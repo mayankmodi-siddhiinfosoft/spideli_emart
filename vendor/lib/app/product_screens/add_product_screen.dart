@@ -337,7 +337,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                       ),
                                     ),
                                     compareFn: (i1, i2) => i1.title == i2.title,
-                                    popupProps: PopupPropsMultiSelection.menu(
+                                    popupProps: MultiSelectionPopupProps.menu(
                                       fit: FlexFit.tight,
                                       showSelectedItems: true,
                                       menuProps: MenuProps(
@@ -361,7 +361,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                     itemAsString: (AttributesModel u) => u.title.toString(),
                                     selectedItems: controller.selectedAttributesList,
                                     onSaved: (data) {},
-                                    onChanged: (data) {
+                                    onSelected: (data) {
                                       if (controller.itemAttributes.value!.attributes != null) {
                                         controller.selectedAttributesList.clear();
                                         controller.itemAttributes.value!.attributes!.clear();
@@ -837,12 +837,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                             ),
                                             InkWell(
                                               onTap: () async {
-                                                FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['jpg', 'jpeg', 'zip', 'png', 'gif', 'pdf']);
+                                                // file_picker 12+: pickFile() returns the single PlatformFile (FilePickerResult removed).
+                                                PlatformFile? result = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['jpg', 'jpeg', 'zip', 'png', 'gif', 'pdf']);
 
                                                 if (result != null) {
-                                                  double sizeInMb = result.files.single.size / (1024 * 1024);
+                                                  double sizeInMb = (await result.length() ?? 0) / (1024 * 1024);
                                                   if (sizeInMb <= double.parse(Constant.digitalProductFileSize)) {
-                                                    controller.digitalFile = File(result.files.single.path.toString());
+                                                    controller.digitalFile = File(result.path.toString());
                                                     controller.digitalProductFileName.value = controller.digitalFile != null ? controller.digitalFile!.path.split('/').last : "";
                                                   } else {
                                                     ShowToastDialog.showToast("${'Please select less than'.tr} ${Constant.digitalProductFileSize.toString()} ${"mb file.".tr}");

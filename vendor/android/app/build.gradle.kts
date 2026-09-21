@@ -20,12 +20,14 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.spideli.store"
-    compileSdk = 36
+    // 37: permission_handler_android 14.1 (permission_handler 13) is built
+    // against Android 17's SDK. targetSdk stays 36.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
         isCoreLibraryDesugaringEnabled = true
     }
 
@@ -66,19 +68,18 @@ NEW Kotlin DSL (replaces kotlinOptions)
 */
 kotlin {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_11)
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
-    implementation("com.android.billingclient:billing:7.1.1")
-    implementation("com.google.firebase:firebase-auth:21.1.0")
-    implementation("androidx.core:core:1.13.1")
-    implementation("com.razorpay:checkout:1.6.33")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("com.google.android.gms:play-services-auth:20.6.0")
-    implementation(platform("com.google.firebase:firebase-bom:32.1.0"))
+    // styles.xml uses Theme.MaterialComponents.
+    implementation("com.google.android.material:material:1.14.0")
+    // Removed pins no native code uses: Play Billing 7.1.1 (Play now requires
+    // v8+ in any bundle that ships it), firebase-auth 21.1.0 / firebase-bom,
+    // play-services-auth, androidx.core and razorpay checkout -- the Flutter
+    // plugins declare their own, newer versions of each.
 }
 
 flutter {

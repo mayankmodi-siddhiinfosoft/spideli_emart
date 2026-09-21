@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -404,7 +404,7 @@ class FireStoreUtils {
 
   static Future<List<TaxModel>?> getTaxList(double lat, double lng, String sectionId) async {
     List<TaxModel> taxList = [];
-    List<Placemark> placeMarks = await placemarkFromCoordinates(lat, lng);
+    List<Placemark> placeMarks = await Geocoding().placemarkFromCoordinates(lat, lng);
 
     await fireStore
         .collection(CollectionName.tax)

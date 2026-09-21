@@ -436,7 +436,7 @@ class AddRestaurantScreen extends StatelessWidget {
                                 ),
                               ),
                               compareFn: (i1, i2) => i1.title == i2.title,
-                              popupProps: PopupPropsMultiSelection.modalBottomSheet(
+                              popupProps: MultiSelectionPopupProps.modalBottomSheet(
                                 showSearchBox: true,
                                 modalBottomSheetProps: ModalBottomSheetProps(backgroundColor: isDark ? AppThemeData.grey800 : AppThemeData.grey50),
                                 itemBuilder: (context, item, bool, isSelected) {
@@ -455,7 +455,7 @@ class AddRestaurantScreen extends StatelessWidget {
                               itemAsString: (VendorCategoryModel u) => u.title.toString(),
                               selectedItems: controller.selectedCategories,
                               onSaved: (data) {},
-                              onChanged: (data) {
+                              onSelected: (data) {
                                 controller.selectedCategories.clear();
                                 controller.selectedCategories.addAll(data);
                               },

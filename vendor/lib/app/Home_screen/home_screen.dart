@@ -1,5 +1,5 @@
 import 'package:bottom_picker/resources/extensions.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_multi_formatter/flutter_multi_formatter.dart';
@@ -1864,7 +1864,7 @@ class HomeScreen extends StatelessWidget {
                   decoratorProps: DropDownDecoratorProps(
                     decoration: InputDecoration(labelText: "Select Delivery Man".tr, border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(vertical: 14, horizontal: 16)),
                   ),
-                  onChanged: (UserModel? value) {
+                  onSelected: (UserModel? value) {
                     if (value == null) return;
 
                     if (Constant.singleOrderReceive == true && value.inProgressOrderID?.isNotEmpty == true) {

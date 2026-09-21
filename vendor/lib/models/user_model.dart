@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/models/admin_commission_model.dart';
 import 'package:vendor/models/subscription_plan_model.dart';
