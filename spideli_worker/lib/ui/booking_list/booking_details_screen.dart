@@ -188,14 +188,16 @@ class BookingDetailsScreen extends StatelessWidget {
                                               children: [
                                                 InkWell(
                                                   onTap: () async {
-                                                    bool? isAvailable = await MapLauncher.isMapAvailable(MapType.google);
+                                                    final directions = MapLauncher.directions(
+                                                      LocationCoords(onProviderOrder.address!.location!.latitude, onProviderOrder.address!.location!.longitude,
+                                                          title: onProviderOrder.address!.locality),
+                                                      mode: TravelMode.driving,
+                                                    );
+                                                    // map_launcher 6: getSupportedMaps also returns browser-only maps, so check isInstalled to keep the old "installed" check.
+                                                    final supportedMaps = await directions.getSupportedMaps(const [GoogleMaps()]);
+                                                    bool isAvailable = supportedMaps.any((map) => map.isInstalled);
                                                     if (isAvailable == true) {
-                                                      await MapLauncher.showDirections(
-                                                        mapType: MapType.google,
-                                                        directionsMode: DirectionsMode.driving,
-                                                        destinationTitle: onProviderOrder.address!.locality,
-                                                        destination: Coords(onProviderOrder.address!.location!.latitude, onProviderOrder.address!.location!.longitude),
-                                                      );
+                                                      await directions.show(map: const GoogleMaps());
                                                     } else {
                                                       ShowToastDialog.showToast("Google map is not installed".tr);
                                                     }
