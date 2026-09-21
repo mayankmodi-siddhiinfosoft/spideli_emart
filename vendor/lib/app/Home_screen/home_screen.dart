@@ -27,7 +27,9 @@ import 'package:vendor/models/wallet_transaction_model.dart';
 import 'package:vendor/service/audio_player_service.dart';
 import 'package:vendor/themes/app_them_data.dart';
 import 'package:vendor/themes/text_field_widget.dart';
+import 'package:vendor/models/currency_model.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/region_service.dart';
 import 'package:vendor/utils/network_image_widget.dart';
 import 'package:vendor/widget/my_separator.dart';
 import 'package:vendor/widget/wholesale_tag.dart';
@@ -274,6 +276,8 @@ class HomeScreen extends StatelessWidget {
   }
 
   InkWell newOrderWidget(isDark, BuildContext context, OrderModel orderModel, HomeController controller) {
+    // Amounts of an order are shown in the currency it was charged in.
+    final CurrencyModel? orderCurrency = RegionService.currencyForOrder(orderModel.regionId);
     // Reset
     double subTotal = 0.0;
     double specialDiscountAmount = 0.0;
@@ -438,7 +442,7 @@ class HomeScreen extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 Text(
-                                  Constant.amountShow(amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
+                                  Constant.amountShow(currency: orderCurrency, amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
                                   style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
                                 ),
                                 InkWell(
@@ -511,7 +515,7 @@ class HomeScreen extends StatelessWidget {
                                         ),
                                       ),
                                       Text(
-                                        Constant.amountShow(amount: (double.parse(product.extrasPrice.toString()) * double.parse(product.quantity.toString())).toString()),
+                                        Constant.amountShow(currency: orderCurrency, amount: (double.parse(product.extrasPrice.toString()) * double.parse(product.quantity.toString())).toString()),
                                         textAlign: TextAlign.start,
                                         style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, fontSize: 16),
                                       ),
@@ -574,7 +578,7 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      Constant.amountShow(amount: totalAmount.toString()).tr,
+                      Constant.amountShow(currency: orderCurrency, amount: totalAmount.toString()).tr,
                       style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
                     ),
                   ],
@@ -593,7 +597,7 @@ class HomeScreen extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            "-${Constant.amountShow(amount: adminCommission.toString())}".tr,
+                            "-${Constant.amountShow(currency: orderCurrency, amount: adminCommission.toString())}".tr,
                             style: TextStyle(color: isDark ? AppThemeData.danger300 : AppThemeData.danger300, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
                           ),
                         ],
@@ -882,6 +886,8 @@ class HomeScreen extends StatelessWidget {
   }
 
   InkWell acceptedWidget(isDark, BuildContext context, OrderModel orderModel, HomeController controller) {
+    // Amounts of an order are shown in the currency it was charged in.
+    final CurrencyModel? orderCurrency = RegionService.currencyForOrder(orderModel.regionId);
     // Reset
     double subTotal = 0.0;
     double specialDiscountAmount = 0.0;
@@ -1042,7 +1048,7 @@ class HomeScreen extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              Constant.amountShow(amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
+                              Constant.amountShow(currency: orderCurrency, amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
                               style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
                             ),
                           ],
@@ -1099,7 +1105,7 @@ class HomeScreen extends StatelessWidget {
                                         ),
                                       ),
                                       Text(
-                                        Constant.amountShow(amount: (double.parse(product.extrasPrice.toString()) * double.parse(product.quantity.toString())).toString()),
+                                        Constant.amountShow(currency: orderCurrency, amount: (double.parse(product.extrasPrice.toString()) * double.parse(product.quantity.toString())).toString()),
                                         textAlign: TextAlign.start,
                                         style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, fontSize: 16),
                                       ),
@@ -1156,7 +1162,7 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      Constant.amountShow(amount: totalAmount.toString()).tr,
+                      Constant.amountShow(currency: orderCurrency, amount: totalAmount.toString()).tr,
                       style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
                     ),
                   ],
@@ -1175,7 +1181,7 @@ class HomeScreen extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            "-${Constant.amountShow(amount: adminCommission.toString())}".tr,
+                            "-${Constant.amountShow(currency: orderCurrency, amount: adminCommission.toString())}".tr,
                             style: TextStyle(color: isDark ? AppThemeData.danger300 : AppThemeData.danger300, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
                           ),
                         ],
@@ -1432,6 +1438,8 @@ class HomeScreen extends StatelessWidget {
   }
 
   InkWell completedAndRejectedWidget(isDark, BuildContext context, OrderModel orderModel, HomeController controller) {
+    // Amounts of an order are shown in the currency it was charged in.
+    final CurrencyModel? orderCurrency = RegionService.currencyForOrder(orderModel.regionId);
     // Reset
     double subTotal = 0.0;
     double specialDiscountAmount = 0.0;
@@ -1592,7 +1600,7 @@ class HomeScreen extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              Constant.amountShow(amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
+                              Constant.amountShow(currency: orderCurrency, amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
                               style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
                             ),
                           ],
@@ -1649,7 +1657,7 @@ class HomeScreen extends StatelessWidget {
                                         ),
                                       ),
                                       Text(
-                                        Constant.amountShow(amount: (double.parse(product.extrasPrice.toString()) * double.parse(product.quantity.toString())).toString()),
+                                        Constant.amountShow(currency: orderCurrency, amount: (double.parse(product.extrasPrice.toString()) * double.parse(product.quantity.toString())).toString()),
                                         textAlign: TextAlign.start,
                                         style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, fontSize: 16),
                                       ),
@@ -1706,7 +1714,7 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      Constant.amountShow(amount: totalAmount.toString()).tr,
+                      Constant.amountShow(currency: orderCurrency, amount: totalAmount.toString()).tr,
                       style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
                     ),
                   ],
@@ -1725,7 +1733,7 @@ class HomeScreen extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            "-${Constant.amountShow(amount: adminCommission.toString())}".tr,
+                            "-${Constant.amountShow(currency: orderCurrency, amount: adminCommission.toString())}".tr,
                             style: TextStyle(color: isDark ? AppThemeData.danger300 : AppThemeData.danger300, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
                           ),
                         ],

@@ -5,6 +5,7 @@ import 'package:vendor/models/currency_model.dart';
 import 'package:vendor/models/user_model.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/notification_service.dart';
+import 'package:vendor/utils/region_service.dart';
 
 import '../constant/collection_name.dart';
 
@@ -24,6 +25,9 @@ class GlobalSettingController extends GetxController {
       } else {
         Constant.currencyModel = CurrencyModel(id: "", code: "USD", decimalDigits: 2, enable: true, name: "US Dollar", symbol: "\$", symbolAtRight: false);
       }
+      // The global currency is only a fallback: once the store is known, its
+      // region's currency wins (see RegionService).
+      RegionService.onGlobalCurrency(Constant.currencyModel!);
     });
     await FireStoreUtils.getSettings();
   }

@@ -179,11 +179,14 @@ class Constant {
     return "#${(orderId).substring(orderId.length - 10)}";
   }
 
-  static String amountShow({required String? amount}) {
-    if (currencyModel?.symbolAtRight == true) {
-      return "${double.parse(amount == null ? '0.0' : amount.toString()).toStringAsFixed(currencyModel!.decimalDigits ?? 0)} ${currencyModel!.symbol.toString()}";
+  /// [currency] overrides the store's currency, e.g. an order's own currency
+  /// (`RegionService.currencyForOrder(order.regionId)`).
+  static String amountShow({required String? amount, CurrencyModel? currency}) {
+    final CurrencyModel c = currency ?? currencyModel!;
+    if (c.symbolAtRight == true) {
+      return "${double.parse(amount == null ? '0.0' : amount.toString()).toStringAsFixed(c.decimalDigits ?? 0)} ${c.symbol.toString()}";
     } else {
-      return "${currencyModel!.symbol.toString()} ${double.parse(amount == null ? '0.0' : amount.toString()).toStringAsFixed(currencyModel!.decimalDigits ?? 0)}";
+      return "${c.symbol.toString()} ${double.parse(amount == null ? '0.0' : amount.toString()).toStringAsFixed(c.decimalDigits ?? 0)}";
     }
   }
 
@@ -547,13 +550,13 @@ class Constant {
     return scheduleDate.subtract(duration);
   }
 
-  static String getTaxDisplayText(List<TaxModel>? taxes) {
+  static String getTaxDisplayText(List<TaxModel>? taxes, {CurrencyModel? currency}) {
     if (taxes == null || taxes.isEmpty) return '';
 
     return taxes
         .map((tax) {
           if (tax.type == "fix") {
-            return "${tax.title} (${Constant.amountShow(amount: tax.tax)})";
+            return "${tax.title} (${Constant.amountShow(amount: tax.tax, currency: currency)})";
           } else {
             return "${tax.title} (${tax.tax}%)";
           }

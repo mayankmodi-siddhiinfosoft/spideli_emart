@@ -46,6 +46,10 @@ class OrderModel {
   bool? isFreeDelivery;
   bool? packagingChargeEnable;
 
+  /// Region the order was placed in (inherited from the store by the customer
+  /// app). Order amounts are shown in this region's currency.
+  String? regionId;
+
   OrderModel({
     this.address,
     this.status,
@@ -152,6 +156,7 @@ class OrderModel {
     }
     taxScope = json['taxScope'];
     platformFee = json['platformFee'];
+    regionId = json['regionId']?.toString();
     isFreeDelivery = json['isFreeDelivery'] ?? false;
     isPosOrder = json['isPosOrder'] ?? false;
     packagingChargeEnable = json['packagingChargeEnable'] ?? false;
@@ -217,6 +222,9 @@ class OrderModel {
     data['isFreeDelivery'] = isFreeDelivery ?? false;
     data['isPosOrder'] = isPosOrder ?? false;
     data['packagingChargeEnable'] = packagingChargeEnable ?? false;
+    if (regionId != null) {
+      data['regionId'] = regionId;
+    }
     return data;
   }
 }

@@ -16,7 +16,9 @@ import 'package:vendor/models/user_model.dart';
 import 'package:vendor/models/wallet_transaction_model.dart';
 import 'package:vendor/models/withdraw_method_model.dart';
 import 'package:vendor/models/withdrawal_model.dart';
+import 'package:vendor/models/currency_model.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/region_service.dart';
 
 class WalletController extends GetxController {
   RxBool isLoading = true.obs;
@@ -34,6 +36,24 @@ class WalletController extends GetxController {
   num get storeBalance => vendorModel.value.storeWalletAmount ?? 0;
   RxList<WalletTransactionModel> walletTransactionList = <WalletTransactionModel>[].obs;
   RxList<WithdrawalModel> withdrawalList = <WithdrawalModel>[].obs;
+
+  /// orderId -> the order's regionId, for order-based wallet rows.
+  RxMap<String, String> orderRegionIds = <String, String>{}.obs;
+
+  /// Order-based rows keep the currency the order was charged in; other rows
+  /// (subscriptions, payouts) use the store's currency (null = default).
+  CurrencyModel? currencyForTransaction(WalletTransactionModel transaction) {
+    final orderId = transaction.orderId;
+    if (orderId == null || orderId.isEmpty) return null;
+    return RegionService.currencyForOrder(orderRegionIds[orderId]);
+  }
+
+  Future<void> loadOrderRegions() async {
+    final ids = walletTransactionList.map((e) => e.orderId ?? '').where((e) => e.isNotEmpty && !orderRegionIds.containsKey(e));
+    if (ids.isEmpty) return;
+    await RegionService.ensureLoaded();
+    orderRegionIds.addAll(await RegionService.orderRegionIds(ids));
+  }
 
   RxInt selectedTabIndex = 0.obs;
   RxInt selectedValue = 0.obs;
@@ -79,7 +99,7 @@ class WalletController extends GetxController {
     for (var element in walletTransactionList) {
       row.cells[0].value = element.note.toString();
       row.cells[1].value = Constant.orderId(orderId: element.orderId.toString());
-      row.cells[2].value = Constant.amountShow(amount: element.amount.toString());
+      row.cells[2].value = Constant.amountShow(amount: element.amount.toString(), currency: currencyForTransaction(element));
       row.cells[3].value = Constant.timestampToDateTime(element.date!);
       row = grid.rows.add();
     }
@@ -167,6 +187,8 @@ class WalletController extends GetxController {
         }
       });
     }
+
+    await loadOrderRegions();
 
     await FireStoreUtils.getWithdrawHistory().then((value) {
       if (value != null) {

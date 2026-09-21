@@ -7,6 +7,7 @@ import 'package:vendor/models/user_model.dart';
 import 'package:vendor/models/vendor_model.dart';
 import 'package:vendor/service/audio_player_service.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/region_service.dart';
 
 class HomeController extends GetxController {
   RxBool isLoading = true.obs;
@@ -51,6 +52,9 @@ class HomeController extends GetxController {
         }
       });
     }
+    // Regions/currencies must be cached before order cards render, so each
+    // order can show the currency it was charged in.
+    await RegionService.applyStore(vendermodel.value.id != null ? vendermodel.value : null);
     await getOrder();
 
     isLoading.value = false;

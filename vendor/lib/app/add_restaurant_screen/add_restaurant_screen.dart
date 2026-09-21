@@ -16,6 +16,7 @@ import 'package:vendor/app/add_restaurant_screen/qr_code_screen.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/add_restaurant_controller.dart';
+import 'package:vendor/models/region_model.dart';
 import 'package:vendor/models/vendor_category_model.dart';
 import 'package:vendor/models/zone_model.dart';
 import 'package:vendor/themes/app_them_data.dart';
@@ -24,6 +25,7 @@ import 'package:vendor/themes/round_button_fill.dart';
 import 'package:vendor/themes/text_field_widget.dart';
 import 'package:vendor/themes/theme_controller.dart';
 import 'package:vendor/utils/network_image_widget.dart';
+import 'package:vendor/utils/region_service.dart';
 import 'package:vendor/widget/osm_map/map_picker_page.dart';
 
 class AddRestaurantScreen extends StatelessWidget {
@@ -318,6 +320,69 @@ class AddRestaurantScreen extends StatelessWidget {
                             ),
                           ),
                         ),
+                        if (controller.regionList.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "Region".tr,
+                                  style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 14, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800),
+                                ),
+                                const SizedBox(height: 5),
+                                DropdownButtonFormField<RegionModel>(
+                                  hint: Text(
+                                    'Select region'.tr,
+                                    style: TextStyle(fontSize: 14, color: isDark ? AppThemeData.grey700 : AppThemeData.grey700, fontFamily: AppThemeData.regular),
+                                  ),
+                                  dropdownColor: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
+                                  icon: const Icon(Icons.keyboard_arrow_down),
+                                  decoration: InputDecoration(
+                                    errorStyle: const TextStyle(color: Colors.red),
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
+                                    disabledBorder: UnderlineInputBorder(
+                                      borderRadius: const BorderRadius.all(Radius.circular(10)),
+                                      borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: const BorderRadius.all(Radius.circular(10)),
+                                      borderSide: BorderSide(color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, width: 1),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: const BorderRadius.all(Radius.circular(10)),
+                                      borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
+                                    ),
+                                    errorBorder: OutlineInputBorder(
+                                      borderRadius: const BorderRadius.all(Radius.circular(10)),
+                                      borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: const BorderRadius.all(Radius.circular(10)),
+                                      borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
+                                    ),
+                                  ),
+                                  initialValue: controller.selectedRegion.value.id == null ? null : controller.selectedRegion.value,
+                                  onChanged: (value) {
+                                    if (value != null) controller.onRegionChanged(value);
+                                  },
+                                  style: TextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontFamily: AppThemeData.medium),
+                                  items: controller.regionList.map((item) {
+                                    return DropdownMenuItem<RegionModel>(
+                                      value: item,
+                                      child: Text(
+                                        item.displayName,
+                                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium, fontSize: 18),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            ),
+                          ),
                         Column(
                           mainAxisAlignment: MainAxisAlignment.start,
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -328,6 +393,9 @@ class AddRestaurantScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: 5),
                             DropdownButtonFormField<ZoneModel>(
+                              // Rebuilt when the region changes, so a cleared
+                              // zone selection is reflected.
+                              key: ValueKey("zone_${controller.selectedRegion.value.id}"),
                               hint: Text(
                                 'Select zone'.tr,
                                 style: TextStyle(fontSize: 14, color: isDark ? AppThemeData.grey700 : AppThemeData.grey700, fontFamily: AppThemeData.regular),
@@ -592,7 +660,7 @@ class AddRestaurantScreen extends StatelessWidget {
                                     prefix: Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                                       child: Text(
-                                        "${Constant.currencyModel!.symbol}".tr,
+                                        "${(RegionService.currencyForRegion(controller.selectedRegion.value.id) ?? Constant.currencyModel)!.symbol}".tr,
                                         style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontSize: 18),
                                       ),
                                     ),
@@ -608,7 +676,7 @@ class AddRestaurantScreen extends StatelessWidget {
                                     prefix: Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                                       child: Text(
-                                        "${Constant.currencyModel!.symbol}".tr,
+                                        "${(RegionService.currencyForRegion(controller.selectedRegion.value.id) ?? Constant.currencyModel)!.symbol}".tr,
                                         style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontSize: 18),
                                       ),
                                     ),

@@ -9,7 +9,10 @@ class ZoneModel {
   String? sectionId;
   double? longitude;
 
-  ZoneModel({this.area, this.publish, this.latitude, this.name, this.id, this.longitude,this.sectionId});
+  /// Region this delivery zone belongs to (optional).
+  String? regionId;
+
+  ZoneModel({this.area, this.publish, this.latitude, this.name, this.id, this.longitude,this.sectionId, this.regionId});
 
   ZoneModel.fromJson(Map<String, dynamic> json) {
     if (json['area'] != null) {
@@ -25,6 +28,8 @@ class ZoneModel {
     id = json['id'];
     longitude = json['longitude'];
     sectionId = json['sectionId'];
+    final dynamic region = json['regionId'];
+    regionId = (region == null || region.toString().isEmpty) ? null : region.toString();
   }
 
   Map<String, dynamic> toJson() {
@@ -38,6 +43,9 @@ class ZoneModel {
     data['id'] = id;
     data['longitude'] = longitude;
     data['sectionId'] = sectionId;
+    if (regionId != null) {
+      data['regionId'] = regionId;
+    }
     return data;
   }
 }

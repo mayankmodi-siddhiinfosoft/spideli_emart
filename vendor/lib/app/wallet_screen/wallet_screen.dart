@@ -756,7 +756,9 @@ class WalletScreen extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        transactionModel.isTopup == false ? "-${Constant.amountShow(amount: transactionModel.amount.toString())}" : Constant.amountShow(amount: transactionModel.amount.toString()),
+                        transactionModel.isTopup == false
+                            ? "-${Constant.amountShow(amount: transactionModel.amount.toString(), currency: controller.currencyForTransaction(transactionModel))}"
+                            : Constant.amountShow(amount: transactionModel.amount.toString(), currency: controller.currencyForTransaction(transactionModel)),
                         style: TextStyle(fontSize: 16, fontFamily: AppThemeData.medium, color: transactionModel.isTopup == true ? AppThemeData.success400 : AppThemeData.danger300),
                       ),
                     ],

@@ -46,6 +46,7 @@ import 'package:vendor/payment/xendit_screen.dart';
 import 'package:vendor/themes/app_them_data.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/preferences.dart';
+import 'package:vendor/utils/region_service.dart';
 
 class SubscriptionController extends GetxController {
   RxList<SubscriptionPlanModel> subscriptionPlanList = <SubscriptionPlanModel>[].obs;
@@ -70,20 +71,28 @@ class SubscriptionController extends GetxController {
     });
 
     userModel.value = await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid()) ?? UserModel();
+    if (userModel.value.vendorID != null && userModel.value.vendorID!.isNotEmpty) {
+      await FireStoreUtils.getVendorById(userModel.value.vendorID.toString()).then((value) {
+        if (value != null) {
+          vendorModel.value = value;
+        }
+      });
+    }
+    // Plan prices are live amounts: show them in the store's region currency.
+    // Also gives the store region used to filter sections and gateways.
+    await RegionService.applyStore(vendorModel.value.id != null ? vendorModel.value : null);
     await FireStoreUtils.getSection().then((value) async {
-      sectionsList.value = value.where((element) => element.serviceTypeFlag == "ecommerce-service" || element.serviceTypeFlag == "delivery-service").toList();
+      sectionsList.value = value
+          .where((element) => element.serviceTypeFlag == "ecommerce-service" || element.serviceTypeFlag == "delivery-service")
+          // Sections not offered in the store's region are hidden (the store's
+          // own section always stays).
+          .where((element) => element.id == userModel.value.sectionId || RegionService.isAvailableInRegion(element.regionIds, RegionService.storeRegionId))
+          .toList();
 
       if (userModel.value.sectionId != null && userModel.value.sectionId!.isNotEmpty) {
         selectedSectionModel.value = sectionsList.where((element) => element.id == userModel.value.sectionId).first;
       } else {
         selectedSectionModel.value = sectionsList.first;
-      }
-      if (userModel.value.vendorID != null && userModel.value.vendorID!.isNotEmpty) {
-        await FireStoreUtils.getVendorById(userModel.value.vendorID.toString()).then((value) {
-          if (value != null) {
-            vendorModel.value = value;
-          }
-        });
       }
     });
     await getSubscriptionPlanList();
@@ -145,17 +154,35 @@ class SubscriptionController extends GetxController {
       orangeMoneyModel.value = OrangeMoney.fromJson(jsonDecode(Preferences.getString(Preferences.orangeMoneySettings)));
       xenditModel.value = Xendit.fromJson(jsonDecode(Preferences.getString(Preferences.xenditSettings)));
       walletSettingModel.value = WalletSettingModel.fromJson(jsonDecode(Preferences.getString(Preferences.walletSettings)));
-      if (stripeModel.value.isEnabled == true) {
-        Stripe.publishableKey = stripeModel.value.clientpublishableKey.toString();
-        Stripe.merchantIdentifier = 'spideli Store'.tr;
-        Stripe.instance.applySettings();
-      }
-      setRef();
-
-      razorPay.on(Razorpay.EVENT_PAYMENT_SUCCESS, handlePaymentSuccess);
-      razorPay.on(Razorpay.EVENT_EXTERNAL_WALLET, handleExternalWaller);
-      razorPay.on(Razorpay.EVENT_PAYMENT_ERROR, handlePaymentError);
     });
+    // Hide gateways not offered in the store's region (non-empty `regionIds`
+    // that excludes it). Done before Stripe setup and the wallet default.
+    await RegionService.loadGatewayRegionIds();
+    final String? regionId = RegionService.storeRegionId;
+    bool offered(String docName) => RegionService.isGatewayAvailable(docName, regionId);
+    if (!offered("stripeSettings")) stripeModel.value.isEnabled = false;
+    if (!offered("paypalSettings")) payPalModel.value.isEnabled = false;
+    if (!offered("payStack")) payStackModel.value.isEnable = false;
+    if (!offered("MercadoPago")) mercadoPagoModel.value.isEnabled = false;
+    if (!offered("flutterWave")) flutterWaveModel.value.isEnable = false;
+    if (!offered("PaytmSettings")) paytmModel.value.isEnabled = false;
+    if (!offered("payFastSettings")) payFastModel.value.isEnable = false;
+    if (!offered("razorpaySettings")) razorPayModel.value.isEnabled = false;
+    if (!offered("midtrans_settings")) midTransModel.value.enable = false;
+    if (!offered("orange_money_settings")) orangeMoneyModel.value.enable = false;
+    if (!offered("xendit_settings")) xenditModel.value.enable = false;
+    if (!offered("walletSettings")) walletSettingModel.value.isEnabled = false;
+
+    if (stripeModel.value.isEnabled == true) {
+      Stripe.publishableKey = stripeModel.value.clientpublishableKey.toString();
+      Stripe.merchantIdentifier = 'spideli Store'.tr;
+      Stripe.instance.applySettings();
+    }
+    setRef();
+
+    razorPay.on(Razorpay.EVENT_PAYMENT_SUCCESS, handlePaymentSuccess);
+    razorPay.on(Razorpay.EVENT_EXTERNAL_WALLET, handleExternalWaller);
+    razorPay.on(Razorpay.EVENT_PAYMENT_ERROR, handlePaymentError);
     if (walletSettingModel.value.isEnabled == true) {
       selectedPaymentMethod.value = PaymentGateway.wallet.name;
     }

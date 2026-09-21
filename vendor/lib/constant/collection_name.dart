@@ -34,6 +34,7 @@ class CollectionName {
   static const String wallet = "wallet";
   static const String withdrawMethod = "withdraw_method";
   static const String zone = "zone";
+  static const String regions = "regions";
   static const String subscriptionPlans = "subscription_plans";
   static const String subscriptionHistory = "subscription_history";
   static const String vendorSubscriptionPlans = "vendor_subscription_plans";

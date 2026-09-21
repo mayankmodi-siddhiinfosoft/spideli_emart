@@ -8,13 +8,21 @@ import 'package:intl/intl.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/models/cart_product_model.dart';
+import 'package:vendor/models/currency_model.dart';
 import 'package:vendor/models/order_model.dart';
 import 'package:vendor/models/tax_model.dart';
 import 'package:vendor/themes/app_them_data.dart';
+import 'package:vendor/utils/region_service.dart';
 
 class OrderDetailsController extends GetxController {
   RxBool isLoading = true.obs;
   Rx<OrderModel> orderModel = OrderModel().obs;
+
+  /// Currency this order was charged in (its own region), not the store's
+  /// current one. Used for every amount on the details screen and receipt.
+  CurrencyModel? get orderCurrency => RegionService.currencyForOrder(orderModel.value.regionId);
+
+  int get _orderDecimals => (orderCurrency ?? Constant.currencyModel)?.decimalDigits ?? 2;
 
   @override
   void onInit() {
@@ -404,7 +412,7 @@ class OrderDetailsController extends GetxController {
           width: 1, // Spacer column
         ),
         PosColumn(
-          text: singleProductTotal.toStringAsFixed(Constant.currencyModel!.decimalDigits!),
+          text: singleProductTotal.toStringAsFixed(_orderDecimals),
           width: 5,
           styles: const PosStyles(align: PosAlign.right, height: PosTextSize.size1, width: PosTextSize.size1, bold: true),
         ),
@@ -601,6 +609,7 @@ class OrderDetailsController extends GetxController {
         ),
         PosColumn(
           text: Constant.amountShow(
+            currency: orderCurrency,
             amount: Constant.calculateTax(
               amount: (double.parse(subTotal.value.toString()) - double.parse(orderModel.value.discount.toString()) - specialDiscountAmount.value).toString(),
               taxModel: taxModel,
@@ -642,7 +651,7 @@ class OrderDetailsController extends GetxController {
         width: 1, // Spacer column
       ),
       PosColumn(
-        text: totalTaxAmount.toStringAsFixed(Constant.currencyModel!.decimalDigits ?? 2),
+        text: totalTaxAmount.toStringAsFixed(_orderDecimals),
         width: 5,
         styles: const PosStyles(align: PosAlign.right, height: PosTextSize.size1, width: PosTextSize.size1, bold: true),
       ),
@@ -733,7 +742,7 @@ class OrderDetailsController extends GetxController {
         width: 1, // Spacer column
       ),
       PosColumn(
-        text: Constant.amountShow(amount: totalAmount.value.toString()),
+        text: Constant.amountShow(currency: orderCurrency, amount: totalAmount.value.toString()),
         width: 5,
         styles: const PosStyles(align: PosAlign.right, height: PosTextSize.size1, width: PosTextSize.size1, bold: true),
       ),
@@ -753,7 +762,7 @@ class OrderDetailsController extends GetxController {
         width: 1, // Spacer column
       ),
       PosColumn(
-        text: double.parse(orderModel.value.discount.toString()).toStringAsFixed(Constant.currencyModel!.decimalDigits ?? 2),
+        text: double.parse(orderModel.value.discount.toString()).toStringAsFixed(_orderDecimals),
         width: 5,
         styles: const PosStyles(align: PosAlign.right, height: PosTextSize.size1, width: PosTextSize.size1, bold: true),
       ),
@@ -773,7 +782,7 @@ class OrderDetailsController extends GetxController {
         width: 1, // Spacer column
       ),
       PosColumn(
-        text: Constant.amountShow(amount: totalAmount.value.toString()),
+        text: Constant.amountShow(currency: orderCurrency, amount: totalAmount.value.toString()),
         width: 5,
         styles: const PosStyles(align: PosAlign.right, height: PosTextSize.size1, width: PosTextSize.size1, bold: true),
       ),
@@ -793,7 +802,7 @@ class OrderDetailsController extends GetxController {
         width: 1, // Spacer column
       ),
       PosColumn(
-        text: Constant.amountShow(amount: totalAmount.value.toString()),
+        text: Constant.amountShow(currency: orderCurrency, amount: totalAmount.value.toString()),
         width: 5,
         styles: const PosStyles(align: PosAlign.right, height: PosTextSize.size1, width: PosTextSize.size1, bold: true),
       ),

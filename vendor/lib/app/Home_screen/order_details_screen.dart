@@ -142,7 +142,7 @@ class OrderDetailsScreen extends StatelessWidget {
                                                   product.taxSetting!.isEmpty
                                                       ? SizedBox()
                                                       : Text(
-                                                          "Tax: ${Constant.getTaxDisplayText(product.taxSetting)}",
+                                                          "Tax: ${Constant.getTaxDisplayText(product.taxSetting, currency: controller.orderCurrency)}",
                                                           maxLines: 2,
                                                           overflow: TextOverflow.ellipsis,
                                                           style: TextStyle(fontSize: 12, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, fontFamily: AppThemeData.semiBold),
@@ -154,7 +154,7 @@ class OrderDetailsScreen extends StatelessWidget {
                                               crossAxisAlignment: CrossAxisAlignment.end,
                                               children: [
                                                 Text(
-                                                  Constant.amountShow(amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
+                                                  Constant.amountShow(currency: controller.orderCurrency, amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
                                                   style: TextStyle(
                                                     color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
                                                     fontSize: 16,
@@ -233,7 +233,7 @@ class OrderDetailsScreen extends StatelessWidget {
                                                         ),
                                                       ),
                                                       Text(
-                                                        Constant.amountShow(amount: (double.parse(product.extrasPrice.toString()) * double.parse(product.quantity.toString())).toString()),
+                                                        Constant.amountShow(currency: controller.orderCurrency, amount: (double.parse(product.extrasPrice.toString()) * double.parse(product.quantity.toString())).toString()),
                                                         textAlign: TextAlign.start,
                                                         style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, fontSize: 16),
                                                       ),
@@ -335,7 +335,7 @@ class OrderDetailsScreen extends StatelessWidget {
                                 /// Item Total
                                 amountRow(
                                   title: "Item totals".tr,
-                                  amount: Constant.amountShow(amount: controller.subTotal.value.toString()),
+                                  amount: Constant.amountShow(currency: controller.orderCurrency, amount: controller.subTotal.value.toString()),
                                   isDark: isDark,
                                 ),
 
@@ -344,7 +344,7 @@ class OrderDetailsScreen extends StatelessWidget {
                                 /// Coupon Discount
                                 amountRow(
                                   title: "Coupon Discount",
-                                  amount: "- (${Constant.amountShow(amount: controller.couponAmount.value.toString())})",
+                                  amount: "- (${Constant.amountShow(currency: controller.orderCurrency, amount: controller.couponAmount.value.toString())})",
                                   isDark: isDark,
                                   amountColor: AppThemeData.danger300,
                                 ),
@@ -354,7 +354,7 @@ class OrderDetailsScreen extends StatelessWidget {
                                   const SizedBox(height: 10),
                                   amountRow(
                                     title: "Special Discount",
-                                    amount: "- (${Constant.amountShow(amount: controller.specialDiscountAmount.value.toString())})",
+                                    amount: "- (${Constant.amountShow(currency: controller.orderCurrency, amount: controller.specialDiscountAmount.value.toString())})",
                                     isDark: isDark,
                                     amountColor: AppThemeData.danger300,
                                   ),
@@ -364,7 +364,7 @@ class OrderDetailsScreen extends StatelessWidget {
                                 if (controller.orderModel.value.packagingChargeEnable == true)
                                   amountRow(
                                     title: "Packaging charge",
-                                    amount: Constant.amountShow(amount: controller.packagingCharge.value.toString()),
+                                    amount: Constant.amountShow(currency: controller.orderCurrency, amount: controller.packagingCharge.value.toString()),
                                     isDark: isDark,
                                   ),
                                 if (controller.orderModel.value.packagingChargeEnable == true) const SizedBox(height: 10),
@@ -377,7 +377,7 @@ class OrderDetailsScreen extends StatelessWidget {
                                   },
                                   child: amountRow(
                                     title: "Tax amount",
-                                    amount: Constant.amountShow(amount: controller.totalTaxAmount.value.toString()),
+                                    amount: Constant.amountShow(currency: controller.orderCurrency, amount: controller.totalTaxAmount.value.toString()),
                                     isDark: isDark,
                                     textColour: AppThemeData.primary300,
                                     underline: true,
@@ -389,7 +389,7 @@ class OrderDetailsScreen extends StatelessWidget {
                                 /// To Pay
                                 amountRow(
                                   title: "To Pay".tr,
-                                  amount: Constant.amountShow(amount: controller.totalAmount.value.toString()),
+                                  amount: Constant.amountShow(currency: controller.orderCurrency, amount: controller.totalAmount.value.toString()),
                                   amountColor: AppThemeData.primary300,
                                   isDark: isDark,
                                 ),
@@ -587,13 +587,13 @@ class OrderDetailsScreen extends StatelessWidget {
                   if (controller.productTaxAmount.value > 0)
                     amountRow(
                       title: "Tax on item total",
-                      amount: Constant.amountShow(amount: controller.productTaxAmount.value.toString()),
+                      amount: Constant.amountShow(currency: controller.orderCurrency, amount: controller.productTaxAmount.value.toString()),
                       isDark: isDark,
                     ),
                   if (controller.orderTaxAmount.value > 0)
                     amountRow(
                       title: "Tax on Order Total",
-                      amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString()),
+                      amount: Constant.amountShow(currency: controller.orderCurrency, amount: controller.orderTaxAmount.value.toString()),
                       isDark: isDark,
                     ),
                   sectionDivider(isDark),
@@ -606,6 +606,7 @@ class OrderDetailsScreen extends StatelessWidget {
                         return amountRow(
                           title: "${controller.orderModel.value.packagingTax![index].title} ${'Tax on Packaging Fee'.tr}",
                           amount: Constant.amountShow(
+                            currency: controller.orderCurrency,
                             amount: Constant.calculateTax(taxModel: controller.orderModel.value.packagingTax![index], amount: controller.packagingCharge.value.toString()).toString(),
                           ),
                           isDark: isDark,
@@ -618,7 +619,7 @@ class OrderDetailsScreen extends StatelessWidget {
                   /// To Pay
                   amountRow(
                     title: "Total Tax Amount",
-                    amount: Constant.amountShow(amount: controller.totalTaxAmount.value.toString()),
+                    amount: Constant.amountShow(currency: controller.orderCurrency, amount: controller.totalTaxAmount.value.toString()),
                     amountColor: AppThemeData.primary300,
                     isDark: isDark,
                   ),

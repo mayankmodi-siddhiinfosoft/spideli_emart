@@ -12,6 +12,7 @@ import 'package:vendor/models/section_model.dart';
 import 'package:vendor/models/tax_model.dart';
 import 'package:vendor/models/vendor_model.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/region_service.dart';
 
 class DashBoardController extends GetxController {
   RxBool isLoading = true.obs;
@@ -54,6 +55,8 @@ class DashBoardController extends GetxController {
         if (value != null) {
           vendorModel.value = value;
           Constant.vendorAdminCommission = value.adminCommission;
+          // Live amounts use the store's region currency from here on.
+          await RegionService.applyStore(value);
           await FireStoreUtils.getSectionById(vendorModel.value.sectionId.toString()).then((value) {
             if (value != null) {
               sectionModel.value = value;

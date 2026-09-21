@@ -9,6 +9,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
+import 'package:vendor/models/region_model.dart';
 import 'package:vendor/models/section_model.dart';
 import 'package:vendor/models/tax_model.dart';
 import 'package:vendor/models/user_model.dart';
@@ -16,6 +17,7 @@ import 'package:vendor/models/vendor_category_model.dart';
 import 'package:vendor/models/vendor_model.dart';
 import 'package:vendor/models/zone_model.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/region_service.dart';
 import 'package:vendor/widget/geoflutterfire/src/geoflutterfire.dart';
 
 class AddRestaurantController extends GetxController {
@@ -44,6 +46,11 @@ class AddRestaurantController extends GetxController {
   RxList<VendorCategoryModel> vendorCategoryList = <VendorCategoryModel>[].obs;
   RxList<ZoneModel> zoneList = <ZoneModel>[].obs;
   Rx<ZoneModel> selectedZone = ZoneModel().obs;
+
+  /// Every published zone; [zoneList] is the subset shown for [selectedRegion].
+  RxList<ZoneModel> allZoneList = <ZoneModel>[].obs;
+  RxList<RegionModel> regionList = <RegionModel>[].obs;
+  Rx<RegionModel> selectedRegion = RegionModel().obs;
 
   // Rx<VendorCategoryModel> selectedCategory = VendorCategoryModel().obs;
   RxList selectedService = [].obs;
@@ -78,6 +85,9 @@ class AddRestaurantController extends GetxController {
           userModel.value = model;
         }
       });
+      await RegionService.ensureLoaded();
+      regionList.value = RegionService.regions;
+
       await FireStoreUtils.getSection().then((value) async {
         sectionsList.value = value.where((element) => element.serviceTypeFlag == "ecommerce-service" || element.serviceTypeFlag == "delivery-service").toList();
       });
@@ -91,6 +101,7 @@ class AddRestaurantController extends GetxController {
 
         await FireStoreUtils.getZone(userModel.value.sectionId.toString()).then((value) {
           if (value != null) {
+            allZoneList.value = value;
             zoneList.value = value;
           }
         });
@@ -136,21 +147,13 @@ class AddRestaurantController extends GetxController {
         });
       }
 
-      await FireStoreUtils.getDelivery().then((value) {
+      await _initRegion();
+
+      // settings/DeliveryCharge: the store region's figures when the admin set
+      // them (`regions[regionId]`), else the global ones.
+      await RegionService.getDeliveryCharge(selectedRegion.value.id).then((value) {
         if (value != null) {
-          deliveryChargeModel.value = value;
-          isEnableDeliverySettings.value = deliveryChargeModel.value.vendorCanModify ?? false;
-          if (value.vendorCanModify == true) {
-            if (vendorModel.value.deliveryCharge != null) {
-              chargePerKmController.value.text = vendorModel.value.deliveryCharge!.deliveryChargesPerKm.toString();
-              minDeliveryChargesController.value.text = vendorModel.value.deliveryCharge!.minimumDeliveryCharges.toString();
-              minDeliveryChargesWithinKMController.value.text = vendorModel.value.deliveryCharge!.minimumDeliveryChargesWithinKm.toString();
-            }
-          } else {
-            chargePerKmController.value.text = deliveryChargeModel.value.deliveryChargesPerKm.toString();
-            minDeliveryChargesController.value.text = deliveryChargeModel.value.minimumDeliveryCharges.toString();
-            minDeliveryChargesWithinKMController.value.text = deliveryChargeModel.value.minimumDeliveryChargesWithinKm.toString();
-          }
+          _applyDeliveryCharge(value);
         }
       });
     } catch (e) {
@@ -158,6 +161,61 @@ class AddRestaurantController extends GetxController {
     }
 
     isLoading.value = false;
+  }
+
+  void _applyDeliveryCharge(DeliveryCharge value) {
+    deliveryChargeModel.value = value;
+    isEnableDeliverySettings.value = deliveryChargeModel.value.vendorCanModify ?? false;
+    if (value.vendorCanModify == true) {
+      if (vendorModel.value.deliveryCharge != null) {
+        chargePerKmController.value.text = vendorModel.value.deliveryCharge!.deliveryChargesPerKm.toString();
+        minDeliveryChargesController.value.text = vendorModel.value.deliveryCharge!.minimumDeliveryCharges.toString();
+        minDeliveryChargesWithinKMController.value.text = vendorModel.value.deliveryCharge!.minimumDeliveryChargesWithinKm.toString();
+      }
+    } else {
+      chargePerKmController.value.text = deliveryChargeModel.value.deliveryChargesPerKm.toString();
+      minDeliveryChargesController.value.text = deliveryChargeModel.value.minimumDeliveryCharges.toString();
+      minDeliveryChargesWithinKMController.value.text = deliveryChargeModel.value.minimumDeliveryChargesWithinKm.toString();
+    }
+  }
+
+  /// Preselects the store's region: `vendors.regionId`, else its zone's
+  /// `regionId` (existing stores saved before regions existed).
+  Future<void> _initRegion() async {
+    String? regionId = vendorModel.value.regionId;
+    final String? zoneId = vendorModel.value.zoneId;
+    if ((regionId == null || regionId.isEmpty) && zoneId != null && zoneId.isNotEmpty) {
+      regionId = allZoneList.where((zone) => zone.id == zoneId).firstOrNull?.regionId ?? await RegionService.regionIdForZone(zoneId);
+    }
+    selectedRegion.value = regionList.where((region) => region.id == regionId).firstOrNull ?? RegionModel();
+    _filterZones();
+  }
+
+  /// Zones of the selected region; if it has none, zones without a region
+  /// (never an empty list because of missing data). No region selected (or no
+  /// regions at all) = every zone, as before.
+  void _filterZones() {
+    final String? regionId = selectedRegion.value.id;
+    if (regionId == null) {
+      zoneList.value = allZoneList.toList();
+    } else {
+      final inRegion = allZoneList.where((zone) => zone.regionId == regionId).toList();
+      zoneList.value = inRegion.isNotEmpty ? inRegion : allZoneList.where((zone) => zone.regionId == null).toList();
+    }
+    // Drop a zone selection that doesn't belong to the region.
+    if (selectedZone.value.id != null && !zoneList.any((zone) => zone.id == selectedZone.value.id)) {
+      selectedZone.value = ZoneModel();
+    }
+  }
+
+  void onRegionChanged(RegionModel region) {
+    selectedRegion.value = region;
+    _filterZones();
+    final DeliveryCharge? charge = RegionService.deliveryChargeForRegion(region.id);
+    if (charge != null) {
+      _applyDeliveryCharge(charge);
+    }
+    update();
   }
 
   Future<void> saveDetails() async {
@@ -169,6 +227,8 @@ class AddRestaurantController extends GetxController {
       ShowToastDialog.showToast("Please enter phone number".tr);
     } else if (addressController.value.text.isEmpty) {
       ShowToastDialog.showToast("Please enter address".tr);
+    } else if (regionList.isNotEmpty && selectedRegion.value.id == null) {
+      ShowToastDialog.showToast("Please select region".tr);
     } else if (selectedZone.value.id == null) {
       ShowToastDialog.showToast("Please select zone".tr);
     } else if (selectedCategories.isEmpty) {
@@ -224,6 +284,9 @@ class AddRestaurantController extends GetxController {
         vendorModel.value.deliveryCharge = deliveryChargeModel;
         vendorModel.value.title = restaurantNameController.value.text;
         vendorModel.value.zoneId = selectedZone.value.id;
+        if (selectedRegion.value.id != null) {
+          vendorModel.value.regionId = selectedRegion.value.id;
+        }
         vendorModel.value.isSelfDelivery = isSelfDelivery.value;
         vendorModel.value.packagingCharge = packagingChargeAmountController.value.text.isNotEmpty ? packagingChargeAmountController.value.text : '0';
 
@@ -281,6 +344,8 @@ class AddRestaurantController extends GetxController {
             ShowToastDialog.showToast("Store details save successfully".tr);
           });
         }
+        // The store's region may have changed: refresh the live currency.
+        await RegionService.applyStore(vendorModel.value);
       } else {
         ShowToastDialog.showToast("The chosen area is outside the selected zone.".tr);
       }

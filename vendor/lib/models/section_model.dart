@@ -21,6 +21,9 @@ class SectionModel {
   PlatformFeeModel? platformFee;
   bool? packagingChargeEnable;
 
+  /// Regions this section/service is offered in. Empty = every region.
+  List<String> regionIds = [];
+
   SectionModel({
     this.referralAmount,
     this.serviceType,
@@ -68,6 +71,7 @@ class SectionModel {
     }
     platformFee = PlatformFeeModel.fromJson(json['platformFee']);
     packagingChargeEnable = json['packagingChargeEnable'] ?? false;
+    regionIds = json['regionIds'] is Iterable ? (json['regionIds'] as Iterable).map((e) => e.toString()).where((e) => e.isNotEmpty).toList() : [];
   }
 
   Map<String, dynamic> toJson() {
