@@ -1,6 +1,7 @@
 import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
+import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/constant/collection_name.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/models/currency_model.dart';
@@ -23,7 +24,9 @@ import 'package:vendor/models/vendor_model.dart';
 class RegionService {
   RegionService._();
 
-  static FirebaseFirestore get _db => FirebaseFirestore.instance;
+  // The app runs on a named Firestore database (see main.dart), so always go
+  // through FireStoreUtils.fireStore -- never FirebaseFirestore.instance.
+  static FirebaseFirestore get _db => FireStoreUtils.fireStore;
 
   static final Map<String, RegionModel> _regions = {};
   static final Map<String, CurrencyModel> _currencies = {};
