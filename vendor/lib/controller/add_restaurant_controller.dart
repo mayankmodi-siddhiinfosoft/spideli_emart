@@ -202,16 +202,16 @@ class AddRestaurantController extends GetxController {
     _filterZones();
   }
 
-  /// Zones of the selected region; if it has none, zones without a region
-  /// (never an empty list because of missing data). No region selected (or no
-  /// regions at all) = every zone, as before.
+  /// Zones that serve the selected region. No region selected (or no regions
+  /// at all) = every zone, as before.
   void _filterZones() {
     final String? regionId = selectedRegion.value.id;
     if (regionId == null) {
       zoneList.value = allZoneList.toList();
     } else {
-      final inRegion = allZoneList.where((zone) => zone.regionId == regionId).toList();
-      zoneList.value = inRegion.isNotEmpty ? inRegion : allZoneList.where((zone) => zone.regionId == null).toList();
+      // A zone may serve several regions (`regionIds`); zones with no region
+      // data serve all of them.
+      zoneList.value = allZoneList.where((zone) => zone.belongsToRegion(regionId)).toList();
     }
     // Drop a zone selection that doesn't belong to the region.
     if (selectedZone.value.id != null && !zoneList.any((zone) => zone.id == selectedZone.value.id)) {
