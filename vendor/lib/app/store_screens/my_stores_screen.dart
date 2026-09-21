@@ -165,7 +165,7 @@ class _StoreTile extends StatelessWidget {
                 ? Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: ShapeDecoration(
-                      color: isDark ? AppThemeData.primary600 : AppThemeData.primary50,
+                      color: isDark ? AppThemeData.grey800 : AppThemeData.primary600,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                     ),
                     child: Text(

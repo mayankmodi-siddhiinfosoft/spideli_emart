@@ -52,87 +52,7 @@ class HomeScreen extends StatelessWidget {
             : DefaultTabController(
                 length: 5,
                 child: Scaffold(
-                  appBar: AppBar(
-                    backgroundColor: AppThemeData.primary300,
-                    centerTitle: false,
-                    title: Row(
-                      children: [
-                        InkWell(
-                          onTap: () {
-                            DashBoardController dashBoardController = Get.find<DashBoardController>();
-                            if (Constant.selectedSection!.dineInActive == true) {
-                              dashBoardController.selectedIndex.value = 4;
-                            } else {
-                              dashBoardController.selectedIndex.value = 3;
-                            }
-                          },
-                          child: ClipOval(
-                            child: NetworkImageWidget(
-                              imageUrl: controller.userModel.value.profilePictureURL.toString(),
-                              height: 42,
-                              width: 42,
-                              fit: BoxFit.cover,
-                              errorWidget: Image.asset("assets/images/user_placeholder.png"),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "Welcome to spideli Store".tr,
-                              style: TextStyle(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, fontSize: 12, fontFamily: AppThemeData.regular),
-                            ),
-                            Text(
-                              controller.userModel.value.fullName().tr,
-                              style: TextStyle(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, fontSize: 16, fontFamily: AppThemeData.semiBold),
-                            ),
-                            // The store being worked on; tap to switch store (owners only).
-                            StorePickerChip(storeName: controller.vendermodel.value.title, isDark: isDark),
-                          ],
-                        ),
-                      ],
-                    ),
-                    bottom: Constant.getEmployeeRolePermission(module: "Manage Order") == true
-                        ? TabBar(
-                            onTap: (value) {
-                              controller.selectedTabIndex.value = value;
-                            },
-                            tabAlignment: TabAlignment.start,
-                            labelStyle: const TextStyle(fontFamily: AppThemeData.semiBold),
-                            labelColor: isDark ? AppThemeData.grey50 : AppThemeData.grey50,
-                            unselectedLabelStyle: const TextStyle(fontFamily: AppThemeData.medium),
-                            unselectedLabelColor: isDark ? AppThemeData.secondary100 : AppThemeData.secondary100,
-                            indicatorColor: AppThemeData.primary300,
-                            isScrollable: true,
-                            padding: const EdgeInsets.symmetric(horizontal: 18),
-                            labelPadding: const EdgeInsets.symmetric(horizontal: 20),
-                            dividerColor: Colors.transparent,
-                            tabs: [
-                              Tab(text: "New".tr),
-                              Tab(text: "Accepted".tr),
-                              Tab(text: "Completed".tr),
-                              Tab(text: "Rejected".tr),
-                              Tab(text: "Cancelled".tr),
-                            ],
-                          )
-                        : null,
-                    actions: [
-                      Visibility(
-                        visible: controller.userModel.value.subscriptionPlan?.features?.chat != false,
-                        child: InkWell(
-                          onTap: () async {
-                            Get.to(const RestaurantInboxScreen());
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: SvgPicture.asset("assets/icons/ic_chat.svg", color: isDark ? AppThemeData.grey900 : AppThemeData.grey50),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                  appBar: _buildHomeHeader(context, controller, isDark),
                   body: controller.userModel.value.isAutoVerify == false && controller.userModel.value.isDocumentVerify == false
                       ? Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -219,7 +139,7 @@ class HomeScreen extends StatelessWidget {
                               ? TabBarView(
                                   children: [
                                     controller.newOrderList.isEmpty
-                                        ? Constant.showEmptyView(message: "New Orders Not found".tr, isDark: isDark)
+                                        ? _OrdersEmptyState(icon: Icons.receipt_long_outlined, title: "No new orders".tr, subtitle: "New orders appear here as soon as customers place them.".tr, isDark: isDark)
                                         : ListView.builder(
                                             shrinkWrap: true,
                                             itemCount: controller.newOrderList.length,
@@ -229,7 +149,7 @@ class HomeScreen extends StatelessWidget {
                                             },
                                           ),
                                     controller.acceptedOrderList.isEmpty
-                                        ? Constant.showEmptyView(message: "Accepted Orders Not found".tr, isDark: isDark)
+                                        ? _OrdersEmptyState(icon: Icons.soup_kitchen_outlined, title: "No accepted orders".tr, subtitle: "Orders you accept show here while they are being prepared.".tr, isDark: isDark)
                                         : ListView.builder(
                                             shrinkWrap: true,
                                             itemCount: controller.acceptedOrderList.length,
@@ -239,7 +159,7 @@ class HomeScreen extends StatelessWidget {
                                             },
                                           ),
                                     controller.completedOrderList.isEmpty
-                                        ? Constant.showEmptyView(message: "Completed Orders Not found".tr, isDark: isDark)
+                                        ? _OrdersEmptyState(icon: Icons.task_alt_rounded, title: "No completed orders".tr, subtitle: "Delivered and picked-up orders are listed here.".tr, isDark: isDark)
                                         : ListView.builder(
                                             shrinkWrap: true,
                                             itemCount: controller.completedOrderList.length,
@@ -249,7 +169,7 @@ class HomeScreen extends StatelessWidget {
                                             },
                                           ),
                                     controller.rejectedOrderList.isEmpty
-                                        ? Constant.showEmptyView(message: "Rejected Orders Not found".tr, isDark: isDark)
+                                        ? _OrdersEmptyState(icon: Icons.block_rounded, title: "No rejected orders".tr, subtitle: "Orders you decline are kept here for reference.".tr, isDark: isDark)
                                         : ListView.builder(
                                             shrinkWrap: true,
                                             itemCount: controller.rejectedOrderList.length,
@@ -259,7 +179,7 @@ class HomeScreen extends StatelessWidget {
                                             },
                                           ),
                                     controller.cancelledOrderList.isEmpty
-                                        ? Constant.showEmptyView(message: "Cancelled Orders Not found".tr, isDark: isDark)
+                                        ? _OrdersEmptyState(icon: Icons.cancel_outlined, title: "No cancelled orders".tr, subtitle: "Orders cancelled by the store or the customer appear here.".tr, isDark: isDark)
                                         : ListView.builder(
                                             shrinkWrap: true,
                                             itemCount: controller.cancelledOrderList.length,
@@ -2178,6 +2098,182 @@ class HomeScreen extends StatelessWidget {
               const SizedBox(height: 20),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Home header: who is signed in, the store being worked on (switchable for
+  /// owners), and the order-status tabs.
+  PreferredSizeWidget _buildHomeHeader(BuildContext context, HomeController controller, bool isDark) {
+    final Color onBrand = isDark ? AppThemeData.grey900 : AppThemeData.grey50;
+    final bool hasStore = (controller.userModel.value.vendorID ?? '').isNotEmpty;
+    final bool canViewOrders = Constant.getEmployeeRolePermission(module: "Manage Order") == true;
+    final double bottomHeight = (hasStore ? 80 : 0) + (canViewOrders ? 54 : 0);
+
+    return AppBar(
+      backgroundColor: AppThemeData.primary300,
+      centerTitle: false,
+      toolbarHeight: 72,
+      titleSpacing: 16,
+      title: Row(
+        children: [
+          InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () {
+              DashBoardController dashBoardController = Get.find<DashBoardController>();
+              dashBoardController.selectedIndex.value = Constant.selectedSection!.dineInActive == true ? 4 : 3;
+            },
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(shape: BoxShape.circle, color: onBrand.withValues(alpha: 0.4)),
+              child: ClipOval(
+                child: NetworkImageWidget(
+                  imageUrl: controller.userModel.value.profilePictureURL.toString(),
+                  height: 46,
+                  width: 46,
+                  fit: BoxFit.cover,
+                  errorWidget: Image.asset("assets/images/user_placeholder.png"),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Welcome to spideli Store".tr,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: onBrand.withValues(alpha: 0.85), fontSize: 13, fontFamily: AppThemeData.regular),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  controller.userModel.value.fullName().tr,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: onBrand, fontSize: 19, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        Visibility(
+          visible: controller.userModel.value.subscriptionPlan?.features?.chat != false,
+          child: Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Material(
+              color: onBrand.withValues(alpha: 0.18),
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => Get.to(const RestaurantInboxScreen()),
+                child: Padding(
+                  padding: const EdgeInsets.all(11),
+                  child: SvgPicture.asset("assets/icons/ic_chat.svg", width: 22, height: 22, colorFilter: ColorFilter.mode(onBrand, BlendMode.srcIn)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+      bottom: bottomHeight == 0
+          ? null
+          : PreferredSize(
+              preferredSize: Size.fromHeight(bottomHeight),
+              child: Column(
+                children: [
+                  if (hasStore)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: CurrentStoreCard(
+                        storeName: controller.vendermodel.value.title,
+                        storePhoto: controller.vendermodel.value.photo,
+                        isDark: isDark,
+                      ),
+                    ),
+                  if (canViewOrders)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: SizedBox(
+                        height: 44,
+                        child: TabBar(
+                          onTap: (value) {
+                            controller.selectedTabIndex.value = value;
+                          },
+                          isScrollable: true,
+                          tabAlignment: TabAlignment.start,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                          dividerColor: Colors.transparent,
+                          indicatorSize: TabBarIndicatorSize.tab,
+                          splashBorderRadius: BorderRadius.circular(22),
+                          // Selected status: a white pill with brand-coloured text.
+                          indicator: BoxDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, borderRadius: BorderRadius.circular(22)),
+                          labelColor: AppThemeData.primary300,
+                          unselectedLabelColor: onBrand.withValues(alpha: 0.9),
+                          labelStyle: const TextStyle(fontSize: 15, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
+                          unselectedLabelStyle: const TextStyle(fontSize: 15, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
+                          tabs: [
+                            for (final label in ["New", "Accepted", "Completed", "Rejected", "Cancelled"])
+                              Tab(
+                                height: 40,
+                                child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text(label.tr)),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+    );
+  }
+
+}
+
+/// Empty state for an order tab: an icon, what's missing, and what will
+/// appear there.
+class _OrdersEmptyState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool isDark;
+
+  const _OrdersEmptyState({required this.icon, required this.title, required this.subtitle, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: isDark ? AppThemeData.grey800 : AppThemeData.primary600),
+              child: Icon(icon, size: 42, color: AppThemeData.primary300),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 19, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: isDark ? AppThemeData.grey400 : AppThemeData.grey500, fontSize: 14, height: 1.4, fontFamily: AppThemeData.regular),
+            ),
+          ],
         ),
       ),
     );
