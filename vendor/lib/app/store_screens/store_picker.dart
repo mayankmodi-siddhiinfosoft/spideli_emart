@@ -29,26 +29,36 @@ class StorePickerChip extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!isAvailable) return const SizedBox();
     final Color textColor = isDark ? AppThemeData.grey900 : AppThemeData.grey50;
-    return InkWell(
-      onTap: () => showStorePicker(isDark),
-      child: Padding(
-        padding: const EdgeInsets.only(top: 2),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.storefront_outlined, size: 14, color: textColor),
-            const SizedBox(width: 4),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 180),
-              child: Text(
-                (storeName ?? '').isNotEmpty ? storeName! : "My Stores".tr,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: textColor, fontSize: 12, fontFamily: AppThemeData.medium),
-              ),
+    // A pill button rather than plain text, so it reads as tappable.
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Material(
+        color: textColor.withValues(alpha: 0.18),
+        shape: StadiumBorder(side: BorderSide(color: textColor.withValues(alpha: 0.55))),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => showStorePicker(isDark),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 5, 8, 5),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.storefront_rounded, size: 17, color: textColor),
+                const SizedBox(width: 6),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 170),
+                  child: Text(
+                    (storeName ?? '').isNotEmpty ? storeName! : "My Stores".tr,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: textColor, fontSize: 14, fontFamily: AppThemeData.semiBold),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.swap_vert_rounded, size: 18, color: textColor),
+              ],
             ),
-            Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: textColor),
-          ],
+          ),
         ),
       ),
     );
