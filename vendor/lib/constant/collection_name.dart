@@ -36,6 +36,9 @@ class CollectionName {
   static const String zone = "zone";
   static const String subscriptionPlans = "subscription_plans";
   static const String subscriptionHistory = "subscription_history";
+  static const String vendorSubscriptionPlans = "vendor_subscription_plans";
+  static const String vendorSubscriptions = "vendor_subscriptions";
+  static const String vendorSubscriptionPayments = "vendor_subscription_payments";
   static const String advertisements = "advertisements";
   static const String cashbackRedeem = "cashback_redeem";
   static const String sections = "sections";

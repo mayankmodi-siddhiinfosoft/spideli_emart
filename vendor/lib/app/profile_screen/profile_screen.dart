@@ -5,6 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:vendor/app/change_password_screen/change_password_screen.dart';
+import 'package:vendor/app/customer_subscription_screens/customer_subscription_screen.dart';
 import 'package:vendor/app/employee_role_screens/role_screen.dart';
 import 'package:vendor/app/employee_screens/employee_list_screen.dart';
 import 'package:vendor/app/help_support_screen/help_support_screen.dart';
@@ -619,6 +620,25 @@ class ProfileScreen extends StatelessWidget {
                                                 "Offers",
                                                 () {
                                                   Get.to(const OfferScreen());
+                                                },
+                                              ),
+                                            // Customer Subscriptions: plans the store sells to its own customers (gated like Offers).
+                                            if (Constant.getEmployeeRolePermission(module: "Offers") == true)
+                                              cardDecoration(
+                                                isDark,
+                                                controller,
+                                                Container(
+                                                  width: 44,
+                                                  height: 44,
+                                                  decoration: ShapeDecoration(
+                                                    color: isDark ? AppThemeData.success600 : AppThemeData.success50,
+                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
+                                                  ),
+                                                  child: const Icon(Icons.card_membership_outlined, size: 22, color: AppThemeData.success400),
+                                                ),
+                                                "Customer Subscriptions",
+                                                () {
+                                                  Get.to(const CustomerSubscriptionScreen());
                                                 },
                                               ),
 
