@@ -31,7 +31,7 @@ class MathUtils {
   /// Encode
   /// Create a geohash from latitude and longitude
   /// that is 'number of chars' long
-  String encode(var latitude, var longitude, var numberOfChars) {
+  String encode(latitude, longitude, numberOfChars) {
     if (numberOfChars == encodeAuto) {
       if (latitude.runtimeType == double || longitude.runtimeType == double) {
         throw Exception('string notation required for auto precision.');
@@ -144,7 +144,7 @@ class MathUtils {
   /// direction [lat, lon], i.e.
   /// [1,0] - north
   /// [1,1] - northeast
-  String neighbor(String hashString, var direction) {
+  String neighbor(String hashString, direction) {
     var lonLat = decode(hashString);
     var neighborLat = lonLat['latitude']! + direction[0] * lonLat['latitudeError'] * 2;
     var neighborLon = lonLat['longitude']! + direction[1] * lonLat['longitudeError'] * 2;

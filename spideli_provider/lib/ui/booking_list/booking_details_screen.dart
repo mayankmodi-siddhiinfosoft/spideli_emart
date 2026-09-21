@@ -326,14 +326,15 @@ class BookingDetailsScreen extends StatelessWidget {
                                               children: [
                                                 InkWell(
                                                   onTap: () async {
-                                                    bool? isAvailable = await MapLauncher.isMapAvailable(MapType.google);
-                                                    if (isAvailable == true) {
-                                                      await MapLauncher.showDirections(
-                                                        mapType: MapType.google,
-                                                        directionsMode: DirectionsMode.driving,
-                                                        destinationTitle: onProviderOrder.address!.locality,
-                                                        destination: Coords(onProviderOrder.address!.location!.latitude, onProviderOrder.address!.location!.longitude),
-                                                      );
+                                                    final directions = MapLauncher.directions(
+                                                      LocationCoords(onProviderOrder.address!.location!.latitude, onProviderOrder.address!.location!.longitude,
+                                                          title: onProviderOrder.address!.locality),
+                                                      mode: TravelMode.driving,
+                                                    );
+                                                    // map_launcher 6: isMapAvailable() replaced by getSupportedMaps(); isInstalled keeps the old "app installed" check.
+                                                    final maps = await directions.getSupportedMaps(const [MapApp.google]);
+                                                    if (maps.any((m) => m.isInstalled)) {
+                                                      await directions.show(map: MapApp.google);
                                                     } else {
                                                       ShowToastDialog.showToast("Google map is not installed".tr);
                                                     }
@@ -1336,16 +1337,26 @@ class BookingDetailsScreen extends StatelessWidget {
             ),
             InkWell(
               onTap: () async {
-                BottomPicker.dateTime(
+                BottomPicker<DateTime>.dateTime(
                   onSubmit: (index) {
-                    controller.selectedDateTime.value = index;
+                    controller.selectedDateTime.value = index!;
                     controller.dateTimeController.value.text = DateFormat('dd-MM-yyyy HH:mm').format(index);
                   },
                   minDateTime: DateTime.now(),
                   initialDateTime: DateTime.now().isAfter(controller.selectedDateTime.value) ? DateTime.now() : controller.selectedDateTime.value,
                   buttonAlignment: MainAxisAlignment.center,
                   displaySubmitButton: true,
-                  pickerTitle: Text(''),
+                  // bottom_picker 5 removed pickerTitle and the built-in close icon; headerBuilder restores the empty title + close button.
+                  headerBuilder: (context) => Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(''),
+                      InkWell(
+                        onTap: () => Navigator.pop(context),
+                        child: Icon(Icons.close, color: Colors.black, size: 20),
+                      ),
+                    ],
+                  ),
                   buttonSingleColor: AppColors.colorPrimary,
                   buttonPadding: 10,
                   buttonWidth: 70,

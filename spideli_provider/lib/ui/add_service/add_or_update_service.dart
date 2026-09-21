@@ -434,8 +434,8 @@ class AddOrUpdateServiceScreen extends StatelessWidget {
                                           });
                                         }
                                       } catch (e) {
-                                        await placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) async {
-                                          List<Placemark> placeMarks = await placemarkFromCoordinates(19.228825, 72.854118);
+                                        await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) async {
+                                          List<Placemark> placeMarks = await Geocoding().placemarkFromCoordinates(19.228825, 72.854118);
 
                                           controller.address.value.text =
                                               "${placeMarks.first.name.toString()},${placeMarks.first.subLocality.toString()},${placeMarks.first.locality.toString()},${placeMarks.first.administrativeArea.toString()},${placeMarks.first.country.toString()}";

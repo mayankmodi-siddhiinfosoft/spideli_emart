@@ -677,7 +677,7 @@ class SubscriptionController extends GetxController {
     });
   }
 
-  Future<String> createPaymentLink({required var amount}) async {
+  Future<String> createPaymentLink({required amount}) async {
     var ordersId = getUuid();
     final url = Uri.parse(midTransModel.value?.isSandbox == true ? 'https://api.sandbox.midtrans.com/v1/payment-links' : 'https://api.midtrans.com/v1/payment-links');
 
@@ -844,7 +844,7 @@ class SubscriptionController extends GetxController {
     });
   }
 
-  Future<XenditModel> createXenditInvoice({required var amount}) async {
+  Future<XenditModel> createXenditInvoice({required amount}) async {
     const url = 'https://api.xendit.co/v2/invoices';
     var headers = {
       'Content-Type': 'application/json',

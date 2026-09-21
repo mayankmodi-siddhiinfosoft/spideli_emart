@@ -3690,10 +3690,10 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
             ),
             InkWell(
               onTap: () async {
-                BottomPicker.dateTime(
+                BottomPicker<DateTime>.dateTime(
                   onSubmit: (index) {
                     setState(() {
-                      selectedDateTime = index;
+                      selectedDateTime = index!;
                       dateTimeController.text = DateFormat('dd-MM-yyyy HH:mm').format(index);
                     });
                   },
@@ -3701,7 +3701,17 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                   initialDateTime: DateTime.now().isAfter(selectedDateTime) ? DateTime.now() : selectedDateTime,
                   buttonAlignment: MainAxisAlignment.center,
                   displaySubmitButton: true,
-                  pickerTitle: Text(''),
+                  // bottom_picker 5 removed pickerTitle and the built-in close icon; headerBuilder restores the empty title + close button.
+                  headerBuilder: (context) => Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(''),
+                      InkWell(
+                        onTap: () => Navigator.pop(context),
+                        child: Icon(Icons.close, color: Colors.black, size: 20),
+                      ),
+                    ],
+                  ),
                   buttonSingleColor: AppColors.colorPrimary,
                   buttonPadding: 10,
                   buttonWidth: 70,
