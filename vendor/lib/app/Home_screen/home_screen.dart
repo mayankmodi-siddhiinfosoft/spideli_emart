@@ -1273,50 +1273,49 @@ class HomeScreen extends StatelessWidget {
                               await FireStoreUtils.updateUserWallet(amount: finalAmount.toString(), userId: orderModel.author!.id.toString());
                             }
 
-                            double taxAmountData = double.parse(totalTaxAmount.toString());
+                            // Reverse exactly what this order credited the store - read back
+                            // from its wallet rows - rather than recomputing it: the recomputed
+                            // figure left out the packaging charge, and an order that was never
+                            // credited must not be debited at all.
+                            final credited = await FireStoreUtils.netVendorCreditForOrder(orderModel.id.toString());
+                            final String vendorOwnerId = (orderModel.vendor?.author ?? FireStoreUtils.getCurrentUid()).toString();
+                            if (credited.total > 0) {
+                              WalletTransactionModel historyTaxModel = WalletTransactionModel(
+                                amount: credited.tax,
+                                id: const Uuid().v4(),
+                                orderId: orderModel.id,
+                                userId: vendorOwnerId,
+                                date: Timestamp.now(),
+                                isTopup: false,
+                                paymentMethod: "tax",
+                                paymentStatus: "success",
+                                note: "Order tax refunded to customer",
+                                transactionUser: "vendor",
+                              );
 
-                            double finalAmount = 0;
-                            if (orderModel.adminCommission != '0' && orderModel.adminCommission != '' && orderModel.adminCommission != null) {
-                              finalAmount = (subTotal / (1 + (double.parse(orderModel.adminCommission!) / 100))) - double.parse(orderModel.discount.toString()) - specialDiscountAmount;
-                            } else {
-                              finalAmount = subTotal - double.parse(orderModel.discount.toString()) - specialDiscountAmount;
+                              WalletTransactionModel historyModel = WalletTransactionModel(
+                                amount: credited.orderAmount,
+                                id: const Uuid().v4(),
+                                orderId: orderModel.id,
+                                userId: vendorOwnerId,
+                                date: Timestamp.now(),
+                                isTopup: false,
+                                paymentMethod: "Wallet",
+                                paymentStatus: "success",
+                                note: "Order amount refunded to customer",
+                                transactionUser: "vendor",
+                              );
+
+                              await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(historyTaxModel.id).set(historyTaxModel.toJson());
+                              await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(historyModel.id).set(historyModel.toJson());
+                              // Debit the store that took the order and its owner (not the
+                              // logged-in user, who may be an employee).
+                              await FireStoreUtils.adjustVendorWallet(
+                                amount: -credited.total,
+                                vendorId: (orderModel.vendorID ?? orderModel.vendor?.id).toString(),
+                                ownerId: vendorOwnerId,
+                              );
                             }
-                            WalletTransactionModel historyTaxModel = WalletTransactionModel(
-                              amount: taxAmountData,
-                              id: const Uuid().v4(),
-                              orderId: orderModel.id,
-                              userId: orderModel.vendor?.author ?? FireStoreUtils.getCurrentUid(),
-                              date: Timestamp.now(),
-                              isTopup: false,
-                              paymentMethod: "tax",
-                              paymentStatus: "success",
-                              note: "Order tax refunded to customer",
-                              transactionUser: "vendor",
-                            );
-
-                            WalletTransactionModel historyModel = WalletTransactionModel(
-                              amount: finalAmount,
-                              id: const Uuid().v4(),
-                              orderId: orderModel.id,
-                              userId: orderModel.vendor?.author ?? FireStoreUtils.getCurrentUid(),
-                              date: Timestamp.now(),
-                              isTopup: false,
-                              paymentMethod: "Wallet",
-                              paymentStatus: "success",
-                              note: "Order amount refunded to customer",
-                              transactionUser: "vendor",
-                            );
-
-                            await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(historyTaxModel.id).set(historyTaxModel.toJson());
-                            await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(historyModel.id).set(historyModel.toJson());
-                            double finalAmountdata = finalAmount + totalTaxAmount;
-                            // Debit the store that took the order and its owner (not the logged-in
-                            // user, who may be an employee).
-                            await FireStoreUtils.adjustVendorWallet(
-                              amount: -finalAmountdata,
-                              vendorId: (orderModel.vendorID ?? orderModel.vendor?.id).toString(),
-                              ownerId: (orderModel.vendor?.author ?? FireStoreUtils.getCurrentUid()).toString(),
-                            );
                             await controller.getOrder();
                             Get.back();
                             ShowToastDialog.closeLoader();

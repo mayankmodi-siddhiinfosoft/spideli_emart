@@ -176,6 +176,12 @@ class AddRestaurantController extends GetxController {
         chargePerKmController.value.text = vendorModel.value.deliveryCharge!.deliveryChargesPerKm.toString();
         minDeliveryChargesController.value.text = vendorModel.value.deliveryCharge!.minimumDeliveryCharges.toString();
         minDeliveryChargesWithinKMController.value.text = vendorModel.value.deliveryCharge!.minimumDeliveryChargesWithinKm.toString();
+      } else {
+        // A store with no charges of its own yet (e.g. one being added) starts
+        // from the region's / platform's figures.
+        chargePerKmController.value.text = (value.deliveryChargesPerKm ?? 0).toString();
+        minDeliveryChargesController.value.text = (value.minimumDeliveryCharges ?? 0).toString();
+        minDeliveryChargesWithinKMController.value.text = (value.minimumDeliveryChargesWithinKm ?? 0).toString();
       }
     } else {
       chargePerKmController.value.text = deliveryChargeModel.value.deliveryChargesPerKm.toString();
@@ -244,9 +250,9 @@ class AddRestaurantController extends GetxController {
         filter();
         DeliveryCharge deliveryChargeModel = DeliveryCharge(
           vendorCanModify: true,
-          deliveryChargesPerKm: num.parse(chargePerKmController.value.text),
-          minimumDeliveryCharges: num.parse(minDeliveryChargesController.value.text),
-          minimumDeliveryChargesWithinKm: num.parse(minDeliveryChargesWithinKMController.value.text),
+          deliveryChargesPerKm: num.tryParse(chargePerKmController.value.text) ?? 0,
+          minimumDeliveryCharges: num.tryParse(minDeliveryChargesController.value.text) ?? 0,
+          minimumDeliveryChargesWithinKm: num.tryParse(minDeliveryChargesWithinKMController.value.text) ?? 0,
         );
 
         if (vendorModel.value.id == null) {
@@ -339,7 +345,9 @@ class AddRestaurantController extends GetxController {
               timeslot: [Timeslot(from: '00:00', to: '23:59')],
             ),
           ];
-          if (vendorModel.value.latitude != null && vendorModel.value.longitude != null) {
+          // The session's product taxes belong to the store being worked on; an
+          // additional store must not replace them.
+          if (!isNewStore && vendorModel.value.latitude != null && vendorModel.value.longitude != null) {
             await FireStoreUtils.getTaxList(double.parse("${vendorModel.value.latitude}"), double.parse("${vendorModel.value.longitude}"), vendorModel.value.sectionId.toString()).then((value) {
               Constant.taxProductList = value!.where((TaxModel taxModel) => taxModel.scope == "product").toList();
             });
@@ -352,8 +360,11 @@ class AddRestaurantController extends GetxController {
             }
           });
         }
-        // The store's region may have changed: refresh the live currency.
-        await RegionService.applyStore(vendorModel.value);
+        // The store's region may have changed: refresh the live currency - but
+        // only for the store being worked on, not a newly added one.
+        if (!isNewStore) {
+          await RegionService.applyStore(vendorModel.value);
+        }
       } else {
         ShowToastDialog.showToast("The chosen area is outside the selected zone.".tr);
       }

@@ -1,6 +1,7 @@
 import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
+import 'package:vendor/utils/region_service.dart';
 import 'package:vendor/constant/collection_name.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/models/user_model.dart';
@@ -40,7 +41,8 @@ class CustomerSubscriptionService {
   }
 
   static Future<void> savePlan(VendorSubscriptionPlanModel plan) async {
-    await _db.collection(CollectionName.vendorSubscriptionPlans).doc(plan.id).set(plan.toJson());
+    // Keep any fields the store panel adds to a plan.
+    await _db.collection(CollectionName.vendorSubscriptionPlans).doc(plan.id).setKnownFields(plan.toJson());
   }
 
   static Future<void> setPlanEnabled(String planId, bool isEnable) async {
@@ -51,13 +53,11 @@ class CustomerSubscriptionService {
     await _db.collection(CollectionName.vendorSubscriptionPlans).doc(planId).delete();
   }
 
-  /// The store's regionId, read from the raw vendor document so this feature
-  /// does not depend on a VendorModel field.
+  /// The store's region: `vendors.regionId`, else its zone's region - the same
+  /// resolution the rest of the app uses.
   static Future<String?> getVendorRegionId(String vendorId) async {
     try {
-      final doc = await _db.collection(CollectionName.vendors).doc(vendorId).get();
-      final value = doc.data()?['regionId'];
-      return value?.toString();
+      return await RegionService.resolveStoreRegionId(await FireStoreUtils.getVendorById(vendorId));
     } catch (e) {
       log("getVendorRegionId :: $e");
       return null;

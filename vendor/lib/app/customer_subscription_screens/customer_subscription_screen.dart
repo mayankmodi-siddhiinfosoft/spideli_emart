@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:vendor/app/customer_subscription_screens/add_edit_customer_subscription_plan_screen.dart';
 import 'package:vendor/constant/constant.dart';
+import 'package:vendor/utils/region_service.dart';
 import 'package:vendor/controller/customer_subscription_controller.dart';
 import 'package:vendor/models/user_model.dart';
 import 'package:vendor/models/vendor_subscription_model.dart';
@@ -227,7 +228,7 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
                 ),
                 // Plan title/price come from the stored snapshot, never the live plan.
                 _labelValue("Plan".tr, sub.plan?.title ?? '-', isDark),
-                _labelValue("Price".tr, sub.plan?.price == null ? '-' : "${_money(sub.plan!.price)} / ${CustomerSubscriptionController.periodLabel(sub.plan!.expiryDay)}", isDark),
+                _labelValue("Price".tr, sub.plan?.price == null ? '-' : "${_money(sub.plan!.price, regionId: sub.regionId)} / ${CustomerSubscriptionController.periodLabel(sub.plan!.expiryDay)}", isDark),
                 _labelValue("Start date".tr, sub.startDate == null ? '-' : Constant.timestampToDate(sub.startDate!), isDark),
                 _labelValue("Expiry date".tr, sub.expiryDate == null ? '-' : Constant.timestampToDate(sub.expiryDate!), isDark),
               ],
@@ -293,7 +294,7 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
                   children: [
                     Expanded(child: _customerInfo(payment.customerId, isDark)),
                     Text(
-                      _money(payment.amount),
+                      _money(payment.amount, regionId: payment.regionId),
                       style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16, fontFamily: AppThemeData.semiBold),
                     ),
                   ],
@@ -302,10 +303,10 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
                 ),
-                _labelValue("Amount".tr, _money(payment.amount), isDark),
-                _labelValue("Admin commission".tr, _money(payment.adminCommission), isDark),
+                _labelValue("Amount".tr, _money(payment.amount, regionId: payment.regionId), isDark),
+                _labelValue("Admin commission".tr, _money(payment.adminCommission, regionId: payment.regionId), isDark),
                 if ((payment.adminCommissionType ?? '').isNotEmpty) _labelValue("Commission type".tr, payment.adminCommissionType!.capitalizeFirst ?? payment.adminCommissionType!, isDark),
-                _labelValue("Store earning".tr, _money(payment.vendorEarning), isDark, valueColor: AppThemeData.success400),
+                _labelValue("Store earning".tr, _money(payment.vendorEarning, regionId: payment.regionId), isDark, valueColor: AppThemeData.success400),
                 _labelValue("Payment method".tr, (payment.paymentMethod ?? '').isEmpty ? '-' : payment.paymentMethod!, isDark),
                 if ((payment.status ?? '').isNotEmpty) _labelValue("Status".tr, payment.status!.capitalizeFirst ?? payment.status!, isDark),
                 _labelValue("Date".tr, payment.createdAt == null ? '-' : Constant.timestampToDateTime(payment.createdAt!), isDark),
@@ -320,8 +321,14 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
   // ------------------------------------------------------------------ Helpers
 
   /// Formats a stored amount string; tolerates empty / malformed values from other clients.
-  String _money(String? amount) {
-    return Constant.amountShow(amount: (double.tryParse(amount?.trim() ?? '') ?? 0).toString());
+  ///
+  /// [regionId] is the record's own region: a payment or subscription keeps the
+  /// currency it was charged in, like an order.
+  String _money(String? amount, {String? regionId}) {
+    return Constant.amountShow(
+      currency: regionId == null ? null : RegionService.currencyForOrder(regionId),
+      amount: (double.tryParse(amount?.trim() ?? '') ?? 0).toString(),
+    );
   }
 
   Widget _scrollableEmpty(String message, bool isDark) {

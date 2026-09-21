@@ -45,6 +45,7 @@ import 'package:vendor/payment/xendit_model.dart';
 import 'package:vendor/payment/xendit_screen.dart';
 import 'package:vendor/themes/app_them_data.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/store_service.dart';
 import 'package:vendor/utils/preferences.dart';
 import 'package:vendor/utils/region_service.dart';
 
@@ -62,6 +63,11 @@ class SubscriptionController extends GetxController {
   RxList<SectionModel> sectionsList = <SectionModel>[].obs;
   Rx<SectionModel> selectedSectionModel = SectionModel().obs;
   Rx<VendorModel> vendorModel = VendorModel().obs;
+
+  /// What a wallet payment is checked against: the current store's balance
+  /// when there is a store, otherwise (a vendor buying before creating one)
+  /// the account total.
+  num get walletBalance => (userModel.value.vendorID ?? '').isNotEmpty ? (vendorModel.value.storeWalletAmount ?? 0) : (userModel.value.walletAmount ?? 0);
 
   Future<void> getInitPlanSettings() async {
     await FireStoreUtils.fireStore.collection(CollectionName.settings).doc('vendor').get().then((value) {
@@ -591,6 +597,32 @@ class SubscriptionController extends GetxController {
 
   Future<void> setOrder() async {
     ShowToastDialog.showLoader("Please wait".tr);
+
+    // Wallet payments are taken BEFORE the plan is granted, and out of the
+    // current store's balance (the money a store can withdraw), checked inside
+    // the transaction. A vendor with no store yet pays from the account total.
+    if (selectedPaymentMethod.value == PaymentGateway.wallet.name) {
+      final String vendorId = userModel.value.vendorID ?? '';
+      try {
+        final num? newTotal = await FireStoreUtils.adjustVendorWallet(
+          amount: -totalAmount.value,
+          vendorId: vendorId,
+          ownerId: FireStoreUtils.getCurrentUid(),
+          requireStoreFunds: vendorId.isNotEmpty,
+        );
+        if (newTotal == null) {
+          ShowToastDialog.closeLoader();
+          ShowToastDialog.showToast("Payment failed. Please try again.".tr);
+          return;
+        }
+        userModel.value.walletAmount = newTotal;
+      } on InsufficientStoreFunds {
+        ShowToastDialog.closeLoader();
+        ShowToastDialog.showToast("You don't have sufficient wallet balance to purchase the subscription plan".tr);
+        return;
+      }
+    }
+
     userModel.value.subscriptionPlanId = selectedSubscriptionPlan.value.id;
     userModel.value.subscriptionPlan = selectedSubscriptionPlan.value;
     userModel.value.subscriptionPlan?.createdAt = Timestamp.now();
@@ -600,10 +632,11 @@ class SubscriptionController extends GetxController {
     userModel.value.sectionId = selectedSectionModel.value.id;
     userModel.value.adminCommissionModel = selectedSectionModel.value.adminCommision;
 
+    // The platform plan belongs to the account, so every store the owner has
+    // gets it - not only the one currently selected.
     if (userModel.value.vendorID != null && userModel.value.vendorID!.isNotEmpty) {
-      print("====>");
-      VendorModel? vendorModel = await FireStoreUtils.getVendorById(userModel.value.vendorID.toString());
-      if (vendorModel != null) {
+      final List<VendorModel> stores = await StoreService.getOwnerStores(FireStoreUtils.getCurrentUid());
+      for (final VendorModel vendorModel in stores) {
         vendorModel.subscriptionPlanId = selectedSubscriptionPlan.value.id;
         vendorModel.subscriptionPlan = selectedSubscriptionPlan.value;
         vendorModel.subscriptionPlan?.createdAt = Timestamp.now();
@@ -612,9 +645,8 @@ class SubscriptionController extends GetxController {
             : Constant().addDayInTimestamp(days: selectedSubscriptionPlan.value.expiryDay, date: Timestamp.now());
         vendorModel.subscriptionTotalOrders = selectedSubscriptionPlan.value.orderLimit;
         vendorModel.adminCommission = selectedSectionModel.value.adminCommision;
+        await FireStoreUtils.updateVendor(vendorModel);
       }
-
-      await FireStoreUtils.updateVendor(vendorModel!);
     }
 
     SubscriptionHistoryModel subscriptionHistoryData = SubscriptionHistoryModel(
@@ -643,16 +675,6 @@ class SubscriptionController extends GetxController {
       );
 
       await FireStoreUtils.setWalletTransaction(transactionModel);
-      // Debit the owner's account total and the current store's balance
-      // together, in a transaction, then carry the fresh total forward so the
-      // updateUser() below doesn't write a stale balance back.
-      final String ownerId = FireStoreUtils.getCurrentUid();
-      final num? newTotal = await FireStoreUtils.adjustVendorWallet(
-        amount: -totalAmount.value,
-        vendorId: userModel.value.vendorID ?? '',
-        ownerId: ownerId,
-      );
-      userModel.value.walletAmount = newTotal ?? (userModel.value.walletAmount! - totalAmount.value);
     }
 
     await FireStoreUtils.updateUser(userModel.value).then((value) async {

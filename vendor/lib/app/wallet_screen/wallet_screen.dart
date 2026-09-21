@@ -617,16 +617,42 @@ class WalletScreen extends StatelessWidget {
                                 ? "razorpay"
                                 : "stripe",
                           );
-                          await FireStoreUtils.withdrawWalletAmount(withdrawHistory);
-                          await FireStoreUtils.adjustVendorWallet(
-                            amount: -double.parse(controller.amountTextFieldController.value.text),
-                            vendorId: controller.vendorModel.value.id ?? controller.userModel.value.vendorID ?? '',
-                            ownerId: controller.vendorModel.value.author ?? FireStoreUtils.getCurrentUid(),
-                          ).then((value) {
-                            Get.back();
-                            FireStoreUtils.sendPayoutMail(amount: controller.amountTextFieldController.value.text, payoutrequestid: withdrawHistory.id.toString());
-                            controller.getWalletTransaction(false);
-                          });
+                          final double withdrawAmount = double.parse(controller.amountTextFieldController.value.text);
+                          final String vendorId = controller.vendorModel.value.id ?? controller.userModel.value.vendorID ?? '';
+                          final String ownerId = controller.vendorModel.value.author ?? FireStoreUtils.getCurrentUid();
+                          ShowToastDialog.showLoader("Please wait".tr);
+                          // Debit first, with the balance re-checked inside the
+                          // transaction, so a double tap or a second device
+                          // can't withdraw the same money twice.
+                          try {
+                            final num? debited = await FireStoreUtils.adjustVendorWallet(
+                              amount: -withdrawAmount,
+                              vendorId: vendorId,
+                              ownerId: ownerId,
+                              requireStoreFunds: true,
+                            );
+                            if (debited == null) {
+                              ShowToastDialog.closeLoader();
+                              ShowToastDialog.showToast("Could not place withdraw request. Please try again.".tr);
+                              return;
+                            }
+                          } on InsufficientStoreFunds {
+                            ShowToastDialog.closeLoader();
+                            ShowToastDialog.showToast("You are not able to place Withdraw request due to insufficient wallet amount".tr);
+                            return;
+                          }
+                          final bool created = await FireStoreUtils.withdrawWalletAmount(withdrawHistory);
+                          if (!created) {
+                            // Put the money back rather than leave a debit with no payout request.
+                            await FireStoreUtils.adjustVendorWallet(amount: withdrawAmount, vendorId: vendorId, ownerId: ownerId);
+                            ShowToastDialog.closeLoader();
+                            ShowToastDialog.showToast("Could not place withdraw request. Please try again.".tr);
+                            return;
+                          }
+                          ShowToastDialog.closeLoader();
+                          Get.back();
+                          FireStoreUtils.sendPayoutMail(amount: controller.amountTextFieldController.value.text, payoutrequestid: withdrawHistory.id.toString());
+                          controller.getWalletTransaction(false);
                         }
                       },
                     ),

@@ -171,7 +171,7 @@ class SelectPaymentScreen extends StatelessWidget {
                     } else if (controller.selectedPaymentMethod.value == PaymentGateway.paytm.name) {
                       controller.getPaytmCheckSum(context, amount: double.parse(controller.totalAmount.value.toString()));
                     } else if (controller.selectedPaymentMethod.value == PaymentGateway.wallet.name) {
-                      if ((controller.userModel.value.walletAmount ?? 0.0) >= controller.totalAmount.value) {
+                      if (controller.walletBalance >= controller.totalAmount.value) {
                         Get.back();
                         controller.placeOrder();
                       } else {
@@ -243,7 +243,7 @@ class SelectPaymentScreen extends StatelessWidget {
                                 style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
                               ),
                               Text(
-                                Constant.amountShow(amount: Constant.userModel?.walletAmount == null ? '0.0' : Constant.userModel?.walletAmount.toString()),
+                                Constant.amountShow(amount: controller.walletBalance.toString()),
                                 textAlign: TextAlign.start,
                                 style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: AppThemeData.primary300),
                               ),

@@ -71,6 +71,27 @@ enum FirebaseEnv { defaultDb, staging }
 /// Change this to switch between default / staging
 const FirebaseEnv currentEnv = FirebaseEnv.defaultDb;
 
+/// Writes a model's fields without touching fields it does not know.
+///
+/// Web panels write fields the app's models don't carry (a store's
+/// `wallet_amount` and `regionId`, an order's `regionId`, ...). A plain
+/// `set(model.toJson())` replaced the whole document and deleted them; a deep
+/// `merge: true` kept them but also stopped nested maps from being replaced,
+/// so removed variants or specifications lingered. `mergeFields` over the
+/// model's own top-level keys replaces each known field whole and leaves every
+/// other field alone.
+/// Thrown by [FireStoreUtils.adjustVendorWallet] when a guarded debit would
+/// take the store's balance below zero.
+class InsufficientStoreFunds implements Exception {
+  const InsufficientStoreFunds();
+}
+
+extension SetKnownFields on DocumentReference<Map<String, dynamic>> {
+  Future<void> setKnownFields(Map<String, dynamic> data) {
+    return set(data, SetOptions(mergeFields: data.keys.map((key) => FieldPath([key])).toList()));
+  }
+}
+
 class FireStoreUtils {
   FireStoreUtils._privateConstructor();
 
@@ -139,18 +160,29 @@ class FireStoreUtils {
     return userModel;
   }
 
+  /// Adds [amount] (negative to debit) to one user's `wallet_amount` in a
+  /// transaction. Used for customer refunds. updateUser() never writes the
+  /// wallet, so a stale copy of a user can't roll a balance back. For a store's
+  /// earnings use [adjustVendorWallet], which also moves the store balance.
   static Future<bool?> updateUserWallet({required String amount, required String userId}) async {
-    bool isAdded = false;
-    await getUserProfile(userId).then((value) async {
-      if (value != null) {
-        UserModel userModel = value;
-        userModel.walletAmount = ((userModel.walletAmount ?? 0.0) + double.parse(amount));
-        await FireStoreUtils.updateUser(userModel).then((value) {
-          isAdded = value;
-        });
+    final num delta = num.tryParse(amount) ?? 0;
+    try {
+      final num? newTotal = await fireStore.runTransaction<num?>((transaction) async {
+        final ref = fireStore.collection(CollectionName.users).doc(userId);
+        final snap = await transaction.get(ref);
+        if (!snap.exists) return null;
+        final num total = (num.tryParse(snap.data()?['wallet_amount']?.toString() ?? '') ?? 0) + delta;
+        transaction.update(ref, {'wallet_amount': total});
+        return total;
+      });
+      if (newTotal != null && Constant.userModel?.id == userId) {
+        Constant.userModel!.walletAmount = newTotal;
       }
-    });
-    return isAdded;
+      return newTotal != null;
+    } catch (e, s) {
+      log("updateUserWallet failed: $e", stackTrace: s);
+      return false;
+    }
   }
 
   /// Credits (positive [amount]) or debits (negative) a store's earnings.
@@ -165,7 +197,7 @@ class FireStoreUtils {
   /// as its numeric value, or 0.
   ///
   /// Returns the owner's new account total, or null if the write failed.
-  static Future<num?> adjustVendorWallet({required num amount, required String vendorId, required String ownerId}) async {
+  static Future<num?> adjustVendorWallet({required num amount, required String vendorId, required String ownerId, bool requireStoreFunds = false}) async {
     num parse(dynamic value) => num.tryParse(value?.toString() ?? '') ?? 0;
     try {
       final num? newOwnerTotal = await fireStore.runTransaction<num?>((transaction) async {
@@ -180,7 +212,15 @@ class FireStoreUtils {
           transaction.update(userRef, {'wallet_amount': ownerTotal});
         }
         if (storeRef != null && storeSnap != null && storeSnap.exists) {
-          transaction.update(storeRef, {'wallet_amount': parse(storeSnap.data()?['wallet_amount']) + amount});
+          final num storeTotal = parse(storeSnap.data()?['wallet_amount']) + amount;
+          // Checked inside the transaction, so two withdrawals racing each
+          // other (double tap, owner and employee) can't both pass.
+          if (requireStoreFunds && storeTotal < 0) {
+            throw const InsufficientStoreFunds();
+          }
+          transaction.update(storeRef, {'wallet_amount': storeTotal});
+        } else if (requireStoreFunds) {
+          throw const InsufficientStoreFunds();
         }
         return ownerTotal;
       });
@@ -188,6 +228,8 @@ class FireStoreUtils {
         Constant.userModel!.walletAmount = newOwnerTotal;
       }
       return newOwnerTotal;
+    } on InsufficientStoreFunds {
+      rethrow;
     } catch (e, s) {
       log("adjustVendorWallet failed: $e", stackTrace: s);
       return null;
@@ -199,7 +241,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.users)
         .doc(userModel.id)
-        .set(userModel.toJson(), SetOptions(merge: true))
+        .setKnownFields(userModel.toJson()..remove('wallet_amount'))
         .whenComplete(() async {
           Constant.userModel = userModel;
           if (userModel.employeePermissionId != null) {
@@ -219,7 +261,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.users)
         .doc(userModel.id)
-        .set(userModel.toJson(), SetOptions(merge: true))
+        .setKnownFields(userModel.toJson()..remove('wallet_amount'))
         .whenComplete(() {
           isUpdate = true;
         })
@@ -235,7 +277,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.payouts)
         .doc(userModel.id)
-        .set(userModel.toJson(), SetOptions(merge: true))
+        .setKnownFields(userModel.toJson())
         .whenComplete(() {
           isUpdate = true;
         })
@@ -557,7 +599,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.vendorOrders)
         .doc(orderModel.id)
-        .set(orderModel.toJson(), SetOptions(merge: true))
+        .setKnownFields(orderModel.toJson())
         .then((value) {
           isUpdate = true;
         })
@@ -568,7 +610,45 @@ class FireStoreUtils {
     return isUpdate;
   }
 
+  /// What an order has credited the store so far, net of earlier reversals,
+  /// from its vendor rows in `wallet`: `payment_method` 'Wallet' is the order
+  /// amount and 'tax' the tax, as both panels write them.
+  static Future<({double orderAmount, double tax, double total})> netVendorCreditForOrder(String orderId) async {
+    final snapshot = await fireStore.collection(CollectionName.wallet).where('order_id', isEqualTo: orderId).get();
+    double orderAmount = 0;
+    double tax = 0;
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      if (data['transactionUser'] != 'vendor') continue;
+      final double amount = double.tryParse(data['amount']?.toString() ?? '') ?? 0;
+      final double signed = data['isTopUp'] == true ? amount : -amount;
+      if (data['payment_method'] == 'Wallet') {
+        orderAmount += signed;
+      } else if (data['payment_method'] == 'tax') {
+        tax += signed;
+      }
+    }
+    orderAmount = orderAmount < 0 ? 0 : orderAmount;
+    tax = tax < 0 ? 0 : tax;
+    return (orderAmount: orderAmount, tax: tax, total: orderAmount + tax);
+  }
+
+  static Future<bool> _isOrderAlreadyCredited(String orderId) async {
+    final snapshot = await fireStore.collection(CollectionName.wallet).where('order_id', isEqualTo: orderId).get();
+    return snapshot.docs.any((doc) {
+      final data = doc.data();
+      return data['transactionUser'] == 'vendor' && data['isTopUp'] == true && data['payment_method'] == 'Wallet';
+    });
+  }
+
   static Future restaurantVendorWalletSet(OrderModel orderModel) async {
+    // Credit each order once. Takeaway orders reached this twice - on Accept
+    // and again on Delivered - paying the store double. The vendor credit row
+    // in `wallet` (payment_method 'Wallet', isTopUp) marks it as already done.
+    if (orderModel.id != null && await _isOrderAlreadyCredited(orderModel.id!)) {
+      log("restaurantVendorWalletSet: order ${orderModel.id} already credited, skipping");
+      return;
+    }
     double subTotal = 0.0;
     double specialDiscountAmount = 0.0;
     double couponAmount = 0.0;
@@ -774,7 +854,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.vendorProducts)
         .doc(productModel.id)
-        .set(productModel.toJson(), SetOptions(merge: true))
+        .setKnownFields(productModel.toJson())
         .whenComplete(() {
           isUpdate = true;
         })
@@ -1156,7 +1236,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.vendorOrders)
         .doc(orderModel.id)
-        .set(orderModel.toJson(), SetOptions(merge: true))
+        .setKnownFields(orderModel.toJson())
         .then((value) {
           isAdded = true;
         })
@@ -1172,7 +1252,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.coupons)
         .doc(orderModel.id)
-        .set(orderModel.toJson(), SetOptions(merge: true))
+        .setKnownFields(orderModel.toJson())
         .then((value) {
           isAdded = true;
         })
@@ -1343,7 +1423,7 @@ class FireStoreUtils {
   }
 
   static Future<VendorModel?> updateVendor(VendorModel vendor) async {
-    return await fireStore.collection(CollectionName.vendors).doc(vendor.id).set(vendor.toJson(), SetOptions(merge: true)).then((document) {
+    return await fireStore.collection(CollectionName.vendors).doc(vendor.id).setKnownFields(vendor.toJson()).then((document) {
       Constant.vendorAdminCommission = vendor.adminCommission;
       return vendor;
     });
@@ -1648,7 +1728,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.bookedTable)
         .doc(orderModel.id)
-        .set(orderModel.toJson(), SetOptions(merge: true))
+        .setKnownFields(orderModel.toJson())
         .then((value) {
           isAdded = true;
         })
@@ -1664,7 +1744,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.vendorProducts)
         .doc(orderModel.id)
-        .set(orderModel.toJson(), SetOptions(merge: true))
+        .setKnownFields(orderModel.toJson())
         .then((value) {
           isAdded = true;
         })

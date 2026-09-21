@@ -141,6 +141,9 @@ class ProductModel {
     data['product_specification'] = productSpecification;
     if (itemAttribute != null) {
       data['item_attribute'] = itemAttribute!.toJson();
+    } else {
+      // Explicit null so removing every attribute actually clears the variants.
+      data['item_attribute'] = null;
     }
     data['id'] = id;
     data['quantity'] = quantity;
