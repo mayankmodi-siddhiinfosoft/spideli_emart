@@ -243,8 +243,9 @@ class ProfileScreen extends StatelessWidget {
                                             : SizedBox(),
                                         // A vendor account can own several stores. Owners only:
                                         // an employee stays on the store they were created for.
-                                        (Constant.userModel?.role == Constant.userRoleVendor &&
-                                                (controller.userModel.value.vendorID ?? '').isNotEmpty)
+                                        // Shown before the first store exists too: Add Store then
+                                        // creates it.
+                                        (Constant.userModel != null && Constant.userModel!.role != Constant.userRoleEmployee)
                                             ? cardDecoration(
                                                 isDark,
                                                 controller,

@@ -21,7 +21,9 @@ class StorePickerChip extends StatelessWidget {
 
   const StorePickerChip({super.key, required this.storeName, required this.isDark});
 
-  static bool get isAvailable => Constant.userModel?.role == Constant.userRoleVendor && (Constant.userModel?.vendorID ?? '').isNotEmpty;
+  /// Owners only (anyone who isn't an employee), once there is a store to show.
+  static bool get isAvailable =>
+      Constant.userModel != null && Constant.userModel!.role != Constant.userRoleEmployee && (Constant.userModel!.vendorID ?? '').isNotEmpty;
 
   @override
   Widget build(BuildContext context) {

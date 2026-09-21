@@ -62,7 +62,11 @@ class AddRestaurantController extends GetxController {
   /// Opened from My Stores to add another store to this account: the form
   /// starts empty and saving creates a new store instead of editing the
   /// current one.
-  final bool isNewStore = Get.arguments is Map && (Get.arguments as Map)['newStore'] == true;
+  ///
+  /// With no store yet, "Add Store" is simply the first store: it is created
+  /// and selected exactly as through Store Information's.
+  final bool isNewStore =
+      Get.arguments is Map && (Get.arguments as Map)['newStore'] == true && (Constant.userModel?.vendorID ?? '').isNotEmpty;
 
   @override
   void onInit() {

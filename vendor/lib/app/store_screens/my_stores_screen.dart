@@ -33,11 +33,7 @@ class MyStoresScreen extends StatelessWidget {
               InkWell(
                 splashColor: Colors.transparent,
                 onTap: () {
-                  Get.to(const AddRestaurantScreen(), arguments: {'newStore': true})?.then((value) {
-                    if (value == true) {
-                      controller.getStores();
-                    }
-                  });
+                  Get.to(const AddRestaurantScreen(), arguments: {'newStore': true})?.then((_) => controller.getStores());
                 },
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
