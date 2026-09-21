@@ -9,7 +9,11 @@ class SubscriptionHistoryModel {
   SubscriptionPlanModel? subscriptionPlan;
   String? paymentType;
 
-  SubscriptionHistoryModel({this.id, this.userId, this.expiryDate, this.createdAt, this.subscriptionPlan, this.paymentType});
+  /// The store the plan was bought for (the platform plan is per store).
+  /// Absent on purchases made before a vendor could own several stores.
+  String? vendorID;
+
+  SubscriptionHistoryModel({this.id, this.userId, this.expiryDate, this.createdAt, this.subscriptionPlan, this.paymentType, this.vendorID});
 
   factory SubscriptionHistoryModel.fromJson(Map<String, dynamic> json) {
     return SubscriptionHistoryModel(
@@ -19,6 +23,7 @@ class SubscriptionHistoryModel {
       createdAt: json['createdAt'],
       subscriptionPlan: json['subscription_plan'] != null ? SubscriptionPlanModel.fromJson(json['subscription_plan']) : null,
       paymentType: json['payment_type'],
+      vendorID: json['vendorID'],
     );
   }
 
@@ -30,6 +35,7 @@ class SubscriptionHistoryModel {
       'createdAt': createdAt,
       'subscription_plan': subscriptionPlan?.toJson(),
       'payment_type': paymentType.toString(),
+      if (vendorID != null) 'vendorID': vendorID,
     };
   }
 }

@@ -146,7 +146,60 @@ class FireStoreUtils {
         Constant.userModel = userModel;
       }
     });
+    if (userModel != null) {
+      await _applyStorePlan(userModel!);
+    }
     return userModel;
+  }
+
+  /// The platform subscription is per store (app-spec-multiple-stores, answer 3):
+  /// `subscriptionPlanId`, `subscription_plan` and `subscriptionExpiryDate` live
+  /// on `vendors/{id}`. Once a user has a selected store, the plan on the loaded
+  /// user is that store's, so every existing plan check (splash, login, access,
+  /// item/order limits, features) follows the store being worked on. Before the
+  /// first store exists the account's own plan still applies (a vendor can buy
+  /// a plan before creating a store).
+  static Future<void> _applyStorePlan(UserModel user) async {
+    final String vendorId = user.vendorID ?? '';
+    if (vendorId.isEmpty) return;
+    try {
+      final storeRef = fireStore.collection(CollectionName.vendors).doc(vendorId);
+      final storeDoc = await storeRef.get();
+      if (!storeDoc.exists) return;
+      final VendorModel store = VendorModel.fromJson(storeDoc.data()!);
+
+      if ((store.subscriptionPlanId ?? '').isEmpty && (store.author ?? '').isNotEmpty) {
+        // Backfill for vendors from before multi-store: an owner with a single
+        // store bought the account plan for that store. Copy it on, once.
+        final UserModel? owner = store.author == user.id ? user : await _getRawUser(store.author!);
+        final bool ownerHasPlan = (owner?.subscriptionPlanId ?? '').isNotEmpty;
+        if (ownerHasPlan) {
+          final ownerStores = await fireStore.collection(CollectionName.vendors).where('author', isEqualTo: store.author).get();
+          if (ownerStores.docs.length == 1) {
+            store.subscriptionPlanId = owner!.subscriptionPlanId;
+            store.subscriptionPlan = owner.subscriptionPlan;
+            store.subscriptionExpiryDate = owner.subscriptionExpiryDate;
+            await storeRef.update({
+              'subscriptionPlanId': store.subscriptionPlanId,
+              'subscription_plan': store.subscriptionPlan?.toJson(),
+              'subscriptionExpiryDate': store.subscriptionExpiryDate,
+              if (store.subscriptionTotalOrders == null) 'subscriptionTotalOrders': store.subscriptionPlan?.orderLimit,
+            });
+          }
+        }
+      }
+
+      user.subscriptionPlanId = store.subscriptionPlanId;
+      user.subscriptionPlan = store.subscriptionPlan;
+      user.subscriptionExpiryDate = store.subscriptionExpiryDate;
+    } catch (e, s) {
+      log("_applyStorePlan: $e", stackTrace: s);
+    }
+  }
+
+  static Future<UserModel?> _getRawUser(String uid) async {
+    final doc = await fireStore.collection(CollectionName.users).doc(uid).get();
+    return doc.exists ? UserModel.fromJson(doc.data()!) : null;
   }
 
   static Future<UserModel?> getUserById(String uuid) async {
@@ -236,12 +289,26 @@ class FireStoreUtils {
     }
   }
 
+  /// What a user save writes. Never the wallet (it only moves transactionally)
+  /// and, once the user has a store, never the platform plan: that lives on the
+  /// store, and the plan on the in-memory user is a copy of the store's.
+  static Map<String, dynamic> _userWriteData(UserModel userModel) {
+    final data = userModel.toJson()..remove('wallet_amount');
+    if ((userModel.vendorID ?? '').isNotEmpty) {
+      data
+        ..remove('subscriptionPlanId')
+        ..remove('subscription_plan')
+        ..remove('subscriptionExpiryDate');
+    }
+    return data;
+  }
+
   static Future<bool> updateUser(UserModel userModel) async {
     bool isUpdate = false;
     await fireStore
         .collection(CollectionName.users)
         .doc(userModel.id)
-        .setKnownFields(userModel.toJson()..remove('wallet_amount'))
+        .setKnownFields(_userWriteData(userModel))
         .whenComplete(() async {
           Constant.userModel = userModel;
           if (userModel.employeePermissionId != null) {
@@ -261,7 +328,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.users)
         .doc(userModel.id)
-        .setKnownFields(userModel.toJson()..remove('wallet_amount'))
+        .setKnownFields(_userWriteData(userModel))
         .whenComplete(() {
           isUpdate = true;
         })
@@ -1842,7 +1909,13 @@ class FireStoreUtils {
       if (value.docs.isNotEmpty) {
         for (var element in value.docs) {
           SubscriptionHistoryModel subscriptionHistoryModel = SubscriptionHistoryModel.fromJson(element.data());
-          subscriptionHistoryList.add(subscriptionHistoryModel);
+          // The platform plan is per store: show this store's purchases, plus
+          // ones made before purchases were tied to a store.
+          final String currentStore = Constant.userModel?.vendorID ?? '';
+          final String rowStore = subscriptionHistoryModel.vendorID ?? '';
+          if (rowStore.isEmpty || currentStore.isEmpty || rowStore == currentStore) {
+            subscriptionHistoryList.add(subscriptionHistoryModel);
+          }
         }
       }
     });

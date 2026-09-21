@@ -45,7 +45,6 @@ import 'package:vendor/payment/xendit_model.dart';
 import 'package:vendor/payment/xendit_screen.dart';
 import 'package:vendor/themes/app_them_data.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
-import 'package:vendor/utils/store_service.dart';
 import 'package:vendor/utils/preferences.dart';
 import 'package:vendor/utils/region_service.dart';
 
@@ -632,11 +631,13 @@ class SubscriptionController extends GetxController {
     userModel.value.sectionId = selectedSectionModel.value.id;
     userModel.value.adminCommissionModel = selectedSectionModel.value.adminCommision;
 
-    // The platform plan belongs to the account, so every store the owner has
-    // gets it - not only the one currently selected.
+    // The platform plan is per store (app-spec-multiple-stores, answer 3): it
+    // goes on the store being worked on. With no store yet (a vendor buying
+    // before creating one) it stays on the account, and the first store
+    // created copies it.
     if (userModel.value.vendorID != null && userModel.value.vendorID!.isNotEmpty) {
-      final List<VendorModel> stores = await StoreService.getOwnerStores(FireStoreUtils.getCurrentUid());
-      for (final VendorModel vendorModel in stores) {
+      VendorModel? vendorModel = await FireStoreUtils.getVendorById(userModel.value.vendorID.toString());
+      if (vendorModel != null) {
         vendorModel.subscriptionPlanId = selectedSubscriptionPlan.value.id;
         vendorModel.subscriptionPlan = selectedSubscriptionPlan.value;
         vendorModel.subscriptionPlan?.createdAt = Timestamp.now();
@@ -656,6 +657,7 @@ class SubscriptionController extends GetxController {
       subscriptionPlan: userModel.value.subscriptionPlan,
       paymentType: selectedPaymentMethod.value,
       userId: userModel.value.id,
+      vendorID: (userModel.value.vendorID ?? '').isEmpty ? null : userModel.value.vendorID,
     );
 
     await FireStoreUtils.setSubscriptionTransaction(subscriptionHistoryData);

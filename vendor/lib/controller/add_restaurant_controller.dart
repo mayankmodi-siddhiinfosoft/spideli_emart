@@ -301,7 +301,13 @@ class AddRestaurantController extends GetxController {
         vendorModel.value.isSelfDelivery = isSelfDelivery.value;
         vendorModel.value.packagingCharge = packagingChargeAmountController.value.text.isNotEmpty ? packagingChargeAmountController.value.text : '0';
 
-        if (selectedSectionModel.value.adminCommision!.isEnabled == true || Constant.isSubscriptionModelApplied == true) {
+        // The platform plan is per store. The first store takes the plan the
+        // account bought before it existed; an additional store starts with no
+        // plan and needs its own (the switch to it leads to the plan screen).
+        // Editing an existing store keeps its own plan untouched.
+        if (!isNewStore &&
+            (Constant.userModel?.vendorID ?? '').isEmpty &&
+            (selectedSectionModel.value.adminCommision!.isEnabled == true || Constant.isSubscriptionModelApplied == true)) {
           vendorModel.value.subscriptionPlanId = userModel.value.subscriptionPlanId;
           vendorModel.value.subscriptionPlan = userModel.value.subscriptionPlan;
           vendorModel.value.subscriptionExpiryDate = userModel.value.subscriptionExpiryDate;
