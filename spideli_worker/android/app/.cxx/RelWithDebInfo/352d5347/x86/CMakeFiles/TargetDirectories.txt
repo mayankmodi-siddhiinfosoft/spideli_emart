@@ -1,0 +1,2 @@
+/Users/rushabhpatel/Documents/GitHub/spideli-ondemand/spideliworker/android/app/.cxx/RelWithDebInfo/352d5347/x86/CMakeFiles/edit_cache.dir
+/Users/rushabhpatel/Documents/GitHub/spideli-ondemand/spideliworker/android/app/.cxx/RelWithDebInfo/352d5347/x86/CMakeFiles/rebuild_cache.dir

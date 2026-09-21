@@ -1,0 +1,231 @@
+{
+  "project_info": {
+    "project_number": "248496578266",
+    "firebase_url": "https://spideli-870b0-default-rtdb.firebaseio.com",
+    "project_id": "spideli-870b0",
+    "storage_bucket": "spideli-870b0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:248496578266:android:11a3961a3ce03f56b70fe3",
+        "android_client_info": {
+          "package_name": "com.spideli.customer"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "248496578266-h99v5hjse9e1jgfbsq47323iig501pje.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.spideli.customer",
+            "certificate_hash": "a4f70c8f603845bace670059eb571e76c967b5f6"
+          }
+        },
+        {
+          "client_id": "248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDzPw53B4IC7ghgwjSdng4FmBg860V9zPs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "248496578266-10c1not15r0rdpd511v8bt42vti75hdu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.spideli.driver"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:248496578266:android:c7a55f0f4ebd1154b70fe3",
+        "android_client_info": {
+          "package_name": "com.spideli.driver"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "248496578266-e7ftitsci6m0henkkk00sh0de3uggpj8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.spideli.driver",
+            "certificate_hash": "a4f70c8f603845bace670059eb571e76c967b5f6"
+          }
+        },
+        {
+          "client_id": "248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDzPw53B4IC7ghgwjSdng4FmBg860V9zPs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "248496578266-10c1not15r0rdpd511v8bt42vti75hdu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.spideli.driver"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:248496578266:android:5652425455f4fbd4b70fe3",
+        "android_client_info": {
+          "package_name": "com.spideli.provider"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "248496578266-bvv56nlma7ar54qerv3402hjbbo1gmf8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.spideli.provider",
+            "certificate_hash": "a4f70c8f603845bace670059eb571e76c967b5f6"
+          }
+        },
+        {
+          "client_id": "248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDzPw53B4IC7ghgwjSdng4FmBg860V9zPs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "248496578266-10c1not15r0rdpd511v8bt42vti75hdu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.spideli.driver"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:248496578266:android:522897bcb50d3bf1b70fe3",
+        "android_client_info": {
+          "package_name": "com.spideli.store"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "248496578266-aekmvciqstpqc7ltp2j0hqk00iu1mnhv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.spideli.store",
+            "certificate_hash": "a4f70c8f603845bace670059eb571e76c967b5f6"
+          }
+        },
+        {
+          "client_id": "248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDzPw53B4IC7ghgwjSdng4FmBg860V9zPs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "248496578266-10c1not15r0rdpd511v8bt42vti75hdu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.spideli.driver"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:248496578266:android:7db2aa73d7de230ab70fe3",
+        "android_client_info": {
+          "package_name": "com.spideli.worker"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "248496578266-qeooo9frmbkah2aonugs66qjef8j36q5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.spideli.worker",
+            "certificate_hash": "a4f70c8f603845bace670059eb571e76c967b5f6"
+          }
+        },
+        {
+          "client_id": "248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDzPw53B4IC7ghgwjSdng4FmBg860V9zPs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "248496578266-10c1not15r0rdpd511v8bt42vti75hdu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.spideli.driver"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,2 @@
+/Users/rushabhpatel/Documents/Latest_spideli/spideli-ondemand/spideli_provider/android/app/.cxx/Debug/6w2c4hs2/x86_64/CMakeFiles/edit_cache.dir
+/Users/rushabhpatel/Documents/Latest_spideli/spideli-ondemand/spideli_provider/android/app/.cxx/Debug/6w2c4hs2/x86_64/CMakeFiles/rebuild_cache.dir
