@@ -1,6 +1,6 @@
 import 'dart:developer';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/wallet_screen/payment_list_screen.dart';
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';

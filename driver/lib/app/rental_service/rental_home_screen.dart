@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/rental_service/rental_booking_search_screen.dart';
 import 'package:driver/app/rental_service/rental_order_details_screen.dart';
 import 'package:driver/app/wallet_screen/payment_list_screen.dart';

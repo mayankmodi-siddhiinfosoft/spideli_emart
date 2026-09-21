@@ -48,9 +48,9 @@ class HomeController extends GetxController {
 
       // Use already-cached location if DashBoardController got it first
       final cached = Constant.locationDataFinal;
-      if (cached != null && (cached.latitude ?? 0) != 0) {
-        lat = cached.latitude!;
-        lng = cached.longitude!;
+      if (cached != null && cached.latitude != 0) {
+        lat = cached.latitude;
+        lng = cached.longitude;
       } else {
         // Direct GPS fetch — works even when offline (no internet needed for GPS)
         final pos = await Geolocator.getCurrentPosition(

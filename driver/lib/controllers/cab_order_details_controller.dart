@@ -10,7 +10,7 @@ import '../models/user_model.dart';
 import '../themes/app_them_data.dart';
 import '../utils/fire_store_utils.dart';
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 
 class CabOrderDetailsController extends GetxController {
   Rx<CabOrderModel> cabOrder = CabOrderModel().obs;

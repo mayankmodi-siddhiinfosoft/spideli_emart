@@ -79,7 +79,7 @@ class CabDashBoardController extends GetxController {
             if (value != null) {
               userModel.value = value;
               if (userModel.value.isActive == true) {
-                userModel.value.location = UserLocation(latitude: locationData.latitude ?? 0.0, longitude: locationData.longitude ?? 0.0);
+                userModel.value.location = UserLocation(latitude: locationData.latitude, longitude: locationData.longitude);
                 userModel.value.rotation = locationData.heading;
                 await FireStoreUtils.updateUser(userModel.value);
               }
@@ -98,7 +98,7 @@ class CabDashBoardController extends GetxController {
                   userModel.value = value;
                   if (userModel.value.isActive == true) {
                     userModel.value.location =
-                        UserLocation(latitude: locationData.latitude ?? 0.0, longitude: locationData.longitude ?? 0.0);
+                        UserLocation(latitude: locationData.latitude, longitude: locationData.longitude);
                     userModel.value.rotation = locationData.heading;
                     await FireStoreUtils.updateUser(userModel.value);
                   }

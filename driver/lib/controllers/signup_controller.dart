@@ -1,7 +1,7 @@
 import 'dart:developer';
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/auth_screen/login_screen.dart';
 import 'package:driver/app/cab_screen/cab_dashboard_screen.dart';
 import 'package:driver/app/dash_board_screen/dash_board_screen.dart';

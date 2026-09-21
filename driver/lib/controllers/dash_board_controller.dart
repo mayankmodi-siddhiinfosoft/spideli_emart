@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
@@ -109,7 +109,7 @@ class DashBoardController extends GetxController {
               userModel.value = value;
               // Always update location in Firestore so home/cab maps stay centred,
               // regardless of isActive status.
-              userModel.value.location = UserLocation(latitude: locationData.latitude ?? 0.0, longitude: locationData.longitude ?? 0.0);
+              userModel.value.location = UserLocation(latitude: locationData.latitude, longitude: locationData.longitude);
               userModel.value.rotation = locationData.heading;
               await FireStoreUtils.updateUser(userModel.value);
             }
@@ -127,7 +127,7 @@ class DashBoardController extends GetxController {
               await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid()).then((value) async {
                 if (value != null) {
                   userModel.value = value;
-                  userModel.value.location = UserLocation(latitude: locationData.latitude ?? 0.0, longitude: locationData.longitude ?? 0.0);
+                  userModel.value.location = UserLocation(latitude: locationData.latitude, longitude: locationData.longitude);
                   userModel.value.rotation = locationData.heading;
                   await FireStoreUtils.updateUser(userModel.value);
                   ShowToastDialog.closeLoader();

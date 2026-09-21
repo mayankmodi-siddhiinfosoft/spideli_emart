@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/chat_screens/chat_video_container.dart';
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
@@ -620,7 +620,7 @@ class FireStoreUtils {
 
   static Future<List<TaxModel>?> getTaxList() async {
     List<TaxModel> taxList = [];
-    List<Placemark> placeMarks = await placemarkFromCoordinates(Constant.selectedLocation.location!.latitude!, Constant.selectedLocation.location!.longitude!);
+    List<Placemark> placeMarks = await Geocoding().placemarkFromCoordinates(Constant.selectedLocation.location!.latitude!, Constant.selectedLocation.location!.longitude!);
     await fireStore.collection(CollectionName.tax).where('country', isEqualTo: placeMarks.first.country).where('enable', isEqualTo: true).get().then((value) {
       for (var element in value.docs) {
         TaxModel taxModel = TaxModel.fromJson(element.data());

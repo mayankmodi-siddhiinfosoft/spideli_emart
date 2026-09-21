@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import '../constant/constant.dart';

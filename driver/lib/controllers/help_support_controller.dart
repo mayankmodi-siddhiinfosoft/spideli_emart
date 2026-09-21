@@ -8,7 +8,7 @@ import 'package:driver/utils/preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:uuid/uuid.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 
 class HelpSupportController extends GetxController {
   Rx<TextEditingController> messageController = TextEditingController().obs;

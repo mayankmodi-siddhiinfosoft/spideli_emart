@@ -8,7 +8,7 @@ import '../models/cab_order_model.dart';
 import '../models/order_model.dart';
 import '../models/parcel_order_model.dart';
 import '../models/rental_order_model.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:intl/intl.dart';
 
 class OwnerOrderListController extends GetxController {
