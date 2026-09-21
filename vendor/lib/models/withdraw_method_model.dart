@@ -1,16 +1,22 @@
 class WithdrawMethodModel {
   String? id;
   String? userId;
+
+  /// The store this method pays out to. Payouts and wallets are per store, so
+  /// each store keeps its own method. Absent on methods saved before a vendor
+  /// could own several stores; those belong to the whole account.
+  String? vendorID;
   FlutterWave? flutterWave;
   Paypal? paypal;
   RazorpayModel? razorpay;
   Stripe? stripe;
 
-  WithdrawMethodModel({this.id, this.userId, this.flutterWave, this.stripe, this.razorpay, this.paypal});
+  WithdrawMethodModel({this.id, this.userId, this.vendorID, this.flutterWave, this.stripe, this.razorpay, this.paypal});
 
   WithdrawMethodModel.fromJson(Map<String, dynamic> json) {
     id = json['id'] ?? "";
     userId = json['userId'] ?? "";
+    vendorID = json['vendorID'];
     flutterWave = json['flutterwave'] != null ? FlutterWave.fromJson(json['flutterwave']) : null;
     stripe = json['stripe'] != null ? Stripe.fromJson(json['stripe']) : null;
     razorpay = json['razorpay'] != null ? RazorpayModel.fromJson(json['razorpay']) : null;
@@ -21,6 +27,9 @@ class WithdrawMethodModel {
     final Map<String, dynamic> data = <String, dynamic>{};
     data['id'] = id;
     data['userId'] = userId;
+    if (vendorID != null) {
+      data['vendorID'] = vendorID;
+    }
     if (flutterWave != null) {
       data['flutterwave'] = flutterWave!.toJson();
     }

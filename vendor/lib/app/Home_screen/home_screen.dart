@@ -2,6 +2,7 @@ import 'package:bottom_picker/resources/extensions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:flutter/material.dart';
+import 'package:vendor/app/store_screens/store_picker.dart';
 import 'package:flutter_multi_formatter/flutter_multi_formatter.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
@@ -87,6 +88,8 @@ class HomeScreen extends StatelessWidget {
                               controller.userModel.value.fullName().tr,
                               style: TextStyle(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, fontSize: 16, fontFamily: AppThemeData.semiBold),
                             ),
+                            // The store being worked on; tap to switch store (owners only).
+                            StorePickerChip(storeName: controller.vendermodel.value.title, isDark: isDark),
                           ],
                         ),
                       ],

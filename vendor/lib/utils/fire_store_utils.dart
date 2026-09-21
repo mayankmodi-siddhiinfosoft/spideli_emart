@@ -1418,6 +1418,17 @@ class FireStoreUtils {
       Constant.userModel!.vendorID = documentReference.id;
       Constant.vendorAdminCommission = vendor.adminCommission;
       await FireStoreUtils.updateUser(Constant.userModel!);
+      // The first store's region is also recorded on the owner, as the panel's
+      // sign-up does. It is no longer authoritative - stores may span regions
+      // and each store's own regionId is what counts - so an existing value is
+      // never overwritten.
+      if ((vendor.regionId ?? '').isNotEmpty) {
+        final userRef = fireStore.collection(CollectionName.users).doc(Constant.userModel!.id);
+        final userDoc = await userRef.get();
+        if ((userDoc.data()?['regionId'] ?? '').toString().isEmpty) {
+          await userRef.update({'regionId': vendor.regionId});
+        }
+      }
     }
     return vendor;
   }
@@ -1652,32 +1663,48 @@ class FireStoreUtils {
     await fireStore.collection(CollectionName.story).doc(vendorId).delete();
   }
 
+  /// The owner of the current store (an employee's store belongs to someone else).
+  static Future<String?> _currentStoreOwnerId() async {
+    if (Constant.userModel?.role != 'employee') return Constant.userModel?.id;
+    final VendorModel? vendor = await getVendorById(Constant.userModel!.vendorID!);
+    return vendor?.author;
+  }
+
+  /// The payout method of the store currently selected.
+  ///
+  /// Withdrawals are per store, so each store has its own method
+  /// (`withdraw_method.vendorID`). A store that has not set one yet falls back
+  /// to the account's method from before multi-store - returned as an unsaved
+  /// copy for this store, so editing it creates the store's own method and the
+  /// shared one is never changed under the owner's other stores.
   static Future<WithdrawMethodModel?> getWithdrawMethod() async {
-    WithdrawMethodModel? withdrawMethodModel;
-    String? uuid = Constant.userModel?.role != 'employee' ? Constant.userModel?.id : '';
-    if (Constant.userModel?.role == 'employee') {
-      VendorModel? vendor = await getVendorById(Constant.userModel!.vendorID!);
-      uuid = vendor?.author;
-      log("GetWithdrawMethod :: ${vendor?.id} :: $uuid :: ${Constant.userModel!.vendorID} :: ${Constant.userModel?.role}");
+    final String vendorId = Constant.userModel?.vendorID ?? '';
+    if (vendorId.isNotEmpty) {
+      final storeMethods = await fireStore.collection(CollectionName.withdrawMethod).where('vendorID', isEqualTo: vendorId).get();
+      if (storeMethods.docs.isNotEmpty) {
+        return WithdrawMethodModel.fromJson(storeMethods.docs.first.data());
+      }
     }
 
-    await fireStore.collection(CollectionName.withdrawMethod).where("userId", isEqualTo: uuid).get().then((value) async {
-      if (value.docs.isNotEmpty) {
-        withdrawMethodModel = WithdrawMethodModel.fromJson(value.docs.first.data());
-      }
-    });
-    return withdrawMethodModel;
+    final String? ownerId = await _currentStoreOwnerId();
+    if (ownerId == null || ownerId.isEmpty) return null;
+    final accountMethods = await fireStore.collection(CollectionName.withdrawMethod).where("userId", isEqualTo: ownerId).get();
+    final legacy = accountMethods.docs.where((doc) => (doc.data()['vendorID'] ?? '').toString().isEmpty).firstOrNull;
+    if (legacy == null) return null;
+    final WithdrawMethodModel copy = WithdrawMethodModel.fromJson(legacy.data());
+    copy.id = null;
+    copy.vendorID = vendorId.isEmpty ? null : vendorId;
+    return copy;
   }
 
   static Future<WithdrawMethodModel?> setWithdrawMethod(WithdrawMethodModel withdrawMethodModel) async {
-    String? uuid = Constant.userModel?.role != 'employee' ? Constant.userModel?.id : '';
-    if (Constant.userModel?.role == 'employee') {
-      VendorModel? user = await getVendorById(Constant.userModel!.vendorID!);
-      uuid = user?.author;
-    }
-    if (withdrawMethodModel.id == null) {
+    if (withdrawMethodModel.id == null || withdrawMethodModel.id!.isEmpty) {
       withdrawMethodModel.id = const Uuid().v4();
-      withdrawMethodModel.userId = uuid;
+    }
+    withdrawMethodModel.userId = await _currentStoreOwnerId();
+    final String vendorId = Constant.userModel?.vendorID ?? '';
+    if (vendorId.isNotEmpty) {
+      withdrawMethodModel.vendorID = vendorId;
     }
     await fireStore.collection(CollectionName.withdrawMethod).doc(withdrawMethodModel.id).set(withdrawMethodModel.toJson()).then((value) async {});
     return withdrawMethodModel;
