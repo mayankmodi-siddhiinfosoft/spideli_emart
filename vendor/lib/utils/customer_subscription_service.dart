@@ -1,6 +1,6 @@
 import 'dart:developer';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:vendor/constant/collection_name.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/models/user_model.dart';
