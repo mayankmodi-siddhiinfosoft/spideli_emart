@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:developer';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/models/rental_order_model.dart';
 import 'package:customer/models/rental_package_model.dart';
 import 'package:customer/models/user_model.dart';

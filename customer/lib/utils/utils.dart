@@ -46,7 +46,7 @@ class Utils {
 
   static Future<String> getAddressFromCoordinates(double lat, double lng) async {
     try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+      List<Placemark> placemarks = await Geocoding().placemarkFromCoordinates(lat, lng);
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks.first;
         String address = "${place.name ?? ''}, ${place.subLocality ?? ''}, ${place.locality ?? ''}, ${place.administrativeArea ?? ''}, ${place.country ?? ''}";
@@ -58,46 +58,54 @@ class Utils {
     }
   }
 
+  // map_launcher 6: isMapAvailable/showDirections replaced by a DirectionsRequest.
+  // getSupportedMaps also returns maps reachable via universal link, so check isInstalled to keep the old "installed only" behaviour.
+  static Future<bool> _isMapInstalled(MapApp map, DirectionsRequest request) async {
+    final maps = await request.getSupportedMaps([map]);
+    return maps.any((m) => m.map.id == map.id && m.isInstalled);
+  }
+
   static Future<void> redirectMap({required String name, required double latitude, required double longLatitude}) async {
+    final directions = MapLauncher.directions(LocationCoords(latitude, longLatitude, title: name), mode: TravelMode.driving);
     if (Constant.mapType == "google") {
-      bool? isAvailable = await MapLauncher.isMapAvailable(MapType.google);
+      bool? isAvailable = await _isMapInstalled(MapApp.google, directions);
       if (isAvailable == true) {
-        await MapLauncher.showDirections(mapType: MapType.google, directionsMode: DirectionsMode.driving, destinationTitle: name, destination: Coords(latitude, longLatitude));
+        await directions.show(map: MapApp.google);
       } else {
         ShowToastDialog.showToast("Google map is not installed".tr);
       }
     } else if (Constant.mapType == "googleGo") {
-      bool? isAvailable = await MapLauncher.isMapAvailable(MapType.googleGo);
+      bool? isAvailable = await _isMapInstalled(MapApp.googleGo, directions);
       if (isAvailable == true) {
-        await MapLauncher.showDirections(mapType: MapType.googleGo, directionsMode: DirectionsMode.driving, destinationTitle: name, destination: Coords(latitude, longLatitude));
+        await directions.show(map: MapApp.googleGo);
       } else {
         ShowToastDialog.showToast("Google Go map is not installed".tr);
       }
     } else if (Constant.mapType == "waze") {
-      bool? isAvailable = await MapLauncher.isMapAvailable(MapType.waze);
+      bool? isAvailable = await _isMapInstalled(MapApp.waze, directions);
       if (isAvailable == true) {
-        await MapLauncher.showDirections(mapType: MapType.waze, directionsMode: DirectionsMode.driving, destinationTitle: name, destination: Coords(latitude, longLatitude));
+        await directions.show(map: MapApp.waze);
       } else {
         ShowToastDialog.showToast("Waze is not installed".tr);
       }
     } else if (Constant.mapType == "mapswithme") {
-      bool? isAvailable = await MapLauncher.isMapAvailable(MapType.mapswithme);
+      bool? isAvailable = await _isMapInstalled(MapApp.mapswithme, directions);
       if (isAvailable == true) {
-        await MapLauncher.showDirections(mapType: MapType.mapswithme, directionsMode: DirectionsMode.driving, destinationTitle: name, destination: Coords(latitude, longLatitude));
+        await directions.show(map: MapApp.mapswithme);
       } else {
         ShowToastDialog.showToast("Mapswithme is not installed".tr);
       }
     } else if (Constant.mapType == "yandexNavi") {
-      bool? isAvailable = await MapLauncher.isMapAvailable(MapType.yandexNavi);
+      bool? isAvailable = await _isMapInstalled(MapApp.yandexNavi, directions);
       if (isAvailable == true) {
-        await MapLauncher.showDirections(mapType: MapType.yandexNavi, directionsMode: DirectionsMode.driving, destinationTitle: name, destination: Coords(latitude, longLatitude));
+        await directions.show(map: MapApp.yandexNavi);
       } else {
         ShowToastDialog.showToast("YandexNavi is not installed".tr);
       }
     } else if (Constant.mapType == "yandexMaps") {
-      bool? isAvailable = await MapLauncher.isMapAvailable(MapType.yandexMaps);
+      bool? isAvailable = await _isMapInstalled(MapApp.yandexMaps, directions);
       if (isAvailable == true) {
-        await MapLauncher.showDirections(mapType: MapType.yandexMaps, directionsMode: DirectionsMode.driving, destinationTitle: name, destination: Coords(latitude, longLatitude));
+        await directions.show(map: MapApp.yandexMaps);
       } else {
         ShowToastDialog.showToast("yandexMaps map is not installed".tr);
       }

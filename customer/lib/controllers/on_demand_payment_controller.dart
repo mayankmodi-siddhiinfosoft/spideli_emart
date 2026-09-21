@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import '../models/onprovider_order_model.dart';
@@ -666,7 +666,7 @@ class OnDemandPaymentController extends GetxController {
     });
   }
 
-  Future<String> createPaymentLink({required var amount}) async {
+  Future<String> createPaymentLink({required dynamic amount}) async {
     var ordersId = const Uuid().v1();
     final url = Uri.parse(midTransModel.value.isSandbox! ? 'https://api.sandbox.midtrans.com/v1/payment-links' : 'https://api.midtrans.com/v1/payment-links');
 
@@ -914,7 +914,7 @@ class OnDemandPaymentController extends GetxController {
     });
   }
 
-  Future<XenditModel> createXenditInvoice({required var amount}) async {
+  Future<XenditModel> createXenditInvoice({required dynamic amount}) async {
     const url = 'https://api.xendit.co/v2/invoices';
     var headers = {
       'Content-Type': 'application/json',

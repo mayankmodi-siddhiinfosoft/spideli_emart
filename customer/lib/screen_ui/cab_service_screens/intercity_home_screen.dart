@@ -267,7 +267,7 @@ class IntercityHomeScreen extends StatelessWidget {
                         return InkWell(
                           onTap: () async {
                             if (controller.popularDestination[index].latitude != null || controller.popularDestination[index].longitude != null) {
-                              List<get_cord_address.Placemark> placeMarks = await get_cord_address.placemarkFromCoordinates(
+                              List<get_cord_address.Placemark> placeMarks = await get_cord_address.Geocoding().placemarkFromCoordinates(
                                 controller.popularDestination[index].latitude ?? 0.0,
                                 controller.popularDestination[index].longitude ?? 0.0,
                               );
@@ -1443,7 +1443,7 @@ class IntercityHomeScreen extends StatelessWidget {
 
                                     await FireStoreUtils.getSOS(controller.currentOrder.value.id ?? '').then((value) async {
                                       if (value == false) {
-                                        await FireStoreUtils.setSos(controller.currentOrder.value.id ?? '', UserLocation(latitude: location.latitude!, longitude: location.longitude!)).then((value) {
+                                        await FireStoreUtils.setSos(controller.currentOrder.value.id ?? '', UserLocation(latitude: location.latitude, longitude: location.longitude)).then((value) {
                                           ShowToastDialog.closeLoader();
                                           ScaffoldMessenger.of(context).showSnackBar(
                                             SnackBar(

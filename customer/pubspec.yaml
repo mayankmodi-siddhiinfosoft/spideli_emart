@@ -4,25 +4,25 @@ description: "A new Flutter project."
 version: 1.0.0+5
 
 environment:
-  sdk: ^3.7.2
+  sdk: ^3.13.0
 
 dependencies:
   flutter:
     sdk: flutter
 
   # Icons & UI
-  cupertino_icons: ^1.0.8
-  flutter_svg: ^2.2.4
-  shimmer: ^3.0.0
-  flutter_easyloading: ^3.0.5
+  cupertino_icons: ^1.0.9
+  flutter_svg: ^2.3.0
+  shimmer: ^4.0.0
+  flutter_easyloading: ^4.0.2
   flutter_rating_bar: ^4.0.1
   dotted_border: ^3.1.0
   flutter_html: ^3.0.0
   photo_view: ^0.15.0
-  bottom_picker: ^4.1.1
-  timelines_plus: ^2.0.0
-  badges: ^3.1.2
-  in_app_review: ^2.0.11
+  bottom_picker: ^5.0.0
+  timelines_plus: ^2.0.1
+  badges: ^3.2.0
+  in_app_review: ^2.0.12
   dropdown_textfield: ^1.2.0
 
   # State Management
@@ -30,69 +30,74 @@ dependencies:
   provider: ^6.1.5+1
 
   # Network & Storage
-  cached_network_image: ^3.4.1
-  shared_preferences: ^2.5.4
-  path_provider: ^2.1.5
+  cached_network_image: ^4.0.0
+  shared_preferences: ^2.5.5
+  path_provider: ^2.1.6
   path: ^1.9.1
 
   # Firebase & Notifications
-  firebase_core: ^3.12.1
-  firebase_auth: ^5.5.1
-  cloud_firestore: ^5.6.5
-  firebase_database: ^11.3.5
-  firebase_storage: ^12.4.4
-  firebase_messaging: ^15.2.4
-  firebase_app_check: ^0.3.2+10
-  flutter_local_notifications: ^21.0.0
+  firebase_core: ^4.15.0
+  firebase_auth: ^6.7.0
+  cloud_firestore: ^6.10.0
+  firebase_database: ^12.6.0
+  firebase_storage: ^13.6.0
+  firebase_messaging: ^16.7.0
+  firebase_app_check: ^0.4.8
+  flutter_local_notifications: ^22.3.1
 
   # Authentication / User
   country_code_picker: ^3.4.1
-  pin_code_fields: ^9.1.0
+  pin_code_fields: ^9.4.0 # held: 10.x reads material_ui Theme; this app uses flutter/material so PIN fields lose app theme (author says stay on 9.4)
   google_sign_in: ^7.2.0
-  sign_in_with_apple: ^7.0.1
+  sign_in_with_apple: ^8.2.0
 
   # Maps & Location
-  google_maps_flutter: ^2.15.0
-  flutter_osm_plugin: ^1.4.3
+  google_maps_flutter: ^2.18.1
+  flutter_osm_plugin: ^2.0.2
   osm_nominatim: ^4.0.1
-  geolocator: ^14.0.2
-  geocoding: ^4.0.0
+  geolocator: ^14.0.3
+  geocoding: ^5.0.0
   flutter_polyline_points: ^3.1.0
-  map_launcher: ^4.4.3
-  flutter_map: ^8.2.2
-  latlong2: ^0.9.1
-  location: ^8.0.1
+  map_launcher: ^6.0.0
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
+  location: ^10.0.2
 
   # Media
-  image_picker: ^1.2.1
-  video_player: ^2.11.0
+  image_picker: ^1.2.3
+  video_player: ^2.14.0
   video_compress: ^3.1.4
 
   # Sharing & QR
-  share_plus: ^12.0.1
+  share_plus: ^13.3.0
   qr_flutter: ^4.1.0
-  qr_code_dart_scan: ^0.11.5
-  clipboard: ^3.0.14
+  qr_code_dart_scan: ^0.14.0
 
   # Payment
-  flutter_stripe: ^12.3.0
-  razorpay_flutter: ^1.4.1
+  flutter_stripe: ^14.0.0
+  razorpay_flutter: ^1.4.6
   flutter_paypal: ^0.2.1
 
   # Utilities
-  mailer: ^7.1.0
-  googleapis_auth: ^2.0.0
-  date_picker_timeline: ^1.2.7
-  sqflite: ^2.4.2
-  intl: ^0.20.2
-  uuid: ^4.5.3
+  mailer: ^7.2.0
+  googleapis_auth: ^2.3.4
+  date_picker_timeline: ^1.4.0
+  sqflite: ^2.4.4
+  intl: ^0.20.3
+  uuid: ^4.6.0
   flutter_google_places_hoc081098: ^2.0.0
 
+
 dependency_overrides:
-  webview_flutter: ^4.9.0
-  http: ^1.6.0
-  google_api_headers: ^5.1.0
-  package_info_plus: ^9.0.0
+  # flutter_html 3.0.0 (latest) calls html's private top-level `matches()`, which
+  # html 0.15.7 removed -- a compile error the analyzer does not report. 0.15.6 is
+  # the version the app used before this upgrade.
+  html: 0.15.6
+  # flutter_google_places_hoc081098 2.0.0 (latest) pins google_api_headers ^4 -> package_info_plus 8 -> win32 5,
+  # which conflicts with share_plus 13 (win32 6). The only API it uses, const GoogleApiHeaders().getHeaders(),
+  # is identical in 5.x.
+  # 5.4.1 needs Dart >=3.13.4 (Flutter 3.47.5); Flutter 3.47.4 ships Dart 3.13.3.
+  google_api_headers: 5.4.0
 
 dev_dependencies:
   flutter_test:

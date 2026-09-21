@@ -1453,7 +1453,7 @@ class CabBookingScreen extends StatelessWidget {
 
                               await FireStoreUtils.getSOS(controller.currentOrder.value.id ?? '').then((value) async {
                                 if (value == false) {
-                                  await FireStoreUtils.setSos(controller.currentOrder.value.id ?? '', UserLocation(latitude: location.latitude!, longitude: location.longitude!)).then((_) {
+                                  await FireStoreUtils.setSos(controller.currentOrder.value.id ?? '', UserLocation(latitude: location.latitude, longitude: location.longitude)).then((_) {
                                     ShowToastDialog.closeLoader();
                                     ScaffoldMessenger.of(
                                       context,

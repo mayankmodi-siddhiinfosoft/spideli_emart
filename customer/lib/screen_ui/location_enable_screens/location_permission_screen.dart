@@ -64,7 +64,7 @@ class LocationPermissionScreen extends StatelessWidget {
                         try {
                           await Geolocator.requestPermission();
                           Position newLocalData = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-                          await placemarkFromCoordinates(newLocalData.latitude, newLocalData.longitude).then((valuePlaceMaker) {
+                          await Geocoding().placemarkFromCoordinates(newLocalData.latitude, newLocalData.longitude).then((valuePlaceMaker) {
                             Placemark placeMark = valuePlaceMaker[0];
                             addressModel.addressAs = "Home";
                             addressModel.location = UserLocation(latitude: newLocalData.latitude, longitude: newLocalData.longitude);
@@ -80,7 +80,7 @@ class LocationPermissionScreen extends StatelessWidget {
 
                           Get.offAll(const ServiceListScreen());
                         } catch (e) {
-                          await placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
+                          await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
                             Placemark placeMark = valuePlaceMaker[0];
                             addressModel.addressAs = "Home";
                             addressModel.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
@@ -144,7 +144,7 @@ class LocationPermissionScreen extends StatelessWidget {
                             });
                           }
                         } catch (e) {
-                          await placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
+                          await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
                             Placemark placeMark = valuePlaceMaker[0];
                             addressModel.addressAs = "Home";
                             addressModel.location = UserLocation(latitude: 19.228825, longitude: 72.854118);

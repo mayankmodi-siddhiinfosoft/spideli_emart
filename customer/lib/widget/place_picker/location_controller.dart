@@ -49,7 +49,7 @@ class LocationController extends GetxController {
 
   Future<void> getAddressFromLatLng(LatLng latLng) async {
     try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(latLng.latitude, latLng.longitude);
+      List<Placemark> placemarks = await Geocoding().placemarkFromCoordinates(latLng.latitude, latLng.longitude);
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks.first;
         selectedPlaceAddress.value = place;
@@ -69,7 +69,7 @@ class LocationController extends GetxController {
 
   Future<void> getCoordinatesFromZipCode(String zipCode) async {
     try {
-      List<Location> locations = await locationFromAddress(zipCode);
+      List<Location> locations = await Geocoding().locationFromAddress(zipCode);
       if (locations.isNotEmpty) {
         selectedLocation.value = LatLng(locations.first.latitude, locations.first.longitude);
       }

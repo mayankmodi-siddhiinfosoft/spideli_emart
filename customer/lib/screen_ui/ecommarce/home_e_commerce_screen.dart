@@ -126,7 +126,7 @@ class HomeECommerceScreen extends StatelessWidget {
                               });
                             }
                           } catch (e) {
-                            await placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
+                            await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
                               Placemark placeMark = valuePlaceMaker[0];
                               shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
                               String currentLocation =

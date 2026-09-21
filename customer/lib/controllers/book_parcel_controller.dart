@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/models/vendor_model.dart';
 import 'package:customer/widget/geoflutterfire/src/geoflutterfire.dart';
 import 'package:dropdown_textfield/dropdown_textfield.dart';
@@ -135,7 +135,7 @@ class BookParcelController extends GetxController {
     try {
       await Geolocator.requestPermission();
       final position = await Geolocator.getCurrentPosition();
-      final placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
+      final placemarks = await Geocoding().placemarkFromCoordinates(position.latitude, position.longitude);
       final place = placemarks.first;
       final address = "${place.name}, ${place.subLocality}, ${place.locality}, ${place.administrativeArea}, ${place.postalCode}, ${place.country}";
 

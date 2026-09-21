@@ -30,7 +30,7 @@ class ScanQrCodeScreen extends StatelessWidget {
             // enable scan invert qr code ( default = false)
             typeScan: TypeScan.live,
             // if TypeScan.takePicture will try decode when click to take a picture(default TypeScan.live)
-            onCapture: (Result result) {
+            onCapture: (ScanResult result) {
               Get.back();
               ShowToastDialog.showLoader("Please wait...".tr);
               if (controller.allNearestRestaurant.isNotEmpty) {

@@ -1,8 +1,8 @@
-import 'package:clipboard/clipboard.dart';
 import 'package:customer/themes/responsive.dart';
 import 'package:customer/widget/my_separator.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import '../../controllers/on_demand_order_details_controller.dart';
@@ -93,7 +93,9 @@ class OnDemandOrderDetailsScreen extends StatelessWidget {
                                     Text('Booking ID'.tr, style: AppThemeData.mediumTextStyle(fontSize: 15, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
                                     InkWell(
                                       onTap: () {
-                                        FlutterClipboard.copy(controller.onProviderOrder.value?.id ?? '').then((value) {
+                                        final bookingId = controller.onProviderOrder.value?.id ?? '';
+                                        if (bookingId.isEmpty) return;
+                                        Clipboard.setData(ClipboardData(text: bookingId)).then((value) {
                                           SnackBar snackBar = SnackBar(
                                             content: Text(
                                               "Booking ID Copied".tr,

@@ -1,5 +1,5 @@
 import 'package:bottom_picker/bottom_picker.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/cart_controller.dart';
 import 'package:customer/models/cart_product_model.dart';
@@ -439,13 +439,14 @@ class CartScreen extends StatelessWidget {
                                 child: InkWell(
                                   onTap: () {
                                     controller.deliveryType.value = "schedule";
-                                    BottomPicker.dateTime(
+                                    BottomPicker<DateTime>.dateTime(
                                       onSubmit: (index) {
-                                        controller.scheduleDateTime.value = index;
+                                        controller.scheduleDateTime.value = index!;
                                       },
                                       minDateTime: DateTime.now(),
                                       displaySubmitButton: true,
-                                      pickerTitle: Text('Schedule Time'.tr),
+                                      // bottom_picker 5 dropped pickerTitle and the built-in close icon; rebuild the same header.
+                                      headerBuilder: (context) => Row(children: [Expanded(child: Text('Schedule Time'.tr)), InkWell(onTap: () => Navigator.pop(context), child: const Icon(Icons.close, color: Colors.black, size: 20))]),
                                       buttonSingleColor: AppThemeData.primary300,
                                     ).show(context);
                                   },
@@ -477,14 +478,14 @@ class CartScreen extends StatelessWidget {
                                           activeColor: AppThemeData.primary300,
                                           onChanged: (value) {
                                             controller.deliveryType.value = "schedule";
-                                            BottomPicker.dateTime(
+                                            BottomPicker<DateTime>.dateTime(
                                               initialDateTime: controller.scheduleDateTime.value,
                                               onSubmit: (index) {
-                                                controller.scheduleDateTime.value = index;
+                                                controller.scheduleDateTime.value = index!;
                                               },
                                               minDateTime: controller.scheduleDateTime.value,
                                               displaySubmitButton: true,
-                                              pickerTitle: Text('Schedule Time'.tr),
+                                              headerBuilder: (context) => Row(children: [Expanded(child: Text('Schedule Time'.tr)), InkWell(onTap: () => Navigator.pop(context), child: const Icon(Icons.close, color: Colors.black, size: 20))]),
                                               buttonSingleColor: AppThemeData.primary300,
                                             ).show(context);
                                           },

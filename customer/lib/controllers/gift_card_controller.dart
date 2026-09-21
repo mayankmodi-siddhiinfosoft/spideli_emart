@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as maths;
 import 'dart:math';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/gift_cards_model.dart';
 import 'package:customer/themes/app_them_data.dart';
@@ -706,7 +706,7 @@ class GiftCardController extends GetxController {
     });
   }
 
-  Future<String> createPaymentLink({required var amount}) async {
+  Future<String> createPaymentLink({required dynamic amount}) async {
     var ordersId = const Uuid().v1();
     final url = Uri.parse(midTransModel.value.isSandbox! ? 'https://api.sandbox.midtrans.com/v1/payment-links' : 'https://api.midtrans.com/v1/payment-links');
 
@@ -847,7 +847,7 @@ class GiftCardController extends GetxController {
     });
   }
 
-  Future<XenditModel> createXenditInvoice({required var amount}) async {
+  Future<XenditModel> createXenditInvoice({required dynamic amount}) async {
     const url = 'https://api.xendit.co/v2/invoices';
     var headers = {
       'Content-Type': 'application/json',

@@ -10,7 +10,7 @@ import '../models/cab_order_model.dart';
 import '../models/user_model.dart';
 import '../service/fire_store_utils.dart';
 import '../themes/app_them_data.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:intl/intl.dart';
 
 class CabOrderDetailsController extends GetxController {

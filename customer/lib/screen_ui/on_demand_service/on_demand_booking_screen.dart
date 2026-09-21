@@ -176,7 +176,7 @@ class OnDemandBookingScreen extends StatelessWidget {
                                           });
                                         }
                                       } catch (e) {
-                                        await placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
+                                        await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
                                           Placemark placeMark = valuePlaceMaker[0];
                                           shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
                                           String currentLocation =
@@ -210,9 +210,9 @@ class OnDemandBookingScreen extends StatelessWidget {
                 const SizedBox(height: 10),
                 GestureDetector(
                   onTap: () {
-                    BottomPicker.dateTime(
+                    BottomPicker<DateTime>.dateTime(
                       onSubmit: (date) {
-                        controller.setDateTime(date);
+                        controller.setDateTime(date!);
                       },
                       minDateTime: DateTime.now(),
                       buttonAlignment: MainAxisAlignment.center,
@@ -220,10 +220,15 @@ class OnDemandBookingScreen extends StatelessWidget {
                       buttonSingleColor: AppThemeData.primary300,
                       buttonPadding: 10,
                       buttonWidth: 70,
-                      pickerTitle: Text("", style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
+                      // bottom_picker 5 dropped pickerTitle/closeIconColor and the built-in close icon; rebuild the same header.
+                      headerBuilder: (context) => Row(
+                        children: [
+                          Expanded(child: Text("", style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900))),
+                          InkWell(onTap: () => Navigator.pop(context), child: Icon(Icons.close, color: isDark ? Colors.white : Colors.black, size: 20)),
+                        ],
+                      ),
                       backgroundColor: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
                       pickerTextStyle: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                      closeIconColor: isDark ? Colors.white : Colors.black,
                     ).show(context);
                   },
                   child: TextFieldWidget(title: "Booking Date & Slot".tr, hintText: "Choose Date and Time".tr, controller: controller.dateTimeController.value, enable: false),
