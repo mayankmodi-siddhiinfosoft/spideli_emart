@@ -237,6 +237,21 @@ class ProductListScreen extends StatelessWidget {
                         disPrice = controller.productList[index].disPrice.toString();
                       }
 
+                      // Wholesale tier badge: the displayed variant's own wholesale price wins
+                      // over the product's; the product's minimum quantity applies to all variants.
+                      String? wholesaleBadge;
+                      final product = controller.productList[index];
+                      if (product.wholesaleEnabled == true && (int.tryParse(product.wholesaleMinQty ?? '') ?? 0) >= 2) {
+                        String wholesalePrice = product.wholesalePrice ?? '';
+                        final displayedVariant = product.itemAttribute?.variants?.where((element) => element.variantSku == selectedVariants.join('-')).firstOrNull;
+                        if ((displayedVariant?.variantWholesalePrice ?? '').isNotEmpty) {
+                          wholesalePrice = displayedVariant!.variantWholesalePrice!;
+                        }
+                        if ((double.tryParse(wholesalePrice) ?? 0) > 0) {
+                          wholesaleBadge = "${Constant.amountShow(amount: wholesalePrice)} ${"from".tr} ${product.wholesaleMinQty} ${"units".tr}";
+                        }
+                      }
+
                       bool isDisplayItemAlert = false;
                       if ((Constant.isSubscriptionModelApplied == true || Constant.selectedSection!.adminCommision?.isEnabled == true)) {
                         if (controller.vendorModel.value.subscriptionPlan?.itemLimit == '-1') {
@@ -343,6 +358,19 @@ class ProductListScreen extends StatelessWidget {
                                                         ),
                                                       ],
                                                     ),
+                                              if (wholesaleBadge != null)
+                                                Container(
+                                                  margin: const EdgeInsets.only(top: 4, bottom: 2),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: isDark ? AppThemeData.primary50 : AppThemeData.primary600,
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  child: Text(
+                                                    wholesaleBadge,
+                                                    style: TextStyle(fontSize: 12, color: AppThemeData.primary300, fontFamily: AppThemeData.medium),
+                                                  ),
+                                                ),
                                               Row(
                                                 children: [
                                                   SvgPicture.asset("assets/icons/ic_star.svg", colorFilter: const ColorFilter.mode(AppThemeData.warning300, BlendMode.srcIn)),

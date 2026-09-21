@@ -12,6 +12,7 @@ import 'package:vendor/themes/app_them_data.dart';
 import 'package:vendor/themes/round_button_fill.dart';
 import 'package:vendor/utils/network_image_widget.dart';
 import 'package:vendor/widget/my_separator.dart';
+import 'package:vendor/widget/wholesale_tag.dart';
 
 class OrderDetailsScreen extends StatelessWidget {
   const OrderDetailsScreen({super.key});
@@ -137,6 +138,7 @@ class OrderDetailsScreen extends StatelessWidget {
                                                       fontFamily: AppThemeData.semiBold,
                                                     ),
                                                   ),
+                                                  WholesaleTag(product: product, isDark: isDark),
                                                   product.taxSetting!.isEmpty
                                                       ? SizedBox()
                                                       : Text(
@@ -152,9 +154,7 @@ class OrderDetailsScreen extends StatelessWidget {
                                               crossAxisAlignment: CrossAxisAlignment.end,
                                               children: [
                                                 Text(
-                                                  double.parse(product.discountPrice ?? "0.0") <= 0
-                                                      ? Constant.amountShow(amount: (double.parse(product.price.toString()) * double.parse(product.quantity.toString())).toString())
-                                                      : Constant.amountShow(amount: (double.parse(product.discountPrice.toString()) * double.parse(product.quantity.toString())).toString()).tr,
+                                                  Constant.amountShow(amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
                                                   style: TextStyle(
                                                     color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
                                                     fontSize: 16,

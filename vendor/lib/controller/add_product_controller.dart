@@ -37,6 +37,11 @@ class AddProductController extends GetxController {
   Rx<TextEditingController> proteinController = TextEditingController().obs;
   Rx<TextEditingController> fatsController = TextEditingController().obs;
 
+  // Wholesale pricing
+  RxBool wholesaleEnabled = false.obs;
+  Rx<TextEditingController> wholesalePriceController = TextEditingController().obs;
+  Rx<TextEditingController> wholesaleMinQtyController = TextEditingController().obs;
+
   Rx<ItemAttribute?> itemAttributes = ItemAttribute(attributes: [], variants: []).obs;
 
   RxList<VendorCategoryModel> vendorCategoryList = <VendorCategoryModel>[].obs;
@@ -181,6 +186,9 @@ class AddProductController extends GetxController {
       isPureVeg.value = productModel.value.veg ?? true;
       isNonVeg.value = productModel.value.nonveg ?? false;
       takeAway.value = productModel.value.takeawayOption ?? false;
+      wholesaleEnabled.value = productModel.value.wholesaleEnabled == true;
+      wholesalePriceController.value.text = productModel.value.wholesalePrice ?? '';
+      wholesaleMinQtyController.value.text = productModel.value.wholesaleMinQty ?? '';
       if (productModel.value.productSpecification != null) {
         productModel.value.productSpecification!.forEach((key, value) {
           specificationList.add(ProductSpecificationModel(lable: key, value: value));
@@ -251,6 +259,8 @@ class AddProductController extends GetxController {
       ShowToastDialog.showToast("Please enter valid regular price".tr);
     } else if (Constant.selectedSection!.serviceTypeFlag == "ecommerce-service" && selectedDigital.value == "Yes" && digitalFile == null && digitalProductFileName.isEmpty) {
       ShowToastDialog.showToast("Please upload digital product".tr);
+    } else if (validateWholesale() case final String wholesaleError) {
+      ShowToastDialog.showToast(wholesaleError);
     } else {
       specification.clear();
       for (var element in specificationList) {
@@ -324,10 +334,54 @@ class AddProductController extends GetxController {
       productModel.value.productSpecification = specification;
       productModel.value.brandId = selectedBrands.value.id;
       productModel.value.taxSetting = List.from(selectedTaxes);
+      applyWholesaleToProduct();
 
       await FireStoreUtils.updateProduct(productModel.value);
       ShowToastDialog.closeLoader();
       Get.back(result: true);
+    }
+  }
+
+  /// Same rules as the store panel. Returns the first error, or null when valid
+  /// (always valid when wholesale pricing is switched off).
+  String? validateWholesale() {
+    if (!wholesaleEnabled.value) return null;
+    final double retail = double.tryParse(regularPriceController.value.text.trim()) ?? 0;
+    final double? wholesale = double.tryParse(wholesalePriceController.value.text.trim());
+    if (wholesale == null || wholesale <= 0) {
+      return "Please enter a valid wholesale price".tr;
+    }
+    if (wholesale >= retail) {
+      return "Wholesale price must be lower than the regular price".tr;
+    }
+    final int? minQty = int.tryParse(wholesaleMinQtyController.value.text.trim());
+    if (minQty == null || minQty < 2) {
+      return "Wholesale minimum quantity must be a whole number of at least 2".tr;
+    }
+    for (final variant in itemAttributes.value?.variants ?? <Variants>[]) {
+      final String raw = (variant.variantWholesalePrice ?? '').trim();
+      if (raw.isEmpty) continue;
+      final double? variantWholesale = double.tryParse(raw);
+      final double variantRetail = double.tryParse((variant.variantPrice ?? '').trim()) ?? 0;
+      if (variantWholesale == null || variantWholesale <= 0) {
+        return "${"Please enter a valid wholesale price for variant".tr} ${variant.variantSku ?? ''}";
+      }
+      if (variantWholesale >= variantRetail) {
+        return "${"Variant wholesale price must be lower than the variant price".tr} (${variant.variantSku ?? ''})";
+      }
+    }
+    return null;
+  }
+
+  /// Copies the wholesale inputs onto [productModel]. When disabled, the
+  /// product values AND every variant wholesale price are cleared to "".
+  void applyWholesaleToProduct() {
+    final bool enabled = wholesaleEnabled.value;
+    productModel.value.wholesaleEnabled = enabled;
+    productModel.value.wholesalePrice = enabled ? wholesalePriceController.value.text.trim() : '';
+    productModel.value.wholesaleMinQty = enabled ? int.parse(wholesaleMinQtyController.value.text.trim()).toString() : '';
+    for (final variant in productModel.value.itemAttribute?.variants ?? <Variants>[]) {
+      variant.variantWholesalePrice = enabled ? (variant.variantWholesalePrice ?? '').trim() : '';
     }
   }
 

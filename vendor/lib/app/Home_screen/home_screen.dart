@@ -30,6 +30,7 @@ import 'package:vendor/themes/text_field_widget.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/network_image_widget.dart';
 import 'package:vendor/widget/my_separator.dart';
+import 'package:vendor/widget/wholesale_tag.dart';
 
 import '../../themes/round_button_fill.dart';
 
@@ -287,7 +288,7 @@ class HomeScreen extends StatelessWidget {
 
     /// ---------------- SUBTOTAL ----------------
     for (var element in orderModel.products!) {
-      final double price = (double.parse(element.discountPrice.toString()) > 0) ? double.parse(element.discountPrice.toString()) : double.parse(element.price.toString());
+      final double price = element.unitPrice;
 
       final double qty = double.parse(element.quantity.toString());
       final double extras = double.parse(element.extrasPrice.toString());
@@ -313,7 +314,7 @@ class HomeScreen extends StatelessWidget {
     /// ---------------- PRODUCT TAX (AFTER DISCOUNT) ----------------
     if (orderModel.taxScope == "product") {
       for (var element in orderModel.products!) {
-        final double price = (double.parse(element.discountPrice.toString()) > 0) ? double.parse(element.discountPrice.toString()) : double.parse(element.price.toString());
+        final double price = element.unitPrice;
 
         final double qty = double.parse(element.quantity.toString());
         final double extras = double.parse(element.extrasPrice.toString());
@@ -422,18 +423,22 @@ class HomeScreen extends StatelessWidget {
                         Row(
                           children: [
                             Expanded(
-                              child: Text(
-                                "${product.quantity}x ${product.name}".tr,
-                                style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    "${product.quantity}x ${product.name}".tr,
+                                    style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
+                                  ),
+                                  WholesaleTag(product: product, isDark: isDark),
+                                ],
                               ),
                             ),
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 Text(
-                                  double.parse(product.discountPrice ?? "0.0") <= 0
-                                      ? Constant.amountShow(amount: (double.parse(product.price.toString()) * double.parse(product.quantity.toString())).toString())
-                                      : Constant.amountShow(amount: (double.parse(product.discountPrice.toString()) * double.parse(product.quantity.toString())).toString()).tr,
+                                  Constant.amountShow(amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
                                   style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
                                 ),
                                 InkWell(
@@ -891,7 +896,7 @@ class HomeScreen extends StatelessWidget {
 
     /// ---------------- SUBTOTAL ----------------
     for (var element in orderModel.products!) {
-      final double price = (double.parse(element.discountPrice.toString()) > 0) ? double.parse(element.discountPrice.toString()) : double.parse(element.price.toString());
+      final double price = element.unitPrice;
 
       final double qty = double.parse(element.quantity.toString());
       final double extras = double.parse(element.extrasPrice.toString());
@@ -917,7 +922,7 @@ class HomeScreen extends StatelessWidget {
     /// ---------------- PRODUCT TAX (AFTER DISCOUNT) ----------------
     if (orderModel.taxScope == "product") {
       for (var element in orderModel.products!) {
-        final double price = (double.parse(element.discountPrice.toString()) > 0) ? double.parse(element.discountPrice.toString()) : double.parse(element.price.toString());
+        final double price = element.unitPrice;
 
         final double qty = double.parse(element.quantity.toString());
         final double extras = double.parse(element.extrasPrice.toString());
@@ -1025,15 +1030,19 @@ class HomeScreen extends StatelessWidget {
                         Row(
                           children: [
                             Expanded(
-                              child: Text(
-                                "${product.quantity}x ${product.name}".tr,
-                                style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    "${product.quantity}x ${product.name}".tr,
+                                    style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
+                                  ),
+                                  WholesaleTag(product: product, isDark: isDark),
+                                ],
                               ),
                             ),
                             Text(
-                              double.parse(product.discountPrice ?? "0.0") <= 0
-                                  ? Constant.amountShow(amount: (double.parse(product.price.toString()) * double.parse(product.quantity.toString())).toString())
-                                  : Constant.amountShow(amount: (double.parse(product.discountPrice.toString()) * double.parse(product.quantity.toString())).toString()).tr,
+                              Constant.amountShow(amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
                               style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
                             ),
                           ],
@@ -1437,7 +1446,7 @@ class HomeScreen extends StatelessWidget {
 
     /// ---------------- SUBTOTAL ----------------
     for (var element in orderModel.products!) {
-      final double price = (double.parse(element.discountPrice.toString()) > 0) ? double.parse(element.discountPrice.toString()) : double.parse(element.price.toString());
+      final double price = element.unitPrice;
 
       final double qty = double.parse(element.quantity.toString());
       final double extras = double.parse(element.extrasPrice.toString());
@@ -1463,7 +1472,7 @@ class HomeScreen extends StatelessWidget {
     /// ---------------- PRODUCT TAX (AFTER DISCOUNT) ----------------
     if (orderModel.taxScope == "product") {
       for (var element in orderModel.products!) {
-        final double price = (double.parse(element.discountPrice.toString()) > 0) ? double.parse(element.discountPrice.toString()) : double.parse(element.price.toString());
+        final double price = element.unitPrice;
 
         final double qty = double.parse(element.quantity.toString());
         final double extras = double.parse(element.extrasPrice.toString());
@@ -1571,15 +1580,19 @@ class HomeScreen extends StatelessWidget {
                         Row(
                           children: [
                             Expanded(
-                              child: Text(
-                                "${product.quantity}x ${product.name}".tr,
-                                style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    "${product.quantity}x ${product.name}".tr,
+                                    style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
+                                  ),
+                                  WholesaleTag(product: product, isDark: isDark),
+                                ],
                               ),
                             ),
                             Text(
-                              double.parse(product.discountPrice ?? "0.0") <= 0
-                                  ? Constant.amountShow(amount: (double.parse(product.price.toString()) * double.parse(product.quantity.toString())).toString())
-                                  : Constant.amountShow(amount: (double.parse(product.discountPrice.toString()) * double.parse(product.quantity.toString())).toString()).tr,
+                              Constant.amountShow(amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
                               style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontWeight: FontWeight.w500, fontFamily: AppThemeData.semiBold),
                             ),
                           ],

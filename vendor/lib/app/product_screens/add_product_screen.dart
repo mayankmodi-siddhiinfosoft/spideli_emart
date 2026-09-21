@@ -469,6 +469,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                                                           variantImage: variant.variantImage,
                                                                           variantPrice: variant.variantPrice,
                                                                           variantQuantity: variant.variantQuantity,
+                                                                          variantWholesalePrice: variant.variantWholesalePrice,
                                                                         );
                                                                         variantsTemp.add(variantsModel);
                                                                       }
@@ -520,6 +521,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                                                   width: Responsive.width(20, context),
                                                                   child: Text(
                                                                     "Price".tr,
+                                                                    style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600),
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                              DataColumn(
+                                                                label: SizedBox(
+                                                                  width: Responsive.width(20, context),
+                                                                  child: Text(
+                                                                    "Wholesale price".tr,
                                                                     style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600),
                                                                   ),
                                                                 ),
@@ -607,6 +617,44 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                                                               color: isDark ? AppThemeData.grey600 : AppThemeData.grey400,
                                                                               fontFamily: AppThemeData.regular,
                                                                             ),
+                                                                          ),
+                                                                        ),
+                                                                      ),
+                                                                      DataCell(
+                                                                        TextFormField(
+                                                                          initialValue: e.variantWholesalePrice,
+                                                                          textInputAction: TextInputAction.done,
+                                                                          inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9.]'))],
+                                                                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                                          onChanged: (value) {
+                                                                            e.variantWholesalePrice = value.trim();
+                                                                          },
+                                                                          style: TextStyle(fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium),
+                                                                          decoration: InputDecoration(
+                                                                            filled: true,
+                                                                            contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                                                                            fillColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
+                                                                            focusedBorder: OutlineInputBorder(
+                                                                              borderRadius: const BorderRadius.all(Radius.circular(10)),
+                                                                              borderSide: BorderSide(color: AppThemeData.primary300, width: 1),
+                                                                            ),
+                                                                            enabledBorder: OutlineInputBorder(
+                                                                              borderRadius: const BorderRadius.all(Radius.circular(10)),
+                                                                              borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
+                                                                            ),
+                                                                            border: OutlineInputBorder(
+                                                                              borderRadius: const BorderRadius.all(Radius.circular(10)),
+                                                                              borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
+                                                                            ),
+                                                                            hintText: "Optional".tr,
+                                                                            prefix: Padding(
+                                                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                                                              child: Text(
+                                                                                "${Constant.currencyModel!.symbol}",
+                                                                                style: TextStyle(color: isDark ? AppThemeData.grey600 : AppThemeData.grey400, fontFamily: AppThemeData.semiBold, fontSize: 18),
+                                                                              ),
+                                                                            ),
+                                                                            hintStyle: TextStyle(fontSize: 14, color: isDark ? AppThemeData.grey600 : AppThemeData.grey400, fontFamily: AppThemeData.regular),
                                                                           ),
                                                                         ),
                                                                       ),
@@ -942,6 +990,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                           "-1 to your product quantity is unlimited".tr,
                           style: TextStyle(color: isDark ? AppThemeData.danger300 : AppThemeData.danger300, fontFamily: AppThemeData.medium, fontSize: 14),
                         ),
+                        const SizedBox(height: 20),
+                        _buildWholesaleSection(controller, isDark),
                         const SizedBox(height: 20),
 
                         Constant.selectedSection!.isProductDetails == false
@@ -1569,6 +1619,82 @@ class _AddProductScreenState extends State<AddProductScreen> {
           },
         );
       },
+    );
+  }
+
+  /// Wholesale pricing block: once a cart line reaches the minimum quantity,
+  /// every unit on that line is charged the wholesale price.
+  Widget _buildWholesaleSection(AddProductController controller, bool isDark) {
+    final bool enabled = controller.wholesaleEnabled.value;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                "Wholesale pricing".tr,
+                style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium, fontSize: 18),
+              ),
+            ),
+            Transform.scale(
+              scale: 0.8,
+              child: CupertinoSwitch(
+                activeTrackColor: AppThemeData.primary300,
+                value: enabled,
+                onChanged: (value) {
+                  controller.wholesaleEnabled.value = value;
+                },
+              ),
+            ),
+          ],
+        ),
+        Text(
+          "Charge a lower unit price when a customer orders at least the minimum quantity of this product.".tr,
+          style: TextStyle(color: isDark ? AppThemeData.grey400 : AppThemeData.grey500, fontFamily: AppThemeData.regular, fontSize: 12),
+        ),
+        if (enabled) ...[
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextFieldWidget(
+                  title: 'Wholesale Price'.tr,
+                  controller: controller.wholesalePriceController.value,
+                  hintText: 'Enter Wholesale Price'.tr,
+                  textInputAction: TextInputAction.done,
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9.]'))],
+                  textInputType: const TextInputType.numberWithOptions(decimal: true),
+                  prefix: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Text(
+                      "${Constant.currencyModel!.symbol}",
+                      style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontSize: 18),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextFieldWidget(
+                  title: 'Minimum Quantity'.tr,
+                  controller: controller.wholesaleMinQtyController.value,
+                  hintText: 'e.g. 10'.tr,
+                  textInputAction: TextInputAction.done,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  textInputType: TextInputType.number,
+                ),
+              ),
+            ],
+          ),
+          Text(
+            "Must be lower than the regular price. Minimum quantity is at least 2. A variant's own wholesale price (in the variants table) overrides this price; the minimum quantity applies to all variants."
+                .tr,
+            style: TextStyle(color: isDark ? AppThemeData.grey400 : AppThemeData.grey500, fontFamily: AppThemeData.regular, fontSize: 12),
+          ),
+        ],
+      ],
     );
   }
 

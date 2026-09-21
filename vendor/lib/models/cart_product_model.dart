@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:vendor/models/product_model.dart' show parseWholesaleBool, parseWholesaleString;
 import 'package:vendor/models/tax_model.dart';
 
 class CartProductModel {
@@ -16,7 +17,29 @@ class CartProductModel {
   VariantInfo? variantInfo;
   List<TaxModel>? taxSetting;
 
-  CartProductModel({this.id, this.categoryId, this.name, this.photo, this.price, this.discountPrice, this.vendorID, this.quantity, this.extrasPrice, this.variantInfo, this.extras, this.taxSetting});
+  /// Written by the customer app / POS: true when [price] is the wholesale
+  /// unit price actually charged (line quantity reached [wholesaleMinQty]).
+  /// Must round-trip: accepting an order rewrites the products array from
+  /// this model.
+  bool? isWholesale;
+  String? wholesaleMinQty;
+
+  CartProductModel({
+    this.id,
+    this.categoryId,
+    this.name,
+    this.photo,
+    this.price,
+    this.discountPrice,
+    this.vendorID,
+    this.quantity,
+    this.extrasPrice,
+    this.variantInfo,
+    this.extras,
+    this.taxSetting,
+    this.isWholesale,
+    this.wholesaleMinQty,
+  });
 
   CartProductModel.fromJson(Map<String, dynamic> json) {
     id = json['id'];
@@ -48,6 +71,20 @@ class CartProductModel {
         : json['taxSetting'] is List
         ? (json['taxSetting'] as List).map((e) => TaxModel.fromJson(e)).toList()
         : [];
+
+    isWholesale = parseWholesaleBool(json['isWholesale']);
+    wholesaleMinQty = parseWholesaleString(json['wholesaleMinQty']);
+  }
+
+  /// Unit price actually charged on this line. For a wholesale line the
+  /// stored [price] is the wholesale price charged, so it is used as-is and
+  /// never re-derived; otherwise the legacy rule applies (discountPrice when
+  /// set, else price).
+  double get unitPrice {
+    final double linePrice = double.tryParse(price.toString()) ?? 0;
+    if (isWholesale == true) return linePrice;
+    final double lineDiscount = double.tryParse(discountPrice.toString()) ?? 0;
+    return lineDiscount > 0 ? lineDiscount : linePrice;
   }
 
   Map<String, dynamic> toJson() {
@@ -67,6 +104,8 @@ class CartProductModel {
     }
     // ✅ Convert List<Map> to String
     data['taxSetting'] = taxSetting == null ? [] : taxSetting!.map((e) => e.toJson()).toList();
+    data['isWholesale'] = isWholesale ?? false;
+    data['wholesaleMinQty'] = wholesaleMinQty ?? '';
     return data;
   }
 }

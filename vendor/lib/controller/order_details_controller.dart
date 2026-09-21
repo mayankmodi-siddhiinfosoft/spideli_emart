@@ -71,7 +71,7 @@ class OrderDetailsController extends GetxController {
 
     /// ---------------- SUBTOTAL ----------------
     for (var element in orderModel.value.products!) {
-      final double price = (double.parse(element.discountPrice.toString()) > 0) ? double.parse(element.discountPrice.toString()) : double.parse(element.price.toString());
+      final double price = element.unitPrice;
 
       final double qty = double.parse(element.quantity.toString());
       final double extras = double.parse(element.extrasPrice.toString());
@@ -97,7 +97,7 @@ class OrderDetailsController extends GetxController {
     /// ---------------- PRODUCT TAX (AFTER DISCOUNT) ----------------
     if (orderModel.value.taxScope == "product") {
       for (var element in orderModel.value.products!) {
-        final double price = (double.parse(element.discountPrice.toString()) > 0) ? double.parse(element.discountPrice.toString()) : double.parse(element.price.toString());
+        final double price = element.unitPrice;
 
         final double qty = double.parse(element.quantity.toString());
         final double extras = double.parse(element.extrasPrice.toString());
@@ -413,6 +413,15 @@ class OrderDetailsController extends GetxController {
           width: 1, // Spacer column
         ),
       ]);
+
+      if (products[i].isWholesale == true) {
+        // ASCII only: thermal printers may not render "·".
+        final String minQty = (products[i].wholesaleMinQty ?? '').trim();
+        bytes += generator.text(
+          minQty.isEmpty ? 'Wholesale'.tr : '${'Wholesale'.tr} - ${'from'.tr} $minQty ${'units'.tr}',
+          styles: const PosStyles(align: PosAlign.left, height: PosTextSize.size1, width: PosTextSize.size1),
+        );
+      }
 
       VariantInfo? variantInfo;
       if (products[i].variantInfo != null) {

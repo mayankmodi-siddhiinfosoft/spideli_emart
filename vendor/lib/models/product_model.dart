@@ -34,6 +34,13 @@ class ProductModel {
   String? digitalProduct;
   List<TaxModel>? taxSetting;
 
+  /// Wholesale pricing (set by the store): once a cart line reaches
+  /// [wholesaleMinQty] units, every unit on that line is charged
+  /// [wholesalePrice]. Both values are strings (like price/disPrice) and are
+  /// written back as "" whenever [wholesaleEnabled] is false.
+  bool? wholesaleEnabled;
+  String? wholesalePrice;
+  String? wholesaleMinQty;
 
   ProductModel({
     this.fats,
@@ -66,7 +73,10 @@ class ProductModel {
     this.brandId,
     this.isDigitalProduct,
     this.digitalProduct,
-    this.taxSetting
+    this.taxSetting,
+    this.wholesaleEnabled,
+    this.wholesalePrice,
+    this.wholesaleMinQty,
   });
 
   ProductModel.fromJson(Map<String, dynamic> json) {
@@ -106,7 +116,13 @@ class ProductModel {
         taxSetting!.add(TaxModel.fromJson(v));
       });
     }
+    wholesaleEnabled = parseWholesaleBool(json['wholesaleEnabled']);
+    wholesalePrice = parseWholesaleString(json['wholesalePrice']);
+    wholesaleMinQty = parseWholesaleString(json['wholesaleMinQty']);
   }
+
+  /// True when the product has a usable wholesale tier configured.
+  bool get hasWholesaleTier => wholesaleEnabled == true && (double.tryParse(wholesalePrice ?? '') ?? 0) > 0 && (int.tryParse(wholesaleMinQty ?? '') ?? 0) >= 2;
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
@@ -145,6 +161,9 @@ class ProductModel {
     if (taxSetting != null) {
       data['taxSetting'] = taxSetting!.map((v) => v.toJson()).toList();
     }
+    data['wholesaleEnabled'] = wholesaleEnabled ?? false;
+    data['wholesalePrice'] = wholesaleEnabled == true ? (wholesalePrice ?? '') : '';
+    data['wholesaleMinQty'] = wholesaleEnabled == true ? (wholesaleMinQty ?? '') : '';
     return data;
   }
 }
@@ -208,7 +227,11 @@ class Variants {
   String? variantQuantity;
   String? variantSku;
 
-  Variants({this.variantId, this.variantImage, this.variantPrice, this.variantQuantity, this.variantSku});
+  /// Variant-level wholesale unit price; "" means "use the product's wholesalePrice".
+  /// The threshold is never per variant: the product's wholesaleMinQty governs.
+  String? variantWholesalePrice;
+
+  Variants({this.variantId, this.variantImage, this.variantPrice, this.variantQuantity, this.variantSku, this.variantWholesalePrice});
 
   Variants.fromJson(Map<String, dynamic> json) {
     variantId = json['variant_id'];
@@ -216,6 +239,7 @@ class Variants {
     variantPrice = json['variant_price'] ?? '0';
     variantQuantity = json['variant_quantity'] ?? '0';
     variantSku = json['variant_sku'];
+    variantWholesalePrice = parseWholesaleString(json['variant_wholesale_price']);
   }
 
   Map<String, dynamic> toJson() {
@@ -225,8 +249,27 @@ class Variants {
     data['variant_price'] = variantPrice;
     data['variant_quantity'] = variantQuantity;
     data['variant_sku'] = variantSku;
+    data['variant_wholesale_price'] = variantWholesalePrice ?? '';
     return data;
   }
+}
+
+/// Tolerant parsing for wholesale fields: bools may arrive as strings,
+/// numbers as num or string.
+bool parseWholesaleBool(dynamic value) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  if (value is String) return value.trim().toLowerCase() == 'true' || value.trim() == '1';
+  return false;
+}
+
+String parseWholesaleString(dynamic value) {
+  if (value == null) return '';
+  if (value is num) {
+    if (value is int) return value.toString();
+    return value % 1 == 0 ? value.toInt().toString() : value.toString();
+  }
+  return value.toString().trim();
 }
 
 class ProductSpecificationModel {

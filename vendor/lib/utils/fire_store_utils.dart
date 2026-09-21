@@ -580,7 +580,7 @@ class FireStoreUtils {
 
     /// ---------------- SUBTOTAL ----------------
     for (var element in orderModel.products!) {
-      final double price = (double.parse(element.discountPrice.toString()) > 0) ? double.parse(element.discountPrice.toString()) : double.parse(element.price.toString());
+      final double price = element.unitPrice;
 
       final double qty = double.parse(element.quantity.toString());
       final double extras = double.parse(element.extrasPrice.toString());
@@ -606,7 +606,7 @@ class FireStoreUtils {
     /// ---------------- PRODUCT TAX (AFTER DISCOUNT) ----------------
     if (orderModel.taxScope == "product") {
       for (var element in orderModel.products!) {
-        final double price = (double.parse(element.discountPrice.toString()) > 0) ? double.parse(element.discountPrice.toString()) : double.parse(element.price.toString());
+        final double price = element.unitPrice;
 
         final double qty = double.parse(element.quantity.toString());
         final double extras = double.parse(element.extrasPrice.toString());
