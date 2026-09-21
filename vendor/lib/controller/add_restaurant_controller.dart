@@ -59,6 +59,11 @@ class AddRestaurantController extends GetxController {
 
   RxBool canShowQRCodeButton = false.obs;
 
+  /// Opened from My Stores to add another store to this account: the form
+  /// starts empty and saving creates a new store instead of editing the
+  /// current one.
+  final bool isNewStore = Get.arguments is Map && (Get.arguments as Map)['newStore'] == true;
+
   @override
   void onInit() {
     // TODO: implement onInit
@@ -107,7 +112,7 @@ class AddRestaurantController extends GetxController {
         });
       }
 
-      if (Constant.userModel?.vendorID != null && Constant.userModel?.vendorID?.isNotEmpty == true) {
+      if (!isNewStore && Constant.userModel?.vendorID != null && Constant.userModel?.vendorID?.isNotEmpty == true) {
         await FireStoreUtils.getVendorById(Constant.userModel!.vendorID.toString()).then((value) {
           if (value != null) {
             vendorModel.value = value;
@@ -256,7 +261,7 @@ class AddRestaurantController extends GetxController {
           }
         }
 
-        vendorModel.value.id = Constant.userModel?.vendorID;
+        vendorModel.value.id = isNewStore ? null : Constant.userModel?.vendorID;
         vendorModel.value.author = Constant.userModel!.id;
         vendorModel.value.authorName = Constant.userModel!.firstName;
         vendorModel.value.authorProfilePic = Constant.userModel!.profilePictureURL;
@@ -297,7 +302,7 @@ class AddRestaurantController extends GetxController {
           vendorModel.value.subscriptionTotalOrders = userModel.value.subscriptionPlan?.orderLimit;
         }
 
-        if (Constant.userModel!.vendorID!.isNotEmpty) {
+        if (!isNewStore && Constant.userModel!.vendorID!.isNotEmpty) {
           await FireStoreUtils.updateVendor(vendorModel.value).then((value) {
             ShowToastDialog.closeLoader();
             ShowToastDialog.showToast("Store details save successfully".tr);
@@ -339,9 +344,12 @@ class AddRestaurantController extends GetxController {
               Constant.taxProductList = value!.where((TaxModel taxModel) => taxModel.scope == "product").toList();
             });
           }
-          await FireStoreUtils.firebaseCreateNewVendor(vendorModel.value).then((value) {
+          await FireStoreUtils.firebaseCreateNewVendor(vendorModel.value, selectAsCurrent: !isNewStore).then((value) {
             ShowToastDialog.closeLoader();
             ShowToastDialog.showToast("Store details save successfully".tr);
+            if (isNewStore) {
+              Get.back(result: true);
+            }
           });
         }
         // The store's region may have changed: refresh the live currency.

@@ -45,14 +45,14 @@ class AddRestaurantScreen extends StatelessWidget {
             titleSpacing: 0,
             iconTheme: IconThemeData(color: isDark ? AppThemeData.grey800 : AppThemeData.grey100, size: 20),
             title: Text(
-              "Store Details".tr,
+              controller.isNewStore ? "Add Store".tr : "Store Details".tr,
               style: TextStyle(color: isDark ? AppThemeData.grey800 : AppThemeData.grey100, fontSize: 18, fontFamily: AppThemeData.medium),
             ),
             actions: [
               Constant.selectedSection!.serviceTypeFlag == "ecommerce-service"
                   ? SizedBox()
                   : Obx(
-                      () => controller.canShowQRCodeButton.value
+                      () => controller.canShowQRCodeButton.value && !controller.isNewStore
                           ? Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 16),
                               child: RoundedButtonFill(

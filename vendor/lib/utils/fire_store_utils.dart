@@ -1321,14 +1321,24 @@ class FireStoreUtils {
     return driverDocumentModel;
   }
 
-  static Future<VendorModel> firebaseCreateNewVendor(VendorModel vendor) async {
+  /// Creates a store owned by the signed-in user.
+  ///
+  /// A vendor account may own several stores. [selectAsCurrent] is true for the
+  /// first store (it becomes `users.vendorID`, the store the app works on); an
+  /// additional store is created with it false, so the owner stays on the store
+  /// they are working in until they switch from My Stores - as in the panel.
+  static Future<VendorModel> firebaseCreateNewVendor(VendorModel vendor, {bool selectAsCurrent = true}) async {
     DocumentReference documentReference = fireStore.collection(CollectionName.vendors).doc();
     vendor.id = documentReference.id;
-    await documentReference.set(vendor.toJson());
-    Constant.userModel!.vendorID = documentReference.id;
+    // Set before writing: it used to be assigned after the write, so new stores
+    // were saved without the owner's notification token.
     vendor.fcmToken = Constant.userModel!.fcmToken;
-    Constant.vendorAdminCommission = vendor.adminCommission;
-    await FireStoreUtils.updateUser(Constant.userModel!);
+    await documentReference.set(vendor.toJson());
+    if (selectAsCurrent) {
+      Constant.userModel!.vendorID = documentReference.id;
+      Constant.vendorAdminCommission = vendor.adminCommission;
+      await FireStoreUtils.updateUser(Constant.userModel!);
+    }
     return vendor;
   }
 

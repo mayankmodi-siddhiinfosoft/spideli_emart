@@ -13,6 +13,7 @@ import 'package:vendor/themes/theme_controller.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:vendor/app/add_advertisement_screen/advertisement_list_screen.dart';
 import 'package:vendor/app/add_restaurant_screen/add_restaurant_screen.dart';
+import 'package:vendor/app/store_screens/my_stores_screen.dart';
 import 'package:vendor/app/add_story_screen/add_story_screen.dart';
 import 'package:vendor/app/auth_screen/login_screen.dart';
 import 'package:vendor/app/change_language/change_language_screen.dart';
@@ -240,6 +241,33 @@ class ProfileScreen extends StatelessWidget {
                                                 },
                                               )
                                             : SizedBox(),
+                                        // A vendor account can own several stores. Owners only:
+                                        // an employee stays on the store they were created for.
+                                        (Constant.userModel?.role == Constant.userRoleVendor &&
+                                                (controller.userModel.value.vendorID ?? '').isNotEmpty)
+                                            ? cardDecoration(
+                                                isDark,
+                                                controller,
+                                                Container(
+                                                  width: 44,
+                                                  height: 44,
+                                                  decoration: ShapeDecoration(
+                                                    color: isDark ? AppThemeData.secondary600 : AppThemeData.secondary50,
+                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
+                                                  ),
+                                                  child: Padding(
+                                                    padding: const EdgeInsets.all(10),
+                                                    child: Icon(Icons.storefront_outlined, color: AppThemeData.primary300, size: 22),
+                                                  ),
+                                                ),
+                                                "My Stores",
+                                                () {
+                                                  Get.to(const MyStoresScreen())?.then((v) {
+                                                    controller.getUserProfile();
+                                                  });
+                                                },
+                                              )
+                                            : const SizedBox(),
                                         (Constant.userModel?.isAutoVerify == false && Constant.userModel?.isDocumentVerify == false) ||
                                                 (controller.userModel.value.vendorID == null || controller.userModel.value.vendorID!.isEmpty)
                                             ? const SizedBox()
