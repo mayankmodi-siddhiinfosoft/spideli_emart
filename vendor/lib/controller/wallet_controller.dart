@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:vendor/models/vendor_model.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:vendor/constant/collection_name.dart';
 import 'package:vendor/constant/constant.dart';
@@ -24,6 +25,13 @@ class WalletController extends GetxController {
   Rx<TextEditingController> noteTextFieldController = TextEditingController().obs;
 
   Rx<UserModel> userModel = UserModel().obs;
+
+  /// The store being viewed. Its `wallet_amount` is what can be withdrawn.
+  Rx<VendorModel> vendorModel = VendorModel().obs;
+
+  /// Withdrawable balance: the current store's own balance, not the owner's
+  /// account total (which spans every store the owner has).
+  num get storeBalance => vendorModel.value.storeWalletAmount ?? 0;
   RxList<WalletTransactionModel> walletTransactionList = <WalletTransactionModel>[].obs;
   RxList<WithdrawalModel> withdrawalList = <WithdrawalModel>[].obs;
 
@@ -170,8 +178,18 @@ class WalletController extends GetxController {
         userModel.value = value;
       }
     });
+    await loadStore();
     await getPaymentMethod();
     isLoading.value = false;
+  }
+
+  Future<void> loadStore() async {
+    final vendorId = userModel.value.vendorID;
+    if (vendorId == null || vendorId.isEmpty) return;
+    final vendor = await FireStoreUtils.getVendorById(vendorId);
+    if (vendor != null) {
+      vendorModel.value = vendor;
+    }
   }
 
   Future<void> getPaymentMethod() async {

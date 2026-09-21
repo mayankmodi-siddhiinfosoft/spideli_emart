@@ -60,7 +60,7 @@ class WalletScreen extends StatelessWidget {
                                 style: TextStyle(color: isDark ? AppThemeData.grey900 : AppThemeData.grey900, fontSize: 16, overflow: TextOverflow.ellipsis, fontFamily: AppThemeData.regular),
                               ),
                               Text(
-                                Constant.amountShow(amount: controller.userModel.value.walletAmount.toString()),
+                                Constant.amountShow(amount: controller.storeBalance.toString()),
                                 maxLines: 1,
                                 style: TextStyle(color: isDark ? AppThemeData.grey900 : AppThemeData.grey900, fontSize: 22, overflow: TextOverflow.ellipsis, fontFamily: AppThemeData.bold),
                               ),
@@ -592,12 +592,17 @@ class WalletScreen extends StatelessWidget {
                           ShowToastDialog.showToast("Please enter amount".tr);
                         } else if (controller.noteTextFieldController.value.text.isEmpty) {
                           ShowToastDialog.showToast("Please enter note".tr);
-                        } else if (double.parse(controller.userModel.value.walletAmount.toString()) <= 0) {
+                        } else if ((double.tryParse(controller.amountTextFieldController.value.text) ?? 0) <= 0) {
+                          ShowToastDialog.showToast("Please enter a valid amount".tr);
+                        } else if (controller.storeBalance <= 0 ||
+                            double.parse(controller.amountTextFieldController.value.text) > controller.storeBalance) {
+                          // Withdrawals come out of this store's own balance,
+                          // as in the store panel's Payouts screen.
                           ShowToastDialog.showToast("You are not able to place Withdraw request due to insufficient wallet amount".tr);
                         } else {
                           WithdrawalModel withdrawHistory = WithdrawalModel(
                             amount: controller.amountTextFieldController.value.text,
-                            vendorID: controller.userModel.value.vendorID,
+                            vendorID: controller.vendorModel.value.id ?? controller.userModel.value.vendorID,
                             paymentStatus: "Pending",
                             paidDate: Timestamp.now(),
                             id: Constant.getUuid(),
@@ -613,7 +618,11 @@ class WalletScreen extends StatelessWidget {
                                 : "stripe",
                           );
                           await FireStoreUtils.withdrawWalletAmount(withdrawHistory);
-                          await FireStoreUtils.updateUserWallet(amount: "-${controller.amountTextFieldController.value.text}", userId: FireStoreUtils.getCurrentUid()).then((value) {
+                          await FireStoreUtils.adjustVendorWallet(
+                            amount: -double.parse(controller.amountTextFieldController.value.text),
+                            vendorId: controller.vendorModel.value.id ?? controller.userModel.value.vendorID ?? '',
+                            ownerId: controller.vendorModel.value.author ?? FireStoreUtils.getCurrentUid(),
+                          ).then((value) {
                             Get.back();
                             FireStoreUtils.sendPayoutMail(amount: controller.amountTextFieldController.value.text, payoutrequestid: withdrawHistory.id.toString());
                             controller.getWalletTransaction(false);

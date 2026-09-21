@@ -153,12 +153,53 @@ class FireStoreUtils {
     return isAdded;
   }
 
+  /// Credits (positive [amount]) or debits (negative) a store's earnings.
+  ///
+  /// A vendor account can own several stores, and each store keeps its own
+  /// balance at `vendors/{vendorId}.wallet_amount` — the store panel caps
+  /// withdrawals at it. The owner's account total at
+  /// `users/{ownerId}.wallet_amount` still moves too, by the same amount, as
+  /// both panels do. Both are read and written in one transaction so a stale
+  /// in-memory balance can never overwrite a concurrent credit. A missing or
+  /// string-typed balance (older panel writes stored `toFixed()` output) reads
+  /// as its numeric value, or 0.
+  ///
+  /// Returns the owner's new account total, or null if the write failed.
+  static Future<num?> adjustVendorWallet({required num amount, required String vendorId, required String ownerId}) async {
+    num parse(dynamic value) => num.tryParse(value?.toString() ?? '') ?? 0;
+    try {
+      final num? newOwnerTotal = await fireStore.runTransaction<num?>((transaction) async {
+        final userRef = fireStore.collection(CollectionName.users).doc(ownerId);
+        // A vendor buying a plan before creating a store has no store yet.
+        final storeRef = vendorId.isEmpty ? null : fireStore.collection(CollectionName.vendors).doc(vendorId);
+        final userSnap = await transaction.get(userRef);
+        final storeSnap = storeRef == null ? null : await transaction.get(storeRef);
+        num? ownerTotal;
+        if (userSnap.exists) {
+          ownerTotal = parse(userSnap.data()?['wallet_amount']) + amount;
+          transaction.update(userRef, {'wallet_amount': ownerTotal});
+        }
+        if (storeRef != null && storeSnap != null && storeSnap.exists) {
+          transaction.update(storeRef, {'wallet_amount': parse(storeSnap.data()?['wallet_amount']) + amount});
+        }
+        return ownerTotal;
+      });
+      if (newOwnerTotal != null && Constant.userModel?.id == ownerId) {
+        Constant.userModel!.walletAmount = newOwnerTotal;
+      }
+      return newOwnerTotal;
+    } catch (e, s) {
+      log("adjustVendorWallet failed: $e", stackTrace: s);
+      return null;
+    }
+  }
+
   static Future<bool> updateUser(UserModel userModel) async {
     bool isUpdate = false;
     await fireStore
         .collection(CollectionName.users)
         .doc(userModel.id)
-        .set(userModel.toJson())
+        .set(userModel.toJson(), SetOptions(merge: true))
         .whenComplete(() async {
           Constant.userModel = userModel;
           if (userModel.employeePermissionId != null) {
@@ -178,7 +219,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.users)
         .doc(userModel.id)
-        .set(userModel.toJson())
+        .set(userModel.toJson(), SetOptions(merge: true))
         .whenComplete(() {
           isUpdate = true;
         })
@@ -194,7 +235,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.payouts)
         .doc(userModel.id)
-        .set(userModel.toJson())
+        .set(userModel.toJson(), SetOptions(merge: true))
         .whenComplete(() {
           isUpdate = true;
         })
@@ -516,7 +557,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.vendorOrders)
         .doc(orderModel.id)
-        .set(orderModel.toJson())
+        .set(orderModel.toJson(), SetOptions(merge: true))
         .then((value) {
           isUpdate = true;
         })
@@ -646,7 +687,11 @@ class FireStoreUtils {
 
     await fireStore.collection(CollectionName.wallet).doc(taxModel.id).set(taxModel.toJson());
 
-    await updateUserWallet(amount: (basePrice + totalTaxAmount).toString(), userId: orderModel.vendor!.author.toString());
+    await adjustVendorWallet(
+      amount: basePrice + totalTaxAmount,
+      vendorId: (orderModel.vendorID ?? orderModel.vendor!.id).toString(),
+      ownerId: orderModel.vendor!.author.toString(),
+    );
   }
 
   static Future<RatingModel?> getOrderReviewsByID(String orderId, String productID) async {
@@ -729,7 +774,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.vendorProducts)
         .doc(productModel.id)
-        .set(productModel.toJson())
+        .set(productModel.toJson(), SetOptions(merge: true))
         .whenComplete(() {
           isUpdate = true;
         })
@@ -1111,7 +1156,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.vendorOrders)
         .doc(orderModel.id)
-        .set(orderModel.toJson())
+        .set(orderModel.toJson(), SetOptions(merge: true))
         .then((value) {
           isAdded = true;
         })
@@ -1127,7 +1172,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.coupons)
         .doc(orderModel.id)
-        .set(orderModel.toJson())
+        .set(orderModel.toJson(), SetOptions(merge: true))
         .then((value) {
           isAdded = true;
         })
@@ -1288,7 +1333,7 @@ class FireStoreUtils {
   }
 
   static Future<VendorModel?> updateVendor(VendorModel vendor) async {
-    return await fireStore.collection(CollectionName.vendors).doc(vendor.id).set(vendor.toJson()).then((document) {
+    return await fireStore.collection(CollectionName.vendors).doc(vendor.id).set(vendor.toJson(), SetOptions(merge: true)).then((document) {
       Constant.vendorAdminCommission = vendor.adminCommission;
       return vendor;
     });
@@ -1593,7 +1638,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.bookedTable)
         .doc(orderModel.id)
-        .set(orderModel.toJson())
+        .set(orderModel.toJson(), SetOptions(merge: true))
         .then((value) {
           isAdded = true;
         })
@@ -1609,7 +1654,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.vendorProducts)
         .doc(orderModel.id)
-        .set(orderModel.toJson())
+        .set(orderModel.toJson(), SetOptions(merge: true))
         .then((value) {
           isAdded = true;
         })

@@ -48,6 +48,16 @@ class VendorModel {
   bool? isSelfDelivery;
   String? packagingCharge;
 
+  /// The store's region (`regions/{id}`). Written by the store/admin panels and
+  /// by the store form here; drives currency and per-region delivery charges.
+  String? regionId;
+
+  /// This store's own withdrawable balance (`vendors/{id}.wallet_amount`).
+  /// Read-only on this model: it is only ever changed by
+  /// [FireStoreUtils.adjustVendorWallet] inside a transaction, never written
+  /// back from here, so a stale copy can't overwrite a credit.
+  num? storeWalletAmount;
+
   VendorModel({
     this.author,
     this.dineInActive,
@@ -93,6 +103,8 @@ class VendorModel {
     this.sectionId,
     this.isSelfDelivery,
     this.packagingCharge,
+    this.regionId,
+    this.storeWalletAmount,
   });
 
   VendorModel.fromJson(Map<String, dynamic> json) {
@@ -150,6 +162,9 @@ class VendorModel {
     sectionId = json['section_id'];
     isSelfDelivery = json['isSelfDelivery'] ?? false;
     packagingCharge = json['packagingCharge'] ?? "0";
+    regionId = json['regionId'];
+    // Older panel writes stored this as a string (toFixed()), so parse.
+    storeWalletAmount = num.tryParse(json['wallet_amount']?.toString() ?? '') ?? 0;
   }
 
   Map<String, dynamic> toJson() {
@@ -210,6 +225,9 @@ class VendorModel {
     data['latitude'] = latitude;
     data['isSelfDelivery'] = isSelfDelivery ?? false;
     data['packagingCharge'] = packagingCharge;
+    if (regionId != null) {
+      data['regionId'] = regionId;
+    }
     return data;
   }
 }

@@ -616,7 +616,16 @@ class SubscriptionController extends GetxController {
       );
 
       await FireStoreUtils.setWalletTransaction(transactionModel);
-      userModel.value.walletAmount = userModel.value.walletAmount! - totalAmount.value;
+      // Debit the owner's account total and the current store's balance
+      // together, in a transaction, then carry the fresh total forward so the
+      // updateUser() below doesn't write a stale balance back.
+      final String ownerId = FireStoreUtils.getCurrentUid();
+      final num? newTotal = await FireStoreUtils.adjustVendorWallet(
+        amount: -totalAmount.value,
+        vendorId: userModel.value.vendorID ?? '',
+        ownerId: ownerId,
+      );
+      userModel.value.walletAmount = newTotal ?? (userModel.value.walletAmount! - totalAmount.value);
     }
 
     await FireStoreUtils.updateUser(userModel.value).then((value) async {

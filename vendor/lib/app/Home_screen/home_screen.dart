@@ -1270,7 +1270,7 @@ class HomeScreen extends StatelessWidget {
                               amount: taxAmountData,
                               id: const Uuid().v4(),
                               orderId: orderModel.id,
-                              userId: FireStoreUtils.getCurrentUid(),
+                              userId: orderModel.vendor?.author ?? FireStoreUtils.getCurrentUid(),
                               date: Timestamp.now(),
                               isTopup: false,
                               paymentMethod: "tax",
@@ -1283,7 +1283,7 @@ class HomeScreen extends StatelessWidget {
                               amount: finalAmount,
                               id: const Uuid().v4(),
                               orderId: orderModel.id,
-                              userId: FireStoreUtils.getCurrentUid(),
+                              userId: orderModel.vendor?.author ?? FireStoreUtils.getCurrentUid(),
                               date: Timestamp.now(),
                               isTopup: false,
                               paymentMethod: "Wallet",
@@ -1295,7 +1295,13 @@ class HomeScreen extends StatelessWidget {
                             await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(historyTaxModel.id).set(historyTaxModel.toJson());
                             await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(historyModel.id).set(historyModel.toJson());
                             double finalAmountdata = finalAmount + totalTaxAmount;
-                            await FireStoreUtils.updateUserWallet(amount: (-finalAmountdata).toString(), userId: FireStoreUtils.getCurrentUid().toString());
+                            // Debit the store that took the order and its owner (not the logged-in
+                            // user, who may be an employee).
+                            await FireStoreUtils.adjustVendorWallet(
+                              amount: -finalAmountdata,
+                              vendorId: (orderModel.vendorID ?? orderModel.vendor?.id).toString(),
+                              ownerId: (orderModel.vendor?.author ?? FireStoreUtils.getCurrentUid()).toString(),
+                            );
                             await controller.getOrder();
                             Get.back();
                             ShowToastDialog.closeLoader();
