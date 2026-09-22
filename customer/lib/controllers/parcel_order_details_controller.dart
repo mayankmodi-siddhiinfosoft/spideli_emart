@@ -63,7 +63,7 @@ class ParcelOrderDetailsController extends GetxController {
 
     taxAmount.value = orderTaxAmount.value + platformTaxAmount.value;
 
-    totalAmount.value = (subTotal.value - discount.value) + double.parse(parcelOrder.value.platformFee ?? '0.0') + taxAmount.value;
+    totalAmount.value = (subTotal.value - discount.value) + double.parse(parcelOrder.value.platformFee ?? '0.0') + taxAmount.value + parcelOrder.value.scopeTaxAmount;
     update();
   }
 
@@ -102,8 +102,24 @@ class ParcelOrderDetailsController extends GetxController {
     order.statusHistory = history;
   }
 
+  /// Cancellable while placed (or an unpaid quote) and still with the sender.
+  static bool canCancel(ParcelOrderModel order) =>
+      (order.status == Constant.orderPlaced || order.status == ParcelShipping.quoteRequestedStatus) && ParcelShipping.beforeHandOver(order.parcelStatus);
+
   Future<void> cancelParcelOrder() async {
     ShowToastDialog.showLoader("Cancelling order...".tr);
+    // Re-read: the parcel may have been collected / dropped off since this screen opened.
+    final ParcelOrderModel? fresh = parcelOrder.value.id == null ? null : await ParcelShippingService.findOrder(parcelOrder.value.id!);
+    if (fresh != null) {
+      parcelOrder.value.status = fresh.status;
+      parcelOrder.value.parcelStatus = fresh.parcelStatus;
+    }
+    if (!canCancel(parcelOrder.value)) {
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("This parcel has already been handed over and can no longer be cancelled.".tr);
+      parcelOrder.refresh();
+      return;
+    }
     // An unpaid quote request has nothing to refund.
     final bool wasPaid = parcelOrder.value.status != ParcelShipping.quoteRequestedStatus && (parcelOrder.value.paymentMethod ?? '').isNotEmpty;
     parcelOrder.value.status = Constant.orderCancelled;

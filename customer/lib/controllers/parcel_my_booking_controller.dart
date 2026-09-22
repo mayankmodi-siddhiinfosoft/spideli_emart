@@ -82,7 +82,13 @@ class ParcelMyBookingController extends GetxController {
     try {
       isLoading.value = true;
 
-      if (order.status != Constant.orderPlaced) {
+      // Re-read: the parcel may have been collected / dropped off meanwhile.
+      final ParcelOrderModel? fresh = order.id == null ? null : await ParcelShippingService.findOrder(order.id!);
+      if (fresh != null) {
+        order.status = fresh.status;
+        order.parcelStatus = fresh.parcelStatus;
+      }
+      if (order.status != Constant.orderPlaced || !ParcelShipping.beforeHandOver(order.parcelStatus)) {
         ShowToastDialog.showToast("You can only cancel before pickup.".tr);
         return;
       }
@@ -105,7 +111,7 @@ class ParcelMyBookingController extends GetxController {
         }
 
         double subTotal = double.parse(order.subTotal.toString()) - double.parse(order.discount.toString());
-        double refundAmount = subTotal + totalTax;
+        double refundAmount = subTotal + totalTax + order.scopeTaxAmount;
 
         WalletTransactionModel walletTransaction = WalletTransactionModel(
           id: Constant.getUuid(),

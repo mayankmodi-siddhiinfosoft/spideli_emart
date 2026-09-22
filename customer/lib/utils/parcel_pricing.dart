@@ -334,6 +334,36 @@ class ParcelPricing {
   static ParcelQuote cityDefault({required double distance, required double weightCategoryCharge}) =>
       ParcelQuote(carrierPrice: distance * weightCategoryCharge, source: ParcelPriceSource.defaultSetting);
 
+  /// Upper limit in kg of a same-city weight category title ("Upto 5 kg",
+  /// "1-5 kg", "500 g - 1 kg", "Above 20kg", "2 lbs"): the largest number in
+  /// it, a number without a unit taking the unit of the next one (kg when
+  /// none). Null when the title holds no number.
+  static double? categoryMaxKg(String? title) {
+    if (title == null) return null;
+    final RegExp re = RegExp(r'(\d+(?:[.,]\d+)?)\s*(kgs?|kilo\w*|grams?|gms?|g|lbs?|pounds?)?(?![a-z])', caseSensitive: false);
+    final List<RegExpMatch> matches = re.allMatches(title).toList();
+    if (matches.isEmpty) return null;
+    double factor(String? unit) {
+      final String u = (unit ?? '').toLowerCase();
+      if (u.startsWith('g')) return 0.001;
+      if (u.startsWith('lb') || u.startsWith('pound')) return 0.45359237;
+      return 1;
+    }
+
+    double? best;
+    for (int i = 0; i < matches.length; i++) {
+      final double? value = double.tryParse(matches[i].group(1)!.replaceAll(',', '.'));
+      if (value == null) continue;
+      String? unit = matches[i].group(2);
+      for (int j = i + 1; unit == null && j < matches.length; j++) {
+        unit = matches[j].group(2);
+      }
+      final double kg = value * factor(unit);
+      if (best == null || kg > best) best = kg;
+    }
+    return best;
+  }
+
   /// Commission of the parcel section on [amount] ("Percent"/"Percentage" or fixed).
   static double commissionOn({required double amount, required String? type, required double? value}) {
     if (value == null || value <= 0) return 0;

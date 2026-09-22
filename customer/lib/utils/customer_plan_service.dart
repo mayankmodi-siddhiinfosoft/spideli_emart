@@ -28,6 +28,10 @@ class CustomerPlan {
   List<String> get points => raw['plan_points'] is List ? (raw['plan_points'] as List).map((e) => e.toString()).toList() : const [];
   bool get unlocksFullHistory => raw['features'] is Map && (raw['features'] as Map)['fullOrderHistory'] == true;
 
+  /// Worth selling: unlocks full history and either never expires or lasts
+  /// at least one day.
+  bool get isSellable => unlocksFullHistory && (neverExpires || days > 0);
+
   /// "Monthly" / "Annual" / "Lifetime" / "N days".
   String get periodLabel => CustomerPlanService.periodLabel(expiryDay);
 }
@@ -55,8 +59,9 @@ class CustomerPlanService {
   /// Plans are priced in the customer's current region currency.
   static CurrencyModel? get currency => RegionService.customerCurrency;
 
-  /// `planFor == "customer"`, `isEnable == true`, and `regionIds` empty or
-  /// containing the customer's region. Cheapest first.
+  /// `planFor == "customer"`, `isEnable == true`, `regionIds` empty or
+  /// containing the customer's region, and [CustomerPlan.isSellable].
+  /// Cheapest first.
   static Future<List<CustomerPlan>> availablePlans() async {
     await RegionService.ensureLoaded();
     final snap = await _db.collection(CollectionName.subscriptionPlans).where('planFor', isEqualTo: 'customer').get();
@@ -67,7 +72,11 @@ class CustomerPlanService {
       data['id'] = (data['id']?.toString().isNotEmpty ?? false) ? data['id'] : doc.id;
       if (data['isEnable'] != true) continue;
       if (!RegionService.isAvailableInAnyRegion(data['regionIds'], regions)) continue;
-      list.add(CustomerPlan(data));
+      final plan = CustomerPlan(data);
+      // Only plans that actually unlock full history and last a real period
+      // ("-1" = never expires; ""/"0"/invalid would expire immediately).
+      if (!plan.isSellable) continue;
+      list.add(plan);
     }
     list.sort((a, b) => a.priceValue.compareTo(b.priceValue));
     return list;

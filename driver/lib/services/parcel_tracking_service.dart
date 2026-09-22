@@ -148,6 +148,8 @@ class ParcelTrackingService {
   static ParcelNextActions nextActions(ParcelOrderModel o) {
     if (_isCancelled(o)) return const ParcelNextActions([], 'This parcel was cancelled.');
     if (!isInMyFleet(o)) return const ParcelNextActions([], 'This parcel is not assigned to you or your company.');
+    // Final step recorded but the completion (Order Completed + earnings) did not go through: allow a retry.
+    if (awaitingCompletion(o)) return ParcelNextActions([driverFinalStatus(o)]);
     final current = currentStatus(o);
     if (ParcelTrackingStatus.isTerminal(current)) return ParcelNextActions([], '${'Parcel is'} $current.');
     if (o.status == Constant.orderCompleted) return const ParcelNextActions([], 'Your part of this delivery is complete.');
@@ -184,10 +186,21 @@ class ParcelTrackingService {
   }
 
   /// The driver's last step: `Delivered` for home delivery, the hand-over at the destination pickup point otherwise.
-  static bool isDriverFinalStep(ParcelOrderModel o, String status) {
-    if (o.deliveryMethod == 'pickup_point') return status == ParcelTrackingStatus.atDestinationPoint;
-    return status == ParcelTrackingStatus.delivered;
+  static bool isDriverFinalStep(ParcelOrderModel o, String status) => status == driverFinalStatus(o);
+
+  static String driverFinalStatus(ParcelOrderModel o) =>
+      o.deliveryMethod == 'pickup_point' ? ParcelTrackingStatus.atDestinationPoint : ParcelTrackingStatus.delivered;
+
+  /// Assigned to me, the final step (or later) is recorded, but the order was never completed / credited.
+  static bool awaitingCompletion(ParcelOrderModel o) {
+    if (!isAssignedToMe(o) || o.status == Constant.orderCompleted || o.driverCredited == true || _isCancelled(o)) return false;
+    final current = currentStatus(o);
+    if (current == ParcelTrackingStatus.returned) return false;
+    return o.parcelStatus != null && ParcelTrackingStatus.rank(current) >= ParcelTrackingStatus.rank(driverFinalStatus(o));
   }
+
+  /// Same city, home pickup and home delivery (today's eMart parcel): the legacy button completes it in one tap.
+  static bool _isSameCityHome(ParcelOrderModel o) => _isCityScope(o) && o.pickupMethod != 'pickup_point' && o.deliveryMethod != 'pickup_point';
 
   /// Receiver code usable as the delivery OTP (the order's `pickupCode`; the parcel flow has no other OTP).
   static String? receiverCode(ParcelOrderModel o) {
@@ -219,11 +232,19 @@ class ParcelTrackingService {
     if (!nextActions(fresh).statuses.contains(status)) {
       throw 'This parcel is already at "${currentStatus(fresh) ?? fresh.status}". Scan again to refresh.';
     }
-    await _writeStatus(fresh, status, deliveryProof: deliveryProof, note: note);
+    await _applyStatus(fresh, status, deliveryProof: deliveryProof, note: note);
+    return (await getById(fresh.id!)) ?? fresh;
+  }
+
+  /// Writes [status] unless it is already recorded (a completion retry), then completes the order on the
+  /// driver's final step. The completion itself is idempotent ([completeOrder]).
+  static Future<void> _applyStatus(ParcelOrderModel fresh, String status, {Map<String, dynamic>? deliveryProof, String? note}) async {
+    if (ParcelTrackingStatus.rank(currentStatus(fresh)) < ParcelTrackingStatus.rank(status) || fresh.parcelStatus == null) {
+      await _writeStatus(fresh, status, deliveryProof: deliveryProof, note: note);
+    }
     if (isDriverFinalStep(fresh, status) && isAssignedToMe(fresh) && fresh.status != Constant.orderCompleted) {
       await completeOrder(fresh);
     }
-    return (await getById(fresh.id!)) ?? fresh;
   }
 
   static Future<void> _writeStatus(ParcelOrderModel o, String status, {Map<String, dynamic>? deliveryProof, String? note}) async {
@@ -265,22 +286,68 @@ class ParcelTrackingService {
     return null;
   }
 
+  /// Re-reads the order and returns it when the existing "Deliver Parcel" button may record the driver's final
+  /// step; throws a user-facing message otherwise. Same-city home-to-home parcels complete in one tap once
+  /// picked up (today's flow); any other parcel only when its next scan step is the final one.
+  static Future<ParcelOrderModel> prepareLegacyDeliver(ParcelOrderModel o) async {
+    final fresh = await getById(o.id ?? '');
+    if (fresh == null) throw 'Parcel not found.';
+    if (_isCancelled(fresh) || fresh.parcelStatus == ParcelTrackingStatus.returned) throw 'This parcel was cancelled or returned.';
+    if (fresh.status == Constant.orderCompleted) throw 'This delivery is already completed.';
+    if (!isAssignedToMe(fresh)) throw 'Only the assigned driver can complete this delivery.';
+    final finalStatus = driverFinalStatus(fresh);
+    if (nextActions(fresh).statuses.contains(finalStatus)) return fresh;
+    final current = currentStatus(fresh);
+    final pickedUp = ParcelTrackingStatus.rank(current) >= 2 || fresh.status == Constant.orderInTransit;
+    if (_isSameCityHome(fresh) && pickedUp && !ParcelTrackingStatus.isTerminal(current)) return fresh;
+    throw 'Scan the parcel to update its status';
+  }
+
   /// Hook for the existing "Deliver Parcel" button: records the driver's final tracking step
   /// (`Delivered` with proof, or the hand-over at the destination pickup point) and completes the order.
   static Future<void> onLegacyDeliver(ParcelOrderModel o, {Map<String, dynamic>? deliveryProof}) async {
-    final finalStatus = o.deliveryMethod == 'pickup_point' ? ParcelTrackingStatus.atDestinationPoint : ParcelTrackingStatus.delivered;
-    if (ParcelTrackingStatus.rank(currentStatus(o)) < ParcelTrackingStatus.rank(finalStatus)) {
-      await _writeStatus(o, finalStatus, deliveryProof: deliveryProof);
-    }
-    if (o.status != Constant.orderCompleted) await completeOrder(o);
+    final fresh = await prepareLegacyDeliver(o);
+    await _applyStatus(fresh, driverFinalStatus(fresh), deliveryProof: deliveryProof);
   }
 
-  /// The existing eMart completion (unchanged behaviour): wallet credit, commission, `Order Completed`,
-  /// customer notification and referral. `status` is written as a field update.
+  /// Sets `Order Completed` and claims `driverCredited` in one transaction — only when the order is not already
+  /// completed / credited / cancelled. True = this call won and must credit the wallet.
+  static Future<bool> _claimCompletion(String orderId) async {
+    return FireStoreUtils.fireStore.runTransaction<bool>((transaction) async {
+      final ref = _doc(orderId);
+      final snap = await transaction.get(ref);
+      final data = snap.data();
+      if (!snap.exists || data == null) return false;
+      final status = data['status']?.toString();
+      final parcelStatus = data['parcelStatus']?.toString();
+      if (data['driverCredited'] == true ||
+          status == Constant.orderCompleted ||
+          status == Constant.orderCancelled ||
+          status == Constant.orderRejected ||
+          parcelStatus == ParcelTrackingStatus.cancelled ||
+          parcelStatus == ParcelTrackingStatus.returned) {
+        return false;
+      }
+      transaction.update(ref, {'status': Constant.orderCompleted, 'driverCredited': true});
+      return true;
+    });
+  }
+
+  /// The existing eMart completion: `Order Completed`, wallet credit, commission, customer notification and
+  /// referral — at most once per order (a stale list, a second screen or a retry cannot pay twice).
   static Future<void> completeOrder(ParcelOrderModel o) async {
-    await _updateWalletAmount(o);
-    await _doc(o.id!).set({'status': Constant.orderCompleted}, SetOptions(merge: true));
+    final won = await _claimCompletion(o.id!);
+    if (!won) {
+      final fresh = await getById(o.id!);
+      if (fresh?.status == Constant.orderCompleted) {
+        o.status = Constant.orderCompleted;
+        return;
+      }
+      throw 'This parcel can no longer be completed.';
+    }
     o.status = Constant.orderCompleted;
+    o.driverCredited = true;
+    await _updateWalletAmount(o);
     try {
       final token = o.author?.fcmToken;
       if (token != null && token.isNotEmpty) {
@@ -304,8 +371,11 @@ class ParcelTrackingService {
     double subTotal = 0.0;
     double totalAmount = 0.0;
 
-    subTotal = double.parse(orderModel.subTotal ?? '0.0');
-    discount = double.parse(orderModel.discount ?? '0.0');
+    // subTotal excludes the fixed scope tax. When the commission was added to the customer's price
+    // (commissionAsExtra) the customer app records it as a fixed adminCommission equal to that amount,
+    // so the driver nets subTotal − commission once (see PARCEL-CONTRACT pricing).
+    subTotal = double.tryParse(orderModel.subTotal ?? '') ?? 0.0;
+    discount = double.tryParse(orderModel.discount ?? '') ?? 0.0;
 
     for (var element in orderModel.taxSetting ?? []) {
       totalTax = totalTax + Constant.calculateTax(amount: (subTotal - discount).toString(), taxModel: element);
@@ -321,13 +391,18 @@ class ParcelTrackingService {
     final UserModel? driver = orderModel.driver;
     final String walletUserId = driver?.ownerId != null && driver!.ownerId!.isNotEmpty ? driver.ownerId.toString() : FireStoreUtils.getCurrentUid();
 
+    // Fixed intercity / intercountry tax: platform revenue, outside subTotal (never credited to the driver).
+    final double scopeTax = (orderModel.parcelScopeTax ?? 0).toDouble();
+    final String paymentMethod = orderModel.paymentMethod ?? '';
+    final bool isCod = paymentMethod == PaymentGateway.cod.name;
+
     totalAmount = ((subTotal - discount) + totalTax);
-    if (orderModel.paymentMethod.toString() != PaymentGateway.cod.name) {
+    if (!isCod) {
       WalletTransactionModel transactionModel = WalletTransactionModel(
           id: Constant.getUuid(),
           amount: totalAmount,
           date: Timestamp.now(),
-          paymentMethod: orderModel.paymentMethod!,
+          paymentMethod: paymentMethod,
           transactionUser: "driver",
           userId: walletUserId,
           isTopup: true,
@@ -346,7 +421,7 @@ class ParcelTrackingService {
         id: Constant.getUuid(),
         amount: adminComm,
         date: Timestamp.now(),
-        paymentMethod: orderModel.paymentMethod!,
+        paymentMethod: paymentMethod,
         transactionUser: "driver",
         userId: walletUserId,
         isTopup: false,
@@ -359,6 +434,27 @@ class ParcelTrackingService {
         await FireStoreUtils.updateUserWallet(amount: "-${adminComm.toString()}", userId: walletUserId);
       }
     });
+
+    // Cash collected by the driver includes the fixed scope tax, which belongs to the platform.
+    if (isCod && scopeTax > 0) {
+      WalletTransactionModel taxTransaction = WalletTransactionModel(
+          id: Constant.getUuid(),
+          amount: scopeTax,
+          date: Timestamp.now(),
+          paymentMethod: paymentMethod,
+          transactionUser: "driver",
+          userId: walletUserId,
+          isTopup: false,
+          orderId: orderModel.id,
+          note: "Parcel fixed tax deducted",
+          paymentStatus: "success");
+
+      await FireStoreUtils.setWalletTransaction(taxTransaction).then((value) async {
+        if (value == true) {
+          await FireStoreUtils.updateUserWallet(amount: "-${scopeTax.toString()}", userId: walletUserId);
+        }
+      });
+    }
   }
 
   // ── Manifest ───────────────────────────────────────────────────────────

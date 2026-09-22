@@ -64,13 +64,15 @@ class GatewayCheckoutScreen extends StatelessWidget {
                   : Container(
                     color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 36),
+                    // Disabled while a payment runs (no double charge). Once
+                    // paid, it only retries saving the purchase.
                     child: RoundedButtonFill(
-                      title: "Pay Now".tr,
+                      title: controller.isPaid.value ? "Retry saving".tr : "Pay Now".tr,
                       height: 5.5,
-                      color: AppThemeData.primary300,
+                      color: controller.isPaying.value ? AppThemeData.grey400 : AppThemeData.primary300,
                       textColor: AppThemeData.grey50,
                       fontSizes: 16,
-                      onPress: () => controller.pay(context),
+                      onPress: controller.isPaying.value ? null : () => controller.pay(context),
                     ),
                   ),
         );

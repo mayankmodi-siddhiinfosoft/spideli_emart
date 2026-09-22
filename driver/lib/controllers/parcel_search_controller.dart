@@ -122,7 +122,8 @@ class ParcelSearchController extends GetxController {
           .toStringAsFixed(int.tryParse(Constant.currencyModel!.decimalDigits.toString()) ?? 2);
     }
 
-    return ((double.parse(subTotal) - (double.parse(discount))) + double.parse(taxAmount)).toStringAsFixed(int.tryParse(Constant.currencyModel!.decimalDigits.toString()) ?? 2);
+    // Fixed intercity/intercountry tax is added on top of the taxed amount.
+    return ((double.parse(subTotal) - (double.parse(discount))) + double.parse(taxAmount) + (parcelBookingData.parcelScopeTax ?? 0).toDouble()).toStringAsFixed(int.tryParse(Constant.currencyModel!.decimalDigits.toString()) ?? 2);
   }
 
   Future<List<ParcelOrderModel>> searchParcelsOnce({

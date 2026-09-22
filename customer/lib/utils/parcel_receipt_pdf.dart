@@ -28,9 +28,12 @@ class ParcelAmounts {
   final double platformFee;
   final double taxes;
 
-  ParcelAmounts(this.subTotal, this.discount, this.platformFee, this.taxes);
+  /// Fixed intercity / intercountry tax, outside VAT and coupons.
+  final double scopeTax;
 
-  double get total => subTotal - discount + platformFee + taxes;
+  ParcelAmounts(this.subTotal, this.discount, this.platformFee, this.taxes, [this.scopeTax = 0]);
+
+  double get total => subTotal - discount + platformFee + taxes + scopeTax;
 
   factory ParcelAmounts.of(ParcelOrderModel o) {
     final double sub = double.tryParse(o.subTotal ?? '') ?? 0;
@@ -45,7 +48,7 @@ class ParcelAmounts {
         tax += Constant.calculateTax(amount: fee.toString(), taxModel: t);
       }
     }
-    return ParcelAmounts(sub, disc, fee, tax);
+    return ParcelAmounts(sub, disc, fee, tax, o.scopeTaxAmount);
   }
 }
 
@@ -319,6 +322,7 @@ class ParcelReceiptPdf {
       }
     } else {
       money('Delivery charge'.tr, a.subTotal);
+      if (a.scopeTax > 0) money('Fixed tax'.tr, a.scopeTax);
     }
     if (a.discount > 0) money('Discount'.tr, -a.discount);
     if (a.platformFee > 0) money('Platform fee'.tr, a.platformFee);

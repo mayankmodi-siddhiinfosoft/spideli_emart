@@ -1306,6 +1306,37 @@ class FireStoreUtils {
     }
   }
 
+  /// Debits [amount] (positive) from [userId]'s wallet in ONE transaction that
+  /// re-reads `wallet_amount` and refuses to go below zero. When
+  /// [walletTransaction] is given, its `wallet` row is written in the same
+  /// transaction, so the row exists only if the debit happened. Returns true
+  /// only when the debit was committed.
+  static Future<bool> debitWalletIfSufficient({required num amount, required String userId, WalletTransactionModel? walletTransaction}) async {
+    if (amount <= 0) return false;
+    try {
+      final num? total = await fireStore.runTransaction<num?>((transaction) async {
+        final ref = fireStore.collection(CollectionName.users).doc(userId);
+        final snap = await transaction.get(ref);
+        if (!snap.exists) return null;
+        final num balance = num.tryParse(snap.data()?['wallet_amount']?.toString() ?? '') ?? 0;
+        if (balance < amount) return null;
+        final num next = balance - amount;
+        transaction.update(ref, {'wallet_amount': next});
+        if (walletTransaction != null) {
+          transaction.set(fireStore.collection(CollectionName.wallet).doc(walletTransaction.id), walletTransaction.toJson());
+        }
+        return next;
+      });
+      if (total != null && userId == getCurrentUid() && Constant.userModel != null) {
+        Constant.userModel!.walletAmount = total;
+      }
+      return total != null;
+    } catch (error) {
+      log("Failed to debit wallet: $error");
+      return false;
+    }
+  }
+
   static StreamController<List<VendorModel>>? getNearestVendorByCategoryController;
 
   static Stream<List<VendorModel>> getAllNearestRestaurantByCategoryId({bool? isDining, required String categoryId, bool ecommarce = false}) async* {

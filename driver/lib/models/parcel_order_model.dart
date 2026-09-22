@@ -73,6 +73,12 @@ class ParcelOrderModel {
   String? carrierName;
   bool? quoteRequested;
   num? manualPrice;
+
+  /// Fixed intercity / intercountry tax the customer paid on top of subTotal (platform revenue, never credited).
+  num? parcelScopeTax;
+
+  /// Set (in a transaction) when the driver completion / wallet credit was claimed — at most once per order.
+  bool? driverCredited;
   String? parcelStatus;
   List<ParcelTrackingEvent> trackingEvents = [];
   Map<String, dynamic>? deliveryProof;
@@ -196,6 +202,8 @@ class ParcelOrderModel {
     carrierName = str(json['carrierName']);
     quoteRequested = json['quoteRequested'] is bool ? json['quoteRequested'] as bool : null;
     manualPrice = json['manualPrice'] is num ? json['manualPrice'] as num : num.tryParse('${json['manualPrice']}');
+    parcelScopeTax = json['parcelScopeTax'] is num ? json['parcelScopeTax'] as num : num.tryParse('${json['parcelScopeTax']}');
+    driverCredited = json['driverCredited'] == true;
     parcelStatus = str(json['parcelStatus']);
     deliveryProof = map(json['deliveryProof']);
     trackingEvents = [];

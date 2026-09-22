@@ -208,7 +208,8 @@ class _MyStoreSubscriptionsScreenState extends State<MyStoreSubscriptionsScreen>
     final next = s.nextDeliveryDay();
     final upcomingSkips = s.skippedDates.where((d) => (DateTime.tryParse(d) ?? DateTime(2000)).isAfter(_today.subtract(const Duration(days: 1)))).toList()..sort();
     final bool running = status == VendorSubscriptionModel.statusActive || status == VendorSubscriptionModel.statusPaused;
-    final bool pausedNow = (s.status ?? '').toLowerCase() == VendorSubscriptionModel.statusPaused && status != VendorSubscriptionModel.statusExpired;
+    // From the effective status: a pause whose pausedUntil has passed is active.
+    final bool pausedNow = status == VendorSubscriptionModel.statusPaused;
     return SubUi.card(
       isDark,
       Column(

@@ -75,6 +75,15 @@ class BookParcelController extends GetxController {
 
   double? get weightKg => double.tryParse(weightKgController.value.text.trim().replaceAll(',', '.'));
 
+  /// Weight carriers are priced / filtered on: the entered kg, else (same
+  /// city) the upper limit of the selected weight category.
+  double get offerWeightKg {
+    final double? kg = weightKg;
+    if (kg != null && kg > 0) return kg;
+    if (isCityScope) return ParcelPricing.categoryMaxKg(selectedWeight?.title) ?? 0;
+    return 0;
+  }
+
   String? get originRegionId => RegionService.regionAt(senderLocation.value?.latitude, senderLocation.value?.longitude);
 
   String? get destinationRegionId => RegionService.regionAt(receiverLocation.value?.latitude, receiverLocation.value?.longitude);
@@ -248,6 +257,10 @@ class BookParcelController extends GetxController {
     } else if (senderLocation.value == null || receiverLocation.value == null) {
       ShowToastDialog.showToast("Please select both sender and receiver locations".tr);
       return false;
+    } else if (isCityScope && Constant.checkZoneCheck(receiverLocation.value!.latitude ?? 0.0, receiverLocation.value!.longitude ?? 0.0) != true) {
+      // Picked under another scope (outside the zones by design), then switched to Same city.
+      ShowToastDialog.showToast("Service is unavailable at the selected address.".tr);
+      return false;
     }
     final String wText = weightKgController.value.text.trim();
     if (!isCityScope && (weightKg == null || weightKg! <= 0)) {
@@ -355,7 +368,7 @@ class BookParcelController extends GetxController {
   Future<List<ParcelCarrierOption>> carrierOptions() async {
     final ParcelPricingSettings settings = await ParcelShippingService.pricingSettings();
     final List<DeliveryCarrierModel> carriers = await ParcelShippingService.carriers();
-    final double kg = weightKg ?? 0;
+    final double kg = offerWeightKg;
     final double km = Constant.distanceType.toLowerCase() == "km" ? distance.value : distance.value * 1.60934;
     final List<ParcelCarrierOption> options = [];
     if (isCityScope) {
@@ -392,10 +405,13 @@ class BookParcelController extends GetxController {
   void goToCart({ParcelCarrierOption? option, bool quoteRequest = false}) {
     DateTime senderPickup = isScheduled.value ? parseScheduledDateTime(scheduledDate.value, scheduledTime.value) : DateTime.now();
 
-    print("Sender Pickup: $distance");
+    // The fixed scope tax (intercity / intercountry) is platform revenue added
+    // to the payable total at checkout: keep it out of subTotal so VAT, %
+    // coupons, commission and the driver's credit never apply to it.
+    final double scopeTax = quoteRequest ? 0.0 : (option?.quote.fixedTax ?? 0.0);
     ParcelOrderModel order = ParcelOrderModel(
       id: Constant.getUuid(),
-      subTotal: (quoteRequest ? 0.0 : (option?.quote.total ?? subTotal.value)).toString(),
+      subTotal: (quoteRequest ? 0.0 : (option != null ? option.quote.total - scopeTax : subTotal.value)).toString(),
       parcelType: selectedCategory?.title ?? '',
       parcelCategoryID: selectedCategory?.id ?? '',
       note: senderNoteController.value.text,
@@ -453,6 +469,7 @@ class BookParcelController extends GetxController {
       ..dimensions = (l != null || w != null || h != null) ? {'l': l ?? 0, 'w': w ?? 0, 'h': h ?? 0} : null
       ..contentDescription = contentDescriptionController.value.text.trim().isEmpty ? null : contentDescriptionController.value.text.trim()
       ..weightKg = weightKg
+      ..parcelScopeTax = scopeTax > 0 ? scopeTax : null
       ..carrierId = option?.carrier?.id
       ..carrierName = option?.carrier?.name
       ..quoteRequested = quoteRequest ? true : null

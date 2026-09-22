@@ -119,9 +119,9 @@ class HomeServices {
   /// skipped. Without a usable configured list: the first 8 available services
   /// by section `order`.
   static List<SectionModel> favourites(List<SectionModel> available, {List<String> customerRegions = const [], Map<String, dynamic>? config}) {
-    final List<String>? configured = _configuredIds(config, customerRegions);
-    if (configured != null) {
-      final Map<String, SectionModel> byId = {for (final s in available) if (s.id != null) s.id!: s};
+    // Region list first, then the admin's `default` list, then section order.
+    final Map<String, SectionModel> byId = {for (final s in available) if (s.id != null) s.id!: s};
+    for (final configured in _configuredLists(config, customerRegions)) {
       final List<SectionModel> picked = [];
       for (final id in configured) {
         final SectionModel? s = byId[id];
@@ -133,18 +133,22 @@ class HomeServices {
     return _byOrder(available).take(favouriteCount).toList();
   }
 
-  static List<String>? _configuredIds(Map<String, dynamic>? config, List<String> customerRegions) {
-    if (config == null) return null;
+  static List<List<String>> _configuredLists(Map<String, dynamic>? config, List<String> customerRegions) {
+    if (config == null) return const [];
+    final List<List<String>> lists = [];
     final dynamic regions = config['regions'];
     if (regions is Map) {
       for (final regionId in customerRegions) {
         final dynamic ids = regions[regionId];
-        if (ids is List && ids.isNotEmpty) return ids.map((e) => e.toString()).toList();
+        if (ids is List && ids.isNotEmpty) {
+          lists.add(ids.map((e) => e.toString()).toList());
+          break;
+        }
       }
     }
     final dynamic fallback = config['default'];
-    if (fallback is List && fallback.isNotEmpty) return fallback.map((e) => e.toString()).toList();
-    return null;
+    if (fallback is List && fallback.isNotEmpty) lists.add(fallback.map((e) => e.toString()).toList());
+    return lists;
   }
 
   // ---------------------------------------------------------------------------

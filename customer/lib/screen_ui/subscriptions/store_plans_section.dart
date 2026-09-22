@@ -127,6 +127,9 @@ class _StoreSubscribeScreenState extends State<StoreSubscribeScreen> {
   late DateTime _start;
   VendorSubscriptionModel? _current;
 
+  /// Until the running subscription is known, paying could overlap it.
+  bool _loadingCurrent = true;
+
   @override
   void initState() {
     super.initState();
@@ -145,10 +148,26 @@ class _StoreSubscribeScreenState extends State<StoreSubscribeScreen> {
       if (!mounted) return;
       setState(() {
         _current = current;
-        final end = current?.expiryDate?.toDate();
-        if (end != null && end.isAfter(_start)) _start = DateTime(end.year, end.month, end.day);
+        _start = _clampStart(_start);
       });
     } catch (_) {}
+    if (mounted) setState(() => _loadingCurrent = false);
+  }
+
+  /// Earliest allowed start: today, or the running subscription's expiry day
+  /// (a renewal must not overlap it).
+  DateTime get _minStart {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final end = _current?.expiryDate?.toDate();
+    if (end == null) return today;
+    final endDay = DateTime(end.year, end.month, end.day);
+    return endDay.isAfter(today) ? endDay : today;
+  }
+
+  DateTime _clampStart(DateTime value) {
+    final min = _minStart;
+    return value.isBefore(min) ? min : value;
   }
 
   Future<void> _pickAddress() async {
@@ -157,12 +176,14 @@ class _StoreSubscribeScreenState extends State<StoreSubscribeScreen> {
   }
 
   Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(context: context, initialDate: _start, firstDate: DateTime(now.year, now.month, now.day), lastDate: DateTime(_start.year + 1, _start.month, _start.day));
-    if (picked != null) setState(() => _start = picked);
+    final first = _minStart;
+    final initial = _clampStart(_start);
+    final picked = await showDatePicker(context: context, initialDate: initial, firstDate: first, lastDate: DateTime(initial.year + 1, initial.month, initial.day));
+    if (picked != null) setState(() => _start = _clampStart(picked));
   }
 
   Future<void> _pay() async {
+    if (_loadingCurrent) return;
     if (Constant.userModel == null) {
       ShowToastDialog.showToast("Please log in to subscribe".tr);
       return;
@@ -174,6 +195,10 @@ class _StoreSubscribeScreenState extends State<StoreSubscribeScreen> {
     final plan = widget.plan;
     final vendor = widget.vendor;
     final regionId = RegionService.regionOfVendor(vendor) ?? plan.regionId;
+    // Never overlap the running subscription, whatever was picked earlier.
+    final clamped = _clampStart(_start);
+    if (clamped != _start) setState(() => _start = clamped);
+    final DateTime startDate = _start;
     ShowToastDialog.showLoader("Please wait...".tr);
     final commission = await StoreSubscriptionService.commissionFor(vendor.id ?? '', plan.priceValue);
     ShowToastDialog.closeLoader();
@@ -183,7 +208,7 @@ class _StoreSubscribeScreenState extends State<StoreSubscribeScreen> {
         amount: plan.price ?? '0',
         currency: RegionService.currencyForVendor(vendor),
         regionId: regionId,
-        onPaid: (method) => StoreSubscriptionService.recordPurchase(plan: plan, vendor: vendor, address: _address!, startDate: _start, paymentMethod: method, commission: commission),
+        onPaid: (method) => StoreSubscriptionService.recordPurchase(plan: plan, vendor: vendor, address: _address!, startDate: startDate, paymentMethod: method, commission: commission),
       ),
     );
     if (result == true) {
@@ -268,7 +293,14 @@ class _StoreSubscribeScreenState extends State<StoreSubscribeScreen> {
       bottomNavigationBar: Container(
         color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 36),
-        child: RoundedButtonFill(title: "Continue to payment".tr, height: 5.5, color: AppThemeData.primary300, textColor: AppThemeData.grey50, fontSizes: 16, onPress: _pay),
+        child: RoundedButtonFill(
+          title: "Continue to payment".tr,
+          height: 5.5,
+          color: _loadingCurrent ? AppThemeData.grey400 : AppThemeData.primary300,
+          textColor: AppThemeData.grey50,
+          fontSizes: 16,
+          onPress: _loadingCurrent ? null : _pay,
+        ),
       ),
     );
   }

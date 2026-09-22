@@ -442,6 +442,10 @@ class ParcelOrderDetails extends StatelessWidget {
                               // Discount
                               _summaryTile("Discount".tr, "-${(Constant.amountShow(amount: controller.discount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))))}", isDark),
 
+                              // Fixed intercity / intercountry tax (outside VAT and coupons).
+                              if (controller.parcelOrder.value.scopeTaxAmount > 0)
+                                _summaryTile("Fixed tax".tr, Constant.amountShow(amount: controller.parcelOrder.value.scopeTaxAmount.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark),
+
                               // Tax List
                               if (double.parse(controller.parcelOrder.value.platformFee ?? '0.0') > 0.0)
                                 _summaryTile("Platform fee".tr, Constant.amountShow(amount: controller.parcelOrder.value.platformFee ?? '0.0', currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark),
@@ -474,7 +478,7 @@ class ParcelOrderDetails extends StatelessWidget {
                       textColor: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
                     ),
                   )
-                  : (controller.parcelOrder.value.status == Constant.orderPlaced || controller.parcelOrder.value.status == ParcelShipping.quoteRequestedStatus)
+                  : ParcelOrderDetailsController.canCancel(controller.parcelOrder.value)
                   ? Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: RoundedButtonFill(

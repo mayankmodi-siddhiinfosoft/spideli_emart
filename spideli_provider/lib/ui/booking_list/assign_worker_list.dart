@@ -1,3 +1,4 @@
+import 'package:spideliprovider/services/provider_verification_gate.dart';
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/controller/assign_worker_controller.dart';
@@ -125,6 +126,7 @@ class AssignWorkerList extends StatelessWidget {
                   if (controller.selectedWorkerRadioTile.value.isEmpty) {
                     ShowToastDialog.showToast('Please select worker.'.tr);
                   } else {
+                    if (await ProviderVerificationGate.blocks()) return;
                     ShowToastDialog.showLoader('Please wait...');
                     final String previousWorkerId = controller.onProviderOrder.value.workerId ?? '';
                     final String newWorkerId = controller.selectedWorkerRadioTile.value.toString();

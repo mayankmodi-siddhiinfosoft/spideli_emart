@@ -69,4 +69,24 @@ void main() {
     expect(q.total, 7000);
     expect(ParcelPricing.rateCard(card: const ParcelRateCard(), scope: ParcelScope.city, distanceKm: 5, weightKg: 1), isNull);
   });
+  test('checkout base excludes the fixed scope tax: Douala > Yaounde 1.5 kg pays 6,550', () {
+    final q = ParcelPricing.intercity(table: table, origin: const ParcelPlace(city: 'Douala'), destination: const ParcelPlace(city: 'Yaounde'), weightKg: 1.5)!;
+    // Book: subTotal = quote.total - fixedTax; parcelScopeTax = fixedTax. Checkout (no VAT / coupon):
+    // (subTotal - discount) + fee + taxes + parcelScopeTax.
+    final double subTotal = q.total - q.fixedTax;
+    expect(subTotal, 1550);
+    expect(subTotal + q.fixedTax, 6550);
+  });
+
+  test('weight category upper limit', () {
+    expect(ParcelPricing.categoryMaxKg('Upto 5 kg'), 5);
+    expect(ParcelPricing.categoryMaxKg('1-5 kg'), 5);
+    expect(ParcelPricing.categoryMaxKg('5kg - 10kg'), 10);
+    expect(ParcelPricing.categoryMaxKg('500 g - 1 kg'), 1);
+    expect(ParcelPricing.categoryMaxKg('Up to 500g'), 0.5);
+    expect(ParcelPricing.categoryMaxKg('Above 20 KG'), 20);
+    expect(ParcelPricing.categoryMaxKg('2,5 kg'), 2.5);
+    expect(ParcelPricing.categoryMaxKg('Small parcel'), isNull);
+    expect(ParcelPricing.categoryMaxKg(null), isNull);
+  });
 }

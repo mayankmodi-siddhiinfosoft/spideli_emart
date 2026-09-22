@@ -1,6 +1,7 @@
 import 'package:driver/app/parcel_screen/parcel_order_details.dart';
 import 'package:driver/app/parcel_screen/parcel_tracking/parcel_scan_screen.dart';
 import 'package:driver/constant/constant.dart';
+import 'package:driver/controllers/parcel_home_controller.dart';
 import 'package:driver/models/parcel_order_model.dart';
 import 'package:driver/services/parcel_tracking_service.dart';
 import 'package:driver/themes/app_them_data.dart';
@@ -27,6 +28,13 @@ class _ParcelRunScreenState extends State<ParcelRunScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    // Parcels completed here must not stay actionable on the (stale) home list.
+    if (Get.isRegistered<ParcelHomeController>()) Get.find<ParcelHomeController>().getParcelList();
+    super.dispose();
   }
 
   Future<void> _load() async {

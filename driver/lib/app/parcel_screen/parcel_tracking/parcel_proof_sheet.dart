@@ -9,6 +9,7 @@ import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/themes/round_button_fill.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -57,8 +58,16 @@ class _ParcelProofSheetState extends State<_ParcelProofSheet> {
   }
 
   Future<void> _takePhoto() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 60);
-    if (picked != null) setState(() => _photo = File(picked.path));
+    try {
+      final picked = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 60);
+      if (picked != null && mounted) setState(() => _photo = File(picked.path));
+    } on PlatformException catch (e) {
+      debugPrint('ParcelProofSheet camera $e');
+      ShowToastDialog.showToast("Camera unavailable. Please allow camera access for the app in your phone settings.".tr);
+    } catch (e) {
+      debugPrint('ParcelProofSheet camera $e');
+      ShowToastDialog.showToast("Could not open the camera".tr);
+    }
   }
 
   Future<void> _confirm() async {

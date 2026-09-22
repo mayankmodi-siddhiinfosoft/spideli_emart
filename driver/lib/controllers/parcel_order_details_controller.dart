@@ -46,7 +46,7 @@ class ParcelOrderDetailsController extends GetxController {
     }
 
 
-    totalAmount.value = (subTotal.value - discount.value) + taxAmount.value;
+    totalAmount.value = (subTotal.value - discount.value) + taxAmount.value + (parcelOrder.value.parcelScopeTax ?? 0).toDouble();
     update();
   }
 

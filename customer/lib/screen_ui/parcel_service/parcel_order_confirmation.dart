@@ -137,7 +137,7 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                             children: [
                               _iconTile("${controller.parcelOrder.value.distance ?? '--'} ${'KM'.tr}", "Distance".tr, "assets/icons/ic_distance_parcel.svg", isDark),
                               _iconTile(controller.parcelOrder.value.parcelWeight ?? '--', "Weight".tr, "assets/icons/ic_weight_parcel.svg", isDark),
-                              _iconTile(Constant.amountShow(amount: controller.parcelOrder.value.subTotal, currency: controller.parcelCurrency), "Rate".tr, "assets/icons/ic_rate_parcel.svg", isDark),
+                              _iconTile(Constant.amountShow(amount: ((double.tryParse(controller.parcelOrder.value.subTotal ?? '') ?? 0) + controller.scopeTax).toString(), currency: controller.parcelCurrency), "Rate".tr, "assets/icons/ic_rate_parcel.svg", isDark),
                             ],
                           ),
                         ),
@@ -258,6 +258,8 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
 
                               // Discount
                               _summaryTile("Discount".tr, "-${Constant.amountShow(amount: controller.discount.value.toString(), currency: controller.parcelCurrency)}", isDark, AppThemeData.dangerDark300),
+                              // Fixed intercity / intercountry tax: outside VAT and coupons.
+                              if (controller.scopeTax > 0) _summaryTile("Fixed tax".tr, Constant.amountShow(amount: controller.scopeTax.toString(), currency: controller.parcelCurrency), isDark, null),
                               if (Constant.platformFeeModel?.enable == true) _summaryTile("Platform fee".tr, Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: controller.parcelCurrency), isDark, null),
 
                               // Tax List
@@ -446,7 +448,7 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                   children: [
                     Text("Preferred Payment".tr, textAlign: TextAlign.start, style: AppThemeData.boldTextStyle(fontSize: 15, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500)),
                     const SizedBox(height: 10),
-                    if (controller.walletSettingModel.value.isEnabled == true || controller.cashOnDeliverySettingModel.value.isEnabled == true)
+                    if (controller.walletSettingModel.value.isEnabled == true || (controller.cashOnDeliverySettingModel.value.isEnabled == true && controller.cashAllowed))
                       Container(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(15),
@@ -462,14 +464,14 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                                 child: cardDecoration(controller, PaymentGateway.wallet, isDark, "assets/images/ic_wallet.png"),
                               ),
                               Visibility(
-                                visible: controller.cashOnDeliverySettingModel.value.isEnabled == true,
+                                visible: controller.cashOnDeliverySettingModel.value.isEnabled == true && controller.cashAllowed,
                                 child: cardDecoration(controller, PaymentGateway.cod, isDark, "assets/images/ic_cash.png"),
                               ),
                             ],
                           ),
                         ),
                       ),
-                    if (controller.walletSettingModel.value.isEnabled == true || controller.cashOnDeliverySettingModel.value.isEnabled == true) const SizedBox(height: 10),
+                    if (controller.walletSettingModel.value.isEnabled == true || (controller.cashOnDeliverySettingModel.value.isEnabled == true && controller.cashAllowed)) const SizedBox(height: 10),
                     Text("Other Payment Options".tr, textAlign: TextAlign.start, style: AppThemeData.boldTextStyle(fontSize: 15, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500)),
                     const SizedBox(height: 10),
                     Container(

@@ -64,7 +64,16 @@ class GatewayCheckoutController extends GetxController {
   RxBool isLoading = true.obs;
   RxString selectedPaymentMethod = ''.obs;
   Rx<UserModel> userModel = UserModel().obs;
-  bool _completed = false;
+
+  /// A pay() call is running: the Pay button is disabled (no double charge).
+  RxBool isPaying = false.obs;
+
+  /// The gateway confirmed the payment. From then on a retry only re-runs the
+  /// record step ([onPaid]) - it never charges again.
+  RxBool isPaid = false.obs;
+  String _paidMethod = '';
+  bool _recorded = false;
+  bool _recording = false;
 
   Rx<WalletSettingModel> walletSettingModel = WalletSettingModel().obs;
   Rx<PayFastModel> payFastModel = PayFastModel().obs;
@@ -82,6 +91,13 @@ class GatewayCheckoutController extends GetxController {
 
   /// Wallet balance is account-level: shown in the customer's currency.
   CurrencyModel? get walletCurrency => RegionService.customerCurrency;
+
+  /// The wallet holds the customer's region currency: it can't pay an amount
+  /// priced in another region's currency (e.g. a store in another region).
+  bool get walletUsable {
+    final customerRegion = RegionService.customerRegionId;
+    return regionId == null || customerRegion == null || regionId == customerRegion;
+  }
 
   /// Phone for gateways that take one: the default saved Mobile Money / Wave
   /// number usable in this region, else the account phone.
@@ -138,7 +154,7 @@ class GatewayCheckoutController extends GetxController {
 
   /// Enabled gateways for this region, in the app's usual order.
   List<PaymentGateway> get availableMethods => [
-    if (walletSettingModel.value.isEnabled == true) PaymentGateway.wallet,
+    if (walletSettingModel.value.isEnabled == true && walletUsable) PaymentGateway.wallet,
     if (stripeModel.value.isEnabled == true) PaymentGateway.stripe,
     if (payPalModel.value.isEnabled == true) PaymentGateway.paypal,
     if (payStackModel.value.isEnable == true) PaymentGateway.payStack,
@@ -183,17 +199,37 @@ class GatewayCheckoutController extends GetxController {
   // ---------------------------------------------------------------- Pay
 
   Future<void> pay(BuildContext context) async {
+    if (isPaying.value || _recorded) return;
+    // Already paid, only the record step failed: retry that, never charge again.
+    if (isPaid.value) {
+      isPaying.value = true;
+      try {
+        await _record();
+      } finally {
+        isPaying.value = false;
+      }
+      return;
+    }
     final method = selectedPaymentMethod.value;
     if (method.isEmpty) {
       ShowToastDialog.showToast("Please select payment method".tr);
       return;
     }
+    isPaying.value = true;
+    try {
+      await _charge(context, method);
+    } finally {
+      isPaying.value = false;
+    }
+  }
+
+  Future<void> _charge(BuildContext context, String method) async {
     if (method == PaymentGateway.wallet.name) {
       await _payWithWallet();
     } else if (method == PaymentGateway.stripe.name) {
       await _stripe();
     } else if (method == PaymentGateway.paypal.name) {
-      _paypal(context);
+      await _paypal(context);
     } else if (method == PaymentGateway.payStack.name) {
       await _payStack();
     } else if (method == PaymentGateway.mercadoPago.name) {
@@ -213,29 +249,46 @@ class GatewayCheckoutController extends GetxController {
     }
   }
 
-  /// Payment confirmed: record it once, then close the checkout with true.
+  /// Payment confirmed: remember it (so a retry never charges again), then
+  /// record it.
   Future<void> _success() async {
-    if (_completed) return;
-    _completed = true;
+    if (!isPaid.value) {
+      isPaid.value = true;
+      _paidMethod = selectedPaymentMethod.value;
+    }
+    await _record();
+  }
+
+  /// Records the paid purchase once, then closes the checkout with true. On
+  /// failure the screen stays open and "Pay Now" retries only this step.
+  Future<void> _record() async {
+    if (_recorded || _recording) return;
+    _recording = true;
     ShowToastDialog.showLoader("Please wait...".tr);
     try {
-      await onPaid(selectedPaymentMethod.value);
+      await onPaid(_paidMethod);
+      _recorded = true;
       ShowToastDialog.closeLoader();
       Get.back(result: true);
     } catch (e) {
       ShowToastDialog.closeLoader();
       log("GatewayCheckoutController record failed: $e");
-      ShowToastDialog.showToast("${"Payment received but saving failed. Please contact support.".tr} $e");
+      ShowToastDialog.showToast("${"Payment received but saving failed. Tap the button to try saving again, or contact support.".tr} $e");
+    } finally {
+      _recording = false;
     }
   }
 
   void _failed() => ShowToastDialog.showToast("Payment UnSuccessful!!".tr);
 
   Future<void> _payWithWallet() async {
+    if (!walletUsable) {
+      ShowToastDialog.showToast("Wallet can't be used for a purchase in another region".tr);
+      return;
+    }
     final double value = double.tryParse(amount) ?? 0;
-    final double balance = double.tryParse(userModel.value.walletAmount?.toString() ?? '0') ?? 0;
-    if (balance < value) {
-      ShowToastDialog.showToast("You don't have sufficient wallet balance".tr);
+    if (value <= 0) {
+      _failed();
       return;
     }
     final String refId = const Uuid().v4();
@@ -250,14 +303,21 @@ class GatewayCheckoutController extends GetxController {
       orderId: refId,
       note: description,
       paymentStatus: "success",
-      regionId: RegionService.customerRegionId,
+      regionId: regionId ?? RegionService.customerRegionId,
     );
-    final ok = await FireStoreUtils.setWalletTransaction(tx);
-    if (ok != true) {
-      _failed();
+    // One transaction: re-reads the balance, refuses to go below zero, and
+    // writes the wallet row only when the debit happens.
+    ShowToastDialog.showLoader("Please wait...".tr);
+    final ok = await FireStoreUtils.debitWalletIfSufficient(amount: value, userId: FireStoreUtils.getCurrentUid(), walletTransaction: tx);
+    ShowToastDialog.closeLoader();
+    if (!ok) {
+      ShowToastDialog.showToast("You don't have sufficient wallet balance".tr);
+      final fresh = await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid());
+      if (fresh != null) userModel.value = fresh;
       return;
     }
-    await FireStoreUtils.updateUserWallet(amount: "-$amount", userId: FireStoreUtils.getCurrentUid());
+    final num? newBalance = Constant.userModel?.walletAmount;
+    if (newBalance != null) userModel.update((u) => u?.walletAmount = newBalance);
     await _success();
   }
 
@@ -291,7 +351,8 @@ class GatewayCheckoutController extends GetxController {
           paymentIntentClientSecret: intent['client_secret'],
           allowsDelayedPaymentMethods: false,
           googlePay: const PaymentSheetGooglePay(merchantCountryCode: 'US', testEnv: true, currencyCode: "USD"),
-          customFlow: true,
+          // Not custom flow: presentPaymentSheet() itself confirms (charges).
+          customFlow: false,
           style: ThemeMode.system,
           appearance: PaymentSheetAppearance(colors: PaymentSheetAppearanceColors(primary: AppThemeData.primary300)),
           merchantDisplayName: 'GoRide',
@@ -308,8 +369,8 @@ class GatewayCheckoutController extends GetxController {
   }
 
   // PayPal
-  void _paypal(BuildContext context) {
-    Navigator.of(context).push(
+  Future<void> _paypal(BuildContext context) async {
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder:
             (BuildContext context) => UsePaypal(

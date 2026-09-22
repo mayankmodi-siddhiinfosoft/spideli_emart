@@ -59,9 +59,16 @@ class ParcelHomeController extends GetxController {
 
   Future<void> pickupParcel(ParcelOrderModel parcelBookingData) async {
     ShowToastDialog.showLoader("Please wait".tr);
-    // Existing "In Transit" status, plus the tracking event `Collected` (spec 4.2 step 8) — field updates only.
-    final error = await ParcelTrackingService.onLegacyPickup(parcelBookingData);
-    ShowToastDialog.closeLoader();
+    String? error;
+    try {
+      // Existing "In Transit" status, plus the tracking event `Collected` (spec 4.2 step 8) — field updates only.
+      error = await ParcelTrackingService.onLegacyPickup(parcelBookingData);
+    } catch (e) {
+      debugPrint('ParcelHomeController.pickupParcel $e');
+      error = "Something went wrong. Please try again.";
+    } finally {
+      ShowToastDialog.closeLoader();
+    }
     if (error != null) {
       ShowToastDialog.showToast(error.tr);
       return;
@@ -72,7 +79,20 @@ class ParcelHomeController extends GetxController {
   /// Existing "Deliver Parcel": for a contract parcel delivered at home the driver first records proof
   /// (receiver code or photo); for pickup-point delivery the last step is the hand-over at that point.
   /// Parcels created before the contract complete exactly as before (plus a `Delivered` tracking event).
-  Future<void> completeParcel(ParcelOrderModel parcelBookingData, {BuildContext? context, bool isDark = false}) async {
+  Future<void> completeParcel(ParcelOrderModel listOrder, {BuildContext? context, bool isDark = false}) async {
+    // The list may be stale (e.g. the parcel was completed or cancelled from another screen): re-read and
+    // refuse cancelled / returned / already completed parcels, or steps that must be scanned.
+    ParcelOrderModel parcelBookingData;
+    ShowToastDialog.showLoader("Please wait".tr);
+    try {
+      parcelBookingData = await ParcelTrackingService.prepareLegacyDeliver(listOrder);
+    } catch (e) {
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast(e is String ? e.tr : "Something went wrong. Please try again.".tr);
+      await getParcelList();
+      return;
+    }
+    ShowToastDialog.closeLoader();
     Map<String, dynamic>? proof;
     if (parcelBookingData.deliveryMethod == 'pickup_point') {
       final ok = await Get.dialog<bool>(AlertDialog(
@@ -84,16 +104,21 @@ class ParcelHomeController extends GetxController {
         ],
       ));
       if (ok != true) return;
-    } else if (parcelBookingData.hasTrackingContract && context != null) {
+    } else if (parcelBookingData.hasTrackingContract && context != null && context.mounted) {
       proof = await showParcelProofSheet(context, parcelBookingData, isDark: isDark);
       if (proof == null) return;
     }
     ShowToastDialog.showLoader("Please wait".tr);
+    String? error;
     try {
       await ParcelTrackingService.onLegacyDeliver(parcelBookingData, deliveryProof: proof);
+    } catch (e) {
+      debugPrint('ParcelHomeController.completeParcel $e');
+      error = e is String ? e : "Something went wrong. Please try again.";
     } finally {
       ShowToastDialog.closeLoader();
     }
+    if (error != null) ShowToastDialog.showToast(error.tr);
     await getParcelList();
   }
 
@@ -107,7 +132,8 @@ class ParcelHomeController extends GetxController {
           .toStringAsFixed(int.tryParse(Constant.currencyModel!.decimalDigits.toString()) ?? 2);
     }
 
-    return ((double.parse(subTotal) - (double.parse(discount))) + double.parse(taxAmount))
+    // Fixed intercity/intercountry tax is added on top of the taxed amount.
+    return ((double.parse(subTotal) - (double.parse(discount))) + double.parse(taxAmount) + (parcelBookingData.parcelScopeTax ?? 0).toDouble())
         .toStringAsFixed(int.tryParse(Constant.currencyModel!.decimalDigits.toString()) ?? 2);
   }
 }

@@ -76,6 +76,11 @@ class ParcelOrderModel {
   String? carrierId;
   String? carrierName;
   Map<String, dynamic>? priceBreakdown;
+
+  /// Fixed intercity / intercountry tax (priceBreakdown.fixedTax): platform
+  /// revenue charged on top of the payable total. Kept OUT of [subTotal] so
+  /// VAT, % coupons, commission and the driver's credit never apply to it.
+  num? parcelScopeTax;
   bool? quoteRequested;
   num? manualPrice;
   String? parcelStatus;
@@ -88,6 +93,12 @@ class ParcelOrderModel {
   /// Same city, home to home, platform drivers: today's parcel.
   bool get isLegacyShape =>
       (scope ?? 'city') == 'city' && (pickupMethod ?? ParcelShipping.home) == ParcelShipping.home && (deliveryMethod ?? ParcelShipping.home) == ParcelShipping.home && carrierId == null && quoteRequested != true;
+
+  /// Fixed scope tax added to the payable total (0 when none).
+  double get scopeTaxAmount => (parcelScopeTax ?? 0).toDouble();
+
+  /// Either leg goes through a pickup point: the sender pays, no cash.
+  bool get usesPickupPoint => pickupMethod == ParcelShipping.pickupPoint || deliveryMethod == ParcelShipping.pickupPoint;
 
   /// Quote requested and the admin has not priced it yet.
   bool get awaitingQuote => quoteRequested == true && manualPrice == null;
@@ -211,6 +222,7 @@ class ParcelOrderModel {
     carrierId = _str(json['carrierId']);
     carrierName = _str(json['carrierName']);
     priceBreakdown = json['priceBreakdown'] is Map ? Map<String, dynamic>.from(json['priceBreakdown']) : null;
+    parcelScopeTax = json['parcelScopeTax'] is num ? json['parcelScopeTax'] : num.tryParse(json['parcelScopeTax']?.toString() ?? '');
     quoteRequested = json['quoteRequested'] == true;
     manualPrice = json['manualPrice'] is num ? json['manualPrice'] : num.tryParse(json['manualPrice']?.toString() ?? '');
     parcelStatus = _str(json['parcelStatus']);
@@ -247,6 +259,7 @@ class ParcelOrderModel {
       'carrierId': carrierId,
       'carrierName': carrierName,
       'priceBreakdown': priceBreakdown,
+      'parcelScopeTax': parcelScopeTax,
       if (quoteRequested == true) 'quoteRequested': true,
     };
     data.removeWhere((key, value) => value == null);
@@ -350,6 +363,10 @@ class ParcelShipping {
   /// eMart `status` of an unpriced quote request: not "Order Placed", so no
   /// driver is dispatched before the admin sets `manualPrice` and it is paid.
   static const String quoteRequestedStatus = 'Quote Requested';
+
+  /// The parcel is still with the sender (not collected / dropped at the
+  /// origin point yet): the only tracking statuses a customer may cancel at.
+  static bool beforeHandOver(String? parcelStatus) => parcelStatus == null || parcelStatus.isEmpty || parcelStatus == created || parcelStatus == paid || parcelStatus == waitingDropOff;
 }
 
 /// One entry of `trackingEvents` (append-only, newest last).
