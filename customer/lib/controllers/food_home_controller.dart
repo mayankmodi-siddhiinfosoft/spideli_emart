@@ -8,13 +8,15 @@ import 'package:customer/models/coupon_model.dart';
 import 'package:customer/models/favourite_model.dart';
 import 'package:customer/models/vendor_category_model.dart';
 import 'package:customer/models/vendor_model.dart';
-import 'package:customer/utils/preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/banner_model.dart';
 import '../models/story_model.dart';
 import '../service/cart_provider.dart';
+import '../service/database_helper.dart';
+import '../themes/custom_dialog_box.dart';
+import '../utils/wholesale_pricing.dart';
 import '../service/fire_store_utils.dart';
 
 class FoodHomeController extends GetxController {
@@ -32,7 +34,7 @@ class FoodHomeController extends GetxController {
   RxBool isLoading = true.obs;
   RxBool isListView = true.obs;
   RxBool isPopular = true.obs;
-  RxString selectedOrderTypeValue = "Delivery".tr.obs;
+  RxString selectedOrderTypeValue = OrderTypeMode.delivery.obs;
 
   Rx<PageController> pageController = PageController(viewportFraction: 0.877).obs;
   Rx<PageController> pageBottomController = PageController(viewportFraction: 0.877).obs;
@@ -45,6 +47,46 @@ class FoodHomeController extends GetxController {
   void onInit() async {
     await getData();
     super.onInit();
+  }
+
+  /// Delivery / TakeAway toggle at the top of the section home (the app's
+  /// existing order-type mode; same behaviour as the former dropdown: a
+  /// non-empty cart is emptied after confirmation).
+  void changeOrderType(BuildContext context, String value) {
+    final String type = OrderTypeMode.normalise(value);
+    if (type == selectedOrderTypeValue.value) return;
+    Future<void> apply() async {
+      await OrderTypeMode.set(type);
+      selectedOrderTypeValue.value = type;
+      getData();
+    }
+
+    if (cartItem.isEmpty) {
+      apply();
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return CustomDialogBox(
+          title: "Alert".tr,
+          descriptions: "Do you really want to change the delivery option? Your cart will be empty.".tr,
+          positiveString: "Ok".tr,
+          negativeString: "Cancel".tr,
+          positiveClick: () async {
+            await apply();
+            DatabaseHelper.instance.deleteAllCartProducts();
+            cartProvider.clearDatabase();
+            getCartData();
+            Get.back();
+          },
+          negativeClick: () {
+            Get.back();
+          },
+          img: null,
+        );
+      },
+    );
   }
 
   RxList<VendorCategoryModel> vendorCategoryModel = <VendorCategoryModel>[].obs;
@@ -65,7 +107,7 @@ class FoodHomeController extends GetxController {
   Future<void> getData() async {
     isLoading.value = true;
     getCartData();
-    selectedOrderTypeValue.value = Preferences.getString(Preferences.foodDeliveryType, defaultValue: "Delivery");
+    selectedOrderTypeValue.value = OrderTypeMode.current;
     await getZone();
     FireStoreUtils.getAllNearestRestaurant().listen((event) async {
       popularRestaurantList.clear();

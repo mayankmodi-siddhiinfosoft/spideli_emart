@@ -72,6 +72,7 @@ dependencies:
   share_plus: ^13.3.0
   qr_flutter: ^4.1.0
   qr_code_dart_scan: ^0.14.0
+  syncfusion_flutter_pdf: ^34.2.8
 
   # Payment
   flutter_stripe: ^14.0.0

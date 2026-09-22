@@ -27,6 +27,8 @@ class CartProvider with ChangeNotifier {
     if ((_cartItems.where((item) => item.id == product.id)).isNotEmpty) {
       var index = _cartItems.indexWhere((item) => item.id == product.id);
       _cartItems[index].quantity = quantity;
+      // Fresher product data (wholesale tiers, fulfilment) when re-added from the store page.
+      if (product.lineMeta != null) _cartItems[index].lineMeta = product.lineMeta;
       if (product.extras != null || product.extras!.isNotEmpty) {
         _cartItems[index].extras = product.extras;
         _cartItems[index].extrasPrice = product.extrasPrice;

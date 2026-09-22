@@ -18,11 +18,9 @@ import 'package:customer/screen_ui/multi_vendor_service/home_screen/story_view.d
 import 'package:customer/screen_ui/multi_vendor_service/home_screen/view_all_category_screen.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
 import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/custom_dialog_box.dart';
 import 'package:customer/themes/responsive.dart';
 import 'package:customer/themes/round_button_fill.dart';
 import 'package:customer/utils/network_image_widget.dart';
-import 'package:customer/utils/preferences.dart';
 import 'package:customer/widget/osm_map/map_picker_page.dart';
 import 'package:customer/widget/place_picker/location_picker_screen.dart';
 import 'package:customer/widget/place_picker/selected_location_model.dart';
@@ -40,11 +38,10 @@ import '../../../controllers/food_home_controller.dart';
 import '../../../controllers/theme_controller.dart';
 import '../../../models/banner_model.dart';
 import '../../../models/story_model.dart';
-import '../../../service/database_helper.dart';
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
-import '../../../themes/text_field_widget.dart';
 import '../../../widget/restaurant_image_view.dart';
+import '../../../widget/shop_widgets.dart';
 import '../../../widget/video_widget.dart';
 import '../../auth_screens/login_screen.dart';
 import '../advertisement_screens/all_advertisement_screen.dart';
@@ -295,20 +292,8 @@ class HomeScreen extends StatelessWidget {
                                           ],
                                         ),
                                         const SizedBox(height: 10),
-                                        InkWell(
-                                          onTap: () {
-                                            Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
-                                          },
-                                          child: TextFieldWidget(
-                                            hintText:
-                                                Constant.sectionConstantModel?.name?.toLowerCase().contains('restaurants') == true
-                                                    ? 'Search the restaurant, food and more...'.tr
-                                                    : 'Search the store, item and more...'.tr,
-                                            controller: null,
-                                            enable: false,
-                                            prefix: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: SvgPicture.asset("assets/icons/ic_search.svg")),
-                                          ),
-                                        ),
+                                        // Delivery / TakeAway toggles at the top; the search bar is at the bottom (spec 7.3).
+                                        OrderTypeToggle(value: controller.selectedOrderTypeValue.value, isDark: isDark, onChanged: (value) => controller.changeOrderType(context, value)),
                                         const SizedBox(height: 5),
                                       ],
                                     ),
@@ -378,17 +363,13 @@ class HomeScreen extends StatelessWidget {
                                                               style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50),
                                                             ),
                                                           ),
-                                                          InkWell(
+                                                          NextArrowButton(
+                                                            color: AppThemeData.grey50,
                                                             onTap: () {
                                                               Get.to(const RestaurantListScreen(), arguments: {"vendorList": controller.newArrivalRestaurantList, "title": "New Arrival"})?.then((v) {
                                                                 controller.getFavouriteRestaurant();
                                                               });
                                                             },
-                                                            child: Text(
-                                                              "View all".tr,
-                                                              textAlign: TextAlign.center,
-                                                              style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
-                                                            ),
                                                           ),
                                                         ],
                                                       ),
@@ -425,17 +406,12 @@ class HomeScreen extends StatelessWidget {
                                                                     style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
                                                                   ),
                                                                 ),
-                                                                InkWell(
+                                                                NextArrowButton(
                                                                   onTap: () {
                                                                     Get.to(AllAdvertisementScreen())?.then((value) {
                                                                       controller.getFavouriteRestaurant();
                                                                     });
                                                                   },
-                                                                  child: Text(
-                                                                    "View all".tr,
-                                                                    textAlign: TextAlign.center,
-                                                                    style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
-                                                                  ),
                                                                 ),
                                                               ],
                                                             ),
@@ -545,6 +521,20 @@ class HomeScreen extends StatelessWidget {
                               ),
                     ),
           ),
+          // Search bar at the bottom of the section home (spec 7.3).
+          bottomNavigationBar:
+              controller.isLoading.value || Constant.isZoneAvailable == false || controller.allNearestRestaurant.isEmpty
+                  ? null
+                  : BottomSearchBar(
+                    isDark: isDark,
+                    hint:
+                        Constant.sectionConstantModel?.name?.toLowerCase().contains('restaurants') == true
+                            ? 'Search the restaurant, food and more...'.tr
+                            : 'Search the store, item and more...'.tr,
+                    onTap: () {
+                      Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
+                    },
+                  ),
           floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
           floatingActionButton: Container(
             decoration: BoxDecoration(color: isDark ? AppThemeData.grey800 : AppThemeData.grey100, borderRadius: const BorderRadius.all(Radius.circular(30))),
@@ -614,58 +604,6 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 14),
-                  Theme(
-                    data: Theme.of(context).copyWith(
-                      canvasColor: isDark ? AppThemeData.greyDark100 : AppThemeData.grey100, // background when dropdown opens
-                    ),
-                    child: DropdownButton<String>(
-                      isDense: false,
-                      underline: const SizedBox(),
-                      dropdownColor: isDark ? AppThemeData.greyDark100 : AppThemeData.grey100,
-                      value: controller.selectedOrderTypeValue.value.tr,
-                      icon: const Icon(Icons.keyboard_arrow_down),
-                      items:
-                          <String>['Delivery'.tr, 'TakeAway'.tr].map((String value) {
-                            return DropdownMenuItem<String>(
-                              value: value,
-                              child: Text(value.tr, style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
-                            );
-                          }).toList(),
-                      onChanged: (value) async {
-                        if (cartItem.isEmpty) {
-                          await Preferences.setString(Preferences.foodDeliveryType, value!);
-                          controller.selectedOrderTypeValue.value = value;
-                          controller.getData();
-                        } else {
-                          showDialog(
-                            context: context,
-                            builder: (BuildContext context) {
-                              return CustomDialogBox(
-                                title: "Alert".tr,
-                                descriptions: "Do you really want to change the delivery option? Your cart will be empty.".tr,
-                                positiveString: "Ok".tr,
-                                negativeString: "Cancel".tr,
-                                positiveClick: () async {
-                                  await Preferences.setString(Preferences.foodDeliveryType, value!);
-                                  controller.selectedOrderTypeValue.value = value;
-                                  controller.getData();
-                                  DatabaseHelper.instance.deleteAllCartProducts();
-                                  controller.cartProvider.clearDatabase();
-                                  controller.getCartData();
-                                  Get.back();
-                                },
-                                negativeClick: () {
-                                  Get.back();
-                                },
-                                img: null,
-                              );
-                            },
-                          );
-                        }
-                      },
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -679,12 +617,7 @@ class HomeScreen extends StatelessWidget {
     return Row(
       children: [
         Expanded(child: Text(name.tr, textAlign: TextAlign.start, style: TextStyle(fontFamily: AppThemeData.bold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900))),
-        InkWell(
-          onTap: () {
-            onPress!();
-          },
-          child: Text("View all".tr, textAlign: TextAlign.center, style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300)),
-        ),
+        NextArrowButton(onTap: () => onPress!()),
       ],
     );
   }

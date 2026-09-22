@@ -15,6 +15,7 @@ import '../../themes/show_toast_dialog.dart';
 import '../multi_vendor_service/chat_screens/chat_screen.dart';
 import 'on_demand_payment_screen.dart';
 import 'on_demand_review_screen.dart';
+import 'package:customer/utils/order_receipt_pdf.dart';
 
 class OnDemandOrderDetailsScreen extends StatelessWidget {
   const OnDemandOrderDetailsScreen({super.key});
@@ -44,7 +45,18 @@ class OnDemandOrderDetailsScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Text("Order Details".tr, style: AppThemeData.boldTextStyle(fontSize: 18, color: AppThemeData.grey900)),
+                  Expanded(child: Text("Order Details".tr, style: AppThemeData.boldTextStyle(fontSize: 18, color: AppThemeData.grey900))),
+                  // PDF receipt: download / share (spec 7.6).
+                  if (controller.onProviderOrder.value != null)
+                    GestureDetector(
+                      onTap: () => OrderReceiptPdf.showOptions(context, () => OrderReceiptPdf.fromProviderOrder(controller)),
+                      child: Container(
+                        height: 42,
+                        width: 42,
+                        decoration: BoxDecoration(shape: BoxShape.circle, color: AppThemeData.grey50),
+                        child: Center(child: Icon(Icons.receipt_long_outlined, color: AppThemeData.grey900, size: 20)),
+                      ),
+                    ),
                 ],
               ),
             ),

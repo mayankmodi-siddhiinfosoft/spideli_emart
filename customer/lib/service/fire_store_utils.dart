@@ -921,44 +921,29 @@ class FireStoreUtils {
     return referralModel;
   }
 
-  static Future<List<ProductModel>> getProductByVendorId(String vendorId) async {
+  /// Published products of a store. With [filterByOrderType] (default) only
+  /// the products the current Delivery / TakeAway order type allows, by the
+  /// product's effective `fulfilment` (the Store app's rule: explicit
+  /// `fulfilment`, else Delivery + TakeAway when `takeawayOption`).
+  static Future<List<ProductModel>> getProductByVendorId(String vendorId, {bool filterByOrderType = true}) async {
     String selectedFoodType = Preferences.getString(Preferences.foodDeliveryType, defaultValue: "Delivery");
     List<ProductModel> list = [];
     log("GetProductByVendorId :: $selectedFoodType");
-    if (selectedFoodType == "TakeAway") {
-      await fireStore
-          .collection(CollectionName.vendorProducts)
-          .where("vendorID", isEqualTo: vendorId)
-          .where('publish', isEqualTo: true)
-          .orderBy("createdAt", descending: false)
-          .get()
-          .then((value) {
-            for (var element in value.docs) {
-              ProductModel productModel = ProductModel.fromJson(element.data());
-              list.add(productModel);
-            }
-          })
-          .catchError((error) {
-            log(error.toString());
-          });
-    } else {
-      await fireStore
-          .collection(CollectionName.vendorProducts)
-          .where("vendorID", isEqualTo: vendorId)
-          .where("takeawayOption", isEqualTo: false)
-          .where('publish', isEqualTo: true)
-          .orderBy("createdAt", descending: false)
-          .get()
-          .then((value) {
-            for (var element in value.docs) {
-              ProductModel productModel = ProductModel.fromJson(element.data());
-              list.add(productModel);
-            }
-          })
-          .catchError((error) {
-            log(error.toString());
-          });
-    }
+    await fireStore
+        .collection(CollectionName.vendorProducts)
+        .where("vendorID", isEqualTo: vendorId)
+        .where('publish', isEqualTo: true)
+        .orderBy("createdAt", descending: false)
+        .get()
+        .then((value) {
+          for (var element in value.docs) {
+            ProductModel productModel = ProductModel.fromJson(element.data());
+            if (!filterByOrderType || productModel.allowsFoodType(selectedFoodType)) list.add(productModel);
+          }
+        })
+        .catchError((error) {
+          log(error.toString());
+        });
 
     return list;
   }

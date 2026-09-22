@@ -359,9 +359,9 @@ class OrderScreen extends StatelessWidget {
                   orderModel.status == Constant.orderCompleted
                       ? Expanded(
                         child: InkWell(
-                          onTap: () {
+                          onTap: () async {
                             for (var element in orderModel.products!) {
-                              controller.addToCart(cartProductModel: element);
+                              await controller.addToCart(cartProductModel: element, vendor: orderModel.vendor);
                               ShowToastDialog.showToast("Item Added In a cart".tr);
                             }
                           },

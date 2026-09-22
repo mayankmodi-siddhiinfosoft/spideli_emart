@@ -54,6 +54,9 @@ import '../screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import '../service/cart_provider.dart';
 import '../service/database_helper.dart';
 import '../utils/region_service.dart';
+import '../utils/wholesale_pricing.dart';
+import 'food_home_controller.dart';
+import 'home_e_commerce_controller.dart';
 import 'package:customer/models/currency_model.dart';
 import '../service/fire_store_utils.dart';
 import '../service/send_notification.dart';
@@ -127,7 +130,7 @@ class CartController extends GetxController {
       }
       calculatePrice();
     });
-    selectedFoodType.value = Preferences.getString(Preferences.foodDeliveryType, defaultValue: "Delivery");
+    selectedFoodType.value = OrderTypeMode.current;
 
     await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid()).then((value) {
       if (value != null) {
@@ -225,7 +228,7 @@ class CartController extends GetxController {
 
     /// ---------------- SUBTOTAL ----------------
     for (var element in cartItem) {
-      final price = double.parse((element.discountPrice != null && double.parse(element.discountPrice.toString()) > 0) ? element.discountPrice.toString() : element.price.toString());
+      final price = element.chargedUnitPrice; // wholesale tier for the line quantity when cheaper (spec 8.2)
 
       final qty = double.parse(element.quantity.toString());
       final extras = double.parse(element.extrasPrice.toString());
@@ -274,7 +277,7 @@ class CartController extends GetxController {
     /// ---------------- PRODUCT TAX (AFTER DISCOUNT) ----------------
     if (Constant.taxScope == "product") {
       for (var element in cartItem) {
-        final price = double.parse((element.discountPrice != null && double.parse(element.discountPrice.toString()) > 0) ? element.discountPrice.toString() : element.price.toString());
+        final price = element.chargedUnitPrice; // wholesale tier for the line quantity when cheaper (spec 8.2)
 
         final qty = double.parse(element.quantity.toString());
         final extras = double.parse(element.extrasPrice.toString());
@@ -405,6 +408,64 @@ class CartController extends GetxController {
 
   List<CartProductModel> tempProduc = [];
 
+  /// Switches Delivery / TakeAway at checkout (the app-wide order type).
+  Future<void> setFoodType(String value) async {
+    final String type = OrderTypeMode.normalise(value);
+    selectedFoodType.value = type;
+    await OrderTypeMode.set(type);
+    if (Get.isRegistered<FoodHomeController>()) Get.find<FoodHomeController>().selectedOrderTypeValue.value = type;
+    if (Get.isRegistered<HomeECommerceController>()) Get.find<HomeECommerceController>().selectedOrderTypeValue.value = type;
+    calculatePrice();
+  }
+
+  /// Checks run before any payment starts (spec 7.3 / 8.2), against the
+  /// products as they are now: the chosen Delivery / TakeAway mode must be
+  /// allowed by every product (effective `fulfilment`), business-only
+  /// wholesale products can't be sold here, and wholesale-only lines must
+  /// reach their minimum quantity. Also refreshes each line's wholesale tiers.
+  Future<bool> validateCartBeforePayment() async {
+    final List<String> problems = [];
+    ShowToastDialog.showLoader("Please wait...".tr);
+    try {
+      for (final CartProductModel line in cartItem.toList()) {
+        final String productId = (line.id ?? '').split('~').first;
+        final String? variantId = (line.id ?? '').contains('~') ? line.id!.split('~').last : null;
+        final ProductModel? product = await FireStoreUtils.getProductById(productId);
+        if (product == null) continue;
+        final String name = line.name ?? product.name ?? '';
+        if (!product.allowsFoodType(selectedFoodType.value)) {
+          final String allowed = product.effectiveFulfilment.map(OrderTypeMode.labelOf).join(' / ');
+          problems.add("${'"'}$name${'"'} ${'is not available for'.tr} ${selectedFoodType.value.tr} (${'only'.tr}: $allowed)");
+        }
+        if (product.isBusinessOnlyProduct) {
+          problems.add("${'"'}$name${'"'}: ${'Business customers only'.tr}");
+        }
+        if (vendorModel.value.id != null) {
+          final CartLineMeta meta = WholesalePricing.metaFor(product, vendorModel.value, variantId: variantId);
+          final String before = jsonEncode(line.lineMeta?.toJson());
+          line.lineMeta = meta;
+          if (before != jsonEncode(meta.toJson())) await DatabaseHelper.instance.updateCartProduct(line);
+        }
+        if ((line.quantity ?? 0) < product.minOrderQuantity) {
+          problems.add("${'"'}$name${'"'}: ${'Minimum order'.tr} ${product.minOrderQuantity} ${'pcs'.tr}");
+        }
+      }
+    } catch (e) {
+      log("validateCartBeforePayment: $e");
+    }
+    ShowToastDialog.closeLoader();
+    calculatePrice();
+    if (problems.isEmpty) return true;
+    Get.dialog(
+      AlertDialog(
+        title: Text("Please review your cart".tr),
+        content: SingleChildScrollView(child: Text(problems.map((e) => "• $e").join("\n\n"))),
+        actions: [TextButton(onPressed: () => Get.back(), child: Text("OK".tr))],
+      ),
+    );
+    return false;
+  }
+
   Future<void> placeOrder() async {
     if (selectedPaymentMethod.value == PaymentGateway.wallet.name) {
       if (double.parse(userModel.value.walletAmount.toString()) >= totalAmount.value) {
@@ -465,7 +526,9 @@ class CartController extends GetxController {
     orderModel.discount = couponAmount.value;
     orderModel.couponId = selectedCouponModel.value.id;
     orderModel.paymentMethod = selectedPaymentMethod.value;
-    orderModel.products = cartItem;
+    // The charged unit price is written on each line (isWholesale /
+    // wholesaleMinQty for wholesale lines) and never re-derived later.
+    orderModel.products = cartItem.map((e) => e.toOrderLine()).toList();
     orderModel.sectionId = Constant.sectionConstantModel?.id;
     orderModel.specialDiscount = specialDiscountMap;
     orderModel.couponCode = selectedCouponModel.value.code;

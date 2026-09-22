@@ -4,6 +4,7 @@ import 'package:customer/models/order_model.dart';
 import 'package:get/get.dart';
 
 import '../service/cart_provider.dart';
+import '../utils/wholesale_pricing.dart';
 
 class OrderDetailsController extends GetxController {
   RxBool isLoading = true.obs;
@@ -58,7 +59,7 @@ class OrderDetailsController extends GetxController {
 
     /// ---------------- SUBTOTAL ----------------
     for (var element in orderModel.value.products!) {
-      final double price = (double.parse(element.discountPrice.toString()) > 0) ? double.parse(element.discountPrice.toString()) : double.parse(element.price.toString());
+      final double price = element.unitPrice; // the charged unit price (wholesale lines: price)
 
       final double qty = double.parse(element.quantity.toString());
       final double extras = double.parse(element.extrasPrice.toString());
@@ -91,7 +92,7 @@ class OrderDetailsController extends GetxController {
     /// ---------------- PRODUCT TAX (AFTER DISCOUNT) ----------------
     if (orderModel.value.taxScope == "product") {
       for (var element in orderModel.value.products!) {
-        final double price = (double.parse(element.discountPrice.toString()) > 0) ? double.parse(element.discountPrice.toString()) : double.parse(element.price.toString());
+        final double price = element.unitPrice; // the charged unit price (wholesale lines: price)
 
         final double qty = double.parse(element.quantity.toString());
         final double extras = double.parse(element.extrasPrice.toString());
@@ -160,8 +161,11 @@ class OrderDetailsController extends GetxController {
 
   final CartProvider cartProvider = CartProvider();
 
-  void addToCart({required CartProductModel cartProductModel}) {
-    cartProvider.addToCart(Get.context!, cartProductModel, cartProductModel.quantity!);
+  /// Reorder: the past order line carries the price that was charged (maybe
+  /// wholesale), so retail prices and tiers are refreshed from the product.
+  Future<void> addToCart({required CartProductModel cartProductModel}) async {
+    final CartProductModel line = await WholesalePricing.reorderLine(cartProductModel, vendor: orderModel.value.vendor);
+    await cartProvider.addToCart(Get.context!, line, line.quantity!);
     update();
   }
 }

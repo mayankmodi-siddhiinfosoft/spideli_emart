@@ -21,7 +21,7 @@ class DatabaseHelper {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
 
-    return await openDatabase(path, version: 1, onCreate: _createDB);
+    return await openDatabase(path, version: 2, onCreate: _createDB, onUpgrade: _upgradeDB);
   }
 
   Future _createDB(Database db, int version) async {
@@ -42,10 +42,19 @@ class DatabaseHelper {
       extras_price $textType,
       extras $textType,
       variant_info $textType NULL,
-      taxSetting $textType NULL
+      taxSetting $textType NULL,
+      line_meta TEXT NULL
     )
     ''');
     print('Table cart_products created'); // Debugging
+  }
+
+  /// v2: `line_meta` (JSON) keeps the product's wholesale tiers, sale type and
+  /// fulfilment on each cart line so the cart can reprice by quantity.
+  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE cart_products ADD COLUMN line_meta TEXT NULL');
+    }
   }
 
   Future<void> insertCartProduct(CartProductModel product) async {
@@ -53,10 +62,7 @@ class DatabaseHelper {
     final db = await instance.database;
     await db.insert(
       'cart_products',
-      product.toJson()
-        ..['variant_info'] = jsonEncode(product.variantInfo)
-        ..['extras'] = jsonEncode(product.extras)
-        ..['taxSetting'] = jsonEncode(product.taxSetting),
+      product.toDbJson(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -85,6 +91,7 @@ class DatabaseHelper {
       'variant_info': jsonEncode(product.variantInfo ?? {}),
       'extras': jsonEncode(product.extras ?? []),
       'taxSetting': jsonEncode(product.taxSetting ?? []),
+      'line_meta': product.lineMeta == null ? null : jsonEncode(product.lineMeta!.toJson()),
     };
 
     await db.update('cart_products', data, where: 'id = ?', whereArgs: [product.id]);

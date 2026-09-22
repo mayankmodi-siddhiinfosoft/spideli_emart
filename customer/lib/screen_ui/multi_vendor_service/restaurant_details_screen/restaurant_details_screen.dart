@@ -22,6 +22,8 @@ import 'package:get/get.dart';
 import '../../../controllers/theme_controller.dart';
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
+import '../../../utils/wholesale_pricing.dart';
+import '../../../widget/shop_widgets.dart';
 import '../cart_screen/cart_screen.dart';
 import '../dine_in_screeen/dine_in_details_screen.dart';
 import '../review_list_screen/review_list_screen.dart';
@@ -339,6 +341,9 @@ class RestaurantDetailsScreen extends StatelessWidget {
                                           ),
                                         ],
                                       ),
+                                  // Delivery / TakeAway filter under the store header (spec 7.3).
+                                  const SizedBox(height: 12),
+                                  Obx(() => OrderTypeToggle(value: controller.orderType.value, isDark: isDark, onChanged: controller.setOrderType)),
                                   controller.vendorModel.value.dineInActive == true || (controller.vendorModel.value.openDineTime != null && controller.vendorModel.value.openDineTime!.isNotEmpty)
                                       ? Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -859,363 +864,332 @@ class ProductListView extends StatelessWidget {
         physics: const NeverScrollableScrollPhysics(),
         itemBuilder: (context, index) {
           VendorCategoryModel vendorCategoryModel = controller.vendorCategoryList[index];
-          return ExpansionTile(
-            childrenPadding: EdgeInsets.zero,
-            tilePadding: EdgeInsets.zero,
-            shape: const Border(),
-            initiallyExpanded: true,
-            title: Text(
-              "${vendorCategoryModel.title.toString()} (${controller.productList.where((p0) => p0.categoryID == vendorCategoryModel.id).toList().length})",
-              style: TextStyle(fontSize: 18, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-            ),
-            children: [
-              Obx(
-                () => ListView.builder(
-                  itemCount: controller.productList.where((p0) => p0.categoryID == vendorCategoryModel.id).toList().length,
+          return Obx(() {
+            final List<ProductModel> categoryProducts = controller.productList.where((p0) => p0.categoryID == vendorCategoryModel.id).toList();
+            // Categories are loaded for the whole catalogue; hide the ones the
+            // Delivery / TakeAway filter (or the search) leaves empty.
+            if (categoryProducts.isEmpty) return const SizedBox.shrink();
+            return ExpansionTile(
+              childrenPadding: EdgeInsets.zero,
+              tilePadding: EdgeInsets.zero,
+              shape: const Border(),
+              initiallyExpanded: true,
+              title: Text(
+                "${vendorCategoryModel.title.toString()} (${categoryProducts.length})",
+                style: TextStyle(fontSize: 18, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
+              ),
+              children: [
+                ListView.builder(
+                  itemCount: categoryProducts.length,
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   padding: EdgeInsets.zero,
-                  itemBuilder: (context, index) {
-                    ProductModel productModel = controller.productList.where((p0) => p0.categoryID == vendorCategoryModel.id).toList()[index];
-
-                    String price = "0.0";
-                    String disPrice = "0.0";
-                    List<String> selectedVariants = [];
-                    List<String> selectedIndexVariants = [];
-                    List<String> selectedIndexArray = [];
-                    if (productModel.itemAttribute != null) {
-                      if (productModel.itemAttribute!.attributes!.isNotEmpty) {
-                        for (var element in productModel.itemAttribute!.attributes!) {
-                          if (element.attributeOptions!.isNotEmpty) {
-                            selectedVariants.add(productModel.itemAttribute!.attributes![productModel.itemAttribute!.attributes!.indexOf(element)].attributeOptions![0].toString());
-                            selectedIndexVariants.add('${productModel.itemAttribute!.attributes!.indexOf(element)} _${productModel.itemAttribute!.attributes![0].attributeOptions![0].toString()}');
-                            selectedIndexArray.add('${productModel.itemAttribute!.attributes!.indexOf(element)}_0');
-                          }
-                        }
-                      }
-                      if (productModel.itemAttribute!.variants!.where((element) => element.variantSku == selectedVariants.join('-')).isNotEmpty) {
-                        price = Constant.productCommissionPrice(
-                          controller.vendorModel.value,
-                          productModel.itemAttribute!.variants!.where((element) => element.variantSku == selectedVariants.join('-')).first.variantPrice ?? '0',
-                        );
-                        disPrice = "0";
-                      }
-                    } else {
-                      price = Constant.productCommissionPrice(controller.vendorModel.value, productModel.price.toString());
-                      disPrice = double.parse(productModel.disPrice.toString()) <= 0 ? "0" : Constant.productCommissionPrice(controller.vendorModel.value, productModel.disPrice.toString());
-                    }
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 20),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Constant.sectionConstantModel!.isProductDetails == false
-                                    ? SizedBox()
-                                    : Row(
-                                      children: [
-                                        productModel.nonveg == true ? SvgPicture.asset("assets/icons/ic_nonveg.svg") : SvgPicture.asset("assets/icons/ic_veg.svg"),
-                                        const SizedBox(width: 5),
-                                        Text(
-                                          productModel.nonveg == true ? "Non Veg.".tr : "Pure veg.".tr,
-                                          style: TextStyle(
-                                            color: productModel.nonveg == true ? AppThemeData.danger300 : AppThemeData.success400,
-                                            fontFamily: AppThemeData.semiBold,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                const SizedBox(height: 5),
-                                Text(
-                                  productModel.name.toString(),
-                                  style: TextStyle(fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                ),
-                                double.parse(disPrice) <= 0
-                                    ? Text(
-                                      Constant.amountShow(amount: price, currency: RegionService.currencyForVendor(controller.vendorModel.value)),
-                                      style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                    )
-                                    : Row(
-                                      children: [
-                                        Text(
-                                          Constant.amountShow(amount: disPrice, currency: RegionService.currencyForVendor(controller.vendorModel.value)),
-                                          style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                        ),
-                                        const SizedBox(width: 5),
-                                        Text(
-                                          Constant.amountShow(amount: price, currency: RegionService.currencyForVendor(controller.vendorModel.value)),
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            decoration: TextDecoration.lineThrough,
-                                            decorationColor: isDark ? AppThemeData.grey500 : AppThemeData.grey400,
-                                            color: isDark ? AppThemeData.grey500 : AppThemeData.grey400,
-                                            fontFamily: AppThemeData.semiBold,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                Row(
-                                  children: [
-                                    SvgPicture.asset("assets/icons/ic_star.svg", colorFilter: const ColorFilter.mode(AppThemeData.warning300, BlendMode.srcIn)),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      "${Constant.calculateReview(reviewCount: productModel.reviewsCount!.toStringAsFixed(0), reviewSum: productModel.reviewsSum.toString())} (${productModel.reviewsCount!.toStringAsFixed(0)})",
-                                      style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w500),
-                                    ),
-                                  ],
-                                ),
-                                Text(
-                                  "${productModel.description}",
-                                  maxLines: 2,
-                                  style: TextStyle(
-                                    overflow: TextOverflow.ellipsis,
-                                    color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                    fontFamily: AppThemeData.regular,
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                                const SizedBox(height: 5),
-                                InkWell(
-                                  onTap: () {
-                                    showDialog(
-                                      context: context,
-                                      builder: (BuildContext context) {
-                                        return infoDialog(controller, isDark, productModel);
-                                      },
-                                    );
-                                  },
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.info, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, size: 18),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        "Info".tr,
-                                        maxLines: 2,
-                                        style: TextStyle(
-                                          overflow: TextOverflow.ellipsis,
-                                          fontSize: 16,
-                                          color: isDark ? AppThemeData.primary300 : AppThemeData.primary300,
-                                          fontFamily: AppThemeData.regular,
-                                          fontWeight: FontWeight.w400,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          ClipRRect(
-                            borderRadius: const BorderRadius.all(Radius.circular(16)),
-                            child: Stack(
-                              children: [
-                                NetworkImageWidget(imageUrl: productModel.photo.toString(), fit: BoxFit.cover, height: Responsive.height(16, context), width: Responsive.width(34, context)),
-                                Container(
-                                  height: Responsive.height(16, context),
-                                  width: Responsive.width(34, context),
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(begin: const Alignment(-0.00, -1.00), end: const Alignment(0, 1), colors: [Colors.black.withOpacity(0), const Color(0xFF111827)]),
-                                  ),
-                                ),
-                                Positioned(
-                                  right: 10,
-                                  top: 10,
-                                  child: InkWell(
-                                    onTap: () async {
-                                      if (controller.favouriteItemList.where((p0) => p0.productId == productModel.id).isNotEmpty) {
-                                        FavouriteItemModel favouriteModel = FavouriteItemModel(
-                                          productId: productModel.id,
-                                          storeId: controller.vendorModel.value.id,
-                                          userId: FireStoreUtils.getCurrentUid(),
-                                        );
-                                        controller.favouriteItemList.removeWhere((item) => item.productId == productModel.id);
-                                        await FireStoreUtils.removeFavouriteItem(favouriteModel);
-                                      } else {
-                                        FavouriteItemModel favouriteModel = FavouriteItemModel(
-                                          productId: productModel.id,
-                                          storeId: controller.vendorModel.value.id,
-                                          userId: FireStoreUtils.getCurrentUid(),
-                                        );
-                                        controller.favouriteItemList.add(favouriteModel);
-
-                                        await FireStoreUtils.setFavouriteItem(favouriteModel);
-                                      }
-                                    },
-                                    child: Obx(
-                                      () =>
-                                          controller.favouriteItemList.where((p0) => p0.productId == productModel.id).isNotEmpty
-                                              ? SvgPicture.asset("assets/icons/ic_like_fill.svg")
-                                              : SvgPicture.asset("assets/icons/ic_like.svg"),
-                                    ),
-                                  ),
-                                ),
-                                controller.isOpen.value == false || Constant.userModel == null
-                                    ? const SizedBox()
-                                    : Positioned(
-                                      bottom: 10,
-                                      left: 20,
-                                      right: 20,
-                                      child:
-                                          selectedVariants.isNotEmpty || (productModel.addOnsTitle != null && productModel.addOnsTitle!.isNotEmpty)
-                                              ? RoundedButtonFill(
-                                                title: "Add".tr,
-                                                width: 10,
-                                                height: 4,
-                                                color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                                textColor: AppThemeData.primary300,
-                                                onPress: () async {
-                                                  controller.selectedVariants.clear();
-                                                  controller.selectedIndexVariants.clear();
-                                                  controller.selectedIndexArray.clear();
-                                                  controller.selectedAddOns.clear();
-                                                  controller.quantity.value = 1;
-                                                  if (productModel.itemAttribute != null) {
-                                                    if (productModel.itemAttribute!.attributes!.isNotEmpty) {
-                                                      for (var element in productModel.itemAttribute!.attributes!) {
-                                                        if (element.attributeOptions!.isNotEmpty) {
-                                                          controller.selectedVariants.add(
-                                                            productModel.itemAttribute!.attributes![productModel.itemAttribute!.attributes!.indexOf(element)].attributeOptions![0].toString(),
-                                                          );
-                                                          controller.selectedIndexVariants.add(
-                                                            '${productModel.itemAttribute!.attributes!.indexOf(element)} _${productModel.itemAttribute!.attributes![0].attributeOptions![0].toString()}',
-                                                          );
-                                                          controller.selectedIndexArray.add('${productModel.itemAttribute!.attributes!.indexOf(element)}_0');
-                                                        }
-                                                      }
-                                                    }
-                                                    final bool productIsInList = cartItem.any(
-                                                      (product) =>
-                                                          product.id ==
-                                                          "${productModel.id}~${productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).isNotEmpty ? productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).first.variantId.toString() : ""}",
-                                                    );
-
-                                                    if (productIsInList) {
-                                                      CartProductModel element = cartItem.firstWhere(
-                                                        (product) =>
-                                                            product.id ==
-                                                            "${productModel.id}~${productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).isNotEmpty ? productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).first.variantId.toString() : ""}",
-                                                      );
-                                                      controller.quantity.value = element.quantity!;
-                                                      if (element.extras != null) {
-                                                        for (var element in element.extras!) {
-                                                          controller.selectedAddOns.add(element);
-                                                        }
-                                                      }
-                                                    }
-                                                  } else {
-                                                    if (cartItem.where((product) => product.id == "${productModel.id}").isNotEmpty) {
-                                                      CartProductModel element = cartItem.firstWhere((product) => product.id == "${productModel.id}");
-                                                      controller.quantity.value = element.quantity!;
-                                                      if (element.extras != null) {
-                                                        for (var element in element.extras!) {
-                                                          controller.selectedAddOns.add(element);
-                                                        }
-                                                      }
-                                                    }
-                                                  }
-                                                  controller.update();
-                                                  controller.calculatePrice(productModel);
-                                                  productDetailsBottomSheet(context, productModel);
-                                                },
-                                              )
-                                              : Obx(
-                                                () =>
-                                                    cartItem.where((p0) => p0.id == productModel.id).isNotEmpty
-                                                        ? Container(
-                                                          width: Responsive.width(100, context),
-                                                          height: Responsive.height(4, context),
-                                                          decoration: ShapeDecoration(
-                                                            color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(200)),
-                                                          ),
-                                                          child: Row(
-                                                            mainAxisAlignment: MainAxisAlignment.center,
-                                                            crossAxisAlignment: CrossAxisAlignment.center,
-                                                            children: [
-                                                              InkWell(
-                                                                onTap: () {
-                                                                  controller.addToCart(
-                                                                    productModel: productModel,
-                                                                    price: price,
-                                                                    discountPrice: disPrice,
-                                                                    isIncrement: false,
-                                                                    quantity: cartItem.where((p0) => p0.id == productModel.id).first.quantity! - 1,
-                                                                  );
-                                                                },
-                                                                child: Icon(Icons.remove, color: isDark ? AppThemeData.grey50 : AppThemeData.greyDark50),
-                                                              ),
-                                                              Padding(
-                                                                padding: const EdgeInsets.symmetric(horizontal: 14),
-                                                                child: Text(
-                                                                  cartItem.where((p0) => p0.id == productModel.id).first.quantity.toString(),
-                                                                  textAlign: TextAlign.start,
-                                                                  maxLines: 1,
-                                                                  style: TextStyle(
-                                                                    fontSize: 16,
-                                                                    overflow: TextOverflow.ellipsis,
-                                                                    fontFamily: AppThemeData.medium,
-                                                                    fontWeight: FontWeight.w500,
-                                                                    color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                              InkWell(
-                                                                onTap: () {
-                                                                  if ((cartItem.where((p0) => p0.id == productModel.id).first.quantity ?? 0) < (productModel.quantity ?? 0) ||
-                                                                      (productModel.quantity ?? 0) == -1) {
-                                                                    controller.addToCart(
-                                                                      productModel: productModel,
-                                                                      price: price,
-                                                                      discountPrice: disPrice,
-                                                                      isIncrement: true,
-                                                                      quantity: cartItem.where((p0) => p0.id == productModel.id).first.quantity! + 1,
-                                                                    );
-                                                                  } else {
-                                                                    ShowToastDialog.showToast("Out of stock".tr);
-                                                                  }
-                                                                },
-                                                                child: Icon(Icons.add, color: isDark ? AppThemeData.grey50 : AppThemeData.greyDark50),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                        )
-                                                        : RoundedButtonFill(
-                                                          title: "Add".tr,
-                                                          width: 10,
-                                                          height: 4,
-                                                          color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                                          textColor: AppThemeData.primary300,
-                                                          onPress: () async {
-                                                            if (1 <= (productModel.quantity ?? 0) || (productModel.quantity ?? 0) == -1) {
-                                                              controller.addToCart(productModel: productModel, price: price, discountPrice: disPrice, isIncrement: true, quantity: 1);
-                                                            } else {
-                                                              ShowToastDialog.showToast("Out of stock".tr);
-                                                            }
-                                                          },
-                                                        ),
-                                              ),
-                                    ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                  itemBuilder: (context, index) => _productItem(context, isDark, categoryProducts[index]),
                 ),
-              ),
-            ],
-          );
+              ],
+            );
+          });
         },
       ),
     );
+  }
+
+  Widget _productItem(BuildContext context, bool isDark, ProductModel productModel) {
+    String price = "0.0";
+    String disPrice = "0.0";
+    String? defaultVariantId;
+    List<String> selectedVariants = [];
+    if (productModel.itemAttribute != null) {
+      if (productModel.itemAttribute!.attributes!.isNotEmpty) {
+        for (var element in productModel.itemAttribute!.attributes!) {
+          if (element.attributeOptions!.isNotEmpty) {
+            selectedVariants.add(productModel.itemAttribute!.attributes![productModel.itemAttribute!.attributes!.indexOf(element)].attributeOptions![0].toString());
+          }
+        }
+      }
+      final Variants? defaultVariant = productModel.itemAttribute!.variants!.firstWhereOrNull((element) => element.variantSku == selectedVariants.join('-'));
+      if (defaultVariant != null) {
+        price = Constant.productCommissionPrice(controller.vendorModel.value, defaultVariant.variantPrice ?? '0');
+        disPrice = "0";
+        defaultVariantId = defaultVariant.variantId;
+      }
+    } else {
+      price = Constant.productCommissionPrice(controller.vendorModel.value, productModel.price.toString());
+      disPrice = double.parse(productModel.disPrice.toString()) <= 0 ? "0" : Constant.productCommissionPrice(controller.vendorModel.value, productModel.disPrice.toString());
+    }
+
+    final currency = RegionService.currencyForVendor(controller.vendorModel.value);
+    // Retail + wholesale tiers side by side (spec 8.2), in the store's currency.
+    final List<PriceBand> bands = WholesalePricing.bands(
+      retail: WholesalePricing.retailPrice(productModel, controller.vendorModel.value, variantId: defaultVariantId),
+      tiers: WholesalePricing.customerTiers(productModel, controller.vendorModel.value, variantId: defaultVariantId),
+      wholesaleOnly: productModel.isWholesaleOnly,
+    );
+    final bool businessOnly = productModel.isBusinessOnlyProduct;
+    final int minQty = productModel.minOrderQuantity;
+    final bool hasOptions = selectedVariants.isNotEmpty || (productModel.addOnsTitle != null && productModel.addOnsTitle!.isNotEmpty);
+    final bool canBuy = controller.isOpen.value == true && Constant.userModel != null && !businessOnly;
+
+    /// Opens the options sheet (variants / add-ons), prefilled from the cart.
+    void openOptions() {
+      controller.selectedVariants.clear();
+      controller.selectedIndexVariants.clear();
+      controller.selectedIndexArray.clear();
+      controller.selectedAddOns.clear();
+      controller.quantity.value = 1;
+      if (productModel.itemAttribute != null) {
+        if (productModel.itemAttribute!.attributes!.isNotEmpty) {
+          for (var element in productModel.itemAttribute!.attributes!) {
+            if (element.attributeOptions!.isNotEmpty) {
+              controller.selectedVariants.add(productModel.itemAttribute!.attributes![productModel.itemAttribute!.attributes!.indexOf(element)].attributeOptions![0].toString());
+              controller.selectedIndexVariants.add('${productModel.itemAttribute!.attributes!.indexOf(element)} _${productModel.itemAttribute!.attributes![0].attributeOptions![0].toString()}');
+              controller.selectedIndexArray.add('${productModel.itemAttribute!.attributes!.indexOf(element)}_0');
+            }
+          }
+        }
+        final String cartId =
+            "${productModel.id}~${productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).isNotEmpty ? productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).first.variantId.toString() : ""}";
+        final CartProductModel? element = cartItem.firstWhereOrNull((product) => product.id == cartId);
+        if (element != null) {
+          controller.quantity.value = element.quantity!;
+          if (element.extras != null) {
+            for (var extra in element.extras!) {
+              controller.selectedAddOns.add(extra);
+            }
+          }
+        }
+      } else {
+        final CartProductModel? element = cartItem.firstWhereOrNull((product) => product.id == "${productModel.id}");
+        if (element != null) {
+          controller.quantity.value = element.quantity!;
+          if (element.extras != null) {
+            for (var extra in element.extras!) {
+              controller.selectedAddOns.add(extra);
+            }
+          }
+        }
+      }
+      // Wholesale-only products start at their minimum quantity.
+      if (controller.quantity.value < minQty) controller.quantity.value = minQty;
+      controller.update();
+      controller.calculatePrice(productModel);
+      productDetailsBottomSheet(context, productModel);
+    }
+
+    /// Adds a product without options at its minimum quantity (or +1 when already in the cart).
+    void addSimple() {
+      final CartProductModel? inCart = cartItem.firstWhereOrNull((p0) => p0.id == productModel.id);
+      final int target = inCart == null ? minQty : (inCart.quantity ?? 0) + 1;
+      if (target <= (productModel.quantity ?? 0) || (productModel.quantity ?? 0) == -1) {
+        controller.addToCart(productModel: productModel, price: price, discountPrice: disPrice, isIncrement: true, quantity: target);
+      } else {
+        ShowToastDialog.showToast("Out of stock".tr);
+      }
+    }
+
+    void addToCartFromInfo() => hasOptions ? openOptions() : addSimple();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Constant.sectionConstantModel!.isProductDetails == false
+                        ? SizedBox()
+                        : Row(
+                          children: [
+                            productModel.nonveg == true ? SvgPicture.asset("assets/icons/ic_nonveg.svg") : SvgPicture.asset("assets/icons/ic_veg.svg"),
+                            const SizedBox(width: 5),
+                            Text(
+                              productModel.nonveg == true ? "Non Veg.".tr : "Pure veg.".tr,
+                              style: TextStyle(color: productModel.nonveg == true ? AppThemeData.danger300 : AppThemeData.success400, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                    const SizedBox(height: 5),
+                    Text(productModel.name.toString(), style: TextStyle(fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600)),
+                    // Wholesale-only products hide the retail price.
+                    if (!productModel.isWholesaleOnly)
+                      double.parse(disPrice) <= 0
+                          ? Text(
+                            Constant.amountShow(amount: price, currency: currency),
+                            style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
+                          )
+                          : Row(
+                            children: [
+                              Text(
+                                Constant.amountShow(amount: disPrice, currency: currency),
+                                style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                Constant.amountShow(amount: price, currency: currency),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  decoration: TextDecoration.lineThrough,
+                                  decorationColor: isDark ? AppThemeData.grey500 : AppThemeData.grey400,
+                                  color: isDark ? AppThemeData.grey500 : AppThemeData.grey400,
+                                  fontFamily: AppThemeData.semiBold,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                    if (productModel.isWholesaleOnly || bands.length > 1)
+                      Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: PriceTiersView(bands: bands, currency: currency, isDark: isDark, compact: true)),
+                    if (businessOnly)
+                      _note("Business customers only".tr, AppThemeData.danger300)
+                    else if (productModel.isWholesaleOnly)
+                      _note("${'Wholesale only'.tr} · ${'Minimum order'.tr}: $minQty ${'pcs'.tr}", AppThemeData.primary300)
+                    else if (productModel.hasWholesaleTier && productModel.wholesaleBlockedForCustomer)
+                      _note("Wholesale prices for Business customers only".tr, isDark ? AppThemeData.grey400 : AppThemeData.grey500),
+                    Row(
+                      children: [
+                        SvgPicture.asset("assets/icons/ic_star.svg", colorFilter: const ColorFilter.mode(AppThemeData.warning300, BlendMode.srcIn)),
+                        const SizedBox(width: 5),
+                        Text(
+                          "${Constant.calculateReview(reviewCount: productModel.reviewsCount!.toStringAsFixed(0), reviewSum: productModel.reviewsSum.toString())} (${productModel.reviewsCount!.toStringAsFixed(0)})",
+                          style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      "${productModel.description}",
+                      maxLines: 2,
+                      style: TextStyle(overflow: TextOverflow.ellipsis, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
+                    ),
+                    const SizedBox(height: 5),
+                    // "Info" opens the details dropdown on the card (spec 7.3).
+                    InkWell(
+                      onTap: () {
+                        controller.expandedProductId.value = controller.expandedProductId.value == productModel.id ? '' : (productModel.id ?? '');
+                      },
+                      child: Row(
+                        children: [
+                          Icon(Icons.info, color: AppThemeData.primary300, size: 18),
+                          const SizedBox(width: 8),
+                          Text("Info".tr, maxLines: 2, style: TextStyle(overflow: TextOverflow.ellipsis, fontSize: 16, color: AppThemeData.primary300, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400)),
+                          Obx(() => Icon(controller.expandedProductId.value == productModel.id ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppThemeData.primary300, size: 20)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ClipRRect(
+                borderRadius: const BorderRadius.all(Radius.circular(16)),
+                child: Stack(
+                  children: [
+                    NetworkImageWidget(imageUrl: productModel.photo.toString(), fit: BoxFit.cover, height: Responsive.height(16, context), width: Responsive.width(34, context)),
+                    Container(
+                      height: Responsive.height(16, context),
+                      width: Responsive.width(34, context),
+                      decoration: BoxDecoration(gradient: LinearGradient(begin: const Alignment(-0.00, -1.00), end: const Alignment(0, 1), colors: [Colors.black.withOpacity(0), const Color(0xFF111827)])),
+                    ),
+                    Positioned(
+                      right: 10,
+                      top: 10,
+                      child: InkWell(
+                        onTap: () async {
+                          if (controller.favouriteItemList.where((p0) => p0.productId == productModel.id).isNotEmpty) {
+                            FavouriteItemModel favouriteModel = FavouriteItemModel(productId: productModel.id, storeId: controller.vendorModel.value.id, userId: FireStoreUtils.getCurrentUid());
+                            controller.favouriteItemList.removeWhere((item) => item.productId == productModel.id);
+                            await FireStoreUtils.removeFavouriteItem(favouriteModel);
+                          } else {
+                            FavouriteItemModel favouriteModel = FavouriteItemModel(productId: productModel.id, storeId: controller.vendorModel.value.id, userId: FireStoreUtils.getCurrentUid());
+                            controller.favouriteItemList.add(favouriteModel);
+                            await FireStoreUtils.setFavouriteItem(favouriteModel);
+                          }
+                        },
+                        child: Obx(
+                          () =>
+                              controller.favouriteItemList.where((p0) => p0.productId == productModel.id).isNotEmpty
+                                  ? SvgPicture.asset("assets/icons/ic_like_fill.svg")
+                                  : SvgPicture.asset("assets/icons/ic_like.svg"),
+                        ),
+                      ),
+                    ),
+                    canBuy == false
+                        ? const SizedBox()
+                        : Positioned(
+                          bottom: 10,
+                          left: 12,
+                          right: 12,
+                          child:
+                              hasOptions
+                                  ? Align(alignment: Alignment.centerRight, child: PlusButton(isDark: isDark, onTap: openOptions))
+                                  : Obx(
+                                    () =>
+                                        cartItem.where((p0) => p0.id == productModel.id).isNotEmpty
+                                            ? Container(
+                                              width: Responsive.width(100, context),
+                                              height: Responsive.height(4, context),
+                                              decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(200))),
+                                              child: Row(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                crossAxisAlignment: CrossAxisAlignment.center,
+                                                children: [
+                                                  InkWell(
+                                                    onTap: () {
+                                                      final int next = cartItem.where((p0) => p0.id == productModel.id).first.quantity! - 1;
+                                                      // Below the minimum quantity the line is removed.
+                                                      controller.addToCart(productModel: productModel, price: price, discountPrice: disPrice, isIncrement: false, quantity: next < minQty ? 0 : next);
+                                                    },
+                                                    child: Icon(Icons.remove, color: isDark ? AppThemeData.grey50 : AppThemeData.greyDark50),
+                                                  ),
+                                                  Padding(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                                                    child: Text(
+                                                      cartItem.where((p0) => p0.id == productModel.id).first.quantity.toString(),
+                                                      textAlign: TextAlign.start,
+                                                      maxLines: 1,
+                                                      style: TextStyle(
+                                                        fontSize: 16,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        fontFamily: AppThemeData.medium,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  InkWell(onTap: addSimple, child: Icon(Icons.add, color: isDark ? AppThemeData.grey50 : AppThemeData.greyDark50)),
+                                                ],
+                                              ),
+                                            )
+                                            : Align(alignment: Alignment.centerRight, child: PlusButton(isDark: isDark, onTap: addSimple)),
+                                  ),
+                        ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          Obx(
+            () => AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              alignment: Alignment.topCenter,
+              child:
+                  controller.expandedProductId.value == productModel.id && productModel.id != null
+                      ? _infoPanel(context, isDark, productModel, bands, canBuy, addToCartFromInfo)
+                      : const SizedBox(width: double.infinity),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _note(String text, Color color) {
+    return Padding(padding: const EdgeInsets.only(bottom: 2), child: Text(text, style: TextStyle(fontSize: 12, color: color, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600)));
   }
 
   Future productDetailsBottomSheet(BuildContext context, ProductModel productModel) {
@@ -1237,205 +1211,92 @@ class ProductListView extends StatelessWidget {
     );
   }
 
-  Dialog infoDialog(RestaurantDetailsController controller, isDark, ProductModel productModel) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      insetPadding: const EdgeInsets.all(10),
-      clipBehavior: Clip.antiAliasWithSaveLayer,
-      backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-      child: Padding(
-        padding: const EdgeInsets.all(30),
-        child: SizedBox(
-          width: 500,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 5),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Product Information's".tr,
-                        textAlign: TextAlign.start,
-                        style: TextStyle(fontFamily: AppThemeData.bold, fontWeight: FontWeight.w700, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
-                      ),
-                      Text(
-                        productModel.description.toString(),
-                        textAlign: TextAlign.start,
-                        style: TextStyle(fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                      ),
-                    ],
-                  ),
-                ),
-                productModel.grams == 0 && Constant.sectionConstantModel!.isProductDetails == false
-                    ? SizedBox.shrink()
-                    : Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              "Gram".tr,
-                              textAlign: TextAlign.start,
-                              style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontSize: 16),
-                            ),
-                          ),
-                          Text(
-                            productModel.grams.toString(),
-                            textAlign: TextAlign.start,
-                            style: TextStyle(fontFamily: AppThemeData.bold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
-                          ),
-                        ],
-                      ),
-                    ),
-                productModel.calories == 0 && Constant.sectionConstantModel!.isProductDetails == false
-                    ? SizedBox.shrink()
-                    : Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              "Calories".tr,
-                              textAlign: TextAlign.start,
-                              style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontSize: 16),
-                            ),
-                          ),
-                          Text(
-                            productModel.calories.toString(),
-                            textAlign: TextAlign.start,
-                            style: TextStyle(fontFamily: AppThemeData.bold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
-                          ),
-                        ],
-                      ),
-                    ),
-                productModel.proteins == 0 && Constant.sectionConstantModel!.isProductDetails == false
-                    ? SizedBox.shrink()
-                    : Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              "Proteins".tr,
-                              textAlign: TextAlign.start,
-                              style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontSize: 16),
-                            ),
-                          ),
-                          Text(
-                            productModel.proteins.toString(),
-                            textAlign: TextAlign.start,
-                            style: TextStyle(fontFamily: AppThemeData.bold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
-                          ),
-                        ],
-                      ),
-                    ),
-                productModel.fats == 0 && Constant.sectionConstantModel!.isProductDetails == false
-                    ? SizedBox.shrink()
-                    : Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              "Fats".tr,
-                              textAlign: TextAlign.start,
-                              style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontSize: 16),
-                            ),
-                          ),
-                          Text(
-                            productModel.fats.toString(),
-                            textAlign: TextAlign.start,
-                            style: TextStyle(fontFamily: AppThemeData.bold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
-                          ),
-                        ],
-                      ),
-                    ),
+  /// Product details as an expandable dropdown on the card (replaces the
+  /// former "Info" popup): images, name, prices (retail + wholesale tiers),
+  /// rating, store name and address, description, additional details and an
+  /// Add to cart button.
+  Widget _infoPanel(BuildContext context, bool isDark, ProductModel productModel, List<PriceBand> bands, bool canBuy, VoidCallback onAdd) {
+    final currency = RegionService.currencyForVendor(controller.vendorModel.value);
+    final List<String> images = <String>[
+      if ((productModel.photo ?? '').isNotEmpty) productModel.photo!,
+      ...?productModel.photos?.map((e) => e.toString()).where((e) => e.isNotEmpty && e != productModel.photo),
+    ];
+    final TextStyle labelStyle = TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontSize: 14);
+    final TextStyle valueStyle = TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 14);
+    final bool showDetails = Constant.sectionConstantModel?.isProductDetails != false;
 
-                productModel.productSpecification != null && productModel.productSpecification!.isNotEmpty
-                    ? Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Specification".tr,
-                            textAlign: TextAlign.start,
-                            style: TextStyle(fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w700, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
-                          ),
-                          SizedBox(height: 8),
-                          ListView.builder(
-                            itemCount: productModel.productSpecification!.length,
-                            shrinkWrap: true,
-                            padding: EdgeInsets.zero,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemBuilder: (context, index) {
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 10),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      productModel.productSpecification!.keys.elementAt(index),
-                                      textAlign: TextAlign.start,
-                                      style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontSize: 16),
-                                    ),
-                                    Text(
-                                      productModel.productSpecification!.values.elementAt(index),
-                                      textAlign: TextAlign.start,
-                                      style: TextStyle(fontFamily: AppThemeData.bold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    )
-                    : const SizedBox(),
+    Widget detailRow(String label, String value) {
+      return Padding(padding: const EdgeInsets.only(bottom: 6), child: Row(children: [Expanded(child: Text(label, style: labelStyle)), Text(value, style: valueStyle)]));
+    }
 
-                productModel.brandId != null && productModel.brandId!.isNotEmpty
-                    ? Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Brand".tr,
-                            textAlign: TextAlign.start,
-                            style: TextStyle(fontWeight: FontWeight.w700, fontFamily: AppThemeData.bold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
-                          ),
-                          SizedBox(height: 5),
-                          Text(
-                            controller.getBrandName(productModel.brandId!),
-                            textAlign: TextAlign.start,
-                            style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
-                          ),
-                        ],
-                      ),
-                    )
-                    : const SizedBox(),
-                const SizedBox(height: 20),
-                RoundedButtonFill(
-                  title: "Back".tr,
-                  color: AppThemeData.primary300,
-                  textColor: AppThemeData.grey50,
-                  onPress: () async {
-                    Get.back();
-                  },
-                ),
-              ],
+    Widget heading(String text) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 12, bottom: 6),
+        child: Text(text, style: TextStyle(fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w700, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 15)),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: ShapeDecoration(
+        color: isDark ? AppThemeData.grey800 : AppThemeData.grey100,
+        shape: RoundedRectangleBorder(side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200), borderRadius: BorderRadius.circular(16)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (images.isNotEmpty)
+            SizedBox(
+              height: 110,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: images.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, i) => ClipRRect(borderRadius: BorderRadius.circular(12), child: NetworkImageWidget(imageUrl: images[i], height: 110, width: 110, fit: BoxFit.cover)),
+              ),
             ),
+          const SizedBox(height: 10),
+          Text(productModel.name ?? '', style: TextStyle(fontSize: 17, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
+          const SizedBox(height: 6),
+          if (bands.isNotEmpty) PriceTiersView(bands: bands, currency: currency, isDark: isDark),
+          if (productModel.isBusinessOnlyProduct) Padding(padding: const EdgeInsets.only(top: 4), child: _note("Business customers only".tr, AppThemeData.danger300)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              SvgPicture.asset("assets/icons/ic_star.svg", colorFilter: const ColorFilter.mode(AppThemeData.warning300, BlendMode.srcIn)),
+              const SizedBox(width: 5),
+              Text(
+                "${Constant.calculateReview(reviewCount: (productModel.reviewsCount ?? 0).toStringAsFixed(0), reviewSum: productModel.reviewsSum.toString())} (${(productModel.reviewsCount ?? 0).toStringAsFixed(0)} ${'Ratings'.tr})",
+                style: valueStyle,
+              ),
+            ],
           ),
-        ),
+          heading("Store".tr),
+          Text(controller.vendorModel.value.title ?? '', style: valueStyle),
+          if ((controller.vendorModel.value.location ?? '').isNotEmpty) Text(controller.vendorModel.value.location!, style: labelStyle),
+          if ((productModel.description ?? '').isNotEmpty) ...[heading("Description".tr), Text(productModel.description!, style: labelStyle)],
+          if (showDetails && ((productModel.grams ?? 0) != 0 || (productModel.calories ?? 0) != 0 || (productModel.proteins ?? 0) != 0 || (productModel.fats ?? 0) != 0)) ...[
+            heading("Additional details".tr),
+            if ((productModel.grams ?? 0) != 0) detailRow("Gram".tr, productModel.grams.toString()),
+            if ((productModel.calories ?? 0) != 0) detailRow("Calories".tr, productModel.calories.toString()),
+            if ((productModel.proteins ?? 0) != 0) detailRow("Proteins".tr, productModel.proteins.toString()),
+            if ((productModel.fats ?? 0) != 0) detailRow("Fats".tr, productModel.fats.toString()),
+          ],
+          if (productModel.productSpecification != null && productModel.productSpecification!.isNotEmpty) ...[
+            heading("Specification".tr),
+            ...productModel.productSpecification!.entries.map((e) => detailRow(e.key, e.value.toString())),
+          ],
+          if (productModel.brandId != null && productModel.brandId!.isNotEmpty && controller.getBrandName(productModel.brandId!).isNotEmpty) ...[
+            heading("Brand".tr),
+            Text(controller.getBrandName(productModel.brandId!), style: valueStyle),
+          ],
+          if (canBuy) ...[
+            const SizedBox(height: 14),
+            RoundedButtonFill(title: "Add to cart".tr, height: 5, color: AppThemeData.primary300, textColor: AppThemeData.grey50, onPress: onAdd),
+          ],
+        ],
       ),
     );
   }
@@ -1802,7 +1663,8 @@ class ProductDetailsView extends StatelessWidget {
                         children: [
                           InkWell(
                             onTap: () {
-                              if (controller.quantity.value > 1) {
+                              // Wholesale-only products can't go below their minimum quantity.
+                              if (controller.quantity.value > productModel.minOrderQuantity) {
                                 controller.quantity.value -= 1;
                                 controller.update();
                               }

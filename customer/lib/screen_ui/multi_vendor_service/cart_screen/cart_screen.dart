@@ -23,6 +23,7 @@ import '../../../models/user_model.dart';
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
 import '../../../widget/my_separator.dart';
+import '../../../widget/shop_widgets.dart';
 import '../restaurant_details_screen/restaurant_details_screen.dart';
 import '../wallet_screen/wallet_screen.dart';
 import 'coupon_list_screen.dart';
@@ -47,6 +48,11 @@ class CartScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Delivery / TakeAway at checkout; products the mode doesn't allow are flagged and blocked.
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          child: OrderTypeToggle(value: controller.selectedFoodType.value, isDark: isDark, onChanged: controller.setFoodType),
+                        ),
                         controller.selectedFoodType.value == 'TakeAway'
                             ? const SizedBox()
                             : Padding(
@@ -158,7 +164,44 @@ class CartScreen extends StatelessWidget {
                                                       textAlign: TextAlign.start,
                                                       style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
                                                     ),
-                                                    double.parse(cartProductModel.discountPrice.toString()) <= 0
+                                                    // Wholesale tier reached by this line's quantity (spec 8.2).
+                                                    cartProductModel.linePrice.isWholesale
+                                                        ? Column(
+                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                          children: [
+                                                            Row(
+                                                              children: [
+                                                                Text(
+                                                                  Constant.amountShow(amount: cartProductModel.chargedUnitPrice.toString(), currency: controller.storeCurrency),
+                                                                  style: TextStyle(
+                                                                    fontSize: 16,
+                                                                    color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
+                                                                    fontFamily: AppThemeData.semiBold,
+                                                                    fontWeight: FontWeight.w600,
+                                                                  ),
+                                                                ),
+                                                                const SizedBox(width: 5),
+                                                                if (cartProductModel.lineMeta?.isWholesaleOnly != true)
+                                                                  Text(
+                                                                    Constant.amountShow(amount: cartProductModel.retailUnitPrice.toString(), currency: controller.storeCurrency),
+                                                                    style: TextStyle(
+                                                                      fontSize: 14,
+                                                                      decoration: TextDecoration.lineThrough,
+                                                                      decorationColor: isDark ? AppThemeData.grey500 : AppThemeData.grey400,
+                                                                      color: isDark ? AppThemeData.grey500 : AppThemeData.grey400,
+                                                                      fontFamily: AppThemeData.semiBold,
+                                                                      fontWeight: FontWeight.w600,
+                                                                    ),
+                                                                  ),
+                                                              ],
+                                                            ),
+                                                            Text(
+                                                              "${'Wholesale price'.tr} · ${'from'.tr} ${cartProductModel.linePrice.minQty} ${'pcs'.tr}",
+                                                              style: TextStyle(fontSize: 12, color: AppThemeData.primary300, fontFamily: AppThemeData.semiBold),
+                                                            ),
+                                                          ],
+                                                        )
+                                                        : double.parse(cartProductModel.discountPrice.toString()) <= 0 || cartProductModel.retailUnitPrice != double.parse(cartProductModel.discountPrice.toString())
                                                         ? Text(
                                                           Constant.amountShow(amount: cartProductModel.price, currency: controller.storeCurrency),
                                                           style: TextStyle(
@@ -193,6 +236,24 @@ class CartScreen extends StatelessWidget {
                                                             ),
                                                           ],
                                                         ),
+                                                    Builder(
+                                                      builder: (context) {
+                                                        // Next cheaper tier, so the customer sees when the price switches.
+                                                        final next = (cartProductModel.lineMeta?.tiers ?? const []).firstWhereOrNull(
+                                                          (t) => t.isUsable && t.minQtyValue > (cartProductModel.quantity ?? 0) && t.priceValue < cartProductModel.chargedUnitPrice,
+                                                        );
+                                                        if (next == null) return const SizedBox.shrink();
+                                                        return Text(
+                                                          "${'Buy'.tr} ${next.minQtyValue}+ ${'for'.tr} ${Constant.amountShow(amount: next.price, currency: controller.storeCurrency)} ${'each'.tr}",
+                                                          style: TextStyle(fontSize: 12, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500, fontFamily: AppThemeData.medium),
+                                                        );
+                                                      },
+                                                    ),
+                                                    if (cartProductModel.lineMeta != null && !cartProductModel.lineMeta!.fulfilment.contains(foodTypeToFulfilment(controller.selectedFoodType.value)))
+                                                      Text(
+                                                        "${'Not available for'.tr} ${controller.selectedFoodType.value.tr}",
+                                                        style: TextStyle(fontSize: 12, color: AppThemeData.danger300, fontFamily: AppThemeData.semiBold),
+                                                      ),
                                                     if (Constant.taxScope == "product")
                                                       cartProductModel.taxSetting?.isEmpty == true
                                                           ? SizedBox()
@@ -218,7 +279,9 @@ class CartScreen extends StatelessWidget {
                                                     children: [
                                                       InkWell(
                                                         onTap: () {
-                                                          controller.addToCart(cartProductModel: cartProductModel, isIncrement: false, quantity: cartProductModel.quantity! - 1);
+                                                          // Below a wholesale-only product's minimum quantity the line is removed.
+                                                          final int next = cartProductModel.quantity! - 1;
+                                                          controller.addToCart(cartProductModel: cartProductModel, isIncrement: false, quantity: next < cartProductModel.minOrderQuantity ? 0 : next);
                                                         },
                                                         child: Icon(Icons.remove, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800),
                                                       ),
@@ -1117,6 +1180,12 @@ class CartScreen extends StatelessWidget {
                                       ShowToastDialog.showToast("The total price must be greater than or equal to the special discount value for the code to apply. Please review your cart total.".tr);
                                       return;
                                     }
+                                    // Delivery / TakeAway allowed for every product, business-only
+                                    // and minimum-quantity rules - before any payment starts.
+                                    if (controller.isOrderPlaced.value == false && !await controller.validateCartBeforePayment()) {
+                                      return;
+                                    }
+                                    if (!context.mounted) return;
                                     if (controller.isOrderPlaced.value == false) {
                                       controller.isOrderPlaced.value = true;
                                       await controller.getCashback();

@@ -28,11 +28,11 @@ import 'package:customer/themes/app_them_data.dart';
 import 'package:customer/themes/responsive.dart';
 import 'package:customer/themes/round_button_border.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
-import 'package:customer/themes/text_field_widget.dart';
 import 'package:customer/utils/network_image_widget.dart';
 import 'package:customer/widget/osm_map/map_picker_page.dart';
 import 'package:customer/widget/place_picker/location_picker_screen.dart';
 import 'package:customer/widget/place_picker/selected_location_model.dart';
+import 'package:customer/widget/shop_widgets.dart';
 import 'package:customer/widget/video_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -197,29 +197,27 @@ class HomeECommerceScreen extends StatelessWidget {
                 ),
               ),
             ],
+            // Delivery / TakeAway toggles at the top; the search bar is at the bottom (spec 7.3).
             bottom: PreferredSize(
-              preferredSize: Size.fromHeight(50.0), // height of the bottom widget
+              preferredSize: Size.fromHeight(56.0), // height of the bottom widget
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: InkWell(
-                  onTap: () {
-                    Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
-                  },
-                  child: TextFieldWidget(
-                    hintText: 'Search the store, item and more...'.tr,
-                    controller: null,
-                    enable: false,
-                    backgroundColor: AppThemeData.grey50,
-                    hintColor: isDark ? AppThemeData.grey400 : AppThemeData.grey400,
-                    prefix: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: SvgPicture.asset("assets/icons/ic_search.svg", colorFilter: ColorFilter.mode(isDark ? AppThemeData.grey400 : AppThemeData.grey400, BlendMode.srcIn)),
-                    ),
-                  ),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                child: Obx(
+                  () => OrderTypeToggle(value: controller.selectedOrderTypeValue.value, isDark: isDark, onChanged: (value) => controller.changeOrderType(context, value)),
                 ),
               ),
             ),
           ),
+          bottomNavigationBar:
+              controller.isLoading.value
+                  ? null
+                  : BottomSearchBar(
+                    isDark: isDark,
+                    hint: 'Search the store, item and more...'.tr,
+                    onTap: () {
+                      Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
+                    },
+                  ),
           body:
               controller.isLoading.value
                   ? _buildHomeECommerceShimmer(isDark)
@@ -241,19 +239,10 @@ class HomeECommerceScreen extends StatelessWidget {
                                     style: AppThemeData.semiBoldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 16),
                                   ),
                                 ),
-                                InkWell(
+                                NextArrowButton(
                                   onTap: () {
                                     Get.to(const ViewAllCategoryScreen());
                                   },
-                                  child: Text(
-                                    "View all".tr,
-                                    textAlign: TextAlign.start,
-                                    style: AppThemeData.semiBoldTextStyle(
-                                      decoration: TextDecoration.underline,
-                                      color: isDark ? AppThemeData.multiVendorDark300 : AppThemeData.multiVendor300,
-                                      fontSize: 14,
-                                    ),
-                                  ),
                                 ),
                               ],
                             ),
@@ -320,17 +309,12 @@ class HomeECommerceScreen extends StatelessWidget {
                                                     style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
                                                   ),
                                                 ),
-                                                InkWell(
+                                                NextArrowButton(
                                                   onTap: () {
                                                     Get.to(AllAdvertisementScreen())?.then((value) {
                                                       controller.getFavouriteRestaurant();
                                                     });
                                                   },
-                                                  child: Text(
-                                                    "View all".tr,
-                                                    textAlign: TextAlign.center,
-                                                    style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
-                                                  ),
                                                 ),
                                               ],
                                             ),

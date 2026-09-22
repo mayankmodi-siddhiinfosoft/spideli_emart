@@ -10,6 +10,9 @@ import 'package:customer/models/product_model.dart';
 import 'package:customer/models/vendor_category_model.dart';
 import 'package:customer/models/vendor_model.dart';
 import '../models/attributes_model.dart';
+import '../utils/wholesale_pricing.dart';
+import 'food_home_controller.dart';
+import 'home_e_commerce_controller.dart';
 import '../service/cart_provider.dart';
 import '../service/fire_store_utils.dart';
 import 'package:flutter/material.dart';
@@ -86,24 +89,26 @@ class RestaurantDetailsController extends GetxController {
   RxList<BrandsModel> brandList = <BrandsModel>[].obs;
 
   Future<void> getProduct() async {
-    await FireStoreUtils.getProductByVendorId(vendorModel.value.id.toString()).then((value) {
+    orderType.value = OrderTypeMode.current;
+    await FireStoreUtils.getProductByVendorId(vendorModel.value.id.toString(), filterByOrderType: false).then((value) {
       if ((Constant.isSubscriptionModelApplied == true || vendorModel.value.adminCommission?.isEnabled == true) && vendorModel.value.subscriptionPlan != null) {
         if (vendorModel.value.subscriptionPlan?.itemLimit == '-1') {
-          allProductList.value = value;
-          productList.value = value;
+          storeProducts = value;
         } else {
           int selectedProduct =
               value.length < int.parse(vendorModel.value.subscriptionPlan?.itemLimit ?? '0') ? (value.isEmpty ? 0 : (value.length)) : int.parse(vendorModel.value.subscriptionPlan?.itemLimit ?? '0');
-          allProductList.value = value.sublist(0, selectedProduct);
-          productList.value = value.sublist(0, selectedProduct);
+          storeProducts = value.sublist(0, selectedProduct);
         }
       } else {
-        allProductList.value = value;
-        productList.value = value;
+        storeProducts = value;
       }
+      allProductList.value = storeProducts.where((p) => p.allowsFoodType(orderType.value)).toList();
+      productList.value = allProductList.toList();
     });
 
-    for (var element in productList) {
+    // Categories of the whole catalogue, so switching Delivery / TakeAway
+    // doesn't lose any; empty ones are hidden by the list.
+    for (var element in storeProducts) {
       await FireStoreUtils.getVendorCategoryById(element.categoryID.toString()).then((value) {
         if (value != null) {
           vendorCategoryList.add(value);
@@ -241,8 +246,54 @@ class RestaurantDetailsController extends GetxController {
       }
     }
     adOnsPrice = (quantity.value * double.parse(adOnsPrice)).toString();
+    // Wholesale tier for the chosen quantity when it is cheaper (spec 8.2).
+    final double unit = LinePrice.resolve(
+      retail: WholesalePricing.retailPrice(productModel, vendorModel.value, variantId: selectedVariantId(productModel)),
+      tiers: WholesalePricing.customerTiers(productModel, vendorModel.value, variantId: selectedVariantId(productModel)),
+      quantity: quantity.value,
+    ).unit;
+    if (productModel.itemAttribute == null || double.parse(variantPrice) > 0) variantPrice = unit.toString();
     mainPrice = ((double.parse(variantPrice.toString()) * double.parse(quantity.value.toString())) + double.parse(adOnsPrice.toString())).toString();
     return mainPrice;
+  }
+
+  /// Variant id of the options currently selected in the product sheet.
+  String? selectedVariantId(ProductModel productModel) {
+    final variant = productModel.itemAttribute?.variants?.firstWhereOrNull((element) => element.variantSku == selectedVariants.join('-'));
+    return variant?.variantId;
+  }
+
+  // ---------------- Delivery / TakeAway filter (spec 7.3) ----------------
+
+  /// Every published product of the store (before the order-type filter).
+  List<ProductModel> storeProducts = <ProductModel>[];
+
+  /// The order type this store page is filtered by (the app-wide mode).
+  RxString orderType = OrderTypeMode.current.obs;
+
+  /// Product whose details dropdown is open on its card ("" = none).
+  RxString expandedProductId = ''.obs;
+
+  void setOrderType(String value) {
+    final String type = OrderTypeMode.normalise(value);
+    if (orderType.value == type) return;
+    orderType.value = type;
+    OrderTypeMode.set(type);
+    // Keep the section home's toggle in step (same app-wide mode).
+    if (Get.isRegistered<FoodHomeController>()) Get.find<FoodHomeController>().selectedOrderTypeValue.value = type;
+    if (Get.isRegistered<HomeECommerceController>()) Get.find<HomeECommerceController>().selectedOrderTypeValue.value = type;
+    applyOrderTypeFilter();
+  }
+
+  void applyOrderTypeFilter() {
+    allProductList.value = storeProducts.where((p) => p.allowsFoodType(orderType.value)).toList();
+    final String search = searchEditingController.value.text;
+    if (search.isNotEmpty) {
+      searchProduct(search);
+    } else {
+      filterRecord();
+    }
+    update();
   }
 
   Future<void> getAttributeData() async {
@@ -292,6 +343,9 @@ class RestaurantDetailsController extends GetxController {
       cartProductModel.taxSetting =
           (Constant.taxScope == "order" ? [] : Constant.taxProductList?.where((activeTax) => productModel.taxSetting?.any((productTax) => productTax.id == activeTax.id) ?? false).toList())!;
     }
+
+    // Wholesale tiers / sale type / fulfilment, so the cart reprices by quantity.
+    cartProductModel.lineMeta = WholesalePricing.metaFor(productModel, vendorModel.value, variantId: variantInfo?.variantId);
 
     if (isIncrement) {
       await cartProvider.addToCart(Get.context!, cartProductModel, quantity);

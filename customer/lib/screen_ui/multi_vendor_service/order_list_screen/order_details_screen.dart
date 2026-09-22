@@ -20,6 +20,7 @@ import '../../../widget/my_separator.dart';
 import '../chat_screens/chat_screen.dart';
 import '../rate_us_screen/rate_product_screen.dart';
 import 'live_tracking_screen.dart';
+import 'package:customer/utils/order_receipt_pdf.dart';
 
 class OrderDetailsScreen extends StatelessWidget {
   const OrderDetailsScreen({super.key});
@@ -38,6 +39,15 @@ class OrderDetailsScreen extends StatelessWidget {
             centerTitle: false,
             titleSpacing: 0,
             title: Text("Order Details".tr, textAlign: TextAlign.start, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
+            actions: [
+              // PDF receipt: download / share (spec 7.6).
+              if (!controller.isLoading.value)
+                TextButton.icon(
+                  onPressed: () => OrderReceiptPdf.showOptions(context, () => OrderReceiptPdf.fromOrder(controller)),
+                  icon: Icon(Icons.receipt_long_outlined, color: AppThemeData.primary300, size: 20),
+                  label: Text("Receipt".tr, style: TextStyle(fontFamily: AppThemeData.semiBold, color: AppThemeData.primary300)),
+                ),
+            ],
           ),
           body:
               controller.isLoading.value
@@ -589,6 +599,13 @@ class OrderDetailsScreen extends StatelessWidget {
                                                         ),
                                                       ],
                                                     ),
+                                                if (cartProductModel.isWholesale == true)
+                                                  Text(
+                                                    (cartProductModel.wholesaleMinQty ?? '').isEmpty
+                                                        ? 'Wholesale price'.tr
+                                                        : "${'Wholesale price'.tr} · ${'from'.tr} ${cartProductModel.wholesaleMinQty} ${'pcs'.tr}",
+                                                    style: TextStyle(fontSize: 12, color: AppThemeData.primary300, fontFamily: AppThemeData.semiBold),
+                                                  ),
                                                 if (Constant.taxScope == "product")
                                                   cartProductModel.taxSetting?.isEmpty == true
                                                       ? SizedBox()
@@ -1104,7 +1121,7 @@ class OrderDetailsScreen extends StatelessWidget {
                                 textColor: AppThemeData.grey50,
                                 onPress: () async {
                                   for (var element in controller.orderModel.value.products!) {
-                                    controller.addToCart(cartProductModel: element);
+                                    await controller.addToCart(cartProductModel: element);
                                     ShowToastDialog.showToast("Item Added In a cart".tr);
                                   }
                                 },

@@ -11,6 +11,9 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../constant/constant.dart';
+import '../service/database_helper.dart';
+import '../themes/custom_dialog_box.dart';
+import '../utils/wholesale_pricing.dart';
 
 class HomeECommerceController extends GetxController {
   final CartProvider cartProvider = CartProvider();
@@ -26,6 +29,46 @@ class HomeECommerceController extends GetxController {
   RxBool isLoading = true.obs;
   RxBool isListView = true.obs;
   RxBool isPopular = true.obs;
+
+  /// Delivery / TakeAway order type (the app's existing mode, spec 7.3).
+  RxString selectedOrderTypeValue = OrderTypeMode.current.obs;
+
+  /// Same behaviour as the food home toggle: a non-empty cart is emptied after confirmation.
+  void changeOrderType(BuildContext context, String value) {
+    final String type = OrderTypeMode.normalise(value);
+    if (type == selectedOrderTypeValue.value) return;
+    Future<void> apply() async {
+      await OrderTypeMode.set(type);
+      selectedOrderTypeValue.value = type;
+    }
+
+    if (cartItem.isEmpty) {
+      apply();
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return CustomDialogBox(
+          title: "Alert".tr,
+          descriptions: "Do you really want to change the delivery option? Your cart will be empty.".tr,
+          positiveString: "Ok".tr,
+          negativeString: "Cancel".tr,
+          positiveClick: () async {
+            await apply();
+            DatabaseHelper.instance.deleteAllCartProducts();
+            cartProvider.clearDatabase();
+            getCartData();
+            Get.back();
+          },
+          negativeClick: () {
+            Get.back();
+          },
+          img: null,
+        );
+      },
+    );
+  }
 
   Rx<PageController> pageController = PageController(viewportFraction: 0.877).obs;
   Rx<PageController> pageBottomController = PageController(viewportFraction: 0.877).obs;
