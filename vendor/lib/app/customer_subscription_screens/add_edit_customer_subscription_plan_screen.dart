@@ -9,6 +9,8 @@ import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/controller/add_edit_customer_subscription_plan_controller.dart';
+import 'package:vendor/controller/customer_subscription_controller.dart';
+import 'package:vendor/models/vendor_subscription_plan_model.dart';
 import 'package:vendor/themes/app_them_data.dart';
 import 'package:vendor/themes/responsive.dart';
 import 'package:vendor/themes/round_button_fill.dart';
@@ -145,6 +147,7 @@ class AddEditCustomerSubscriptionPlanScreen extends StatelessWidget {
                             textInputType: TextInputType.number,
                             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                           ),
+                        _scheduleSection(context, controller, isDark),
                         Row(
                           children: [
                             Expanded(
@@ -189,6 +192,206 @@ class AddEditCustomerSubscriptionPlanScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  // ------------------------------------------------------------------ Delivery schedule
+
+  Widget _sectionTitle(String text, bool isDark, {String? subtitle}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            text,
+            style: TextStyle(fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: TextStyle(fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400, fontSize: 12, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _scheduleSection(BuildContext context, AddEditCustomerSubscriptionPlanController controller, bool isDark) {
+    final isWeekly = controller.frequency.value == VendorSubscriptionPlanModel.frequencyWeekly;
+    final fieldBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(10),
+      borderSide: BorderSide(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
+    );
+    InputDecoration fieldDecoration(String hint) => InputDecoration(
+          hintText: hint,
+          isDense: true,
+          filled: true,
+          fillColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          border: fieldBorder,
+          enabledBorder: fieldBorder,
+          focusedBorder: fieldBorder.copyWith(borderSide: BorderSide(color: AppThemeData.primary300)),
+          hintStyle: TextStyle(fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400, fontSize: 14, color: isDark ? AppThemeData.grey500 : AppThemeData.grey400),
+        );
+    final inputStyle = TextStyle(fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 6),
+        _sectionTitle("Items per delivery".tr, isDark, subtitle: "What one delivery contains, e.g. Baguette × 2".tr),
+        ...controller.itemRows.map(
+          (row) => Padding(
+            key: ObjectKey(row),
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: row.nameController,
+                    textCapitalization: TextCapitalization.sentences,
+                    cursorColor: AppThemeData.primary300,
+                    style: inputStyle,
+                    decoration: fieldDecoration("Item name".tr),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: row.quantityController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    cursorColor: AppThemeData.primary300,
+                    textAlign: TextAlign.center,
+                    style: inputStyle,
+                    decoration: fieldDecoration("Qty".tr),
+                  ),
+                ),
+                IconButton(
+                  tooltip: "Remove item".tr,
+                  onPressed: () => controller.removeItemRow(row),
+                  icon: const Icon(Icons.remove_circle_outline, color: AppThemeData.danger300, size: 22),
+                ),
+              ],
+            ),
+          ),
+        ),
+        TextButton.icon(
+          onPressed: controller.addItemRow,
+          icon: Icon(Icons.add, color: AppThemeData.primary300, size: 20),
+          label: Text(
+            "Add item".tr,
+            style: TextStyle(fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, fontSize: 14, color: AppThemeData.primary300),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _sectionTitle("Frequency".tr, isDark),
+        Row(
+          children: [
+            _radioOption("Daily".tr, !isWeekly, isDark, () => controller.setFrequency(VendorSubscriptionPlanModel.frequencyDaily)),
+            _radioOption("Weekly".tr, isWeekly, isDark, () => controller.setFrequency(VendorSubscriptionPlanModel.frequencyWeekly)),
+            const Expanded(child: SizedBox()),
+          ],
+        ),
+        const SizedBox(height: 14),
+        _sectionTitle("Delivery days".tr, isDark, subtitle: isWeekly ? "Pick the one day of the week to deliver".tr : "Untick the days without delivery".tr),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: VendorSubscriptionPlanModel.weekdays.map((day) {
+            final selected = controller.deliveryDays.contains(day);
+            return ChoiceChip(
+              label: Text(CustomerSubscriptionController.shortDay(day)),
+              selected: selected,
+              showCheckmark: false,
+              onSelected: (_) => controller.toggleDay(day),
+              selectedColor: AppThemeData.primary300,
+              backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
+              side: BorderSide(color: selected ? AppThemeData.primary300 : (isDark ? AppThemeData.grey700 : AppThemeData.grey200)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              labelStyle: TextStyle(
+                fontFamily: AppThemeData.medium,
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                color: selected ? AppThemeData.grey50 : (isDark ? AppThemeData.grey50 : AppThemeData.grey900),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 16),
+        _sectionTitle("Delivery time slot".tr, isDark),
+        Row(
+          children: [
+            Expanded(child: _timeField(context, "From".tr, controller.slotFrom, isDark)),
+            const SizedBox(width: 10),
+            Expanded(child: _timeField(context, "To".tr, controller.slotTo, isDark)),
+          ],
+        ),
+        const SizedBox(height: 18),
+      ],
+    );
+  }
+
+  Widget _radioOption(String label, bool selected, bool isDark, VoidCallback onTap) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        child: Row(
+          children: [
+            Icon(selected ? Icons.radio_button_checked : Icons.radio_button_off, color: selected ? AppThemeData.primary300 : (isDark ? AppThemeData.grey500 : AppThemeData.grey400), size: 22),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, fontSize: 15, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _timeField(BuildContext context, String label, RxString value, bool isDark) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () async {
+        final picked = await showTimePicker(
+          context: context,
+          initialTime: AddEditCustomerSubscriptionPlanController.parseTime(value.value) ?? const TimeOfDay(hour: 7, minute: 0),
+          builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true), child: child!),
+        );
+        if (picked != null) value.value = AddEditCustomerSubscriptionPlanController.formatTime(picked);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.schedule, size: 18, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
+            const SizedBox(width: 8),
+            Text(
+              "$label ",
+              style: TextStyle(fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400, fontSize: 13, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
+            ),
+            Expanded(
+              child: Text(
+                value.value.isEmpty ? "--:--" : value.value,
+                textAlign: TextAlign.end,
+                style: TextStyle(fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, fontSize: 15, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

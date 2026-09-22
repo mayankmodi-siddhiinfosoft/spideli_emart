@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:vendor/app/customer_subscription_screens/add_edit_customer_subscription_plan_screen.dart';
+import 'package:vendor/app/customer_subscription_screens/customer_subscription_production_screen.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/utils/region_service.dart';
 import 'package:vendor/controller/customer_subscription_controller.dart';
@@ -62,6 +63,13 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
               "Customer Subscriptions".tr,
               style: TextStyle(color: isDark ? AppThemeData.grey800 : AppThemeData.grey100, fontSize: 18, fontFamily: AppThemeData.medium),
             ),
+            actions: [
+              IconButton(
+                tooltip: "Daily production list".tr,
+                icon: Icon(Icons.checklist_rtl, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100),
+                onPressed: () => Get.to(() => const CustomerSubscriptionProductionScreen()),
+              ),
+            ],
             bottom: TabBar(
               controller: _tabController,
               indicatorSize: TabBarIndicatorSize.tab,
@@ -138,6 +146,15 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
                             "${_money(plan.price)} / ${CustomerSubscriptionController.periodLabel(plan.expiryDay)}",
                             style: TextStyle(color: AppThemeData.primary300, fontSize: 14, fontFamily: AppThemeData.medium),
                           ),
+                          if (plan.hasSchedule) ...[
+                            const SizedBox(height: 6),
+                            _scheduleLine(Icons.event_repeat, "${CustomerSubscriptionController.frequencyLabel(plan.frequency)} · ${CustomerSubscriptionController.daysLabel(plan.effectiveDeliveryDays)}", isDark),
+                            if (plan.timeSlot?.isSet == true) _scheduleLine(Icons.schedule, plan.timeSlot!.label, isDark),
+                          ] else ...[
+                            const SizedBox(height: 6),
+                            _scheduleLine(Icons.info_outline, "No delivery schedule - edit to add one".tr, isDark),
+                          ],
+                          if (plan.items.isNotEmpty) _scheduleLine(Icons.inventory_2_outlined, CustomerSubscriptionController.itemsLabel(plan.items), isDark),
                         ],
                       ),
                     ),
@@ -202,15 +219,64 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
     if (controller.subscriberList.isEmpty) {
       return RefreshIndicator(onRefresh: controller.getSubscribers, child: _scrollableEmpty("No subscribers yet".tr, isDark));
     }
-    return RefreshIndicator(
-      onRefresh: controller.getSubscribers,
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        itemCount: controller.subscriberList.length,
-        itemBuilder: (context, index) {
-          final VendorSubscriptionModel sub = controller.subscriberList[index];
-          final status = sub.effectiveStatus;
-          return _card(
+    final list = controller.filteredSubscribers;
+    return Column(
+      children: [
+        _subscriberFilters(controller, isDark),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: controller.getSubscribers,
+            child: list.isEmpty
+                ? _scrollableEmpty("No subscribers in this list".tr, isDark)
+                : ListView.builder(
+                    padding: const EdgeInsets.only(top: 4, bottom: 10),
+                    itemCount: list.length,
+                    itemBuilder: (context, index) => _subscriberCard(controller, list[index], isDark),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _subscriberFilters(CustomerSubscriptionController controller, bool isDark) {
+    return SizedBox(
+      height: 52,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        children: CustomerSubscriptionController.subscriberFilters.map((filter) {
+          final selected = controller.subscriberFilter.value == filter;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text("${CustomerSubscriptionController.filterLabel(filter)} (${controller.countFor(filter)})"),
+              selected: selected,
+              showCheckmark: false,
+              onSelected: (_) => controller.subscriberFilter.value = filter,
+              selectedColor: AppThemeData.primary300,
+              backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
+              side: BorderSide(color: selected ? AppThemeData.primary300 : (isDark ? AppThemeData.grey700 : AppThemeData.grey200)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              labelStyle: TextStyle(
+                fontFamily: AppThemeData.medium,
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                color: selected ? AppThemeData.grey50 : (isDark ? AppThemeData.grey50 : AppThemeData.grey900),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _subscriberCard(CustomerSubscriptionController controller, VendorSubscriptionModel sub, bool isDark) {
+    final status = sub.effectiveStatus;
+    final relative = CustomerSubscriptionController.expiryRelativeLabel(sub);
+    final expiringSoon = sub.isExpiringSoon;
+    final renewed = controller.renewedIds.contains(sub.id);
+    return _card(
             isDark,
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -219,7 +285,20 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(child: _customerInfo(sub.customerId, isDark)),
-                    _statusChip(status, isDark),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        _statusChip(status, isDark),
+                        if (expiringSoon) ...[
+                          const SizedBox(height: 4),
+                          _tagChip("Expiring soon".tr, AppThemeData.warning400),
+                        ],
+                        if (renewed) ...[
+                          const SizedBox(height: 4),
+                          _tagChip("Renewed".tr, AppThemeData.primary300),
+                        ],
+                      ],
+                    ),
                   ],
                 ),
                 Padding(
@@ -231,12 +310,25 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
                 _labelValue("Price".tr, sub.plan?.price == null ? '-' : "${_money(sub.plan!.price, regionId: sub.regionId)} / ${CustomerSubscriptionController.periodLabel(sub.plan!.expiryDay)}", isDark),
                 _labelValue("Start date".tr, sub.startDate == null ? '-' : Constant.timestampToDate(sub.startDate!), isDark),
                 _labelValue("Expiry date".tr, sub.expiryDate == null ? '-' : Constant.timestampToDate(sub.expiryDate!), isDark),
+                if (relative.isNotEmpty)
+                  _labelValue(
+                    "",
+                    relative,
+                    isDark,
+                    valueColor: status == 'expired' ? AppThemeData.danger300 : (expiringSoon ? AppThemeData.warning400 : AppThemeData.success400),
+                  ),
+                if (sub.plan?.hasSchedule == true)
+                  _labelValue(
+                    "Delivery".tr,
+                    [
+                      CustomerSubscriptionController.daysLabel(sub.plan!.effectiveDeliveryDays),
+                      if (sub.plan!.timeSlot?.isSet == true) sub.plan!.timeSlot!.label,
+                    ].join(" · "),
+                    isDark,
+                  ),
               ],
             ),
           );
-        },
-      ),
-    );
   }
 
   // ------------------------------------------------------------------ Payments (read-only)
@@ -394,6 +486,39 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
               value,
               textAlign: TextAlign.end,
               style: TextStyle(color: valueColor ?? (isDark ? AppThemeData.grey50 : AppThemeData.grey900), fontSize: 14, fontFamily: AppThemeData.medium),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tagChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontSize: 11, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  Widget _scheduleLine(IconData icon, String text, bool isDark) {
+    final color = isDark ? AppThemeData.grey300 : AppThemeData.grey600;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(padding: const EdgeInsets.only(top: 1), child: Icon(icon, size: 14, color: color)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: color, fontSize: 12, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
             ),
           ),
         ],

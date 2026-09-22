@@ -110,4 +110,13 @@ class CustomerSubscriptionService {
     _customerCache[customerId] = user;
     return user;
   }
+
+  /// The customer's default shipping address (else their first one), or null.
+  static String? customerAddress(UserModel? user) {
+    final list = user?.shippingAddress;
+    if (list == null || list.isEmpty) return null;
+    final address = list.firstWhere((a) => a.isDefault == true, orElse: () => list.first);
+    final text = [address.address, address.locality, address.landmark].map((e) => e?.trim() ?? '').where((e) => e.isNotEmpty).join(', ');
+    return text.isEmpty ? null : text;
+  }
 }

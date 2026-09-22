@@ -27,6 +27,13 @@ class AddEditCustomerSubscriptionPlanController extends GetxController {
   RxBool isEnable = true.obs;
   RxList images = <dynamic>[].obs;
 
+  // Delivery schedule (spec 4.7): items, frequency, delivery days, time slot.
+  RxList<PlanItemRow> itemRows = <PlanItemRow>[].obs;
+  RxString frequency = VendorSubscriptionPlanModel.frequencyDaily.obs;
+  RxList<String> deliveryDays = List<String>.from(VendorSubscriptionPlanModel.weekdays).obs;
+  RxString slotFrom = "".obs;
+  RxString slotTo = "".obs;
+
   Rx<VendorSubscriptionPlanModel> planModel = VendorSubscriptionPlanModel().obs;
   Rx<VendorModel> vendorModel = VendorModel().obs;
   String? vendorRegionId;
@@ -59,7 +66,17 @@ class AddEditCustomerSubscriptionPlanController extends GetxController {
       if (planModel.value.photo != null && planModel.value.photo!.isNotEmpty) {
         images.add(planModel.value.photo);
       }
+      final plan = planModel.value;
+      itemRows.value = plan.items.map((e) => PlanItemRow(name: e.name ?? '', quantity: e.quantity ?? '')).toList();
+      if (plan.frequency != null) frequency.value = plan.frequency!;
+      if (plan.hasSchedule) deliveryDays.value = List<String>.from(plan.effectiveDeliveryDays);
+      if (frequency.value == VendorSubscriptionPlanModel.frequencyWeekly && deliveryDays.length != 1) {
+        deliveryDays.value = [deliveryDays.isEmpty ? VendorSubscriptionPlanModel.weekdays.first : deliveryDays.first];
+      }
+      slotFrom.value = plan.timeSlot?.from ?? '';
+      slotTo.value = plan.timeSlot?.to ?? '';
     }
+    if (itemRows.isEmpty) itemRows.add(PlanItemRow());
     final vendorId = Constant.userModel?.vendorID;
     if (vendorId != null && vendorId.isNotEmpty) {
       final vendor = await FireStoreUtils.getVendorById(vendorId);
@@ -104,6 +121,11 @@ class AddEditCustomerSubscriptionPlanController extends GetxController {
       ShowToastDialog.showToast("Please enter a valid number of days".tr);
       return;
     }
+    final scheduleError = _validateSchedule();
+    if (scheduleError != null) {
+      ShowToastDialog.showToast(scheduleError);
+      return;
+    }
 
     ShowToastDialog.showLoader("Please wait...".tr);
     try {
@@ -127,6 +149,10 @@ class AddEditCustomerSubscriptionPlanController extends GetxController {
       plan.expiryDay = days;
       plan.isEnable = isEnable.value;
       plan.createdAt = plan.createdAt ?? Timestamp.now();
+      plan.items = _filledItemRows.map((r) => VendorSubscriptionPlanItem(name: r.nameController.text.trim(), quantity: r.quantityController.text.trim())).toList();
+      plan.frequency = frequency.value;
+      plan.deliveryDays = VendorSubscriptionPlanModel.weekdays.where(deliveryDays.contains).toList();
+      plan.timeSlot = VendorSubscriptionTimeSlot(from: slotFrom.value, to: slotTo.value);
 
       await CustomerSubscriptionService.savePlan(plan);
       ShowToastDialog.closeLoader();
@@ -135,6 +161,73 @@ class AddEditCustomerSubscriptionPlanController extends GetxController {
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast("${'Something went wrong:'.tr} $e");
     }
+  }
+
+  // ---------------------------------------------------------------- Schedule
+
+  /// Rows where the user typed something (fully blank rows are ignored).
+  List<PlanItemRow> get _filledItemRows => itemRows.where((r) => r.nameController.text.trim().isNotEmpty || r.quantityController.text.trim().isNotEmpty).toList();
+
+  String? _validateSchedule() {
+    final rows = _filledItemRows;
+    if (rows.isEmpty) return "Please add at least one item".tr;
+    for (final r in rows) {
+      if (r.nameController.text.trim().isEmpty) return "Please enter a name for every item".tr;
+      final qty = int.tryParse(r.quantityController.text.trim());
+      if (qty == null || qty < 1) return "Item quantity must be at least 1".tr;
+    }
+    if (deliveryDays.isEmpty) return "Please select at least one delivery day".tr;
+    if (frequency.value == VendorSubscriptionPlanModel.frequencyWeekly && deliveryDays.length != 1) return "A weekly plan delivers on exactly one day".tr;
+    final from = VendorSubscriptionTimeSlot.minutesOf(slotFrom.value);
+    final to = VendorSubscriptionTimeSlot.minutesOf(slotTo.value);
+    if (from == null || to == null) return "Please select the delivery time slot".tr;
+    if (from >= to) return "The time slot must end after it starts".tr;
+    return null;
+  }
+
+  void addItemRow() => itemRows.add(PlanItemRow());
+
+  void removeItemRow(PlanItemRow row) {
+    itemRows.remove(row);
+    // Dispose once the row's text fields have left the tree.
+    WidgetsBinding.instance.addPostFrameCallback((_) => row.dispose());
+    if (itemRows.isEmpty) itemRows.add(PlanItemRow());
+  }
+
+  void setFrequency(String value) {
+    if (frequency.value == value) return;
+    frequency.value = value;
+    if (value == VendorSubscriptionPlanModel.frequencyDaily) {
+      deliveryDays.value = List<String>.from(VendorSubscriptionPlanModel.weekdays);
+    } else {
+      deliveryDays.value = [deliveryDays.isEmpty ? VendorSubscriptionPlanModel.weekdays.first : VendorSubscriptionPlanModel.weekdays.firstWhere(deliveryDays.contains)];
+    }
+  }
+
+  /// Daily: toggle the day. Weekly: the tapped day becomes the only day.
+  void toggleDay(String day) {
+    if (frequency.value == VendorSubscriptionPlanModel.frequencyWeekly) {
+      deliveryDays.value = [day];
+    } else if (deliveryDays.contains(day)) {
+      deliveryDays.remove(day);
+    } else {
+      deliveryDays.add(day);
+    }
+  }
+
+  static String formatTime(TimeOfDay time) => "${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}";
+
+  static TimeOfDay? parseTime(String hhmm) {
+    final minutes = VendorSubscriptionTimeSlot.minutesOf(hhmm);
+    return minutes == null ? null : TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60);
+  }
+
+  @override
+  void onClose() {
+    for (final r in itemRows) {
+      r.dispose();
+    }
+    super.onClose();
   }
 
   final ImagePicker _imagePicker = ImagePicker();
@@ -149,5 +242,20 @@ class AddEditCustomerSubscriptionPlanController extends GetxController {
     } on PlatformException catch (e) {
       ShowToastDialog.showToast("${"Failed to Pick :".tr} \n $e");
     }
+  }
+}
+
+/// One editable "item + quantity" row of the plan form.
+class PlanItemRow {
+  final TextEditingController nameController;
+  final TextEditingController quantityController;
+
+  PlanItemRow({String name = '', String quantity = ''})
+      : nameController = TextEditingController(text: name),
+        quantityController = TextEditingController(text: quantity);
+
+  void dispose() {
+    nameController.dispose();
+    quantityController.dispose();
   }
 }
