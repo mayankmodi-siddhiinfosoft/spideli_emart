@@ -118,7 +118,7 @@ class ProductRatingViewScreen extends StatelessWidget {
                                       ignoreGestures: true,
                                       initialRating: controller.ratingModel.value.id == null
                                           ? 0.0
-                                          : controller.ratingModel.value.reviewAttributes![controller.reviewAttributeList[index].id] ?? 0.0,
+                                          : ((controller.ratingModel.value.reviewAttributes![controller.reviewAttributeList[index].id] ?? 0) as num).toDouble(),
                                       minRating: 1,
                                       direction: Axis.horizontal,
                                       itemCount: 5,

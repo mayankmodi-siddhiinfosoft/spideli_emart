@@ -142,7 +142,7 @@ class AddEditRoleScreen extends StatelessWidget {
                             ),
                           );
                         }),
-                        Obx(() => _PermissionMatrix(controller: controller)),
+                        _PermissionMatrix(controller: controller),
                       ]),
                     ),
                   ),
@@ -175,8 +175,12 @@ class _PermissionMatrix extends StatelessWidget {
     controller.isAllPermission.value = controller.permissionList.every((item) => item.isActive == true);
   }
 
+  // Tracks permissionList in its own observer (a parent Obx cannot see reads
+  // made in this child's build).
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => DsObserve(builder: _build);
+
+  Widget _build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
     // Group indices (not models) so every switch still writes to permissionList[index].

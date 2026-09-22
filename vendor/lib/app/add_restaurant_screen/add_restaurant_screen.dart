@@ -625,96 +625,100 @@ class _StoreProgressCard extends StatelessWidget {
         controller.mobileNumberController.value,
         controller.addressController.value,
       ]),
-      builder: (context, _) {
-        final checks = <(String, IconData, bool)>[
-          ("Photos".tr, Icons.photo_library_outlined, controller.images.isNotEmpty),
-          ("Details".tr, Icons.storefront_outlined, controller.restaurantNameController.value.text.trim().isNotEmpty && controller.restaurantDescriptionController.value.text.trim().isNotEmpty),
-          ("Location".tr, Icons.place_outlined, controller.addressController.value.text.trim().isNotEmpty && controller.mobileNumberController.value.text.trim().isNotEmpty),
-          ("Zone".tr, Icons.map_outlined, controller.selectedZone.value.id != null),
-          ("Categories".tr, Icons.category_outlined, controller.selectedCategories.isNotEmpty),
-        ];
-        final done = checks.where((e) => e.$3).length;
-        final progress = done / checks.length;
-        final name = controller.restaurantNameController.value.text.trim();
-        return DsCard(
-          padding: const EdgeInsets.all(DsSpace.lg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(borderRadius: DsRadius.brMd, gradient: DsGradients.brand(context), boxShadow: DsShadows.sm(context)),
-                    clipBehavior: Clip.antiAlias,
-                    child: AnimatedSwitcher(
-                      duration: DsMotion.of(context, DsMotion.base),
-                      child: controller.images.isNotEmpty
-                          ? FormPickedImage(key: ValueKey(controller.images.first), source: controller.images.first, width: 64, height: 64)
-                          : const Icon(Icons.storefront_rounded, color: Colors.white, size: 30),
+      // DsObserve: this builder runs lazily, so reads of observables such as
+      // selectedCategories must be tracked here to update the meter.
+      builder: (context, _) => DsObserve(
+        builder: (context) {
+          final checks = <(String, IconData, bool)>[
+            ("Photos".tr, Icons.photo_library_outlined, controller.images.isNotEmpty),
+            ("Details".tr, Icons.storefront_outlined, controller.restaurantNameController.value.text.trim().isNotEmpty && controller.restaurantDescriptionController.value.text.trim().isNotEmpty),
+            ("Location".tr, Icons.place_outlined, controller.addressController.value.text.trim().isNotEmpty && controller.mobileNumberController.value.text.trim().isNotEmpty),
+            ("Zone".tr, Icons.map_outlined, controller.selectedZone.value.id != null),
+            ("Categories".tr, Icons.category_outlined, controller.selectedCategories.isNotEmpty),
+          ];
+          final done = checks.where((e) => e.$3).length;
+          final progress = done / checks.length;
+          final name = controller.restaurantNameController.value.text.trim();
+          return DsCard(
+            padding: const EdgeInsets.all(DsSpace.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(borderRadius: DsRadius.brMd, gradient: DsGradients.brand(context), boxShadow: DsShadows.sm(context)),
+                      clipBehavior: Clip.antiAlias,
+                      child: AnimatedSwitcher(
+                        duration: DsMotion.of(context, DsMotion.base),
+                        child: controller.images.isNotEmpty
+                            ? FormPickedImage(key: ValueKey(controller.images.first), source: controller.images.first, width: 64, height: 64)
+                            : const Icon(Icons.storefront_rounded, color: Colors.white, size: 30),
+                      ),
                     ),
-                  ),
-                  const DsGap(DsSpace.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name.isEmpty ? (controller.isNewStore ? "Add Store".tr : "Store Details".tr) : name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: t.title,
-                        ),
-                        const DsGap(DsSpace.xs),
-                        Wrap(
-                          spacing: DsSpace.xs,
-                          runSpacing: DsSpace.xs,
-                          children: [
-                            if ((controller.selectedSectionModel.value.name ?? '').isNotEmpty)
-                              DsBadge(label: controller.selectedSectionModel.value.name.toString(), tone: DsTone.brand, icon: Icons.layers_outlined, small: true),
-                            if (controller.selectedZone.value.id != null) DsBadge(label: controller.selectedZone.value.name.toString(), tone: DsTone.info, icon: Icons.map_outlined, small: true),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  DsProgressRing(
-                    value: progress,
-                    size: 56,
-                    stroke: 6,
-                    tone: progress >= 1 ? DsTone.success : DsTone.brand,
-                    semanticLabel: "Profile completion".tr,
-                    center: Text('${(progress * 100).round()}%', style: t.labelSm.withColor(c.textPrimary)),
-                  ),
-                ],
-              ),
-              const DsGap(DsSpace.lg),
-              Wrap(
-                spacing: DsSpace.xs,
-                runSpacing: DsSpace.xs,
-                children: [
-                  for (final check in checks)
-                    AnimatedContainer(
-                      duration: DsMotion.of(context, DsMotion.base),
-                      curve: DsMotion.standard,
-                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm, vertical: DsSpace.xs),
-                      decoration: BoxDecoration(color: check.$3 ? c.successSoft : c.surfaceAlt, borderRadius: DsRadius.brPill),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                    const DsGap(DsSpace.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(check.$3 ? Icons.check_circle_rounded : check.$2, size: 14, color: check.$3 ? c.successStrong : c.textMuted),
+                          Text(
+                            name.isEmpty ? (controller.isNewStore ? "Add Store".tr : "Store Details".tr) : name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: t.title,
+                          ),
                           const DsGap(DsSpace.xs),
-                          Text(check.$1, style: t.labelSm.withColor(check.$3 ? c.successStrong : c.textSecondary)),
+                          Wrap(
+                            spacing: DsSpace.xs,
+                            runSpacing: DsSpace.xs,
+                            children: [
+                              if ((controller.selectedSectionModel.value.name ?? '').isNotEmpty)
+                                DsBadge(label: controller.selectedSectionModel.value.name.toString(), tone: DsTone.brand, icon: Icons.layers_outlined, small: true),
+                              if (controller.selectedZone.value.id != null) DsBadge(label: controller.selectedZone.value.name.toString(), tone: DsTone.info, icon: Icons.map_outlined, small: true),
+                            ],
+                          ),
                         ],
                       ),
                     ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
+                    DsProgressRing(
+                      value: progress,
+                      size: 56,
+                      stroke: 6,
+                      tone: progress >= 1 ? DsTone.success : DsTone.brand,
+                      semanticLabel: "Profile completion".tr,
+                      center: Text('${(progress * 100).round()}%', style: t.labelSm.withColor(c.textPrimary)),
+                    ),
+                  ],
+                ),
+                const DsGap(DsSpace.lg),
+                Wrap(
+                  spacing: DsSpace.xs,
+                  runSpacing: DsSpace.xs,
+                  children: [
+                    for (final check in checks)
+                      AnimatedContainer(
+                        duration: DsMotion.of(context, DsMotion.base),
+                        curve: DsMotion.standard,
+                        padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm, vertical: DsSpace.xs),
+                        decoration: BoxDecoration(color: check.$3 ? c.successSoft : c.surfaceAlt, borderRadius: DsRadius.brPill),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(check.$3 ? Icons.check_circle_rounded : check.$2, size: 14, color: check.$3 ? c.successStrong : c.textMuted),
+                            const DsGap(DsSpace.xs),
+                            Text(check.$1, style: t.labelSm.withColor(check.$3 ? c.successStrong : c.textSecondary)),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

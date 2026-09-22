@@ -208,12 +208,15 @@ class SelectPaymentScreen extends StatelessWidget {
   }
 
   Obx cardDecoration(SubscriptionController controller, PaymentGateway value, isDark, String image) {
-    return Obx(
-      () => Builder(
+    return Obx(() {
+      // Read observables synchronously here so the Obx tracks them (reads
+      // inside the Builder below run later and would not be observed).
+      final selected = controller.selectedPaymentMethod.value == value.name;
+      final walletBalance = controller.walletBalance;
+      return Builder(
         builder: (context) {
           final c = context.dsColors;
           final t = context.dsText;
-          final selected = controller.selectedPaymentMethod.value == value.name;
           final br = DsRadius.brLg;
           return Padding(
             padding: const EdgeInsets.only(bottom: DsSpace.md),
@@ -259,7 +262,7 @@ class SelectPaymentScreen extends StatelessWidget {
                                     children: [
                                       Text(value.name.capitalizeString(), textAlign: TextAlign.start, style: t.bodyStrong),
                                       Text(
-                                        Constant.amountShow(amount: controller.walletBalance.toString()),
+                                        Constant.amountShow(amount: walletBalance.toString()),
                                         textAlign: TextAlign.start,
                                         style: t.titleSm.tabular.withColor(c.brandStrong),
                                       ),
@@ -304,7 +307,7 @@ class SelectPaymentScreen extends StatelessWidget {
             ),
           );
         },
-      ),
-    );
+      );
+    });
   }
 }

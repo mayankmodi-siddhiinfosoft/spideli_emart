@@ -129,7 +129,9 @@ class CustomerSubscriptionProductionScreen extends StatelessWidget {
         ),
       );
     }
-    return Builder(
+    // DsObserve (not Builder): this builder runs lazily, so its reads of
+    // groups / unscheduled must be tracked here to refresh on pull-to-refresh.
+    return DsObserve(
       builder: (context) {
         final l = context.dsLayout;
         final cards = <Widget>[...controller.groups.map((g) => _planCard(g)), if (controller.unscheduled.isNotEmpty) _unscheduledCard(controller.unscheduled)];
@@ -157,7 +159,8 @@ class CustomerSubscriptionProductionScreen extends StatelessWidget {
   }
 
   Widget _summaryCard(CustomerSubscriptionProductionController controller) {
-    return Builder(
+    // DsObserve so the lazily-built totals (groups / overallTotals) are tracked.
+    return DsObserve(
       builder: (context) {
         final t = context.dsText;
         return DsResponsive(

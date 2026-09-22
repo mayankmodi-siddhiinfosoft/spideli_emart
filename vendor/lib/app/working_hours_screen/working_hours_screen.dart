@@ -26,36 +26,39 @@ class WorkingHoursScreen extends StatelessWidget {
                   ),
                 )
               // Local rebuild after a time is picked (the picked value is
-              // written straight into the model, as before).
+              // written straight into the model, as before). DsObserve tracks
+              // workingHours read in here so "+" / Remove Time re-render.
               : StatefulBuilder(
-                  builder: (context, refresh) {
-                    final days = <Widget>[];
-                    for (int index = 0; index < controller.workingHours.length; index++) {
-                      days.add(_dayCard(context, controller, index, () => refresh(() {})));
-                    }
-                    return SingleChildScrollView(
-                      child: DsResponsive(
-                        maxWidth: DsLayout.wideMax,
-                        padded: true,
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: DsSpace.md, bottom: DsSpace.xxl),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              DsFadeSlideIn(child: _WeekOverview(hours: controller.workingHours)),
-                              DsSectionHeader(title: "Weekly schedule".tr, icon: Icons.calendar_view_week_rounded),
-                              DsAdaptiveGrid(
-                                minItemWidth: 340,
-                                maxColumns: 2,
-                                equalHeight: false,
-                                children: [for (int i = 0; i < days.length; i++) DsFadeSlideIn(index: i + 1, child: days[i])],
-                              ),
-                            ],
+                  builder: (context, refresh) => DsObserve(
+                    builder: (context) {
+                      final days = <Widget>[];
+                      for (int index = 0; index < controller.workingHours.length; index++) {
+                        days.add(_dayCard(context, controller, index, () => refresh(() {})));
+                      }
+                      return SingleChildScrollView(
+                        child: DsResponsive(
+                          maxWidth: DsLayout.wideMax,
+                          padded: true,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: DsSpace.md, bottom: DsSpace.xxl),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                DsFadeSlideIn(child: _WeekOverview(hours: controller.workingHours)),
+                                DsSectionHeader(title: "Weekly schedule".tr, icon: Icons.calendar_view_week_rounded),
+                                DsAdaptiveGrid(
+                                  minItemWidth: 340,
+                                  maxColumns: 2,
+                                  equalHeight: false,
+                                  children: [for (int i = 0; i < days.length; i++) DsFadeSlideIn(index: i + 1, child: days[i])],
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
           bottomBar: DsStickyBar(
             child: DsButton.primary(

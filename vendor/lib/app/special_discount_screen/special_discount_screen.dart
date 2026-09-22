@@ -81,8 +81,12 @@ class _SpecialDiscountBodyState extends State<_SpecialDiscountBody> {
 
   SpecialDiscountController get controller => widget.controller;
 
+  // DsObserve tracks isSpecialSwitched / specialDiscount read in this child's
+  // build (the parent GetX cannot); setState still drives the day tab.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => DsObserve(builder: _build);
+
+  Widget _build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
     if (controller.specialDiscount.isEmpty) {

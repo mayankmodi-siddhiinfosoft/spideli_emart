@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../foundation/ds_observe.dart';
 import '../tokens/ds_colors.dart';
 import '../tokens/ds_tokens.dart';
 import '../tokens/ds_typography.dart';
@@ -193,7 +194,9 @@ class DsAsync extends StatelessWidget {
       child = empty!;
     } else {
       state = 'content';
-      child = builder(context);
+      // Observe reads made while building content: the builder runs here,
+      // after any enclosing Obx/GetX has finished tracking.
+      child = DsObserve(builder: builder);
     }
     return AnimatedSwitcher(
       duration: DsMotion.of(context, duration),

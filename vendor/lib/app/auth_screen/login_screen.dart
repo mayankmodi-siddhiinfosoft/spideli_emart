@@ -53,7 +53,10 @@ class LoginScreen extends StatelessWidget {
                 ),
               const DsGap(DsSpace.xxl),
               Obx(() {
-                final showEmployee = Constant.isEmployeeManagement == true && controller.selectedTabbar.value == 1;
+                // Read the observable unconditionally so the Obx always has a
+                // dependency (short-circuiting on the flag left it with none).
+                final selectedTab = controller.selectedTabbar.value;
+                final showEmployee = Constant.isEmployeeManagement == true && selectedTab == 1;
                 return AnimatedSwitcher(
                   duration: DsMotion.of(context, DsMotion.base),
                   switchInCurve: DsMotion.emphasized,

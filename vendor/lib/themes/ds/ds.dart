@@ -11,6 +11,7 @@ export 'tokens/ds_typography.dart';
 
 // Foundation
 export 'foundation/ds_context.dart';
+export 'foundation/ds_observe.dart';
 export 'foundation/ds_page_transition.dart';
 export 'foundation/ds_responsive.dart';
 export 'foundation/ds_theme.dart';

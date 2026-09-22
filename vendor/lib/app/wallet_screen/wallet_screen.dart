@@ -411,8 +411,13 @@ class _BalanceHero extends StatelessWidget {
   final VoidCallback onDownload;
   final VoidCallback onFilter;
 
+  // Wrapped in DsObserve: this child builds after the parent observer has
+  // finished tracking, so its own reads of the wallet observables must be
+  // tracked here to refresh after withdraw / filter / clear / refresh.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => DsObserve(builder: _build);
+
+  Widget _build(BuildContext context) {
     final t = context.dsText;
     final canWithdraw =
         !((controller.userModel.value.isDocumentVerify == false && controller.userModel.value.isAutoVerify == false) ||

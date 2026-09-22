@@ -115,7 +115,13 @@ class AddEditOfferScreen extends StatelessWidget {
                                   DsSegment('Fix Price'.tr, icon: Icons.payments_outlined),
                                   DsSegment('Percentage'.tr, icon: Icons.percent_rounded),
                                 ],
-                                index: isPercent ? 1 : 0,
+                                // Exact match like the old radios: any other stored
+                                // value shows neither selected (-1 selects no segment).
+                                index: controller.selectCouponType.value == "Fix Price"
+                                    ? 0
+                                    : controller.selectCouponType.value == "Percentage"
+                                    ? 1
+                                    : -1,
                                 onChanged: (i) {
                                   if (i == 0) {
                                     controller.selectCouponType.value = "Fix Price";
