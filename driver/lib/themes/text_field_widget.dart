@@ -1,3 +1,4 @@
+import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +6,9 @@ import 'package:get/get.dart';
 
 import 'app_them_data.dart';
 
+/// Legacy labelled text field (kept for existing screens). Visuals follow
+/// the design system; the constructor API and behaviour are unchanged.
+/// New code should use [DsTextField].
 class TextFieldWidget extends StatefulWidget {
   final String? title;
   final String? initialValue;
@@ -58,31 +62,42 @@ class _TextFieldWidgetState extends State<TextFieldWidget> {
   void initState() {
     super.initState();
     _focusNode = widget.focusNode ?? FocusNode();
-    _focusNode.addListener(() {
-      setState(() {});
-    });
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    // Only dispose the node this widget created.
+    if (widget.focusNode == null) _focusNode.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeController themeController = Get.find<ThemeController>();
     final isDark = themeController.isDark.value;
+    final c = DsColors.resolve(isDark, highContrast: MediaQuery.maybeHighContrastOf(context) ?? false);
+    final enabled = widget.enable ?? true;
 
-    // Theme-aware colors
-    final borderColor = _focusNode.hasFocus ? (isDark ? AppThemeData.greyDark400 : AppThemeData.grey400) : (isDark ? AppThemeData.greyDark200 : AppThemeData.grey200);
+    OutlineInputBorder border(Color color, [double width = 1]) =>
+        OutlineInputBorder(borderRadius: DsRadius.brMd, borderSide: BorderSide(color: color, width: width));
 
-    final fillColor = isDark ? (AppThemeData.greyDark100) : (AppThemeData.grey100);
-
-    final textColor = isDark ? AppThemeData.greyDark900 : AppThemeData.grey900;
-
-    final hintColor = isDark ? AppThemeData.greyDark400 : AppThemeData.grey400;
+    final idleBorder = isDark || c.highContrast ? c.border : c.surfaceAlt;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (widget.title != null) ...[
-          Text(widget.title!.tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800)),
-          const SizedBox(height: 5),
+          Text(
+            widget.title!.tr,
+            style: DsTypography.labelSm.copyWith(fontSize: 13, height: 1.35, color: c.textSecondary),
+          ),
+          const SizedBox(height: DsSpace.sm),
         ],
         TextFormField(
           keyboardType: widget.textInputType ?? TextInputType.text,
@@ -100,39 +115,30 @@ class _TextFieldWidgetState extends State<TextFieldWidget> {
           maxLength: widget.maxLength,
           readOnly: widget.readOnly ?? false,
           onFieldSubmitted: widget.onFieldSubmitted,
-          style: AppThemeData.semiBoldTextStyle(color: textColor),
+          cursorColor: AppThemeData.primary300,
+          style: DsTypography.bodyStrong.copyWith(height: 1.4, color: enabled ? c.textPrimary : c.textSecondary),
           decoration: InputDecoration(
-            errorStyle: const TextStyle(color: Colors.red),
+            errorStyle: DsTypography.caption.copyWith(color: c.danger),
+            errorMaxLines: 3,
             filled: true,
-            enabled: widget.enable ?? true,
-            fillColor: fillColor,
-            contentPadding: EdgeInsets.symmetric(vertical: widget.title == null ? 15 : (widget.enable == false ? 13 : 8), horizontal: 10),
+            isDense: false,
+            enabled: enabled,
+            fillColor: enabled ? c.surfaceAlt : Color.alphaBlend(c.surfaceAlt.withValues(alpha: 0.5), c.surface),
+            contentPadding: EdgeInsets.symmetric(vertical: widget.prefix != null ? 16 : 14, horizontal: DsSpace.lg),
             prefixIcon: widget.prefix,
             suffixIcon: widget.suffix,
             prefixIconConstraints: const BoxConstraints(minHeight: 20, minWidth: 20),
             suffixIconConstraints: const BoxConstraints(minHeight: 20, minWidth: 20),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: borderColor, width: 1.2),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: borderColor, width: 1.2),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: borderColor, width: 1.2),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Colors.red),
-            ),
-            disabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: borderColor, width: 1.2),
-            ),
+            prefixIconColor: c.textMuted,
+            suffixIconColor: c.textMuted,
+            border: border(idleBorder),
+            enabledBorder: border(idleBorder),
+            focusedBorder: border(AppThemeData.primary300, 1.6),
+            errorBorder: border(c.danger),
+            focusedErrorBorder: border(c.danger, 1.6),
+            disabledBorder: border(Colors.transparent),
             hintText: widget.hintText.tr,
-            hintStyle: AppThemeData.regularTextStyle(fontSize: 14, color: hintColor),
+            hintStyle: DsTypography.body.copyWith(height: 1.4, color: c.textMuted),
           ),
         ),
         const SizedBox(height: 12),

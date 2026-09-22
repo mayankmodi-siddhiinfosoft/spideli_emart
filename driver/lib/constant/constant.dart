@@ -12,6 +12,8 @@ import 'package:driver/models/section_model.dart';
 import 'package:driver/models/tax_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/themes/app_them_data.dart';
+import 'package:driver/themes/ds/components/ds_feedback.dart';
+import 'package:driver/themes/ds/loading/ds_loaders.dart';
 import 'package:driver/utils/preferences.dart';
 import 'package:driver/widget/permission_dialog.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -213,16 +215,14 @@ class Constant {
     return const Uuid().v4();
   }
 
+  /// App-wide loading indicator (design-system brand loader).
   static Widget loader() {
-    return Center(
-      child: CircularProgressIndicator(color: AppThemeData.primary300),
-    );
+    return const Center(child: DsBrandLoader());
   }
 
+  /// App-wide empty placeholder (design-system empty state).
   static Widget showEmptyView({required String message, required bool isDark}) {
-    return Center(
-      child: Text(message, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-    );
+    return DsEmptyState(icon: Icons.inbox_outlined, title: message, compact: true);
   }
 
   static String getReferralCode() {

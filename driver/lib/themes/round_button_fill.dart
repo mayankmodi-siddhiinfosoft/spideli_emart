@@ -1,9 +1,13 @@
+import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/responsive.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import 'app_them_data.dart';
 
+/// Legacy filled button (kept for existing screens). Visuals follow the
+/// design system; the constructor API and sizing behaviour are unchanged.
+/// New code should use [DsButton].
 class RoundedButtonFill extends StatelessWidget {
   final String title;
   final double? width;
@@ -34,41 +38,57 @@ class RoundedButtonFill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        FocusManager.instance.primaryFocus?.unfocus();
-        onPress?.call();
-      },
-      child: Container(
-        width: Responsive.width(width ?? 100, context),
-        height: Responsive.height(height ?? 6, context),
-        decoration: ShapeDecoration(
-          color: color,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(borderRadius ?? 50)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (isRight == false) Padding(padding: const EdgeInsets.only(right: 10, left: 10), child: icon),
-            isCenter == true
-                ? Text(
-                    title.tr,
-                    textAlign: TextAlign.center,
-                    style: AppThemeData.semiBoldTextStyle(fontSize: fontSizes ?? 16, color: textColor ?? AppThemeData.grey50),
-                  )
-                : Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(right: isRight == null ? 0 : 30),
-                      child: Text(
-                        title.tr,
-                        textAlign: TextAlign.center,
-                        style: AppThemeData.semiBoldTextStyle(fontSize: fontSizes ?? 16, color: textColor ?? AppThemeData.grey50),
-                      ),
-                    ),
-                  ),
-            if (isRight == true) Padding(padding: const EdgeInsets.only(left: 10, right: 10), child: icon),
-          ],
+    final br = BorderRadius.circular(borderRadius ?? DsRadius.md);
+    final isBrand = color != null && color == AppThemeData.primary300;
+    final label = Text(
+      title.tr,
+      textAlign: TextAlign.center,
+      maxLines: 1,
+      style: AppThemeData.semiBoldTextStyle(fontSize: fontSizes ?? 16, color: textColor ?? AppThemeData.grey50).copyWith(letterSpacing: 0.1),
+    );
+    // Scale the label down instead of clipping at large text sizes, since
+    // the height is a fixed fraction of the screen.
+    final fitted = FittedBox(fit: BoxFit.scaleDown, child: label);
+
+    return Semantics(
+      button: true,
+      child: DsPressable(
+        child: Container(
+          width: Responsive.width(width ?? 100, context),
+          height: Responsive.height(height ?? 6, context),
+          decoration: BoxDecoration(
+            borderRadius: br,
+            boxShadow: isBrand ? DsShadows.glow(context, color: color).take(1).toList() : null,
+          ),
+          child: Material(
+            color: color ?? Colors.transparent,
+            borderRadius: br,
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+                onPress?.call();
+              },
+              splashColor: (textColor ?? Colors.white).withValues(alpha: 0.14),
+              highlightColor: (textColor ?? Colors.white).withValues(alpha: 0.06),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (isRight == false) Padding(padding: const EdgeInsets.only(right: 10, left: 10), child: icon),
+                  isCenter == true
+                      ? Flexible(child: fitted)
+                      : Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.only(right: isRight == null ? 0 : 30),
+                            child: Center(child: fitted),
+                          ),
+                        ),
+                  if (isRight == true) Padding(padding: const EdgeInsets.only(left: 10, right: 10), child: icon),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

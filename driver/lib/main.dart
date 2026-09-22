@@ -8,7 +8,7 @@ import 'package:driver/firebase_options.dart';
 import 'package:driver/models/language_model.dart';
 import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/services/localization_service.dart';
-import 'package:driver/themes/app_them_data.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/easy_loading_config.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:driver/utils/fire_store_utils.dart';
@@ -80,24 +80,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           title: 'Driver'.tr,
           debugShowCheckedModeBanner: false,
           themeMode: themeController.themeMode,
-          theme: ThemeData(
-            scaffoldBackgroundColor: AppThemeData.surface,
-            textTheme: TextTheme(bodyLarge: TextStyle(color: AppThemeData.grey900)),
-            appBarTheme: AppBarTheme(
-              backgroundColor: AppThemeData.surface,
-              foregroundColor: AppThemeData.grey900,
-              iconTheme: IconThemeData(color: AppThemeData.grey900),
-            ),
-          ),
-          darkTheme: ThemeData(
-            scaffoldBackgroundColor: AppThemeData.surfaceDark,
-            textTheme: TextTheme(bodyLarge: TextStyle(color: AppThemeData.greyDark900)),
-            appBarTheme: AppBarTheme(
-              backgroundColor: AppThemeData.surfaceDark,
-              foregroundColor: AppThemeData.greyDark900,
-              iconTheme: IconThemeData(color: AppThemeData.greyDark900),
-            ),
-          ),
+          // Design-system themes (lib/themes/ds). Brand color is read from
+          // AppThemeData.primary300 (Firestore `app_driver_color`) and
+          // refreshed by DsBrandTheme below.
+          theme: DsTheme.light(),
+          darkTheme: DsTheme.dark(),
+          highContrastTheme: DsTheme.lightHighContrast(),
+          highContrastDarkTheme: DsTheme.darkHighContrast(),
+          // App-wide page transition (shared-axis on Android, native swipe on iOS).
+          customTransition: DsPageTransition(),
+          transitionDuration: DsMotion.page,
+          navigatorObservers: [DsBrandTheme.observer],
           localizationsDelegates: const [
             CountryLocalizations.delegate,
           ],
@@ -105,10 +98,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           fallbackLocale: LocalizationService.locale,
           translations: LocalizationService(),
           builder: (context, child) {
-            return SafeArea(
-              bottom: true,
-              top: false,
-              child: EasyLoading.init()(context, child),
+            return DsBrandTheme(
+              child: SafeArea(
+                bottom: true,
+                top: false,
+                child: EasyLoading.init()(context, child),
+              ),
             );
           },
           home: GetBuilder<GlobalSettingController>(
