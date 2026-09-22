@@ -163,7 +163,9 @@ class DashBoardScreen extends StatelessWidget {
             SubscriptionPlanWidget(
               onClick: () {
                 Get.back();
-                controller.selectedDrawerIndex.value = 5;
+                // By id, not position: inserting Documents shifted the indexes.
+                final int index = controller.drawerItems.indexWhere((e) => e.id == 'subscription');
+                if (index >= 0) controller.selectedDrawerIndex.value = index;
               },
               userModel: MyAppState.currentUser!,
             ),

@@ -16,12 +16,24 @@ class CancelReasonResult {
 
   const CancelReasonResult({required this.reason, required this.code});
 
-  /// Contract fields for a driver cancellation / rejection.
-  Map<String, dynamic> toFields() => {
-        'cancelReason': reason,
-        'cancelReasonCode': code,
-        'cancelledBy': 'driver',
-        'cancelledAt': Timestamp.now(),
+  /// Fields for a driver passing on / handing back a ride or rental.
+  ///
+  /// The booking stays open to other drivers, so the reason is appended to a
+  /// per-driver `driverRejections` list rather than written to the booking's
+  /// own cancelReason / cancelledBy (those would otherwise stay on a booking
+  /// another driver later completes). [afterAccept] marks a driver who had
+  /// accepted and then cancelled, so the customer app can say "your driver
+  /// cancelled - finding another driver".
+  Map<String, dynamic> toFields(String? driverId, {bool afterAccept = false}) => {
+        'driverRejections': FieldValue.arrayUnion([
+          {
+            'driverId': driverId ?? '',
+            'reason': reason,
+            'code': code,
+            'at': Timestamp.now(),
+            'afterAccept': afterAccept,
+          },
+        ]),
       };
 }
 

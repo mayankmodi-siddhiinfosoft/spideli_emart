@@ -92,8 +92,27 @@ class FireStoreUtils {
     }
   }
 
+  /// Claims the provider credit for a booking exactly once. Returns true for
+  /// the first caller only (marker `providerCredited` set in a transaction), so
+  /// retries, the list and detail screens, or two devices can't pay twice.
+  static Future<bool> claimProviderCredit(String orderId) async {
+    try {
+      return await firestore.runTransaction<bool>((transaction) async {
+        final ref = firestore.collection(PROVIDER_ORDER).doc(orderId);
+        final snap = await transaction.get(ref);
+        if (!snap.exists || snap.data()?['providerCredited'] == true) return false;
+        transaction.update(ref, {'providerCredited': true});
+        return true;
+      });
+    } catch (e) {
+      log("claimProviderCredit failed: $e");
+      return false;
+    }
+  }
+
   static Future providerWalletSet(OnProviderOrderModel orderModel, bool isSent) async {
-    if (isSent == true) {
+    // Once per booking, whichever app or screen gets here first.
+    if (isSent == true && await claimProviderCredit(orderModel.id)) {
       double total = 0.0;
       double discount = 0.0;
       double specialDiscount = 0.0;

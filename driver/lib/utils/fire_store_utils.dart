@@ -945,7 +945,13 @@ class FireStoreUtils {
   static Future<String?> documentBlockReason() async {
     try {
       final driverDocs = await getDocumentOfDriver();
+      // Only document types the admin currently requires (the same list the
+      // verification screen shows). An old entry for a type that was since
+      // disabled can't be re-uploaded, so it must not lock the driver offline.
+      final required = await getDocumentList(Constant.userModel?.isOwner == true ? "owner" : "driver");
+      final Set<String> requiredIds = required.map((d) => d.id ?? '').where((id) => id.isNotEmpty).toSet();
       for (final doc in driverDocs?.documents ?? <Documents>[]) {
+        if (!requiredIds.contains(doc.documentId)) continue;
         final status = doc.verificationStatus;
         if (status == 'expired') return "One of your documents has expired. Please upload a valid document to go online.";
         if (status == 'rejected') return "One of your documents was rejected. Please upload it again to go online.";

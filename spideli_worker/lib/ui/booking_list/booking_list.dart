@@ -132,7 +132,10 @@ class _JobList extends StatelessWidget {
         }
         final List<OnProviderOrderModel> orders = snapshot.data!.docs
             .map((doc) => OnProviderOrderModel.fromJson(doc.data()))
-            .where((order) => !activeJobs || RegionService.isJobInWorkerRegion(order.regionId))
+            // No region filter here: these jobs were assigned to this worker by
+            // name by their provider, so hiding one would leave it assigned to
+            // nobody who can see it. Region-bound dispatch belongs where a job
+            // is offered, not where it is already assigned.
             .toList();
         if (orders.isEmpty) {
           return Center(child: Text(emptyMessage.tr));

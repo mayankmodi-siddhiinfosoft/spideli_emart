@@ -163,7 +163,9 @@ class RegionService {
 
   /// Currency a booking (or its receipt / wallet rows) was charged in: the
   /// booking's own region, else the provider's, else global.
-  static CurrencyModel? currencyForBooking(String? bookingRegionId) => currencyForRegion(bookingRegionId) ?? liveCurrency;
+  /// History: the booking's own region, else the GLOBAL currency (records from
+  /// before regions existed were charged in it) - not the provider's region.
+  static CurrencyModel? currencyForBooking(String? bookingRegionId) => currencyForRegion(bookingRegionId) ?? globalCurrency ?? liveCurrency;
 
   /// Resolves the provider's region and points [currencyData] (used by every
   /// live amount) at that region's currency. Safe to call repeatedly.

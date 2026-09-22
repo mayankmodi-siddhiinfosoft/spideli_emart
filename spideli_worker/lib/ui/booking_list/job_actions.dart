@@ -91,18 +91,25 @@ class JobActions {
         urls.add(await FireStoreUtils.uploadCompletionPhoto(file, order.id));
       }
       order.status = ORDER_STATUS_COMPLETED;
-      if (order.provider.priceUnit != "Fixed") {
-        await FireStoreUtils.providerWalletSet(order, true);
-      }
-      await FireStoreUtils.getFirestOrderOrNOt(order).then((value) async {
-        if (value == true) {
-          await FireStoreUtils.updateReferralAmount(order);
-        }
-      });
+      // Complete first, then pay: if anything after this fails, a retry can't
+      // pay the provider again (the credit below is claimed once per booking).
       await FireStoreUtils.updateOrderFields(order.id, {
         'status': ORDER_STATUS_COMPLETED,
         if (urls.isNotEmpty) 'completionPhotos': FieldValue.arrayUnion(urls),
       });
+      if (order.provider.priceUnit != "Fixed") {
+        await FireStoreUtils.providerWalletSet(order, true);
+      }
+      try {
+        await FireStoreUtils.getFirestOrderOrNOt(order).then((value) async {
+          if (value == true) {
+            await FireStoreUtils.updateReferralAmount(order);
+          }
+        });
+      } catch (e) {
+        // The referral bonus must never block or repeat the completion.
+        debugPrint('JobActions.complete: referral credit skipped: $e');
+      }
       await SendNotification.sendFcmMessage(providerServiceCompleted, order.author.fcmToken, _payload(order));
     } catch (e) {
       ShowToastDialog.showToast("Something went wrong, please try again.".tr);

@@ -188,17 +188,11 @@ class CabHomeController extends GetxController {
 
       // 1️⃣ Immediately update local state (UI)
       currentOrder.value.status = Constant.driverRejected;
-      if (reason != null) {
-        currentOrder.value.cancelReason = reason.reason;
-        currentOrder.value.cancelReasonCode = reason.code;
-        currentOrder.value.cancelledBy = 'driver';
-        currentOrder.value.cancelledAt = Timestamp.now();
-      }
-
       currentOrder.value.rejectedByDrivers ??= [];
       if (!currentOrder.value.rejectedByDrivers!.contains(driverModel.value.id)) {
         currentOrder.value.rejectedByDrivers!.add(driverModel.value.id);
       }
+      final String? rideId = currentOrder.value.id;
 
       // Immediately update UI so bottom sheet hides right away
       currentOrder.refresh();
@@ -221,7 +215,16 @@ class CabHomeController extends GetxController {
       await clearMap();
 
       // 5️⃣ Update Firestore in background (no UI wait)
-      unawaited(FireStoreUtils.setCabOrder(currentOrder.value));
+      // Only the fields this rejection changes. Writing the cached ride back
+      // (the pending-request copy can be stale) overwrote rejectedByDrivers and
+      // lost other drivers' rejections, so they were offered the ride again.
+      if (rideId != null) {
+        unawaited(FireStoreUtils.updateRideFields(rideId, {
+          'status': Constant.driverRejected,
+          if (driverModel.value.id != null) 'rejectedByDrivers': FieldValue.arrayUnion([driverModel.value.id]),
+          if (reason != null) ...reason.toFields(driverModel.value.id),
+        }));
+      }
 
       // 6️⃣ Reset local current order after short delay
       Future.delayed(const Duration(milliseconds: 300), () {
@@ -258,7 +261,7 @@ class CabHomeController extends GetxController {
         if (uid != null) 'rejectedByDrivers': FieldValue.arrayUnion([uid]),
         'driverId': null,
         'driver': FieldValue.delete(),
-        ...reason.toFields(),
+        ...reason.toFields(uid, afterAccept: true),
       });
       driverModel.value.inProgressOrderID?.remove(order.id);
       driverModel.value.orderCabRequestData = null;

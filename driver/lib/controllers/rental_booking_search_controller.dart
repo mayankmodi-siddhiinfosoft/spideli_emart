@@ -43,7 +43,7 @@ class RentalBookingSearchController extends GetxController {
   RxList<RentalOrderModel> rentalBookingData = <RentalOrderModel>[].obs;
 
   /// Driver passes on a booking request: a reason is mandatory (spec 9.1).
-  /// Known-fields write: rejectedByDrivers + the contract cancellation fields.
+  /// Known-fields write: rejectedByDrivers + this driver's reason in driverRejections.
   Future<void> rejectBooking(RentalOrderModel order) async {
     if (order.id == null) return;
     final reason = await CancelReasonSheet.show(title: "Why are you rejecting this booking?".tr);
@@ -51,7 +51,7 @@ class RentalBookingSearchController extends GetxController {
     ShowToastDialog.showLoader("Rejecting booking...".tr);
     final ok = await FireStoreUtils.updateRentalFields(order.id!, {
       'rejectedByDrivers': FieldValue.arrayUnion([FireStoreUtils.getCurrentUid()]),
-      ...reason.toFields(),
+      ...reason.toFields(FireStoreUtils.getCurrentUid()),
     });
     ShowToastDialog.closeLoader();
     if (!ok) {
