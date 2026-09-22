@@ -4,7 +4,8 @@ import 'package:spideliprovider/model/sectionModel.dart';
 import 'package:spideliprovider/model/tax_model.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/themes/app_colors.dart';
-import 'package:spideliprovider/themes/app_them_data.dart';
+import 'package:spideliprovider/themes/ds/components/ds_feedback.dart';
+import 'package:spideliprovider/themes/ds/loading/ds_loaders.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:spideliprovider/widgets/permission_dialog.dart';
 import 'package:flutter/material.dart';
@@ -100,10 +101,9 @@ String maskingString(String documentId, int maskingDigit) {
   return maskedDigits;
 }
 
+/// App-wide loading indicator (design-system brand loader).
 Widget loader() {
-  return Center(
-    child: CircularProgressIndicator(color: AppThemeData.secondary300),
-  );
+  return const Center(child: DsBrandLoader());
 }
 
 bool isExpire(User userModel) {
@@ -125,10 +125,9 @@ bool isExpire(User userModel) {
   return isPlanExpire;
 }
 
+/// App-wide empty placeholder (design-system empty state).
 Widget showEmptyView({required String message}) {
-  return Center(
-    child: Text(message, textAlign: TextAlign.center, style: const TextStyle(fontFamily: AppThemeData.medium, fontSize: 18)),
-  );
+  return DsEmptyState(icon: Icons.inbox_outlined, title: message, compact: true);
 }
 
 String timestampToDateTime(Timestamp timestamp) {

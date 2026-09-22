@@ -1,72 +1,57 @@
-import 'package:spideliprovider/themes/app_colors.dart';
+import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
+/// Location-permission-denied dialog. Visuals follow the design system;
+/// the actions (close / open app settings) are unchanged.
 class PermissionDialog extends StatelessWidget {
   const PermissionDialog({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+    // Listen to the theme provider so the dialog rebuilds on theme changes.
+    Provider.of<DarkThemeProvider>(context);
+    final c = context.dsColors;
+    final t = context.dsText;
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-      insetPadding: const EdgeInsets.all(30),
+      shape: RoundedRectangleBorder(borderRadius: DsRadius.brXl, side: c.isDark ? BorderSide(color: c.border) : BorderSide.none),
+      backgroundColor: c.surfaceRaised,
+      insetPadding: const EdgeInsets.all(DsSpace.xxl),
       clipBehavior: Clip.antiAliasWithSaveLayer,
-      child: Padding(
-        padding: const EdgeInsets.all(30),
-        child: SizedBox(
-          width: 500,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(DsSpace.xxl),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.add_location_alt_rounded, color: Theme.of(context).primaryColor, size: 100),
-            const SizedBox(height: 20),
+            const DsIconWell(icon: Icons.add_location_alt_rounded, tone: DsTone.warning, size: 72, circle: true),
+            const SizedBox(height: DsSpace.xl),
             Text(
               'You denied location permission forever. Please allow location permission from your app settings.'.tr,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 18),
+              style: t.bodyLg.copyWith(color: c.textSecondary),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: DsSpace.xxl),
             Row(children: [
               Expanded(
-                child: TextButton(
-                  style: TextButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30), side: BorderSide(width: 2, color: Theme.of(context).primaryColor)),
-                    minimumSize: const Size(1, 50),
-                  ),
-                  child:  Text('close'.tr),
+                child: DsButton.secondary(
+                  label: 'close'.tr,
+                  expand: true,
                   onPressed: () => Navigator.pop(context),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: DsSpace.md),
               Expanded(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: double.infinity),
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.colorPrimary,
-                      padding: const EdgeInsets.only(top: 12, bottom: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(25.0),
-                        side: BorderSide(
-                          color: AppColors.colorPrimary,
-                        ),
-                      ),
-                    ),
-                    child: Text(
-                      'settings'.tr,
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: themeChange.getTheme() ? Colors.black : Colors.white,
-                      ),
-                    ),
-                    onPressed: () async {
-                      await Geolocator.openAppSettings();
-                      Get.back();
-                    },
-                  ),
+                child: DsButton.primary(
+                  label: 'settings'.tr,
+                  icon: Icons.settings_outlined,
+                  expand: true,
+                  onPressed: () async {
+                    await Geolocator.openAppSettings();
+                    Get.back();
+                  },
                 ),
               )
             ]),

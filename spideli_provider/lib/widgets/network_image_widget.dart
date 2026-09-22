@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:spideliprovider/constant/constants.dart';
+import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/themes/responsive.dart';
 import 'package:flutter/material.dart';
 
@@ -31,7 +32,15 @@ class NetworkImageWidget extends StatelessWidget {
       height: height ?? Responsive.height(8, context),
       width: width ?? Responsive.width(15, context),
       color: color,
-      progressIndicatorBuilder: (context, url, downloadProgress) => loader(),
+      fadeInDuration: DsMotion.of(context, DsMotion.base),
+      // DS shimmer placeholder sized like the image (was a spinner).
+      progressIndicatorBuilder: (context, url, downloadProgress) => DsShimmer(
+        child: DsSkeleton.box(
+          height: height ?? Responsive.height(8, context),
+          width: width ?? Responsive.width(15, context),
+          radius: borderRadius ?? 0,
+        ),
+      ),
       errorWidget: (context, url, error) =>
           errorWidget ??
           Image.network(
