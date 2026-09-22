@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -67,6 +68,41 @@ class VerificationDetailsUploadScreen extends StatelessWidget {
                           const SizedBox(
                             height: 20,
                           ),
+                          if (controller.documents.value.verificationStatus == 'rejected' && controller.documents.value.rejectReason != null)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              margin: const EdgeInsets.only(bottom: 10),
+                              decoration: BoxDecoration(color: AppThemeData.danger50, borderRadius: BorderRadius.circular(10)),
+                              child: Text(
+                                "${'Rejected'.tr}: ${controller.documents.value.rejectReason}",
+                                style: TextStyle(color: AppThemeData.danger300, fontFamily: AppThemeData.medium, fontSize: 14),
+                              ),
+                            ),
+                          if (controller.needsExpiryDate || controller.expiryDate.value != null)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.event, color: AppThemeData.primary300),
+                              title: Text("Expiry date".tr, style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.bold, fontSize: 16)),
+                              subtitle: Text(
+                                controller.expiryDate.value == null ? "Select the expiry date".tr : Constant.timestampToDate(Timestamp.fromDate(controller.expiryDate.value!)),
+                                style: TextStyle(
+                                  color: controller.documents.value.isExpired ? AppThemeData.danger300 : (isDark ? AppThemeData.grey300 : AppThemeData.grey600),
+                                  fontFamily: AppThemeData.regular,
+                                ),
+                              ),
+                              onTap: !controller.canUpload
+                                  ? null
+                                  : () async {
+                                      final picked = await showDatePicker(
+                                        context: context,
+                                        initialDate: controller.expiryDate.value ?? DateTime.now().add(const Duration(days: 1)),
+                                        firstDate: DateTime.now(),
+                                        lastDate: DateTime(2100),
+                                      );
+                                      if (picked != null) controller.expiryDate.value = picked;
+                                    },
+                            ),
                           Visibility(
                             visible: controller.documentModel.value.frontSide == true ? true : false,
                             child: Padding(
@@ -284,11 +320,15 @@ class VerificationDetailsUploadScreen extends StatelessWidget {
                       ),
                     ),
                   ),
-            bottomNavigationBar: controller.documents.value.status == "approved" || controller.documents.value.status == "uploaded"
+            bottomNavigationBar: !controller.canUpload
                 ? const SizedBox()
                 : InkWell(
                     onTap: () {
-                      if (controller.documentModel.value.frontSide == true && controller.frontImage.value.isEmpty) {
+                      if (controller.needsExpiryDate && controller.expiryDate.value == null) {
+                        ShowToastDialog.showToast("Please select the expiry date of the document.".tr);
+                      } else if (controller.expiryDate.value != null && controller.expiryDate.value!.isBefore(DateTime.now())) {
+                        ShowToastDialog.showToast("This document has expired. Please upload a valid document.".tr);
+                      } else if (controller.documentModel.value.frontSide == true && controller.frontImage.value.isEmpty) {
                         ShowToastDialog.showToast("Please upload front side of document.".tr);
                       } else if (controller.documentModel.value.backSide == true && controller.backImage.value.isEmpty) {
                         ShowToastDialog.showToast("Please upload back side of document.".tr);

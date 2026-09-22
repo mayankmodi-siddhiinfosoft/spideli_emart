@@ -1,3 +1,4 @@
+import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/order_list_screen/order_details_screen.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/dash_board_controller.dart';
@@ -335,7 +336,7 @@ class OrderListScreen extends StatelessWidget {
                                                           ),
                                                         ),
                                                         Text(
-                                                          Constant.amountShow(amount: orderModel.deliveryCharge),
+                                                          Constant.amountShow(currency: RegionService.currencyForRecord(orderModel.regionId), amount: orderModel.deliveryCharge),
                                                           textAlign: TextAlign.start,
                                                           style: TextStyle(
                                                             fontFamily: AppThemeData.semiBold,
@@ -367,7 +368,7 @@ class OrderListScreen extends StatelessWidget {
                                                             ),
                                                           ),
                                                           Text(
-                                                            Constant.amountShow(amount: orderModel.tipAmount),
+                                                            Constant.amountShow(currency: RegionService.currencyForRecord(orderModel.regionId), amount: orderModel.tipAmount),
                                                             textAlign: TextAlign.start,
                                                             style: TextStyle(
                                                               fontFamily: AppThemeData.semiBold,

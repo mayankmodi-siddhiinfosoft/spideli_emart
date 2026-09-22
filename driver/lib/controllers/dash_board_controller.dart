@@ -5,6 +5,7 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/region_service.dart';
 import 'package:driver/utils/preferences.dart';
 import 'package:get/get.dart';
 import 'package:location/location.dart';
@@ -36,6 +37,7 @@ class DashBoardController extends GetxController {
         if (event.exists) {
           userModel.value = UserModel.fromJson(event.data()!);
           Constant.userModel = UserModel.fromJson(event.data()!);
+          RegionService.applyDriver(Constant.userModel);
         }
       },
     );

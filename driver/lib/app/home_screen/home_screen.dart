@@ -1,3 +1,4 @@
+import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/chat_screens/chat_screen.dart';
 import 'package:driver/app/home_screen/deliver_order_screen.dart';
 import 'package:driver/app/home_screen/pickup_order_screen.dart';
@@ -470,7 +471,7 @@ class HomeScreen extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        Constant.amountShow(amount: controller.currentOrder.value.deliveryCharge),
+                        Constant.amountShow(currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.deliveryCharge),
                         textAlign: TextAlign.start,
                         style: TextStyle(
                           fontFamily: AppThemeData.semiBold,
@@ -502,7 +503,7 @@ class HomeScreen extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          Constant.amountShow(amount: controller.currentOrder.value.tipAmount),
+                          Constant.amountShow(currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.tipAmount),
                           textAlign: TextAlign.start,
                           style: TextStyle(
                             fontFamily: AppThemeData.semiBold,
@@ -1030,7 +1031,7 @@ class HomeScreen extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            Constant.amountShow(amount: totalAmount.toString()),
+                            Constant.amountShow(currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: totalAmount.toString()),
                             textAlign: TextAlign.start,
                             style: TextStyle(
                               fontFamily: AppThemeData.semiBold,
@@ -1061,7 +1062,7 @@ class HomeScreen extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            Constant.amountShow(amount: controller.currentOrder.value.tipAmount),
+                            Constant.amountShow(currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.tipAmount),
                             textAlign: TextAlign.start,
                             style: TextStyle(
                               fontFamily: AppThemeData.semiBold,

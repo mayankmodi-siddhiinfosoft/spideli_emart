@@ -1,3 +1,5 @@
+import 'package:driver/app/cab_screen/widget/cab_ride_extras.dart';
+import 'package:driver/utils/region_service.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:driver/themes/responsive.dart';
 import 'package:flutter/material.dart';
@@ -307,7 +309,7 @@ class CabOrderDetails extends StatelessWidget {
                             ),
                             _iconTile(controller.cabOrder.value.duration ?? '--', "Duration".tr, "assets/icons/ic_duration.svg", isDark),
                             _iconTile(
-                              Constant.amountShow(amount: controller.cabOrder.value.subTotal),
+                              Constant.amountShow(currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId), amount: controller.cabOrder.value.subTotal),
                               "${controller.cabOrder.value.paymentMethod}".tr,
                               "assets/icons/ic_rate_parcel.svg",
                               isDark,
@@ -315,6 +317,18 @@ class CabOrderDetails extends StatelessWidget {
                           ],
                         ),
                       ),
+                      if (CabRideExtras.hasContent(controller.cabOrder.value, showCancellation: true)) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(15),
+                            color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
+                            border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
+                          ),
+                          padding: const EdgeInsets.all(16),
+                          child: CabRideExtras(order: controller.cabOrder.value, isDark: isDark, showCancellation: true),
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       Container(
                         decoration: BoxDecoration(
@@ -330,17 +344,16 @@ class CabOrderDetails extends StatelessWidget {
                             const SizedBox(height: 8),
 
                             // Subtotal
-                            _summaryTile("Subtotal".tr, Constant.amountShow(amount: controller.subTotal.value.toString()), isDark, null),
+                            _summaryTile("Subtotal".tr, Constant.amountShow(currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId), amount: controller.subTotal.value.toString()), isDark, null),
 
                             // Discount
-                            _summaryTile("Discount".tr, Constant.amountShow(amount: controller.discount.value.toString()), isDark, null),
+                            _summaryTile("Discount".tr, Constant.amountShow(currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId), amount: controller.discount.value.toString()), isDark, null),
 
                             // Tax List
                             ...List.generate(controller.cabOrder.value.taxSetting!.length, (index) {
                               return _summaryTile(
                                   "${controller.cabOrder.value.taxSetting![index].title} ${controller.cabOrder.value.taxSetting![index].type == 'fix' ? '' : '(${controller.cabOrder.value.taxSetting![index].tax}%)'}",
-                                  Constant.amountShow(
-                                    amount: Constant.getTaxValue(
+                                  Constant.amountShow(currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId), amount: Constant.getTaxValue(
                                       amount: ((double.tryParse(controller.cabOrder.value.subTotal.toString()) ?? 0.0) -
                                               (double.tryParse(controller.cabOrder.value.discount.toString()) ?? 0.0))
                                           .toString(),
@@ -354,11 +367,11 @@ class CabOrderDetails extends StatelessWidget {
                             const Divider(),
 
                             // Total
-                            _summaryTile("Order Total".tr, Constant.amountShow(amount: controller.totalAmount.value.toString()), isDark, null),
+                            _summaryTile("Order Total".tr, Constant.amountShow(currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId), amount: controller.totalAmount.value.toString()), isDark, null),
                             _summaryTile(
                               "Admin Commission (${controller.cabOrder.value.adminCommission}${controller.cabOrder.value.adminCommissionType == "Percentage" || controller.cabOrder.value.adminCommissionType == "percentage" ? "%" : Constant.currencyModel!.symbol})"
                                   .tr,
-                              Constant.amountShow(amount: controller.adminCommission.value.toString()),
+                              Constant.amountShow(currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId), amount: controller.adminCommission.value.toString()),
                               isDark,
                               AppThemeData.danger300,
                             ),

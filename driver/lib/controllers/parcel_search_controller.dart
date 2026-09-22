@@ -1,3 +1,4 @@
+import 'package:driver/utils/region_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/send_notification.dart';
@@ -165,6 +166,9 @@ class ParcelSearchController extends GetxController {
       // Match if driver zone equals either sender or receiver zone
       final zoneMatch = (senderZoneId == driverZoneId) || (receiverZoneId == driverZoneId);
       if (!zoneMatch) return false;
+
+      // Zone-bound (spec 9.1): only requests of the driver's region.
+      if (RegionService.isOutOfDriverRegion(data['regionId']?.toString(), driver: driverModel.value)) return false;
 
       // ✅ Date check
       final Timestamp ts = data['senderPickupDateTime'];

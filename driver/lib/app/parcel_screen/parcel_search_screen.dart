@@ -1,3 +1,4 @@
+import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/parcel_screen/parcel_order_details.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
@@ -290,7 +291,7 @@ class ParcelSearchScreen extends StatelessWidget {
                                                         height: 5,
                                                       ),
                                                       Text(
-                                                        Constant.amountShow(amount: controller.calculateParcelTotalAmountBooking(parcelBookingData)).tr,
+                                                        Constant.amountShow(currency: RegionService.currencyForRecord(parcelBookingData.regionId), amount: controller.calculateParcelTotalAmountBooking(parcelBookingData)).tr,
                                                         textAlign: TextAlign.start,
                                                         style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                                       )

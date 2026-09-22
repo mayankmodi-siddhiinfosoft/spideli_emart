@@ -4,6 +4,8 @@ import 'package:driver/models/user_model.dart';
 import 'package:driver/models/vendor_model.dart';
 
 class ParcelOrderModel {
+  /// Region the parcel order was charged in, when known.
+  String? regionId;
   UserModel? author;
   UserModel? driver;
 
@@ -146,6 +148,7 @@ class ParcelOrderModel {
         platformTax!.add(TaxModel.fromJson(v));
       });
     }
+    regionId = json['regionId']?.toString();
   }
 
   Map<String, dynamic> toJson() {
@@ -211,6 +214,7 @@ class ParcelOrderModel {
     if (platformTax != null) {
       data['platformTax'] = platformTax!.map((v) => v.toJson()).toList();
     }
+    if (regionId != null && regionId!.isNotEmpty) data['regionId'] = regionId;
 
     return data;
   }

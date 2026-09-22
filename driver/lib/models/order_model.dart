@@ -6,6 +6,8 @@ import 'package:driver/models/user_model.dart';
 import 'package:driver/models/vendor_model.dart';
 
 class OrderModel {
+  /// Region the order was charged in (inherited from the store).
+  String? regionId;
   ShippingAddress? address;
   String? status;
   String? couponId;
@@ -155,6 +157,7 @@ class OrderModel {
     isFreeDelivery = json['isFreeDelivery'] ?? false;
     isPosOrder = json['isPosOrder'] ?? false;
     packagingChargeEnable = json['packagingChargeEnable'] ?? false;
+    regionId = json['regionId']?.toString();
   }
 
   Map<String, dynamic> toJson() {
@@ -217,6 +220,7 @@ class OrderModel {
     data['isFreeDelivery'] = isFreeDelivery ?? false;
     data['isPosOrder'] = isPosOrder ?? false;
     data['packagingChargeEnable'] = packagingChargeEnable ?? false;
+    if (regionId != null && regionId!.isNotEmpty) data['regionId'] = regionId;
     return data;
   }
 }

@@ -44,4 +44,5 @@ class CollectionName {
   static const String rentalOrders = 'rental_orders';
   static const String itemsReview = 'items_review';
   static const String chat = "chat";
+  static const String regions = "regions";
 }

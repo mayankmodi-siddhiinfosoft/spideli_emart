@@ -100,25 +100,46 @@ class VerificationScreen extends StatelessWidget {
                                             fontFamily: AppThemeData.regular,
                                           ),
                                         ),
+                                        if (documents.verificationStatus == 'rejected' && documents.rejectReason != null)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Text(
+                                              "${'Reason'.tr}: ${documents.rejectReason}",
+                                              style: const TextStyle(color: Colors.red, fontFamily: AppThemeData.regular, fontSize: 13),
+                                            ),
+                                          ),
+                                        if (documents.expiryDate != null)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Text(
+                                              "${documents.isExpired ? 'Expired on'.tr : 'Expires on'.tr} ${Constant.timestampToDate(documents.expiryDate!)}",
+                                              style: TextStyle(color: documents.isExpired ? Colors.red : (isDark ? AppThemeData.grey300 : AppThemeData.grey600), fontFamily: AppThemeData.regular, fontSize: 13),
+                                            ),
+                                          ),
+                                        if (documents.verificationStatus == 'rejected' || documents.isExpired)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Text("Tap to upload again".tr, style: TextStyle(color: AppThemeData.primary300, fontFamily: AppThemeData.medium, fontSize: 13)),
+                                          ),
                                       ],
                                     ),
                                   ),
                                   Padding(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                     child: Text(
-                                      documents.status == "approved"
-                                          ? "Verified".tr
-                                          : documents.status == "rejected"
-                                          ? "Rejected".tr
-                                          : documents.status == "uploaded"
-                                          ? "Uploaded".tr
-                                          : "Pending".tr,
+                                      const {
+                                            'approved': "Approved",
+                                            'rejected': "Rejected",
+                                            'expired': "Expired",
+                                            'pending': "Pending review",
+                                          }[documents.verificationStatus]?.tr ??
+                                          "Not submitted".tr,
                                       style: TextStyle(
-                                          color: documents.status == "approved"
+                                          color: documents.verificationStatus == 'approved'
                                               ? Colors.green
-                                              : documents.status == "rejected"
+                                              : (documents.verificationStatus == 'rejected' || documents.verificationStatus == 'expired')
                                               ? Colors.red
-                                              : documents.status == "uploaded"
+                                              : documents.verificationStatus == 'pending'
                                               ? AppThemeData.primary300
                                               : Colors.orange,
                                           fontFamily: AppThemeData.medium,

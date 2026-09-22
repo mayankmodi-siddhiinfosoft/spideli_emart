@@ -16,6 +16,8 @@ import 'package:driver/models/wallet_transaction_model.dart';
 import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/region_service.dart';
+import 'package:driver/widget/cancel_reason_sheet.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart' as flutterMap;
@@ -161,6 +163,10 @@ class CabHomeController extends GetxController {
       currentOrder.value.status = Constant.driverAccepted;
       currentOrder.value.driverId = driverModel.value.id;
       currentOrder.value.driver = driverModel.value;
+      // Spec 18.12: a ride carries the assigned driver's region.
+      if (currentOrder.value.regionId == null || currentOrder.value.regionId!.isEmpty) {
+        currentOrder.value.regionId = await RegionService.regionIdToStamp(driverModel.value);
+      }
       await FireStoreUtils.setCabOrder(currentOrder.value);
 
       ShowToastDialog.closeLoader();
@@ -174,12 +180,20 @@ class CabHomeController extends GetxController {
     }
   }
 
-  Future<void> rejectOrder() async {
+  /// Driver rejects a pending ride request. A reason is mandatory (spec 9.1);
+  /// [reason] is null only for the automatic out-of-region decline.
+  Future<void> rejectOrder({CancelReasonResult? reason, bool silent = false}) async {
     try {
       await AudioPlayerService.playSound(false);
 
       // 1️⃣ Immediately update local state (UI)
       currentOrder.value.status = Constant.driverRejected;
+      if (reason != null) {
+        currentOrder.value.cancelReason = reason.reason;
+        currentOrder.value.cancelReasonCode = reason.code;
+        currentOrder.value.cancelledBy = 'driver';
+        currentOrder.value.cancelledAt = Timestamp.now();
+      }
 
       currentOrder.value.rejectedByDrivers ??= [];
       if (!currentOrder.value.rejectedByDrivers!.contains(driverModel.value.id)) {
@@ -195,10 +209,12 @@ class CabHomeController extends GetxController {
       await FireStoreUtils.updateUser(driverModel.value);
 
       // 3️⃣ Close bottom sheet immediately (don’t wait for Firestore)
-      if (Get.isBottomSheetOpen ?? false) {
-        Get.back();
-      } else if (Constant.singleOrderReceive == false) {
-        Get.back();
+      if (!silent) {
+        if (Get.isBottomSheetOpen ?? false) {
+          Get.back();
+        } else if (Constant.singleOrderReceive == false) {
+          Get.back();
+        }
       }
 
       // 4️⃣ Clear map immediately
@@ -214,6 +230,100 @@ class CabHomeController extends GetxController {
     } catch (e, s) {
       print("rejectOrder() error: $e\n$s");
     }
+  }
+
+  /// Asks for the mandatory reason, then rejects the pending request.
+  Future<void> rejectWithReason() async {
+    final reason = await CancelReasonSheet.show(title: "Why are you rejecting this ride?".tr);
+    if (reason == null) return;
+    await rejectOrder(reason: reason);
+  }
+
+  /// Driver cancels a ride he already accepted (before pickup). The ride goes
+  /// back to dispatch exactly like a rejected request (status "Driver
+  /// Rejected", driver added to rejectedByDrivers, driver cleared) so the
+  /// customer is re-matched instead of losing the booking; the reason is
+  /// recorded with cancelledBy "driver".
+  Future<void> cancelAcceptedRide() async {
+    final order = currentOrder.value;
+    if (order.id == null) return;
+    final reason = await CancelReasonSheet.show(title: "Why are you cancelling this ride?".tr);
+    if (reason == null) return;
+    try {
+      ShowToastDialog.showLoader("Please wait".tr);
+      await AudioPlayerService.playSound(false);
+      final uid = driverModel.value.id;
+      await FireStoreUtils.updateRideFields(order.id!, {
+        'status': Constant.driverRejected,
+        if (uid != null) 'rejectedByDrivers': FieldValue.arrayUnion([uid]),
+        'driverId': null,
+        'driver': FieldValue.delete(),
+        ...reason.toFields(),
+      });
+      driverModel.value.inProgressOrderID?.remove(order.id);
+      driverModel.value.orderCabRequestData = null;
+      await FireStoreUtils.updateUser(driverModel.value);
+      currentOrder.value = CabOrderModel();
+      await clearMap();
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("Ride cancelled".tr);
+    } catch (e) {
+      ShowToastDialog.closeLoader();
+      log("cancelAcceptedRide error: $e");
+      ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+    }
+  }
+
+  /// Marks stop [index] of [CabOrderModel.orderedStops] as reached (spec 4.8
+  /// step 5). Stops are completed in sequence.
+  Future<void> markStopReached(int index) async {
+    final order = currentOrder.value;
+    if (order.id == null || order.stops == null) return;
+    final ordered = order.orderedStops;
+    if (index < 0 || index >= ordered.length) return;
+    for (int i = 0; i < index; i++) {
+      if (ordered[i]['reached'] != true) {
+        ShowToastDialog.showToast("Please complete the previous stop first".tr);
+        return;
+      }
+    }
+    ShowToastDialog.showLoader("Please wait".tr);
+    final target = ordered[index];
+    // Rewrite the array in the document's own order, touching only `reached`
+    // and `reachedAt` of the target stop.
+    final updated = order.stops!.map((stop) {
+      final copy = Map<String, dynamic>.from(stop);
+      if (identical(stop, target)) {
+        copy['reached'] = true;
+        copy['reachedAt'] = Timestamp.now();
+      }
+      return copy;
+    }).toList();
+    final ok = await FireStoreUtils.updateRideFields(order.id!, {'stops': updated});
+    ShowToastDialog.closeLoader();
+    if (ok) {
+      currentOrder.value.stops = updated;
+      currentOrder.refresh();
+    } else {
+      ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+    }
+  }
+
+  /// Zone-bound dispatch (spec 9.1): a request from another region is declined
+  /// automatically so dispatch moves on to a driver of that region.
+  final Set<String> _declinedOutOfRegion = {};
+
+  bool _isOutOfRegionRequest(CabOrderModel order) {
+    final pending = order.status == Constant.orderPlaced || order.status == Constant.driverPending;
+    return pending && RegionService.isOutOfDriverRegion(order.regionId, driver: driverModel.value);
+  }
+
+  Future<void> _declineOutOfRegion(CabOrderModel order) async {
+    final id = order.id;
+    if (id == null || !_declinedOutOfRegion.add(id)) return;
+    log("Declining ride $id: region ${order.regionId} is not the driver's region");
+    currentOrder.value = order;
+    await rejectOrder(silent: true);
   }
 
   bool get shouldShowOrderSheet {
@@ -358,6 +468,10 @@ class CabHomeController extends GetxController {
         if (id != null && id.isNotEmpty) {
           // Immediately show the order from cached data so the accept/reject
           // sheet appears without waiting for the Firestore snapshot.
+          if (_isOutOfRegionRequest(pendingRequest)) {
+            await _declineOutOfRegion(pendingRequest);
+            return;
+          }
           if (currentOrder.value.id == null) {
             currentOrder.value = pendingRequest;
             await changeData();
@@ -382,7 +496,12 @@ class CabHomeController extends GetxController {
       if (docSnap.exists) {
         final data = docSnap.data();
         if (data != null) {
-          currentOrder.value = CabOrderModel.fromJson(data);
+          final incoming = CabOrderModel.fromJson(data);
+          if (_isOutOfRegionRequest(incoming)) {
+            await _declineOutOfRegion(incoming);
+            return;
+          }
+          currentOrder.value = incoming;
           await changeData();
           if (currentOrder.value.status == Constant.orderCompleted) {
             driverModel.value.inProgressOrderID = [];

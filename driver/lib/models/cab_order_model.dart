@@ -40,6 +40,32 @@ class CabOrderModel {
   List<TaxModel>? taxSetting;
   List<TaxModel>? platformTax;
 
+  // ── Spideli additions (all optional; absent = today's behaviour) ──────────
+  /// Region of the ride (the assigned driver's region, spec 18.12).
+  String? regionId;
+
+  /// Intermediate stops between pickup and destination (spec 4.8), kept raw
+  /// so every key written by the Customer app round-trips untouched:
+  /// `{ address, lat, lng, order, reached, reachedAt }`.
+  List<Map<String, dynamic>>? stops;
+
+  /// `{ adults, children }`
+  Map<String, dynamic>? passengers;
+
+  /// Free text from the customer to the driver.
+  String? instructions;
+
+  /// The customer can only communicate in writing - chat, do not call.
+  bool? writtenCommunicationOnly;
+
+  /// `{ name, phone, email }` when the ride was booked for someone else.
+  Map<String, dynamic>? rideFor;
+
+  String? cancelReason;
+  String? cancelReasonCode;
+  String? cancelledBy;
+  Timestamp? cancelledAt;
+
   CabOrderModel({
     this.status,
     this.rejectedByDrivers,
@@ -124,7 +150,38 @@ class CabOrderModel {
         platformTax!.add(TaxModel.fromJson(v));
       });
     }
+    regionId = json['regionId']?.toString();
+    if (json['stops'] is List) {
+      stops = (json['stops'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+    passengers = json['passengers'] is Map ? Map<String, dynamic>.from(json['passengers']) : null;
+    instructions = json['instructions']?.toString();
+    writtenCommunicationOnly = json['writtenCommunicationOnly'] == true ? true : (json['writtenCommunicationOnly'] == false ? false : null);
+    rideFor = json['rideFor'] is Map ? Map<String, dynamic>.from(json['rideFor']) : null;
+    cancelReason = json['cancelReason']?.toString();
+    cancelReasonCode = json['cancelReasonCode']?.toString();
+    cancelledBy = json['cancelledBy']?.toString();
+    cancelledAt = json['cancelledAt'] is Timestamp ? json['cancelledAt'] : null;
   }
+
+  /// Stops sorted by their `order` key (falls back to list position).
+  List<Map<String, dynamic>> get orderedStops {
+    final list = List<Map<String, dynamic>>.from(stops ?? const []);
+    list.sort((a, b) => ((a['order'] as num?) ?? 0).compareTo((b['order'] as num?) ?? 0));
+    return list;
+  }
+
+  int get adults => (passengers?['adults'] as num?)?.toInt() ?? 0;
+
+  int get children => (passengers?['children'] as num?)?.toInt() ?? 0;
+
+  bool get hasPassengers => passengers != null && (adults > 0 || children > 0);
+
+  String? get riderName => (rideFor?['name']?.toString().isNotEmpty == true) ? rideFor!['name'].toString() : null;
+
+  String? get riderPhone => (rideFor?['phone']?.toString().isNotEmpty == true) ? rideFor!['phone'].toString() : null;
+
+  bool get isForSomeoneElse => rideFor != null && (riderName != null || riderPhone != null);
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
@@ -183,6 +240,17 @@ class CabOrderModel {
     if (platformTax != null) {
       data['platformTax'] = platformTax!.map((v) => v.toJson()).toList();
     }
+    // Additive fields: only written when known, so a save never clears them.
+    if (regionId != null && regionId!.isNotEmpty) data['regionId'] = regionId;
+    if (stops != null) data['stops'] = stops;
+    if (passengers != null) data['passengers'] = passengers;
+    if (instructions != null) data['instructions'] = instructions;
+    if (writtenCommunicationOnly != null) data['writtenCommunicationOnly'] = writtenCommunicationOnly;
+    if (rideFor != null) data['rideFor'] = rideFor;
+    if (cancelReason != null) data['cancelReason'] = cancelReason;
+    if (cancelReasonCode != null) data['cancelReasonCode'] = cancelReasonCode;
+    if (cancelledBy != null) data['cancelledBy'] = cancelledBy;
+    if (cancelledAt != null) data['cancelledAt'] = cancelledAt;
     return data;
   }
 }

@@ -117,12 +117,25 @@ class Constant {
 
   static String? adminType = "admin";
 
-  static String amountShow({required String? amount}) {
-    if (currencyModel!.symbolAtRight == true) {
-      return "${double.parse(amount.toString()).toStringAsFixed(currencyModel!.decimalDigits ?? 0)} ${currencyModel!.symbol.toString()}";
+  /// Formats [amount] in [currency], or in the live currency (the driver's
+  /// region currency, else the global one) when [currency] is omitted. Pass a
+  /// record's own currency for history, e.g.
+  /// `RegionService.currencyForRecord(order.regionId)`.
+  static String amountShow({required String? amount, CurrencyModel? currency}) {
+    final CurrencyModel c = currency ?? currencyModel!;
+    if (c.symbolAtRight == true) {
+      return "${double.parse(amount.toString()).toStringAsFixed(c.decimalDigits ?? 0)} ${c.symbol.toString()}";
     } else {
-      return "${currencyModel!.symbol.toString()} ${amount == null || amount.isEmpty ? "0.0" : double.parse(amount.toString()).toStringAsFixed(currencyModel!.decimalDigits ?? 0)}";
+      return "${c.symbol.toString()} ${amount == null || amount.isEmpty ? "0.0" : double.parse(amount.toString()).toStringAsFixed(c.decimalDigits ?? 0)}";
     }
+  }
+
+  /// Maps a section's `serviceTypeFlag` to the driver service type stored in
+  /// `users.serviceTypes`. Multivendor e-commerce sections are delivered by
+  /// the same delivery flow as the other multivendor sections.
+  static String driverServiceTypeFor(String? serviceTypeFlag) {
+    if (serviceTypeFlag == null || serviceTypeFlag.isEmpty || serviceTypeFlag == 'ecommerce-service') return 'delivery-service';
+    return serviceTypeFlag;
   }
 
   Future<Uint8List> getBytesFromUrl(String url, {int width = 100}) async {

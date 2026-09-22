@@ -9,6 +9,7 @@ import 'package:driver/models/user_model.dart';
 import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/region_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -241,6 +242,16 @@ class HomeController extends GetxController {
 
           if (newOrder.rejectedByDrivers!.contains(driverModel.value.id)) {
             await _handleOrderNotFound();
+            return;
+          }
+
+          // Zone-bound (spec 9.1): never offer a request from another region.
+          if (newOrder.status == Constant.driverPending &&
+              newOrder.id != null &&
+              driverModel.value.id != null &&
+              RegionService.isOutOfDriverRegion(newOrder.regionId, driver: driverModel.value)) {
+            await _handleOrderNotFound();
+            await FireStoreUtils.declineOutOfRegionVendorOrder(newOrder.id!, driverModel.value.id!);
             return;
           }
 

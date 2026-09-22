@@ -1,3 +1,4 @@
+import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/rental_service/rental_order_details_screen.dart';
 import 'package:flutter/material.dart';
 import '../../constant/constant.dart';
@@ -208,7 +209,7 @@ class RentalOrderListScreen extends StatelessWidget {
                                             ),
                                             SizedBox(width: 10),
                                             Text(
-                                              Constant.amountShow(amount: order.rentalPackageModel!.baseFare.toString()),
+                                              Constant.amountShow(currency: RegionService.currencyForRecord(order.regionId), amount: order.rentalPackageModel!.baseFare.toString()),
                                               style: AppThemeData.boldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                             ),
                                           ],

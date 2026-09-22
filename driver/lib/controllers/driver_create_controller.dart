@@ -323,6 +323,10 @@ class DriverCreateController extends GetxController {
     driverModel.value.provider = 'email';
     driverModel.value.isOwner = false;
     driverModel.value.ownerId = FireStoreUtils.getCurrentUid();
+    // A company's fleet driver works in the company's management zone.
+    if ((driverModel.value.regionId ?? '').isEmpty && (Constant.userModel?.regionId ?? '').isNotEmpty) {
+      driverModel.value.regionId = Constant.userModel!.regionId;
+    }
 
     // Derive fields from selected sections.
     driverModel.value.sectionIds = selectedSections.map((s) => s.id).whereType<String>().toList();
@@ -330,7 +334,7 @@ class DriverCreateController extends GetxController {
       for (final s in selectedSections)
         if (s.id != null) s.id!: s.name ?? s.id!
     };
-    driverModel.value.serviceTypes = selectedSections.map((s) => s.serviceTypeFlag ?? 'delivery-service').toSet().toList();
+    driverModel.value.serviceTypes = selectedSections.map((s) => Constant.driverServiceTypeFor(s.serviceTypeFlag)).toSet().toList();
   }
 
   Map<String, dynamic> _buildVehicleDetails(Map<String, dynamic> existing) {

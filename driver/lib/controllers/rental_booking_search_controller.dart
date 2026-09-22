@@ -1,3 +1,4 @@
+import 'package:driver/utils/region_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
@@ -6,6 +7,8 @@ import 'package:driver/models/user_model.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/widget/geoflutterfire/src/geoflutterfire.dart';
 import 'package:driver/widget/geoflutterfire/src/models/point.dart';
+import 'package:driver/constant/show_toast_dialog.dart';
+import 'package:driver/widget/cancel_reason_sheet.dart';
 import 'package:get/get.dart';
 
 class RentalBookingSearchController extends GetxController {
@@ -38,6 +41,66 @@ class RentalBookingSearchController extends GetxController {
   }
 
   RxList<RentalOrderModel> rentalBookingData = <RentalOrderModel>[].obs;
+
+  /// Driver passes on a booking request: a reason is mandatory (spec 9.1).
+  /// Known-fields write: rejectedByDrivers + the contract cancellation fields.
+  Future<void> rejectBooking(RentalOrderModel order) async {
+    if (order.id == null) return;
+    final reason = await CancelReasonSheet.show(title: "Why are you rejecting this booking?".tr);
+    if (reason == null) return;
+    ShowToastDialog.showLoader("Rejecting booking...".tr);
+    final ok = await FireStoreUtils.updateRentalFields(order.id!, {
+      'rejectedByDrivers': FieldValue.arrayUnion([FireStoreUtils.getCurrentUid()]),
+      ...reason.toFields(),
+    });
+    ShowToastDialog.closeLoader();
+    if (!ok) {
+      ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+      return;
+    }
+    Get.back(result: true);
+    ShowToastDialog.showToast("Booking rejected successfully".tr);
+    getRentalSearchBooking();
+  }
+
+  /// Driver accepts a booking request. Known-fields write; stamps the driver's
+  /// region when the booking has none (spec 18.12). A booking whose price
+  /// proposal is still open must be answered first (spec 4.9).
+  Future<void> acceptBooking(RentalOrderModel order) async {
+    if (order.id == null) return;
+    final proposalStatus = order.proposalStatus;
+    if (proposalStatus == 'pending') {
+      ShowToastDialog.showToast("Please answer the customer's price proposal first".tr);
+      return;
+    }
+    if (proposalStatus == 'countered') {
+      ShowToastDialog.showToast("Waiting for the customer to answer your counter-offer".tr);
+      return;
+    }
+    ShowToastDialog.showLoader("Accepting booking...".tr);
+    // Update section model for this order's section (multi-section support)
+    final sid = order.sectionId;
+    if (sid != null && sid.isNotEmpty) {
+      await FireStoreUtils.getSectionBySectionId(sid).then((s) {
+        if (s != null) Constant.sectionModels[sid] = s;
+      });
+    }
+    final driver = Constant.userModel;
+    final regionId = (order.regionId == null || order.regionId!.isEmpty) ? await RegionService.regionIdToStamp(driver) : null;
+    final ok = await FireStoreUtils.updateRentalFields(order.id!, {
+      'status': Constant.driverAccepted,
+      'driverId': FireStoreUtils.getCurrentUid(),
+      if (driver != null) 'driver': driver.toJson(),
+      if (regionId != null && regionId.isNotEmpty) 'regionId': regionId,
+    });
+    ShowToastDialog.closeLoader();
+    if (!ok) {
+      ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+      return;
+    }
+    Get.back(result: true);
+    ShowToastDialog.showToast("Booking accepted successfully".tr);
+  }
 
   Future<void> getRentalSearchBooking() async {
     final lat = Constant.locationDataFinal?.latitude ?? driverModel.value.location?.latitude ?? 0.0;
@@ -95,6 +158,9 @@ class RentalBookingSearchController extends GetxController {
       if (data['zoneId'] == null || data['zoneId'] != driverModel.value.zoneId) {
         return false;
       }
+
+      // Zone-bound (spec 9.1): only requests of the driver's region.
+      if (RegionService.isOutOfDriverRegion(data['regionId']?.toString(), driver: driverModel.value)) return false;
 
       // ✅ Per-section vehicle type match:
       // If driver has vehicleDetails, match the order's vehicleId against the

@@ -1,3 +1,4 @@
+import 'package:driver/utils/region_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/rental_service/rental_booking_search_screen.dart';
 import 'package:driver/app/rental_service/rental_order_details_screen.dart';
@@ -479,7 +480,7 @@ class RentalHomeScreen extends StatelessWidget {
                                                                     height: 5,
                                                                   ),
                                                                   Text(
-                                                                    Constant.amountShow(amount: rentalBookingData.subTotal).tr,
+                                                                    Constant.amountShow(currency: RegionService.currencyForRecord(rentalBookingData.regionId), amount: rentalBookingData.subTotal).tr,
                                                                     textAlign: TextAlign.start,
                                                                     style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                                                   )

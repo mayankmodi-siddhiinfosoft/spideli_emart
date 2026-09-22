@@ -1,3 +1,5 @@
+import 'package:driver/app/rental_service/widget/rental_proposal_card.dart';
+import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/chat_screens/chat_screen.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
@@ -44,6 +46,25 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        RentalProposalCard(
+                          order: controller.order.value,
+                          isDark: isDark,
+                          onChanged: () {
+                            if (controller.order.value.id != null) controller.fetchOrder(controller.order.value.id!);
+                          },
+                        ),
+                        if ((controller.order.value.cancelReason?.isNotEmpty ?? false) &&
+                            [Constant.orderCancelled, Constant.orderRejected, Constant.driverRejected].contains(controller.order.value.status))
+                          Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(color: AppThemeData.danger50, borderRadius: BorderRadius.circular(12)),
+                            child: Text(
+                              "${'Cancellation reason'.tr}${controller.order.value.cancelledBy == null ? '' : ' (${controller.order.value.cancelledBy!.tr})'}: ${controller.order.value.cancelReason}",
+                              style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: AppThemeData.grey900),
+                            ),
+                          ),
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
@@ -144,7 +165,7 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                                     ),
                                     const SizedBox(width: 10),
                                     Text(
-                                      Constant.amountShow(amount: controller.order.value.rentalPackageModel!.baseFare.toString()),
+                                      Constant.amountShow(currency: RegionService.currencyForRecord(controller.order.value.regionId), amount: controller.order.value.rentalPackageModel!.baseFare.toString()),
                                       style: AppThemeData.boldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                     ),
                                   ],
@@ -378,8 +399,7 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                                         ),
                                       ),
                                       Text(
-                                        Constant.amountShow(
-                                          amount: controller.order.value.rentalPackageModel!.baseFare.toString(),
+                                        Constant.amountShow(currency: RegionService.currencyForRecord(controller.order.value.regionId), amount: controller.order.value.rentalPackageModel!.baseFare.toString(),
                                         ).tr,
                                         textAlign: TextAlign.start,
                                         style: AppThemeData.boldTextStyle(
@@ -534,23 +554,22 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                               const SizedBox(height: 8),
                               _summaryTile(
                                 "Subtotal".tr,
-                                Constant.amountShow(amount: controller.subTotal.value.toString()),
+                                Constant.amountShow(currency: RegionService.currencyForRecord(controller.order.value.regionId), amount: controller.subTotal.value.toString()),
                                 isDark,
                                 null,
                               ),
                               _summaryTile(
                                 "Discount".tr,
-                                Constant.amountShow(amount: controller.discount.value.toString()),
+                                Constant.amountShow(currency: RegionService.currencyForRecord(controller.order.value.regionId), amount: controller.discount.value.toString()),
                                 isDark,
                                 AppThemeData.dangerDark300,
                               ),
                               ...List.generate(controller.order.value.taxSetting?.length ?? 0, (index) {
                                 final taxModel = controller.order.value.taxSetting![index];
-                                final taxTitle = "${taxModel.title} ${taxModel.type == 'fix' ? '(${Constant.amountShow(amount: taxModel.tax)})' : '(${taxModel.tax}%)'}";
+                                final taxTitle = "${taxModel.title} ${taxModel.type == 'fix' ? '(${Constant.amountShow(currency: RegionService.currencyForRecord(controller.order.value.regionId), amount: taxModel.tax)})' : '(${taxModel.tax}%)'}";
                                 return _summaryTile(
                                   taxTitle,
-                                  Constant.amountShow(
-                                    amount: Constant.getTaxValue(
+                                  Constant.amountShow(currency: RegionService.currencyForRecord(controller.order.value.regionId), amount: Constant.getTaxValue(
                                       amount: (controller.subTotal.value - controller.discount.value).toString(),
                                       taxModel: taxModel,
                                     ).toString(),
@@ -562,14 +581,14 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                               const Divider(),
                               _summaryTile(
                                 "Order Total".tr,
-                                Constant.amountShow(amount: controller.totalAmount.value.toString()),
+                                Constant.amountShow(currency: RegionService.currencyForRecord(controller.order.value.regionId), amount: controller.totalAmount.value.toString()),
                                 isDark,
                                 null,
                               ),
                               _summaryTile(
                                 "Admin Commission (${controller.order.value.adminCommission}${controller.order.value.adminCommissionType == "Percentage" || controller.order.value.adminCommissionType == "percentage" ? "%" : Constant.currencyModel!.symbol})"
                                     .tr,
-                                Constant.amountShow(amount: controller.adminCommission.value.toString()),
+                                Constant.amountShow(currency: RegionService.currencyForRecord(controller.order.value.regionId), amount: controller.adminCommission.value.toString()),
                                 isDark,
                                 AppThemeData.danger300,
                               ),

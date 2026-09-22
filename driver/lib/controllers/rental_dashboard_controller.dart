@@ -3,6 +3,7 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/region_service.dart';
 import 'package:driver/utils/preferences.dart';
 import 'package:get/get.dart';
 import 'package:location/location.dart';
@@ -31,6 +32,7 @@ class RentalDashboardController extends GetxController {
         if (event.exists) {
           userModel.value = UserModel.fromJson(event.data()!);
           Constant.userModel = UserModel.fromJson(event.data()!);
+          RegionService.applyDriver(Constant.userModel);
           // Preload all registered sections into cache
           for (final sid in userModel.value.sectionIds ?? <String>[]) {
             if (!Constant.sectionModels.containsKey(sid)) {

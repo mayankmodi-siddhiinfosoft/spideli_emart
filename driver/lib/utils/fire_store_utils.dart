@@ -65,6 +65,14 @@ enum FirebaseEnv { defaultDb, staging }
 /// Change this to switch between default / staging
 const FirebaseEnv currentEnv = FirebaseEnv.defaultDb;
 
+/// Writes only the given top-level fields of an existing document and leaves
+/// every other field (e.g. panel-written `regionId`) untouched (contract lesson 2).
+extension SetKnownFields on DocumentReference<Map<String, dynamic>> {
+  Future<void> setKnownFields(Map<String, dynamic> data) {
+    return set(data, SetOptions(mergeFields: data.keys.map((key) => FieldPath([key])).toList()));
+  }
+}
+
 class FireStoreUtils {
   FireStoreUtils._privateConstructor();
 
@@ -230,10 +238,11 @@ class FireStoreUtils {
     return sections;
   }
 
-  /// Returns active sections for driver registration (delivery, cab, parcel, rental only).
-  /// Excludes onDemand, ecommerce, and any other non-driver section types.
+  /// Returns active sections for driver registration: delivery sections (any
+  /// multivendor / e-commerce section, spec 4.11), cab, parcel and rental.
+  /// Excludes on-demand and any other non-driver section types.
   static Future<List<SectionModel>> getAllActiveSections() async {
-    const driverFlags = ['delivery-service', 'cab-service', 'parcel_delivery', 'rental-service'];
+    const driverFlags = ['delivery-service', 'ecommerce-service', 'cab-service', 'parcel_delivery', 'rental-service'];
     List<SectionModel> sections = [];
     await fireStore.collection(CollectionName.sections).where("isActive", isEqualTo: true).get().then((query) {
       for (var doc in query.docs) {
@@ -646,7 +655,9 @@ class FireStoreUtils {
 
   static Future<bool?> setParcelOrder(ParcelOrderModel orderModel) async {
     bool isAdded = false;
-    await fireStore.collection(CollectionName.parcelOrders).doc(orderModel.id).set(orderModel.toJson()).then((value) {
+    // merge: a save from the app must not delete fields it does not model
+    // (regionId and other panel / customer-app fields).
+    await fireStore.collection(CollectionName.parcelOrders).doc(orderModel.id).set(orderModel.toJson(), SetOptions(merge: true)).then((value) {
       isAdded = true;
     }).catchError((error) {
       log("Failed to update user: $error");
@@ -926,6 +937,25 @@ class FireStoreUtils {
     return driverDocumentModel;
   }
 
+  /// Spec 3.6: an actor whose documents are not valid cannot go online.
+  /// Account-level approval stays `users.isDocumentVerify` (checked by the
+  /// callers exactly as before); this adds the per-document checks: a
+  /// document that expired or was rejected blocks going online. Returns the
+  /// message to show, or null when the driver may go online.
+  static Future<String?> documentBlockReason() async {
+    try {
+      final driverDocs = await getDocumentOfDriver();
+      for (final doc in driverDocs?.documents ?? <Documents>[]) {
+        final status = doc.verificationStatus;
+        if (status == 'expired') return "One of your documents has expired. Please upload a valid document to go online.";
+        if (status == 'rejected') return "One of your documents was rejected. Please upload it again to go online.";
+      }
+    } catch (e) {
+      log("documentBlockReason failed: $e");
+    }
+    return null;
+  }
+
   static Future addDriverInbox(InboxModel inboxModel) async {
     return await fireStore.collection("chat_driver").doc(inboxModel.orderId).set(inboxModel.toJson()).then((document) {
       return inboxModel;
@@ -1050,7 +1080,7 @@ class FireStoreUtils {
       }
     });
 
-    await fireStore.collection(CollectionName.documentsVerify).doc(getCurrentUid()).set(driverDocumentModel.toJson()).then((value) {
+    await fireStore.collection(CollectionName.documentsVerify).doc(getCurrentUid()).set(driverDocumentModel.toJson(), SetOptions(merge: true)).then((value) {
       isAdded = true;
     }).catchError((error) {
       isAdded = false;
@@ -1391,7 +1421,93 @@ class FireStoreUtils {
   }
 
   static Future rentalOrderPlace(RentalOrderModel orderModel) async {
-    await fireStore.collection(CollectionName.rentalOrders).doc(orderModel.id).set(orderModel.toJson());
+    // merge: a save from the app must not delete fields it does not model
+    // (regionId, priceProposal history written by the customer, ...).
+    await fireStore.collection(CollectionName.rentalOrders).doc(orderModel.id).set(orderModel.toJson(), SetOptions(merge: true));
+  }
+
+  /// Known-fields update of a `rides` document.
+  static Future<bool> updateRideFields(String rideId, Map<String, dynamic> data) async {
+    try {
+      await fireStore.collection(CollectionName.ridesBooking).doc(rideId).setKnownFields(data);
+      return true;
+    } catch (e) {
+      log("updateRideFields failed: $e");
+      return false;
+    }
+  }
+
+  /// Known-fields update of a `rental_orders` document.
+  static Future<bool> updateRentalFields(String orderId, Map<String, dynamic> data) async {
+    try {
+      await fireStore.collection(CollectionName.rentalOrders).doc(orderId).setKnownFields(data);
+      return true;
+    } catch (e) {
+      log("updateRentalFields failed: $e");
+      return false;
+    }
+  }
+
+  /// Zone-bound dispatch (spec 9.1): declines a `vendor_orders` request that
+  /// belongs to another region, exactly like the driver's own "Reject"
+  /// (status "Driver Rejected" + rejectedByDrivers) so dispatch moves on, and
+  /// removes it from the driver's pending requests. Known-fields writes only.
+  static final Set<String> _declinedVendorOrders = {};
+
+  static Future<void> declineOutOfRegionVendorOrder(String orderId, String driverId) async {
+    if (!_declinedVendorOrders.add(orderId)) return;
+    log("Declining order $orderId: not in the driver's region");
+    try {
+      await fireStore.collection(CollectionName.vendorOrders).doc(orderId).setKnownFields({
+        'status': Constant.driverRejected,
+        'rejectedByDrivers': FieldValue.arrayUnion([driverId]),
+      });
+      await fireStore.collection(CollectionName.users).doc(driverId).setKnownFields({
+        'orderRequestData': FieldValue.arrayRemove([orderId]),
+      });
+    } catch (e) {
+      _declinedVendorOrders.remove(orderId);
+      log("declineOutOfRegionVendorOrder failed: $e");
+    }
+  }
+
+  /// Known-fields update of a `users` document.
+  static Future<bool> updateUserFields(String userId, Map<String, dynamic> data) async {
+    try {
+      await fireStore.collection(CollectionName.users).doc(userId).setKnownFields(data);
+      return true;
+    } catch (e) {
+      log("updateUserFields failed: $e");
+      return false;
+    }
+  }
+
+  /// Built-in driver cancellation reasons (APP-CONTRACT), used when
+  /// `settings/cancellationReasons.driver` is missing or empty.
+  static const List<String> defaultDriverCancellationReasons = [
+    "Customer not at pickup",
+    "Customer asked to cancel",
+    "Vehicle problem",
+    "Unsafe pickup location",
+    "Other",
+  ];
+
+  /// `settings/cancellationReasons.driver`, else the built-in defaults. The
+  /// list always ends with "Other" (free text).
+  static Future<List<String>> getDriverCancellationReasons() async {
+    List<String> reasons = [];
+    try {
+      final doc = await fireStore.collection(CollectionName.settings).doc('cancellationReasons').get();
+      final raw = doc.data()?['driver'];
+      if (raw is Iterable) {
+        reasons = raw.map((e) => e?.toString().trim() ?? '').where((e) => e.isNotEmpty).toList();
+      }
+    } catch (e) {
+      log("getDriverCancellationReasons failed: $e");
+    }
+    if (reasons.isEmpty) reasons = List<String>.from(defaultDriverCancellationReasons);
+    if (!reasons.any((e) => e.toLowerCase() == 'other')) reasons.add("Other");
+    return reasons;
   }
 
   static Future<RentalOrderModel?> getRentalOrderById(String orderId) async {

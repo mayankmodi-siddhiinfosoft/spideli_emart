@@ -1,3 +1,4 @@
+import 'package:driver/utils/region_service.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -889,8 +890,7 @@ class OwnerOrderListScreen extends StatelessWidget {
                                   ),
                                   SizedBox(width: 10),
                                   Text(
-                                    Constant.amountShow(
-                                        amount: order
+                                    Constant.amountShow(currency: RegionService.currencyForRecord(order.regionId), amount: order
                                             .rentalPackageModel!
                                             .baseFare
                                             .toString()),

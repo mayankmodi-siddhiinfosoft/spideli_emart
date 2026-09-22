@@ -41,6 +41,23 @@ class RentalOrderModel {
   String? platformFee;
   List<TaxModel>? platformTax;
 
+  // ── Spideli additions (all optional; absent = today's behaviour) ──────────
+  /// Region of the booking (the driver's region, spec 18.12).
+  String? regionId;
+
+  /// Customer price proposal (spec 4.9), kept raw so it round-trips:
+  /// `{ amount, message, status, counterAmount, respondedBy, respondedAt, history }`.
+  Map<String, dynamic>? priceProposal;
+
+  /// Listed price kept when a proposal is accepted (read-only here; written
+  /// once by RentalProposalService, never by a model save).
+  String? listedPrice;
+
+  String? cancelReason;
+  String? cancelReasonCode;
+  String? cancelledBy;
+  Timestamp? cancelledAt;
+
   RentalOrderModel({
     this.status,
     this.rejectedByDrivers,
@@ -123,13 +140,30 @@ class RentalOrderModel {
         platformTax!.add(TaxModel.fromJson(v));
       });
     }
+    regionId = json['regionId']?.toString();
+    priceProposal = json['priceProposal'] is Map ? Map<String, dynamic>.from(json['priceProposal']) : null;
+    listedPrice = json['listedPrice']?.toString();
+    cancelReason = json['cancelReason']?.toString();
+    cancelReasonCode = json['cancelReasonCode']?.toString();
+    cancelledBy = json['cancelledBy']?.toString();
+    cancelledAt = json['cancelledAt'] is Timestamp ? json['cancelledAt'] : null;
   }
+
+  String? get proposalStatus => priceProposal?['status']?.toString();
+
+  bool get hasPendingProposal => proposalStatus == 'pending';
+
+  num? get proposedAmount => num.tryParse(priceProposal?['amount']?.toString() ?? '');
+
+  num? get counterAmount => num.tryParse(priceProposal?['counterAmount']?.toString() ?? '');
+
+  String? get proposalMessage => (priceProposal?['message']?.toString().isNotEmpty == true) ? priceProposal!['message'].toString() : null;
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
     data['status'] = status;
     if (rejectedByDrivers != null) {
-      data['rejectedByDrivers'] = rejectedByDrivers!.map((v) => v.toJson()).toList();
+      data['rejectedByDrivers'] = rejectedByDrivers;
     }
     data['couponId'] = couponId;
     data['bookingDateTime'] = bookingDateTime;
@@ -184,6 +218,13 @@ class RentalOrderModel {
     if (platformTax != null) {
       data['platformTax'] = platformTax!.map((v) => v.toJson()).toList();
     }
+    // Additive fields: only written when known, so a save never clears them.
+    if (regionId != null && regionId!.isNotEmpty) data['regionId'] = regionId;
+    if (priceProposal != null) data['priceProposal'] = priceProposal;
+    if (cancelReason != null) data['cancelReason'] = cancelReason;
+    if (cancelReasonCode != null) data['cancelReasonCode'] = cancelReasonCode;
+    if (cancelledBy != null) data['cancelledBy'] = cancelledBy;
+    if (cancelledAt != null) data['cancelledAt'] = cancelledAt;
     return data;
   }
 }

@@ -47,6 +47,21 @@ class UserModel {
   bool? isOwner;
   bool? isAutoVerify;
 
+  /// Management zone (spec 3.1 / 18.4). Absent = global settings.
+  String? regionId;
+
+  /// "individual" | "company" (spec 4.11). Absent = individual.
+  String? driverType;
+
+  /// Company identification (spec 4.11), additive on the user doc.
+  String? companyName;
+  String? operatingLicence;
+  String? commercialRegister;
+  String? uniqueIdNumber;
+  String? operatingLicenceFile;
+  String? commercialRegisterFile;
+  String? uniqueIdNumberFile;
+
   UserModel({
     this.id,
     this.firstName,
@@ -88,6 +103,15 @@ class UserModel {
     this.ownerId,
     this.isOwner,
     this.isAutoVerify,
+    this.regionId,
+    this.driverType,
+    this.companyName,
+    this.operatingLicence,
+    this.commercialRegister,
+    this.uniqueIdNumber,
+    this.operatingLicenceFile,
+    this.commercialRegisterFile,
+    this.uniqueIdNumberFile,
   });
 
   String fullName() {
@@ -157,7 +181,23 @@ class UserModel {
     ownerId = json['ownerId'];
     isOwner = json['isOwner'];
     isAutoVerify = json['isAutoVerify'];
+    regionId = _str(json['regionId']);
+    driverType = _str(json['driverType']);
+    companyName = _str(json['companyName']);
+    operatingLicence = _str(json['operatingLicence']);
+    commercialRegister = _str(json['commercialRegister']);
+    uniqueIdNumber = _str(json['uniqueIdNumber']);
+    operatingLicenceFile = _str(json['operatingLicenceFile']);
+    commercialRegisterFile = _str(json['commercialRegisterFile']);
+    uniqueIdNumberFile = _str(json['uniqueIdNumberFile']);
   }
+
+  static String? _str(dynamic value) {
+    final text = value?.toString();
+    return (text == null || text.isEmpty) ? null : text;
+  }
+
+  bool get isCompany => driverType == 'company' || isOwner == true;
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
@@ -218,6 +258,17 @@ class UserModel {
     if (adminCommissionModel != null) {
       data['adminCommission'] = adminCommissionModel!.toJson();
     }
+    // Additive fields: written only when known, so an update never clears a
+    // value the admin panel set (e.g. regionId).
+    if (regionId != null) data['regionId'] = regionId;
+    if (driverType != null) data['driverType'] = driverType;
+    if (companyName != null) data['companyName'] = companyName;
+    if (operatingLicence != null) data['operatingLicence'] = operatingLicence;
+    if (commercialRegister != null) data['commercialRegister'] = commercialRegister;
+    if (uniqueIdNumber != null) data['uniqueIdNumber'] = uniqueIdNumber;
+    if (operatingLicenceFile != null) data['operatingLicenceFile'] = operatingLicenceFile;
+    if (commercialRegisterFile != null) data['commercialRegisterFile'] = commercialRegisterFile;
+    if (uniqueIdNumberFile != null) data['uniqueIdNumberFile'] = uniqueIdNumberFile;
     return data;
   }
 }

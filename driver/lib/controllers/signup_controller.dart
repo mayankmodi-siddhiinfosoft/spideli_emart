@@ -13,14 +13,17 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/car_makes.dart';
 import 'package:driver/models/car_model.dart';
+import 'package:driver/models/region_model.dart';
 import 'package:driver/models/section_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/models/vehicle_type.dart';
 import 'package:driver/models/zone_model.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/region_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
 
 class SignupController extends GetxController {
   Rx<TextEditingController> firstNameEditingController = TextEditingController().obs;
@@ -63,6 +66,65 @@ class SignupController extends GetxController {
 
   RxString selectedValue = "Individual".obs;
 
+  // ── Management zone (region, spec 3.1 / 4.11) ──────────────────────────────
+  RxList<RegionModel> regionList = <RegionModel>[].obs;
+  Rx<RegionModel?> selectedRegion = Rx<RegionModel?>(null);
+
+  /// A region must be picked whenever the admin has created regions.
+  bool get regionRequired => regionList.isNotEmpty;
+
+  // ── Company identification (spec 4.11) ──────────────────────────────────────
+  Rx<TextEditingController> companyNameController = TextEditingController().obs;
+  Rx<TextEditingController> operatingLicenceController = TextEditingController().obs;
+  Rx<TextEditingController> commercialRegisterController = TextEditingController().obs;
+  Rx<TextEditingController> uniqueIdNumberController = TextEditingController().obs;
+
+  /// Local paths of the picked company documents, keyed by the user-doc field
+  /// the uploaded URL is written to.
+  RxMap<String, String> companyFiles = <String, String>{}.obs;
+
+  static const Map<String, String> companyFileFields = {
+    'operatingLicenceFile': 'Operating licence',
+    'commercialRegisterFile': 'Commercial register',
+    'uniqueIdNumberFile': 'Unique identification number',
+  };
+
+  bool get isCompany => selectedValue.value == 'Company';
+
+  Future<void> pickCompanyFile(String field, ImageSource source) async {
+    try {
+      final XFile? file = await ImagePicker().pickImage(source: source, imageQuality: 80);
+      if (file == null) return;
+      companyFiles[field] = file.path;
+    } catch (e) {
+      ShowToastDialog.showToast("Could not open the camera / gallery".tr);
+    }
+  }
+
+  /// Uploads the picked company documents (after the account exists) and
+  /// writes their URLs on the user model.
+  Future<void> _uploadCompanyFiles(String uid) async {
+    for (final entry in companyFiles.entries) {
+      try {
+        final file = File(entry.value);
+        final url = await Constant.uploadUserImageToFireStorage(file, "driverDocument/$uid/company", "${entry.key}_${file.path.split('/').last}");
+        switch (entry.key) {
+          case 'operatingLicenceFile':
+            userModel.value.operatingLicenceFile = url;
+            break;
+          case 'commercialRegisterFile':
+            userModel.value.commercialRegisterFile = url;
+            break;
+          case 'uniqueIdNumberFile':
+            userModel.value.uniqueIdNumberFile = url;
+            break;
+        }
+      } catch (e) {
+        log("Company document upload failed (${entry.key}): $e");
+      }
+    }
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   bool sectionNeedsVehicle(SectionModel section) => section.serviceTypeFlag == 'cab-service' || section.serviceTypeFlag == 'rental-service';
@@ -71,26 +133,14 @@ class SignupController extends GetxController {
 
   bool isSectionSelected(SectionModel section) => selectedSections.any((s) => s.id == section.id);
 
-  /// Sections visible based on role selection.
-  /// Company/Owner cannot register for delivery-service — only cab, parcel, rental.
-  List<SectionModel> get visibleSections {
-    if (selectedValue.value == 'Company') {
-      return allSections.where((s) => s.serviceTypeFlag != 'delivery-service').toList();
-    }
-    return allSections;
-  }
+  /// Sections offered at registration. Spec 4.11: a Company can select the
+  /// delivery sections (any multivendor / e-commerce section) in addition to
+  /// Cab, Parcel and Rental, exactly like an Individual.
+  List<SectionModel> get visibleSections => allSections;
 
-  /// Called when switching between Individual / Company to deselect
-  /// any sections that are no longer visible (delivery-service for Company).
+  /// Called when switching between Individual / Company.
   void onRoleChanged(String role) {
     selectedValue.value = role;
-    if (role == 'Company') {
-      // Remove any delivery-service sections from selection
-      final deliverySections = selectedSections.where((s) => s.serviceTypeFlag == 'delivery-service').toList();
-      for (final s in deliverySections) {
-        selectedSections.removeWhere((sec) => sec.id == s.id);
-      }
-    }
     update();
   }
 
@@ -103,6 +153,8 @@ class SignupController extends GetxController {
         return 'Parcel';
       case 'rental-service':
         return 'Rental';
+      case 'ecommerce-service':
+        return 'Delivery (e-commerce)';
       default:
         return 'Delivery';
     }
@@ -138,6 +190,7 @@ class SignupController extends GetxController {
       }),
       FireStoreUtils.getCarMakes().then((v) => carMakesList.value = v),
       FireStoreUtils.getAllActiveSections().then((v) => allSections.value = v),
+      RegionService.ensureLoaded().then((_) => regionList.value = RegionService.regions),
     ]);
   }
 
@@ -212,6 +265,8 @@ class SignupController extends GetxController {
 
     if (type.value == "google" || type.value == "apple" || type.value == "mobileNumber") {
       _populateUserModel();
+      final uid = userModel.value.id ?? FirebaseAuth.instance.currentUser?.uid;
+      if (isCompany && uid != null) await _uploadCompanyFiles(uid);
       await FireStoreUtils.updateUser(userModel.value);
       _navigateAfterSignup(userModel.value);
     } else {
@@ -223,6 +278,7 @@ class SignupController extends GetxController {
         if (credential.user != null) {
           userModel.value.id = credential.user!.uid;
           _populateUserModel();
+          if (isCompany) await _uploadCompanyFiles(credential.user!.uid);
           await FireStoreUtils.updateUser(userModel.value);
           _navigateAfterSignup(userModel.value);
         }
@@ -277,8 +333,20 @@ class SignupController extends GetxController {
     // ── Section IDs ──────────────────────────────────────────────────────────
     userModel.value.sectionIds = selectedSections.map((s) => s.id!).toList();
 
+    // ── Region + Individual / Company (spec 4.11) ─────────────────────────────
+    if (selectedRegion.value?.id != null) userModel.value.regionId = selectedRegion.value!.id;
+    userModel.value.driverType = isCompany ? 'company' : 'individual';
+    if (isCompany) {
+      String? text(Rx<TextEditingController> c) => c.value.text.trim().isEmpty ? null : c.value.text.trim();
+      userModel.value.companyName = text(companyNameController);
+      userModel.value.operatingLicence = text(operatingLicenceController);
+      userModel.value.commercialRegister = text(commercialRegisterController);
+      userModel.value.uniqueIdNumber = text(uniqueIdNumberController);
+    }
+
     // ── Derive serviceTypes from unique serviceTypeFlags of selected sections ─
-    final uniqueFlags = selectedSections.map((s) => s.serviceTypeFlag ?? 'delivery-service').toSet().toList();
+    // (e-commerce sections are served by the delivery flow)
+    final uniqueFlags = selectedSections.map((s) => Constant.driverServiceTypeFor(s.serviceTypeFlag)).toSet().toList();
     userModel.value.serviceTypes = uniqueFlags;
 
     // ── sectionNames: simple {sectionId → sectionName} lookup ────────────────
@@ -289,9 +357,9 @@ class SignupController extends GetxController {
     // ── vehicleDetails: {sectionId → {vehicleId, vehicleType, carBrand, carModel, carPlateNumber}} ─
     // Skip for Company users — they register their own drivers separately.
     final Map<String, dynamic> vDetails = {};
-    final bool isCompany = selectedValue.value == "Company";
+    final bool companyAccount = isCompany;
     for (final section in selectedSections) {
-      if (!isCompany && sectionNeedsVehicle(section)) {
+      if (!companyAccount && sectionNeedsVehicle(section)) {
         final vehicle = selectedVehiclePerSection[section.id];
         final carMakes = selectedCarMakesPerSection[section.id]?.value;
         final carModel = selectedCarModelPerSection[section.id]?.value;

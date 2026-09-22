@@ -1,3 +1,5 @@
+import 'package:driver/utils/region_service.dart';
+import 'package:driver/app/cab_screen/widget/cab_ride_extras.dart';
 import 'package:driver/app/chat_screens/chat_screen.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
@@ -309,6 +311,26 @@ class CabHomeScreen extends StatelessWidget {
     );
   }
 
+  /// Opens the ride chat with the customer (same arguments as the chat buttons).
+  Future<void> openCustomerChat(CabHomeController controller) async {
+    ShowToastDialog.showLoader("Please wait".tr);
+    UserModel? customer = await FireStoreUtils.getUserProfile(controller.currentOrder.value.authorID.toString());
+    UserModel? driver = await FireStoreUtils.getUserProfile(controller.currentOrder.value.driverId.toString());
+    ShowToastDialog.closeLoader();
+    if (customer == null || driver == null) return;
+    Get.to(const ChatScreen(), arguments: {
+      "customerName": customer.fullName(),
+      "restaurantName": driver.fullName(),
+      "orderId": controller.currentOrder.value.id,
+      "restaurantId": driver.id,
+      "customerId": customer.id,
+      "customerProfileImage": customer.profilePictureURL ?? "",
+      "restaurantProfileImage": driver.profilePictureURL ?? "",
+      "token": customer.fcmToken,
+      "chatType": "Driver",
+    });
+  }
+
   Padding showDriverBottomSheet(bool isDark, CabHomeController controller) {
     return Padding(
       padding: const EdgeInsets.all(8.0),
@@ -428,6 +450,11 @@ class CabHomeScreen extends StatelessWidget {
                   itemCount: 2,
                 ),
               ),
+              if (CabRideExtras.hasContent(controller.currentOrder.value))
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 220),
+                  child: SingleChildScrollView(child: CabRideExtras(order: controller.currentOrder.value, isDark: isDark)),
+                ),
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 5),
                 child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
@@ -477,7 +504,7 @@ class CabHomeScreen extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          Constant.amountShow(amount: controller.currentOrder.value.tipAmount),
+                          Constant.amountShow(currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.tipAmount),
                           textAlign: TextAlign.start,
                           style: TextStyle(
                             fontFamily: AppThemeData.semiBold,
@@ -529,7 +556,7 @@ class CabHomeScreen extends StatelessWidget {
                       color: AppThemeData.danger300,
                       textColor: AppThemeData.grey50,
                       onPress: () {
-                        controller.rejectOrder();
+                        controller.rejectWithReason();
                       },
                     ),
                   ),
@@ -652,7 +679,11 @@ class CabHomeScreen extends StatelessWidget {
                             children: [
                               InkWell(
                                 onTap: () {
-                                  Constant.makePhoneCall(controller.currentOrder.value.author!.phoneNumber.toString());
+                                  if (controller.currentOrder.value.writtenCommunicationOnly == true) {
+                                    openCustomerChat(controller);
+                                  } else {
+                                    Constant.makePhoneCall(controller.currentOrder.value.author!.phoneNumber.toString());
+                                  }
                                 },
                                 child: Container(
                                   width: 38,
@@ -665,7 +696,7 @@ class CabHomeScreen extends StatelessWidget {
                                   ),
                                   child: Padding(
                                     padding: const EdgeInsets.all(8.0),
-                                    child: SvgPicture.asset("assets/icons/ic_phone_call.svg"),
+                                    child: SvgPicture.asset(controller.currentOrder.value.writtenCommunicationOnly == true ? "assets/icons/ic_wechat.svg" : "assets/icons/ic_phone_call.svg"),
                                   ),
                                 ),
                               ),
@@ -797,7 +828,11 @@ class CabHomeScreen extends StatelessWidget {
                                         ),
                                         InkWell(
                                           onTap: () {
-                                            Constant.makePhoneCall(controller.currentOrder.value.author!.phoneNumber.toString());
+                                            if (controller.currentOrder.value.writtenCommunicationOnly == true) {
+                                    openCustomerChat(controller);
+                                  } else {
+                                    Constant.makePhoneCall(controller.currentOrder.value.author!.phoneNumber.toString());
+                                  }
                                           },
                                           child: Container(
                                             width: 42,
@@ -810,7 +845,7 @@ class CabHomeScreen extends StatelessWidget {
                                             ),
                                             child: Padding(
                                               padding: const EdgeInsets.all(8.0),
-                                              child: SvgPicture.asset("assets/icons/ic_phone_call.svg"),
+                                              child: SvgPicture.asset(controller.currentOrder.value.writtenCommunicationOnly == true ? "assets/icons/ic_wechat.svg" : "assets/icons/ic_phone_call.svg"),
                                             ),
                                           ),
                                         ),
@@ -889,6 +924,18 @@ class CabHomeScreen extends StatelessWidget {
                           itemCount: 2,
                         ),
                       ),
+                if (CabRideExtras.hasContent(controller.currentOrder.value))
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 240),
+                    child: SingleChildScrollView(
+                      child: CabRideExtras(
+                        order: controller.currentOrder.value,
+                        isDark: isDark,
+                        // Stops are reached after the customer is picked up.
+                        onStopReached: controller.currentOrder.value.status == Constant.orderInTransit ? (index) => controller.markStopReached(index) : null,
+                      ),
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 20),
                   child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
@@ -965,7 +1012,7 @@ class CabHomeScreen extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            Constant.amountShow(amount: totalAmount.toString()),
+                            Constant.amountShow(currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: totalAmount.toString()),
                             textAlign: TextAlign.start,
                             style: TextStyle(
                               fontFamily: AppThemeData.semiBold,
@@ -996,7 +1043,7 @@ class CabHomeScreen extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            Constant.amountShow(amount: controller.currentOrder.value.tipAmount),
+                            Constant.amountShow(currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.tipAmount),
                             textAlign: TextAlign.start,
                             style: TextStyle(
                               fontFamily: AppThemeData.semiBold,
@@ -1009,6 +1056,15 @@ class CabHomeScreen extends StatelessWidget {
                 const SizedBox(
                   height: 10,
                 ),
+                if (controller.currentOrder.value.status == Constant.orderShipped || controller.currentOrder.value.status == Constant.driverAccepted)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () => controller.cancelAcceptedRide(),
+                      icon: const Icon(Icons.cancel_outlined, color: AppThemeData.danger300, size: 18),
+                      label: Text("Cancel ride".tr, style: TextStyle(color: AppThemeData.danger300, fontFamily: AppThemeData.semiBold)),
+                    ),
+                  ),
               ],
             ),
           ),

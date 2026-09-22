@@ -1,3 +1,4 @@
+import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/home_screen/home_screen.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/dash_board_controller.dart';
@@ -155,6 +156,13 @@ class HomeScreenMultipleOrder extends StatelessWidget {
                                                                         if (snapshot.hasError) {
                                                                           return Center(child: Text('Error: ${snapshot.error}'));
                                                                         } else if (snapshot.data == null) {
+                                                                          return const SizedBox();
+                                                                        } else if (snapshot.data!.status == Constant.driverPending &&
+                                                                            snapshot.data!.id != null &&
+                                                                            controller.driverModel.value.id != null &&
+                                                                            RegionService.isOutOfDriverRegion(snapshot.data!.regionId, driver: controller.driverModel.value)) {
+                                                                          // Zone-bound (spec 9.1): not offered; declined so dispatch moves on.
+                                                                          FireStoreUtils.declineOutOfRegionVendorOrder(snapshot.data!.id!, controller.driverModel.value.id!);
                                                                           return const SizedBox();
                                                                         } else {
                                                                           OrderModel orderModel = snapshot.data!;
@@ -326,7 +334,7 @@ class HomeScreenMultipleOrder extends StatelessWidget {
                                                                                             ),
                                                                                           ),
                                                                                           Text(
-                                                                                            Constant.amountShow(amount: orderModel.deliveryCharge),
+                                                                                            Constant.amountShow(currency: RegionService.currencyForRecord(orderModel.regionId), amount: orderModel.deliveryCharge),
                                                                                             textAlign: TextAlign.start,
                                                                                             style: TextStyle(
                                                                                               fontFamily: AppThemeData.semiBold,
@@ -359,7 +367,7 @@ class HomeScreenMultipleOrder extends StatelessWidget {
                                                                                             ),
                                                                                           ),
                                                                                           Text(
-                                                                                            Constant.amountShow(amount: orderModel.tipAmount),
+                                                                                            Constant.amountShow(currency: RegionService.currencyForRecord(orderModel.regionId), amount: orderModel.tipAmount),
                                                                                             textAlign: TextAlign.start,
                                                                                             style: TextStyle(
                                                                                               fontFamily: AppThemeData.semiBold,
@@ -447,260 +455,12 @@ class HomeScreenMultipleOrder extends StatelessWidget {
                                                                           return Center(child: Text('Error: ${snapshot.error}'));
                                                                         } else if (snapshot.data == null) {
                                                                           return const SizedBox();
-                                                                        } else {
-                                                                          OrderModel orderModel = snapshot.data!;
-                                                                          double distanceInMeters = Geolocator.distanceBetween(orderModel.vendor!.latitude ?? 0.0, orderModel.vendor!.longitude ?? 0.0,
-                                                                              orderModel.address!.location!.latitude ?? 0.0, orderModel.address!.location!.longitude ?? 0.0);
-                                                                          double kilometer = distanceInMeters / 1000;
-                                                                          return InkWell(
-                                                                            onTap: () {
-                                                                              Get.to(
-                                                                                  const HomeScreen(
-                                                                                    isAppBarShow: true,
-                                                                                  ),
-                                                                                  arguments: {"orderModel": orderModel});
-                                                                            },
-                                                                            child: Column(
-                                                                              children: [
-                                                                                Timeline.tileBuilder(
-                                                                                  shrinkWrap: true,
-                                                                                  padding: EdgeInsets.zero,
-                                                                                  physics: const NeverScrollableScrollPhysics(),
-                                                                                  theme: TimelineThemeData(
-                                                                                    nodePosition: 0,
-                                                                                    // indicatorPosition: 0,
-                                                                                  ),
-                                                                                  builder: TimelineTileBuilder.connected(
-                                                                                    contentsAlign: ContentsAlign.basic,
-                                                                                    indicatorBuilder: (context, index) {
-                                                                                      return index == 0
-                                                                                          ? Container(
-                                                                                              decoration: ShapeDecoration(
-                                                                                                color: AppThemeData.primary50,
-                                                                                                shape: RoundedRectangleBorder(
-                                                                                                  borderRadius: BorderRadius.circular(120),
-                                                                                                ),
-                                                                                              ),
-                                                                                              child: Padding(
-                                                                                                padding: const EdgeInsets.all(10),
-                                                                                                child: SvgPicture.asset(
-                                                                                                  "assets/icons/ic_building.svg",
-                                                                                                  colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn),
-                                                                                                ),
-                                                                                              ),
-                                                                                            )
-                                                                                          : Container(
-                                                                                              decoration: ShapeDecoration(
-                                                                                                color: AppThemeData.carRent50,
-                                                                                                shape: RoundedRectangleBorder(
-                                                                                                  borderRadius: BorderRadius.circular(120),
-                                                                                                ),
-                                                                                              ),
-                                                                                              child: Padding(
-                                                                                                padding: const EdgeInsets.all(10),
-                                                                                                child: SvgPicture.asset(
-                                                                                                  "assets/icons/ic_location.svg",
-                                                                                                  colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn),
-                                                                                                ),
-                                                                                              ),
-                                                                                            );
-                                                                                    },
-                                                                                    connectorBuilder: (context, index, connectorType) {
-                                                                                      return const DashedLineConnector(
-                                                                                        color: AppThemeData.grey300,
-                                                                                        gap: 3,
-                                                                                      );
-                                                                                    },
-                                                                                    contentsBuilder: (context, index) {
-                                                                                      return Padding(
-                                                                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                                                                        child: index == 0
-                                                                                            ? Column(
-                                                                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                                                                children: [
-                                                                                                  Text(
-                                                                                                    "${orderModel.vendor!.title}",
-                                                                                                    textAlign: TextAlign.start,
-                                                                                                    style: TextStyle(
-                                                                                                      fontFamily: AppThemeData.semiBold,
-                                                                                                      fontSize: 16,
-                                                                                                      color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                                                                    ),
-                                                                                                  ),
-                                                                                                  Text(
-                                                                                                    "${orderModel.vendor!.location}",
-                                                                                                    textAlign: TextAlign.start,
-                                                                                                    style: TextStyle(
-                                                                                                      fontFamily: AppThemeData.medium,
-                                                                                                      fontSize: 14,
-                                                                                                      color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                                                                    ),
-                                                                                                  ),
-                                                                                                ],
-                                                                                              )
-                                                                                            : Column(
-                                                                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                                                                children: [
-                                                                                                  Text(
-                                                                                                    "Deliver to the".tr,
-                                                                                                    textAlign: TextAlign.start,
-                                                                                                    style: TextStyle(
-                                                                                                      fontFamily: AppThemeData.semiBold,
-                                                                                                      fontSize: 16,
-                                                                                                      color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                                                                    ),
-                                                                                                  ),
-                                                                                                  Text(
-                                                                                                    orderModel.address!.getFullAddress(),
-                                                                                                    textAlign: TextAlign.start,
-                                                                                                    style: TextStyle(
-                                                                                                      fontFamily: AppThemeData.medium,
-                                                                                                      fontSize: 14,
-                                                                                                      color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                                                                    ),
-                                                                                                  ),
-                                                                                                ],
-                                                                                              ),
-                                                                                      );
-                                                                                    },
-                                                                                    itemCount: 2,
-                                                                                  ),
-                                                                                ),
-                                                                                Padding(
-                                                                                  padding: const EdgeInsets.symmetric(vertical: 5),
-                                                                                  child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                                                ),
-                                                                                Row(
-                                                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                                                  children: [
-                                                                                    Expanded(
-                                                                                      child: Text(
-                                                                                        "Trip Distance".tr,
-                                                                                        textAlign: TextAlign.start,
-                                                                                        style: TextStyle(
-                                                                                          fontFamily: AppThemeData.regular,
-                                                                                          color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                                                          fontSize: 16,
-                                                                                        ),
-                                                                                      ),
-                                                                                    ),
-                                                                                    Text(
-                                                                                      "${double.parse(kilometer.toString()).toStringAsFixed(2)} ${Constant.distanceType}",
-                                                                                      textAlign: TextAlign.start,
-                                                                                      style: TextStyle(
-                                                                                        fontFamily: AppThemeData.semiBold,
-                                                                                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                                                        fontSize: 16,
-                                                                                      ),
-                                                                                    ),
-                                                                                  ],
-                                                                                ),
-                                                                                Visibility(
-                                                                                  visible: (controller.driverModel.value.vendorID?.isEmpty == true),
-                                                                                  child: Column(children: [
-                                                                                    const SizedBox(
-                                                                                      height: 5,
-                                                                                    ),
-                                                                                    Row(
-                                                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                                                      children: [
-                                                                                        Expanded(
-                                                                                          child: Text(
-                                                                                            "Delivery Charge".tr,
-                                                                                            textAlign: TextAlign.start,
-                                                                                            style: TextStyle(
-                                                                                              fontFamily: AppThemeData.regular,
-                                                                                              color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                                                              fontSize: 16,
-                                                                                            ),
-                                                                                          ),
-                                                                                        ),
-                                                                                        Text(
-                                                                                          Constant.amountShow(amount: orderModel.deliveryCharge),
-                                                                                          textAlign: TextAlign.start,
-                                                                                          style: TextStyle(
-                                                                                            fontFamily: AppThemeData.semiBold,
-                                                                                            color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                                                            fontSize: 16,
-                                                                                          ),
-                                                                                        ),
-                                                                                      ],
-                                                                                    ),
-                                                                                  ]),
-                                                                                ),
-                                                                                const SizedBox(
-                                                                                  height: 5,
-                                                                                ),
-                                                                                orderModel.tipAmount == null || orderModel.tipAmount!.isEmpty || double.parse(orderModel.tipAmount.toString()) <= 0
-                                                                                    ? const SizedBox()
-                                                                                    : Row(
-                                                                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                                                                        children: [
-                                                                                          Expanded(
-                                                                                            child: Text(
-                                                                                              "Tips".tr,
-                                                                                              textAlign: TextAlign.start,
-                                                                                              style: TextStyle(
-                                                                                                fontFamily: AppThemeData.regular,
-                                                                                                color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                                                                fontSize: 16,
-                                                                                              ),
-                                                                                            ),
-                                                                                          ),
-                                                                                          Text(
-                                                                                            Constant.amountShow(amount: orderModel.tipAmount),
-                                                                                            textAlign: TextAlign.start,
-                                                                                            style: TextStyle(
-                                                                                              fontFamily: AppThemeData.semiBold,
-                                                                                              color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                                                              fontSize: 16,
-                                                                                            ),
-                                                                                          ),
-                                                                                        ],
-                                                                                      ),
-                                                                                const SizedBox(
-                                                                                  height: 10,
-                                                                                ),
-                                                                              ],
-                                                                            ),
-                                                                          );
-                                                                        }
-                                                                      }
-                                                                    }),
-                                                              ),
-                                                            ),
-                                                          );
-                                                        },
-                                                      ),
-                                              ]
-                                            : [
-                                                controller.activeOrder.isEmpty
-                                                    ? Constant.showEmptyView(message: "Active order not found.".tr, isDark: isDark)
-                                                    : ListView.builder(
-                                                        itemCount: controller.activeOrder.length,
-                                                        shrinkWrap: true,
-                                                        padding: EdgeInsets.zero,
-                                                        itemBuilder: (context, index) {
-                                                          return Padding(
-                                                            padding: const EdgeInsets.symmetric(vertical: 5),
-                                                            child: Container(
-                                                              decoration: ShapeDecoration(
-                                                                color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                                                shape: RoundedRectangleBorder(
-                                                                  borderRadius: BorderRadius.circular(16),
-                                                                ),
-                                                              ),
-                                                              child: Padding(
-                                                                padding: const EdgeInsets.all(8.0),
-                                                                child: FutureBuilder(
-                                                                    future: FireStoreUtils.getOrderById(controller.activeOrder[index]),
-                                                                    builder: (context, snapshot) {
-                                                                      if (snapshot.connectionState == ConnectionState.waiting) {
-                                                                        return const SizedBox();
-                                                                      } else {
-                                                                        if (snapshot.hasError) {
-                                                                          return Center(child: Text('Error: ${snapshot.error}'));
-                                                                        } else if (snapshot.data == null) {
+                                                                        } else if (snapshot.data!.status == Constant.driverPending &&
+                                                                            snapshot.data!.id != null &&
+                                                                            controller.driverModel.value.id != null &&
+                                                                            RegionService.isOutOfDriverRegion(snapshot.data!.regionId, driver: controller.driverModel.value)) {
+                                                                          // Zone-bound (spec 9.1): not offered; declined so dispatch moves on.
+                                                                          FireStoreUtils.declineOutOfRegionVendorOrder(snapshot.data!.id!, controller.driverModel.value.id!);
                                                                           return const SizedBox();
                                                                         } else {
                                                                           OrderModel orderModel = snapshot.data!;
@@ -871,7 +631,7 @@ class HomeScreenMultipleOrder extends StatelessWidget {
                                                                                           ),
                                                                                         ),
                                                                                         Text(
-                                                                                          Constant.amountShow(amount: orderModel.deliveryCharge),
+                                                                                          Constant.amountShow(currency: RegionService.currencyForRecord(orderModel.regionId), amount: orderModel.deliveryCharge),
                                                                                           textAlign: TextAlign.start,
                                                                                           style: TextStyle(
                                                                                             fontFamily: AppThemeData.semiBold,
@@ -903,7 +663,269 @@ class HomeScreenMultipleOrder extends StatelessWidget {
                                                                                             ),
                                                                                           ),
                                                                                           Text(
-                                                                                            Constant.amountShow(amount: orderModel.tipAmount),
+                                                                                            Constant.amountShow(currency: RegionService.currencyForRecord(orderModel.regionId), amount: orderModel.tipAmount),
+                                                                                            textAlign: TextAlign.start,
+                                                                                            style: TextStyle(
+                                                                                              fontFamily: AppThemeData.semiBold,
+                                                                                              color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
+                                                                                              fontSize: 16,
+                                                                                            ),
+                                                                                          ),
+                                                                                        ],
+                                                                                      ),
+                                                                                const SizedBox(
+                                                                                  height: 10,
+                                                                                ),
+                                                                              ],
+                                                                            ),
+                                                                          );
+                                                                        }
+                                                                      }
+                                                                    }),
+                                                              ),
+                                                            ),
+                                                          );
+                                                        },
+                                                      ),
+                                              ]
+                                            : [
+                                                controller.activeOrder.isEmpty
+                                                    ? Constant.showEmptyView(message: "Active order not found.".tr, isDark: isDark)
+                                                    : ListView.builder(
+                                                        itemCount: controller.activeOrder.length,
+                                                        shrinkWrap: true,
+                                                        padding: EdgeInsets.zero,
+                                                        itemBuilder: (context, index) {
+                                                          return Padding(
+                                                            padding: const EdgeInsets.symmetric(vertical: 5),
+                                                            child: Container(
+                                                              decoration: ShapeDecoration(
+                                                                color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
+                                                                shape: RoundedRectangleBorder(
+                                                                  borderRadius: BorderRadius.circular(16),
+                                                                ),
+                                                              ),
+                                                              child: Padding(
+                                                                padding: const EdgeInsets.all(8.0),
+                                                                child: FutureBuilder(
+                                                                    future: FireStoreUtils.getOrderById(controller.activeOrder[index]),
+                                                                    builder: (context, snapshot) {
+                                                                      if (snapshot.connectionState == ConnectionState.waiting) {
+                                                                        return const SizedBox();
+                                                                      } else {
+                                                                        if (snapshot.hasError) {
+                                                                          return Center(child: Text('Error: ${snapshot.error}'));
+                                                                        } else if (snapshot.data == null) {
+                                                                          return const SizedBox();
+                                                                        } else if (snapshot.data!.status == Constant.driverPending &&
+                                                                            snapshot.data!.id != null &&
+                                                                            controller.driverModel.value.id != null &&
+                                                                            RegionService.isOutOfDriverRegion(snapshot.data!.regionId, driver: controller.driverModel.value)) {
+                                                                          // Zone-bound (spec 9.1): not offered; declined so dispatch moves on.
+                                                                          FireStoreUtils.declineOutOfRegionVendorOrder(snapshot.data!.id!, controller.driverModel.value.id!);
+                                                                          return const SizedBox();
+                                                                        } else {
+                                                                          OrderModel orderModel = snapshot.data!;
+                                                                          double distanceInMeters = Geolocator.distanceBetween(orderModel.vendor!.latitude ?? 0.0, orderModel.vendor!.longitude ?? 0.0,
+                                                                              orderModel.address!.location!.latitude ?? 0.0, orderModel.address!.location!.longitude ?? 0.0);
+                                                                          double kilometer = distanceInMeters / 1000;
+                                                                          return InkWell(
+                                                                            onTap: () {
+                                                                              Get.to(
+                                                                                  const HomeScreen(
+                                                                                    isAppBarShow: true,
+                                                                                  ),
+                                                                                  arguments: {"orderModel": orderModel});
+                                                                            },
+                                                                            child: Column(
+                                                                              children: [
+                                                                                Timeline.tileBuilder(
+                                                                                  shrinkWrap: true,
+                                                                                  padding: EdgeInsets.zero,
+                                                                                  physics: const NeverScrollableScrollPhysics(),
+                                                                                  theme: TimelineThemeData(
+                                                                                    nodePosition: 0,
+                                                                                    // indicatorPosition: 0,
+                                                                                  ),
+                                                                                  builder: TimelineTileBuilder.connected(
+                                                                                    contentsAlign: ContentsAlign.basic,
+                                                                                    indicatorBuilder: (context, index) {
+                                                                                      return index == 0
+                                                                                          ? Container(
+                                                                                              decoration: ShapeDecoration(
+                                                                                                color: AppThemeData.primary50,
+                                                                                                shape: RoundedRectangleBorder(
+                                                                                                  borderRadius: BorderRadius.circular(120),
+                                                                                                ),
+                                                                                              ),
+                                                                                              child: Padding(
+                                                                                                padding: const EdgeInsets.all(10),
+                                                                                                child: SvgPicture.asset(
+                                                                                                  "assets/icons/ic_building.svg",
+                                                                                                  colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn),
+                                                                                                ),
+                                                                                              ),
+                                                                                            )
+                                                                                          : Container(
+                                                                                              decoration: ShapeDecoration(
+                                                                                                color: AppThemeData.carRent50,
+                                                                                                shape: RoundedRectangleBorder(
+                                                                                                  borderRadius: BorderRadius.circular(120),
+                                                                                                ),
+                                                                                              ),
+                                                                                              child: Padding(
+                                                                                                padding: const EdgeInsets.all(10),
+                                                                                                child: SvgPicture.asset(
+                                                                                                  "assets/icons/ic_location.svg",
+                                                                                                  colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn),
+                                                                                                ),
+                                                                                              ),
+                                                                                            );
+                                                                                    },
+                                                                                    connectorBuilder: (context, index, connectorType) {
+                                                                                      return const DashedLineConnector(
+                                                                                        color: AppThemeData.grey300,
+                                                                                        gap: 3,
+                                                                                      );
+                                                                                    },
+                                                                                    contentsBuilder: (context, index) {
+                                                                                      return Padding(
+                                                                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                                                                        child: index == 0
+                                                                                            ? Column(
+                                                                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                                                                children: [
+                                                                                                  Text(
+                                                                                                    "${orderModel.vendor!.title}",
+                                                                                                    textAlign: TextAlign.start,
+                                                                                                    style: TextStyle(
+                                                                                                      fontFamily: AppThemeData.semiBold,
+                                                                                                      fontSize: 16,
+                                                                                                      color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
+                                                                                                    ),
+                                                                                                  ),
+                                                                                                  Text(
+                                                                                                    "${orderModel.vendor!.location}",
+                                                                                                    textAlign: TextAlign.start,
+                                                                                                    style: TextStyle(
+                                                                                                      fontFamily: AppThemeData.medium,
+                                                                                                      fontSize: 14,
+                                                                                                      color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
+                                                                                                    ),
+                                                                                                  ),
+                                                                                                ],
+                                                                                              )
+                                                                                            : Column(
+                                                                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                                                                children: [
+                                                                                                  Text(
+                                                                                                    "Deliver to the".tr,
+                                                                                                    textAlign: TextAlign.start,
+                                                                                                    style: TextStyle(
+                                                                                                      fontFamily: AppThemeData.semiBold,
+                                                                                                      fontSize: 16,
+                                                                                                      color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
+                                                                                                    ),
+                                                                                                  ),
+                                                                                                  Text(
+                                                                                                    orderModel.address!.getFullAddress(),
+                                                                                                    textAlign: TextAlign.start,
+                                                                                                    style: TextStyle(
+                                                                                                      fontFamily: AppThemeData.medium,
+                                                                                                      fontSize: 14,
+                                                                                                      color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
+                                                                                                    ),
+                                                                                                  ),
+                                                                                                ],
+                                                                                              ),
+                                                                                      );
+                                                                                    },
+                                                                                    itemCount: 2,
+                                                                                  ),
+                                                                                ),
+                                                                                Padding(
+                                                                                  padding: const EdgeInsets.symmetric(vertical: 5),
+                                                                                  child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
+                                                                                ),
+                                                                                Row(
+                                                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                                                  children: [
+                                                                                    Expanded(
+                                                                                      child: Text(
+                                                                                        "Trip Distance".tr,
+                                                                                        textAlign: TextAlign.start,
+                                                                                        style: TextStyle(
+                                                                                          fontFamily: AppThemeData.regular,
+                                                                                          color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
+                                                                                          fontSize: 16,
+                                                                                        ),
+                                                                                      ),
+                                                                                    ),
+                                                                                    Text(
+                                                                                      "${double.parse(kilometer.toString()).toStringAsFixed(2)} ${Constant.distanceType}",
+                                                                                      textAlign: TextAlign.start,
+                                                                                      style: TextStyle(
+                                                                                        fontFamily: AppThemeData.semiBold,
+                                                                                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
+                                                                                        fontSize: 16,
+                                                                                      ),
+                                                                                    ),
+                                                                                  ],
+                                                                                ),
+                                                                                Visibility(
+                                                                                  visible: (controller.driverModel.value.vendorID?.isEmpty == true),
+                                                                                  child: Column(children: [
+                                                                                    const SizedBox(
+                                                                                      height: 5,
+                                                                                    ),
+                                                                                    Row(
+                                                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                                                      children: [
+                                                                                        Expanded(
+                                                                                          child: Text(
+                                                                                            "Delivery Charge".tr,
+                                                                                            textAlign: TextAlign.start,
+                                                                                            style: TextStyle(
+                                                                                              fontFamily: AppThemeData.regular,
+                                                                                              color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
+                                                                                              fontSize: 16,
+                                                                                            ),
+                                                                                          ),
+                                                                                        ),
+                                                                                        Text(
+                                                                                          Constant.amountShow(currency: RegionService.currencyForRecord(orderModel.regionId), amount: orderModel.deliveryCharge),
+                                                                                          textAlign: TextAlign.start,
+                                                                                          style: TextStyle(
+                                                                                            fontFamily: AppThemeData.semiBold,
+                                                                                            color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
+                                                                                            fontSize: 16,
+                                                                                          ),
+                                                                                        ),
+                                                                                      ],
+                                                                                    ),
+                                                                                  ]),
+                                                                                ),
+                                                                                const SizedBox(
+                                                                                  height: 5,
+                                                                                ),
+                                                                                orderModel.tipAmount == null || orderModel.tipAmount!.isEmpty || double.parse(orderModel.tipAmount.toString()) <= 0
+                                                                                    ? const SizedBox()
+                                                                                    : Row(
+                                                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                                                        children: [
+                                                                                          Expanded(
+                                                                                            child: Text(
+                                                                                              "Tips".tr,
+                                                                                              textAlign: TextAlign.start,
+                                                                                              style: TextStyle(
+                                                                                                fontFamily: AppThemeData.regular,
+                                                                                                color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
+                                                                                                fontSize: 16,
+                                                                                              ),
+                                                                                            ),
+                                                                                          ),
+                                                                                          Text(
+                                                                                            Constant.amountShow(currency: RegionService.currencyForRecord(orderModel.regionId), amount: orderModel.tipAmount),
                                                                                             textAlign: TextAlign.start,
                                                                                             style: TextStyle(
                                                                                               fontFamily: AppThemeData.semiBold,

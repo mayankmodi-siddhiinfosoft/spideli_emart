@@ -5,6 +5,7 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/signup_controller.dart';
 import 'package:driver/models/car_makes.dart';
 import 'package:driver/models/car_model.dart';
+import 'package:driver/models/region_model.dart';
 import 'package:driver/models/vehicle_type.dart';
 import 'package:driver/models/zone_model.dart';
 import 'package:driver/themes/app_them_data.dart';
@@ -16,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../constant/constant.dart';
 
@@ -339,6 +341,78 @@ class SignupScreen extends StatelessWidget {
                           ),
                     const SizedBox(height: 10),
 
+                    // ── Management zone (region) ──────────────────────────
+                    if (controller.regionList.isNotEmpty) ...[
+                      Text("Management zone".tr, style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 14, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800)),
+                      const SizedBox(height: 5),
+                      DropdownButtonFormField<RegionModel>(
+                        hint: Text('Select management zone'.tr, style: TextStyle(fontSize: 14, color: AppThemeData.grey700, fontFamily: AppThemeData.regular)),
+                        icon: const Icon(Icons.keyboard_arrow_down),
+                        dropdownColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
+                        decoration: _dropdownDecoration(isDark),
+                        initialValue: controller.selectedRegion.value,
+                        onChanged: (value) {
+                          controller.selectedRegion.value = value;
+                          controller.update();
+                        },
+                        style: TextStyle(fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium),
+                        items: controller.regionList.map((item) => DropdownMenuItem<RegionModel>(value: item, child: Text(item.displayName))).toList(),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+
+                    // ── Company identification (spec 4.11) ────────────────
+                    if (controller.isCompany) ...[
+                      Text("Company information".tr, style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 14, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800)),
+                      const SizedBox(height: 5),
+                      TextFieldWidget(
+                        title: 'Company Name'.tr,
+                        controller: controller.companyNameController.value,
+                        hintText: 'Enter Company Name'.tr,
+                        textInputAction: TextInputAction.next,
+                      ),
+                      TextFieldWidget(
+                        title: 'Operating Licence'.tr,
+                        controller: controller.operatingLicenceController.value,
+                        hintText: 'Enter Operating Licence Number'.tr,
+                        textInputAction: TextInputAction.next,
+                      ),
+                      TextFieldWidget(
+                        title: 'Commercial Register'.tr,
+                        controller: controller.commercialRegisterController.value,
+                        hintText: 'Enter Commercial Register Number'.tr,
+                        textInputAction: TextInputAction.next,
+                      ),
+                      TextFieldWidget(
+                        title: 'Unique Identification Number'.tr,
+                        controller: controller.uniqueIdNumberController.value,
+                        hintText: 'Enter Unique Identification Number'.tr,
+                        textInputAction: TextInputAction.next,
+                      ),
+                      const SizedBox(height: 5),
+                      Text("Company documents".tr, style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 14, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800)),
+                      ...SignupController.companyFileFields.entries.map((entry) {
+                        final picked = controller.companyFiles[entry.key];
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(picked == null ? Icons.upload_file : Icons.check_circle, color: picked == null ? AppThemeData.grey500 : AppThemeData.success400),
+                          title: Text(entry.value.tr, style: TextStyle(fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium)),
+                          subtitle: Text(picked == null ? "Not uploaded".tr : picked.split('/').last,
+                              maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: isDark ? AppThemeData.grey400 : AppThemeData.grey600)),
+                          trailing: PopupMenuButton<ImageSource>(
+                            icon: Icon(Icons.add_a_photo_outlined, color: AppThemeData.primary300),
+                            onSelected: (source) => controller.pickCompanyFile(entry.key, source),
+                            itemBuilder: (_) => [
+                              PopupMenuItem(value: ImageSource.camera, child: Text("Camera".tr)),
+                              PopupMenuItem(value: ImageSource.gallery, child: Text("Gallery".tr)),
+                            ],
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 10),
+                    ],
+
                     // ── Password (email sign-up only) ─────────────────────
                     controller.type.value == "google" || controller.type.value == "apple" || controller.type.value == "mobileNumber"
                         ? const SizedBox()
@@ -445,6 +519,15 @@ class SignupScreen extends StatelessWidget {
                       ShowToastDialog.showToast("Password and Confirm password doesn't match".tr);
                     } else if (controller.selectedValue.value == "Individual" && controller.selectedZone.value.id == null) {
                       ShowToastDialog.showToast("Please select zone".tr);
+                    } else if (controller.regionRequired && controller.selectedRegion.value == null) {
+                      ShowToastDialog.showToast("Please select your management zone".tr);
+                    } else if (controller.isCompany && controller.companyNameController.value.text.trim().isEmpty) {
+                      ShowToastDialog.showToast("Please enter company name".tr);
+                    } else if (controller.isCompany &&
+                        (controller.operatingLicenceController.value.text.trim().isEmpty ||
+                            controller.commercialRegisterController.value.text.trim().isEmpty ||
+                            controller.uniqueIdNumberController.value.text.trim().isEmpty)) {
+                      ShowToastDialog.showToast("Please enter the operating licence, commercial register and unique identification number".tr);
                     } else {
                       controller.signUpWithEmailAndPassword();
                     }

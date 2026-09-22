@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/document_model.dart';
@@ -12,6 +13,17 @@ class DetailsUploadController extends GetxController {
   Rx<DocumentModel> documentModel = DocumentModel().obs;
 
   Rx<DateTime?> selectedDate = DateTime.now().obs;
+
+  /// Expiry date of the document (document types with `expireAt: true`).
+  Rx<DateTime?> expiryDate = Rx<DateTime?>(null);
+
+  bool get needsExpiryDate => documentModel.value.expireAt == true;
+
+  /// Rejected or expired documents can be uploaded again (spec 3.6).
+  bool get canUpload {
+    final status = documents.value.verificationStatus;
+    return status == 'not_submitted' || status == 'rejected' || status == 'expired';
+  }
 
   RxString frontImage = "".obs;
   RxString backImage = "".obs;
@@ -43,8 +55,9 @@ class DetailsUploadController extends GetxController {
         var contain = value.documents!.where((element) => element.documentId == documentModel.value.id);
         if (contain.isNotEmpty) {
           documents.value = value.documents!.firstWhere((itemToCheck) => itemToCheck.documentId == documentModel.value.id);
-          frontImage.value = documents.value.frontImage!;
-          backImage.value = documents.value.backImage!;
+          frontImage.value = documents.value.frontImage ?? '';
+          backImage.value = documents.value.backImage ?? '';
+          expiryDate.value = documents.value.expiryDate?.toDate();
         }
       }
     });
@@ -87,6 +100,9 @@ class DetailsUploadController extends GetxController {
     documents.value.backImage = backImage.value;
     documents.value.documentId = documentModel.value.id;
     documents.value.status = "uploaded";
+    // A re-upload starts a new review: the previous rejection reason goes.
+    documents.value.clearReview();
+    if (expiryDate.value != null) documents.value.expiryDate = Timestamp.fromDate(expiryDate.value!);
 
     await FireStoreUtils.uploadDriverDocument(documents.value).then((value) {
       if (value) {

@@ -208,6 +208,14 @@ class DrawerView extends StatelessWidget {
                           onChanged: (value) async {
                             if (Constant.userModel?.isAutoVerify == false) {
                               if (controller.userModel.value.isDocumentVerify == true) {
+                                // Spec 3.6: expired / rejected documents block going online.
+                                if (value == true) {
+                                  final blockReason = await FireStoreUtils.documentBlockReason();
+                                  if (blockReason != null) {
+                                    ShowToastDialog.showToast(blockReason.tr);
+                                    return;
+                                  }
+                                }
                                 controller.userModel.value.isActive = value;
                                 controller.userModel.value.inProgressOrderID = Constant.userModel!.inProgressOrderID;
                                 controller.userModel.value.orderCabRequestData = Constant.userModel!.orderCabRequestData;

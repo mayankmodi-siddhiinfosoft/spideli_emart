@@ -81,7 +81,7 @@ class ChangeSectionController extends GetxController {
     user.sectionIds = selectedSections.map((s) => s.id!).toList();
 
     final uniqueFlags = selectedSections
-        .map((s) => s.serviceTypeFlag ?? 'delivery-service')
+        .map((s) => Constant.driverServiceTypeFor(s.serviceTypeFlag))
         .toSet()
         .toList();
     user.serviceTypes = uniqueFlags;
@@ -114,7 +114,7 @@ class ChangeSectionController extends GetxController {
     // updateUser uses set(merge:true) which merges nested map keys
     // so old keys in sectionNames/vehicleDetails persist.
     // This second write replaces those fields entirely.
-    final docRef = FirebaseFirestore.instance
+    final docRef = FireStoreUtils.fireStore
         .collection(CollectionName.users)
         .doc(user.id);
 

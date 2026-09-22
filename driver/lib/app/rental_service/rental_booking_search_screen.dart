@@ -1,4 +1,6 @@
+import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/rental_service/rental_order_details_screen.dart';
+import 'package:driver/app/rental_service/widget/rental_proposal_card.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/rental_booking_search_controller.dart';
@@ -6,7 +8,6 @@ import 'package:driver/models/rental_order_model.dart';
 import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/themes/round_button_fill.dart';
 import 'package:driver/themes/theme_controller.dart';
-import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/network_image_widget.dart';
 import 'package:driver/widget/dotted_line.dart';
 import 'package:flutter/material.dart';
@@ -212,7 +213,7 @@ class RentalBookingSearchScreen extends StatelessWidget {
                                                       height: 5,
                                                     ),
                                                     Text(
-                                                      Constant.amountShow(amount: rentalBookingData.subTotal).tr,
+                                                      Constant.amountShow(currency: RegionService.currencyForRecord(rentalBookingData.regionId), amount: rentalBookingData.subTotal).tr,
                                                       textAlign: TextAlign.start,
                                                       style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                                     )
@@ -237,6 +238,7 @@ class RentalBookingSearchScreen extends StatelessWidget {
                                             ],
                                           ),
                                           const SizedBox(height: 16),
+                                          RentalProposalCard(order: rentalBookingData, isDark: isDark, onChanged: () => controller.getRentalSearchBooking()),
                                           Row(
                                             children: [
                                               Expanded(
@@ -246,12 +248,7 @@ class RentalBookingSearchScreen extends StatelessWidget {
                                                   color: isDark ? AppThemeData.greyDark300 : AppThemeData.grey300,
                                                   textColor: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500,
                                                   onPress: () async {
-                                                    ShowToastDialog.showLoader("Rejecting booking...".tr);
-                                                    rentalBookingData.rejectedByDrivers!.add(FireStoreUtils.getCurrentUid());
-                                                    await FireStoreUtils.rentalOrderPlace(rentalBookingData);
-                                                    Get.back(result: true);
-                                                    ShowToastDialog.showToast("Booking rejected successfully".tr);
-                                                    controller.getRentalSearchBooking();
+                                                    await controller.rejectBooking(rentalBookingData);
                                                   },
                                                 ),
                                               ),
@@ -268,20 +265,7 @@ class RentalBookingSearchScreen extends StatelessWidget {
                                                     if (controller.driverModel.value.ownerId != null && controller.driverModel.value.ownerId!.isNotEmpty) {
                                                       if (controller.ownerModel.value.walletAmount != null &&
                                                           controller.ownerModel.value.walletAmount! >= double.parse(Constant.minimumDepositToRideAccept)) {
-                                                        ShowToastDialog.showLoader("Accepting booking...".tr);
-                                                        // Update section model for this order's section (multi-section support)
-                                                        final sid = rentalBookingData.sectionId;
-                                                        if (sid != null && sid.isNotEmpty) {
-                                                          await FireStoreUtils.getSectionBySectionId(sid).then((s) {
-                                                            if (s != null) Constant.sectionModels[sid] = s;
-                                                          });
-                                                        }
-                                                        rentalBookingData.status = Constant.driverAccepted;
-                                                        rentalBookingData.driverId = FireStoreUtils.getCurrentUid();
-                                                        rentalBookingData.driver = Constant.userModel;
-                                                        await FireStoreUtils.rentalOrderPlace(rentalBookingData);
-                                                        Get.back(result: true);
-                                                        ShowToastDialog.showToast("Booking accepted successfully".tr);
+                                                        await controller.acceptBooking(rentalBookingData);
                                                       } else {
                                                         ShowToastDialog.showToast(
                                                             "Your owner has to maintain minimum ${Constant.amountShow(amount: Constant.ownerMinimumDepositToRideAccept)} wallet balance to accept the rental booking. Please contact your owner"
@@ -289,20 +273,7 @@ class RentalBookingSearchScreen extends StatelessWidget {
                                                       }
                                                     } else {
                                                       if (controller.driverModel.value.walletAmount! >= double.parse(Constant.minimumDepositToRideAccept)) {
-                                                        ShowToastDialog.showLoader("Accepting booking...".tr);
-                                                        // Update section model for this order's section (multi-section support)
-                                                        final sid = rentalBookingData.sectionId;
-                                                        if (sid != null && sid.isNotEmpty) {
-                                                          await FireStoreUtils.getSectionBySectionId(sid).then((s) {
-                                                            if (s != null) Constant.sectionModels[sid] = s;
-                                                          });
-                                                        }
-                                                        rentalBookingData.status = Constant.driverAccepted;
-                                                        rentalBookingData.driverId = FireStoreUtils.getCurrentUid();
-                                                        rentalBookingData.driver = Constant.userModel;
-                                                        await FireStoreUtils.rentalOrderPlace(rentalBookingData);
-                                                        Get.back(result: true);
-                                                        ShowToastDialog.showToast("Booking accepted successfully".tr);
+                                                        await controller.acceptBooking(rentalBookingData);
                                                       } else {
                                                         ShowToastDialog.showToast("Your owner has to maintain minimum @amount wallet balance to accept the rental booking. Please contact your owner"
                                                             .trParams({"amount": Constant.amountShow(amount: Constant.ownerMinimumDepositToRideAccept)}));

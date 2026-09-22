@@ -1,3 +1,4 @@
+import 'package:driver/utils/region_service.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:driver/themes/responsive.dart';
 import 'package:flutter/material.dart';
@@ -216,7 +217,7 @@ class ParcelOrderDetails extends StatelessWidget {
                               isDark,
                             ),
                             _iconTile(
-                              Constant.amountShow(amount: controller.parcelOrder.value.subTotal),
+                              Constant.amountShow(currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.parcelOrder.value.subTotal),
                               "Rate".tr,
                               "assets/icons/ic_rate_parcel.svg",
                               isDark,
@@ -289,17 +290,16 @@ class ParcelOrderDetails extends StatelessWidget {
                             const SizedBox(height: 8),
 
                             // Subtotal
-                            _summaryTile("Subtotal".tr, Constant.amountShow(amount: controller.subTotal.value.toString()), isDark, null),
+                            _summaryTile("Subtotal".tr, Constant.amountShow(currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.subTotal.value.toString()), isDark, null),
 
                             // Discount
-                            _summaryTile("Discount".tr, Constant.amountShow(amount: controller.discount.value.toString()), isDark, null),
+                            _summaryTile("Discount".tr, Constant.amountShow(currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.discount.value.toString()), isDark, null),
 
                             // Tax List
                             ...List.generate(controller.parcelOrder.value.taxSetting!.length, (index) {
                               return _summaryTile(
                                   "${controller.parcelOrder.value.taxSetting![index].title} ${controller.parcelOrder.value.taxSetting![index].type == 'fix' ? '' : '(${controller.parcelOrder.value.taxSetting![index].tax}%)'}",
-                                  Constant.amountShow(
-                                    amount: Constant.getTaxValue(
+                                  Constant.amountShow(currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: Constant.getTaxValue(
                                       amount: ((double.tryParse(controller.parcelOrder.value.subTotal.toString()) ?? 0.0) -
                                               (double.tryParse(controller.parcelOrder.value.discount.toString()) ?? 0.0))
                                           .toString(),
@@ -314,11 +314,11 @@ class ParcelOrderDetails extends StatelessWidget {
 
                             // Total
                             _summaryTile(
-                                "Order Total".tr, Constant.amountShow(amount: controller.totalAmount.value.toString()), isDark, null),
+                                "Order Total".tr, Constant.amountShow(currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.totalAmount.value.toString()), isDark, null),
                             _summaryTile(
                               "Admin Commission (${controller.parcelOrder.value.adminCommission}${controller.parcelOrder.value.adminCommissionType == "Percentage" || controller.parcelOrder.value.adminCommissionType == "percentage" ? "%" : Constant.currencyModel!.symbol})"
                                   .tr,
-                              Constant.amountShow(amount: controller.adminCommission.value.toString()),
+                              Constant.amountShow(currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.adminCommission.value.toString()),
                               isDark,
                               AppThemeData.danger300,
                             ),
