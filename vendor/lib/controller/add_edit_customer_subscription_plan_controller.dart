@@ -40,6 +40,12 @@ class AddEditCustomerSubscriptionPlanController extends GetxController {
 
   bool get isEdit => planModel.value.id != null;
 
+  /// A plan created before schedules existed, being edited without adding one:
+  /// it keeps working as before (listed under "No delivery schedule"), so the
+  /// owner can still change its price or text.
+  bool get _keepsNoSchedule => isEdit && !_hadSchedule && _filledItemRows.isEmpty;
+  bool _hadSchedule = true;
+
   @override
   void onInit() {
     getArgument();
@@ -69,6 +75,7 @@ class AddEditCustomerSubscriptionPlanController extends GetxController {
       final plan = planModel.value;
       itemRows.value = plan.items.map((e) => PlanItemRow(name: e.name ?? '', quantity: e.quantity ?? '')).toList();
       if (plan.frequency != null) frequency.value = plan.frequency!;
+      _hadSchedule = plan.hasSchedule;
       if (plan.hasSchedule) deliveryDays.value = List<String>.from(plan.effectiveDeliveryDays);
       if (frequency.value == VendorSubscriptionPlanModel.frequencyWeekly && deliveryDays.length != 1) {
         deliveryDays.value = [deliveryDays.isEmpty ? VendorSubscriptionPlanModel.weekdays.first : deliveryDays.first];
@@ -121,7 +128,7 @@ class AddEditCustomerSubscriptionPlanController extends GetxController {
       ShowToastDialog.showToast("Please enter a valid number of days".tr);
       return;
     }
-    final scheduleError = _validateSchedule();
+    final scheduleError = _keepsNoSchedule ? null : _validateSchedule();
     if (scheduleError != null) {
       ShowToastDialog.showToast(scheduleError);
       return;
@@ -149,10 +156,12 @@ class AddEditCustomerSubscriptionPlanController extends GetxController {
       plan.expiryDay = days;
       plan.isEnable = isEnable.value;
       plan.createdAt = plan.createdAt ?? Timestamp.now();
-      plan.items = _filledItemRows.map((r) => VendorSubscriptionPlanItem(name: r.nameController.text.trim(), quantity: r.quantityController.text.trim())).toList();
-      plan.frequency = frequency.value;
-      plan.deliveryDays = VendorSubscriptionPlanModel.weekdays.where(deliveryDays.contains).toList();
-      plan.timeSlot = VendorSubscriptionTimeSlot(from: slotFrom.value, to: slotTo.value);
+      if (!_keepsNoSchedule) {
+        plan.items = _filledItemRows.map((r) => VendorSubscriptionPlanItem(name: r.nameController.text.trim(), quantity: r.quantityController.text.trim())).toList();
+        plan.frequency = frequency.value;
+        plan.deliveryDays = VendorSubscriptionPlanModel.weekdays.where(deliveryDays.contains).toList();
+        plan.timeSlot = VendorSubscriptionTimeSlot(from: slotFrom.value, to: slotTo.value);
+      }
 
       await CustomerSubscriptionService.savePlan(plan);
       ShowToastDialog.closeLoader();

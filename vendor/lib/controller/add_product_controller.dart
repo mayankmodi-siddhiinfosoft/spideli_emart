@@ -50,7 +50,12 @@ class AddProductController extends GetxController {
 
   // Fulfilment modes offered for this product (at least one).
   RxBool fulfilDelivery = true.obs;
-  RxBool fulfilTakeaway = true.obs;
+  // What the form opened with, so an untouched older product isn't saved as
+  // explicitly restricted.
+  List<String>? _loadedFulfilment;
+  bool _loadedFulfilmentExplicit = false;
+  // Off for new products, like the old 'Enable Takeaway option' switch.
+  RxBool fulfilTakeaway = false.obs;
 
   Rx<ItemAttribute?> itemAttributes = ItemAttribute(attributes: [], variants: []).obs;
 
@@ -212,6 +217,8 @@ class AddProductController extends GetxController {
       final fulfilment = productModel.value.effectiveFulfilment;
       fulfilDelivery.value = fulfilment.contains(ProductModel.fulfilmentDelivery);
       fulfilTakeaway.value = fulfilment.contains(ProductModel.fulfilmentTakeaway);
+      _loadedFulfilment = [...fulfilment];
+      _loadedFulfilmentExplicit = productModel.value.hasExplicitFulfilment;
       if (productModel.value.productSpecification != null) {
         productModel.value.productSpecification!.forEach((key, value) {
           specificationList.add(ProductSpecificationModel(lable: key, value: value));
@@ -510,6 +517,21 @@ class AddProductController extends GetxController {
       if (variantWholesale >= variantRetail) {
         return "${"Variant wholesale price must be lower than the variant price".tr} (${variant.variantSku ?? ''})";
       }
+      // The variant's price replaces tier 1 only; tiers 2+ still apply to it,
+      // so they must stay cheaper than the variant's tier 1.
+      if (tiers.length > 1 && variantWholesale <= (double.tryParse(tiers[1].price) ?? 0)) {
+        return "${"Variant wholesale price must be higher than the next wholesale tier".tr} (${variant.variantSku ?? ''})";
+      }
+    }
+    // Tiers 2+ apply to every variant: each must be below every variant's retail price.
+    for (final variant in itemAttributes.value?.variants ?? <Variants>[]) {
+      final double variantRetail = double.tryParse((variant.variantPrice ?? '').trim()) ?? 0;
+      if (variantRetail <= 0) continue;
+      for (final tier in tiers.skip(1)) {
+        if ((double.tryParse(tier.price) ?? 0) >= variantRetail) {
+          return "${"Wholesale tier price must be lower than every variant price".tr} (${variant.variantSku ?? ''}, ${"from".tr} ${tier.minQty})";
+        }
+      }
     }
     return null;
   }
@@ -529,7 +551,9 @@ class AddProductController extends GetxController {
     productModel.value.wholesaleMinQty = tiers.isNotEmpty ? tiers.first.minQty : '';
     productModel.value.saleType = enabled ? saleType.value : ProductModel.saleTypeRetail;
     productModel.value.wholesaleBusinessOnly = enabled && wholesaleBusinessOnly.value;
-    productModel.value.fulfilment = [if (fulfilDelivery.value) ProductModel.fulfilmentDelivery, if (fulfilTakeaway.value) ProductModel.fulfilmentTakeaway];
+    final List<String> chosen = [if (fulfilDelivery.value) ProductModel.fulfilmentDelivery, if (fulfilTakeaway.value) ProductModel.fulfilmentTakeaway];
+    final bool unchanged = _loadedFulfilment != null && _loadedFulfilment!.length == chosen.length && _loadedFulfilment!.every(chosen.contains);
+    productModel.value.fulfilment = (!_loadedFulfilmentExplicit && unchanged) ? null : chosen;
     for (final variant in productModel.value.itemAttribute?.variants ?? <Variants>[]) {
       variant.variantWholesalePrice = enabled ? (variant.variantWholesalePrice ?? '').trim() : '';
     }

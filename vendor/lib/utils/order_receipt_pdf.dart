@@ -156,7 +156,11 @@ class OrderReceiptPdf {
     // totalRejectAmount is the controller's "everything the customer paid"
     // figure (store total + platform fee and tax + delivery tax + delivery
     // charge and tip unless free).
-    w.total('Total'.tr, money(c.totalRejectAmount.value), bold: true);
+    // Two clearly labelled figures, so the receipt can't be confused with the
+    // order screen's "To Pay" (the store total, before delivery, tip and
+    // platform fees).
+    w.total('Store total'.tr, money(c.totalAmount.value));
+    w.total('Total paid by customer'.tr, money(c.totalRejectAmount.value), bold: true);
     w.gap(16);
     w.line('Thank you for your order!'.tr, w.smallFont, align: PdfTextAlignment.center);
 

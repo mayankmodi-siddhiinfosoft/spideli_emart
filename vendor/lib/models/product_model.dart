@@ -151,8 +151,20 @@ class ProductModel {
     wholesalePrice = parseWholesaleString(json['wholesalePrice']);
     wholesaleMinQty = parseWholesaleString(json['wholesaleMinQty']);
     wholesaleTiers = WholesaleTier.parseList(json['wholesaleTiers']);
-    if (wholesaleTiers!.isEmpty && (wholesalePrice ?? '').isNotEmpty && (wholesaleMinQty ?? '').isNotEmpty) {
-      wholesaleTiers = [WholesaleTier(minQty: wholesaleMinQty!, price: wholesalePrice!)];
+    if ((wholesalePrice ?? '').isNotEmpty && (wholesaleMinQty ?? '').isNotEmpty) {
+      final legacy = WholesaleTier(minQty: wholesaleMinQty!, price: wholesalePrice!);
+      if (wholesaleTiers!.isEmpty) {
+        wholesaleTiers = [legacy];
+      } else {
+        // The web panels and POS edit only the single-tier fields. If they were
+        // changed there, they win for tier 1 - otherwise the next save here
+        // would write the old tier 1 back over the panel's edit.
+        final tiers = [...wholesaleTiers!]..sort((a, b) => a.minQtyValue.compareTo(b.minQtyValue));
+        if (tiers.first.minQty != legacy.minQty || tiers.first.price != legacy.price) {
+          tiers[0] = legacy;
+          wholesaleTiers = tiers;
+        }
+      }
     }
     final String rawSaleType = parseWholesaleString(json['saleType']).toLowerCase();
     saleType = rawSaleType.isEmpty ? null : rawSaleType;
@@ -253,7 +265,11 @@ class ProductModel {
     data['wholesaleMinQty'] = tiers.isNotEmpty ? tiers.first.minQty : '';
     data['saleType'] = effectiveSaleType;
     data['wholesaleBusinessOnly'] = enabled && wholesaleBusinessOnly == true;
-    data['fulfilment'] = effectiveFulfilment;
+    // Only when the owner chose the modes: writing the default would mark every
+    // older product as explicitly restricted the first time it is saved.
+    if (hasExplicitFulfilment) {
+      data['fulfilment'] = allFulfilmentModes.where((m) => fulfilment!.contains(m)).toList();
+    }
     return data;
   }
 }

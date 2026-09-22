@@ -37,6 +37,11 @@ class OrderCommissionRow {
   /// What the store was credited for the order: base price + tax.
   final double storeReceived;
 
+  /// True when [storeReceived] is the amount actually credited (from the
+  /// order's wallet rows); false when it is an estimate from the formula,
+  /// e.g. the credit row is outside the current date filter.
+  final bool storeReceivedFromCredit;
+
   OrderCommissionRow({
     required this.order,
     required this.subTotal,
@@ -45,6 +50,7 @@ class OrderCommissionRow {
     required this.commissionApplied,
     required this.taxAmount,
     required this.storeReceived,
+    this.storeReceivedFromCredit = false,
   });
 }
 
@@ -344,6 +350,15 @@ class WalletController extends GetxController {
   }
 
   void _buildCommissions(List<OrderModel> storeOrders) {
+    // What each order actually credited the store, net of reversals, from its
+    // vendor rows - so the tab shows real money, not a recomputation that
+    // follows today's commission setting.
+    final Map<String, double> credited = {};
+    for (final row in walletTransactionList) {
+      if (row.transactionUser != 'vendor' || (row.orderId ?? '').isEmpty) continue;
+      if (row.paymentMethod != 'Wallet' && row.paymentMethod != 'tax') continue;
+      credited[row.orderId!] = (credited[row.orderId!] ?? 0) + (row.isTopup ? row.amount : -row.amount);
+    }
     final List<OrderCommissionRow> rows = [];
     for (final order in storeOrders) {
       if (order.status != Constant.orderCompleted) continue;
@@ -357,7 +372,8 @@ class WalletController extends GetxController {
             commissionPercent: credit.adminCommissionPercent,
             commissionApplied: credit.commissionApplied,
             taxAmount: credit.totalTaxAmount,
-            storeReceived: credit.basePrice + credit.totalTaxAmount,
+            storeReceived: credited[order.id] ?? (credit.basePrice + credit.totalTaxAmount),
+            storeReceivedFromCredit: credited.containsKey(order.id),
           ),
         );
       } catch (e) {

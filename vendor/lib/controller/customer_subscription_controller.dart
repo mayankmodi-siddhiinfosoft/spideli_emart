@@ -144,6 +144,9 @@ class CustomerSubscriptionController extends GetxController {
     final groups = <String, List<VendorSubscriptionModel>>{};
     for (final s in subs) {
       if ((s.customerId ?? '').isEmpty || s.effectivePlanId.isEmpty || (s.id ?? '').isEmpty) continue;
+      // Only real subscription periods count: a failed or pending payment, or a
+      // cancelled attempt, is not something that was renewed.
+      if (s.effectiveStatus != 'active' && s.effectiveStatus != 'expired') continue;
       groups.putIfAbsent("${s.customerId}|${s.effectivePlanId}", () => []).add(s);
     }
     final ids = <String>{};

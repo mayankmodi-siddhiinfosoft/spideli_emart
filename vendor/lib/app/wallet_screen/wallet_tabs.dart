@@ -319,7 +319,7 @@ class WalletCommissionsTab extends StatelessWidget {
             _line("Order subtotal".tr, money(row.subTotal)),
             _line(commissionLabel, row.commissionAmount > 0 ? "-${money(row.commissionAmount)}" : money(0), color: row.commissionAmount > 0 ? AppThemeData.danger300 : null),
             if (row.taxAmount != 0) _line("Tax".tr, money(row.taxAmount)),
-            _line("Store received".tr, money(row.storeReceived), color: AppThemeData.success400, bold: true),
+            _line(row.storeReceivedFromCredit ? "Store received".tr : "Store receives (estimated)".tr, money(row.storeReceived), color: AppThemeData.success400, bold: true),
           ],
         ),
       ),
