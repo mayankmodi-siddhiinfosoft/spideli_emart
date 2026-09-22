@@ -412,6 +412,9 @@ class CartController extends GetxController {
   Future<void> setFoodType(String value) async {
     final String type = OrderTypeMode.normalise(value);
     selectedFoodType.value = type;
+    // No delivery tip on a takeaway order: the tip row is hidden in TakeAway,
+    // so a tip chosen earlier must not stay in the total.
+    if (type != OrderTypeMode.delivery) deliveryTips.value = 0;
     await OrderTypeMode.set(type);
     if (Get.isRegistered<FoodHomeController>()) Get.find<FoodHomeController>().selectedOrderTypeValue.value = type;
     if (Get.isRegistered<HomeECommerceController>()) Get.find<HomeECommerceController>().selectedOrderTypeValue.value = type;
@@ -431,7 +434,10 @@ class CartController extends GetxController {
         final String productId = (line.id ?? '').split('~').first;
         final String? variantId = (line.id ?? '').contains('~') ? line.id!.split('~').last : null;
         final ProductModel? product = await FireStoreUtils.getProductById(productId);
-        if (product == null) continue;
+        if (product == null) {
+          problems.add("${'"'}${line.name ?? ''}${'"'} ${'is no longer available'.tr}");
+          continue;
+        }
         final String name = line.name ?? product.name ?? '';
         if (!product.allowsFoodType(selectedFoodType.value)) {
           final String allowed = product.effectiveFulfilment.map(OrderTypeMode.labelOf).join(' / ');
@@ -451,7 +457,11 @@ class CartController extends GetxController {
         }
       }
     } catch (e) {
+      // Fail closed: an unchecked cart must not reach payment.
       log("validateCartBeforePayment: $e");
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("Could not check your cart. Please try again.".tr);
+      return false;
     }
     ShowToastDialog.closeLoader();
     calculatePrice();

@@ -204,6 +204,16 @@ class FireStoreUtils {
 
   static Future<bool> updateUser(UserModel userModel) async {
     bool isUpdate = false;
+    // Sign-up creates the user through here: give a NEW document an explicit
+    // wallet_amount of 0 (updateUser never writes the balance otherwise).
+    try {
+      final ref = fireStore.collection(CollectionName.users).doc(userModel.id);
+      if (!(await ref.get()).exists) {
+        await ref.set({'wallet_amount': 0}, SetOptions(merge: true));
+      }
+    } catch (e) {
+      log("updateUser: wallet_amount init skipped: $e");
+    }
     await fireStore
         .collection(CollectionName.users)
         .doc(userModel.id)

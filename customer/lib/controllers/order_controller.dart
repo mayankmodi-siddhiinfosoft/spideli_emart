@@ -1,3 +1,4 @@
+import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/cart_product_model.dart';
 import 'package:customer/models/order_model.dart';
@@ -41,6 +42,7 @@ class OrderController extends GetxController {
           Constant.orderAccepted,
           Constant.driverPending,
           Constant.driverAccepted,
+          Constant.driverRejected, // back to dispatch, still active
           Constant.orderShipped,
           Constant.orderInTransit,
         };
@@ -72,7 +74,11 @@ class OrderController extends GetxController {
   /// Reorder: the past order line carries the price that was charged (maybe
   /// wholesale), so retail prices and tiers are refreshed from the product.
   Future<void> addToCart({required CartProductModel cartProductModel, VendorModel? vendor}) async {
-    final CartProductModel line = await WholesalePricing.reorderLine(cartProductModel, vendor: vendor);
+    final CartProductModel? line = await WholesalePricing.reorderLine(cartProductModel, vendor: vendor);
+    if (line == null) {
+      ShowToastDialog.showToast("This item can't be reordered right now. Please add it from the store.".tr);
+      return;
+    }
     await cartProvider.addToCart(Get.context!, line, line.quantity!);
     update();
   }

@@ -182,7 +182,7 @@ class RentalProposalCard extends StatelessWidget {
           if (status == 'countered' || (status == 'rejected' && order.counterAmount != null)) row("Counter-offer".tr, _money(order.counterAmount), color: AppThemeData.warning400),
           if (status == 'accepted') row("Agreed price".tr, _money(num.tryParse(order.subTotal ?? '')), color: AppThemeData.success400),
           if (status == 'accepted') Text("You will pay the agreed price.".tr, style: AppThemeData.regularTextStyle(fontSize: 12, color: sub)),
-          if (status == 'countered') ...[
+          if (status == 'countered' && open) ...[
             const SizedBox(height: 10),
             Row(
               children: [

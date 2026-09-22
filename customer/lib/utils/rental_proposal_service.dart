@@ -74,6 +74,8 @@ class RentalProposalService {
     return _update(
       orderId,
       expectedStatus: 'countered',
+      // A cancelled booking must not have its price rewritten.
+      requireOpenBooking: true,
       build: (order, proposal) {
         final counter = num.tryParse(proposal['counterAmount']?.toString() ?? '');
         final now = Timestamp.now();
@@ -95,6 +97,8 @@ class RentalProposalService {
     return _update(
       orderId,
       expectedStatus: 'countered',
+      // A cancelled booking must not have its price rewritten.
+      requireOpenBooking: true,
       build: (order, proposal) {
         final counter = num.tryParse(proposal['counterAmount']?.toString() ?? '');
         proposal

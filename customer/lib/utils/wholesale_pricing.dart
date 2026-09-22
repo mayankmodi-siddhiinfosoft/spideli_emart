@@ -89,7 +89,10 @@ class WholesalePricing {
   /// Rebuilds a line of a past order for "reorder": the order line carries the
   /// price that was charged (possibly wholesale), so retail prices and the
   /// wholesale tiers are taken from the product as it is now.
-  static Future<CartProductModel> reorderLine(CartProductModel line, {VendorModel? vendor}) async {
+  /// Returns null when a WHOLESALE line can't be re-priced (product or store
+  /// unavailable, or an error): its stored price is the wholesale unit price,
+  /// and adding it as a plain line would sell at that price at any quantity.
+  static Future<CartProductModel?> reorderLine(CartProductModel line, {VendorModel? vendor}) async {
     final String productId = (line.id ?? '').split('~').first;
     final String? variantId = (line.id ?? '').contains('~') ? line.id!.split('~').last : null;
     final CartProductModel copy = CartProductModel.fromJson(line.toJson())
@@ -98,7 +101,7 @@ class WholesalePricing {
     try {
       final ProductModel? product = await FireStoreUtils.getProductById(productId);
       final VendorModel? store = (vendor?.id != null) ? vendor : await FireStoreUtils.getVendorById(line.vendorID ?? '');
-      if (product == null || store == null) return copy;
+      if (product == null || store == null) return line.isWholesale == true ? null : copy;
       copy.lineMeta = metaFor(product, store, variantId: variantId);
       if (line.isWholesale == true) {
         final Variants? variant = _variant(product, variantId);
@@ -111,7 +114,9 @@ class WholesalePricing {
         }
       }
       if ((copy.quantity ?? 0) < copy.minOrderQuantity) copy.quantity = copy.minOrderQuantity;
-    } catch (_) {}
+    } catch (_) {
+      if (line.isWholesale == true) return null;
+    }
     return copy;
   }
 }
