@@ -18,6 +18,7 @@ import '../../widget/place_picker/selected_location_model.dart';
 import '../auth_screens/login_screen.dart';
 import '../location_enable_screens/address_list_screen.dart';
 import 'book_parcel_screen.dart';
+import 'parcel_tracking_screen.dart';
 
 class HomeParcelScreen extends StatelessWidget {
   const HomeParcelScreen({super.key});
@@ -155,6 +156,35 @@ class HomeParcelScreen extends StatelessWidget {
                           const SizedBox(height: 12),
                           BannerView(bannerList: controller.bannerTopHome),
                           const SizedBox(height: 12),
+                          // Spec 7.5: Track > scan QR / enter number.
+                          InkWell(
+                            borderRadius: BorderRadius.circular(15),
+                            onTap: () => Get.to(() => const ParcelTrackingScreen()),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(15),
+                                color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
+                                border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.qr_code_scanner, color: AppThemeData.primary300, size: 30),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text("Track a parcel".tr, style: AppThemeData.semiBoldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 16)),
+                                        Text("Scan the QR code or enter the tracking number".tr, style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500, fontSize: 12)),
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(Icons.arrow_forward_ios, color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800, size: 18),
+                                ],
+                              ),
+                            ),
+                          ),
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 15),
                             child: Column(

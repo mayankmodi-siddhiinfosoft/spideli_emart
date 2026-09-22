@@ -3,6 +3,7 @@ import 'package:customer/models/rating_model.dart';
 import 'package:customer/models/wallet_transaction_model.dart';
 import 'package:customer/screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import '../constant/constant.dart';
@@ -10,6 +11,7 @@ import '../models/parcel_category.dart';
 import '../models/parcel_order_model.dart';
 import '../models/user_model.dart';
 import '../service/fire_store_utils.dart';
+import '../service/parcel_shipping_service.dart';
 
 class ParcelOrderDetailsController extends GetxController {
   Rx<ParcelOrderModel> parcelOrder = ParcelOrderModel().obs;
@@ -102,8 +104,10 @@ class ParcelOrderDetailsController extends GetxController {
 
   Future<void> cancelParcelOrder() async {
     ShowToastDialog.showLoader("Cancelling order...".tr);
+    // An unpaid quote request has nothing to refund.
+    final bool wasPaid = parcelOrder.value.status != ParcelShipping.quoteRequestedStatus && (parcelOrder.value.paymentMethod ?? '').isNotEmpty;
     parcelOrder.value.status = Constant.orderCancelled;
-    if (parcelOrder.value.paymentMethod?.toLowerCase() != "cod") {
+    if (wasPaid && parcelOrder.value.paymentMethod?.toLowerCase() != "cod") {
       WalletTransactionModel walletTransaction = WalletTransactionModel(
         id: Constant.getUuid(),
         amount: totalAmount.value,
@@ -127,6 +131,13 @@ class ParcelOrderDetailsController extends GetxController {
     }
 
     await FireStoreUtils.parcelOrderPlace(parcelOrder.value);
+    if (parcelOrder.value.isTrackable) {
+      try {
+        await ParcelShippingService.append(parcelOrder.value.id!, ParcelShippingService.event(ParcelShipping.cancelled));
+      } catch (e) {
+        debugPrint('Cancelled event not appended: $e');
+      }
+    }
     ShowToastDialog.closeLoader();
     ShowToastDialog.showToast("Order cancelled successfully".tr);
     Get.back(result: true);
@@ -138,6 +149,15 @@ class ParcelOrderDetailsController extends GetxController {
     parcelCategory.value = categories;
     isLoading.value = false;
   }
+
+  /// Fields [ParcelOrderModel.toJson] does not write back but a quote
+  /// payment needs to read (manual price, events, status).
+  Map<String, dynamic> readOnlyJson() => {
+    'manualPrice': parcelOrder.value.manualPrice,
+    'parcelStatus': parcelOrder.value.parcelStatus,
+    'trackingEvents': parcelOrder.value.trackingEvents.map((e) => e.toJson()).toList(),
+    'createdAt': parcelOrder.value.createdAt,
+  };
 
   String formatDate(Timestamp timestamp) {
     final dateTime = timestamp.toDate();

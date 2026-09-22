@@ -18,6 +18,11 @@ import '../../themes/text_field_widget.dart';
 import '../../widget/osm_map/map_picker_page.dart';
 import '../../widget/place_picker/location_picker_screen.dart';
 import '../../widget/place_picker/selected_location_model.dart';
+import '../../models/parcel_order_model.dart';
+import '../../models/parcel_shipping_models.dart';
+import '../../utils/parcel_pricing.dart';
+import 'parcel_shipping_widgets.dart';
+import 'pickup_point_picker_screen.dart';
 
 class BookParcelScreen extends StatelessWidget {
   const BookParcelScreen({super.key});
@@ -70,6 +75,8 @@ class BookParcelScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                typeAndScopeView(controller, isDark),
+                const SizedBox(height: 16),
                 selectDeliveryTypeView(controller, isDark, context),
                 const SizedBox(height: 16),
                 buildUploadBoxView(isDark, controller),
@@ -82,7 +89,10 @@ class BookParcelScreen extends StatelessWidget {
                   noteController: controller.senderNoteController.value,
                   countryCodeController: controller.senderCountryCodeController.value,
                   countryISOCodeController: controller.senderCountryISOCodeController.value,
-                  showWeight: true,
+                  emailController: controller.senderEmailController.value,
+                  cityController: controller.senderCityController.value,
+                  isSender: true,
+                  showWeight: controller.isCityScope,
                   isDark: isDark,
                   context: context,
                   controller: controller,
@@ -98,6 +108,8 @@ class BookParcelScreen extends StatelessWidget {
                           final lng = firstPlace.coordinates.longitude;
                           controller.senderLocationController.value.text = address; // ✅
                           controller.senderLocation.value = UserLocation(latitude: lat, longitude: lng); // ✅ <-- Add this
+                          controller.originPickupPoint.value = null;
+                          controller.fillPlace(sender: true, latitude: lat, longitude: lng);
                         } else {
                           ShowToastDialog.showToast("Service is unavailable at the selected address.".tr);
                         }
@@ -110,6 +122,8 @@ class BookParcelScreen extends StatelessWidget {
                           if (Constant.checkZoneCheck(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude) == true) {
                             controller.senderLocationController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
                             controller.senderLocation.value = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
+                            controller.originPickupPoint.value = null;
+                            controller.fillPlace(sender: true, latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
                           } else {
                             ShowToastDialog.showToast("Service is unavailable at the selected address.".tr);
                           }
@@ -128,6 +142,9 @@ class BookParcelScreen extends StatelessWidget {
                   noteController: controller.receiverNoteController.value,
                   countryCodeController: controller.receiverCountryCodeController.value,
                   countryISOCodeController: controller.receiverISOCountryCodeController.value,
+                  emailController: controller.receiverEmailController.value,
+                  cityController: controller.receiverCityController.value,
+                  isSender: false,
                   showWeight: false,
                   isDark: isDark,
                   context: context,
@@ -138,13 +155,16 @@ class BookParcelScreen extends StatelessWidget {
                       if (result != null) {
                         final firstPlace = result;
 
-                        if (Constant.checkZoneCheck(firstPlace.coordinates.latitude, firstPlace.coordinates.longitude) == true) {
+                        // Another city / country is outside the delivery zones by design.
+                        if (!controller.isCityScope || Constant.checkZoneCheck(firstPlace.coordinates.latitude, firstPlace.coordinates.longitude) == true) {
                           final lat = firstPlace.coordinates.latitude;
                           final lng = firstPlace.coordinates.longitude;
                           final address = firstPlace.address;
 
                           controller.receiverLocationController.value.text = address; // ✅
                           controller.receiverLocation.value = UserLocation(latitude: lat, longitude: lng);
+                          controller.destinationPickupPoint.value = null;
+                          controller.fillPlace(sender: false, latitude: lat, longitude: lng);
                         } else {
                           ShowToastDialog.showToast("Service is unavailable at the selected address.".tr);
                         }
@@ -154,9 +174,11 @@ class BookParcelScreen extends StatelessWidget {
                         if (value != null) {
                           SelectedLocationModel selectedLocationModel = value;
 
-                          if (Constant.checkZoneCheck(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude) == true) {
+                          if (!controller.isCityScope || Constant.checkZoneCheck(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude) == true) {
                             controller.receiverLocationController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
                             controller.receiverLocation.value = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude); // ✅ <-- Add this
+                            controller.destinationPickupPoint.value = null;
+                            controller.fillPlace(sender: false, latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
                           } else {
                             ShowToastDialog.showToast("Service is unavailable at the selected address.".tr);
                           }
@@ -165,6 +187,10 @@ class BookParcelScreen extends StatelessWidget {
                     }
                   },
                 ),
+                const SizedBox(height: 16),
+                parcelDetailsView(controller, isDark),
+                const SizedBox(height: 16),
+                methodsView(controller, isDark),
                 const SizedBox(height: 15),
                 RoundedButtonFill(
                   title: "Continue".tr,
@@ -180,6 +206,178 @@ class BookParcelScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _chip(String label, bool selected, bool isDark, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8, bottom: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        selectedColor: AppThemeData.primary300,
+        labelStyle: AppThemeData.semiBoldTextStyle(fontSize: 14, color: selected ? AppThemeData.grey900 : (isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String title, bool isDark) =>
+      Text(title, style: AppThemeData.boldTextStyle(color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500, fontSize: 13));
+
+  /// Spec 4.2 step 1: parcel or mail; same city / other city / other country.
+  Widget typeAndScopeView(BookParcelController controller, bool isDark) {
+    return ParcelCard(
+      isDark: isDark,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle("What are you sending?".tr, isDark),
+          const SizedBox(height: 8),
+          Wrap(
+            children: [
+              _chip("Parcel".tr, controller.shipmentType.value == ParcelShipping.parcel, isDark, () => controller.shipmentType.value = ParcelShipping.parcel),
+              _chip("Mail".tr, controller.shipmentType.value == ParcelShipping.mail, isDark, () => controller.shipmentType.value = ParcelShipping.mail),
+            ],
+          ),
+          const SizedBox(height: 4),
+          _sectionTitle("Where to?".tr, isDark),
+          const SizedBox(height: 8),
+          Wrap(
+            children: [
+              for (final sc in [ParcelScope.city, ParcelScope.intercity, ParcelScope.intercountry])
+                _chip(ParcelLabels.scope(sc), controller.scope.value == sc, isDark, () {
+                  controller.scope.value = sc;
+                  if (sc == ParcelScope.city && controller.receiverLocation.value != null) {
+                    final loc = controller.receiverLocation.value!;
+                    if (Constant.checkZoneCheck(loc.latitude ?? 0, loc.longitude ?? 0) != true) {
+                      // A receiver outside the zones cannot be a same-city delivery.
+                      controller.receiverLocation.value = null;
+                      controller.receiverLocationController.value.clear();
+                    }
+                  }
+                }),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Spec 4.2 step 2: weight, dimensions, declared value, content description.
+  Widget parcelDetailsView(BookParcelController controller, bool isDark) {
+    final Color bg = isDark ? AppThemeData.surfaceDark : AppThemeData.surface;
+    final Color border = isDark ? AppThemeData.greyDark200 : AppThemeData.grey200;
+    final numeric = [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))];
+    return ParcelCard(
+      isDark: isDark,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle("Parcel details".tr, isDark),
+          const SizedBox(height: 10),
+          TextFieldWidget(
+            hintText: controller.isCityScope ? "Weight in kg (optional)".tr : "Weight in kg".tr,
+            controller: controller.weightKgController.value,
+            textInputType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: numeric,
+            backgroundColor: bg,
+            borderColor: border,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: TextFieldWidget(hintText: "L (cm)".tr, controller: controller.lengthController.value, textInputType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: numeric, backgroundColor: bg, borderColor: border)),
+              const SizedBox(width: 8),
+              Expanded(child: TextFieldWidget(hintText: "W (cm)".tr, controller: controller.widthController.value, textInputType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: numeric, backgroundColor: bg, borderColor: border)),
+              const SizedBox(width: 8),
+              Expanded(child: TextFieldWidget(hintText: "H (cm)".tr, controller: controller.heightController.value, textInputType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: numeric, backgroundColor: bg, borderColor: border)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextFieldWidget(
+            hintText: "Declared value (optional)".tr,
+            controller: controller.declaredValueController.value,
+            textInputType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: numeric,
+            backgroundColor: bg,
+            borderColor: border,
+          ),
+          const SizedBox(height: 10),
+          TextFieldWidget(hintText: "Content description".tr, controller: controller.contentDescriptionController.value, backgroundColor: bg, borderColor: border),
+        ],
+      ),
+    );
+  }
+
+  /// Spec 4.2 steps 3-4: how the parcel leaves and how the receiver gets it.
+  Widget methodsView(BookParcelController controller, bool isDark) {
+    Widget option(String label, bool selected, VoidCallback onTap) => InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Icon(selected ? Icons.radio_button_checked : Icons.radio_button_off, size: 20, color: selected ? AppThemeData.primary300 : (isDark ? AppThemeData.greyDark500 : AppThemeData.grey500)),
+            const SizedBox(width: 10),
+            Expanded(child: Text(label, style: AppThemeData.semiBoldTextStyle(fontSize: 15, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900))),
+          ],
+        ),
+      ),
+    );
+    Widget pointTile(PickupPointModel? point, VoidCallback onTap) => Padding(
+      padding: const EdgeInsets.only(left: 30, bottom: 6),
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: const Icon(Icons.storefront_outlined, size: 18),
+        label: Text(point == null ? "Choose a pickup point".tr : "${point.name}${point.subtitle.isEmpty ? '' : ' - ${point.subtitle}'}", maxLines: 2, overflow: TextOverflow.ellipsis),
+      ),
+    );
+    Future<void> pick({required bool origin}) async {
+      final PickupPointModel? current = origin ? controller.originPickupPoint.value : controller.destinationPickupPoint.value;
+      final result = await Get.to(
+        () => PickupPointPickerScreen(
+          title: origin ? "Drop-off point".tr : "Collection point".tr,
+          regionId: origin ? controller.originRegionId : controller.destinationRegionId,
+          city: origin ? controller.senderCityController.value.text : controller.receiverCityController.value.text,
+          selectedId: current?.id,
+        ),
+      );
+      if (result is PickupPointModel) {
+        if (origin) {
+          controller.originPickupPoint.value = result;
+        } else {
+          controller.destinationPickupPoint.value = result;
+        }
+      }
+    }
+
+    return ParcelCard(
+      isDark: isDark,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle("Pickup method".tr, isDark),
+          option(ParcelLabels.pickupMethod(ParcelShipping.home), controller.pickupMethod.value == ParcelShipping.home, () => controller.pickupMethod.value = ParcelShipping.home),
+          option(ParcelLabels.pickupMethod(ParcelShipping.pickupPoint), controller.pickupMethod.value == ParcelShipping.pickupPoint, () {
+            controller.pickupMethod.value = ParcelShipping.pickupPoint;
+            if (controller.originPickupPoint.value == null) pick(origin: true);
+          }),
+          if (controller.pickupMethod.value == ParcelShipping.pickupPoint) pointTile(controller.originPickupPoint.value, () => pick(origin: true)),
+          const Divider(height: 20),
+          _sectionTitle("Delivery method".tr, isDark),
+          option(ParcelLabels.deliveryMethod(ParcelShipping.home), controller.deliveryMethod.value == ParcelShipping.home, () => controller.deliveryMethod.value = ParcelShipping.home),
+          option(ParcelLabels.deliveryMethod(ParcelShipping.pickupPoint), controller.deliveryMethod.value == ParcelShipping.pickupPoint, () {
+            if (controller.receiverLocation.value == null) {
+              ShowToastDialog.showToast("Please select the receiver address first".tr);
+              return;
+            }
+            controller.deliveryMethod.value = ParcelShipping.pickupPoint;
+            if (controller.destinationPickupPoint.value == null) pick(origin: false);
+          }),
+          if (controller.deliveryMethod.value == ParcelShipping.pickupPoint) pointTile(controller.destinationPickupPoint.value, () => pick(origin: false)),
+        ],
+      ),
     );
   }
 
@@ -354,6 +552,9 @@ class BookParcelScreen extends StatelessWidget {
     required TextEditingController noteController,
     required TextEditingController countryCodeController,
     required TextEditingController countryISOCodeController,
+    required TextEditingController emailController,
+    required TextEditingController cityController,
+    required bool isSender,
     bool showWeight = false,
     GestureTapCallback? onTap,
     required bool isDark,
@@ -426,6 +627,59 @@ class BookParcelScreen extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 10),
+          TextFieldWidget(
+            hintText: "Email (optional)".tr,
+            controller: emailController,
+            textInputType: TextInputType.emailAddress,
+            backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
+            borderColor: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200,
+          ),
+          if (!controller.isCityScope) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFieldWidget(
+                    hintText: "City".tr,
+                    controller: cityController,
+                    backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
+                    borderColor: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
+                  ),
+                  child: CountryCodePicker(
+                    key: ValueKey('${isSender ? 's' : 'r'}-${isSender ? controller.senderCountryCode.value : controller.receiverCountryCode.value}'),
+                    onChanged: (value) {
+                      if (isSender) {
+                        controller.senderCountry.value = value.name ?? '';
+                        controller.senderCountryCode.value = value.code ?? '';
+                      } else {
+                        controller.receiverCountry.value = value.name ?? '';
+                        controller.receiverCountryCode.value = value.code ?? '';
+                      }
+                    },
+                    initialSelection:
+                        (isSender ? controller.senderCountryCode.value : controller.receiverCountryCode.value).isNotEmpty
+                            ? (isSender ? controller.senderCountryCode.value : controller.receiverCountryCode.value)
+                            : Constant.defaultCountryCode,
+                    showCountryOnly: true,
+                    showOnlyCountryWhenClosed: true,
+                    textStyle: TextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : Colors.black),
+                    dialogTextStyle: TextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
+                    searchStyle: TextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
+                    dialogBackgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (showWeight) ...[
             const SizedBox(height: 10),
             DropDownTextField(

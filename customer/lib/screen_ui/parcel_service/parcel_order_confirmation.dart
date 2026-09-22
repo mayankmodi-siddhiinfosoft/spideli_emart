@@ -16,6 +16,7 @@ import '../../themes/app_them_data.dart';
 import '../../themes/round_button_fill.dart';
 import '../../themes/show_toast_dialog.dart';
 import '../multi_vendor_service/wallet_screen/wallet_screen.dart';
+import 'parcel_shipping_widgets.dart';
 
 class ParcelOrderConfirmationScreen extends StatelessWidget {
   const ParcelOrderConfirmationScreen({super.key});
@@ -141,6 +142,22 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                           ),
                         ),
 
+                        const SizedBox(height: 16),
+                        if (!controller.parcelOrder.value.isLegacyShape) ParcelShippingSummaryCard(order: controller.parcelOrder.value, isDark: isDark),
+                        if (controller.parcelOrder.value.priceBreakdown != null && !controller.isQuotePayment && !controller.parcelOrder.value.isLegacyShape) ...[
+                          const SizedBox(height: 16),
+                          ParcelBreakdownCard(isDark: isDark, currency: controller.parcelCurrency, breakdown: controller.parcelOrder.value.priceBreakdown!),
+                        ],
+                        if (controller.isQuoteRequest) ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            "No carrier serves this route yet. Send the request: the Spideli team will set a price, then you can pay it from the order details.".tr,
+                            style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark700 : AppThemeData.grey700),
+                          ),
+                          const SizedBox(height: 24),
+                          RoundedButtonFill(title: "Request a quote".tr, onPress: () => controller.placeOrder(), color: AppThemeData.primary300, textColor: AppThemeData.grey900),
+                        ],
+                        if (!controller.isQuoteRequest) ...[
                         const SizedBox(height: 10),
 
                         Row(
@@ -301,7 +318,8 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
 
                                   const SizedBox(width: 60),
 
-                                  // Receiver
+                                  // Receiver (same-city only)
+                                  if (!controller.senderMustPay)
                                   GestureDetector(
                                     onTap: () => controller.paymentBy.value = "Receiver",
                                     child: Row(
@@ -341,6 +359,7 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                           color: AppThemeData.primary300,
                           textColor: AppThemeData.grey900,
                         ),
+                        ],
                       ],
                     ),
                   ),

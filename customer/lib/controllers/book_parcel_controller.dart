@@ -14,11 +14,16 @@ import 'package:image_picker/image_picker.dart';
 import '../constant/constant.dart';
 import '../models/parcel_category.dart';
 import '../models/parcel_order_model.dart';
+import '../models/parcel_shipping_models.dart';
 import '../models/parcel_weight_model.dart';
 import '../models/user_model.dart';
+import '../screen_ui/parcel_service/parcel_carrier_selection_screen.dart';
 import '../screen_ui/parcel_service/parcel_order_confirmation.dart';
 import '../service/fire_store_utils.dart';
+import '../service/parcel_shipping_service.dart';
 import '../themes/show_toast_dialog.dart';
+import '../utils/parcel_pricing.dart';
+import '../utils/region_service.dart';
 
 class BookParcelController extends GetxController {
   // Sender details
@@ -40,6 +45,64 @@ class BookParcelController extends GetxController {
 
   // Delivery type
   final RxString selectedDeliveryType = 'now'.obs;
+
+  // ---- Shipping (PARCEL-CONTRACT): type & scope, route, parcel details, methods.
+  final RxString shipmentType = ParcelShipping.parcel.obs;
+  final RxString scope = ParcelScope.city.obs;
+  final Rx<TextEditingController> senderEmailController = TextEditingController().obs;
+  final Rx<TextEditingController> receiverEmailController = TextEditingController().obs;
+  final Rx<TextEditingController> senderCityController = TextEditingController().obs;
+  final Rx<TextEditingController> receiverCityController = TextEditingController().obs;
+  final RxString senderCountry = ''.obs;
+  final RxString senderCountryCode = ''.obs;
+  final RxString receiverCountry = ''.obs;
+  final RxString receiverCountryCode = ''.obs;
+  final Rx<TextEditingController> weightKgController = TextEditingController().obs;
+  final Rx<TextEditingController> lengthController = TextEditingController().obs;
+  final Rx<TextEditingController> widthController = TextEditingController().obs;
+  final Rx<TextEditingController> heightController = TextEditingController().obs;
+  final Rx<TextEditingController> declaredValueController = TextEditingController().obs;
+  final Rx<TextEditingController> contentDescriptionController = TextEditingController().obs;
+  final RxString pickupMethod = ParcelShipping.home.obs;
+  final RxString deliveryMethod = ParcelShipping.home.obs;
+  final Rx<PickupPointModel?> originPickupPoint = Rx<PickupPointModel?>(null);
+  final Rx<PickupPointModel?> destinationPickupPoint = Rx<PickupPointModel?>(null);
+
+  bool get isCityScope => scope.value == ParcelScope.city;
+
+  /// Today's flow: same city, home pickup and home delivery.
+  bool get isLegacyShape => isCityScope && pickupMethod.value == ParcelShipping.home && deliveryMethod.value == ParcelShipping.home;
+
+  double? get weightKg => double.tryParse(weightKgController.value.text.trim().replaceAll(',', '.'));
+
+  String? get originRegionId => RegionService.regionAt(senderLocation.value?.latitude, senderLocation.value?.longitude);
+
+  String? get destinationRegionId => RegionService.regionAt(receiverLocation.value?.latitude, receiverLocation.value?.longitude);
+
+  ParcelPlace get originPlace => ParcelPlace(city: senderCityController.value.text.trim(), country: senderCountry.value, countryCode: senderCountryCode.value);
+
+  ParcelPlace get destinationPlace => ParcelPlace(city: receiverCityController.value.text.trim(), country: receiverCountry.value, countryCode: receiverCountryCode.value);
+
+  /// Fills city / country of a party from the picked coordinates (editable).
+  Future<void> fillPlace({required bool sender, required double latitude, required double longitude}) async {
+    try {
+      final placemarks = await Geocoding().placemarkFromCoordinates(latitude, longitude);
+      if (placemarks.isEmpty) return;
+      final place = placemarks.first;
+      final String city = (place.locality ?? '').isNotEmpty ? place.locality! : (place.subAdministrativeArea ?? '');
+      if (sender) {
+        if (city.isNotEmpty) senderCityController.value.text = city;
+        senderCountry.value = place.country ?? senderCountry.value;
+        senderCountryCode.value = place.isoCountryCode ?? senderCountryCode.value;
+      } else {
+        if (city.isNotEmpty) receiverCityController.value.text = city;
+        receiverCountry.value = place.country ?? receiverCountry.value;
+        receiverCountryCode.value = place.isoCountryCode ?? receiverCountryCode.value;
+      }
+    } catch (e) {
+      debugPrint('fillPlace failed: $e');
+    }
+  }
 
   // Scheduled delivery fields
   final Rx<TextEditingController> scheduledDateController = TextEditingController().obs;
@@ -142,6 +205,9 @@ class BookParcelController extends GetxController {
       final userLocation = UserLocation(latitude: position.latitude, longitude: position.longitude);
       senderLocation.value = userLocation;
       senderLocationController.value.text = address;
+      senderCityController.value.text = place.locality ?? '';
+      senderCountry.value = place.country ?? '';
+      senderCountryCode.value = place.isoCountryCode ?? '';
     } catch (e) {
       debugPrint("Failed to fetch current location: $e");
     }
@@ -176,11 +242,56 @@ class BookParcelController extends GetxController {
       }
     }
 
-    if (selectedWeight == null) {
+    if (isCityScope && selectedWeight == null) {
       ShowToastDialog.showToast("Please select parcel weight".tr);
       return false;
     } else if (senderLocation.value == null || receiverLocation.value == null) {
       ShowToastDialog.showToast("Please select both sender and receiver locations".tr);
+      return false;
+    }
+    final String wText = weightKgController.value.text.trim();
+    if (!isCityScope && (weightKg == null || weightKg! <= 0)) {
+      ShowToastDialog.showToast("Please enter the parcel weight in kg".tr);
+      return false;
+    } else if (wText.isNotEmpty && (weightKg == null || weightKg! <= 0)) {
+      ShowToastDialog.showToast("Please enter a valid weight in kg".tr);
+      return false;
+    }
+    for (final email in [senderEmailController.value.text.trim(), receiverEmailController.value.text.trim()]) {
+      if (email.isNotEmpty && !GetUtils.isEmail(email)) {
+        ShowToastDialog.showToast("Please enter a valid email".tr);
+        return false;
+      }
+    }
+    if (!isCityScope) {
+      if (originPlace.city.isEmpty || destinationPlace.city.isEmpty) {
+        ShowToastDialog.showToast("Please enter the sender and receiver cities".tr);
+        return false;
+      }
+      if (originPlace.countryCode.isEmpty || destinationPlace.countryCode.isEmpty) {
+        ShowToastDialog.showToast("Please select the sender and receiver countries".tr);
+        return false;
+      }
+      final bool sameCountry = originPlace.countryCode.toUpperCase() == destinationPlace.countryCode.toUpperCase();
+      if (scope.value == ParcelScope.intercity && originPlace.cityMatches(destinationPlace.city)) {
+        ShowToastDialog.showToast("Sender and receiver are in the same city: choose Same city".tr);
+        return false;
+      }
+      if (scope.value == ParcelScope.intercity && !sameCountry) {
+        ShowToastDialog.showToast("Receiver is in another country: choose Other country".tr);
+        return false;
+      }
+      if (scope.value == ParcelScope.intercountry && sameCountry) {
+        ShowToastDialog.showToast("Receiver is in the same country: choose Other city".tr);
+        return false;
+      }
+    }
+    if (pickupMethod.value == ParcelShipping.pickupPoint && originPickupPoint.value == null) {
+      ShowToastDialog.showToast("Please choose the drop-off pickup point".tr);
+      return false;
+    }
+    if (deliveryMethod.value == ParcelShipping.pickupPoint && destinationPickupPoint.value == null) {
+      ShowToastDialog.showToast("Please choose the collection pickup point".tr);
       return false;
     }
     return true;
@@ -189,48 +300,109 @@ class BookParcelController extends GetxController {
   Future<void> bookNow() async {
     if (!validateFields()) return;
 
+    ShowToastDialog.showLoader("Please wait...".tr);
     try {
       distance.value = 0.0;
 
-      if (Constant.selectedMapType == 'osm') {
-        print("Fetching route using OSM");
-        print("Sender Location: ${senderLocation.value?.latitude}, ${senderLocation.value?.longitude}");
-        print("Receiver Location: ${receiverLocation.value?.latitude}, ${receiverLocation.value?.longitude}");
-        await fetchRouteWithWaypoints([
-          latlong.LatLng(senderLocation.value?.latitude ?? 0.0, senderLocation.value?.longitude ?? 0.0),
-          latlong.LatLng(receiverLocation.value?.latitude ?? 0.0, receiverLocation.value?.longitude ?? 0.0),
-        ]);
-      } else {
-        await fetchGoogleRouteWithWaypoints();
+      if (isCityScope) {
+        if (Constant.selectedMapType == 'osm') {
+          await fetchRouteWithWaypoints([
+            latlong.LatLng(senderLocation.value?.latitude ?? 0.0, senderLocation.value?.longitude ?? 0.0),
+            latlong.LatLng(receiverLocation.value?.latitude ?? 0.0, receiverLocation.value?.longitude ?? 0.0),
+          ]);
+        } else {
+          await fetchGoogleRouteWithWaypoints();
+        }
+      }
+      // Intercity / intercountry (or no route found): straight-line distance,
+      // only used by carriers priced on their per-km rate card.
+      if (distance.value <= 0 && !isCityScope) {
+        final double meters = Geolocator.distanceBetween(
+          senderLocation.value!.latitude ?? 0.0,
+          senderLocation.value!.longitude ?? 0.0,
+          receiverLocation.value!.latitude ?? 0.0,
+          receiverLocation.value!.longitude ?? 0.0,
+        );
+        distance.value = Constant.distanceType.toLowerCase() == "km" ? meters / 1000.0 : meters / 1609.34;
       }
 
-      if (distance.value < 0.5) {
+      if (isCityScope && distance.value < 0.5) {
+        ShowToastDialog.closeLoader();
         ShowToastDialog.showToast("Sender's location to receiver's location should be more than 1 km.".tr);
         return;
       }
 
-      subTotal.value = (distance.value * double.parse(selectedWeight!.deliveryCharge.toString()));
-      goToCart();
+      subTotal.value = isCityScope ? (distance.value * double.parse(selectedWeight!.deliveryCharge.toString())) : 0;
+      final List<ParcelCarrierOption> options = await carrierOptions();
+      ShowToastDialog.closeLoader();
+
+      // Same city, home to home and no carrier to choose from: today's flow.
+      if (isLegacyShape && options.length == 1 && options.first.carrier == null) {
+        goToCart(option: options.first);
+        return;
+      }
+      Get.to(() => const ParcelCarrierSelectionScreen(), arguments: {'controller': this, 'options': options});
     } catch (e) {
+      ShowToastDialog.closeLoader();
       ShowToastDialog.showToast("Something went wrong while booking.".tr);
       debugPrint("bookNow error: $e");
     }
   }
 
-  void goToCart() {
+  /// Offers for this shipment (spec 4.2 step 5). Same city: the platform's
+  /// drivers at today's price first, then eligible carriers. Other scopes:
+  /// eligible carriers with a price for the route. Empty = not served.
+  Future<List<ParcelCarrierOption>> carrierOptions() async {
+    final ParcelPricingSettings settings = await ParcelShippingService.pricingSettings();
+    final List<DeliveryCarrierModel> carriers = await ParcelShippingService.carriers();
+    final double kg = weightKg ?? 0;
+    final double km = Constant.distanceType.toLowerCase() == "km" ? distance.value : distance.value * 1.60934;
+    final List<ParcelCarrierOption> options = [];
+    if (isCityScope) {
+      options.add(ParcelCarrierOption(carrier: null, quote: ParcelPricing.cityDefault(distance: distance.value, weightCategoryCharge: double.parse(selectedWeight!.deliveryCharge.toString()))));
+    }
+    final commission = Constant.sectionConstantModel?.adminCommision;
+    final List<ParcelCarrierOption> carrierOffers = [];
+    for (final carrier in carriers) {
+      if (!carrier.isEligible(originRegionId: originRegionId, weightKg: kg)) continue;
+      ParcelQuote? quote = ParcelPricing.carrierQuote(
+        scope: scope.value,
+        table: carrier.rateTable,
+        card: carrier.rateCard,
+        origin: originPlace,
+        destination: destinationPlace,
+        weightKg: kg,
+        distanceKm: km,
+        settings: settings,
+      );
+      if (quote == null) continue;
+      if (settings.commissionAsExtra && commission?.isEnabled == true) {
+        quote = quote.copyWith(
+          commission: ParcelPricing.commissionOn(amount: quote.carrierPrice + quote.extraKgCharge, type: commission?.commissionType, value: double.tryParse(commission?.amount?.toString() ?? '')),
+        );
+      }
+      carrierOffers.add(ParcelCarrierOption(carrier: carrier, quote: quote));
+    }
+    carrierOffers.sort((a, b) => a.quote.total.compareTo(b.quote.total));
+    options.addAll(carrierOffers);
+    return options;
+  }
+
+  /// Builds the order for [option] (quoteRequest = route not served) and opens checkout.
+  void goToCart({ParcelCarrierOption? option, bool quoteRequest = false}) {
     DateTime senderPickup = isScheduled.value ? parseScheduledDateTime(scheduledDate.value, scheduledTime.value) : DateTime.now();
 
     print("Sender Pickup: $distance");
     ParcelOrderModel order = ParcelOrderModel(
       id: Constant.getUuid(),
-      subTotal: subTotal.value.toString(),
+      subTotal: (quoteRequest ? 0.0 : (option?.quote.total ?? subTotal.value)).toString(),
       parcelType: selectedCategory?.title ?? '',
       parcelCategoryID: selectedCategory?.id ?? '',
       note: senderNoteController.value.text,
       receiverNote: receiverNoteController.value.text,
       distance: distance.value.toStringAsFixed(4),
-      parcelWeight: selectedWeight?.title ?? '',
-      parcelWeightCharge: selectedWeight?.deliveryCharge,
+      parcelWeight: isCityScope && selectedWeight != null ? (selectedWeight?.title ?? '') : '${_kg(weightKg ?? 0)} kg',
+      parcelWeightCharge: isCityScope ? selectedWeight?.deliveryCharge : null,
       sendToDriver: isScheduled.value == true ? false : true,
       senderPickupDateTime: Timestamp.fromDate(senderPickup),
       receiverPickupDateTime: Timestamp.fromDate(DateTime.now()),
@@ -248,11 +420,13 @@ class BookParcelController extends GetxController {
         address: senderLocationController.value.text,
         name: senderNameController.value.text,
         phone: "(${senderCountryCodeController.value.text}) ${senderMobileController.value.text}",
+        email: senderEmailController.value.text.trim(),
       ),
       receiver: LocationInformation(
         address: receiverLocationController.value.text,
         name: receiverNameController.value.text,
         phone: "(${receiverCountryCodeController.value.text}) ${receiverMobileController.value.text}",
+        email: receiverEmailController.value.text.trim(),
       ),
       receiverLatLong: receiverLocation.value,
       senderLatLong: senderLocation.value,
@@ -262,12 +436,63 @@ class BookParcelController extends GetxController {
       platformTax: Constant.platformTaxList,
     );
 
+    // Shipping fields (tracking number / QR / pickup code are generated when
+    // the order is placed).
+    num? n(TextEditingController c) => num.tryParse(c.text.trim().replaceAll(',', '.'));
+    final num? l = n(lengthController.value), w = n(widthController.value), h = n(heightController.value);
+    order
+      ..shipmentType = shipmentType.value
+      ..scope = scope.value
+      ..origin = originPlace
+      ..destination = destinationPlace
+      ..pickupMethod = pickupMethod.value
+      ..originPickupPointId = pickupMethod.value == ParcelShipping.pickupPoint ? originPickupPoint.value?.id : null
+      ..deliveryMethod = deliveryMethod.value
+      ..destinationPickupPointId = deliveryMethod.value == ParcelShipping.pickupPoint ? destinationPickupPoint.value?.id : null
+      ..declaredValue = declaredValueController.value.text.trim().isEmpty ? null : declaredValueController.value.text.trim()
+      ..dimensions = (l != null || w != null || h != null) ? {'l': l ?? 0, 'w': w ?? 0, 'h': h ?? 0} : null
+      ..contentDescription = contentDescriptionController.value.text.trim().isEmpty ? null : contentDescriptionController.value.text.trim()
+      ..weightKg = weightKg
+      ..carrierId = option?.carrier?.id
+      ..carrierName = option?.carrier?.name
+      ..quoteRequested = quoteRequest ? true : null
+      ..regionId = originRegionId;
+    if (quoteRequest) {
+      order.status = ParcelShipping.quoteRequestedStatus;
+      order.sendToDriver = false;
+    } else if (option != null) {
+      final q = option.quote;
+      order.priceBreakdown = {
+        'carrierPrice': q.carrierPrice,
+        'extraKgCharge': q.extraKgCharge,
+        'fixedTax': q.fixedTax,
+        'commission': q.commission,
+        'options': q.options,
+        'total': q.total,
+        'currency': RegionService.currencyForRecord(originRegionId)?.code ?? '',
+        'source': q.source,
+      };
+    }
+    // Dispatch geo-points follow where the parcel physically is: a driver
+    // collects at the origin pickup point / delivers to the destination one.
+    // senderLatLong / receiverLatLong keep the parties' own addresses.
+    final PickupPointModel? from = pickupMethod.value == ParcelShipping.pickupPoint ? originPickupPoint.value : null;
+    final PickupPointModel? to = deliveryMethod.value == ParcelShipping.pickupPoint ? destinationPickupPoint.value : null;
+    if (from != null && from.hasLocation) {
+      order.sourcePoint = G(geopoint: GeoPoint(from.latitude!, from.longitude!), geohash: Geoflutterfire().point(latitude: from.latitude!, longitude: from.longitude!).hash);
+    }
+    if (to != null && to.hasLocation) {
+      order.destinationPoint = G(geopoint: GeoPoint(to.latitude!, to.longitude!), geohash: Geoflutterfire().point(latitude: to.latitude!, longitude: to.longitude!).hash);
+    }
+
     debugPrint("Order Distance: ${distance.value}");
     debugPrint("Subtotal: ${subTotal.value}");
     debugPrint("Order JSON: ${order.toJson()}");
 
     Get.to(() => ParcelOrderConfirmationScreen(), arguments: {'parcelOrder': order, 'images': images});
   }
+
+  static String _kg(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
   DateTime parseScheduledDateTime(String dateStr, String timeStr) {
     try {

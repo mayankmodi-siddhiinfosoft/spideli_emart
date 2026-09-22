@@ -46,6 +46,8 @@ import '../payment/xendit_screen.dart';
 import '../screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import '../screen_ui/parcel_service/order_successfully_placed.dart';
 import '../service/fire_store_utils.dart';
+import '../service/parcel_shipping_service.dart';
+import '../utils/parcel_pricing.dart';
 import '../themes/app_them_data.dart';
 import '../themes/show_toast_dialog.dart';
 import '../utils/preferences.dart';
@@ -63,6 +65,16 @@ class ParcelOrderConfirmationController extends GetxController {
   }
 
   CurrencyModel? get parcelCurrency => RegionService.currencyForRecord(parcelRegionId);
+
+  /// Unpriced quote request (route not served): nothing to pay yet.
+  bool get isQuoteRequest => parcelOrder.value.quoteRequested == true && parcelOrder.value.manualPrice == null;
+
+  /// Paying a quote priced by the admin (the order already exists).
+  bool get isQuotePayment => parcelOrder.value.quoteReadyToPay;
+
+  /// Receiver-pays (cash) is only offered for same-city parcels: elsewhere
+  /// the receiver is in another region / currency.
+  bool get senderMustPay => (parcelOrder.value.scope ?? ParcelScope.city) != ParcelScope.city || isQuotePayment;
   final RxList<XFile> images = <XFile>[].obs;
   final RxString paymentBy = "Receiver".obs;
 
@@ -92,6 +104,12 @@ class ParcelOrderConfirmationController extends GetxController {
     if (args != null) {
       parcelOrder.value = args['parcelOrder'];
       images.value = List<XFile>.from(args['images'] ?? []);
+      // Paying a quote the admin priced: the manual price wins.
+      if (parcelOrder.value.quoteReadyToPay) {
+        parcelOrder.value.subTotal = parcelOrder.value.manualPrice.toString();
+      }
+      // Other city / country: the sender pays, in the origin currency.
+      if (senderMustPay) paymentBy.value = "Sender";
       calculatePrice();
     }
 
@@ -161,23 +179,61 @@ class ParcelOrderConfirmationController extends GetxController {
         }
       }
 
-      parcelOrder.value.parcelImages = parcelImages;
+      if (parcelImages.isNotEmpty || !isQuotePayment) parcelOrder.value.parcelImages = parcelImages;
       parcelOrder.value.discount = discount.value.toString();
       parcelOrder.value.discountType = selectedCouponModel.value.discountType.toString();
       parcelOrder.value.discountLabel = selectedCouponModel.value.code.toString();
       parcelOrder.value.adminCommission = Constant.sectionConstantModel?.adminCommision?.amount?.toString();
       parcelOrder.value.adminCommissionType = Constant.sectionConstantModel?.adminCommision?.commissionType;
-      parcelOrder.value.status = Constant.orderPlaced;
-      parcelOrder.value.createdAt = Timestamp.now();
+      parcelOrder.value.status = isQuoteRequest ? ParcelShipping.quoteRequestedStatus : Constant.orderPlaced;
+      if (isQuotePayment) parcelOrder.value.sendToDriver = parcelOrder.value.isSchedule != true;
+      parcelOrder.value.createdAt ??= Timestamp.now();
       parcelOrder.value.author = userModel.value;
       parcelOrder.value.authorID = FireStoreUtils.getCurrentUid();
-      parcelOrder.value.paymentMethod = paymentBy.value == "Receiver" ? "cod" : selectedPaymentMethod.value;
+      if (senderMustPay) paymentBy.value = "Sender";
+      parcelOrder.value.paymentMethod = isQuoteRequest ? '' : (paymentBy.value == "Receiver" ? "cod" : selectedPaymentMethod.value);
       parcelOrder.value.paymentCollectByReceiver = paymentBy.value == "Receiver";
       parcelOrder.value.senderZoneId = Constant.getZoneId(parcelOrder.value.senderLatLong!.latitude ?? 0.0, parcelOrder.value.senderLatLong!.longitude ?? 0.0);
       parcelOrder.value.regionId ??= parcelRegionId;
       parcelOrder.value.receiverZoneId = Constant.getZoneId(parcelOrder.value.receiverLatLong!.latitude ?? 0.0, parcelOrder.value.receiverLatLong!.longitude ?? 0.0);
 
-      if (paymentBy.value != "Receiver") {
+      // ---- Shipping contract: codes, price breakdown, first tracking events.
+      final ParcelOrderModel order = parcelOrder.value;
+      final bool isNew = !isQuotePayment;
+      order.trackingNumber ??= await ParcelShippingService.newTrackingNumber();
+      order.qrValue ??= ParcelShippingService.qrValueFor(order.id!);
+      order.pickupCode ??= ParcelShippingService.newPickupCode();
+      order.shipmentType ??= ParcelShipping.parcel;
+      order.scope ??= ParcelScope.city;
+      order.pickupMethod ??= ParcelShipping.home;
+      order.deliveryMethod ??= ParcelShipping.home;
+      if (isQuotePayment) {
+        order.priceBreakdown = {
+          'carrierPrice': (order.manualPrice ?? 0).toDouble(),
+          'extraKgCharge': 0,
+          'fixedTax': 0,
+          'commission': 0,
+          'options': 0,
+          'total': totalAmount.value,
+          'currency': parcelCurrency?.code ?? '',
+          'source': ParcelPriceSource.manual,
+        };
+      } else if (!isQuoteRequest) {
+        order.priceBreakdown ??= {'carrierPrice': subTotal.value, 'extraKgCharge': 0, 'fixedTax': 0, 'commission': 0, 'options': 0, 'source': ParcelPriceSource.defaultSetting};
+        // total = what the customer pays (after coupon, platform fee and taxes).
+        order.priceBreakdown!['total'] = totalAmount.value;
+        order.priceBreakdown!['currency'] = parcelCurrency?.code ?? '';
+      }
+      final bool paidNow = !isQuoteRequest && paymentBy.value != "Receiver" && selectedPaymentMethod.value != PaymentGateway.cod.name;
+      final List<ParcelTrackingEvent> events = [
+        if (isNew) ParcelShippingService.event(ParcelShipping.created, note: isQuoteRequest ? 'Quote requested' : null),
+        if (!isQuoteRequest && order.pickupMethod == ParcelShipping.pickupPoint)
+          ParcelShippingService.event(ParcelShipping.waitingDropOff, pickupPointId: order.originPickupPointId, note: paidNow ? 'Paid' : null)
+        else if (paidNow)
+          ParcelShippingService.event(ParcelShipping.paid),
+      ];
+
+      if (!isQuoteRequest && paymentBy.value != "Receiver") {
         if (selectedPaymentMethod.value == PaymentGateway.wallet.name) {
           WalletTransactionModel transactionModel = WalletTransactionModel(
             id: Constant.getUuid(),
@@ -202,12 +258,12 @@ class ParcelOrderConfirmationController extends GetxController {
         }
       }
 
-      await FireStoreUtils.parcelOrderPlace(parcelOrder.value).then((value) async {
+      await ParcelShippingService.save(parcelOrder.value, events, isNew: isNew).then((value) async {
         await FireStoreUtils.addCustomerRegion(parcelOrder.value.regionId);
         ShowToastDialog.closeLoader();
-        ShowToastDialog.showToast("Order placed successfully".tr);
+        ShowToastDialog.showToast(isQuoteRequest ? "Quote requested".tr : "Order placed successfully".tr);
         Get.offAll(() => OrderSuccessfullyPlaced(), arguments: {'parcelOrder': parcelOrder.value});
-        await FireStoreUtils.sendParcelBookEmail(orderModel: parcelOrder.value);
+        if (isNew) await FireStoreUtils.sendParcelBookEmail(orderModel: parcelOrder.value);
       });
     } catch (e) {
       ShowToastDialog.closeLoader();

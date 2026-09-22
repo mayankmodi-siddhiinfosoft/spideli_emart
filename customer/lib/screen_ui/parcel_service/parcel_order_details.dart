@@ -17,6 +17,11 @@ import '../../themes/round_button_fill.dart';
 import '../../themes/show_toast_dialog.dart';
 import '../../utils/network_image_widget.dart';
 import '../multi_vendor_service/chat_screens/chat_screen.dart';
+import '../../models/parcel_order_model.dart';
+import '../../utils/parcel_receipt_pdf.dart';
+import 'parcel_order_confirmation.dart';
+import 'parcel_shipping_widgets.dart';
+import 'parcel_tracking_screen.dart';
 
 class ParcelOrderDetails extends StatelessWidget {
   const ParcelOrderDetails({super.key});
@@ -73,6 +78,56 @@ class ParcelOrderDetails extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Shipping: status, QR / barcode / pickup code, route, price breakdown, receipt, tracking.
+                        if (controller.parcelOrder.value.isTrackable) ...[
+                          ParcelCard(
+                            isDark: isDark,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text("Tracking status".tr, style: AppThemeData.mediumTextStyle(fontSize: 13, color: AppThemeData.grey500)),
+                                      Text(
+                                        controller.parcelOrder.value.awaitingQuote
+                                            ? "Waiting for a quote".tr
+                                            : controller.parcelOrder.value.quoteReadyToPay
+                                            ? "Quote ready - pay to confirm".tr
+                                            : (controller.parcelOrder.value.parcelStatus ?? controller.parcelOrder.value.status ?? '').tr,
+                                        style: AppThemeData.boldTextStyle(fontSize: 16, color: AppThemeData.primary300),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  onPressed: () => Get.to(() => ParcelTrackingScreen(order: controller.parcelOrder.value)),
+                                  icon: const Icon(Icons.timeline),
+                                  label: Text("Track".tr),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          ParcelCodesCard(order: controller.parcelOrder.value, isDark: isDark),
+                          const SizedBox(height: 12),
+                          ParcelShippingSummaryCard(order: controller.parcelOrder.value, isDark: isDark),
+                          if (controller.parcelOrder.value.priceBreakdown != null) ...[
+                            const SizedBox(height: 12),
+                            ParcelBreakdownCard(
+                              isDark: isDark,
+                              currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId),
+                              breakdown: controller.parcelOrder.value.priceBreakdown!,
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            onPressed: () => ParcelReceiptPdf.showOptions(context, controller.parcelOrder.value),
+                            icon: const Icon(Icons.receipt_long_outlined),
+                            label: Text("Download / share receipt (PDF)".tr),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
                         Container(
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(15),
@@ -407,7 +462,19 @@ class ParcelOrderDetails extends StatelessWidget {
                     ),
                   ),
           bottomNavigationBar:
-              controller.parcelOrder.value.status == Constant.orderPlaced
+              controller.parcelOrder.value.quoteReadyToPay
+                  ? Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: RoundedButtonFill(
+                      title: "Pay the quote".tr,
+                      onPress: () => Get.to(() => const ParcelOrderConfirmationScreen(), arguments: {'parcelOrder': ParcelOrderModel.fromJson(controller.parcelOrder.value.toJson()..addAll(controller.readOnlyJson())), 'images': []}),
+                      height: 5,
+                      borderRadius: 15,
+                      color: AppThemeData.primary300,
+                      textColor: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
+                    ),
+                  )
+                  : (controller.parcelOrder.value.status == Constant.orderPlaced || controller.parcelOrder.value.status == ParcelShipping.quoteRequestedStatus)
                   ? Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: RoundedButtonFill(

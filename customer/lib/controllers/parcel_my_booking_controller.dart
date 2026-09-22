@@ -7,6 +7,7 @@ import '../models/parcel_order_model.dart';
 import '../models/wallet_transaction_model.dart';
 import '../screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import '../service/fire_store_utils.dart';
+import '../service/parcel_shipping_service.dart';
 import '../themes/show_toast_dialog.dart';
 
 class ParcelMyBookingController extends GetxController {
@@ -52,7 +53,8 @@ class ParcelMyBookingController extends GetxController {
   List<ParcelOrderModel> getOrdersForTab(String tab) {
     switch (tab) {
       case "New":
-        return parcelOrder.where((order) => ["Order Placed"].contains(order.status)).toList();
+        // Quote requests (route not served) wait here until priced and paid.
+        return parcelOrder.where((order) => ["Order Placed", ParcelShipping.quoteRequestedStatus].contains(order.status)).toList();
 
       case "In Transit":
         return parcelOrder.where((order) => ["Order Accepted", "Driver Accepted", "Driver Pending", "Order Shipped", "In Transit"].contains(order.status)).toList();
@@ -87,6 +89,9 @@ class ParcelMyBookingController extends GetxController {
 
       order.status = Constant.orderCancelled;
       await FireStoreUtils.parcelOrderPlace(order);
+      if (order.isTrackable) {
+        await ParcelShippingService.append(order.id!, ParcelShippingService.event(ParcelShipping.cancelled)).catchError((_) {});
+      }
 
       listenParcelOrders();
 
