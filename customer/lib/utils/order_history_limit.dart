@@ -2,6 +2,7 @@ import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/collection_name.dart';
+import 'package:customer/screen_ui/subscriptions/my_plan_screen.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/themes/app_them_data.dart';
 import 'package:flutter/material.dart';
@@ -70,14 +71,15 @@ class OrderHistoryLimit {
   }
 }
 
-/// "See older orders" prompt shown under a limited history. Buying the plan is
-/// blocked (spec blocking question 1), so this only informs: it writes
-/// nothing.
+/// "See older orders" prompt shown under a limited history. Opens "My plan"
+/// where the customer can buy the full-history plan (spec 4.6); when they
+/// come back, [onReturn] reloads the history so a new plan shows everything.
 class OlderOrdersPrompt extends StatelessWidget {
   final int hiddenCount;
   final bool isDark;
+  final VoidCallback? onReturn;
 
-  const OlderOrdersPrompt({super.key, required this.hiddenCount, required this.isDark});
+  const OlderOrdersPrompt({super.key, required this.hiddenCount, required this.isDark, this.onReturn});
 
   @override
   Widget build(BuildContext context) {
@@ -99,13 +101,16 @@ class OlderOrdersPrompt extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              "${"Older orders hidden:".tr} $hiddenCount. ${"A subscription to view your complete order history is coming soon.".tr}",
+              "${"Older orders hidden:".tr} $hiddenCount. ${"Subscribe to a monthly or annual plan to view your complete order history.".tr}",
               style: TextStyle(fontSize: 14, fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600),
             ),
             const SizedBox(height: 10),
             OutlinedButton(
-              onPressed: null, // plan purchase is not available yet (blocked Q1)
-              child: Text("Coming soon".tr),
+              onPressed: () async {
+                await Get.to(() => const MyPlanScreen());
+                onReturn?.call();
+              },
+              child: Text("See plans".tr),
             ),
           ],
         ),

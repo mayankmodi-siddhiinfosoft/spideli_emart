@@ -29,6 +29,10 @@ import 'package:get/get.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../terms_and_condition/terms_and_condition_screen.dart';
+import '../../subscriptions/business_account_screen.dart';
+import '../../subscriptions/my_plan_screen.dart';
+import '../../subscriptions/my_store_subscriptions_screen.dart';
+import '../../subscriptions/saved_payment_methods_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -93,6 +97,37 @@ class ProfileScreen extends StatelessWidget {
                               ),
                             ),
                           ),
+                          if (Constant.userModel != null) ...[
+                            const SizedBox(height: 20),
+                            Text(
+                              "Account & Subscriptions".tr,
+                              style: TextStyle(fontSize: 12, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w500),
+                            ),
+                            const SizedBox(height: 10),
+                            Container(
+                              width: Responsive.width(100, context),
+                              decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                child: Column(
+                                  children: [
+                                    cardDecoration(isDark, controller, "assets/icons/ic_orders.svg", "My plan".tr, () {
+                                      Get.to(() => const MyPlanScreen());
+                                    }),
+                                    cardDecoration(isDark, controller, "assets/icons/ic_dinin_order.svg", "My subscriptions".tr, () {
+                                      Get.to(() => const MyStoreSubscriptionsScreen());
+                                    }),
+                                    cardDecoration(isDark, controller, "assets/icons/ic_wallet.svg", "Payment methods".tr, () {
+                                      Get.to(() => const SavedPaymentMethodsScreen());
+                                    }),
+                                    cardDecoration(isDark, controller, "assets/images/ic_profile.svg", "Business account".tr, () {
+                                      Get.to(() => const BusinessAccountScreen());
+                                    }),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 20),
                           Constant.sectionConstantModel!.dineInActive == true
                               ? Column(

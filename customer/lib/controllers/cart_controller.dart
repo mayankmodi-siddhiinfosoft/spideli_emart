@@ -1,3 +1,4 @@
+import 'package:customer/utils/saved_payment_methods.dart';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
@@ -910,7 +911,7 @@ class CartController extends GetxController {
       "payment_options": "ussd, card, barter, payattitude",
       "customer": {
         "email": userModel.value.email.toString(),
-        "phonenumber": userModel.value.phoneNumber, // Add a real phone number
+        "phonenumber": SavedPaymentMethods.checkoutPhone(regionId: RegionService.regionOfVendor(vendorModel.value), fallback: userModel.value.phoneNumber), // default saved Mobile Money number (spec 7.8)
         "name": userModel.value.fullName(), // Add a real customer name
       },
       "customizations": {"title": "Payment for Services", "description": "Payment for XYZ services"},
@@ -1082,7 +1083,7 @@ class CartController extends GetxController {
       'description': 'wallet Topup',
       'retry': {'enabled': true, 'max_count': 1},
       'send_sms_hash': true,
-      'prefill': {'contact': userModel.value.phoneNumber, 'email': userModel.value.email},
+      'prefill': {'contact': SavedPaymentMethods.checkoutPhone(regionId: RegionService.regionOfVendor(vendorModel.value), fallback: userModel.value.phoneNumber), 'email': userModel.value.email},
       'external': {
         'wallets': ['paytm'],
       },

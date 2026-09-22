@@ -61,4 +61,9 @@ class CollectionName {
   static const String complaints = 'complaints';
   static const String chat = "chat";
   static const String regions = "regions";
+  static const String subscriptionPlans = "subscription_plans";
+  static const String subscriptionHistory = "subscription_history";
+  static const String vendorSubscriptionPlans = "vendor_subscription_plans";
+  static const String vendorSubscriptions = "vendor_subscriptions";
+  static const String vendorSubscriptionPayments = "vendor_subscription_payments";
 }

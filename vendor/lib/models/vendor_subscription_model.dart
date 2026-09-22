@@ -34,7 +34,37 @@ class VendorSubscriptionModel {
     status = json['status']?.toString();
     regionId = json['regionId']?.toString();
     deliveryAddress = _parseAddress(json['deliveryAddress']) ?? _parseAddress(json['address']);
+    pausedFrom = parseSubscriptionTimestamp(json['pausedFrom']);
+    pausedUntil = parseSubscriptionTimestamp(json['pausedUntil']);
+    if (json['skippedDates'] is List) skippedDates = (json['skippedDates'] as List).map((e) => e.toString()).toList();
   }
+
+  /// Written by the customer app: a pause (`status: "paused"`, `pausedFrom`,
+  /// optional `pausedUntil`, both inclusive) and skipped days (`yyyy-MM-dd`).
+  Timestamp? pausedFrom;
+  Timestamp? pausedUntil;
+  List<String> skippedDates = [];
+
+  static String _dayKey(DateTime d) => "${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
+
+  /// Paused on [day]: stored status `paused` and the day between `pausedFrom`
+  /// and `pausedUntil` (each bound open-ended when absent).
+  bool isPausedOn(DateTime day) {
+    if ((status ?? '').toLowerCase() != 'paused') return false;
+    final d = DateTime(day.year, day.month, day.day);
+    if (pausedFrom != null) {
+      final f = pausedFrom!.toDate();
+      if (d.isBefore(DateTime(f.year, f.month, f.day))) return false;
+    }
+    if (pausedUntil != null) {
+      final u = pausedUntil!.toDate();
+      if (d.isAfter(DateTime(u.year, u.month, u.day))) return false;
+    }
+    return true;
+  }
+
+  /// The customer skipped [day] (`skippedDates`).
+  bool isSkipped(DateTime day) => skippedDates.contains(_dayKey(day));
 
   static String? _parseAddress(dynamic value) {
     if (value == null) return null;
@@ -55,6 +85,12 @@ class VendorSubscriptionModel {
     final stored = (status ?? '').toLowerCase();
     if (stored == 'cancelled') return 'cancelled';
     if (expiryDate != null && expiryDate!.toDate().isBefore(DateTime.now())) return 'expired';
+    // A pause whose end date has passed reads as active again.
+    if (stored == 'paused' && pausedUntil != null) {
+      final u = pausedUntil!.toDate();
+      final now = DateTime.now();
+      if (DateTime(u.year, u.month, u.day).isBefore(DateTime(now.year, now.month, now.day))) return 'active';
+    }
     if (stored.isEmpty) return 'active';
     return stored;
   }

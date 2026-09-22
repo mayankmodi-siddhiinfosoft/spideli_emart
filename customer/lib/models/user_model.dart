@@ -62,6 +62,16 @@ class UserModel {
   /// for the same reason.
   List<String>? regionIds;
 
+  /// Customer business account (spec 8.2), written only through field updates
+  /// by `BusinessAccount` and verified by the admin panel. Read-only here:
+  /// never written back by [toJson].
+  String? accountType;
+  Map<String, dynamic>? businessProfile;
+
+  /// Customer saved Mobile Money / Wave numbers (spec 3.4 / 7.8), written only
+  /// through field updates by `SavedPaymentMethods`. Read-only in [toJson].
+  List<Map<String, dynamic>>? savedPaymentMethods;
+
   UserModel({
     this.id,
     this.firstName,
@@ -185,6 +195,9 @@ class UserModel {
     isAutoVerify = json['isAutoVerify'];
     regionId = (json['regionId'] == null || json['regionId'].toString().isEmpty) ? null : json['regionId'].toString();
     regionIds = json['regionIds'] is List ? (json['regionIds'] as List).map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList() : null;
+    accountType = json['accountType']?.toString();
+    businessProfile = json['businessProfile'] is Map ? Map<String, dynamic>.from(json['businessProfile']) : null;
+    savedPaymentMethods = json['savedPaymentMethods'] is List ? (json['savedPaymentMethods'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() : null;
   }
 
   Map<String, dynamic> toJson() {

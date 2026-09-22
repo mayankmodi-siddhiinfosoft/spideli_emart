@@ -24,6 +24,7 @@ import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
 import '../../../utils/wholesale_pricing.dart';
 import '../../../widget/shop_widgets.dart';
+import '../../subscriptions/store_plans_section.dart';
 import '../cart_screen/cart_screen.dart';
 import '../dine_in_screeen/dine_in_details_screen.dart';
 import '../review_list_screen/review_list_screen.dart';
@@ -439,6 +440,7 @@ class RestaurantDetailsScreen extends StatelessWidget {
                                           CouponListView(controller: controller),
                                         ],
                                       ),
+                                  StorePlansSection(vendor: controller.vendorModel.value),
                                   const SizedBox(height: 20),
                                   Text(
                                     "Menu".tr,

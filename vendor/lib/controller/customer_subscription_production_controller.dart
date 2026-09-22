@@ -80,6 +80,8 @@ class CustomerSubscriptionProductionController extends GetxController {
 
     for (final sub in subscriptions) {
       if (!sub.isActiveOn(day)) continue;
+      // The customer paused the subscription over this day, or skipped it.
+      if (sub.isPausedOn(day) || sub.isSkipped(day)) continue;
       final plan = sub.plan;
       if (plan == null || !plan.hasSchedule) {
         noSchedule.add(sub);

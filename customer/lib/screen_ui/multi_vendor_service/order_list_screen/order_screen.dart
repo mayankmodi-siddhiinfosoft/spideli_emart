@@ -156,7 +156,7 @@ class OrderScreen extends StatelessWidget {
                                                 padding: EdgeInsets.zero,
                                                 itemBuilder: (context, index) {
                                                   if (index == controller.allList.length) {
-                                                    return OlderOrdersPrompt(hiddenCount: controller.hiddenOrderCount.value, isDark: isDark);
+                                                    return OlderOrdersPrompt(hiddenCount: controller.hiddenOrderCount.value, isDark: isDark, onReturn: controller.getOrder);
                                                   }
                                                   OrderModel orderModel = controller.allList[index];
                                                   return itemView(isDark, context, orderModel, controller);

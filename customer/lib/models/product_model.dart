@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:customer/models/tax_model.dart';
 import 'package:get/get.dart';
+import 'package:customer/utils/business_account.dart';
 
 class ProductModel {
   int? fats;
@@ -186,12 +187,13 @@ class ProductModel {
   /// Wholesale-only product: retail price hidden, minimum quantity = first tier.
   bool get isWholesaleOnly => effectiveSaleType == saleTypeWholesale && hasWholesaleTier;
 
-  /// This app has no verified Business account type yet, so a
-  /// business-only wholesale product never gets wholesale prices here.
-  bool get wholesaleBlockedForCustomer => wholesaleBusinessOnly == true;
+  /// Business-only wholesale: prices (and wholesale-only products) are
+  /// available only to a customer whose business profile the admin approved
+  /// (`users.businessProfile.status == "approved"`, spec 8.2).
+  bool get wholesaleBlockedForCustomer => wholesaleBusinessOnly == true && !BusinessAccount.isApproved;
 
-  /// Wholesale-only AND business-only: cannot be sold in this app
-  /// ("Business customers only").
+  /// Wholesale-only AND business-only, for a customer without an approved
+  /// business account: cannot be bought ("Business customers only").
   bool get isBusinessOnlyProduct => isWholesaleOnly && wholesaleBlockedForCustomer;
 
   /// Mirrors the Store app's `effectiveFulfilment`: the explicit [fulfilment]

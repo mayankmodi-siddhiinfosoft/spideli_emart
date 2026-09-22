@@ -12,7 +12,8 @@ class CustomerSubscriptionController extends GetxController {
   static const String filterExpiringSoon = "expiring";
   static const String filterExpired = "expired";
   static const String filterCancelled = "cancelled";
-  static const List<String> subscriberFilters = [filterAll, filterActive, filterExpiringSoon, filterExpired, filterCancelled];
+  static const String filterPaused = "paused";
+  static const List<String> subscriberFilters = [filterAll, filterActive, filterPaused, filterExpiringSoon, filterExpired, filterCancelled];
 
   RxBool isPlansLoading = true.obs;
   RxBool isSubscribersLoading = true.obs;
@@ -118,6 +119,8 @@ class CustomerSubscriptionController extends GetxController {
         return sub.effectiveStatus == 'expired';
       case filterCancelled:
         return sub.effectiveStatus == 'cancelled';
+      case filterPaused:
+        return sub.effectiveStatus == 'paused';
       default:
         return true;
     }
@@ -133,6 +136,8 @@ class CustomerSubscriptionController extends GetxController {
         return "Expired".tr;
       case filterCancelled:
         return "Cancelled".tr;
+      case filterPaused:
+        return "Paused".tr;
       default:
         return "All".tr;
     }

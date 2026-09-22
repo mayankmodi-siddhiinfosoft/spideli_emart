@@ -19,7 +19,9 @@ import 'package:get/get.dart';
 ///   3. else price.
 /// All figures are commission-inclusive (Constant.productCommissionPrice),
 /// like the retail prices the app already shows. `wholesaleBusinessOnly`
-/// products get no wholesale price here (no verified Business accounts yet).
+/// products get wholesale prices only for a customer whose business account
+/// the admin approved (`BusinessAccount.isApproved`, via
+/// `ProductModel.wholesaleBlockedForCustomer`).
 class WholesalePricing {
   WholesalePricing._();
 
