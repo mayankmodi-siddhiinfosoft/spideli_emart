@@ -6,6 +6,9 @@ import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/services/helper.dart';
 import 'package:spideliprovider/ui/dashboard/dashboard_screen.dart';
+import 'package:spideliprovider/model/region_model.dart';
+import 'package:spideliprovider/services/region_service.dart';
+import 'package:spideliprovider/ui/documents/provider_documents_screen.dart';
 import 'package:spideliprovider/ui/subscription_plan_screen/app_not_access_screen.dart';
 import 'package:spideliprovider/ui/subscription_plan_screen/subscription_plan_screen.dart';
 import 'package:flutter/material.dart';
@@ -58,10 +61,57 @@ class SignUpController extends GetxController {
   }
 
   getData() async {
+    await RegionService.ensureLoaded();
+    regions.value = RegionService.regions;
     await FireStoreUtils.firestore.collection(Setting).doc('provider').get().then((value) {
       auto_approve_provider = value.data()!['auto_approve_provider'];
       update();
     });
+  }
+
+  // ---------------- Registration attached to a management zone (spec 3.1, 10) ----------------
+
+  RxList<RegionModel> regions = <RegionModel>[].obs;
+  RxString selectedRegionId = ''.obs;
+  Rx<TextEditingController> companyNameEditingController = TextEditingController().obs;
+
+  /// A management zone is mandatory as soon as the admin panel defines some.
+  bool get regionRequired => regions.isNotEmpty;
+
+  /// Writes `users.regionId` (+ company name) on the new account. Separate
+  /// from the model's toJson, which never writes regionId.
+  Future<void> writeRegistrationFields(User user) async {
+    final String companyName = companyNameEditingController.value.text.trim();
+    final Map<String, dynamic> data = {
+      if (selectedRegionId.value.isNotEmpty) 'regionId': selectedRegionId.value,
+      if (companyName.isNotEmpty) 'companyName': companyName,
+    };
+    if (user.id.isEmpty || data.isEmpty) return;
+    try {
+      await FireStoreUtils.writeUserFields(user.id, data);
+      if (selectedRegionId.value.isNotEmpty) user.regionId = selectedRegionId.value;
+      if (companyName.isNotEmpty) user.companyName = companyName;
+    } catch (e) {
+      debugPrint("Registration fields not written: $e");
+    }
+  }
+
+  /// Account created but awaiting approval: continue with the documents
+  /// (spec 10 "Company information > Upload documents > Pending verification").
+  void showPendingVerification(BuildContext context) {
+    Get.dialog(
+      AlertDialog(
+        title: Text('Signup Successfull'.tr),
+        content: Text("Thank you for sign up, your application is under approval. Upload your documents so that it can be verified.".tr),
+        actions: [
+          TextButton(
+            onPressed: () => Get.offAll(() => const ProviderDocumentsScreen(pendingMode: true)),
+            child: Text('Upload documents'.tr),
+          ),
+        ],
+      ),
+      barrierDismissible: false,
+    );
   }
 
   /// if the fields are validated and location is enabled we create a new user
@@ -78,6 +128,7 @@ class SignUpController extends GetxController {
       userModel.value.countryCode = countryCodeEditingController.value.text;
       userModel.value.createdAt = Timestamp.now();
       userModel.value.appIdentifier = Platform.isAndroid ? 'android' : 'ios';
+      await writeRegistrationFields(userModel.value);
 
       await FireStoreUtils.updateCurrentUser(userModel.value).then((value) async {
         if (auto_approve_provider == true) {
@@ -109,10 +160,10 @@ class SignUpController extends GetxController {
               Get.offAll(const AppNotAccessScreen());
             }
           } else {
-            showAlertDialog(context, 'Signup Successfull'.tr, "Thank you for sign up, your application is under approval so please wait till that approve.".tr, true, login: true);
+            showPendingVerification(context);
           }
         } else {
-          showAlertDialog(context, 'Signup Successfull'.tr, "Thank you for sign up, your application is under approval so please wait till that approve.".tr, true, login: true);
+          showPendingVerification(context);
         }
       });
     } else {
@@ -121,6 +172,7 @@ class SignUpController extends GetxController {
           firstNameEditingController.value.text.toString(), lastNameEditingController.value.text.toString(), phoneNUmberEditingController.value.text.toString(), auto_approve_provider);
       ShowToastDialog.closeLoader();
       if (result != null && result is User) {
+        await writeRegistrationFields(result);
         if (auto_approve_provider == true) {
           if (result.active == true) {
             result.active = true;
@@ -150,10 +202,10 @@ class SignUpController extends GetxController {
               Get.offAll(const AppNotAccessScreen());
             }
           } else {
-            showAlertDialog(context, 'Signup Successfull'.tr, "Thank you for sign up, your application is under approval so please wait till that approve.".tr, true, login: true);
+            showPendingVerification(context);
           }
         } else {
-          showAlertDialog(context, 'Signup Successfull'.tr, "Thank you for sign up, your application is under approval so please wait till that approve.".tr, true, login: true);
+          showPendingVerification(context);
         }
       } else if (result != null && result is String) {
         showAlertDialog(context, 'Failed'.tr, result, true);

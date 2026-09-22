@@ -3,6 +3,7 @@ import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/controller/wallet_controller.dart';
 import 'package:spideliprovider/main.dart';
+import 'package:spideliprovider/model/currency_model.dart';
 import 'package:spideliprovider/model/topupTranHistory.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/model/withdrawHistoryModel.dart';
@@ -155,7 +156,7 @@ class WalletScreen extends StatelessWidget {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3),
                 child: GestureDetector(
-                  onTap: () => showTransactionDetails(topupTranHistory: topUpTranHistory, context: context),
+                  onTap: () => showTransactionDetails(topupTranHistory: topUpTranHistory, context: context, currency: controller.currencyForRow(topUpTranHistory)),
                   child: Card(
                     elevation: 2,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -212,8 +213,8 @@ class WalletScreen extends StatelessWidget {
                                     children: [
                                       Text(
                                         topUpTranHistory.isTopup
-                                            ? "${"+"} ${amountShow(amount: topUpTranHistory.amount.toString())}"
-                                            : "(${"-"} ${amountShow(amount: topUpTranHistory.amount.toString())})",
+                                            ? "${"+"} ${amountShow(currency: controller.currencyForRow(topUpTranHistory), amount: topUpTranHistory.amount.toString())}"
+                                            : "(${"-"} ${amountShow(currency: controller.currencyForRow(topUpTranHistory), amount: topUpTranHistory.amount.toString())})",
                                         style: TextStyle(
                                           fontWeight: FontWeight.w600,
                                           color: topUpTranHistory.isTopup ? Colors.green : Colors.red,
@@ -258,7 +259,7 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  showTransactionDetails({required TopupTranHistoryModel topupTranHistory, required BuildContext context}) {
+  showTransactionDetails({required TopupTranHistoryModel topupTranHistory, required BuildContext context, CurrencyModel? currency}) {
     return showModalBottomSheet(
         elevation: 5,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.only(topLeft: Radius.circular(15), topRight: Radius.circular(15))),
@@ -371,7 +372,7 @@ class WalletScreen extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 Text(
-                                  topupTranHistory.isTopup ? "${"+"} ${amountShow(amount: topupTranHistory.amount.toString())}" : "(${"-"} ${amountShow(amount: topupTranHistory.amount.toString())})",
+                                  topupTranHistory.isTopup ? "${"+"} ${amountShow(currency: currency, amount: topupTranHistory.amount.toString())}" : "(${"-"} ${amountShow(currency: currency, amount: topupTranHistory.amount.toString())})",
                                   style: TextStyle(
                                     fontWeight: FontWeight.w600,
                                     color: topupTranHistory.isTopup ? Colors.green : Colors.red,

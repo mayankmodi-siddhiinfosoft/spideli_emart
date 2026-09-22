@@ -126,9 +126,21 @@ class AssignWorkerList extends StatelessWidget {
                     ShowToastDialog.showToast('Please select worker.'.tr);
                   } else {
                     ShowToastDialog.showLoader('Please wait...');
-                    controller.onProviderOrder.value.workerId = controller.selectedWorkerRadioTile.value.toString();
+                    final String previousWorkerId = controller.onProviderOrder.value.workerId ?? '';
+                    final String newWorkerId = controller.selectedWorkerRadioTile.value.toString();
+                    final User? selected = controller.user.firstWhereOrNull((w) => w.id == newWorkerId);
+                    controller.onProviderOrder.value.workerId = newWorkerId;
                     controller.onProviderOrder.value.status = ORDER_STATUS_ASSIGNED;
                     await FireStoreUtils.updateOrder(controller.onProviderOrder.value);
+                    // Manual assignment log (spec 10), append-only.
+                    if (previousWorkerId != newWorkerId) {
+                      await FireStoreUtils.logWorkerAssignment(
+                        orderId: controller.onProviderOrder.value.id,
+                        workerId: newWorkerId,
+                        workerName: selected?.fullName().trim() ?? '',
+                        previousWorkerId: previousWorkerId,
+                      );
+                    }
                     Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": controller.onProviderOrder.value.id};
                     await SendNotification.sendFcmMessage(workerBookingAssigned, controller.fcmToken.value, payLoad);
 

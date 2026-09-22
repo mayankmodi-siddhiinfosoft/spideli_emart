@@ -191,11 +191,15 @@ String? validateConfirmPassword(String? password, String? confirmPassword) {
   }
 }
 
-String amountShow({required String? amount}) {
-  if (currencyData!.symbolatright == true) {
-    return "${double.parse(amount ?? '0').toStringAsFixed(currencyData?.decimal ?? 2)}${currencyData?.symbol ?? ''}";
+/// Formats [amount] in [currency] (a booking's own currency for history), or
+/// in the live currency ([currencyData], the provider's region currency).
+String amountShow({required String? amount, CurrencyModel? currency}) {
+  final CurrencyModel? c = currency ?? currencyData;
+  final double value = double.tryParse(amount ?? '0') ?? 0;
+  if (c?.symbolatright == true) {
+    return "${value.toStringAsFixed(c?.decimal ?? 2)}${c?.symbol ?? ''}";
   } else {
-    return "${currencyData?.symbol ?? ''}${double.parse(amount ?? '0').toStringAsFixed(currencyData?.decimal ?? 2)}";
+    return "${c?.symbol ?? ''}${value.toStringAsFixed(c?.decimal ?? 2)}";
   }
 }
 

@@ -80,6 +80,8 @@ dependencies:
   flutter_google_places_hoc081098: ^2.0.0
   google_sign_in: ^7.2.0
   sign_in_with_apple: ^8.1.0
+  syncfusion_flutter_pdf: ^34.2.8
+  share_plus: ^13.3.0
 
 
 dev_dependencies:

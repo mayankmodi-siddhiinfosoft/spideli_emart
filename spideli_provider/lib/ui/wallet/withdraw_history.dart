@@ -1,6 +1,7 @@
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/controller/wallet_controller.dart';
 import 'package:spideliprovider/model/withdrawHistoryModel.dart';
+import 'package:spideliprovider/services/region_service.dart';
 import 'package:spideliprovider/themes/app_colors.dart';
 import 'package:spideliprovider/themes/responsive.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
@@ -113,7 +114,7 @@ class WithdrawHistoryScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          "- ${amountShow(amount: (withdrawHistory.amount.toString()))}",
+                          "- ${amountShow(currency: RegionService.currencyForBooking(withdrawHistory.regionId), amount: (withdrawHistory.amount.toString()))}",
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             color: withdrawHistory.paymentStatus == "Success" ? Colors.green : Colors.deepOrangeAccent,
@@ -269,7 +270,7 @@ class WithdrawHistoryScreen extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
                                     Text(
-                                      " ${amountShow(amount: withdrawHistoryModel.amount.toString())}",
+                                      " ${amountShow(currency: RegionService.currencyForBooking(withdrawHistoryModel.regionId), amount: withdrawHistoryModel.amount.toString())}",
                                       style: TextStyle(
                                         fontWeight: FontWeight.w600,
                                         color: withdrawHistoryModel.paymentStatus == "Success" ? Colors.green : Colors.deepOrangeAccent,

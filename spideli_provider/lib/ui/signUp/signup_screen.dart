@@ -176,11 +176,44 @@ class SignupScreen extends StatelessWidget {
                             ),
                           ],
                         ),
+                  // Company information + management zone (spec 10: "Register (zone) > Company information").
+                  TextFieldWidget(
+                    title: 'Company Name'.tr,
+                    controller: controller.companyNameEditingController.value,
+                    hintText: 'Enter Company Name (optional)'.tr,
+                    prefix: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Icon(Icons.business_outlined, size: 20, color: themeChange.getTheme() ? AppThemeData.grey300 : AppThemeData.grey600),
+                    ),
+                  ),
+                  if (controller.regions.isNotEmpty) ...[
+                    Text(
+                      'Management Zone'.tr,
+                      style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 14, color: themeChange.getTheme() ? AppThemeData.grey100 : AppThemeData.grey800),
+                    ),
+                    const SizedBox(height: 5),
+                    DropdownButtonFormField<String>(
+                      initialValue: controller.selectedRegionId.value.isEmpty ? null : controller.selectedRegionId.value,
+                      isExpanded: true,
+                      hint: Text('Select the zone you operate in'.tr),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      items: controller.regions.map((r) => DropdownMenuItem<String>(value: r.id, child: Text(r.displayName))).toList(),
+                      onChanged: (value) => controller.selectedRegionId.value = value ?? '',
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   RoundedButtonFill(
                     title: "Signup".tr,
                     color: AppColors.colorPrimary,
                     textColor: AppThemeData.grey50,
                     onPress: () async {
+                      if (controller.regionRequired && controller.selectedRegionId.value.isEmpty) {
+                        ShowToastDialog.showToast("Please select your management zone".tr);
+                        return;
+                      }
                       if (controller.type.value == "google" || controller.type.value == "apple" || controller.type.value == "mobileNumber") {
                         if (controller.firstNameEditingController.value.text.trim().isEmpty) {
                           ShowToastDialog.showToast("Please enter first name".tr);

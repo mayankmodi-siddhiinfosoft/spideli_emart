@@ -7,6 +7,7 @@ import 'package:spideliprovider/main.dart';
 import 'package:spideliprovider/model/onprovider_order_model.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
+import 'package:spideliprovider/services/region_service.dart';
 import 'package:spideliprovider/services/send_notification.dart';
 import 'package:spideliprovider/themes/app_colors.dart';
 import 'package:spideliprovider/themes/responsive.dart';
@@ -250,9 +251,11 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                         child: Text(
                                                           onProviderOrder.provider.priceUnit == 'Fixed'
                                                               ? amountShow(
+                                                                  currency: RegionService.currencyForBooking(onProviderOrder.regionId),
                                                                   amount: total.toString(),
                                                                 )
                                                               : "${amountShow(
+                                                                  currency: RegionService.currencyForBooking(onProviderOrder.regionId),
                                                                   amount: total.toString(),
                                                                 )}/hr",
                                                           style: TextStyle(
@@ -967,9 +970,11 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                         child: Text(
                                                           onProviderOrder.provider.priceUnit == 'Fixed'
                                                               ? amountShow(
+                                                                  currency: RegionService.currencyForBooking(onProviderOrder.regionId),
                                                                   amount: total.toString(),
                                                                 )
                                                               : "${amountShow(
+                                                                  currency: RegionService.currencyForBooking(onProviderOrder.regionId),
                                                                   amount: total.toString(),
                                                                 )}/hr",
                                                           style: TextStyle(
@@ -1684,9 +1689,11 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                         child: Text(
                                                           onProviderOrder.provider.priceUnit == 'Fixed'
                                                               ? amountShow(
+                                                                  currency: RegionService.currencyForBooking(onProviderOrder.regionId),
                                                                   amount: total.toString(),
                                                                 )
                                                               : "${amountShow(
+                                                                  currency: RegionService.currencyForBooking(onProviderOrder.regionId),
                                                                   amount: total.toString(),
                                                                 )}/hr",
                                                           style: TextStyle(
@@ -2360,9 +2367,11 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                         child: Text(
                                                           onProviderOrder.provider.priceUnit == 'Fixed'
                                                               ? amountShow(
+                                                                  currency: RegionService.currencyForBooking(onProviderOrder.regionId),
                                                                   amount: total.toString(),
                                                                 )
                                                               : "${amountShow(
+                                                                  currency: RegionService.currencyForBooking(onProviderOrder.regionId),
                                                                   amount: total.toString(),
                                                                 )}/hr",
                                                           style: TextStyle(
@@ -3086,9 +3095,11 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                         child: Text(
                                                           onProviderOrder.provider.priceUnit == 'Fixed'
                                                               ? amountShow(
+                                                                  currency: RegionService.currencyForBooking(onProviderOrder.regionId),
                                                                   amount: total.toString(),
                                                                 )
                                                               : "${amountShow(
+                                                                  currency: RegionService.currencyForBooking(onProviderOrder.regionId),
                                                                   amount: total.toString(),
                                                                 )}/hr",
                                                           style: TextStyle(

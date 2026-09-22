@@ -15,6 +15,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../services/notification_service.dart';
 import '../ui/signUp/signup_screen.dart';
+import 'package:spideliprovider/ui/documents/provider_documents_screen.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 class LoginController extends GetxController {
@@ -66,7 +67,28 @@ class LoginController extends GetxController {
           Get.offAll(const AppNotAccessScreen());
         }
       } else {
-        showAlertDialog(context, 'Your account has been disabled, Please contact to admin.'.tr, "", true);
+        // Not active yet (pending verification) or disabled: the documents
+        // stay reachable so a rejected document can be uploaded again.
+        Get.dialog(
+          AlertDialog(
+            title: Text('Your account is not active yet'.tr),
+            content: Text('It may still be under verification, or disabled by the administrator. You can check your documents and their status.'.tr),
+            actions: [
+              TextButton(
+                onPressed: () async {
+                  Get.back();
+                  await FirebaseAuth.instance.signOut();
+                },
+                child: Text('OK'.tr),
+              ),
+              TextButton(
+                onPressed: () => Get.offAll(() => const ProviderDocumentsScreen(pendingMode: true)),
+                child: Text('My documents'.tr),
+              ),
+            ],
+          ),
+          barrierDismissible: false,
+        );
       }
     } else if (result != null && result is String) {
       showAlertDialog(context, "Couldn't Authenticate".tr, result, true);

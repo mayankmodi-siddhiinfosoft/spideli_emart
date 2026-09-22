@@ -41,6 +41,7 @@ import 'package:spideliprovider/model/subscription_plan_model.dart';
 import 'package:spideliprovider/model/topupTranHistory.dart';
 import 'package:spideliprovider/model/withdrawHistoryModel.dart';
 import 'package:spideliprovider/model/withdraw_method_model.dart';
+import 'package:spideliprovider/services/region_service.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
@@ -53,6 +54,15 @@ import 'package:the_apple_sign_in/the_apple_sign_in.dart' as apple;
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+
+/// Update of an existing document that writes only [data]'s keys (contract
+/// lesson 2): a full `set(model.toJson())` would delete every field the model
+/// doesn't know, such as the panel's `regionId`. Creates the doc if missing.
+extension SetKnownFields on DocumentReference<Map<String, dynamic>> {
+  Future<void> setKnownFields(Map<String, dynamic> data) {
+    return set(data, SetOptions(mergeFields: data.keys.map((k) => FieldPath([k])).toList()));
+  }
+}
 
 enum FirebaseEnv { defaultDb, staging }
 
@@ -176,10 +186,46 @@ class FireStoreUtils {
     }
   }
 
+  /// Writes only the fields the [User] model knows (contract lesson 2), so
+  /// panel-written fields (`regionId`, `isDocumentVerify`, ...) survive.
   static Future<User?> updateCurrentUser(User user) async {
-    return await firestore.collection(USERS).doc(user.id).set(user.toJson()).then((document) {
+    return await firestore.collection(USERS).doc(user.id).setKnownFields(user.toJson()).then((document) {
       return user;
     });
+  }
+
+  /// Merges [data] into `users/{uid}` (creates the doc when missing).
+  static Future<void> writeUserFields(String uid, Map<String, dynamic> data) async {
+    if (uid.isEmpty || data.isEmpty) return;
+    await firestore.collection(USERS).doc(uid).setKnownFields(data);
+  }
+
+  /// The signed-in provider's region, for records created by this app
+  /// (spec 18.12): the stored `users.regionId`, else the resolved one.
+  static String? currentProviderRegionId() {
+    final String? own = MyAppState.currentUser?.regionId;
+    if (own != null && own.isNotEmpty) return own;
+    return RegionService.providerRegionId;
+  }
+
+  /// Appends one entry to `provider_orders/{orderId}.assignmentLog` (spec 10).
+  /// Append-only: arrayUnion, never a rewrite of the list.
+  static Future<void> logWorkerAssignment({required String orderId, required String workerId, required String workerName, String? previousWorkerId}) async {
+    if (orderId.isEmpty) return;
+    final entry = AssignmentLogEntry(
+      workerId: workerId,
+      workerName: workerName,
+      assignedBy: getCurrentUid(),
+      at: Timestamp.now(),
+      previousWorkerId: (previousWorkerId == null || previousWorkerId.isEmpty) ? null : previousWorkerId,
+    );
+    try {
+      await firestore.collection(PROVIDER_ORDER).doc(orderId).update({
+        'assignmentLog': FieldValue.arrayUnion([entry.toJson()])
+      });
+    } catch (e) {
+      log("Assignment log not written: $e");
+    }
   }
 
   static Future<bool> isMaintenanceMode() async {
@@ -337,17 +383,20 @@ class FireStoreUtils {
 
   static Future<ProviderServiceModel> firebaseAddOrUpdateProvider(ProviderServiceModel productModel) async {
     if ((productModel.id!).isNotEmpty) {
-      await firestore.collection(PROVIDERS_SERVICES).doc(productModel.id).set(productModel.toJson());
+      // Update: known fields only, so the panel's regionId etc. are kept.
+      await firestore.collection(PROVIDERS_SERVICES).doc(productModel.id).setKnownFields(productModel.toJson());
     } else {
       DocumentReference docRef = firestore.collection(PROVIDERS_SERVICES).doc();
       productModel.id = docRef.id;
-      docRef.set(productModel.toJson());
+      // Creation: stamp the provider's region (spec 18.12).
+      final String? regionId = currentProviderRegionId();
+      docRef.set({...productModel.toJson(), if (regionId != null) 'regionId': regionId});
     }
     return productModel;
   }
 
   static Future<ProviderServiceModel?> updateProvider(ProviderServiceModel vendor) async {
-    return await firestore.collection(PROVIDERS_SERVICES).doc(vendor.id).set(vendor.toJson()).then((document) {
+    return await firestore.collection(PROVIDERS_SERVICES).doc(vendor.id).setKnownFields(vendor.toJson()).then((document) {
       return vendor;
     });
   }
@@ -832,7 +881,15 @@ class FireStoreUtils {
     return "updated Amount".tr;
   }
 
-  static Future<String?> firebaseCreateNewWorker(User user) async => await firestore.collection(WORKERS).doc(user.id).set(user.toJson()).then((value) => null, onError: (e) => e);
+  /// Creates `providers_workers/{id}`, stamped with the provider's region
+  /// (spec 18.12) when known.
+  static Future<String?> firebaseCreateNewWorker(User user) async {
+    final String? regionId = user.regionId ?? currentProviderRegionId();
+    return await firestore
+        .collection(WORKERS)
+        .doc(user.id)
+        .set({...user.toJson(), if (regionId != null && regionId.isNotEmpty) 'regionId': regionId}).then((value) => null, onError: (e) => e);
+  }
 
   static Future<List<User>> getAllWorkers() async {
     List<User> products = [];
@@ -861,7 +918,7 @@ class FireStoreUtils {
   }
 
   static Future<User> firebaseUpdateWorker(User User) async {
-    await firestore.collection(WORKERS).doc(User.id).set(User.toJson());
+    await firestore.collection(WORKERS).doc(User.id).setKnownFields(User.toJson());
 
     return User;
   }

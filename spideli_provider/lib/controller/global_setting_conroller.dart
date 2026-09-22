@@ -3,6 +3,7 @@ import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/model/currency_model.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/services/notification_service.dart';
+import 'package:spideliprovider/services/region_service.dart';
 import 'package:get/get.dart';
 
 class GlobalSettingController extends GetxController {
@@ -21,6 +22,9 @@ class GlobalSettingController extends GetxController {
       } else {
         currencyData = CurrencyModel(id: "", code: "USD", decimal: 2, isactive: true, name: "US Dollar", symbol: "\$", symbolatright: false);
       }
+      // Global currency is only the fallback; a provider with a region keeps
+      // its region currency even if this read finishes last.
+      RegionService.onGlobalCurrency(currencyData!);
     });
 
     await FireStoreUtils.firestore.collection(Setting).doc('globalSettings').get().then((value) {

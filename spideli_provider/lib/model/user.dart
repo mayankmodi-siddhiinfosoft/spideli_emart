@@ -47,6 +47,25 @@ class User with ChangeNotifier {
   AdminCommissionModel? adminCommission;
   String? appIdentifier;
 
+  /// Management zone (`regions/{id}`), written at registration (spec 3.1).
+  /// Read-only afterwards: [toJson] never writes it, so an update can't undo a
+  /// change made in the admin panel. Absent on older accounts.
+  String? regionId;
+
+  /// Delivery zone, when the panel stored one (region fallback only).
+  String? zoneId;
+
+  /// Set by the admin panel once the documents are verified. Read-only.
+  bool? isDocumentVerify;
+
+  /// Company information (spec 10) - same field names as delivery carriers /
+  /// driver companies. Written by the app only when present.
+  String? companyName;
+  String? commercialRegister;
+  String? uniqueIdNumber;
+  String? commercialRegisterFile;
+  String? uniqueIdNumberFile;
+
   User(
       {this.id = '',
       this.firstName = '',
@@ -80,7 +99,15 @@ class User with ChangeNotifier {
       this.subscriptionTotalOrders,
       this.sectionId = '',
       this.adminCommission,
-      this.appIdentifier})
+      this.appIdentifier,
+      this.regionId,
+      this.zoneId,
+      this.isDocumentVerify,
+      this.companyName,
+      this.commercialRegister,
+      this.uniqueIdNumber,
+      this.commercialRegisterFile,
+      this.uniqueIdNumberFile})
       : lastOnlineTimestamp = lastOnlineTimestamp ?? Timestamp.now(),
         userBankDetails = userBankDetails ?? UserBankDetails(),
         location = location ?? UserLocation(),
@@ -132,7 +159,20 @@ class User with ChangeNotifier {
       appIdentifier: json['appIdentifier'],
       sectionId: json['section_id'] ?? '',
       adminCommission: json['adminCommission'] != null ? AdminCommissionModel.fromJson(json['adminCommission']) : null,
+      regionId: _optString(json['regionId']),
+      zoneId: _optString(json['zoneId']),
+      isDocumentVerify: json['isDocumentVerify'] is bool ? json['isDocumentVerify'] : null,
+      companyName: _optString(json['companyName']),
+      commercialRegister: _optString(json['commercialRegister']),
+      uniqueIdNumber: _optString(json['uniqueIdNumber']),
+      commercialRegisterFile: _optString(json['commercialRegisterFile']),
+      uniqueIdNumberFile: _optString(json['uniqueIdNumberFile']),
     );
+  }
+
+  static String? _optString(dynamic value) {
+    final String? s = value?.toString();
+    return (s == null || s.isEmpty) ? null : s;
   }
 
   Map<String, dynamic> toJson() {
@@ -172,6 +212,14 @@ class User with ChangeNotifier {
       'subscriptionTotalOrders': subscriptionTotalOrders,
       'section_id': sectionId,
       if (adminCommission != null) 'adminCommission': adminCommission!.toJson(),
+      // Company information: only when known, so an older model never blanks it.
+      if (companyName != null) 'companyName': companyName,
+      if (commercialRegister != null) 'commercialRegister': commercialRegister,
+      if (uniqueIdNumber != null) 'uniqueIdNumber': uniqueIdNumber,
+      if (commercialRegisterFile != null) 'commercialRegisterFile': commercialRegisterFile,
+      if (uniqueIdNumberFile != null) 'uniqueIdNumberFile': uniqueIdNumberFile,
+      // regionId, zoneId and isDocumentVerify are deliberately not written here
+      // (panel-owned after creation); creation paths add regionId explicitly.
     };
   }
 }

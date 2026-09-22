@@ -3,6 +3,7 @@ import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/controller/booking_details_controller.dart';
 import 'package:spideliprovider/model/onprovider_order_model.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
+import 'package:spideliprovider/services/region_service.dart';
 import 'package:spideliprovider/services/send_notification.dart';
 import 'package:spideliprovider/themes/app_colors.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
@@ -106,7 +107,7 @@ class CommonUI {
                       ),
                       prefixIcon: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                        child: Text(currencyData!.symbol.toString()),
+                        child: Text(RegionService.currencyForBooking(onProviderOrder.regionId)?.symbol ?? currencyData?.symbol ?? ""),
                       ),
                     )),
               ),

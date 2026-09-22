@@ -9,12 +9,14 @@ import 'package:spideliprovider/model/onprovider_order_model.dart';
 import 'package:spideliprovider/model/tax_model.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
+import 'package:spideliprovider/services/region_service.dart';
 import 'package:spideliprovider/services/send_notification.dart';
 import 'package:spideliprovider/themes/app_colors.dart';
 import 'package:spideliprovider/themes/responsive.dart';
 import 'package:spideliprovider/ui/booking_list/assign_worker_list.dart';
 import 'package:spideliprovider/ui/booking_list/verify_otp_screen.dart';
 import 'package:spideliprovider/ui/chat_screen/chat_screen.dart';
+import 'package:spideliprovider/utils/booking_receipt_pdf.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:spideliprovider/widgets/common_ui.dart';
 import 'package:flutter/material.dart';
@@ -524,7 +526,7 @@ class BookingDetailsScreen extends StatelessWidget {
                                                       ),
                                                     ),
                                                     Text(
-                                                      amountShow(amount: onProviderOrder.extraCharges.toString()),
+                                                      amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: onProviderOrder.extraCharges.toString()),
                                                       style: TextStyle(
                                                         color: themeChange.getTheme() ? Colors.white : Colors.black,
                                                         fontFamily: "Poppinsm",
@@ -625,7 +627,7 @@ class BookingDetailsScreen extends StatelessWidget {
                                                 ),
                                               ),
                                               Text(
-                                                "(-${amountShow(amount: controller.adminComm.value.toString())})",
+                                                "(-${amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.adminComm.value.toString())})",
                                                 style: TextStyle(fontWeight: FontWeight.w600, color: Colors.red, fontSize: 14),
                                               ),
                                             ],
@@ -644,6 +646,7 @@ class BookingDetailsScreen extends StatelessWidget {
                                 const SizedBox(
                                   height: 10,
                                 ),
+                                receiptAndAssignmentSection(context, onProviderOrder, themeChange),
                                 controller.ratingService.isEmpty
                                     ? SizedBox()
                                     : Column(
@@ -1030,6 +1033,86 @@ class BookingDetailsScreen extends StatelessWidget {
           );
   }
 
+  /// Receipt (spec 7.6 / 10), reassignment and the manual assignment log
+  /// (spec 10) of this booking.
+  Widget receiptAndAssignmentSection(BuildContext context, OnProviderOrderModel onProviderOrder, DarkThemeProvider themeChange) {
+    final bool dark = themeChange.getTheme();
+    final Color textColor = dark ? Colors.white : AppColors.colorDark;
+    final bool canReassign = onProviderOrder.status == ORDER_STATUS_ASSIGNED && (onProviderOrder.workerId ?? '').isNotEmpty;
+    final DateFormat fmt = DateFormat('dd MMM yyyy, hh:mm a');
+    final List<AssignmentLogEntry> log = [...onProviderOrder.assignmentLog]..sort((a, b) => (a.at?.millisecondsSinceEpoch ?? 0).compareTo(b.at?.millisecondsSinceEpoch ?? 0));
+    String nameOf(String? workerId) {
+      if (workerId == null || workerId.isEmpty) return '';
+      final match = log.where((e) => e.workerId == workerId && e.workerName.isNotEmpty);
+      return match.isNotEmpty ? match.first.workerName : workerId;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Receipt'.tr, style: TextStyle(color: textColor, fontFamily: AppColors.bold)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.download_outlined),
+                  label: Text('Download'.tr),
+                  onPressed: () => BookingReceiptPdf.download(onProviderOrder, provider: MyAppState.currentUser),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.share_outlined),
+                  label: Text('Share'.tr),
+                  onPressed: () => BookingReceiptPdf.share(onProviderOrder, provider: MyAppState.currentUser),
+                ),
+              ),
+            ],
+          ),
+          if (canReassign) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.colorPrimary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                icon: const Icon(Icons.swap_horiz, color: Colors.white),
+                label: Text('Reassign worker'.tr, style: const TextStyle(color: Colors.white, fontFamily: AppColors.semiBold)),
+                onPressed: () => Get.to(const AssignWorkerList(), arguments: {"onProviderOrder": onProviderOrder}),
+              ),
+            ),
+          ],
+          if (log.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Text('Assignment log'.tr, style: TextStyle(color: textColor, fontFamily: AppColors.bold)),
+            const SizedBox(height: 6),
+            Container(
+              decoration: BoxDecoration(color: dark ? AppColors.darkContainerBorderColor : AppColors.colorWhite, borderRadius: BorderRadius.circular(10)),
+              child: Column(
+                children: log.map((e) {
+                  final String by = e.assignedBy == MyAppState.currentUser?.id ? 'you'.tr : e.assignedBy;
+                  final String from = nameOf(e.previousWorkerId);
+                  return ListTile(
+                    dense: true,
+                    leading: Icon(e.previousWorkerId == null ? Icons.person_add_alt : Icons.swap_horiz, color: AppColors.colorPrimary),
+                    title: Text(
+                      from.isEmpty ? '${'Assigned to'.tr} ${e.workerName.isEmpty ? e.workerId : e.workerName}' : '${'Reassigned from'.tr} $from ${'to'.tr} ${e.workerName.isEmpty ? e.workerId : e.workerName}',
+                      style: TextStyle(color: textColor, fontFamily: AppColors.medium),
+                    ),
+                    subtitle: Text('${e.at != null ? fmt.format(e.at!.toDate()) : ''}  ${'by'.tr} $by', style: const TextStyle(color: AppColors.colorGrey500)),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget priceTotalRow(BookingDetailsController controller, OnProviderOrderModel onProviderOrder, context) {
     controller.price.value = 0.0;
     controller.discount.value = 0.0;
@@ -1125,15 +1208,15 @@ class BookingDetailsScreen extends StatelessWidget {
                     children: [
                       Text(
                         (onProviderOrder.provider.disPrice == "" || onProviderOrder.provider.disPrice == "0")
-                            ? '${amountShow(amount: onProviderOrder.adminCommission ?? '0')} × ${onProviderOrder.quantity.toStringAsFixed(2)}'
-                            : '${amountShow(amount: onProviderOrder.provider.disPrice.toString())} × ${onProviderOrder.quantity.toStringAsFixed(2)}',
+                            ? '${amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: onProviderOrder.provider.price.toString())} × ${onProviderOrder.quantity.toStringAsFixed(2)}'
+                            : '${amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: onProviderOrder.provider.disPrice.toString())} × ${onProviderOrder.quantity.toStringAsFixed(2)}',
                         style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.regular),
                       ),
                       SizedBox(
                         width: 10,
                       ),
                       Text(
-                        amountShow(amount: controller.price.toString()),
+                        amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.price.toString()),
                         style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
                       ),
                     ],
@@ -1165,7 +1248,7 @@ class BookingDetailsScreen extends StatelessWidget {
                         ],
                       ),
                       Text(
-                        '(- ${amountShow(amount: controller.discount.value.toString())})',
+                        '(- ${amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.discount.value.toString())})',
                         style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
                       ),
                     ],
@@ -1185,7 +1268,7 @@ class BookingDetailsScreen extends StatelessWidget {
                     style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
                   ),
                   Text(
-                    amountShow(amount: controller.subTotal.toString()),
+                    amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.subTotal.toString()),
                     style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
                   ),
                 ],
@@ -1208,7 +1291,7 @@ class BookingDetailsScreen extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            "${taxModel.title.toString()} (${taxModel.type == "fix" ? amountShow(amount: taxModel.tax) : "${taxModel.tax}%"})",
+                            "${taxModel.title.toString()} (${taxModel.type == "fix" ? amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: taxModel.tax) : "${taxModel.tax}%"})",
                             style: TextStyle(
                               fontFamily: AppColors.medium,
                               color: themeChange.getTheme() ? Colors.white : Colors.black,
@@ -1216,7 +1299,7 @@ class BookingDetailsScreen extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          amountShow(amount: getTaxValue(amount: (double.parse(controller.subTotal.toString())).toString(), taxModel: taxModel).toString()),
+                          amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: getTaxValue(amount: (double.parse(controller.subTotal.toString())).toString(), taxModel: taxModel).toString()),
                           style: TextStyle(fontFamily: AppColors.medium, color: themeChange.getTheme() ? Colors.white : Colors.black, fontSize: 14),
                         ),
                       ],
@@ -1262,7 +1345,7 @@ class BookingDetailsScreen extends StatelessWidget {
                     style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
                   ),
                   Text(
-                    amountShow(amount: controller.totalAmount.toString()),
+                    amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.totalAmount.toString()),
                     style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
                   ),
                 ],

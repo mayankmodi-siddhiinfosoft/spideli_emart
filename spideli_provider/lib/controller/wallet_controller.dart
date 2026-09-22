@@ -9,6 +9,8 @@ import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/model/withdrawHistoryModel.dart';
 import 'package:spideliprovider/model/withdraw_method_model.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
+import 'package:spideliprovider/services/region_service.dart';
+import 'package:spideliprovider/model/currency_model.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -24,6 +26,12 @@ class WalletController extends GetxController {
   RxList<TopupTranHistoryModel> topupHistoryQuery = <TopupTranHistoryModel>[].obs;
   Stream<DocumentSnapshot<Map<String, dynamic>>>? userQuery;
   RxString userId = "".obs;
+
+  /// `provider_orders.regionId` of the bookings the wallet rows refer to.
+  RxMap<String, String> bookingRegionIds = <String, String>{}.obs;
+
+  /// Currency of a wallet row: its booking's region, else the provider's.
+  CurrencyModel? currencyForRow(TopupTranHistoryModel row) => RegionService.currencyForBooking(bookingRegionIds[row.orderId]);
 
   UserBankDetails? userBankDetail = MyAppState.currentUser!.userBankDetails;
   Rx<TextEditingController> amountController = TextEditingController(text: 50.toString()).obs;
@@ -52,10 +60,13 @@ class WalletController extends GetxController {
     }
     await getPaymentSettings();
 
+    await RegionService.apply(MyAppState.currentUser);
     await FireStoreUtils.getTopUpTransaction(userId.value).then((value) {
       topupHistoryQuery.clear();
       topupHistoryQuery.addAll(value);
     });
+    // Rows tied to a booking are shown in that booking's currency (history).
+    bookingRegionIds.value = await RegionService.bookingRegionIds(topupHistoryQuery.map((e) => e.orderId));
 
     await FireStoreUtils.getWithdrawTransaction(userId.value).then((value) {
       withdrawHistoryQuery.clear();

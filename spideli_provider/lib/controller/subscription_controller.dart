@@ -33,6 +33,7 @@ import 'package:spideliprovider/payment/stripe_failed_model.dart';
 import 'package:spideliprovider/payment/xenditModel.dart';
 import 'package:spideliprovider/payment/xenditScreen.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
+import 'package:spideliprovider/services/region_service.dart';
 import 'package:spideliprovider/themes/app_them_data.dart';
 import 'package:spideliprovider/ui/dashboard/dashboard_screen.dart';
 import 'package:spideliprovider/ui/subscription_plan_screen/app_not_access_screen.dart';
@@ -154,6 +155,8 @@ class SubscriptionController extends GetxController {
 
   getInitPlanSettings() async {
     userModel.value = await FireStoreUtils.getCurrentUser(MyAppState.currentUser!.id) ?? User();
+    // Plan prices are live amounts: the provider's region currency.
+    await RegionService.apply(userModel.value);
     await FireStoreUtils.getSections().then(
       (value) async {
         value.forEach((element) {
@@ -220,6 +223,8 @@ class SubscriptionController extends GetxController {
     xenditModel.value = await FireStoreUtils.getXenditSettingData();
     midTransModel.value = await FireStoreUtils.getMidTransSettingData();
 
+    await _applyRegionToGateways();
+
     if (stripeModel.value?.isEnabled == true) {
       Stripe.publishableKey = stripeModel.value?.clientpublishableKey ?? '';
       Stripe.merchantIdentifier = 'spideli';
@@ -231,6 +236,30 @@ class SubscriptionController extends GetxController {
     razorPay.on(Razorpay.EVENT_PAYMENT_ERROR, handlePaymentError);
 
     setRef();
+  }
+
+  /// Payment methods per region (spec 18.7): a gateway whose settings doc
+  /// lists `regionIds` is offered only in those regions; the provider pays, so
+  /// the provider's region decides. Unknown region / empty list = unchanged.
+  Future<void> _applyRegionToGateways() async {
+    await RegionService.apply(MyAppState.currentUser);
+    await RegionService.loadGatewayRegionIds();
+    final String? regionId = RegionService.providerRegionId;
+    bool off(String doc) => !RegionService.isGatewayAvailable(doc, regionId);
+    if (off('walletSettings')) walletSettingModel.value?.isEnabled = false;
+    if (off('razorpaySettings')) razorPayModel.value?.isEnabled = false;
+    if (off('paypalSettings')) payPalModel.value?.isEnabled = false;
+    if (off('stripeSettings')) stripeModel.value?.isEnabled = false;
+    if (off('payStack')) payStackModel.value?.isEnable = false;
+    if (off('flutterWave')) flutterWaveModel.value?.isEnable = false;
+    if (off('PaytmSettings')) paytmModel.value?.isEnabled = false;
+    if (off('payFastSettings')) payFastModel.value?.isEnable = false;
+    if (off('MercadoPago')) mercadoPagoModel.value?.isEnabled = false;
+    if (off('orange_money_settings')) orangeMoneyModel.value?.enable = false;
+    if (off('xendit_settings')) xenditModel.value?.enable = false;
+    if (off('midtrans_settings')) midTransModel.value?.enable = false;
+    walletSettingModel.refresh();
+    stripeModel.refresh();
   }
 
   Rx<WalletSettingModel?> walletSettingModel = WalletSettingModel().obs;

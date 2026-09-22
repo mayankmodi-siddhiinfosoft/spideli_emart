@@ -37,8 +37,12 @@ class WithdrawHistoryModel {
       adminNote: parsedJson['adminNote'] ?? "",
       role: parsedJson['role'] ?? "",
       withdrawMethod: parsedJson['withdrawMethod'] ?? '',
-    );
+    )..regionId = (parsedJson['regionId']?.toString().isNotEmpty ?? false) ? parsedJson['regionId'].toString() : null;
   }
+
+  /// Payouts carry no region today (spec 18.13: the panel resolves it from the
+  /// provider); read if present so a stamped payout keeps its own currency.
+  String? regionId;
 
   Map<String, dynamic> toJson() {
     Map<String, dynamic> json = {

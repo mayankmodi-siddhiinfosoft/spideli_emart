@@ -34,6 +34,14 @@ class OnProviderOrderModel {
   bool? extraPaymentStatus;
   String? workerId;
 
+  /// Region the booking was charged in (`provider_orders.regionId`). Read-only
+  /// here: [toJson] never writes it and updates merge, so it is kept.
+  String? regionId;
+
+  /// Append-only worker assignment log (spec 10), written with arrayUnion by
+  /// [FireStoreUtils.logWorkerAssignment]. Read-only here.
+  List<AssignmentLogEntry> assignmentLog;
+
   OnProviderOrderModel({
     this.sectionId = '',
     this.authorID = '',
@@ -64,7 +72,10 @@ class OnProviderOrderModel {
     this.paymentStatus,
     this.extraPaymentStatus,
     this.workerId,
-  })  : author = author ?? User(),
+    this.regionId,
+    List<AssignmentLogEntry>? assignmentLog,
+  })  : assignmentLog = assignmentLog ?? const [],
+        author = author ?? User(),
         createdAt = createdAt ?? Timestamp.now(),
         provider = provider ?? ProviderServiceModel(),
         scheduleDateTime = scheduleDateTime ?? Timestamp.now();
@@ -113,6 +124,10 @@ class OnProviderOrderModel {
       extraPaymentStatus: parsedJson['extraPaymentStatus'],
       workerId: parsedJson['workerId'] ?? "",
       extraChargesDescription: parsedJson['extraChargesDescription'] ?? "",
+      regionId: (parsedJson['regionId']?.toString().isNotEmpty ?? false) ? parsedJson['regionId'].toString() : null,
+      assignmentLog: parsedJson['assignmentLog'] is List
+          ? (parsedJson['assignmentLog'] as List).whereType<Map>().map((e) => AssignmentLogEntry.fromJson(Map<String, dynamic>.from(e))).toList()
+          : const [],
     );
   }
 
@@ -150,4 +165,35 @@ class OnProviderOrderModel {
       'extraChargesDescription': extraChargesDescription,
     };
   }
+}
+
+/// One row of `provider_orders.assignmentLog`:
+/// `{ workerId, workerName, assignedBy, at, previousWorkerId? }`.
+class AssignmentLogEntry {
+  final String workerId;
+  final String workerName;
+  final String assignedBy;
+  final Timestamp? at;
+  final String? previousWorkerId;
+
+  const AssignmentLogEntry({required this.workerId, required this.workerName, required this.assignedBy, this.at, this.previousWorkerId});
+
+  factory AssignmentLogEntry.fromJson(Map<String, dynamic> json) {
+    final String? previous = json['previousWorkerId']?.toString();
+    return AssignmentLogEntry(
+      workerId: json['workerId']?.toString() ?? '',
+      workerName: json['workerName']?.toString() ?? '',
+      assignedBy: json['assignedBy']?.toString() ?? '',
+      at: json['at'] is Timestamp ? json['at'] : null,
+      previousWorkerId: (previous == null || previous.isEmpty) ? null : previous,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'workerId': workerId,
+        'workerName': workerName,
+        'assignedBy': assignedBy,
+        'at': at ?? Timestamp.now(),
+        'previousWorkerId': previousWorkerId,
+      };
 }
