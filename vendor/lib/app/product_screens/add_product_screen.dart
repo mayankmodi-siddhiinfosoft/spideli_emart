@@ -1139,27 +1139,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                             ],
                           ),
 
-                        Constant.selectedSection != null && Constant.selectedSection!.serviceTypeFlag == "ecommerce-service"
-                            ? Container()
-                            : Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      "Enable Takeaway option".tr,
-                                      style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium, fontSize: 18),
-                                    ),
-                                  ),
-                                  Transform.scale(
-                                    scale: 0.8,
-                                    child: CupertinoSwitch(
-                                      value: controller.takeAway.value,
-                                      onChanged: (value) {
-                                        controller.takeAway.value = value;
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
+                        // The separate 'Enable Takeaway option' switch is replaced by the
+                        // Delivery / Takeaway choice below, which writes the same field.
                         const SizedBox(height: 20),
                         _buildFulfilmentSection(controller, isDark),
                         const SizedBox(height: 20),

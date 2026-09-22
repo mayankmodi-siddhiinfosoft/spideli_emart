@@ -183,10 +183,19 @@ class ProductModel {
   }
 
   /// Normalised fulfilment modes, see [fulfilment].
+  ///
+  /// `takeawayOption` is what the customer app already reads to list a product
+  /// under Takeaway, so it stays the source of truth for takeaway: a product
+  /// saved before `fulfilment` existed is Delivery, plus Takeaway only if its
+  /// takeawayOption was on - exactly what customers see today.
   List<String> get effectiveFulfilment {
     final List<String> modes = allFulfilmentModes.where((m) => fulfilment?.contains(m) == true).toList();
-    return modes.isEmpty ? List<String>.from(allFulfilmentModes) : modes;
+    if (modes.isNotEmpty) return modes;
+    return [fulfilmentDelivery, if (takeawayOption == true) fulfilmentTakeaway];
   }
+
+  /// Whether the owner explicitly chose the modes (the list only flags those).
+  bool get hasExplicitFulfilment => allFulfilmentModes.any((m) => fulfilment?.contains(m) == true);
 
   /// Minimum order quantity: first tier's minQty for wholesale-only products, else 1.
   int get minOrderQuantity {

@@ -355,7 +355,9 @@ class AddProductController extends GetxController {
           : itemAttributes.value;
       productModel.value.addOnsTitle = listAddTitle;
       productModel.value.addOnsPrice = listAddPrice;
-      productModel.value.takeawayOption = takeAway.value;
+      // One control: the Takeaway choice under 'Available for' drives the
+      // takeawayOption the customer app reads.
+      productModel.value.takeawayOption = fulfilTakeaway.value;
       productModel.value.productSpecification = specification;
       productModel.value.brandId = selectedBrands.value.id;
       productModel.value.taxSetting = List.from(selectedTaxes);

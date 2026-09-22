@@ -27,6 +27,8 @@ String? wholesaleTiersBadge(ProductModel product, {String? variantWholesalePrice
 /// "Delivery only" / "Takeaway only" when the product is restricted to one
 /// fulfilment mode, else null.
 String? fulfilmentRestrictionLabel(ProductModel product) {
+  // Only flag restrictions the owner chose, not the default of older products.
+  if (!product.hasExplicitFulfilment) return null;
   final List<String> modes = product.effectiveFulfilment;
   if (modes.length != 1) return null;
   return modes.first == ProductModel.fulfilmentDelivery ? "Delivery only".tr : "Takeaway only".tr;
