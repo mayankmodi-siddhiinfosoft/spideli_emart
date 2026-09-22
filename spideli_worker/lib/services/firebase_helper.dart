@@ -31,6 +31,15 @@ enum FirebaseEnv { defaultDb, staging }
 /// Change this to switch between default / staging
 const FirebaseEnv currentEnv = FirebaseEnv.defaultDb;
 
+extension KnownFieldsWrite on DocumentReference<Map<String, dynamic>> {
+  /// Writes only the top-level keys of [data] and leaves every other field
+  /// untouched, so fields written by the admin panel (`regionId`,
+  /// `isDocumentVerify`, ...) survive an app-side update.
+  Future<void> setKnownFields(Map<String, dynamic> data) {
+    return set(data, SetOptions(mergeFields: data.keys.map((key) => FieldPath([key])).toList()));
+  }
+}
+
 class FireStoreUtils {
   FireStoreUtils._privateConstructor();
 
@@ -154,9 +163,10 @@ class FireStoreUtils {
       if (userDocument.data() != null && userDocument.exists) {
         try {
           print(userDocument.data());
-          User user = User.fromJson(userDocument.data()!);
-          user.walletAmount = user.walletAmount + amount;
-          await firestore.collection(USERS).doc(userId).set(user.toJson()).then((value) => print("north"));
+          // Only the wallet field: a full set(user.toJson()) with the worker's
+          // User model erased every provider field it does not know
+          // (regionId, subscription and panel fields).
+          await firestore.collection(USERS).doc(userId).update({'wallet_amount': FieldValue.increment(amount)});
         } catch (error) {
           print(error);
           if (error.toString() == "Bad state: field does not exist within the DocumentSnapshotPlatform") {
@@ -172,7 +182,9 @@ class FireStoreUtils {
   }
 
   static Future<User?> updateCurrentUser(User user) async {
-    return await firestore.collection(WORKERS).doc(user.id).set(user.toJson()).then((document) {
+    // Known fields only, so panel-written fields (regionId, isDocumentVerify)
+    // survive a profile / online-status save.
+    return await firestore.collection(WORKERS).doc(user.id).setKnownFields(user.toJson()).then((document) {
       return user;
     });
   }
@@ -281,8 +293,17 @@ class FireStoreUtils {
     }
   }
 
-  static Future updateOrder(OnProviderOrderModel onProviderOrderModel) async {
-    await firestore.collection(PROVIDER_ORDER).doc(onProviderOrderModel.id).set(onProviderOrderModel.toJson(), SetOptions(merge: true));
+  /// Job status writes: only the given fields of `provider_orders/{id}`, so
+  /// every other field (regionId, panel fields, the customer's author map)
+  /// is left as it is.
+  static Future<void> updateOrderFields(String orderId, Map<String, dynamic> data) async {
+    await firestore.collection(PROVIDER_ORDER).doc(orderId).update(data);
+  }
+
+  static Future<String> uploadCompletionPhoto(File image, String orderId) async {
+    final Reference upload = storage.child('$STORAGE_ROOT/jobCompletion/$orderId/${const Uuid().v4()}.jpg');
+    final TaskSnapshot task = await upload.putFile(image, SettableMetadata(contentType: 'image/jpeg'));
+    return task.ref.getDownloadURL();
   }
 
   static Future<List<RatingModel>> getReviewByProviderServiceId(String serviceId) async {

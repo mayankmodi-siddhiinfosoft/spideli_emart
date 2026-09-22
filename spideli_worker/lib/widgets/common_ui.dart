@@ -6,6 +6,7 @@ import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/services/send_notification.dart';
 import 'package:spideliworker/themes/app_colors.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
+import 'package:spideliworker/utils/region_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
@@ -106,7 +107,7 @@ class CommonUI {
                       ),
                       prefixIcon: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                        child: Text(currencyData!.symbol.toString()),
+                        child: Text((RegionService.currencyForRegion(onProviderOrder.regionId) ?? currencyData!).symbol.toString()),
                       ),
                     )),
               ),
@@ -126,7 +127,12 @@ class CommonUI {
                   onProviderOrder.extraChargesDescription = controller.descriptionController.value.text.toString();
                   onProviderOrder.extraPaymentStatus = false;
 
-                  await FireStoreUtils.updateOrder(onProviderOrder);
+                  // Only the extra-charge fields (known-fields write).
+                  await FireStoreUtils.updateOrderFields(onProviderOrder.id, {
+                    'extraCharges': onProviderOrder.extraCharges,
+                    'extraChargesDescription': onProviderOrder.extraChargesDescription,
+                    'extraPaymentStatus': false,
+                  });
                   Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
                   await SendNotification.sendFcmMessage(providerServiceExtraCharges, onProviderOrder.author.fcmToken, payLoad);
 

@@ -46,6 +46,12 @@ class User with ChangeNotifier {
   AdminCommissionModel? adminCommission;
   String? appIdentifier;
 
+  /// Panel-written, READ ONLY here (never put in toJson, so a profile save
+  /// can never erase them): the worker's management zone and the admin's
+  /// document-verification flag (same field the Driver app uses).
+  String? regionId;
+  bool? isDocumentVerify;
+
   User(
       {this.id = '',
       this.firstName = '',
@@ -79,7 +85,9 @@ class User with ChangeNotifier {
       this.subscriptionTotalOrders,
       this.sectionId = '',
       this.adminCommission,
-      this.appIdentifier})
+      this.appIdentifier,
+      this.regionId,
+      this.isDocumentVerify})
       : lastOnlineTimestamp = lastOnlineTimestamp ?? Timestamp.now(),
         userBankDetails = userBankDetails ?? UserBankDetails(),
         location = location ?? UserLocation(),
@@ -131,6 +139,8 @@ class User with ChangeNotifier {
       appIdentifier: json['appIdentifier'],
       sectionId: json['section_id'] ?? '',
       adminCommission: json['adminCommission'] != null ? AdminCommissionModel.fromJson(json['adminCommission']) : null,
+      regionId: (json['regionId']?.toString().isNotEmpty == true) ? json['regionId'].toString() : null,
+      isDocumentVerify: json['isDocumentVerify'] is bool ? json['isDocumentVerify'] : null,
     );
   }
 

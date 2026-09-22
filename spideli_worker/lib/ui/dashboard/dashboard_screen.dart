@@ -40,11 +40,15 @@ class DashBoardScreen extends StatelessWidget {
                 navigationBarItem(
                   index: 0,
                   assetIcon: "assets/icons/ic_order.svg",
-                  label: 'Booking'.tr,
+                  label: 'Jobs'.tr,
                   controller: controller,
                 ),
+                BottomNavigationBarItem(
+                  icon: const Padding(padding: EdgeInsets.symmetric(vertical: 5), child: Icon(Icons.badge_outlined, size: 22)),
+                  label: 'Documents'.tr,
+                ),
                 navigationBarItem(
-                  index: 1,
+                  index: 2,
                   assetIcon: "assets/icons/ic_profile.svg",
                   label: 'Profile'.tr,
                   controller: controller,

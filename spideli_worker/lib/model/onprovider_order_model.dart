@@ -34,6 +34,13 @@ class OnProviderOrderModel {
   bool? extraPaymentStatus;
   String? workerId;
 
+  // Additive, READ ONLY here (never in toJson, so a save cannot erase them):
+  // `regionId` = the provider's region (spec 18.12); `completionPhotos` =
+  // photo URLs the worker attached when completing the job (written by a
+  // targeted update, FireStoreUtils.updateOrderFields).
+  String? regionId;
+  List<String> completionPhotos;
+
   OnProviderOrderModel({
     this.sectionId = '',
     this.authorID = '',
@@ -64,6 +71,8 @@ class OnProviderOrderModel {
     this.paymentStatus,
     this.extraPaymentStatus,
     this.workerId,
+    this.regionId,
+    this.completionPhotos = const [],
   })  : author = author ?? User(),
         createdAt = createdAt ?? Timestamp.now(),
         provider = provider ?? ProviderServiceModel(),
@@ -107,6 +116,8 @@ class OnProviderOrderModel {
       paymentStatus: parsedJson['paymentStatus'],
       extraPaymentStatus: parsedJson['extraPaymentStatus'],
       workerId: parsedJson['workerId'] ?? "",
+      regionId: (parsedJson['regionId']?.toString().isNotEmpty == true) ? parsedJson['regionId'].toString() : null,
+      completionPhotos: parsedJson['completionPhotos'] is List ? (parsedJson['completionPhotos'] as List).map((e) => e.toString()).toList() : const [],
     );
   }
 

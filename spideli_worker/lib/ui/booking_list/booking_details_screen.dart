@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:spideliworker/constant/constants.dart';
 import 'package:spideliworker/constant/show_toast_dialog.dart';
 import 'package:spideliworker/controller/booking_details_controller.dart';
@@ -6,9 +5,11 @@ import 'package:spideliworker/model/onprovider_order_model.dart';
 import 'package:spideliworker/model/tax_model.dart';
 import 'package:spideliworker/model/user.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
-import 'package:spideliworker/services/send_notification.dart';
 import 'package:spideliworker/themes/app_colors.dart';
-import 'package:spideliworker/ui/booking_list/verify_otp_screen.dart';
+import 'package:spideliworker/ui/booking_list/job_actions.dart';
+import 'package:spideliworker/ui/chat_screen/full_screen_image_viewer.dart';
+import 'package:spideliworker/utils/region_service.dart';
+import 'package:spideliworker/widgets/network_image_widget.dart';
 import 'package:spideliworker/ui/chat_screen/chat_screen.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 import 'package:spideliworker/widgets/common_ui.dart';
@@ -381,7 +382,7 @@ class BookingDetailsScreen extends StatelessWidget {
                                                       ),
                                                     ),
                                                     Text(
-                                                      amountShow(amount: onProviderOrder.extraCharges.toString()),
+                                                      amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.extraCharges.toString()),
                                                       style: TextStyle(
                                                         color: themeChange.getTheme() ? Colors.white : Colors.black,
                                                         fontFamily: "Poppinsm",
@@ -479,153 +480,8 @@ class BookingDetailsScreen extends StatelessWidget {
                                 const SizedBox(
                                   height: 10,
                                 ),
-                                onProviderOrder.status == ORDER_STATUS_CANCELLED
-                                    ? const SizedBox()
-                                    : Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                        child: onProviderOrder.status == ORDER_STATUS_ASSIGNED
-                                            ? Padding(
-                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                                child: SizedBox(
-                                                  width: Responsive.width(70, context),
-                                                  child: ElevatedButton(
-                                                    style: ElevatedButton.styleFrom(
-                                                      elevation: 0.0,
-                                                      backgroundColor: AppColors.colorPrimary,
-                                                      padding: const EdgeInsets.all(8),
-                                                      side: BorderSide(color: AppColors.colorPrimary, width: 0.4),
-                                                      shape: const RoundedRectangleBorder(
-                                                        borderRadius: BorderRadius.all(
-                                                          Radius.circular(10),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    onPressed: () async {
-                                                      if (onProviderOrder.newScheduleDateTime!.toDate().isBefore(Timestamp.now().toDate())) {
-                                                        ShowToastDialog.showLoader('Please wait...');
-                                                        onProviderOrder.status = ORDER_STATUS_ONGOING;
-                                                        if (onProviderOrder.provider.priceUnit == "Hourly") {
-                                                          onProviderOrder.startTime = Timestamp.now();
-                                                        }
-                                                        await FireStoreUtils.updateOrder(onProviderOrder);
-                                                        Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-                                                        await SendNotification.sendFcmMessage(providerServiceInTransit, onProviderOrder.author.fcmToken, payLoad);
-
-                                                        ShowToastDialog.closeLoader();
-                                                      } else {
-                                                        Get.showSnackbar(
-                                                          GetSnackBar(
-                                                              message:
-                                                                  ('${"You can start booking on".tr} ${DateFormat("EEE dd MMMM , hh:mm a").format(onProviderOrder.newScheduleDateTime!.toDate())}.'),
-                                                              duration: 5.seconds),
-                                                        );
-                                                      }
-                                                    },
-                                                    child: Text(
-                                                      'On Going'.tr,
-                                                      style: const TextStyle(color: AppColors.colorWhite, fontFamily: AppColors.semiBold),
-                                                    ),
-                                                  ),
-                                                ),
-                                              )
-                                            : onProviderOrder.status == ORDER_STATUS_ONGOING
-                                                ? Padding(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                                    child: Row(
-                                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                      children: [
-                                                        Expanded(
-                                                          child: onProviderOrder.provider.priceUnit.toString() == "Hourly" && onProviderOrder.endTime == null
-                                                              ? ElevatedButton(
-                                                                  style: ElevatedButton.styleFrom(
-                                                                    elevation: 0.0,
-                                                                    backgroundColor: AppColors.colorPrimary,
-                                                                    padding: const EdgeInsets.all(8),
-                                                                    side: BorderSide(color: AppColors.colorPrimary, width: 0.4),
-                                                                    shape: const RoundedRectangleBorder(
-                                                                      borderRadius: BorderRadius.all(
-                                                                        Radius.circular(10),
-                                                                      ),
-                                                                    ),
-                                                                  ),
-                                                                  onPressed: () async {
-                                                                    ShowToastDialog.showLoader('Please wait...');
-                                                                    if (onProviderOrder.provider.priceUnit == "Hourly") {
-                                                                      onProviderOrder.endTime = Timestamp.now();
-                                                                      onProviderOrder.paymentStatus = false;
-                                                                      int minutes = onProviderOrder.endTime!.toDate().difference(onProviderOrder.startTime!.toDate()).inMinutes;
-                                                                      onProviderOrder.quantity = minutes > 60 ? double.parse(durationToString(minutes)) : double.parse(durationToString(60));
-                                                                    }
-                                                                    await FireStoreUtils.updateOrder(onProviderOrder);
-                                                                    Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-                                                                    await SendNotification.sendFcmMessage(providerStopTime, onProviderOrder.author.fcmToken, payLoad);
-                                                                    ShowToastDialog.closeLoader();
-                                                                  },
-                                                                  child: Text(
-                                                                    'Stop Time'.tr,
-                                                                    style: const TextStyle(color: AppColors.colorWhite, fontFamily: AppColors.semiBold),
-                                                                  ),
-                                                                )
-                                                              : ElevatedButton(
-                                                                  style: ElevatedButton.styleFrom(
-                                                                    elevation: 0.0,
-                                                                    backgroundColor: AppColors.colorPrimary,
-                                                                    padding: const EdgeInsets.all(8),
-                                                                    side: BorderSide(color: AppColors.colorPrimary, width: 0.4),
-                                                                    shape: const RoundedRectangleBorder(
-                                                                      borderRadius: BorderRadius.all(
-                                                                        Radius.circular(10),
-                                                                      ),
-                                                                    ),
-                                                                  ),
-                                                                  onPressed: () async {
-                                                                    if (onProviderOrder.extraPaymentStatus == false ||
-                                                                        (onProviderOrder.paymentStatus == false && onProviderOrder.payment_method != "cod")) {
-                                                                      ShowToastDialog.showToast('Payment is pending.'.tr);
-                                                                    } else {
-                                                                      completePickUp(onProviderOrder);
-                                                                    }
-                                                                  },
-                                                                  child: Text(
-                                                                    'Complete'.tr,
-                                                                    style: const TextStyle(color: AppColors.colorWhite, fontFamily: AppColors.semiBold),
-                                                                  ),
-                                                                ),
-                                                        ),
-                                                        const SizedBox(
-                                                          width: 10,
-                                                        ),
-                                                        onProviderOrder.extraCharges!.isNotEmpty && onProviderOrder.extraCharges != null
-                                                            ? const SizedBox()
-                                                            : Expanded(
-                                                                child: ElevatedButton(
-                                                                  style: ElevatedButton.styleFrom(
-                                                                    elevation: 0.0,
-                                                                    backgroundColor: AppColors.colorPrimary,
-                                                                    padding: const EdgeInsets.all(8),
-                                                                    side: BorderSide(color: AppColors.colorPrimary, width: 0.4),
-                                                                    shape: const RoundedRectangleBorder(
-                                                                      borderRadius: BorderRadius.all(
-                                                                        Radius.circular(10),
-                                                                      ),
-                                                                    ),
-                                                                  ),
-                                                                  onPressed: () async {
-                                                                    BookingDetailsController bookingDetailsController = Get.put(BookingDetailsController());
-                                                                    CommonUI.showAddExtraChargesDialog(context, bookingDetailsController, onProviderOrder);
-                                                                    Get.delete<BookingDetailsController>();
-                                                                  },
-                                                                  child: Text(
-                                                                    'Add Extra Charges'.tr,
-                                                                    style: const TextStyle(color: AppColors.colorWhite, fontFamily: AppColors.semiBold),
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                      ],
-                                                    ),
-                                                  )
-                                                : const SizedBox(),
-                                      ),
+                                completionPhotosWidget(onProviderOrder, themeChange.getTheme()),
+                                onProviderOrder.status == ORDER_STATUS_CANCELLED ? const SizedBox() : jobActionsWidget(context, onProviderOrder),
                               ]),
                             );
                           }),
@@ -785,15 +641,15 @@ class BookingDetailsScreen extends StatelessWidget {
                       children: [
                         Text(
                           (onProviderOrder.provider.disPrice == "" || onProviderOrder.provider.disPrice == "0")
-                              ? '${amountShow(amount: onProviderOrder.provider.price.toString())} × ${onProviderOrder.quantity}'
-                              : '${amountShow(amount: onProviderOrder.provider.disPrice.toString())} × ${onProviderOrder.quantity}',
+                              ? '${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.provider.price.toString())} × ${onProviderOrder.quantity}'
+                              : '${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.provider.disPrice.toString())} × ${onProviderOrder.quantity}',
                           style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.regular),
                         ),
                         const SizedBox(
                           width: 10,
                         ),
                         Text(
-                          amountShow(amount: controller.price.toString()),
+                          amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.price.toString()),
                           style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
                         ),
                       ],
@@ -825,7 +681,7 @@ class BookingDetailsScreen extends StatelessWidget {
                           ],
                         ),
                         Text(
-                          '(- ${amountShow(amount: controller.discount.value.toString())})',
+                          '(- ${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.discount.value.toString())})',
                           style: const TextStyle(color: Colors.green, fontFamily: AppColors.medium),
                         ),
                       ],
@@ -845,7 +701,7 @@ class BookingDetailsScreen extends StatelessWidget {
                       style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
                     ),
                     Text(
-                      amountShow(amount: controller.subTotal.toString()),
+                      amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.subTotal.toString()),
                       style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
                     ),
                   ],
@@ -868,12 +724,12 @@ class BookingDetailsScreen extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(
-                              "${taxModel.title.toString()} (${taxModel.type == "fix" ? amountShow(amount: taxModel.tax) : "${taxModel.tax}%"})",
+                              "${taxModel.title.toString()} (${taxModel.type == "fix" ? amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: taxModel.tax) : "${taxModel.tax}%"})",
                               style: TextStyle(fontFamily: AppColors.medium, color: themeChange.getTheme() ? Colors.white : Colors.black),
                             ),
                           ),
                           Text(
-                            amountShow(amount: getTaxValue(amount: (double.parse(controller.subTotal.toString())).toString(), taxModel: taxModel).toString()),
+                            amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: getTaxValue(amount: (double.parse(controller.subTotal.toString())).toString(), taxModel: taxModel).toString()),
                             style: TextStyle(fontFamily: AppColors.medium, color: themeChange.getTheme() ? Colors.white : Colors.black, fontSize: 14),
                           ),
                         ],
@@ -919,7 +775,7 @@ class BookingDetailsScreen extends StatelessWidget {
                       style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
                     ),
                     Text(
-                      amountShow(amount: controller.totalAmount.toString()),
+                      amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.totalAmount.toString()),
                       style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
                     ),
                   ],
@@ -977,25 +833,77 @@ class BookingDetailsScreen extends StatelessWidget {
     );
   }
 
-  Future<void> completePickUp(OnProviderOrderModel onProviderOrder) async {
-    final isComplete = await Navigator.of(Get.context!).push(MaterialPageRoute(
-        builder: (context) => VerifyOtpScreen(
-              otp: onProviderOrder.otp,
-            )));
-    if (isComplete != null) {
-      if (isComplete == true) {
-        ShowToastDialog.showLoader('Please wait...');
-        onProviderOrder.status = ORDER_STATUS_COMPLETED;
-        if (onProviderOrder.provider.priceUnit != "Fixed") {
-          await FireStoreUtils.providerWalletSet(onProviderOrder, true);
-        }
+  /// Photos attached by the worker when completing the job.
+  Widget completionPhotosWidget(OnProviderOrderModel onProviderOrder, bool dark) {
+    if (onProviderOrder.completionPhotos.isEmpty) return const SizedBox();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Text("Completion photos".tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark, fontFamily: AppColors.bold)),
+        ),
+        SizedBox(
+          height: 90,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: onProviderOrder.completionPhotos.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) => InkWell(
+              onTap: () => Get.to(() => FullScreenImageViewer(imageUrl: onProviderOrder.completionPhotos[index])),
+              child: NetworkImageWidget(imageUrl: onProviderOrder.completionPhotos[index], height: 90, width: 90, fit: BoxFit.cover, borderRadius: 8),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-        await FireStoreUtils.updateOrder(onProviderOrder);
-        Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-        await SendNotification.sendFcmMessage(providerServiceCompleted, onProviderOrder.author.fcmToken, payLoad);
+  /// Start / Stop Time / Complete / Add Extra Charges (see JobActions).
+  Widget jobActionsWidget(BuildContext context, OnProviderOrderModel onProviderOrder) {
+    Widget button(String label, VoidCallback onPressed) => ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            elevation: 0.0,
+            backgroundColor: AppColors.colorPrimary,
+            padding: const EdgeInsets.all(8),
+            side: BorderSide(color: AppColors.colorPrimary, width: 0.4),
+            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
+          ),
+          onPressed: onPressed,
+          child: Text(label.tr, style: const TextStyle(color: AppColors.colorWhite, fontFamily: AppColors.semiBold)),
+        );
 
-        ShowToastDialog.closeLoader();
-      }
+    if (onProviderOrder.status == ORDER_STATUS_ASSIGNED) {
+      return Padding(
+        padding: const EdgeInsets.all(20),
+        child: SizedBox(width: Responsive.width(70, context), child: button('Start', () => JobActions.start(onProviderOrder))),
+      );
     }
+    if (onProviderOrder.status == ORDER_STATUS_ONGOING) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: onProviderOrder.provider.priceUnit.toString() == "Hourly" && onProviderOrder.endTime == null
+                  ? button('Stop Time', () => JobActions.stopTime(onProviderOrder))
+                  : button('Complete', () => JobActions.complete(onProviderOrder)),
+            ),
+            const SizedBox(width: 10),
+            onProviderOrder.extraCharges!.isNotEmpty && onProviderOrder.extraCharges != null
+                ? const SizedBox()
+                : Expanded(
+                    child: button('Add Extra Charges', () {
+                      BookingDetailsController bookingDetailsController = Get.put(BookingDetailsController());
+                      CommonUI.showAddExtraChargesDialog(context, bookingDetailsController, onProviderOrder);
+                      Get.delete<BookingDetailsController>();
+                    }),
+                  ),
+          ],
+        ),
+      );
+    }
+    return const SizedBox();
   }
 }

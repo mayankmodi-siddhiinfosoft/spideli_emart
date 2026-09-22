@@ -24,6 +24,12 @@ const Order_Rating = 'items_review';
 const ChatWorker = 'chat';
 const sections = "sections";
 const REFERRAL = 'referral';
+const REGIONS = 'regions';
+// Document verification: the same collections the Driver/Store apps use.
+// `documents` = admin-configured document types (type == "worker"),
+// `documents_verify/{uid}` = the documents one actor uploaded.
+const DOCUMENTS = 'documents';
+const DOCUMENTS_VERIFY = 'documents_verify';
 
 const dynamicNotification = 'dynamic_notification';
 
@@ -115,11 +121,15 @@ Widget loader() {
   );
 }
 
-String amountShow({required String? amount}) {
-  if (currencyData!.symbolatright == true) {
-    return "${double.parse(amount.toString()).toStringAsFixed(currencyData!.decimal!)} ${currencyData!.symbol.toString()}";
+/// [currency] overrides the global currency, e.g. a booking's own currency
+/// (`RegionService.currencyForRegion(order.regionId)`); null = global.
+String amountShow({required String? amount, CurrencyModel? currency}) {
+  final CurrencyModel c = currency ?? currencyData!;
+  final String value = double.parse(amount.toString()).toStringAsFixed(c.decimal ?? 0);
+  if (c.symbolatright == true) {
+    return "$value ${c.symbol.toString()}";
   } else {
-    return "${currencyData!.symbol.toString()} ${double.parse(amount.toString()).toStringAsFixed(currencyData!.decimal!)}";
+    return "${c.symbol.toString()} $value";
   }
 }
 
