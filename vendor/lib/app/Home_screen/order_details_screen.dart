@@ -9,6 +9,7 @@ import 'package:vendor/controller/order_details_controller.dart';
 import 'package:vendor/models/cart_product_model.dart';
 import 'package:vendor/models/order_model.dart';
 import 'package:vendor/themes/app_them_data.dart';
+import 'package:vendor/themes/round_button_border.dart';
 import 'package:vendor/themes/round_button_fill.dart';
 import 'package:vendor/utils/network_image_widget.dart';
 import 'package:vendor/widget/my_separator.dart';
@@ -471,7 +472,34 @@ class OrderDetailsScreen extends StatelessWidget {
                             ],
                           ),
                         Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          padding: const EdgeInsets.only(top: 20),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: RoundedButtonBorder(
+                                  title: "Download receipt".tr,
+                                  color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
+                                  borderColor: AppThemeData.primary300,
+                                  textColor: AppThemeData.primary300,
+                                  height: 5,
+                                  onPress: () => controller.downloadReceipt(),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: RoundedButtonFill(
+                                  title: "Share receipt".tr,
+                                  color: AppThemeData.primary300,
+                                  textColor: AppThemeData.grey50,
+                                  height: 5,
+                                  onPress: () => controller.shareReceipt(),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12, bottom: 20),
                           child: RoundedButtonFill(
                             title: "Print Invoice".tr,
                             color: AppThemeData.danger300,

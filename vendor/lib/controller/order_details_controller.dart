@@ -1,17 +1,21 @@
 import 'dart:convert';
 import 'dart:developer';
+import 'dart:io';
 
 import 'package:esc_pos_utils/esc_pos_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:vendor/constant/constant.dart';
+import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/models/cart_product_model.dart';
 import 'package:vendor/models/currency_model.dart';
 import 'package:vendor/models/order_model.dart';
 import 'package:vendor/models/tax_model.dart';
 import 'package:vendor/themes/app_them_data.dart';
+import 'package:vendor/utils/order_receipt_pdf.dart';
 import 'package:vendor/utils/region_service.dart';
 
 class OrderDetailsController extends GetxController {
@@ -177,6 +181,66 @@ class OrderDetailsController extends GetxController {
     totalRejectAmount.value =
         totalAmount.value + platformFee.value + platformTaxAmount.value + driverDeliveryTaxAmount.value + (orderModel.value.isFreeDelivery == false ? deliveryCharges.value + deliveryTips.value : 0);
     isLoading.value = false;
+  }
+
+  // ---------------- PDF receipt (spec 7.6 / 8.4) ----------------
+
+  /// Builds the PDF receipt from the figures above and saves it in the app
+  /// documents directory. Null (after a toast) when it could not be made.
+  Future<File?> _saveReceipt() async {
+    ShowToastDialog.showLoader("Please wait".tr);
+    try {
+      final File file = await OrderReceiptPdf.save(this);
+      ShowToastDialog.closeLoader();
+      return file;
+    } catch (e, s) {
+      log("Receipt PDF failed: $e", stackTrace: s);
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("Could not create the receipt. Please try again.".tr);
+      return null;
+    }
+  }
+
+  Future<void> downloadReceipt() async {
+    final File? file = await _saveReceipt();
+    if (file == null) return;
+    // The documents directory is private to the app; on Android also drop a
+    // copy in the public Download folder, as the wallet statement does.
+    if (Platform.isAndroid) {
+      try {
+        final Directory downloads = Directory('/storage/emulated/0/Download');
+        if (await downloads.exists()) {
+          await file.copy('${downloads.path}/${file.uri.pathSegments.last}');
+          ShowToastDialog.showToast("Receipt downloaded in download folder".tr);
+          return;
+        }
+      } catch (e) {
+        log("Receipt copy to Download failed: $e");
+      }
+    }
+    ShowToastDialog.showToast("Receipt saved".tr);
+  }
+
+  Future<void> shareReceipt() async {
+    final File? file = await _saveReceipt();
+    if (file == null) return;
+    await _share(file);
+  }
+
+  Future<void> _share(File file) async {
+    final String orderNo = Constant.orderId(orderId: orderModel.value.id.toString());
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path, mimeType: 'application/pdf')],
+          subject: "${"Receipt".tr} ${"Order".tr} $orderNo",
+          text: "${orderModel.value.vendor?.title ?? ''} - ${"Receipt".tr} ${"Order".tr} $orderNo".trim(),
+        ),
+      );
+    } catch (e) {
+      log("Receipt share failed: $e");
+      ShowToastDialog.showToast("Could not share the receipt.".tr);
+    }
   }
 
   Future<void> printTicket(BuildContext context) async {

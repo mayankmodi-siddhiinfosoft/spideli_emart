@@ -50,7 +50,7 @@ class HomeScreen extends StatelessWidget {
         return controller.isLoading.value
             ? Constant.loader()
             : DefaultTabController(
-                length: 5,
+                length: 6,
                 child: Scaffold(
                   appBar: _buildHomeHeader(context, controller, isDark),
                   body: controller.userModel.value.isAutoVerify == false && controller.userModel.value.isDocumentVerify == false
@@ -148,13 +148,25 @@ class HomeScreen extends StatelessWidget {
                                               return newOrderWidget(isDark, context, orderModel, controller);
                                             },
                                           ),
-                                    controller.acceptedOrderList.isEmpty
-                                        ? _OrdersEmptyState(icon: Icons.soup_kitchen_outlined, title: "No accepted orders".tr, subtitle: "Orders you accept show here while they are being prepared.".tr, isDark: isDark)
+                                    // Preparing and Ready both use the card of the former "Accepted"
+                                    // tab, so every action it offered stays available.
+                                    controller.preparingOrderList.isEmpty
+                                        ? _OrdersEmptyState(icon: Icons.soup_kitchen_outlined, title: "No orders being prepared".tr, subtitle: "Orders you accept show here while they are being prepared or waiting for a driver.".tr, isDark: isDark)
                                         : ListView.builder(
                                             shrinkWrap: true,
-                                            itemCount: controller.acceptedOrderList.length,
+                                            itemCount: controller.preparingOrderList.length,
                                             itemBuilder: (context, index) {
-                                              OrderModel orderModel = controller.acceptedOrderList[index];
+                                              OrderModel orderModel = controller.preparingOrderList[index];
+                                              return acceptedWidget(isDark, context, orderModel, controller);
+                                            },
+                                          ),
+                                    controller.readyOrderList.isEmpty
+                                        ? _OrdersEmptyState(icon: Icons.delivery_dining_outlined, title: "No orders ready".tr, subtitle: "Orders that are shipped or on their way to the customer show here.".tr, isDark: isDark)
+                                        : ListView.builder(
+                                            shrinkWrap: true,
+                                            itemCount: controller.readyOrderList.length,
+                                            itemBuilder: (context, index) {
+                                              OrderModel orderModel = controller.readyOrderList[index];
                                               return acceptedWidget(isDark, context, orderModel, controller);
                                             },
                                           ),
@@ -2220,7 +2232,7 @@ class HomeScreen extends StatelessWidget {
                           labelStyle: const TextStyle(fontSize: 15, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
                           unselectedLabelStyle: const TextStyle(fontSize: 15, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
                           tabs: [
-                            for (final label in ["New", "Accepted", "Completed", "Rejected", "Cancelled"])
+                            for (final label in ["New", "Preparing", "Ready", "Completed", "Rejected", "Cancelled"])
                               Tab(
                                 height: 40,
                                 child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text(label.tr)),

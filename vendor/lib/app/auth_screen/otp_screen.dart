@@ -11,6 +11,7 @@ import 'package:vendor/app/dash_board_screens/dash_board_screen.dart';
 import 'package:vendor/app/subscription_plan_screen/subscription_plan_screen.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
+import 'package:vendor/controller/store_selector_controller.dart';
 import 'package:vendor/controller/otp_controller.dart';
 import 'package:vendor/models/user_model.dart';
 import 'package:vendor/themes/app_them_data.dart';
@@ -110,6 +111,11 @@ class OtpScreen extends StatelessWidget {
                                             if (userModel.active == true) {
                                               userModel.fcmToken = await NotificationService.getToken();
                                               await FireStoreUtils.updateUser(userModel);
+                                              // Owners with several stores pick one first (spec: Login > Store selector > Dashboard).
+                                              if (await StoreSelectorController.openIfNeeded(userModel)) {
+                                                ShowToastDialog.closeLoader();
+                                                return;
+                                              }
                                               bool isPlanExpire = false;
                                               if (userModel.subscriptionPlan?.id != null) {
                                                 if (userModel.subscriptionExpiryDate == null) {

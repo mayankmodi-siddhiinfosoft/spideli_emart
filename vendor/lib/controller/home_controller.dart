@@ -27,10 +27,17 @@ class HomeController extends GetxController {
 
   RxList<OrderModel> allOrderList = <OrderModel>[].obs;
   RxList<OrderModel> newOrderList = <OrderModel>[].obs;
-  RxList<OrderModel> acceptedOrderList = <OrderModel>[].obs;
+  /// "Preparing": accepted by the store, waiting for / assigned to a driver.
+  RxList<OrderModel> preparingOrderList = <OrderModel>[].obs;
+
+  /// "Ready": handed over and on its way.
+  RxList<OrderModel> readyOrderList = <OrderModel>[].obs;
   RxList<OrderModel> completedOrderList = <OrderModel>[].obs;
   RxList<OrderModel> rejectedOrderList = <OrderModel>[].obs;
   RxList<OrderModel> cancelledOrderList = <OrderModel>[].obs;
+
+  static const List<String> preparingStatuses = [Constant.orderAccepted, Constant.driverPending, Constant.driverRejected, Constant.driverAccepted];
+  static const List<String> readyStatuses = [Constant.orderShipped, Constant.orderInTransit];
 
   Rx<UserModel> userModel = UserModel().obs;
   Rx<VendorModel> vendermodel = VendorModel().obs;
@@ -78,23 +85,16 @@ class HomeController extends GetxController {
     ) async {
       allOrderList.clear();
       for (var element in event.docs) {
-        OrderModel orderModel = OrderModel.fromJson(element.data());
-        allOrderList.add(orderModel);
-        newOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderPlaced).toList();
-        acceptedOrderList.value = allOrderList
-            .where(
-              (p0) =>
-                  p0.status == Constant.orderAccepted ||
-                  p0.status == Constant.driverPending ||
-                  p0.status == Constant.driverRejected ||
-                  p0.status == Constant.orderShipped ||
-                  p0.status == Constant.orderInTransit,
-            )
-            .toList();
-        completedOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderCompleted).toList();
-        rejectedOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderRejected).toList();
-        cancelledOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderCancelled).toList();
+        allOrderList.add(OrderModel.fromJson(element.data()));
       }
+      // Tabs (spec: New | Preparing | Ready | Completed, then Rejected and
+      // Cancelled), mapped onto the existing statuses.
+      newOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderPlaced).toList();
+      preparingOrderList.value = allOrderList.where((p0) => preparingStatuses.contains(p0.status)).toList();
+      readyOrderList.value = allOrderList.where((p0) => readyStatuses.contains(p0.status)).toList();
+      completedOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderCompleted).toList();
+      rejectedOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderRejected).toList();
+      cancelledOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderCancelled).toList();
       update();
       if (newOrderList.isNotEmpty == true) {
         await AudioPlayerService.playSound(true);

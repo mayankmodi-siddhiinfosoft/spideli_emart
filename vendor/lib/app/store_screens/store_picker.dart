@@ -106,7 +106,7 @@ class CurrentStoreCard extends StatelessWidget {
 
   static void showStorePicker(bool isDark) {
     // onInit loads the owner's stores.
-    final controller = Get.put(MyStoresController(), tag: 'storePicker');
+    final controller = Get.put(MyStoresController(withOverview: false), tag: 'storePicker');
     Get.bottomSheet(
       _StorePickerSheet(controller: controller, isDark: isDark),
       backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
