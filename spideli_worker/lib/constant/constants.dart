@@ -2,7 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:spideliworker/model/currency_model.dart';
 import 'package:spideliworker/model/tax_model.dart';
 import 'package:spideliworker/themes/app_colors.dart';
-import 'package:spideliworker/themes/app_them_data.dart';
+import 'package:spideliworker/themes/ds/components/ds_feedback.dart';
+import 'package:spideliworker/themes/ds/loading/ds_loaders.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
@@ -115,10 +116,9 @@ String? validatePassword(String? value) {
   }
 }
 
+/// App-wide loading indicator (design-system brand loader).
 Widget loader() {
-  return Center(
-    child: CircularProgressIndicator(color: AppColors.colorPrimary),
-  );
+  return const Center(child: DsBrandLoader());
 }
 
 /// [currency] overrides the global currency, e.g. a booking's own currency
@@ -145,13 +145,10 @@ double getTaxValue({String? amount, TaxModel? taxModel}) {
   return taxVal;
 }
 
+/// App-wide empty placeholder (design-system empty state). Colors follow the
+/// ambient theme; [themeChange] is kept for API compatibility.
 Widget showEmptyView({required String message, required bool themeChange}) {
-  return Center(
-    child: Text(
-      message,
-      style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 18, color: themeChange ? AppThemeData.grey200 : AppThemeData.grey900),
-    ),
-  );
+  return DsEmptyState(icon: Icons.inbox_outlined, title: message, compact: true);
 }
 
 String dateAndTimeFormatTimestamp(Timestamp? timestamp) {

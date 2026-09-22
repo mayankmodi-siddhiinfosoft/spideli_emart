@@ -65,15 +65,20 @@ class AppThemeData {
 
   static const Color driverApp50 = Color(0XFFEFF9EB);
 
-  static const String black = 'Urbanist-Black';
-  static const String bold = 'Urbanist-Bold';
-  static const String extraBold = 'Urbanist-ExtraBold';
-  static const String extraLight = 'Urbanist-ExtraLight';
-  static const String light = 'Urbanist-Light';
-  static const String medium = 'Urbanist-Medium';
-  static const String regular = 'Urbanist-Regular';
-  static const String semiBold = 'Urbanist-SemiBold';
-  static const String thin = 'Urbanist-Thin';
+  // Font families. These used to point at 'Urbanist-*' families that are not
+  // bundled (pubspec only declares Metropolis), so text silently fell back to
+  // the platform font. They now map to the bundled Metropolis faces; weights
+  // without a matching face use the nearest one.
+  static const String fontFamily = 'Metropolis';
+  static const String black = 'Metropolis-ExtraBold';
+  static const String bold = 'Metropolis-Bold';
+  static const String extraBold = 'Metropolis-ExtraBold';
+  static const String extraLight = 'Metropolis-Regular';
+  static const String light = 'Metropolis-Regular';
+  static const String medium = 'Metropolis-Medium';
+  static const String regular = 'Metropolis-Regular';
+  static const String semiBold = 'Metropolis-SemiBold';
+  static const String thin = 'Metropolis-Regular';
 
   static TextStyle regularTextStyle({
     double? fontSize,

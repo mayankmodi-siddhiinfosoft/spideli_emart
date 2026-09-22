@@ -100,24 +100,45 @@ flutter:
     - assets/icons/
 
   fonts:
+    # Design-system family: one family, selected by fontWeight
+    # (DsTypography.family = 'Metropolis').
+    - family: Metropolis
+      fonts:
+        - asset: assets/fonts/Metropolis-Regular.otf
+          weight: 400
+        - asset: assets/fonts/Metropolis-Medium.otf
+          weight: 500
+        - asset: assets/fonts/Metropolis-SemiBold.otf
+          weight: 600
+        - asset: assets/fonts/Metropolis-Bold.otf
+          weight: 700
+        - asset: assets/fonts/Metropolis-ExtraBold.otf
+          weight: 800
+
+    # Legacy per-weight families (AppColors.regular/medium/...). The weight
+    # used to be a separate list entry without an asset; it now sits on the
+    # asset it describes.
     - family: Metropolis-Regular
       fonts:
-        - weight: 500
         - asset: assets/fonts/Metropolis-Regular.otf
+          weight: 400
 
     - family: Metropolis-Medium
       fonts:
         - asset: assets/fonts/Metropolis-Medium.otf
+          weight: 500
 
     - family: Metropolis-Bold
       fonts:
-        - weight: 700
         - asset: assets/fonts/Metropolis-Bold.otf
+          weight: 700
 
     - family: Metropolis-SemiBold
       fonts:
         - asset: assets/fonts/Metropolis-SemiBold.otf
+          weight: 600
 
     - family: Metropolis-ExtraBold
       fonts:
         - asset: assets/fonts/Metropolis-ExtraBold.otf
+          weight: 800

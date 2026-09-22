@@ -8,7 +8,8 @@ import 'package:spideliworker/services/localization_service.dart';
 import 'package:spideliworker/services/notification_service.dart';
 import 'package:spideliworker/services/preferences.dart';
 import 'package:spideliworker/themes/app_colors.dart';
-import 'package:spideliworker/themes/styles.dart';
+import 'package:spideliworker/themes/ds/ds.dart';
+import 'package:spideliworker/themes/easy_loading_config.dart';
 import 'package:spideliworker/ui/splash_screen/splash_screen.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
@@ -111,6 +112,8 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
       await FireStoreUtils.firestore.collection(Setting).doc("globalSettings").get().then((value) {
         AppColors.colorPrimary = Color(int.parse(value.data()!['worker_app_color'].toString().replaceFirst("#", "0xff")));
+        // Re-theme Material widgets with the brand color that just loaded.
+        DsBrandTheme.refresh();
       });
     } catch (e) {
       setState(() {
@@ -142,21 +145,29 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       },
       child: Consumer<DarkThemeProvider>(
         builder: (context, value, child) {
+          final bool isDarkTheme = themeChangeProvider.darkTheme == 0
+              ? true
+              : themeChangeProvider.darkTheme == 1
+                  ? false
+                  : themeChangeProvider.getSystemThem();
+          applyEasyLoadingStyle(isDarkTheme);
           return GetMaterialApp(
             navigatorKey: navigatorKey,
             title: 'spideli Worker',
             debugShowCheckedModeBanner: false,
-            theme: Styles.themeData(
-                themeChangeProvider.darkTheme == 0
-                    ? true
-                    : themeChangeProvider.darkTheme == 1
-                        ? false
-                        : themeChangeProvider.getSystemThem(),
-                context),
+            // Design-system theme (lib/themes/ds). Brightness follows
+            // DarkThemeProvider exactly as before; the brand color is read
+            // from AppColors.colorPrimary and refreshed by DsBrandTheme.
+            theme: DsTheme.build(isDarkTheme),
+            // App-wide page transition (shared-axis on Android, native
+            // swipe-back on iOS).
+            customTransition: DsPageTransition(),
+            transitionDuration: DsMotion.page,
+            navigatorObservers: [DsBrandTheme.observer],
             locale: LocalizationService.locale,
             fallbackLocale: LocalizationService.locale,
             translations: LocalizationService(),
-            builder: EasyLoading.init(),
+            builder: (context, child) => DsBrandTheme(child: EasyLoading.init()(context, child)),
             home: GetBuilder<GlobalSettingController>(
               init: GlobalSettingController(),
               builder: (context) {

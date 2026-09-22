@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import '../themes/app_them_data.dart';
+import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:provider/provider.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 
+/// Legacy labelled text field (kept for existing screens). Visuals follow
+/// the design system; the constructor API and behaviour are unchanged.
+/// New code should use [DsTextField].
 class TextFieldWidget extends StatefulWidget {
   final String? title;
   final String? initialValue;
@@ -66,23 +69,25 @@ class _TextFieldWidgetState extends State<TextFieldWidget> {
   @override
   Widget build(BuildContext context) {
     final themeChange = Provider.of<DarkThemeProvider>(context);
+    final isDark = themeChange.getTheme();
+    final c = DsColors.resolve(isDark);
+    final enabled = widget.enable ?? true;
+    final focused = _focusNode.hasFocus;
 
-    final borderColor =
-    _focusNode.hasFocus ? (themeChange.getTheme() ? AppThemeData.grey500 : AppThemeData.grey400) : (themeChange.getTheme() ? AppThemeData.grey700 : AppThemeData.grey200);
+    OutlineInputBorder border(Color color, [double width = 1]) =>
+        OutlineInputBorder(borderRadius: DsRadius.brMd, borderSide: BorderSide(color: color, width: width));
 
-    final fillColor =
-    themeChange.getTheme() ? (_focusNode.hasFocus ? AppThemeData.grey900 : AppThemeData.grey800) : (_focusNode.hasFocus ? AppThemeData.grey100 : Colors.transparent);
-
-    final textColor = themeChange.getTheme() ? AppThemeData.surface : AppThemeData.grey900;
-
-    final hintColor = themeChange.getTheme() ? AppThemeData.grey500 : AppThemeData.grey400;
+    final restBorder = isDark ? c.border : c.surfaceAlt;
+    final fillColor = !enabled
+        ? Color.alphaBlend(c.surfaceAlt.withValues(alpha: 0.5), c.surface)
+        : (focused ? c.surface : c.surfaceAlt);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (widget.title != null) ...[
-          Text(widget.title!.tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: themeChange.getTheme() ? AppThemeData.grey100 : AppThemeData.grey800)),
-          const SizedBox(height: 5),
+          Text(widget.title!.tr, style: DsTypography.labelSm.copyWith(fontSize: 13, color: c.textSecondary)),
+          const SizedBox(height: DsSpace.sm),
         ],
         TextFormField(
           keyboardType: widget.textInputType ?? TextInputType.text,
@@ -100,39 +105,30 @@ class _TextFieldWidgetState extends State<TextFieldWidget> {
           maxLength: widget.maxLength,
           readOnly: widget.readOnly ?? false,
           onFieldSubmitted: widget.onFieldSubmitted,
-          style: AppThemeData.semiBoldTextStyle(color: textColor),
+          cursorColor: c.brand,
+          style: DsTypography.bodyStrong.copyWith(color: enabled ? c.textPrimary : c.textSecondary),
           decoration: InputDecoration(
-            errorStyle: const TextStyle(color: Colors.red),
+            errorStyle: DsTypography.caption.copyWith(color: c.danger),
+            errorMaxLines: 3,
             filled: true,
-            enabled: widget.enable ?? true,
+            enabled: enabled,
+            isDense: false,
             fillColor: fillColor,
-            contentPadding: EdgeInsets.symmetric(vertical: widget.title == null ? 15 : (widget.enable == false ? 13 : 8), horizontal: 10),
+            contentPadding: EdgeInsets.symmetric(vertical: widget.prefix != null ? 16 : 14, horizontal: DsSpace.lg),
             prefixIcon: widget.prefix,
             suffixIcon: widget.suffix,
+            prefixIconColor: c.textMuted,
+            suffixIconColor: c.textMuted,
             prefixIconConstraints: const BoxConstraints(minHeight: 20, minWidth: 20),
             suffixIconConstraints: const BoxConstraints(minHeight: 20, minWidth: 20),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: borderColor),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: borderColor),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: borderColor, width: 1.2),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Colors.red),
-            ),
-            disabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: borderColor),
-            ),
+            border: border(restBorder),
+            enabledBorder: border(restBorder),
+            focusedBorder: border(c.brand, 1.6),
+            errorBorder: border(c.danger),
+            focusedErrorBorder: border(c.danger, 1.6),
+            disabledBorder: border(Colors.transparent),
             hintText: widget.hintText.tr,
-            hintStyle: AppThemeData.regularTextStyle(fontSize: 14, color: hintColor),
+            hintStyle: DsTypography.body.copyWith(color: c.textMuted),
           ),
         ),
         const SizedBox(height: 12),
