@@ -54,8 +54,9 @@ class AddProductController extends GetxController {
   // explicitly restricted.
   List<String>? _loadedFulfilment;
   bool _loadedFulfilmentExplicit = false;
-  // Off for new products, like the old 'Enable Takeaway option' switch.
-  RxBool fulfilTakeaway = false.obs;
+  // New products are available for both, which is what takeawayOption: false
+  // (the old default) meant.
+  RxBool fulfilTakeaway = true.obs;
 
   Rx<ItemAttribute?> itemAttributes = ItemAttribute(attributes: [], variants: []).obs;
 
@@ -362,9 +363,10 @@ class AddProductController extends GetxController {
           : itemAttributes.value;
       productModel.value.addOnsTitle = listAddTitle;
       productModel.value.addOnsPrice = listAddPrice;
-      // One control: the Takeaway choice under 'Available for' drives the
-      // takeawayOption the customer app reads.
-      productModel.value.takeawayOption = fulfilTakeaway.value;
+      // One control. takeawayOption keeps its legacy meaning for customer apps
+      // that don't read `fulfilment` yet: true = TakeAway ONLY (hidden in
+      // Delivery mode). So it is on exactly when Delivery is not allowed.
+      productModel.value.takeawayOption = fulfilTakeaway.value && !fulfilDelivery.value;
       productModel.value.productSpecification = specification;
       productModel.value.brandId = selectedBrands.value.id;
       productModel.value.taxSetting = List.from(selectedTaxes);

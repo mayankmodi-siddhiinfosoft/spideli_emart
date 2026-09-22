@@ -195,11 +195,15 @@ class ProductModel {
   bool get isBusinessOnlyProduct => isWholesaleOnly && wholesaleBlockedForCustomer;
 
   /// Mirrors the Store app's `effectiveFulfilment`: the explicit [fulfilment]
-  /// when set, else Delivery always + Takeaway when [takeawayOption] is on.
+  /// when set, else the legacy meaning of [takeawayOption].
+  /// A product saved before `fulfilment` existed keeps the meaning the apps
+  /// have always given `takeawayOption`: true = TAKEAWAY ONLY (the customer
+  /// app hid it in Delivery mode and showed every product in TakeAway mode);
+  /// false/absent = both Delivery and TakeAway.
   List<String> get effectiveFulfilment {
     final List<String> modes = allFulfilmentModes.where((m) => fulfilment?.contains(m) == true).toList();
     if (modes.isNotEmpty) return modes;
-    return [fulfilmentDelivery, if (takeawayOption == true) fulfilmentTakeaway];
+    return takeawayOption == true ? [fulfilmentTakeaway] : [fulfilmentDelivery, fulfilmentTakeaway];
   }
 
   /// Whether the product can be ordered with the order type [foodType] ("Delivery" / "TakeAway").

@@ -330,6 +330,40 @@ class RegionService {
     return data;
   }
 
+  static const Map<String, String> _gatewayPrefsKey = {
+    'stripe': Preferences.stripeSettings,
+    'paypal': Preferences.paypalSettings,
+    'payStack': Preferences.payStack,
+    'mercadoPago': Preferences.mercadoPago,
+    'flutterWave': Preferences.flutterWave,
+    'payFast': Preferences.payFastSettings,
+    'razorpay': Preferences.razorpaySettings,
+    'midTrans': Preferences.midTransSettings,
+    'orangeMoney': Preferences.orangeMoneySettings,
+    'xendit': Preferences.xenditSettings,
+    'wallet': Preferences.walletSettings,
+    'cod': Preferences.codSettings,
+    'paytm': Preferences.paytmSettings,
+  };
+
+  /// Whether the payment method [name] (a PaymentGateway name) can be used in
+  /// [regionId]: enabled in its settings and not excluded by its regionIds.
+  /// Used to drop a remembered choice after the region's methods reload.
+  static bool isGatewayUsable(String name, String? regionId) {
+    if (name.isEmpty) return false;
+    final String? key = _gatewayPrefsKey[name];
+    if (key == null) return true;
+    try {
+      final data = gatewaySettings(key, regionId);
+      for (final field in const ['isEnabled', 'isEnable', 'enable']) {
+        if (data.containsKey(field)) return data[field] == true;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Delivery charge (settings/DeliveryCharge, optional per-region overrides)
   // ---------------------------------------------------------------------------

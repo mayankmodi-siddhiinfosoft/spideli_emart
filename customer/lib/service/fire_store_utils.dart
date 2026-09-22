@@ -182,12 +182,32 @@ class FireStoreUtils {
     return userModel;
   }
 
+  /// What a user save writes. Never `wallet_amount`: balances move only via
+  /// [updateUserWallet], so a stale copy of a user can't undo a credit (e.g. a
+  /// refund the store just made). When the document belongs to SOMEONE ELSE
+  /// (a customer rating a driver or provider), their account status,
+  /// verification, subscription and earnings fields are left alone too.
+  static Map<String, dynamic> _userWriteData(UserModel userModel) {
+    final data = userModel.toJson()..remove('wallet_amount');
+    final String? me = auth.FirebaseAuth.instance.currentUser?.uid;
+    if (me != null && userModel.id != me) {
+      for (final key in const [
+        'active', 'isActive', 'role', 'isDocumentVerify', 'isAutoVerify', 'isOwner', 'ownerId',
+        'subscriptionPlanId', 'subscriptionExpiryDate', 'subscription_plan', 'adminCommission',
+        'salary', 'userBankDetails', 'vendorID', 'zoneId', 'sectionIds',
+      ]) {
+        data.remove(key);
+      }
+    }
+    return data;
+  }
+
   static Future<bool> updateUser(UserModel userModel) async {
     bool isUpdate = false;
     await fireStore
         .collection(CollectionName.users)
         .doc(userModel.id)
-        .setKnownFields(userModel.toJson())
+        .setKnownFields(_userWriteData(userModel))
         .whenComplete(() {
           // Reviews also update drivers/providers through here: only the
           // signed-in customer's own document refreshes the session copy.
@@ -924,7 +944,7 @@ class FireStoreUtils {
   /// Published products of a store. With [filterByOrderType] (default) only
   /// the products the current Delivery / TakeAway order type allows, by the
   /// product's effective `fulfilment` (the Store app's rule: explicit
-  /// `fulfilment`, else Delivery + TakeAway when `takeawayOption`).
+  /// `fulfilment`, else legacy `takeawayOption`: true = TakeAway only).
   static Future<List<ProductModel>> getProductByVendorId(String vendorId, {bool filterByOrderType = true}) async {
     String selectedFoodType = Preferences.getString(Preferences.foodDeliveryType, defaultValue: "Delivery");
     List<ProductModel> list = [];
@@ -1253,26 +1273,27 @@ class FireStoreUtils {
     });
   }
 
+  /// Adds [amount] (negative to debit) to a user's `wallet_amount` in a
+  /// transaction, so two concurrent credits/debits can't overwrite each other.
   static Future<bool?> updateUserWallet({required String amount, required String userId}) async {
-    bool isAdded = false;
-    await getUserProfile(userId).then((value) async {
-      if (value != null) {
-        UserModel userModel = value;
-        print("Old Wallet Amount: ${userModel.walletAmount}");
-        print("Amount to Add: $amount");
-        userModel.walletAmount = double.parse(userModel.walletAmount.toString()) + double.parse(amount);
-        // Only the balance changes: never rewrite the whole user document.
-        try {
-          await fireStore.collection(CollectionName.users).doc(userId).setKnownFields({'wallet_amount': userModel.walletAmount});
-          if (userId == getCurrentUid()) Constant.userModel = userModel;
-          isAdded = true;
-        } catch (error) {
-          log("Failed to update wallet: $error");
-          isAdded = false;
-        }
+    final num delta = num.tryParse(amount) ?? 0;
+    try {
+      final num? total = await fireStore.runTransaction<num?>((transaction) async {
+        final ref = fireStore.collection(CollectionName.users).doc(userId);
+        final snap = await transaction.get(ref);
+        if (!snap.exists) return null;
+        final num next = (num.tryParse(snap.data()?['wallet_amount']?.toString() ?? '') ?? 0) + delta;
+        transaction.update(ref, {'wallet_amount': next});
+        return next;
+      });
+      if (total != null && userId == getCurrentUid() && Constant.userModel != null) {
+        Constant.userModel!.walletAmount = total;
       }
-    });
-    return isAdded;
+      return total != null;
+    } catch (error) {
+      log("Failed to update wallet: $error");
+      return false;
+    }
   }
 
   static StreamController<List<VendorModel>>? getNearestVendorByCategoryController;

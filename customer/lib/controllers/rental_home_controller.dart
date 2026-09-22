@@ -220,7 +220,13 @@ class RentalHomeController extends GetxController {
     if (regionId == _paymentRegionId) return;
     final String keep = selectedPaymentMethod.value;
     await getPaymentSettings(regionId: regionId);
-    if (keep.isNotEmpty) selectedPaymentMethod.value = keep;
+    // Keep the customer's choice only if that method is still usable in the
+    // new region; otherwise clear it so checkout asks again.
+    if (keep.isNotEmpty && RegionService.isGatewayUsable(keep, _paymentRegionId)) {
+      selectedPaymentMethod.value = keep;
+    } else if (!RegionService.isGatewayUsable(selectedPaymentMethod.value, _paymentRegionId)) {
+      selectedPaymentMethod.value = '';
+    }
   }
 
   Future<void> getPaymentSettings({String? regionId}) async {

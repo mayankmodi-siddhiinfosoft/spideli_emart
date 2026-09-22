@@ -33,20 +33,34 @@ class OrderController extends GetxController {
       // never in FireStoreUtils (the store app / panels must see everything).
       final int? limit = await OrderHistoryLimit.visibleCount();
       await FireStoreUtils.getAllOrder().then((value) {
-        final visible = OrderHistoryLimit.newest(value, limit, (OrderModel o) => o.createdAt);
-        hiddenOrderCount.value = value.length - visible.length;
-        allList.value = visible;
+        // The limit is on order HISTORY. Orders still being placed, prepared
+        // or delivered are always shown, however old, so a customer can
+        // always track and act on them.
+        const activeStatuses = {
+          Constant.orderPlaced,
+          Constant.orderAccepted,
+          Constant.driverPending,
+          Constant.driverAccepted,
+          Constant.orderShipped,
+          Constant.orderInTransit,
+        };
+        final active = value.where((o) => activeStatuses.contains(o.status)).toList();
+        final finished = value.where((o) => !activeStatuses.contains(o.status)).toList();
+        final visibleFinished = OrderHistoryLimit.newest(finished, limit, (OrderModel o) => o.createdAt);
+        hiddenOrderCount.value = finished.length - visibleFinished.length;
+        allList.value = [...active, ...visibleFinished]
+          ..sort((a, b) => (b.createdAt?.millisecondsSinceEpoch ?? 0).compareTo(a.createdAt?.millisecondsSinceEpoch ?? 0));
 
-        rejectedList.value = allList.where((p0) => p0.status == Constant.orderRejected).toList();
+        rejectedList.value = visibleFinished.where((p0) => p0.status == Constant.orderRejected).toList();
         inProgressList.value =
-            allList
+            active
                 .where(
                   (p0) => p0.status == Constant.orderAccepted || p0.status == Constant.driverPending || p0.status == Constant.orderShipped || p0.status == Constant.orderInTransit,
                 )
                 .toList();
 
-        deliveredList.value = allList.where((p0) => p0.status == Constant.orderCompleted).toList();
-        cancelledList.value = allList.where((p0) => p0.status == Constant.orderCancelled).toList();
+        deliveredList.value = visibleFinished.where((p0) => p0.status == Constant.orderCompleted).toList();
+        cancelledList.value = visibleFinished.where((p0) => p0.status == Constant.orderCancelled).toList();
       });
     }
 

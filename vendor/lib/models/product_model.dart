@@ -196,14 +196,14 @@ class ProductModel {
 
   /// Normalised fulfilment modes, see [fulfilment].
   ///
-  /// `takeawayOption` is what the customer app already reads to list a product
-  /// under Takeaway, so it stays the source of truth for takeaway: a product
-  /// saved before `fulfilment` existed is Delivery, plus Takeaway only if its
-  /// takeawayOption was on - exactly what customers see today.
+  /// A product saved before `fulfilment` existed keeps the meaning the apps
+  /// have always given `takeawayOption`: true = TAKEAWAY ONLY (the customer
+  /// app hid it in Delivery mode and showed every product in TakeAway mode);
+  /// false/absent = both Delivery and TakeAway.
   List<String> get effectiveFulfilment {
     final List<String> modes = allFulfilmentModes.where((m) => fulfilment?.contains(m) == true).toList();
     if (modes.isNotEmpty) return modes;
-    return [fulfilmentDelivery, if (takeawayOption == true) fulfilmentTakeaway];
+    return takeawayOption == true ? [fulfilmentTakeaway] : [fulfilmentDelivery, fulfilmentTakeaway];
   }
 
   /// Whether the owner explicitly chose the modes (the list only flags those).
