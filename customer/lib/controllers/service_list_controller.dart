@@ -1,4 +1,5 @@
 import 'package:customer/models/section_model.dart';
+import 'package:customer/models/service_group_model.dart';
 import 'package:customer/models/tax_model.dart';
 import 'package:customer/screen_ui/cab_service_screens/cab_dashboard_screen.dart';
 import 'package:customer/screen_ui/ecommarce/dash_board_e_commerce_screen.dart';
@@ -8,6 +9,7 @@ import 'package:customer/service/cart_provider.dart';
 import 'package:customer/service/database_helper.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/utils/region_service.dart';
+import 'package:customer/utils/home_services.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/models/currency_model.dart';
@@ -25,8 +27,13 @@ import '../screen_ui/on_demand_service/on_demand_dashboard_screen.dart';
 
 class ServiceListController extends GetxController {
   var isLoading = false.obs;
-  var serviceListBanner = <dynamic>[].obs;
   var sectionList = <SectionModel>[].obs;
+
+  // Circular home (spec 7.1) and "More" panel (spec 7.2 / 18.11).
+  final RxList<HomeBanner> topBanners = <HomeBanner>[].obs;
+  final RxList<HomeBanner> lowerBanners = <HomeBanner>[].obs;
+  final RxList<SectionModel> favouriteList = <SectionModel>[].obs;
+  final RxList<ServiceGroupView> groupList = <ServiceGroupView>[].obs;
   var currencyData = CurrencyModel().obs;
 
   @override
@@ -55,9 +62,13 @@ class ServiceListController extends GetxController {
 
     sectionList.assignAll(sections);
 
-    await FireStoreUtils.getSectionBannerList().then((value) {
-      serviceListBanner.assignAll(value);
-    });
+    // Favourites and groups are computed from the region-filtered list:
+    // region filter first, grouping second.
+    final (List<ServiceGroupModel> groups, Map<String, dynamic>? favouritesConfig, banners) = await (HomeServices.loadGroups(), HomeServices.loadFavouritesConfig(), HomeServices.loadBanners()).wait;
+    favouriteList.assignAll(HomeServices.favourites(sections, customerRegions: customerRegions, config: favouritesConfig));
+    groupList.assignAll(HomeServices.group(sections, groups));
+    topBanners.assignAll(banners.top);
+    lowerBanners.assignAll(banners.lower);
 
     await getZone();
     isLoading.value = false;
@@ -69,6 +80,13 @@ class ServiceListController extends GetxController {
         Constant.zoneList = value;
       }
     });
+  }
+
+  /// A banner linking to a service opens it (when available here).
+  Future<void> onBannerTap(BuildContext context, HomeBanner banner) async {
+    if (banner.sectionId == null) return;
+    final SectionModel? section = sectionList.firstWhereOrNull((s) => s.id == banner.sectionId);
+    if (section != null) await onServiceTap(context, section);
   }
 
   Future<void> onServiceTap(BuildContext context, SectionModel sectionModel) async {

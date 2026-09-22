@@ -173,7 +173,7 @@ class OrderReceiptPdf {
       details: [
         MapEntry('Type'.tr, order.takeAway == true ? 'TakeAway'.tr : 'Delivery'.tr),
         MapEntry('Status'.tr, (order.status ?? '').tr),
-        MapEntry('Payment method'.tr, _paymentLabel(order.paymentMethod)),
+        MapEntry('Payment method'.tr, paymentLabel(order.paymentMethod)),
       ],
       items: items,
       totals: totals,
@@ -214,7 +214,7 @@ class OrderReceiptPdf {
       details: [
         if (order.scheduleDateTime != null) MapEntry('Booking date'.tr, DateFormat('MMM dd, yyyy hh:mm aa').format(order.scheduleDateTime!.toDate())),
         MapEntry('Status'.tr, order.status.tr),
-        MapEntry('Payment method'.tr, _paymentLabel(order.payment_method)),
+        MapEntry('Payment method'.tr, paymentLabel(order.payment_method)),
       ],
       items: [ReceiptItem(name: order.provider.title ?? '', notes: [if ((order.provider.priceUnit ?? '').isNotEmpty) '${'Unit'.tr}: ${order.provider.priceUnit}'], qty: qty, unit: unit)],
       // Extra charges added by the provider after the job, when there are any.
@@ -224,7 +224,7 @@ class OrderReceiptPdf {
     );
   }
 
-  static String _paymentLabel(String? method) {
+  static String paymentLabel(String? method) {
     if (method == null || method.isEmpty) return '-';
     if (method.toLowerCase() == 'cod') return 'Cash on delivery'.tr;
     return method.capitalizeFirst ?? method;
@@ -306,12 +306,24 @@ class OrderReceiptPdf {
     if (d.customerAddress.trim().isNotEmpty) w.line('${'Address'.tr}: ${d.customerAddress}', w.bodyFont);
     w.gap(10);
 
-    // Items.
-    w.itemHeader(['Item'.tr, 'Qty'.tr, 'Unit price'.tr, 'Total'.tr]);
-    for (final ReceiptItem item in d.items) {
-      w.itemRow(item.name, item.notes, _qty(item.qty), money(item.unit), money(item.unit * item.qty), indent: item.indent);
+    // Driver, route, vehicle ... (rides and rentals).
+    for (final ReceiptBlock block in d.blocks) {
+      if (block.lines.isEmpty) continue;
+      w.line(block.title, w.headingFont);
+      for (final e in block.lines) {
+        w.pair(e.key, e.value);
+      }
+      w.gap(8);
     }
-    w.gap(4);
+
+    // Items (none on a ride: its fare lines are all in the totals).
+    if (d.items.isNotEmpty) {
+      w.itemHeader(['Item'.tr, 'Qty'.tr, 'Unit price'.tr, 'Total'.tr]);
+      for (final ReceiptItem item in d.items) {
+        w.itemRow(item.name, item.notes, _qty(item.qty), money(item.unit), money(item.unit * item.qty), indent: item.indent);
+      }
+      w.gap(4);
+    }
     w.rule();
     w.gap(6);
 
@@ -363,6 +375,10 @@ class ReceiptData {
   final double totalPaid;
   final CurrencyModel? currency;
 
+  /// Extra titled blocks printed after the customer (driver, route, vehicle,
+  /// rental period ...). Empty for shopping orders.
+  final List<ReceiptBlock> blocks;
+
   ReceiptData({
     required this.orderId,
     required this.orderLabel,
@@ -380,7 +396,16 @@ class ReceiptData {
     required this.totals,
     required this.totalPaid,
     required this.currency,
+    this.blocks = const [],
   });
+}
+
+/// A titled group of label / value lines on the receipt.
+class ReceiptBlock {
+  final String title;
+  final List<MapEntry<String, String>> lines;
+
+  ReceiptBlock(this.title, this.lines);
 }
 
 class ReceiptItem {

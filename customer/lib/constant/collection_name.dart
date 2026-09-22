@@ -4,6 +4,7 @@ class CollectionName {
   static const String onBoarding = "on_boarding";
   static const String referral = "referral";
   static const String sections = "sections";
+  static const String serviceGroups = "service_groups";
   static const String bookedTable = "booked_table";
   static const String chatDriver = "chat_driver";
   static const String chatStore = "chat_store";

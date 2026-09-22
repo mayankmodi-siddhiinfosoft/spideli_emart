@@ -1,3 +1,5 @@
+import 'package:customer/utils/order_receipt_pdf.dart';
+import 'package:customer/utils/ride_receipt_pdf.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/themes/responsive.dart';
 import 'package:customer/widget/my_separator.dart';
@@ -51,7 +53,14 @@ class CabOrderDetails extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Text("Ride Details".tr, style: AppThemeData.boldTextStyle(fontSize: 18, color: AppThemeData.grey900)),
+                  Expanded(child: Text("Ride Details".tr, style: AppThemeData.boldTextStyle(fontSize: 18, color: AppThemeData.grey900))),
+                  // PDF receipt: download / share (spec 7.6).
+                  if (!controller.isLoading.value)
+                    IconButton(
+                      tooltip: "Receipt".tr,
+                      onPressed: () => OrderReceiptPdf.showOptions(context, () => RideReceiptPdf.fromCabOrder(controller)),
+                      icon: Icon(Icons.receipt_long_outlined, color: AppThemeData.grey900),
+                    ),
                 ],
               ),
             ),

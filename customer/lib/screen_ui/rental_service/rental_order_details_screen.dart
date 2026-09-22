@@ -1,3 +1,5 @@
+import 'package:customer/utils/order_receipt_pdf.dart';
+import 'package:customer/utils/ride_receipt_pdf.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/rental_order_model.dart';
@@ -53,7 +55,14 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Text("Order Details".tr, style: AppThemeData.boldTextStyle(fontSize: 18, color: AppThemeData.grey900)),
+                  Expanded(child: Text("Order Details".tr, style: AppThemeData.boldTextStyle(fontSize: 18, color: AppThemeData.grey900))),
+                  // PDF receipt: download / share (spec 7.6).
+                  if (!controller.isLoading.value)
+                    IconButton(
+                      tooltip: "Receipt".tr,
+                      onPressed: () => OrderReceiptPdf.showOptions(context, () => RideReceiptPdf.fromRentalOrder(controller)),
+                      icon: Icon(Icons.receipt_long_outlined, color: AppThemeData.grey900),
+                    ),
                 ],
               ),
             ),

@@ -24,6 +24,14 @@ class SectionModel {
   /// Regions the service is offered in (spec 18.8). Empty/absent = every region.
   List<String>? regionIds;
 
+  /// `service_groups` id this service belongs to (spec 18.11). "" / absent =
+  /// ungrouped. Read only.
+  String? serviceGroup;
+
+  /// Position of the service (lower first); decides order within a group.
+  /// Read only.
+  num? order;
+
   SectionModel({
     this.referralAmount,
     this.serviceType,
@@ -44,6 +52,8 @@ class SectionModel {
     this.platformFee,
     this.packagingChargeEnable,
     this.regionIds,
+    this.serviceGroup,
+    this.order,
   });
 
   SectionModel.fromJson(Map<String, dynamic> json) {
@@ -73,6 +83,8 @@ class SectionModel {
     platformFee = PlatformFeeModel.fromJson(json['platformFee']);
     packagingChargeEnable = json['packagingChargeEnable'] ?? false;
     regionIds = json['regionIds'] is List ? (json['regionIds'] as List).map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList() : null;
+    serviceGroup = json['serviceGroup']?.toString();
+    order = json['order'] is num ? json['order'] as num : num.tryParse(json['order']?.toString() ?? '');
   }
 
   Map<String, dynamic> toJson() {
@@ -101,6 +113,8 @@ class SectionModel {
     }
     data['packagingChargeEnable'] = packagingChargeEnable;
     if (regionIds != null) data['regionIds'] = regionIds;
+    if (serviceGroup != null) data['serviceGroup'] = serviceGroup;
+    if (order != null) data['order'] = order;
 
     return data;
   }
