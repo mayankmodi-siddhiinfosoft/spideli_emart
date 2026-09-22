@@ -44,6 +44,21 @@ class RentalOrderModel {
   String? platformFee;
   List<TaxModel>? platformTax;
 
+  /// RentalCar price proposal (spec 4.9 / 7.11, APP-CONTRACT):
+  /// `{amount, message, status, counterAmount?, respondedBy?, respondedAt?, history[]}`.
+  /// Answered by the Driver app, so [toJson] never writes it: it is written at
+  /// creation and by `RentalProposalService` (guarded transactions) only.
+  Map<String, dynamic>? priceProposal;
+
+  /// The listed price kept when a proposal changes `subTotal`. Not in [toJson].
+  String? listedPrice;
+
+  // Cancellation (contract). Written by dedicated field updates only.
+  String? cancelReason;
+  String? cancelReasonCode;
+  String? cancelledBy;
+  Timestamp? cancelledAt;
+
   RentalOrderModel({
     this.status,
     this.rejectedByDrivers,
@@ -127,13 +142,32 @@ class RentalOrderModel {
         platformTax!.add(TaxModel.fromJson(v));
       });
     }
+    priceProposal = json['priceProposal'] is Map ? Map<String, dynamic>.from(json['priceProposal']) : null;
+    listedPrice = json['listedPrice']?.toString();
+    cancelReason = json['cancelReason']?.toString();
+    cancelReasonCode = json['cancelReasonCode']?.toString();
+    cancelledBy = json['cancelledBy']?.toString();
+    cancelledAt = json['cancelledAt'] is Timestamp ? json['cancelledAt'] : null;
   }
+
+  /// "pending" | "accepted" | "rejected" | "countered", or null (no proposal).
+  String? get proposalStatus => priceProposal?['status']?.toString();
+
+  num? get proposedAmount => num.tryParse(priceProposal?['amount']?.toString() ?? '');
+
+  num? get counterAmount => num.tryParse(priceProposal?['counterAmount']?.toString() ?? '');
+
+  String? get proposalMessage => (priceProposal?['message']?.toString().isNotEmpty == true) ? priceProposal!['message'].toString() : null;
+
+  List<Map<String, dynamic>> get proposalHistory =>
+      priceProposal?['history'] is List ? (priceProposal!['history'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() : const [];
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
     data['status'] = status;
     if (rejectedByDrivers != null) {
-      data['rejectedByDrivers'] = rejectedByDrivers!.map((v) => v.toJson()).toList();
+      // Entries are driver ids (strings); calling toJson() on them threw.
+      data['rejectedByDrivers'] = rejectedByDrivers;
     }
     data['couponId'] = couponId;
     data['bookingDateTime'] = bookingDateTime;

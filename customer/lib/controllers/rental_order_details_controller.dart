@@ -1,5 +1,6 @@
 import 'package:customer/models/currency_model.dart';
 import 'package:customer/utils/region_service.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
@@ -21,6 +22,9 @@ import 'package:customer/models/payment_model/wallet_setting_model.dart';
 import 'package:customer/models/payment_model/xendit.dart';
 import 'package:customer/models/rating_model.dart';
 import 'package:customer/models/rental_order_model.dart';
+import 'package:customer/constant/collection_name.dart';
+import 'package:customer/utils/rental_proposal_service.dart';
+import 'package:customer/widget/cancel_reason_sheet.dart';
 import 'package:customer/models/wallet_transaction_model.dart';
 import 'package:customer/payment/mercado_pago_screen.dart';
 import 'package:customer/payment/pay_fast_screen.dart';
@@ -81,8 +85,38 @@ class RentalOrderDetailsController extends GetxController {
       calculateTotalAmount();
       await fetchDriverDetails();
       await getPaymentSettings(regionId: bookingRegionId);
+      _listenWhileOpen();
     }
     isLoading.value = false;
+  }
+
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _orderSubscription;
+
+  /// While the booking is still "Order Placed" (the price-proposal negotiation
+  /// happens then, spec 4.9) the screen follows the live document so the
+  /// driver's answer and the agreed `subTotal` show up. Once the booking leaves
+  /// that status the last snapshot is applied and the screen stops following
+  /// (today's behaviour afterwards: no payment flow runs while "Order Placed").
+  void _listenWhileOpen() {
+    final id = order.value.id;
+    if (id == null || order.value.status != Constant.orderPlaced) return;
+    _orderSubscription = FireStoreUtils.fireStore.collection(CollectionName.rentalOrders).doc(id).snapshots().listen((snap) {
+      final data = snap.data();
+      if (data == null || order.value.status != Constant.orderPlaced) return;
+      order.value = RentalOrderModel.fromJson(data);
+      calculateTotalAmount();
+      if (order.value.status != Constant.orderPlaced) {
+        _orderSubscription?.cancel();
+        _orderSubscription = null;
+        fetchDriverDetails();
+      }
+    });
+  }
+
+  @override
+  void onClose() {
+    _orderSubscription?.cancel();
+    super.onClose();
   }
 
   /// The booking's region: its own `regionId`, else its driver's, else its
@@ -136,6 +170,11 @@ class RentalOrderDetailsController extends GetxController {
       subTotal.value = double.tryParse(order.value.subTotal?.toString() ?? "0") ?? 0.0;
       discount.value = double.tryParse(order.value.discount?.toString() ?? "0") ?? 0.0;
       taxAmount.value = 0.0;
+      // Reset the accumulators so a recalculation (live update) does not add up.
+      orderTaxAmount.value = 0.0;
+      platformTaxAmount.value = 0.0;
+      extraKilometerCharge.value = 0.0;
+      extraMinutesCharge.value = 0.0;
 
       if (order.value.endTime != null) {
         DateTime start = order.value.startTime!.toDate();
@@ -234,13 +273,25 @@ class RentalOrderDetailsController extends GetxController {
   }
 
   Future<void> cancelRentalRequest(RentalOrderModel order, {List<TaxModel>? taxList}) async {
+    // Mandatory reason (APP-CONTRACT); guarded field update, not a full write.
+    final reason = await CancelReasonSheet.show();
+    if (reason == null || order.id == null) return;
     try {
       isLoading.value = true;
 
+      final error = await RentalBookingCancellation.cancel(order.id!, reason.toFields());
+      if (error != null) {
+        ShowToastDialog.showToast(error);
+        return;
+      }
       order.status = Constant.orderCancelled;
-      await FireStoreUtils.rentalOrderPlace(order);
+      order.cancelReason = reason.reason;
+      order.cancelReasonCode = reason.code;
+      order.cancelledBy = 'customer';
 
-      if (order.paymentMethod?.toLowerCase() != "cod") {
+      // Refund only what was actually paid (bookings are paid during the
+      // trip, so a cancellable booking is normally unpaid).
+      if (order.paymentStatus == true && order.paymentMethod?.toLowerCase() != "cod") {
         double refundAmount = totalAmount.value;
 
         WalletTransactionModel walletTransaction = WalletTransactionModel(

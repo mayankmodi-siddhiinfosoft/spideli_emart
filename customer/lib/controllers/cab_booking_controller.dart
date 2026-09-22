@@ -9,6 +9,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/collection_name.dart';
 import 'package:customer/constant/constant.dart';
+import 'package:customer/controllers/cab_ride_options.dart';
 import 'package:customer/models/cab_order_model.dart';
 import 'package:customer/models/coupon_model.dart';
 import 'package:customer/models/payment_model/cod_setting_model.dart';
@@ -56,7 +57,7 @@ import 'package:uuid/uuid.dart';
 import '../screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import '../themes/app_them_data.dart';
 
-class CabBookingController extends GetxController {
+class CabBookingController extends GetxController with CabRideOptions {
   late GoogleMapController mapController;
   final flutterMap.MapController mapOsmController = flutterMap.MapController();
 
@@ -220,8 +221,8 @@ class CabBookingController extends GetxController {
           // DRIVER → PICKUP
           await fetchRouteWithWaypoints([latlong.LatLng(driverLat, driverLng), latlong.LatLng(pickupLat, pickupLng)]);
         } else if (order.status == Constant.orderInTransit) {
-          // PICKUP → DESTINATION
-          await fetchRouteWithWaypoints([latlong.LatLng(driverLat, driverLng), latlong.LatLng(destLat, destLng)]);
+          // PICKUP → (unreached stops) → DESTINATION
+          await fetchRouteWithWaypoints([latlong.LatLng(driverLat, driverLng), ...unreachedStopPoints(order).map((p) => latlong.LatLng(p.latitude, p.longitude)), latlong.LatLng(destLat, destLng)]);
         }
         updateRouteMarkers(driverModel);
       } else {
@@ -229,7 +230,7 @@ class CabBookingController extends GetxController {
         if (order.status == Constant.driverAccepted) {
           await fetchGoogleRouteBetween(LatLng(driverLat, driverLng), LatLng(pickupLat, pickupLng));
         } else if (order.status == Constant.orderInTransit) {
-          await fetchGoogleRouteBetween(LatLng(driverLat, driverLng), LatLng(destLat, destLng));
+          await fetchGoogleRouteBetween(LatLng(driverLat, driverLng), LatLng(destLat, destLng), waypoints: unreachedStopPoints(order));
         }
         updateRouteMarkers(driverModel);
       }
@@ -330,12 +331,21 @@ class CabBookingController extends GetxController {
     }
   }
 
-  Future<void> fetchGoogleRouteBetween(LatLng originPoint, LatLng destPoint) async {
+  /// Stops of a live ride the driver has not reached yet, in order.
+  List<LatLng> unreachedStopPoints(CabOrderModel order) {
+    return order.orderedStops
+        .where((s) => s['reached'] != true && s['lat'] is num && s['lng'] is num)
+        .map((s) => LatLng((s['lat'] as num).toDouble(), (s['lng'] as num).toDouble()))
+        .toList();
+  }
+
+  Future<void> fetchGoogleRouteBetween(LatLng originPoint, LatLng destPoint, {List<LatLng> waypoints = const []}) async {
     final origin = '${originPoint.latitude},${originPoint.longitude}';
     final destination = '${destPoint.latitude},${destPoint.longitude}';
+    final waypointsParam = waypoints.isEmpty ? '' : '&waypoints=${Uri.encodeComponent(waypoints.map((p) => '${p.latitude},${p.longitude}').join('|'))}';
     final url = Uri.parse(
       'https://maps.googleapis.com/maps/api/directions/json'
-      '?origin=$origin&destination=$destination'
+      '?origin=$origin&destination=$destination$waypointsParam'
       '&mode=driving&key=${Constant.mapAPIKey}',
     );
 
@@ -351,10 +361,15 @@ class CabBookingController extends GetxController {
 
         addPolyLine(coordinates);
 
-        // Distance + duration update
-        final leg = route['legs'][0];
-        final totalDistance = leg['distance']['value'] / 1000.0;
-        final totalDuration = leg['duration']['value'] / 60.0;
+        // Distance + duration update (all legs: through the stops)
+        num meters = 0;
+        num seconds = 0;
+        for (final leg in route['legs'] as List) {
+          meters += leg['distance']['value'];
+          seconds += leg['duration']['value'];
+        }
+        final totalDistance = meters / 1000.0;
+        final totalDuration = seconds / 60.0;
 
         distance.value = totalDistance;
         duration.value = '${totalDuration.toStringAsFixed(0)} min';
@@ -522,9 +537,16 @@ class CabBookingController extends GetxController {
     orderModel.taxSetting = Constant.orderProductTaxList;
     orderModel.platformFee = Constant.platformFeeModel?.fee;
     orderModel.platformTax = Constant.platformTaxList;
+    // Stops, passengers, instructions, written-only, rider (spec 4.8).
+    applyRideOptions(orderModel);
     log("Order Model : ${orderModel.toJson()}");
     ShowToastDialog.showLoader("Please wait".tr);
-    await FireStoreUtils.cabOrderPlace(orderModel);
+    // Creation write: the model's fields plus `stops` (which toJson leaves out
+    // so later customer-side updates never undo a stop the driver reached).
+    await FireStoreUtils.fireStore.collection(CollectionName.rides).doc(orderModel.id).setKnownFields({
+      ...orderModel.toJson(),
+      if (orderModel.stops != null) 'stops': orderModel.stops,
+    });
     await FireStoreUtils.addCustomerRegion(orderModel.regionId);
     await FireStoreUtils.sendCabBookEmail(orderModel: orderModel);
     userModel.value.inProgressOrderID!.add(orderModel.id);
@@ -624,6 +646,10 @@ class CabBookingController extends GetxController {
         wayPoints.add(departureLatLongOsm.value);
       }
 
+      // Stops A, B, … in order (spec 4.8): the route, distance and fare go
+      // through them.
+      wayPoints.addAll(stops.map((s) => latlong.LatLng(s.lat, s.lng)));
+
       // Only add valid destination
       if (destinationLatLongOsm.value.latitude != 0.0 && destinationLatLongOsm.value.longitude != 0.0) {
         wayPoints.add(destinationLatLongOsm.value);
@@ -641,13 +667,44 @@ class CabBookingController extends GetxController {
         osmMarker.add(flutterMap.Marker(point: destinationLatLongOsm.value, width: 40, height: 40, child: destinationIconOsm!));
       }
 
-      if (wayPoints.length >= 2) {
+      // Stop markers
+      for (int i = 0; i < stops.length; i++) {
+        osmMarker.add(flutterMap.Marker(point: latlong.LatLng(stops[i].lat, stops[i].lng), width: 30, height: 30, child: _stopBadge(i)));
+      }
+
+      final hasSource = departureLatLongOsm.value.latitude != 0.0 && departureLatLongOsm.value.longitude != 0.0;
+      final hasDestination = destinationLatLongOsm.value.latitude != 0.0 && destinationLatLongOsm.value.longitude != 0.0;
+      if (hasSource && hasDestination && wayPoints.length >= 2) {
         await fetchRouteWithWaypoints(wayPoints);
       }
     } else {
       // Google Maps path
+      markers.removeWhere((marker) => marker.markerId.value.startsWith('Stop '));
+      for (int i = 0; i < stops.length; i++) {
+        markers.add(
+          Marker(
+            markerId: MarkerId('Stop $i'),
+            infoWindow: InfoWindow(title: '${'Stop'.tr} ${CabRideOptions.stopLabel(i)}'),
+            position: LatLng(stops[i].lat, stops[i].lng),
+            icon: stopIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+          ),
+        );
+      }
       fetchGoogleRouteWithWaypoints();
     }
+  }
+
+  @override
+  void onStopsChanged() {
+    getDirections();
+  }
+
+  Widget _stopBadge(int index) {
+    return Container(
+      decoration: BoxDecoration(color: AppThemeData.primary300, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
+      alignment: Alignment.center,
+      child: Text(CabRideOptions.stopLabel(index), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+    );
   }
 
   Future<void> fetchGoogleRouteWithWaypoints() async {
@@ -658,7 +715,7 @@ class CabBookingController extends GetxController {
 
     final url = Uri.parse(
       'https://maps.googleapis.com/maps/api/directions/json'
-      '?origin=$origin&destination=$destination'
+      '?origin=$origin&destination=$destination$googleWaypointsParam'
       '&mode=driving&key=${Constant.mapAPIKey}',
     );
 

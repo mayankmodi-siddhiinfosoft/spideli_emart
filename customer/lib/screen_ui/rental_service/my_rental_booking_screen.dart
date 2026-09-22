@@ -5,6 +5,7 @@ import 'package:customer/screen_ui/auth_screens/login_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import 'package:customer/screen_ui/rental_service/rental_order_details_screen.dart';
 import 'package:customer/themes/round_button_fill.dart';
+import 'package:customer/screen_ui/rental_service/widget/rental_proposal_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../constant/constant.dart';
@@ -152,6 +153,7 @@ class MyRentalBookingScreen extends StatelessWidget {
                                           ],
                                         ),
                                         const SizedBox(height: 12),
+                                        RentalProposalStatusLine(order: order),
                                         Text("Vehicle Type :".tr, style: AppThemeData.boldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
                                         Padding(
                                           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),

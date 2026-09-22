@@ -3,6 +3,7 @@ import 'package:customer/themes/responsive.dart';
 import 'package:customer/widget/my_separator.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:flutter/material.dart';
+import 'package:customer/screen_ui/cab_service_screens/widget/cab_ride_options_widgets.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
 import '../../constant/constant.dart';
@@ -225,6 +226,8 @@ class CabOrderDetails extends StatelessWidget {
                                     ),
                           ),
                         ),
+                        // Stops, passengers, instructions, rider, cancellation reason (spec 4.8).
+                        CabRideExtrasView(order: controller.cabOrder.value, isDark: isDark, showCancellation: true),
                         controller.cabOrder.value.driver != null
                             ? Column(
                               children: [

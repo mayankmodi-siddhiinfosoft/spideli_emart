@@ -2,6 +2,7 @@ import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/coupon_model.dart';
 import 'package:customer/screen_ui/rental_service/rental_coupon_screen.dart';
+import 'package:customer/screen_ui/rental_service/widget/rental_proposal_widgets.dart';
 import 'package:customer/themes/responsive.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/network_image_widget.dart';
@@ -297,6 +298,23 @@ class RentalConformationScreen extends StatelessWidget {
                             },
                             color: AppThemeData.primary300,
                             textColor: AppThemeData.grey900,
+                          ),
+                          SizedBox(height: 10),
+                          // Spec 4.9: book at the listed price above, or propose a price.
+                          RoundedButtonFill(
+                            title: "Propose my price".tr,
+                            onPress: () async {
+                              final input = await showProposePriceSheet(
+                                listedPrice: Constant.amountShow(
+                                  amount: controller.subTotal.value.toString(),
+                                  currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId)),
+                                ),
+                              );
+                              if (input == null) return;
+                              await controller.proposePrice(amount: input.amount, message: input.message);
+                            },
+                            color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200,
+                            textColor: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
                           ),
                           SizedBox(height: 20),
                         ],

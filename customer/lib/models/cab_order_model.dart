@@ -43,6 +43,39 @@ class CabOrderModel {
   List<TaxModel>? taxSetting;
   List<TaxModel>? platformTax;
 
+  // --- CabCar extras (spec 4.8 / 7.10, APP-CONTRACT). All additive: absent =
+  // today's behaviour. ---
+
+  /// Intermediate stops between pickup and destination, kept raw:
+  /// `{address, lat, lng, order, reached, reachedAt}`. The Driver app marks
+  /// `reached` / `reachedAt`, so [toJson] never writes this field (a stale
+  /// customer-side update must not undo a reached stop); the booking writes it
+  /// once at creation (see `CabRideOptions.creationFields`).
+  List<Map<String, dynamic>>? stops;
+
+  /// `{ adults, children }`
+  Map<String, dynamic>? passengers;
+
+  /// Free text to the driver.
+  String? instructions;
+
+  /// The customer can only communicate in writing (driver should chat).
+  bool? writtenCommunicationOnly;
+
+  /// `{ name, phone, email }` when the ride is booked for someone else.
+  Map<String, dynamic>? rideFor;
+
+  /// Driver passes / cancellations (Driver app, APP-CONTRACT "CHANGED after
+  /// review"): `[{driverId, reason, code, at, afterAccept}]`. Read only.
+  List<Map<String, dynamic>>? driverRejections;
+
+  // Final cancellation (by the customer). Written by a dedicated field
+  // update, never by [toJson].
+  String? cancelReason;
+  String? cancelReasonCode;
+  String? cancelledBy;
+  Timestamp? cancelledAt;
+
   CabOrderModel({
     this.status,
     this.rejectedByDrivers,
@@ -128,7 +161,51 @@ class CabOrderModel {
         platformTax!.add(TaxModel.fromJson(v));
       });
     }
+    if (json['stops'] is List) {
+      stops = (json['stops'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+    passengers = json['passengers'] is Map ? Map<String, dynamic>.from(json['passengers']) : null;
+    instructions = json['instructions']?.toString();
+    writtenCommunicationOnly = json['writtenCommunicationOnly'] is bool ? json['writtenCommunicationOnly'] : null;
+    rideFor = json['rideFor'] is Map ? Map<String, dynamic>.from(json['rideFor']) : null;
+    if (json['driverRejections'] is List) {
+      driverRejections = (json['driverRejections'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+    cancelReason = json['cancelReason']?.toString();
+    cancelReasonCode = json['cancelReasonCode']?.toString();
+    cancelledBy = json['cancelledBy']?.toString();
+    cancelledAt = json['cancelledAt'] is Timestamp ? json['cancelledAt'] : null;
   }
+
+  /// Stops sorted by their `order` key (falls back to list position).
+  List<Map<String, dynamic>> get orderedStops {
+    final list = List<Map<String, dynamic>>.from(stops ?? const []);
+    final indexed = list.asMap().entries.toList()
+      ..sort((a, b) => ((a.value['order'] as num?)?.toInt() ?? a.key).compareTo((b.value['order'] as num?)?.toInt() ?? b.key));
+    return indexed.map((e) => e.value).toList();
+  }
+
+  int get adults => (passengers?['adults'] as num?)?.toInt() ?? 0;
+
+  int get children => (passengers?['children'] as num?)?.toInt() ?? 0;
+
+  bool get hasPassengers => passengers != null && (adults > 0 || children > 0);
+
+  String? get riderName => (rideFor?['name']?.toString().isNotEmpty == true) ? rideFor!['name'].toString() : null;
+
+  String? get riderPhone => (rideFor?['phone']?.toString().isNotEmpty == true) ? rideFor!['phone'].toString() : null;
+
+  String? get riderEmail => (rideFor?['email']?.toString().isNotEmpty == true) ? rideFor!['email'].toString() : null;
+
+  bool get isForSomeoneElse => rideFor != null && (riderName != null || riderPhone != null);
+
+  /// The latest driver pass / cancellation, if any.
+  Map<String, dynamic>? get lastDriverRejection => (driverRejections?.isNotEmpty ?? false) ? driverRejections!.last : null;
+
+  /// The assigned driver cancelled after accepting and the ride went back to
+  /// dispatch (not a final cancellation): `status == "Driver Rejected"` and
+  /// the LAST `driverRejections` entry has `afterAccept == true`.
+  bool get isDriverCancelledRedispatch => status == 'Driver Rejected' && lastDriverRejection?['afterAccept'] == true;
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
@@ -188,6 +265,13 @@ class CabOrderModel {
       data['platformTax'] = platformTax!.map((v) => v.toJson()).toList();
     }
     if (regionId != null) data['regionId'] = regionId;
+    // Customer-owned booking extras never change after creation, so rewriting
+    // them is harmless. `stops` and the cancellation fields are deliberately
+    // left out (see their docs).
+    if (passengers != null) data['passengers'] = passengers;
+    if (instructions != null) data['instructions'] = instructions;
+    if (writtenCommunicationOnly != null) data['writtenCommunicationOnly'] = writtenCommunicationOnly;
+    if (rideFor != null) data['rideFor'] = rideFor;
     return data;
   }
 }

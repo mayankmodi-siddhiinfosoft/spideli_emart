@@ -15,6 +15,9 @@ import 'package:customer/utils/utils.dart';
 import 'package:customer/widget/my_separator.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:flutter/material.dart';
+import 'package:customer/controllers/cab_ride_options.dart';
+import 'package:customer/screen_ui/cab_service_screens/widget/cab_ride_options_widgets.dart';
+import 'package:customer/widget/cancel_reason_sheet.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -141,9 +144,9 @@ class CabBookingScreen extends StatelessWidget {
   Widget searchLocationBottomSheet(BuildContext context, CabBookingController controller, bool isDark) {
     return Positioned.fill(
       child: DraggableScrollableSheet(
-        initialChildSize: 0.30,
+        initialChildSize: 0.36,
         // Start height
-        minChildSize: 0.30,
+        minChildSize: 0.36,
         // Minimum height
         maxChildSize: 0.8,
         // Maximum height
@@ -152,10 +155,11 @@ class CabBookingScreen extends StatelessWidget {
           return Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(color: isDark ? AppThemeData.grey700 : Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(35))),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+            child: ListView(
+              controller: scrollController,
+              padding: EdgeInsets.zero,
               children: [
-                Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: AppThemeData.grey400), height: 4, width: 33),
+                Center(child: Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: AppThemeData.grey400), height: 4, width: 33)),
                 SizedBox(height: 10),
                 Stack(
                   children: [
@@ -261,6 +265,9 @@ class CabBookingScreen extends StatelessWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                // Stops A, B, … (spec 4.8): route and fare go through them.
+                CabStopsEditor(controller: controller, isDark: isDark),
                 SizedBox(height: 15),
                 RoundedButtonFill(
                   title: "Continue".tr,
@@ -687,6 +694,12 @@ class CabBookingScreen extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 10),
+                            if (controller.stops.isNotEmpty) ...[
+                              CabStopsSummary(controller: controller, isDark: isDark),
+                              const SizedBox(height: 10),
+                            ],
+                            CabTripOptionsSection(controller: controller, isDark: isDark),
+                            const SizedBox(height: 10),
                             Row(
                               children: [
                                 Expanded(child: Text("Promo code".tr, style: AppThemeData.boldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900))),
@@ -943,6 +956,11 @@ class CabBookingScreen extends StatelessWidget {
                       RoundedButtonFill(
                         title: "Confirm Booking".tr,
                         onPress: () async {
+                          final error = controller.validateRideOptions();
+                          if (error != null) {
+                            ShowToastDialog.showToast(error);
+                            return;
+                          }
                           controller.placeOrder();
                         },
                         color: AppThemeData.primary300,
@@ -976,23 +994,38 @@ class CabBookingScreen extends StatelessWidget {
                 children: [
                   Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: AppThemeData.grey400), height: 4, width: 33),
                   SizedBox(height: 30),
+                  // The assigned driver cancelled: back to dispatch, not final.
+                  DriverCancelledBanner(order: controller.currentOrder.value),
                   Text("Waiting for driver....".tr, style: AppThemeData.mediumTextStyle(fontSize: 18, color: AppThemeData.grey900)),
-                  Image.asset('assets/loader.gif', width: 250),
+                  Image.asset('assets/loader.gif', width: controller.currentOrder.value.isDriverCancelledRedispatch ? 150 : 250),
                   RoundedButtonFill(
                     title: "Cancel Ride".tr,
                     color: AppThemeData.danger300,
                     textColor: AppThemeData.surface,
                     onPress: () async {
+                      // Mandatory reason (spec 4.8); field update guarded by the ride's
+                      // current status (a driver acceptance that just landed wins).
+                      final reason = await CancelReasonSheet.show();
+                      if (reason == null) return;
                       try {
+                        if (controller.currentOrder.value.id != null) {
+                          ShowToastDialog.showLoader("Please wait".tr);
+                          final error = await CabRideCancellation.cancel(controller.currentOrder.value.id!, reason.toFields());
+                          ShowToastDialog.closeLoader();
+                          if (error != null) {
+                            ShowToastDialog.showToast(error);
+                            return;
+                          }
+                        }
                         controller.currentOrder.update((order) {
                           if (order != null) {
                             order.status = Constant.orderRejected;
+                            order.cancelReason = reason.reason;
+                            order.cancelReasonCode = reason.code;
+                            order.cancelledBy = 'customer';
                           }
                         });
-
-                        if (controller.currentOrder.value.id != null) {
-                          await FireStoreUtils.updateCabOrder(controller.currentOrder.value);
-                        }
+                        controller.resetRideOptions();
 
                         controller.bottomSheetType.value = "";
                         controller.polyLines.clear();
@@ -1148,6 +1181,9 @@ class CabBookingScreen extends StatelessWidget {
                             ),
                           ],
                         ),
+                        const SizedBox(height: 10),
+                        // Stops progress, passengers, instructions, rider (spec 4.8).
+                        CabRideExtrasView(order: controller.currentOrder.value, isDark: isDark),
                         const SizedBox(height: 14),
                         Constant.isEnableOTPTripStart == true
                             ? Padding(

@@ -1,11 +1,13 @@
 import 'dart:developer';
 import 'dart:math' as maths;
 
+import 'package:customer/constant/collection_name.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/coupon_model.dart';
 import 'package:customer/models/rental_order_model.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
+import 'package:customer/utils/rental_proposal_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -82,7 +84,25 @@ class RentalConformationController extends GetxController {
     }
   }
 
-  Future<void> placeOrder() async {
+  /// "Propose my price" (spec 4.9): books the car like [placeOrder] and adds a
+  /// pending `priceProposal`. The listed price stays in `subTotal` (and is kept
+  /// in `listedPrice`); it changes only when a proposal / counter is accepted.
+  /// A coupon is not combined with a proposal (the discount would apply to a
+  /// price that is still being negotiated).
+  Future<void> proposePrice({required num amount, String? message}) async {
+    if (selectedCouponModel.value.id != null) {
+      selectedCouponModel.value = CouponModel();
+      couponController.value.clear();
+      calculateAmount();
+      ShowToastDialog.showToast("Coupons can't be combined with a price proposal".tr);
+    }
+    await placeOrder(
+      extraFields: {'priceProposal': RentalProposalService.initial(amount: amount, message: message), 'listedPrice': subTotal.value.toString()},
+      successMessage: "Your price proposal was sent".tr,
+    );
+  }
+
+  Future<void> placeOrder({Map<String, dynamic>? extraFields, String? successMessage}) async {
     ShowToastDialog.showLoader("Placing booking...".tr);
     rentalOrderModel.value.discount = discount.value.toString();
     rentalOrderModel.value.couponCode = selectedCouponModel.value.code;
@@ -92,10 +112,12 @@ class RentalConformationController extends GetxController {
     rentalOrderModel.value.platformFee = Constant.platformFeeModel?.fee;
     rentalOrderModel.value.platformTax = Constant.platformTaxList;
     rentalOrderModel.value.taxSetting = Constant.orderProductTaxList;
-    await FireStoreUtils.rentalOrderPlace(rentalOrderModel.value).then((value) async {
+    // Creation write; `priceProposal` / `listedPrice` are not in toJson (the
+    // Driver app answers the proposal), so they are added here.
+    await FireStoreUtils.fireStore.collection(CollectionName.rentalOrders).doc(rentalOrderModel.value.id).setKnownFields({...rentalOrderModel.value.toJson(), ...?extraFields}).then((value) async {
       await FireStoreUtils.sendCarBookEmail(orderModel: rentalOrderModel.value);
       ShowToastDialog.closeLoader();
-      ShowToastDialog.showToast("Order placed successfully".tr);
+      ShowToastDialog.showToast(successMessage ?? "Order placed successfully".tr);
       Get.offAll(const RentalDashboardScreen());
       CabRentalDashboardControllers controller = Get.put(CabRentalDashboardControllers());
       controller.selectedIndex.value = 1;

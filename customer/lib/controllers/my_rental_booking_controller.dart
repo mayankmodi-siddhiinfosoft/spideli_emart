@@ -1,4 +1,7 @@
 import 'dart:async';
+
+import 'package:customer/utils/rental_proposal_service.dart';
+import 'package:customer/widget/cancel_reason_sheet.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/wallet_transaction_model.dart';
@@ -181,14 +184,22 @@ class MyRentalBookingController extends GetxController {
   List<RentalOrderModel> get filteredRentalOrders => getOrdersForTab(selectedTab.value);
 
   Future<void> cancelRentalRequest(RentalOrderModel order, {List<TaxModel>? taxList}) async {
+    // Mandatory reason (APP-CONTRACT); guarded field update, not a full write.
+    final reason = await CancelReasonSheet.show();
+    if (reason == null || order.id == null) return;
     try {
       isLoading.value = true;
-      order.status = Constant.orderCancelled;
-      await FireStoreUtils.rentalOrderPlace(order);
+      final error = await RentalBookingCancellation.cancel(order.id!, reason.toFields());
+      if (error != null) {
+        ShowToastDialog.showToast(error);
+        return;
+      }
 
       listenRentalOrders();
 
-      if (order.paymentMethod?.toLowerCase() != "cod") {
+      // Refund only what was actually paid (bookings are paid during the
+      // trip, so a cancellable booking is normally unpaid).
+      if (order.paymentStatus == true && order.paymentMethod?.toLowerCase() != "cod") {
         double refundAmount = totalAmount.value;
 
         WalletTransactionModel walletTransaction = WalletTransactionModel(

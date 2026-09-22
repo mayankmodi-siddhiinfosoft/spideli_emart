@@ -5,6 +5,7 @@ import 'package:customer/payment/create_razor_pay_order_model.dart';
 import 'package:customer/payment/rozorpay_conroller.dart';
 import 'package:customer/screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import 'package:customer/screen_ui/rental_service/rental_review_screen.dart';
+import 'package:customer/screen_ui/rental_service/widget/rental_proposal_widgets.dart';
 import 'package:customer/themes/responsive.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/network_image_widget.dart';
@@ -69,6 +70,8 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                // Price proposal & negotiation (spec 4.9); hidden without one.
+                                RentalProposalCard(order: controller.order.value, isDark: isDark, currency: controller.bookingCurrency),
                                 Container(
                                   padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
