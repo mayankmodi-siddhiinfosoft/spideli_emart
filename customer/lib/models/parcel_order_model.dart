@@ -4,6 +4,9 @@ import 'package:customer/models/user_model.dart';
 import 'package:customer/models/vendor_model.dart';
 
 class ParcelOrderModel {
+  /// Region the record belongs to (spec 18.12). History amounts use its
+  /// currency; see `RegionService.currencyForRecord`.
+  String? regionId;
   UserModel? author;
   UserModel? driver;
 
@@ -95,6 +98,7 @@ class ParcelOrderModel {
   });
 
   ParcelOrderModel.fromJson(Map<String, dynamic> json) {
+    regionId = (json['regionId'] == null || json['regionId'].toString().isEmpty) ? null : json['regionId'].toString();
     author = json['author'] != null ? UserModel.fromJson(json['author']) : null;
     driver = json['driver'] != null ? UserModel.fromJson(json['driver']) : null;
     sender = json['sender'] != null ? LocationInformation.fromJson(json['sender']) : null;
@@ -212,6 +216,7 @@ class ParcelOrderModel {
       data['platformTax'] = platformTax!.map((v) => v.toJson()).toList();
     }
 
+    if (regionId != null) data['regionId'] = regionId;
     return data;
   }
 }

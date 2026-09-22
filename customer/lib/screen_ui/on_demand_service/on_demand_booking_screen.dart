@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:bottom_picker/bottom_picker.dart';
 import 'package:customer/themes/responsive.dart';
 import 'package:customer/widget/my_separator.dart';
@@ -294,7 +295,7 @@ class OnDemandBookingScreen extends StatelessWidget {
                     Container(
                       margin: const EdgeInsets.only(top: 3),
                       child: Text(
-                        coupon.discountType == "Fix Price" ? "${Constant.amountShow(amount: coupon.discount.toString())} ${'OFF'.tr}" : "${coupon.discount} ${'% Off'.tr}",
+                        coupon.discountType == "Fix Price" ? "${Constant.amountShow(amount: coupon.discount.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId))} ${'OFF'.tr}" : "${coupon.discount} ${'% Off'.tr}",
                         style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.7, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                       ),
                     ),
@@ -481,7 +482,7 @@ class OnDemandBookingScreen extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 5),
-            rowText("Price".tr, Constant.amountShow(amount: controller.price.value.toString()), isDark),
+            rowText("Price".tr, Constant.amountShow(amount: controller.price.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), isDark),
             controller.discountAmount.value != 0 ? const Divider() : const SizedBox(),
             controller.discountAmount.value != 0
                 ? Padding(
@@ -494,29 +495,29 @@ class OnDemandBookingScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              "${"Discount".tr} ${controller.discountType.value == 'Percentage' || controller.discountType.value == 'Percent' ? "(${controller.discountLabel.value}%)" : "(${Constant.amountShow(amount: controller.discountLabel.value)})"}",
+                              "${"Discount".tr} ${controller.discountType.value == 'Percentage' || controller.discountType.value == 'Percent' ? "(${controller.discountLabel.value}%)" : "(${Constant.amountShow(amount: controller.discountLabel.value, currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId))})"}",
                               style: TextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                             ),
                             Text(controller.offerCode.value, style: TextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
                           ],
                         ),
                       ),
-                      Text("(-${Constant.amountShow(amount: controller.discountAmount.value.toString())})", style: const TextStyle(color: Colors.red)),
+                      Text("(-${Constant.amountShow(amount: controller.discountAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId))})", style: const TextStyle(color: Colors.red)),
                     ],
                   ),
                 )
                 : const SizedBox(),
             const Divider(),
-            if (Constant.platformFeeModel?.enable == true) rowText("Platform fee".tr, Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString()), isDark),
+            if (Constant.platformFeeModel?.enable == true) rowText("Platform fee".tr, Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), isDark),
             if (Constant.platformFeeModel?.enable == true) const Divider(),
             InkWell(
               onTap: () {
                 showBillBifurcationDialog(context, isDark, controller);
               },
-              child: rowText("Tax amount".tr, Constant.amountShow(amount: (controller.taxAmount.value).toString()), isDark, underline: true),
+              child: rowText("Tax amount".tr, Constant.amountShow(amount: (controller.taxAmount.value).toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), isDark, underline: true),
             ),
             const Divider(),
-            rowText("Total Amount".tr, Constant.amountShow(amount: controller.totalAmount.value.toString()), isDark),
+            rowText("Total Amount".tr, Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), isDark),
             const SizedBox(height: 5),
           ],
         ),
@@ -560,11 +561,11 @@ class OnDemandBookingScreen extends StatelessWidget {
                   const SizedBox(height: 5),
                   sectionDivider(isDark),
                   const SizedBox(height: 5),
-                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString()), isDark: isDark),
+                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), isDark: isDark),
                   sectionDivider(isDark),
-                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString()), isDark: isDark),
+                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), isDark: isDark),
                   sectionDivider(isDark),
-                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString()), amountColor: AppThemeData.primary300, isDark: isDark),
+                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), amountColor: AppThemeData.primary300, isDark: isDark),
                   const SizedBox(height: 20),
                   Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: Text("Close".tr))),
                 ],

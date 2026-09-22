@@ -160,7 +160,7 @@ class CartScreen extends StatelessWidget {
                                                     ),
                                                     double.parse(cartProductModel.discountPrice.toString()) <= 0
                                                         ? Text(
-                                                          Constant.amountShow(amount: cartProductModel.price),
+                                                          Constant.amountShow(amount: cartProductModel.price, currency: controller.storeCurrency),
                                                           style: TextStyle(
                                                             fontSize: 16,
                                                             color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
@@ -171,7 +171,7 @@ class CartScreen extends StatelessWidget {
                                                         : Row(
                                                           children: [
                                                             Text(
-                                                              Constant.amountShow(amount: cartProductModel.discountPrice.toString()),
+                                                              Constant.amountShow(amount: cartProductModel.discountPrice.toString(), currency: controller.storeCurrency),
                                                               style: TextStyle(
                                                                 fontSize: 16,
                                                                 color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
@@ -181,7 +181,7 @@ class CartScreen extends StatelessWidget {
                                                             ),
                                                             const SizedBox(width: 5),
                                                             Text(
-                                                              Constant.amountShow(amount: cartProductModel.price),
+                                                              Constant.amountShow(amount: cartProductModel.price, currency: controller.storeCurrency),
                                                               style: TextStyle(
                                                                 fontSize: 14,
                                                                 decoration: TextDecoration.lineThrough,
@@ -197,7 +197,7 @@ class CartScreen extends StatelessWidget {
                                                       cartProductModel.taxSetting?.isEmpty == true
                                                           ? SizedBox()
                                                           : Text(
-                                                            "${'Tax:'.tr} ${Constant.getTaxDisplayText(cartProductModel.taxSetting)}",
+                                                            "${'Tax:'.tr} ${Constant.getTaxDisplayText(cartProductModel.taxSetting, currency: controller.storeCurrency)}",
                                                             maxLines: 2,
                                                             overflow: TextOverflow.ellipsis,
                                                             style: TextStyle(fontSize: 12, color: isDark ? AppThemeData.grey500 : AppThemeData.grey400, fontFamily: AppThemeData.semiBold),
@@ -338,7 +338,7 @@ class CartScreen extends StatelessWidget {
                                                       ),
                                                       Text(
                                                         Constant.amountShow(
-                                                          amount: (double.parse(cartProductModel.extrasPrice.toString()) * double.parse(cartProductModel.quantity.toString())).toString(),
+                                                          amount: (double.parse(cartProductModel.extrasPrice.toString()) * double.parse(cartProductModel.quantity.toString())).toString(), currency: controller.storeCurrency,
                                                         ),
                                                         textAlign: TextAlign.start,
                                                         style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, fontSize: 16),
@@ -577,7 +577,7 @@ class CartScreen extends StatelessWidget {
                                             ),
                                           ),
                                           Text(
-                                            Constant.amountShow(amount: controller.subTotal.value.toString()),
+                                            Constant.amountShow(amount: controller.subTotal.value.toString(), currency: controller.storeCurrency),
                                             textAlign: TextAlign.start,
                                             style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
                                           ),
@@ -598,7 +598,7 @@ class CartScreen extends StatelessWidget {
                                             ),
                                           ),
                                           Text(
-                                            "- (${Constant.amountShow(amount: controller.couponAmount.value.toString())})",
+                                            "- (${Constant.amountShow(amount: controller.couponAmount.value.toString(), currency: controller.storeCurrency)})",
                                             textAlign: TextAlign.start,
                                             style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.danger300 : AppThemeData.danger300, fontSize: 16),
                                           ),
@@ -619,7 +619,7 @@ class CartScreen extends StatelessWidget {
                                                     ),
                                                   ),
                                                   Text(
-                                                    "- (${Constant.amountShow(amount: controller.specialDiscountAmount.value.toString())})",
+                                                    "- (${Constant.amountShow(amount: controller.specialDiscountAmount.value.toString(), currency: controller.storeCurrency)})",
                                                     textAlign: TextAlign.start,
                                                     style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.danger300 : AppThemeData.danger300, fontSize: 16),
                                                   ),
@@ -641,7 +641,7 @@ class CartScreen extends StatelessWidget {
                                               ),
                                             ),
                                             Text(
-                                              Constant.amountShow(amount: controller.packagingCharge.value.toString()),
+                                              Constant.amountShow(amount: controller.packagingCharge.value.toString(), currency: controller.storeCurrency),
                                               textAlign: TextAlign.start,
                                               style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
                                             ),
@@ -667,7 +667,7 @@ class CartScreen extends StatelessWidget {
                                                     style: TextStyle(fontFamily: AppThemeData.regular, color: AppThemeData.success400, fontSize: 16),
                                                   )
                                                   : Text(
-                                                    Constant.amountShow(amount: controller.deliveryCharges.value.toString()),
+                                                    Constant.amountShow(amount: controller.deliveryCharges.value.toString(), currency: controller.storeCurrency),
                                                     textAlign: TextAlign.start,
                                                     style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
                                                   ),
@@ -705,7 +705,7 @@ class CartScreen extends StatelessWidget {
                                                 ),
                                               ),
                                               Text(
-                                                Constant.amountShow(amount: controller.deliveryTips.toString()),
+                                                Constant.amountShow(amount: controller.deliveryTips.toString(), currency: controller.storeCurrency),
                                                 textAlign: TextAlign.start,
                                                 style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
                                               ),
@@ -726,7 +726,7 @@ class CartScreen extends StatelessWidget {
                                               ),
                                             ),
                                             Text(
-                                              Constant.amountShow(amount: controller.platformFee.value.toString()),
+                                              Constant.amountShow(amount: controller.platformFee.value.toString(), currency: controller.storeCurrency),
                                               textAlign: TextAlign.start,
                                               style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
                                             ),
@@ -741,7 +741,7 @@ class CartScreen extends StatelessWidget {
                                         },
                                         child: amountRow(
                                           title: "Tax amount".tr,
-                                          amount: Constant.amountShow(amount: controller.totalTaxAmount.value.toString()),
+                                          amount: Constant.amountShow(amount: controller.totalTaxAmount.value.toString(), currency: controller.storeCurrency),
                                           isDark: isDark,
                                           textColour: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
                                           underline: true,
@@ -761,7 +761,7 @@ class CartScreen extends StatelessWidget {
                                             ),
                                           ),
                                           Text(
-                                            Constant.amountShow(amount: controller.totalAmount.value.toString()),
+                                            Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.storeCurrency),
                                             textAlign: TextAlign.start,
                                             style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
                                           ),
@@ -841,7 +841,7 @@ class CartScreen extends StatelessWidget {
                                                       padding: const EdgeInsets.symmetric(vertical: 10),
                                                       child: Center(
                                                         child: Text(
-                                                          Constant.amountShow(amount: "20"),
+                                                          Constant.amountShow(amount: "20", currency: controller.storeCurrency),
                                                           style: TextStyle(
                                                             color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
                                                             fontSize: 14,
@@ -880,7 +880,7 @@ class CartScreen extends StatelessWidget {
                                                       padding: const EdgeInsets.symmetric(vertical: 10),
                                                       child: Center(
                                                         child: Text(
-                                                          Constant.amountShow(amount: "30"),
+                                                          Constant.amountShow(amount: "30", currency: controller.storeCurrency),
                                                           style: TextStyle(
                                                             color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
                                                             fontSize: 14,
@@ -919,7 +919,7 @@ class CartScreen extends StatelessWidget {
                                                       padding: const EdgeInsets.symmetric(vertical: 10),
                                                       child: Center(
                                                         child: Text(
-                                                          Constant.amountShow(amount: "40"),
+                                                          Constant.amountShow(amount: "40", currency: controller.storeCurrency),
                                                           style: TextStyle(
                                                             color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
                                                             fontSize: 14,
@@ -1007,7 +1007,7 @@ class CartScreen extends StatelessWidget {
                                   style: TextStyle(color: AppThemeData.success300, fontFamily: AppThemeData.semiBold, fontSize: 13),
                                 ),
                                 Text(
-                                  "${"You will get".tr} ${Constant.amountShow(amount: controller.bestCashback.value.cashbackValue?.toStringAsFixed(2))} ${"cashback after completing the order.".tr}",
+                                  "${"You will get".tr} ${Constant.amountShow(amount: controller.bestCashback.value.cashbackValue?.toStringAsFixed(2), currency: controller.storeCurrency)} ${"cashback after completing the order.".tr}",
                                   style: TextStyle(color: AppThemeData.success300, fontFamily: AppThemeData.semiBold, fontSize: 13),
                                 ),
                               ],
@@ -1195,8 +1195,8 @@ class CartScreen extends StatelessWidget {
                   sectionDivider(isDark),
                   const SizedBox(height: 5),
                   Constant.taxScope == 'product'
-                      ? amountRow(title: "Tax on item total".tr, amount: Constant.amountShow(amount: controller.productTaxAmount.value.toString()), isDark: isDark)
-                      : amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString()), isDark: isDark),
+                      ? amountRow(title: "Tax on item total".tr, amount: Constant.amountShow(amount: controller.productTaxAmount.value.toString(), currency: controller.storeCurrency), isDark: isDark)
+                      : amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: controller.storeCurrency), isDark: isDark),
                   if (controller.selectedFoodType.value != 'TakeAway' && controller.vendorModel.value.isSelfDelivery != true && Constant.driverDeliveryTaxList!.isNotEmpty == true)
                     sectionDivider(isDark),
                   if (controller.selectedFoodType.value != 'TakeAway' && controller.vendorModel.value.isSelfDelivery != true)
@@ -1208,7 +1208,7 @@ class CartScreen extends StatelessWidget {
                         return amountRow(
                           title: "${Constant.driverDeliveryTaxList?[index].title} ${'Tax on Delivery Fee'.tr}",
                           amount: Constant.amountShow(
-                            amount: Constant.calculateTax(taxModel: Constant.driverDeliveryTaxList![index], amount: (controller.deliveryCharges.value).toString()).toString(),
+                            amount: Constant.calculateTax(taxModel: Constant.driverDeliveryTaxList![index], amount: (controller.deliveryCharges.value).toString()).toString(), currency: controller.storeCurrency,
                           ),
                           isDark: isDark,
                         );
@@ -1225,8 +1225,8 @@ class CartScreen extends StatelessWidget {
                         title: "${Constant.packagingTaxList![index].title} ${'Tax on Packaging Fee'.tr}",
                         amount:
                             controller.packagingCharge.value == 0.0
-                                ? Constant.amountShow(amount: '0')
-                                : Constant.amountShow(amount: Constant.calculateTax(taxModel: Constant.packagingTaxList![index], amount: controller.packagingCharge.value.toString()).toString()),
+                                ? Constant.amountShow(amount: '0', currency: controller.storeCurrency)
+                                : Constant.amountShow(amount: Constant.calculateTax(taxModel: Constant.packagingTaxList![index], amount: controller.packagingCharge.value.toString()).toString(), currency: controller.storeCurrency),
                         isDark: isDark,
                       );
                     },
@@ -1243,14 +1243,14 @@ class CartScreen extends StatelessWidget {
                           title: "${Constant.platformTaxList![index].title} ${'Tax on Platform Fee'.tr}",
                           amount:
                               controller.platformFee.value == 0.0
-                                  ? Constant.amountShow(amount: '0')
-                                  : Constant.amountShow(amount: Constant.calculateTax(taxModel: Constant.platformTaxList![index], amount: controller.platformFee.value.toString()).toString()),
+                                  ? Constant.amountShow(amount: '0', currency: controller.storeCurrency)
+                                  : Constant.amountShow(amount: Constant.calculateTax(taxModel: Constant.platformTaxList![index], amount: controller.platformFee.value.toString()).toString(), currency: controller.storeCurrency),
                           isDark: isDark,
                         );
                       },
                     ),
                   if (Constant.platformTaxList?.isNotEmpty == true) sectionDivider(isDark),
-                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.totalTaxAmount.value.toString()), amountColor: AppThemeData.primary300, isDark: isDark),
+                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.totalTaxAmount.value.toString(), currency: controller.storeCurrency), amountColor: AppThemeData.primary300, isDark: isDark),
                   const SizedBox(height: 20),
                   Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: Text("Close".tr))),
                 ],
@@ -1320,7 +1320,7 @@ class CartScreen extends StatelessWidget {
                 inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]'))],
                 prefix: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  child: Text(Constant.currencyModel!.symbol.tr, style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontSize: 18)),
+                  child: Text((controller.storeCurrency ?? Constant.currencyModel!).symbol.tr, style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontSize: 18)),
                 ),
                 hintText: 'Enter Tips Amount'.tr,
               ),

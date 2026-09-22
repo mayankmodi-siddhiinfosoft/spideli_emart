@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/all_brand_product_controller.dart';
 import 'package:customer/controllers/theme_controller.dart';
@@ -99,16 +100,16 @@ class AllBrandProductScreen extends StatelessWidget {
                                         style: AppThemeData.semiBoldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark600 : AppThemeData.grey600),
                                       ),
                                       disPrice == "" || disPrice == "0"
-                                          ? Text(Constant.amountShow(amount: price), style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: AppThemeData.primary300))
+                                          ? Text(Constant.amountShow(amount: price, currency: RegionService.currencyForVendorId(productModel.vendorID)), style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: AppThemeData.primary300))
                                           : Row(
                                             children: [
                                               Text(
-                                                Constant.amountShow(amount: price),
+                                                Constant.amountShow(amount: price, currency: RegionService.currencyForVendorId(productModel.vendorID)),
                                                 style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: Colors.grey, decoration: TextDecoration.lineThrough),
                                               ),
                                               const SizedBox(width: 5),
                                               Text(
-                                                Constant.amountShow(amount: disPrice),
+                                                Constant.amountShow(amount: disPrice, currency: RegionService.currencyForVendorId(productModel.vendorID)),
                                                 style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                               ),
                                             ],

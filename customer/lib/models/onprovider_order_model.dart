@@ -35,6 +35,9 @@ class OnProviderOrderModel {
   String? platformFee;
   List<TaxModel>? platformTax;
 
+  /// The provider's region (spec 18.12). History amounts use its currency.
+  String? regionId;
+
   OnProviderOrderModel({
     this.sectionId = '',
     this.authorID = '',
@@ -67,6 +70,7 @@ class OnProviderOrderModel {
     this.workerId,
     this.platformFee,
     this.platformTax,
+    this.regionId,
   }) : author = author ?? UserModel(),
        createdAt = createdAt ?? Timestamp.now(),
        provider = provider ?? ProviderServiceModel(),
@@ -119,6 +123,7 @@ class OnProviderOrderModel {
       extraChargesDescription: parsedJson['extraChargesDescription'] ?? "",
       platformFee: parsedJson['platformFee'],
       platformTax: platformTax,
+      regionId: (parsedJson['regionId'] == null || parsedJson['regionId'].toString().isEmpty) ? null : parsedJson['regionId'].toString(),
     );
   }
 
@@ -155,6 +160,7 @@ class OnProviderOrderModel {
       'extraChargesDescription': extraChargesDescription,
       'platformFee': platformFee,
       'platformTax': platformTax?.map((v) => v.toJson()).toList(),
+      if (regionId != null) 'regionId': regionId,
     };
   }
 }

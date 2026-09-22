@@ -78,9 +78,20 @@ import '../screen_ui/multi_vendor_service/chat_screens/chat_video_container.dart
 import '../themes/app_them_data.dart';
 import '../themes/show_toast_dialog.dart';
 import '../utils/preferences.dart';
+import '../utils/region_service.dart';
 import '../widget/geoflutterfire/src/geoflutterfire.dart';
 import '../widget/geoflutterfire/src/models/point.dart';
 import 'package:http/http.dart' as http;
+
+/// Writes only the keys present in [data] and leaves every other field of the
+/// document alone (contract lesson 2): a full `set(model.toJson())` on an
+/// existing document deletes fields the app does not model, such as the admin
+/// panel's `regionId` / `regionIds`. Creates the document when it is missing.
+extension SetKnownFields on DocumentReference<Map<String, dynamic>> {
+  Future<void> setKnownFields(Map<String, dynamic> data) {
+    return set(data, SetOptions(mergeFields: data.keys.map((key) => FieldPath([key])).toList()));
+  }
+}
 
 enum FirebaseEnv { defaultDb, staging }
 
@@ -176,9 +187,11 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.users)
         .doc(userModel.id)
-        .set(userModel.toJson())
+        .setKnownFields(userModel.toJson())
         .whenComplete(() {
-          Constant.userModel = userModel;
+          // Reviews also update drivers/providers through here: only the
+          // signed-in customer's own document refreshes the session copy.
+          if (auth.FirebaseAuth.instance.currentUser == null || userModel.id == auth.FirebaseAuth.instance.currentUser!.uid) Constant.userModel = userModel;
           isUpdate = true;
         })
         .catchError((error) {
@@ -874,7 +887,7 @@ class FireStoreUtils {
   // }
 
   static Future<VendorModel?> updateVendor(VendorModel vendor) async {
-    return await fireStore.collection(CollectionName.vendors).doc(vendor.id).set(vendor.toJson()).then((document) {
+    return await fireStore.collection(CollectionName.vendors).doc(vendor.id).setKnownFields(vendor.toJson()).then((document) {
       return vendor;
     });
   }
@@ -884,7 +897,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.vendorProducts)
         .doc(orderModel.id)
-        .set(orderModel.toJson())
+        .setKnownFields(orderModel.toJson())
         .then((value) {
           isAdded = true;
         })
@@ -950,12 +963,14 @@ class FireStoreUtils {
     return list;
   }
 
-  static Future<DeliveryCharge?> getDeliveryCharge() async {
+  /// settings/DeliveryCharge for [regionId] (the store's region):
+  /// `regions[regionId]` when present, else the global figures (spec 18.6).
+  static Future<DeliveryCharge?> getDeliveryCharge({String? regionId}) async {
     DeliveryCharge? deliveryCharge;
     try {
       await fireStore.collection(CollectionName.settings).doc("DeliveryCharge").get().then((value) {
         if (value.exists) {
-          deliveryCharge = DeliveryCharge.fromJson(value.data()!);
+          deliveryCharge = RegionService.deliveryChargeFrom(value.data(), regionId);
         }
       });
     } catch (e, s) {
@@ -1063,6 +1078,8 @@ class FireStoreUtils {
 
   static Future<bool?> setOrder(OrderModel orderModel) async {
     bool isAdded = false;
+    // vendor_orders.regionId = the store's region (spec 18.12).
+    orderModel.regionId ??= RegionService.regionOfVendor(orderModel.vendor) ?? await RegionService.resolveVendorRegion(orderModel.vendorID);
     await fireStore
         .collection(CollectionName.vendorOrders)
         .doc(orderModel.id)
@@ -1074,7 +1091,25 @@ class FireStoreUtils {
           log("Failed to update user: $error");
           isAdded = false;
         });
+    if (isAdded) await addCustomerRegion(orderModel.regionId);
     return isAdded;
+  }
+
+  /// Adds [regionId] to the customer's `users.regionIds` (every region the
+  /// customer has ordered in). Skipped when the region is unknown.
+  static Future<void> addCustomerRegion(String? regionId) async {
+    if (regionId == null || regionId.isEmpty || auth.FirebaseAuth.instance.currentUser == null) return;
+    try {
+      await fireStore.collection(CollectionName.users).doc(getCurrentUid()).update({
+        'regionIds': FieldValue.arrayUnion([regionId]),
+      });
+      final user = Constant.userModel;
+      if (user != null && user.id == getCurrentUid()) {
+        user.regionIds = {...?user.regionIds, regionId}.toList();
+      }
+    } catch (e) {
+      log("addCustomerRegion failed: $e");
+    }
   }
 
   static Future<List<CouponModel>> getOfferByVendorId(String vendorId) async {
@@ -1132,63 +1167,77 @@ class FireStoreUtils {
     return ratingList;
   }
 
+  /// Loads every gateway's settings into Preferences (unchanged, shared by
+  /// every checkout) and remembers each gateway's `regionIds` (spec 18.7).
+  /// Checkouts read them back through `RegionService.gatewaySettings`, which
+  /// disables a gateway not offered in the checkout's region.
   static Future getPaymentSettingsData() async {
     await fireStore.collection(CollectionName.settings).doc("payFastSettings").get().then((value) async {
       if (value.exists) {
+        RegionService.rememberGatewayRegions(Preferences.payFastSettings, value.data()!['regionIds']);
         PayFastModel payFastModel = PayFastModel.fromJson(value.data()!);
         await Preferences.setString(Preferences.payFastSettings, jsonEncode(payFastModel.toJson()));
       }
     });
     await fireStore.collection(CollectionName.settings).doc("MercadoPago").get().then((value) async {
       if (value.exists) {
+        RegionService.rememberGatewayRegions(Preferences.mercadoPago, value.data()!['regionIds']);
         MercadoPagoModel mercadoPagoModel = MercadoPagoModel.fromJson(value.data()!);
         await Preferences.setString(Preferences.mercadoPago, jsonEncode(mercadoPagoModel.toJson()));
       }
     });
     await fireStore.collection(CollectionName.settings).doc("paypalSettings").get().then((value) async {
       if (value.exists) {
+        RegionService.rememberGatewayRegions(Preferences.paypalSettings, value.data()!['regionIds']);
         PayPalModel payPalModel = PayPalModel.fromJson(value.data()!);
         await Preferences.setString(Preferences.paypalSettings, jsonEncode(payPalModel.toJson()));
       }
     });
     await fireStore.collection(CollectionName.settings).doc("stripeSettings").get().then((value) async {
       if (value.exists) {
+        RegionService.rememberGatewayRegions(Preferences.stripeSettings, value.data()!['regionIds']);
         StripeModel stripeModel = StripeModel.fromJson(value.data()!);
         await Preferences.setString(Preferences.stripeSettings, jsonEncode(stripeModel.toJson()));
       }
     });
     await fireStore.collection(CollectionName.settings).doc("flutterWave").get().then((value) async {
       if (value.exists) {
+        RegionService.rememberGatewayRegions(Preferences.flutterWave, value.data()!['regionIds']);
         FlutterWaveModel flutterWaveModel = FlutterWaveModel.fromJson(value.data()!);
         await Preferences.setString(Preferences.flutterWave, jsonEncode(flutterWaveModel.toJson()));
       }
     });
     await fireStore.collection(CollectionName.settings).doc("payStack").get().then((value) async {
       if (value.exists) {
+        RegionService.rememberGatewayRegions(Preferences.payStack, value.data()!['regionIds']);
         PayStackModel payStackModel = PayStackModel.fromJson(value.data()!);
         await Preferences.setString(Preferences.payStack, jsonEncode(payStackModel.toJson()));
       }
     });
     await fireStore.collection(CollectionName.settings).doc("PaytmSettings").get().then((value) async {
       if (value.exists) {
+        RegionService.rememberGatewayRegions(Preferences.paytmSettings, value.data()!['regionIds']);
         PaytmModel paytmModel = PaytmModel.fromJson(value.data()!);
         await Preferences.setString(Preferences.paytmSettings, jsonEncode(paytmModel.toJson()));
       }
     });
     await fireStore.collection(CollectionName.settings).doc("walletSettings").get().then((value) async {
       if (value.exists) {
+        RegionService.rememberGatewayRegions(Preferences.walletSettings, value.data()!['regionIds']);
         WalletSettingModel walletSettingModel = WalletSettingModel.fromJson(value.data()!);
         await Preferences.setString(Preferences.walletSettings, jsonEncode(walletSettingModel.toJson()));
       }
     });
     await fireStore.collection(CollectionName.settings).doc("razorpaySettings").get().then((value) async {
       if (value.exists) {
+        RegionService.rememberGatewayRegions(Preferences.razorpaySettings, value.data()!['regionIds']);
         RazorPayModel razorPayModel = RazorPayModel.fromJson(value.data()!);
         await Preferences.setString(Preferences.razorpaySettings, jsonEncode(razorPayModel.toJson()));
       }
     });
     await fireStore.collection(CollectionName.settings).doc("CODSettings").get().then((value) async {
       if (value.exists) {
+        RegionService.rememberGatewayRegions(Preferences.codSettings, value.data()!['regionIds']);
         CodSettingModel codSettingModel = CodSettingModel.fromJson(value.data()!);
         await Preferences.setString(Preferences.codSettings, jsonEncode(codSettingModel.toJson()));
       }
@@ -1196,6 +1245,7 @@ class FireStoreUtils {
 
     await fireStore.collection(CollectionName.settings).doc("midtrans_settings").get().then((value) async {
       if (value.exists) {
+        RegionService.rememberGatewayRegions(Preferences.midTransSettings, value.data()!['regionIds']);
         MidTrans midTrans = MidTrans.fromJson(value.data()!);
         await Preferences.setString(Preferences.midTransSettings, jsonEncode(midTrans.toJson()));
       }
@@ -1203,6 +1253,7 @@ class FireStoreUtils {
 
     await fireStore.collection(CollectionName.settings).doc("orange_money_settings").get().then((value) async {
       if (value.exists) {
+        RegionService.rememberGatewayRegions(Preferences.orangeMoneySettings, value.data()!['regionIds']);
         OrangeMoney orangeMoney = OrangeMoney.fromJson(value.data()!);
         await Preferences.setString(Preferences.orangeMoneySettings, jsonEncode(orangeMoney.toJson()));
       }
@@ -1210,6 +1261,7 @@ class FireStoreUtils {
 
     await fireStore.collection(CollectionName.settings).doc("xendit_settings").get().then((value) async {
       if (value.exists) {
+        RegionService.rememberGatewayRegions(Preferences.xenditSettings, value.data()!['regionIds']);
         Xendit xendit = Xendit.fromJson(value.data()!);
         await Preferences.setString(Preferences.xenditSettings, jsonEncode(xendit.toJson()));
       }
@@ -1224,9 +1276,15 @@ class FireStoreUtils {
         print("Old Wallet Amount: ${userModel.walletAmount}");
         print("Amount to Add: $amount");
         userModel.walletAmount = double.parse(userModel.walletAmount.toString()) + double.parse(amount);
-        await FireStoreUtils.updateUser(userModel).then((value) {
-          isAdded = value;
-        });
+        // Only the balance changes: never rewrite the whole user document.
+        try {
+          await fireStore.collection(CollectionName.users).doc(userId).setKnownFields({'wallet_amount': userModel.walletAmount});
+          if (userId == getCurrentUid()) Constant.userModel = userModel;
+          isAdded = true;
+        } catch (error) {
+          log("Failed to update wallet: $error");
+          isAdded = false;
+        }
       }
     });
     return isAdded;
@@ -1660,10 +1718,10 @@ class FireStoreUtils {
     String newString = emailTemplateModel!.message.toString();
     newString = newString.replaceAll("{username}", Constant.userModel!.firstName.toString() + Constant.userModel!.lastName.toString());
     newString = newString.replaceAll("{date}", DateFormat('yyyy-MM-dd').format(Timestamp.now().toDate()));
-    newString = newString.replaceAll("{amount}", Constant.amountShow(amount: amount));
+    newString = newString.replaceAll("{amount}", Constant.amountShow(amount: amount, currency: RegionService.customerCurrency));
     newString = newString.replaceAll("{paymentmethod}", paymentMethod.toString());
     newString = newString.replaceAll("{transactionid}", tractionId.toString());
-    newString = newString.replaceAll("{newwalletbalance}.", Constant.amountShow(amount: Constant.userModel!.walletAmount.toString()));
+    newString = newString.replaceAll("{newwalletbalance}.", Constant.amountShow(amount: Constant.userModel!.walletAmount.toString(), currency: RegionService.customerCurrency));
     await Constant.sendMail(subject: emailTemplateModel.subject, isAdmin: emailTemplateModel.isSendToAdmin, body: newString, recipients: [Constant.userModel!.email]);
   }
 
@@ -2015,16 +2073,19 @@ class FireStoreUtils {
     return popularDestination;
   }
 
+  // These three create AND update their documents, so they write known fields
+  // only: fields owned by the Driver app / admin panel (e.g. `regionId`)
+  // survive a customer-side update.
   static Future cabOrderPlace(CabOrderModel orderModel) async {
-    await fireStore.collection(CollectionName.rides).doc(orderModel.id).set(orderModel.toJson());
+    await fireStore.collection(CollectionName.rides).doc(orderModel.id).setKnownFields(orderModel.toJson());
   }
 
   static Future parcelOrderPlace(ParcelOrderModel orderModel) async {
-    await fireStore.collection(CollectionName.parcelOrders).doc(orderModel.id).set(orderModel.toJson());
+    await fireStore.collection(CollectionName.parcelOrders).doc(orderModel.id).setKnownFields(orderModel.toJson());
   }
 
   static Future rentalOrderPlace(RentalOrderModel orderModel) async {
-    await fireStore.collection(CollectionName.rentalOrders).doc(orderModel.id).set(orderModel.toJson());
+    await fireStore.collection(CollectionName.rentalOrders).doc(orderModel.id).setKnownFields(orderModel.toJson());
   }
 
   static Future<CabOrderModel?> getCabOrderById(String orderId) async {
@@ -2306,19 +2367,27 @@ class FireStoreUtils {
   }
 
   static Future<OnProviderOrderModel> onDemandOrderPlace(OnProviderOrderModel orderModel, double totalAmount) async {
-    DocumentReference documentReference;
+    DocumentReference<Map<String, dynamic>> documentReference;
     if (orderModel.id.isEmpty) {
       documentReference = fireStore.collection(CollectionName.providerOrders).doc();
       orderModel.id = documentReference.id;
     } else {
       documentReference = fireStore.collection(CollectionName.providerOrders).doc(orderModel.id);
     }
-    await documentReference.set(orderModel.toJson());
+    // provider_orders.regionId = the provider's region (spec 18.12).
+    final bool isNewRegion = orderModel.regionId == null;
+    if (isNewRegion) {
+      orderModel.regionId = await RegionService.providerRegionId(orderModel.provider);
+    }
+    await documentReference.setKnownFields(orderModel.toJson());
+    if (isNewRegion) await addCustomerRegion(orderModel.regionId);
 
     return orderModel;
   }
 
   static Future<void> sendOrderOnDemandServiceEmail({required OnProviderOrderModel orderModel}) async {
+    // Receipt = history: the booking's own region currency.
+    final CurrencyModel? orderCurrency = RegionService.currencyForRecord(orderModel.regionId);
     try {
       String firstHTML = """
        <table style="width: 100%; border-collapse: collapse; border: 1px solid rgb(0, 0, 0);">
@@ -2358,8 +2427,8 @@ class FireStoreUtils {
         <tr>
             <td style="width: 20%; border-top: 1px solid rgb(0, 0, 0);">${orderModel.provider.title}</td>
             <td style="width: 20%; border: 1px solid rgb(0, 0, 0);" rowspan="2">${orderModel.quantity}</td>
-            <td style="width: 20%; border: 1px solid rgb(0, 0, 0);" rowspan="2">${Constant.amountShow(amount: (orderModel.provider.disPrice == "" || orderModel.provider.disPrice == "0") ? orderModel.provider.price.toString() : orderModel.provider.disPrice.toString())}</td>
-            <td style="width: 20%; border: 1px solid rgb(0, 0, 0);" rowspan="2">${Constant.amountShow(amount: (total).toString())}</td>
+            <td style="width: 20%; border: 1px solid rgb(0, 0, 0);" rowspan="2">${Constant.amountShow(amount: (orderModel.provider.disPrice == "" || orderModel.provider.disPrice == "0") ? orderModel.provider.price.toString() : orderModel.provider.disPrice.toString(), currency: orderCurrency)}</td>
+            <td style="width: 20%; border: 1px solid rgb(0, 0, 0);" rowspan="2">${Constant.amountShow(amount: (total).toString(), currency: orderCurrency)}</td>
         </tr>
     """;
         htmlList.add(product);
@@ -2372,23 +2441,23 @@ class FireStoreUtils {
           for (var element in orderModel.taxModel!) {
             taxAmount = taxAmount + Constant.getTaxValue(amount: (total - discount).toString(), taxModel: element);
             String taxHtml =
-                """<span style="font-size: 1rem;">${element.title}: ${Constant.amountShow(amount: Constant.getTaxValue(amount: (total - discount).toString(), taxModel: element).toString())}${orderModel.taxModel!.indexOf(element) == orderModel.taxModel!.length - 1 ? "</span>" : "<br></span>"}""";
+                """<span style="font-size: 1rem;">${element.title}: ${Constant.amountShow(amount: Constant.getTaxValue(amount: (total - discount).toString(), taxModel: element).toString(), currency: orderCurrency)}${orderModel.taxModel!.indexOf(element) == orderModel.taxModel!.length - 1 ? "</span>" : "<br></span>"}""";
             taxHtmlList.add(taxHtml);
           }
         }
 
         var totalamount = total + taxAmount - discount;
 
-        newString = newString.replaceAll("{subtotal}", Constant.amountShow(amount: total.toString()));
+        newString = newString.replaceAll("{subtotal}", Constant.amountShow(amount: total.toString(), currency: orderCurrency));
         newString = newString.replaceAll("{coupon}", '(${orderModel.couponCode.toString()})');
-        newString = newString.replaceAll("{discountamount}", orderModel.couponCode == null ? "0.0" : Constant.amountShow(amount: orderModel.discount.toString()));
-        newString = newString.replaceAll("{totalAmount}", Constant.amountShow(amount: totalamount.toString()));
+        newString = newString.replaceAll("{discountamount}", orderModel.couponCode == null ? "0.0" : Constant.amountShow(amount: orderModel.discount.toString(), currency: orderCurrency));
+        newString = newString.replaceAll("{totalAmount}", Constant.amountShow(amount: totalamount.toString(), currency: orderCurrency));
 
         String tableHTML = htmlList.join();
         String lastHTML = "</tbody></table>";
         newString = newString.replaceAll("{productdetails}", firstHTML + tableHTML + lastHTML);
         newString = newString.replaceAll("{taxdetails}", taxHtmlList.join());
-        newString = newString.replaceAll("{newwalletbalance}.", Constant.amountShow(amount: Constant.userModel?.walletAmount.toString()));
+        newString = newString.replaceAll("{newwalletbalance}.", Constant.amountShow(amount: Constant.userModel?.walletAmount.toString(), currency: RegionService.customerCurrency));
 
         String subjectNewString = emailTemplateModel.subject.toString();
         subjectNewString = subjectNewString.replaceAll("{orderid}", orderModel.id);
@@ -2562,7 +2631,7 @@ class FireStoreUtils {
 
   static Future<ProviderServiceModel?> updateProvider(ProviderServiceModel provider) async {
     try {
-      await fireStore.collection(CollectionName.providersServices).doc(provider.id).set(provider.toJson());
+      await fireStore.collection(CollectionName.providersServices).doc(provider.id).setKnownFields(provider.toJson());
       return provider;
     } catch (e, stackTrace) {
       print('Error updating provider: $e');
@@ -2573,7 +2642,7 @@ class FireStoreUtils {
 
   static Future<WorkerModel?> updateWorker(WorkerModel worker) async {
     try {
-      await fireStore.collection(CollectionName.providersWorkers).doc(worker.id).set(worker.toJson());
+      await fireStore.collection(CollectionName.providersWorkers).doc(worker.id).setKnownFields(worker.toJson());
       return worker;
     } catch (e, stackTrace) {
       print('Error updating worker: $e');
@@ -2781,6 +2850,8 @@ class FireStoreUtils {
   }) async {
     try {
       DocumentReference docRef = fireStore.collection(CollectionName.complaints).doc();
+      // complaints.regionId = the region of the driver the complaint is about.
+      final String? regionId = await RegionService.userRegionId(driverID);
 
       Map<String, dynamic> complaintData = {
         'id': docRef.id,
@@ -2793,6 +2864,7 @@ class FireStoreUtils {
         'customerId': customerID,
         'status': "Initiated",
         'title': title,
+        if (regionId != null) 'regionId': regionId,
       };
 
       await docRef.set(complaintData);

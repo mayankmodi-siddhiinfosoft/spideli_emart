@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as maths;
@@ -177,20 +178,22 @@ class GiftCardController extends GetxController {
   Rx<Xendit> xenditModel = Xendit().obs;
 
   Future<void> getPaymentSettings() async {
+    // Not tied to a store: the customer's current region (spec 18.7).
+    await RegionService.ensureLoaded();
     await FireStoreUtils.getPaymentSettingsData().then((value) {
-      payFastModel.value = PayFastModel.fromJson(jsonDecode(Preferences.getString(Preferences.payFastSettings)));
-      mercadoPagoModel.value = MercadoPagoModel.fromJson(jsonDecode(Preferences.getString(Preferences.mercadoPago)));
-      payPalModel.value = PayPalModel.fromJson(jsonDecode(Preferences.getString(Preferences.paypalSettings)));
-      stripeModel.value = StripeModel.fromJson(jsonDecode(Preferences.getString(Preferences.stripeSettings)));
-      flutterWaveModel.value = FlutterWaveModel.fromJson(jsonDecode(Preferences.getString(Preferences.flutterWave)));
-      payStackModel.value = PayStackModel.fromJson(jsonDecode(Preferences.getString(Preferences.payStack)));
-      paytmModel.value = PaytmModel.fromJson(jsonDecode(Preferences.getString(Preferences.paytmSettings)));
-      razorPayModel.value = RazorPayModel.fromJson(jsonDecode(Preferences.getString(Preferences.razorpaySettings)));
-      cashOnDeliverySettingModel.value = CodSettingModel.fromJson(jsonDecode(Preferences.getString(Preferences.codSettings)));
-      midTransModel.value = MidTrans.fromJson(jsonDecode(Preferences.getString(Preferences.midTransSettings)));
-      orangeMoneyModel.value = OrangeMoney.fromJson(jsonDecode(Preferences.getString(Preferences.orangeMoneySettings)));
-      xenditModel.value = Xendit.fromJson(jsonDecode(Preferences.getString(Preferences.xenditSettings)));
-      walletSettingModel.value = WalletSettingModel.fromJson(jsonDecode(Preferences.getString(Preferences.walletSettings)));
+      payFastModel.value = PayFastModel.fromJson(RegionService.gatewaySettings(Preferences.payFastSettings, RegionService.customerRegionId));
+      mercadoPagoModel.value = MercadoPagoModel.fromJson(RegionService.gatewaySettings(Preferences.mercadoPago, RegionService.customerRegionId));
+      payPalModel.value = PayPalModel.fromJson(RegionService.gatewaySettings(Preferences.paypalSettings, RegionService.customerRegionId));
+      stripeModel.value = StripeModel.fromJson(RegionService.gatewaySettings(Preferences.stripeSettings, RegionService.customerRegionId));
+      flutterWaveModel.value = FlutterWaveModel.fromJson(RegionService.gatewaySettings(Preferences.flutterWave, RegionService.customerRegionId));
+      payStackModel.value = PayStackModel.fromJson(RegionService.gatewaySettings(Preferences.payStack, RegionService.customerRegionId));
+      paytmModel.value = PaytmModel.fromJson(RegionService.gatewaySettings(Preferences.paytmSettings, RegionService.customerRegionId));
+      razorPayModel.value = RazorPayModel.fromJson(RegionService.gatewaySettings(Preferences.razorpaySettings, RegionService.customerRegionId));
+      cashOnDeliverySettingModel.value = CodSettingModel.fromJson(RegionService.gatewaySettings(Preferences.codSettings, RegionService.customerRegionId));
+      midTransModel.value = MidTrans.fromJson(RegionService.gatewaySettings(Preferences.midTransSettings, RegionService.customerRegionId));
+      orangeMoneyModel.value = OrangeMoney.fromJson(RegionService.gatewaySettings(Preferences.orangeMoneySettings, RegionService.customerRegionId));
+      xenditModel.value = Xendit.fromJson(RegionService.gatewaySettings(Preferences.xenditSettings, RegionService.customerRegionId));
+      walletSettingModel.value = WalletSettingModel.fromJson(RegionService.gatewaySettings(Preferences.walletSettings, RegionService.customerRegionId));
       if (walletSettingModel.value.isEnabled == true) {
         selectedPaymentMethod.value = PaymentGateway.wallet.name;
       } else if (stripeModel.value.isEnabled == true) {

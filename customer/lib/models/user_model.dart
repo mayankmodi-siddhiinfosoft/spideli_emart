@@ -53,6 +53,15 @@ class UserModel {
   String? providerId;
   bool? online;
 
+  /// Driver / provider / worker / vendor region (admin panel). Read-only here:
+  /// never written back by [toJson], so a stale copy cannot overwrite it.
+  String? regionId;
+
+  /// Customer: every region the customer has ordered in (written with
+  /// `FieldValue.arrayUnion` when an order is placed). Read-only in [toJson]
+  /// for the same reason.
+  List<String>? regionIds;
+
   UserModel({
     this.id,
     this.firstName,
@@ -99,6 +108,8 @@ class UserModel {
     this.providerId,
     this.online,
     this.isAutoVerify,
+    this.regionId,
+    this.regionIds,
   });
 
   String fullName() {
@@ -172,6 +183,8 @@ class UserModel {
     providerId = json['providerId'];
     online = json['online'];
     isAutoVerify = json['isAutoVerify'];
+    regionId = (json['regionId'] == null || json['regionId'].toString().isEmpty) ? null : json['regionId'].toString();
+    regionIds = json['regionIds'] is List ? (json['regionIds'] as List).map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList() : null;
   }
 
   Map<String, dynamic> toJson() {

@@ -21,6 +21,9 @@ class SectionModel {
   PlatformFeeModel? platformFee;
   bool? packagingChargeEnable;
 
+  /// Regions the service is offered in (spec 18.8). Empty/absent = every region.
+  List<String>? regionIds;
+
   SectionModel({
     this.referralAmount,
     this.serviceType,
@@ -40,6 +43,7 @@ class SectionModel {
     this.rideType,
     this.platformFee,
     this.packagingChargeEnable,
+    this.regionIds,
   });
 
   SectionModel.fromJson(Map<String, dynamic> json) {
@@ -68,6 +72,7 @@ class SectionModel {
     }
     platformFee = PlatformFeeModel.fromJson(json['platformFee']);
     packagingChargeEnable = json['packagingChargeEnable'] ?? false;
+    regionIds = json['regionIds'] is List ? (json['regionIds'] as List).map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList() : null;
   }
 
   Map<String, dynamic> toJson() {
@@ -95,6 +100,7 @@ class SectionModel {
       data['platformFee'] = platformFee?.toJson();
     }
     data['packagingChargeEnable'] = packagingChargeEnable;
+    if (regionIds != null) data['regionIds'] = regionIds;
 
     return data;
   }

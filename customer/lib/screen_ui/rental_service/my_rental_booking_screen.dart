@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:customer/models/rental_order_model.dart';
 import 'package:customer/screen_ui/auth_screens/login_screen.dart';
@@ -219,7 +220,7 @@ class MyRentalBookingScreen extends StatelessWidget {
                                               ),
                                               SizedBox(width: 10),
                                               Text(
-                                                Constant.amountShow(amount: order.rentalPackageModel!.baseFare.toString()),
+                                                Constant.amountShow(amount: order.rentalPackageModel!.baseFare.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: order.regionId, zoneId: order.zoneId))),
                                                 style: AppThemeData.boldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                               ),
                                             ],
@@ -298,7 +299,7 @@ class MyRentalBookingScreen extends StatelessWidget {
                               style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
                             ),
                             Text(
-                              Constant.amountShow(amount: Constant.userModel!.walletAmount == null ? '0.0' : Constant.userModel!.walletAmount.toString()),
+                              Constant.amountShow(amount: Constant.userModel!.walletAmount == null ? '0.0' : Constant.userModel!.walletAmount.toString(), currency: RegionService.customerCurrency),
                               textAlign: TextAlign.start,
                               style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
                             ),

@@ -33,6 +33,9 @@ class ProviderServiceModel {
   SubscriptionPlanModel? subscriptionPlan;
   String? subscriptionTotalOrders;
 
+  /// `providers_services.regionId` (the provider's region).
+  String? regionId;
+
   ProviderServiceModel({
     this.author = '',
     this.authorName = '',
@@ -64,6 +67,7 @@ class ProviderServiceModel {
     this.days = const [],
     this.phoneNumber,
     this.subscriptionTotalOrders,
+    this.regionId,
   }) : geoFireData = geoFireData ??
             GeoFireData(
               geohash: "",
@@ -106,6 +110,7 @@ class ProviderServiceModel {
       subscriptionExpiryDate: parsedJson['subscriptionExpiryDate'],
       subscriptionTotalOrders: parsedJson['subscriptionTotalOrders'],
       subscriptionPlan: parsedJson['subscription_plan'] != null ? SubscriptionPlanModel.fromJson(parsedJson['subscription_plan']) : null,
+      regionId: (parsedJson['regionId'] == null || parsedJson['regionId'].toString().isEmpty) ? null : parsedJson['regionId'].toString(),
     );
   }
 
@@ -141,6 +146,7 @@ class ProviderServiceModel {
       'subscriptionExpiryDate': subscriptionExpiryDate,
       'subscriptionTotalOrders': subscriptionTotalOrders,
       'subscription_plan': subscriptionPlan?.toJson(),
+      if (regionId != null) 'regionId': regionId,
     };
     return json;
   }

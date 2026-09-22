@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/coupon_model.dart';
 import 'package:customer/screen_ui/rental_service/rental_coupon_screen.dart';
@@ -123,7 +124,7 @@ class RentalConformationScreen extends StatelessWidget {
                                     ),
                                     SizedBox(width: 10),
                                     Text(
-                                      Constant.amountShow(amount: controller.rentalOrderModel.value.rentalPackageModel!.baseFare.toString()),
+                                      Constant.amountShow(amount: controller.rentalOrderModel.value.rentalPackageModel!.baseFare.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))),
                                       style: AppThemeData.boldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                     ),
                                   ],
@@ -269,22 +270,22 @@ class RentalConformationScreen extends StatelessWidget {
                                 const SizedBox(height: 8),
 
                                 // Subtotal
-                                _summaryTile("Subtotal".tr, Constant.amountShow(amount: controller.subTotal.value.toString()), isDark, null),
+                                _summaryTile("Subtotal".tr, Constant.amountShow(amount: controller.subTotal.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), isDark, null),
 
                                 // Discount
-                                _summaryTile("Discount".tr, Constant.amountShow(amount: controller.discount.value.toString()), isDark, AppThemeData.dangerDark300),
-                                if (Constant.platformFeeModel?.enable == true) _summaryTile("Platform fee".tr, Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString()), isDark, null),
+                                _summaryTile("Discount".tr, Constant.amountShow(amount: controller.discount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), isDark, AppThemeData.dangerDark300),
+                                if (Constant.platformFeeModel?.enable == true) _summaryTile("Platform fee".tr, Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), isDark, null),
                                 InkWell(
                                   onTap: () {
                                     showBillBifurcationDialog(context, isDark, controller);
                                   },
-                                  child: _summaryTile("Tax amount".tr, Constant.amountShow(amount: (controller.taxAmount.value).toString()), isDark, null, underline: true),
+                                  child: _summaryTile("Tax amount".tr, Constant.amountShow(amount: (controller.taxAmount.value).toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), isDark, null, underline: true),
                                 ),
 
                                 const Divider(),
 
                                 // Total
-                                _summaryTile("Order Total".tr, Constant.amountShow(amount: controller.totalAmount.value.toString()), isDark, null),
+                                _summaryTile("Order Total".tr, Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), isDark, null),
                               ],
                             ),
                           ),
@@ -347,11 +348,11 @@ class RentalConformationScreen extends StatelessWidget {
                   const SizedBox(height: 5),
                   sectionDivider(isDark),
                   const SizedBox(height: 5),
-                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString()), isDark: isDark),
+                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), isDark: isDark),
                   sectionDivider(isDark),
-                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString()), isDark: isDark),
+                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), isDark: isDark),
                   sectionDivider(isDark),
-                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString()), amountColor: AppThemeData.primary300, isDark: isDark),
+                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), amountColor: AppThemeData.primary300, isDark: isDark),
                   const SizedBox(height: 20),
                   Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: Text("Close".tr))),
                 ],

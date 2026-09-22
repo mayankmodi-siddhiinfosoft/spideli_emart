@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/refer_friend_controller.dart';
 import 'package:customer/themes/app_them_data.dart';
@@ -55,7 +56,7 @@ class ReferFriendScreen extends StatelessWidget {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                "${Constant.amountShow(amount: Constant.sectionConstantModel!.referralAmount)} ${'Each🎉'.tr}",
+                                "${Constant.amountShow(amount: Constant.sectionConstantModel!.referralAmount, currency: RegionService.customerCurrency)} ${'Each🎉'.tr}",
                                 style: TextStyle(fontSize: 24, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w500),
                               ),
                               const SizedBox(height: 32),
@@ -70,7 +71,7 @@ class ReferFriendScreen extends StatelessWidget {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                "${'Invite your friends to sign up with spideli using your code, and you’ll earn'.tr} ${Constant.amountShow(amount: Constant.sectionConstantModel!.referralAmount)} ${'after their Success the first order! 💸🍔'.tr}"
+                                "${'Invite your friends to sign up with spideli using your code, and you’ll earn'.tr} ${Constant.amountShow(amount: Constant.sectionConstantModel!.referralAmount, currency: RegionService.customerCurrency)} ${'after their Success the first order! 💸🍔'.tr}"
                                     .tr,
                                 textAlign: TextAlign.center,
                                 style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w500),
@@ -132,7 +133,7 @@ class ReferFriendScreen extends StatelessWidget {
                                 textColor: AppThemeData.grey50,
                                 onPress: () async {
                                   await Share.share(
-                                    "${"Hey there, thanks for choosing Foodie. Hope you love our product. If you do, share it with your friends using code".tr} ${controller.referralModel.value.referralCode.toString()} ${"and get".tr}${Constant.amountShow(amount: Constant.sectionConstantModel!.referralAmount.toString())} ${"when order completed".tr}",
+                                    "${"Hey there, thanks for choosing Foodie. Hope you love our product. If you do, share it with your friends using code".tr} ${controller.referralModel.value.referralCode.toString()} ${"and get".tr}${Constant.amountShow(amount: Constant.sectionConstantModel!.referralAmount.toString(), currency: RegionService.customerCurrency)} ${"when order completed".tr}",
                                   );
                                 },
                               ),

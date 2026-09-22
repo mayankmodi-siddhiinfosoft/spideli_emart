@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:customer/models/subscription_plan_model.dart';
+import 'package:customer/utils/region_service.dart';
 
 import 'admin_commission_model.dart';
 
@@ -24,6 +25,9 @@ class VendorModel {
   num? walletAmount;
   String? closeDineTime;
   String? zoneId;
+
+  /// The store's region (admin panel). See `RegionService.regionOfVendor`.
+  String? regionId;
   Timestamp? createdAt;
   double? longitude;
   bool? enabledDiveInFuture;
@@ -70,6 +74,7 @@ class VendorModel {
     this.walletAmount,
     this.closeDineTime,
     this.zoneId,
+    this.regionId,
     this.createdAt,
     this.longitude,
     this.enabledDiveInFuture,
@@ -122,6 +127,7 @@ class VendorModel {
     walletAmount = json['walletAmount'];
     closeDineTime = json['closeDineTime'];
     zoneId = json['zoneId'];
+    regionId = (json['regionId'] == null || json['regionId'].toString().isEmpty) ? null : json['regionId'].toString();
     // createdAt = json['createdAt'];
     longitude = double.parse(json['longitude'].toString());
     enabledDiveInFuture = json['enabledDiveInFuture'];
@@ -163,6 +169,7 @@ class VendorModel {
             ? Timestamp.fromMillisecondsSinceEpoch((json['subscriptionExpiryDate']['_seconds'] ?? 0) * 1000)
             : null;
     packagingCharge = json['packagingCharge'] ?? "0";
+    RegionService.rememberVendor(id, regionId, zoneId);
   }
 
   Map<String, dynamic> toJson() {
@@ -198,6 +205,7 @@ class VendorModel {
     data['walletAmount'] = walletAmount;
     data['closeDineTime'] = closeDineTime;
     data['zoneId'] = zoneId;
+    if (regionId != null) data['regionId'] = regionId;
     data['createdAt'] = createdAt;
     data['longitude'] = longitude;
     data['enabledDiveInFuture'] = enabledDiveInFuture;

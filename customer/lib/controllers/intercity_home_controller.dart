@@ -1,3 +1,5 @@
+import 'package:customer/models/currency_model.dart';
+import 'package:customer/utils/region_service.dart';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
@@ -140,7 +142,7 @@ class IntercityHomeController extends GetxController {
       selectedVehicleType.value = vehicleTypes.first;
     }
 
-    await getPaymentSettings();
+    await getPaymentSettings(regionId: rideRegionId);
 
     FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen((userSnapshot) async {
       if (!userSnapshot.exists) return;
@@ -171,6 +173,7 @@ class IntercityHomeController extends GetxController {
               if (event.exists && event.data() != null) {
                 UserModel driverModel0 = UserModel.fromJson(event.data()!);
                 driverModel.value = driverModel0;
+                await refreshPaymentRegion();
                 await updateDriverRoute(driverModel0);
               }
             });
@@ -430,6 +433,8 @@ class IntercityHomeController extends GetxController {
       });
     } else {
       currentOrder.value.paymentStatus = true;
+      // rides.regionId = the driver's region (the Driver app writes it on accept too).
+      currentOrder.value.regionId ??= (driverModel.value.regionId?.isNotEmpty == true ? driverModel.value.regionId : null);
       currentOrder.value.paymentMethod = selectedPaymentMethod.value;
       userModel.value.inProgressOrderID ??= [];
       userModel.value.inProgressOrderID!.clear();
@@ -445,6 +450,7 @@ class IntercityHomeController extends GetxController {
           userId: FireStoreUtils.getCurrentUid(),
           isTopup: false,
           orderId: currentOrder.value.id,
+          regionId: currentOrder.value.regionId,
           note: "Cab Amount debited".tr,
           paymentStatus: "success".tr,
           serviceType: Constant.parcelServiceType,
@@ -476,6 +482,9 @@ class IntercityHomeController extends GetxController {
     );
 
     CabOrderModel orderModel = CabOrderModel();
+    // rides.regionId at creation: the region the pickup resolves to, if known
+    // (the Driver app writes the driver's region on accept).
+    orderModel.regionId = RegionService.regionAt(sourceLocation.latitude, sourceLocation.longitude);
     orderModel.id = const Uuid().v4();
     orderModel.distance = distance.value.toString();
     orderModel.duration = duration.value;
@@ -518,6 +527,7 @@ class IntercityHomeController extends GetxController {
     log("Order Model : ${orderModel.toJson()}");
     ShowToastDialog.showLoader("Please wait".tr);
     await FireStoreUtils.cabOrderPlace(orderModel);
+    await FireStoreUtils.addCustomerRegion(orderModel.regionId);
     await FireStoreUtils.sendCabBookEmail(orderModel: orderModel);
     userModel.value.inProgressOrderID!.add(orderModel.id);
     await FireStoreUtils.updateUser(userModel.value);
@@ -984,21 +994,55 @@ class IntercityHomeController extends GetxController {
   Rx<OrangeMoney> orangeMoneyModel = OrangeMoney().obs;
   Rx<Xendit> xenditModel = Xendit().obs;
 
-  Future<void> getPaymentSettings() async {
+  /// Region deciding a ride's currency and payment methods (spec 18.5 /
+  /// 18.7, contract Q4): the ride's own `regionId`, else the assigned
+  /// driver's, else the region the pickup resolves to, else the customer's
+  /// current region. Null = global figures (today's behaviour).
+  String? get rideRegionId {
+    final String? own = currentOrder.value.regionId;
+    if (own != null && own.isNotEmpty) return own;
+    final String? driverRegion = driverModel.value.regionId;
+    if (driverRegion != null && driverRegion.isNotEmpty) return driverRegion;
+    return RegionService.regionAt(pickupLatitude, pickupLongitude) ?? RegionService.customerRegionId;
+  }
+
+  double get pickupLatitude => Constant.selectedMapType == 'osm' ? departureLatLongOsm.value.latitude : departureLatLong.value.latitude;
+
+  double get pickupLongitude => Constant.selectedMapType == 'osm' ? departureLatLongOsm.value.longitude : departureLatLong.value.longitude;
+
+  /// Fares shown / charged in the ride's region currency.
+  CurrencyModel? get rideCurrency => RegionService.currencyForRecord(rideRegionId);
+
+  /// Region the loaded payment methods were filtered for.
+  String? _paymentRegionId;
+
+  /// Re-filters the payment methods when the deciding region changed (e.g.
+  /// once the driver is known), keeping the customer's current choice.
+  Future<void> refreshPaymentRegion() async {
+    final String? region = rideRegionId;
+    if (region == _paymentRegionId) return;
+    final String keep = selectedPaymentMethod.value;
+    razorPay.clear();
+    await getPaymentSettings(regionId: region);
+    if (keep.isNotEmpty) selectedPaymentMethod.value = keep;
+  }
+
+  Future<void> getPaymentSettings({String? regionId}) async {
+    _paymentRegionId = regionId;
     await FireStoreUtils.getPaymentSettingsData().then((value) {
-      stripeModel.value = StripeModel.fromJson(jsonDecode(Preferences.getString(Preferences.stripeSettings)));
-      payPalModel.value = PayPalModel.fromJson(jsonDecode(Preferences.getString(Preferences.paypalSettings)));
-      payStackModel.value = PayStackModel.fromJson(jsonDecode(Preferences.getString(Preferences.payStack)));
-      mercadoPagoModel.value = MercadoPagoModel.fromJson(jsonDecode(Preferences.getString(Preferences.mercadoPago)));
-      flutterWaveModel.value = FlutterWaveModel.fromJson(jsonDecode(Preferences.getString(Preferences.flutterWave)));
-      paytmModel.value = PaytmModel.fromJson(jsonDecode(Preferences.getString(Preferences.paytmSettings)));
-      payFastModel.value = PayFastModel.fromJson(jsonDecode(Preferences.getString(Preferences.payFastSettings)));
-      razorPayModel.value = RazorPayModel.fromJson(jsonDecode(Preferences.getString(Preferences.razorpaySettings)));
-      midTransModel.value = MidTrans.fromJson(jsonDecode(Preferences.getString(Preferences.midTransSettings)));
-      orangeMoneyModel.value = OrangeMoney.fromJson(jsonDecode(Preferences.getString(Preferences.orangeMoneySettings)));
-      xenditModel.value = Xendit.fromJson(jsonDecode(Preferences.getString(Preferences.xenditSettings)));
-      walletSettingModel.value = WalletSettingModel.fromJson(jsonDecode(Preferences.getString(Preferences.walletSettings)));
-      cashOnDeliverySettingModel.value = CodSettingModel.fromJson(jsonDecode(Preferences.getString(Preferences.codSettings)));
+      stripeModel.value = StripeModel.fromJson(RegionService.gatewaySettings(Preferences.stripeSettings, regionId));
+      payPalModel.value = PayPalModel.fromJson(RegionService.gatewaySettings(Preferences.paypalSettings, regionId));
+      payStackModel.value = PayStackModel.fromJson(RegionService.gatewaySettings(Preferences.payStack, regionId));
+      mercadoPagoModel.value = MercadoPagoModel.fromJson(RegionService.gatewaySettings(Preferences.mercadoPago, regionId));
+      flutterWaveModel.value = FlutterWaveModel.fromJson(RegionService.gatewaySettings(Preferences.flutterWave, regionId));
+      paytmModel.value = PaytmModel.fromJson(RegionService.gatewaySettings(Preferences.paytmSettings, regionId));
+      payFastModel.value = PayFastModel.fromJson(RegionService.gatewaySettings(Preferences.payFastSettings, regionId));
+      razorPayModel.value = RazorPayModel.fromJson(RegionService.gatewaySettings(Preferences.razorpaySettings, regionId));
+      midTransModel.value = MidTrans.fromJson(RegionService.gatewaySettings(Preferences.midTransSettings, regionId));
+      orangeMoneyModel.value = OrangeMoney.fromJson(RegionService.gatewaySettings(Preferences.orangeMoneySettings, regionId));
+      xenditModel.value = Xendit.fromJson(RegionService.gatewaySettings(Preferences.xenditSettings, regionId));
+      walletSettingModel.value = WalletSettingModel.fromJson(RegionService.gatewaySettings(Preferences.walletSettings, regionId));
+      cashOnDeliverySettingModel.value = CodSettingModel.fromJson(RegionService.gatewaySettings(Preferences.codSettings, regionId));
 
       if (walletSettingModel.value.isEnabled == true) {
         selectedPaymentMethod.value = PaymentGateway.wallet.name;

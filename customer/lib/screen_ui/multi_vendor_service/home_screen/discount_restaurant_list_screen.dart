@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/discount_restaurant_list_controller.dart';
 import 'package:customer/models/coupon_model.dart';
@@ -77,7 +78,7 @@ class DiscountRestaurantListScreen extends StatelessWidget {
                                             child: Padding(
                                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                               child: Text(
-                                                "${offerModel.discountType == "Fix Price" ? Constant.currencyModel!.symbol : ""}${offerModel.discount}${offerModel.discountType == "Percentage" ? "% off".toUpperCase().tr : " off".toUpperCase().tr}",
+                                                "${offerModel.discountType == "Fix Price" ? (RegionService.currencyForVendorId(offerModel.vendorID) ?? Constant.currencyModel!).symbol : ""}${offerModel.discount}${offerModel.discountType == "Percentage" ? "% off".toUpperCase().tr : " off".toUpperCase().tr}",
                                                 textAlign: TextAlign.start,
                                                 maxLines: 1,
                                                 style: TextStyle(overflow: TextOverflow.ellipsis, fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50),

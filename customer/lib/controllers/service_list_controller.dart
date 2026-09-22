@@ -7,6 +7,7 @@ import 'package:customer/screen_ui/rental_service/rental_dashboard_screen.dart';
 import 'package:customer/service/cart_provider.dart';
 import 'package:customer/service/database_helper.dart';
 import 'package:customer/service/fire_store_utils.dart';
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/models/currency_model.dart';
@@ -44,6 +45,13 @@ class ServiceListController extends GetxController {
 
     // Load sections
     List<SectionModel> sections = await FireStoreUtils.getSections();
+
+    // Service availability by region (spec 18.8): a section with a non-empty
+    // `regionIds` is shown only when it includes one of the customer's current
+    // regions. An unresolved customer region shows every section (today).
+    await RegionService.ensureLoaded();
+    final List<String> customerRegions = RegionService.customerRegionIds;
+    sections = sections.where((section) => RegionService.isAvailableInAnyRegion(section.regionIds, customerRegions)).toList();
 
     sectionList.assignAll(sections);
 

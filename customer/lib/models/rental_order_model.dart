@@ -6,6 +6,9 @@ import 'package:customer/models/user_model.dart';
 import 'package:customer/models/vendor_model.dart';
 
 class RentalOrderModel {
+  /// Region the record belongs to (spec 18.12). History amounts use its
+  /// currency; see `RegionService.currencyForRecord`.
+  String? regionId;
   String? status;
   List<dynamic>? rejectedByDrivers;
   String? couponId;
@@ -79,6 +82,7 @@ class RentalOrderModel {
   });
 
   RentalOrderModel.fromJson(Map<String, dynamic> json) {
+    regionId = (json['regionId'] == null || json['regionId'].toString().isEmpty) ? null : json['regionId'].toString();
     status = json['status'];
     rejectedByDrivers = json['rejectedByDrivers'] ?? [];
     couponId = json['couponId'];
@@ -184,6 +188,7 @@ class RentalOrderModel {
     if (platformTax != null) {
       data['platformTax'] = platformTax!.map((v) => v.toJson()).toList();
     }
+    if (regionId != null) data['regionId'] = regionId;
     return data;
   }
 }

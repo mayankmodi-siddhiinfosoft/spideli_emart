@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/dine_in_restaurant_details_controller.dart';
 import 'package:customer/models/favourite_model.dart';
@@ -259,7 +260,7 @@ class DineInDetailsScreen extends StatelessWidget {
                                       ),
                                       Padding(padding: const EdgeInsets.symmetric(horizontal: 10), child: Icon(Icons.circle, size: 5, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500)),
                                       Text(
-                                        "${Constant.amountShow(amount: controller.vendorModel.value.restaurantCost)} ${'for two'.tr}".tr,
+                                        "${Constant.amountShow(amount: controller.vendorModel.value.restaurantCost, currency: RegionService.currencyForVendor(controller.vendorModel.value))} ${'for two'.tr}".tr,
                                         textAlign: TextAlign.start,
                                         maxLines: 1,
                                         style: TextStyle(
@@ -568,7 +569,7 @@ class DineInDetailsScreen extends StatelessWidget {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            Constant.currencyModel!.symbol.toString(),
+                                            (RegionService.currencyForVendor(controller.vendorModel.value) ?? Constant.currencyModel!).symbol.toString(),
                                             textAlign: TextAlign.center,
                                             style: TextStyle(fontSize: 24, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w400, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
                                           ),
@@ -587,7 +588,7 @@ class DineInDetailsScreen extends StatelessWidget {
                                                 ),
                                               ),
                                               Text(
-                                                "${Constant.amountShow(amount: controller.vendorModel.value.restaurantCost ?? "0.0")} ${'(approx)'.tr}",
+                                                "${Constant.amountShow(amount: controller.vendorModel.value.restaurantCost ?? "0.0", currency: RegionService.currencyForVendor(controller.vendorModel.value))} ${'(approx)'.tr}",
                                                 textAlign: TextAlign.start,
                                                 style: TextStyle(
                                                   fontSize: 16,

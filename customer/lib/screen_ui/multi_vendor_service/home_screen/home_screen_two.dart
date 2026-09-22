@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'dart:math';
 
 import 'package:customer/constant/constant.dart';
@@ -641,7 +642,7 @@ class OfferView extends StatelessWidget {
                                       const SizedBox(height: 5),
                                       RoundedButtonFill(
                                         title:
-                                            "${offerModel.discountType == "Fix Price" ? Constant.currencyModel!.symbol : ""}${offerModel.discount}${offerModel.discountType == "Percentage" ? "% off".tr : "off".tr}",
+                                            "${offerModel.discountType == "Fix Price" ? (RegionService.currencyForVendorId(offerModel.vendorID) ?? Constant.currencyModel!).symbol : ""}${offerModel.discount}${offerModel.discountType == "Percentage" ? "% off".tr : "off".tr}",
                                         color: Colors.primaries[Random().nextInt(Colors.primaries.length)],
                                         textColor: AppThemeData.grey50,
                                         width: 20,

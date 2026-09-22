@@ -1,3 +1,5 @@
+import 'package:customer/utils/region_service.dart';
+import 'package:customer/utils/order_history_limit.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/order_controller.dart';
 import 'package:customer/models/cart_product_model.dart';
@@ -144,15 +146,18 @@ class OrderScreen extends StatelessWidget {
                                   Expanded(
                                     child: TabBarView(
                                       children: [
-                                        controller.allList.isEmpty
+                                        controller.allList.isEmpty && controller.hiddenOrderCount.value == 0
                                             ? Constant.showEmptyView(message: "Order Not Found".tr)
                                             : RefreshIndicator(
                                               onRefresh: () => controller.getOrder(),
                                               child: ListView.builder(
-                                                itemCount: controller.allList.length,
+                                                itemCount: controller.allList.length + (controller.hiddenOrderCount.value > 0 ? 1 : 0),
                                                 shrinkWrap: true,
                                                 padding: EdgeInsets.zero,
                                                 itemBuilder: (context, index) {
+                                                  if (index == controller.allList.length) {
+                                                    return OlderOrdersPrompt(hiddenCount: controller.hiddenOrderCount.value, isDark: isDark);
+                                                  }
                                                   OrderModel orderModel = controller.allList[index];
                                                   return itemView(isDark, context, orderModel, controller);
                                                 },
@@ -333,7 +338,7 @@ class OrderScreen extends StatelessWidget {
                               double.parse(cartProduct.discountPrice.toString()) <= 0
                                   ? (double.parse('${cartProduct.price ?? 0}') * double.parse('${cartProduct.quantity ?? 0}')).toString()
                                   : (double.parse('${cartProduct.discountPrice ?? 0}') * double.parse('${cartProduct.quantity ?? 0}'))
-                                      .toString(),
+                                      .toString(), currency: RegionService.currencyForRecord(orderModel.regionId),
                         ),
                         style: TextStyle(
                           color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,

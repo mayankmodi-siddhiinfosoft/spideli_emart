@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/history_gift_card_controller.dart';
 import 'package:customer/models/gift_cards_order_model.dart';
@@ -54,7 +55,7 @@ class HistoryGiftCard extends StatelessWidget {
                                               ),
                                             ),
                                             Text(
-                                              Constant.amountShow(amount: giftCardOrderModel.price.toString()),
+                                              Constant.amountShow(amount: giftCardOrderModel.price.toString(), currency: RegionService.customerCurrency),
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,

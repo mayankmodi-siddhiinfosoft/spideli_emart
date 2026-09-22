@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/models/cab_order_model.dart';
 import 'package:customer/payment/create_razor_pay_order_model.dart';
 import 'package:customer/payment/rozorpay_conroller.dart';
@@ -229,6 +230,7 @@ class MyCabBookingScreen extends StatelessWidget {
                                               title: "Pay Now".tr,
                                               onPress: () async {
                                                 controller.selectedPaymentMethod.value = order.paymentMethod.toString();
+                                                await controller.preparePaymentFor(order);
                                                 controller.calculateTotalAmount(order);
                                                 Get.bottomSheet(paymentBottomSheet(context, controller, isDark), isScrollControlled: true, backgroundColor: Colors.transparent);
                                               },
@@ -447,7 +449,7 @@ class MyCabBookingScreen extends StatelessWidget {
                               style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
                             ),
                             Text(
-                              Constant.amountShow(amount: Constant.userModel!.walletAmount == null ? '0.0' : Constant.userModel!.walletAmount.toString()),
+                              Constant.amountShow(amount: Constant.userModel!.walletAmount == null ? '0.0' : Constant.userModel!.walletAmount.toString(), currency: RegionService.customerCurrency),
                               textAlign: TextAlign.start,
                               style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
                             ),

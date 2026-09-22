@@ -21,6 +21,9 @@ class WorkerModel {
   num? reviewsCount;
   num? reviewsSum;
 
+  /// `providers_workers.regionId` (the provider's region).
+  String? regionId;
+
   WorkerModel({
     this.id = '',
     this.firstName = '',
@@ -40,6 +43,7 @@ class WorkerModel {
     this.online,
     this.reviewsCount = 0,
     this.reviewsSum = 0,
+    this.regionId,
   }) : geoFireData = geoFireData ?? GeoFireData(geohash: "", geoPoint: const GeoPoint(0.0, 0.0));
 
   String fullName() {
@@ -66,6 +70,7 @@ class WorkerModel {
       online: parsedJson['online'] ?? false,
       reviewsCount: parsedJson['reviewsCount'] ?? 0,
       reviewsSum: parsedJson['reviewsSum'] ?? 0,
+      regionId: (parsedJson['regionId'] == null || parsedJson['regionId'].toString().isEmpty) ? null : parsedJson['regionId'].toString(),
     );
   }
 
@@ -89,6 +94,7 @@ class WorkerModel {
       'online': online,
       'reviewsCount': reviewsCount,
       'reviewsSum': reviewsSum,
+      if (regionId != null) 'regionId': regionId,
     };
     return json;
   }

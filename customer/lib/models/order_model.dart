@@ -7,6 +7,9 @@ import 'cart_product_model.dart';
 import 'cashback_model.dart';
 
 class OrderModel {
+  /// Region the record belongs to (spec 18.12). History amounts use its
+  /// currency; see `RegionService.currencyForRecord`.
+  String? regionId;
   ShippingAddress? address;
   String? status;
   String? couponId;
@@ -90,6 +93,7 @@ class OrderModel {
   });
 
   OrderModel.fromJson(Map<String, dynamic> json) {
+    regionId = (json['regionId'] == null || json['regionId'].toString().isEmpty) ? null : json['regionId'].toString();
     address = json['address'] != null ? ShippingAddress.fromJson(json['address']) : null;
     status = json['status'];
     couponId = json['couponId'];
@@ -218,6 +222,7 @@ class OrderModel {
     data['isFreeDelivery'] = isFreeDelivery ?? false;
     data['isPosOrder'] = isPosOrder ?? false;
     data['packagingChargeEnable'] = packagingChargeEnable ?? false;
+    if (regionId != null) data['regionId'] = regionId;
     return data;
   }
 }

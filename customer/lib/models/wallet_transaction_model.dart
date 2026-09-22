@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class WalletTransactionModel {
+  /// Region the record belongs to (spec 18.12). History amounts use its
+  /// currency; see `RegionService.currencyForRecord`.
+  String? regionId;
   String? userId;
   String? paymentMethod;
   double? amount;
@@ -25,9 +28,11 @@ class WalletTransactionModel {
     this.transactionUser,
     this.note,
     this.serviceType,
+    this.regionId,
   });
 
   WalletTransactionModel.fromJson(Map<String, dynamic> json) {
+    regionId = (json['regionId'] == null || json['regionId'].toString().isEmpty) ? null : json['regionId'].toString();
     id = json['id'];
     userId = json['user_id'];
     paymentMethod = json['payment_method'];
@@ -53,6 +58,7 @@ class WalletTransactionModel {
     data['date'] = date;
     data['transactionUser'] = transactionUser;
     data['note'] = note;
+    if (regionId != null) data['regionId'] = regionId;
     return data;
   }
 }

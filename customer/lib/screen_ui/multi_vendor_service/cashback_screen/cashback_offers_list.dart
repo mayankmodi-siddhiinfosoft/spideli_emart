@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/cashback_controller.dart';
 import 'package:customer/themes/app_them_data.dart';
@@ -52,18 +53,18 @@ class CashbackOffersListScreen extends StatelessWidget {
                                 Text(
                                   controller.cashbackList[index].cashbackType == 'Percent'
                                       ? "${controller.cashbackList[index].cashbackAmount}%"
-                                      : Constant.amountShow(amount: "${controller.cashbackList[index].cashbackAmount}"),
+                                      : Constant.amountShow(amount: "${controller.cashbackList[index].cashbackAmount}", currency: RegionService.customerCurrency),
                                   style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
                                 ),
                               ],
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              "${"Min spent".tr} ${Constant.amountShow(amount: "${controller.cashbackList[index].minimumPurchaseAmount ?? 0.0}")} | ${"Valid till".tr} ${Constant.timestampToDateTime2(controller.cashbackList[index].endDate!)}",
+                              "${"Min spent".tr} ${Constant.amountShow(amount: "${controller.cashbackList[index].minimumPurchaseAmount ?? 0.0}", currency: RegionService.customerCurrency)} | ${"Valid till".tr} ${Constant.timestampToDateTime2(controller.cashbackList[index].endDate!)}",
                               style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular, fontSize: 14),
                             ),
                             Text(
-                              "${"Maximum cashback up to".tr} ${Constant.amountShow(amount: "${controller.cashbackList[index].maximumDiscount ?? 0.0}")}",
+                              "${"Maximum cashback up to".tr} ${Constant.amountShow(amount: "${controller.cashbackList[index].maximumDiscount ?? 0.0}", currency: RegionService.customerCurrency)}",
                               style: TextStyle(color: isDark ? AppThemeData.primary200 : AppThemeData.primary300, fontFamily: AppThemeData.regular, fontSize: 14),
                             ),
                           ],

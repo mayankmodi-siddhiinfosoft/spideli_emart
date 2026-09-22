@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/gift_card_controller.dart';
 import 'package:customer/payment/create_razor_pay_order_model.dart';
@@ -190,7 +191,7 @@ class SelectGiftPaymentScreen extends StatelessWidget {
                           style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
                         ),
                         Text(
-                          Constant.amountShow(amount: controller.userModel.value.walletAmount == null ? '0.0' : controller.userModel.value.walletAmount.toString()),
+                          Constant.amountShow(amount: controller.userModel.value.walletAmount == null ? '0.0' : controller.userModel.value.walletAmount.toString(), currency: RegionService.customerCurrency),
                           textAlign: TextAlign.start,
                           style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
                         ),

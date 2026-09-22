@@ -1,3 +1,5 @@
+import 'package:customer/models/currency_model.dart';
+import 'package:customer/utils/region_service.dart';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
@@ -78,10 +80,23 @@ class RentalOrderDetailsController extends GetxController {
       order.value = args as RentalOrderModel;
       calculateTotalAmount();
       await fetchDriverDetails();
-      await getPaymentSettings();
+      await getPaymentSettings(regionId: bookingRegionId);
     }
     isLoading.value = false;
   }
+
+  /// The booking's region: its own `regionId`, else its driver's, else its
+  /// zone's single region (`regionOf`). Null = global.
+  String? get bookingRegionId {
+    final String? own = order.value.regionId;
+    if (own != null && own.isNotEmpty) return own;
+    final String? driverRegion = driverUser.value?.regionId;
+    if (driverRegion != null && driverRegion.isNotEmpty) return driverRegion;
+    return RegionService.regionOf(zoneId: order.value.zoneId);
+  }
+
+  /// History amounts of this booking.
+  CurrencyModel? get bookingCurrency => RegionService.currencyForRecord(bookingRegionId);
 
   Future<void> fetchDriverDetails() async {
     if (order.value.driverId != null) {
@@ -185,6 +200,8 @@ class RentalOrderDetailsController extends GetxController {
     } else {
       order.value.paymentStatus = true;
       order.value.paymentMethod = selectedPaymentMethod.value;
+      // rental_orders.regionId = the driver's region (the Driver app writes it too).
+      order.value.regionId ??= (driverUser.value?.regionId?.isNotEmpty == true ? driverUser.value?.regionId : null);
       if (selectedPaymentMethod.value == PaymentGateway.wallet.name) {
         WalletTransactionModel transactionModel = WalletTransactionModel(
           id: Constant.getUuid(),
@@ -195,6 +212,7 @@ class RentalOrderDetailsController extends GetxController {
           userId: FireStoreUtils.getCurrentUid(),
           isTopup: false,
           orderId: order.value.id,
+          regionId: bookingRegionId,
           note: "Rental Amount debited",
           paymentStatus: "success",
           serviceType: Constant.parcelServiceType,
@@ -235,6 +253,7 @@ class RentalOrderDetailsController extends GetxController {
           isTopup: true,
           // refund
           orderId: order.id,
+          regionId: order.regionId,
           note: "Refund for cancelled booking",
           paymentStatus: "success",
           serviceType: Constant.parcelServiceType,
@@ -267,21 +286,35 @@ class RentalOrderDetailsController extends GetxController {
   Rx<OrangeMoney> orangeMoneyModel = OrangeMoney().obs;
   Rx<Xendit> xenditModel = Xendit().obs;
 
-  Future<void> getPaymentSettings() async {
+  /// Region the loaded payment methods were filtered for (spec 18.7).
+  String? _paymentRegionId;
+
+  /// Re-filters the payment methods for [regionId] (the booking's region, else its driver's) when it
+  /// differs from the loaded one, keeping the customer's current choice.
+  Future<void> refreshPaymentRegion(String? regionId) async {
+    if (regionId == _paymentRegionId) return;
+    final String keep = selectedPaymentMethod.value;
+    razorPay.clear();
+    await getPaymentSettings(regionId: regionId);
+    if (keep.isNotEmpty) selectedPaymentMethod.value = keep;
+  }
+
+  Future<void> getPaymentSettings({String? regionId}) async {
+    _paymentRegionId = regionId;
     await FireStoreUtils.getPaymentSettingsData().then((value) {
-      stripeModel.value = StripeModel.fromJson(jsonDecode(Preferences.getString(Preferences.stripeSettings)));
-      payPalModel.value = PayPalModel.fromJson(jsonDecode(Preferences.getString(Preferences.paypalSettings)));
-      payStackModel.value = PayStackModel.fromJson(jsonDecode(Preferences.getString(Preferences.payStack)));
-      mercadoPagoModel.value = MercadoPagoModel.fromJson(jsonDecode(Preferences.getString(Preferences.mercadoPago)));
-      flutterWaveModel.value = FlutterWaveModel.fromJson(jsonDecode(Preferences.getString(Preferences.flutterWave)));
-      paytmModel.value = PaytmModel.fromJson(jsonDecode(Preferences.getString(Preferences.paytmSettings)));
-      payFastModel.value = PayFastModel.fromJson(jsonDecode(Preferences.getString(Preferences.payFastSettings)));
-      razorPayModel.value = RazorPayModel.fromJson(jsonDecode(Preferences.getString(Preferences.razorpaySettings)));
-      midTransModel.value = MidTrans.fromJson(jsonDecode(Preferences.getString(Preferences.midTransSettings)));
-      orangeMoneyModel.value = OrangeMoney.fromJson(jsonDecode(Preferences.getString(Preferences.orangeMoneySettings)));
-      xenditModel.value = Xendit.fromJson(jsonDecode(Preferences.getString(Preferences.xenditSettings)));
-      walletSettingModel.value = WalletSettingModel.fromJson(jsonDecode(Preferences.getString(Preferences.walletSettings)));
-      cashOnDeliverySettingModel.value = CodSettingModel.fromJson(jsonDecode(Preferences.getString(Preferences.codSettings)));
+      stripeModel.value = StripeModel.fromJson(RegionService.gatewaySettings(Preferences.stripeSettings, regionId));
+      payPalModel.value = PayPalModel.fromJson(RegionService.gatewaySettings(Preferences.paypalSettings, regionId));
+      payStackModel.value = PayStackModel.fromJson(RegionService.gatewaySettings(Preferences.payStack, regionId));
+      mercadoPagoModel.value = MercadoPagoModel.fromJson(RegionService.gatewaySettings(Preferences.mercadoPago, regionId));
+      flutterWaveModel.value = FlutterWaveModel.fromJson(RegionService.gatewaySettings(Preferences.flutterWave, regionId));
+      paytmModel.value = PaytmModel.fromJson(RegionService.gatewaySettings(Preferences.paytmSettings, regionId));
+      payFastModel.value = PayFastModel.fromJson(RegionService.gatewaySettings(Preferences.payFastSettings, regionId));
+      razorPayModel.value = RazorPayModel.fromJson(RegionService.gatewaySettings(Preferences.razorpaySettings, regionId));
+      midTransModel.value = MidTrans.fromJson(RegionService.gatewaySettings(Preferences.midTransSettings, regionId));
+      orangeMoneyModel.value = OrangeMoney.fromJson(RegionService.gatewaySettings(Preferences.orangeMoneySettings, regionId));
+      xenditModel.value = Xendit.fromJson(RegionService.gatewaySettings(Preferences.xenditSettings, regionId));
+      walletSettingModel.value = WalletSettingModel.fromJson(RegionService.gatewaySettings(Preferences.walletSettings, regionId));
+      cashOnDeliverySettingModel.value = CodSettingModel.fromJson(RegionService.gatewaySettings(Preferences.codSettings, regionId));
 
       if (walletSettingModel.value.isEnabled == true) {
         selectedPaymentMethod.value = PaymentGateway.wallet.name;

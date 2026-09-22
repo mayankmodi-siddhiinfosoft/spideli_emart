@@ -52,6 +52,9 @@ import '../payment/xendit_screen.dart';
 import '../screen_ui/multi_vendor_service/cart_screen/oder_placing_screens.dart';
 import '../screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import '../service/cart_provider.dart';
+import '../service/database_helper.dart';
+import '../utils/region_service.dart';
+import 'package:customer/models/currency_model.dart';
 import '../service/fire_store_utils.dart';
 import '../service/send_notification.dart';
 import '../themes/show_toast_dialog.dart';
@@ -120,6 +123,7 @@ class CartController extends GetxController {
             vendorModel.value = value;
           }
         });
+        await _loadDeliveryCharge();
       }
       calculatePrice();
     });
@@ -131,13 +135,7 @@ class CartController extends GetxController {
       }
     });
 
-    await FireStoreUtils.getDeliveryCharge().then((value) {
-      if (value != null) {
-        deliveryChargeModel.value = value;
-        print("===> Delivery Charge Model: ${deliveryChargeModel.value.toJson()}");
-        calculatePrice();
-      }
-    });
+    await _loadDeliveryCharge();
 
     await FireStoreUtils.getAllVendorPublicCoupons(vendorModel.value.id.toString()).then((value) {
       couponList.value = value;
@@ -147,6 +145,28 @@ class CartController extends GetxController {
       allCouponList.value = value;
     });
   }
+
+  /// Store region the delivery charge was last loaded for ("" = global).
+  String? _deliveryChargeRegion;
+
+  /// settings/DeliveryCharge for the store's region (spec 18.6): reloaded only
+  /// when the cart's store region changes.
+  Future<void> _loadDeliveryCharge() async {
+    await RegionService.ensureLoaded();
+    final String region = RegionService.regionOfVendor(vendorModel.value.id == null ? null : vendorModel.value) ?? '';
+    if (_deliveryChargeRegion == region) return;
+    _deliveryChargeRegion = region;
+    await FireStoreUtils.getDeliveryCharge(regionId: region.isEmpty ? null : region).then((value) {
+      if (value != null) {
+        deliveryChargeModel.value = value;
+        print("===> Delivery Charge Model: ${deliveryChargeModel.value.toJson()}");
+        calculatePrice();
+      }
+    });
+  }
+
+  /// Live prices in the cart / checkout: the store's region currency.
+  CurrencyModel? get storeCurrency => RegionService.currencyForVendor(vendorModel.value.id == null ? null : vendorModel.value);
 
   Future<void> calculatePrice() async {
     // Reset values
@@ -427,6 +447,8 @@ class CartController extends GetxController {
     orderModel.author = userModel.value;
     orderModel.vendorID = vendorModel.value.id;
     orderModel.vendor = vendorModel.value;
+    // vendor_orders.regionId = the store's region (spec 18.12).
+    orderModel.regionId = RegionService.regionOfVendor(vendorModel.value);
     orderModel.adminCommission =
         Constant.sectionConstantModel?.adminCommision?.isEnabled == false
             ? '0'
@@ -474,6 +496,7 @@ class CartController extends GetxController {
         orderId: orderModel.id,
         note: "Order Amount debited".tr,
         paymentStatus: "success".tr,
+        regionId: orderModel.regionId,
       );
 
       await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
@@ -553,20 +576,27 @@ class CartController extends GetxController {
 
   Future<void> getPaymentSettings() async {
     isLoading.value = true;
+    // Payment methods follow the store's region (spec 18.7, contract Q4).
+    String? vendorId = cartItem.isNotEmpty ? cartItem.first.vendorID : vendorModel.value.id;
+    if (vendorId == null || vendorId.isEmpty) {
+      final saved = await DatabaseHelper.instance.fetchCartProducts();
+      if (saved.isNotEmpty) vendorId = saved.first.vendorID;
+    }
+    final String? storeRegionId = await RegionService.resolveVendorRegion(vendorId);
     await FireStoreUtils.getPaymentSettingsData().then((value) {
-      stripeModel.value = StripeModel.fromJson(jsonDecode(Preferences.getString(Preferences.stripeSettings)));
-      payPalModel.value = PayPalModel.fromJson(jsonDecode(Preferences.getString(Preferences.paypalSettings)));
-      payStackModel.value = PayStackModel.fromJson(jsonDecode(Preferences.getString(Preferences.payStack)));
-      mercadoPagoModel.value = MercadoPagoModel.fromJson(jsonDecode(Preferences.getString(Preferences.mercadoPago)));
-      flutterWaveModel.value = FlutterWaveModel.fromJson(jsonDecode(Preferences.getString(Preferences.flutterWave)));
-      paytmModel.value = PaytmModel.fromJson(jsonDecode(Preferences.getString(Preferences.paytmSettings)));
-      payFastModel.value = PayFastModel.fromJson(jsonDecode(Preferences.getString(Preferences.payFastSettings)));
-      razorPayModel.value = RazorPayModel.fromJson(jsonDecode(Preferences.getString(Preferences.razorpaySettings)));
-      midTransModel.value = MidTrans.fromJson(jsonDecode(Preferences.getString(Preferences.midTransSettings)));
-      orangeMoneyModel.value = OrangeMoney.fromJson(jsonDecode(Preferences.getString(Preferences.orangeMoneySettings)));
-      xenditModel.value = Xendit.fromJson(jsonDecode(Preferences.getString(Preferences.xenditSettings)));
-      walletSettingModel.value = WalletSettingModel.fromJson(jsonDecode(Preferences.getString(Preferences.walletSettings)));
-      cashOnDeliverySettingModel.value = CodSettingModel.fromJson(jsonDecode(Preferences.getString(Preferences.codSettings)));
+      stripeModel.value = StripeModel.fromJson(RegionService.gatewaySettings(Preferences.stripeSettings, storeRegionId));
+      payPalModel.value = PayPalModel.fromJson(RegionService.gatewaySettings(Preferences.paypalSettings, storeRegionId));
+      payStackModel.value = PayStackModel.fromJson(RegionService.gatewaySettings(Preferences.payStack, storeRegionId));
+      mercadoPagoModel.value = MercadoPagoModel.fromJson(RegionService.gatewaySettings(Preferences.mercadoPago, storeRegionId));
+      flutterWaveModel.value = FlutterWaveModel.fromJson(RegionService.gatewaySettings(Preferences.flutterWave, storeRegionId));
+      paytmModel.value = PaytmModel.fromJson(RegionService.gatewaySettings(Preferences.paytmSettings, storeRegionId));
+      payFastModel.value = PayFastModel.fromJson(RegionService.gatewaySettings(Preferences.payFastSettings, storeRegionId));
+      razorPayModel.value = RazorPayModel.fromJson(RegionService.gatewaySettings(Preferences.razorpaySettings, storeRegionId));
+      midTransModel.value = MidTrans.fromJson(RegionService.gatewaySettings(Preferences.midTransSettings, storeRegionId));
+      orangeMoneyModel.value = OrangeMoney.fromJson(RegionService.gatewaySettings(Preferences.orangeMoneySettings, storeRegionId));
+      xenditModel.value = Xendit.fromJson(RegionService.gatewaySettings(Preferences.xenditSettings, storeRegionId));
+      walletSettingModel.value = WalletSettingModel.fromJson(RegionService.gatewaySettings(Preferences.walletSettings, storeRegionId));
+      cashOnDeliverySettingModel.value = CodSettingModel.fromJson(RegionService.gatewaySettings(Preferences.codSettings, storeRegionId));
 
       if (walletSettingModel.value.isEnabled == true) {
         selectedPaymentMethod.value = PaymentGateway.wallet.name;

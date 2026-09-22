@@ -33,6 +33,7 @@ import '../models/language_model.dart';
 import '../models/mail_setting.dart';
 import '../models/section_model.dart';
 import '../service/fire_store_utils.dart';
+import '../utils/region_service.dart';
 import '../themes/show_toast_dialog.dart';
 import '../widget/permission_dialog.dart';
 import 'package:http/http.dart' as http;
@@ -276,11 +277,17 @@ class Constant {
     ShowToastDialog.closeLoader();
   }
 
-  static String amountShow({required String? amount}) {
-    if (currencyModel!.symbolatright == true) {
-      return "${double.parse(amount.toString()).toStringAsFixed(currencyModel?.decimal ?? 0)} ${currencyModel!.symbol.toString()}";
+  /// Formats [amount] with [currency]. Omit [currency] for the globally
+  /// active one (today's behaviour). Pass the store's region currency for live
+  /// prices and the record's own region currency for history - see
+  /// `RegionService.currencyForVendor` / `RegionService.currencyForRecord`.
+  static String amountShow({required String? amount, CurrencyModel? currency}) {
+    final CurrencyModel c = currency ?? currencyModel!;
+    final String value = (amount == null || amount.isEmpty) ? "0.0" : amount;
+    if (c.symbolatright == true) {
+      return "${double.parse(value).toStringAsFixed(c.decimal)} ${c.symbol.toString()}";
     } else {
-      return "${currencyModel!.symbol.toString()} ${amount == null || amount.isEmpty ? "0.0" : double.parse(amount.toString()).toStringAsFixed(currencyModel?.decimal ?? 0)}";
+      return "${c.symbol.toString()} ${double.parse(value).toStringAsFixed(c.decimal)}";
     }
   }
 
@@ -637,6 +644,8 @@ class Constant {
   }
 
   static Future<void> sendOrderEmail({required OrderModel orderModel}) async {
+    // Receipt = history: amounts in the order's own region currency.
+    final CurrencyModel? orderCurrency = RegionService.currencyForRecord(orderModel.regionId);
     double deliveryCharges = 0.0;
     double deliveryTips = 0.0;
     double subTotal = 0.0;
@@ -771,7 +780,7 @@ class Constant {
       double specialDiscount = 0.0;
       double discount = 0.0;
 
-      String specialLabel = '(${orderModel.specialDiscount!['special_discount_label']}${orderModel.specialDiscount!['specialType'] == "amount" ? currencyModel!.symbol : "%"})';
+      String specialLabel = '(${orderModel.specialDiscount!['special_discount_label']}${orderModel.specialDiscount!['specialType'] == "amount" ? orderCurrency?.symbol : "%"})';
       List<String> htmlList = [];
 
       for (var element in orderModel.products!) {
@@ -789,9 +798,9 @@ class Constant {
         <tr>
             <td style="width: 20%; border-top: 1px solid rgb(0, 0, 0);">${element.name}</td>
             <td style="width: 20%; border: 1px solid rgb(0, 0, 0);" rowspan="2">${element.quantity}</td>
-            <td style="width: 20%; border: 1px solid rgb(0, 0, 0);" rowspan="2">${amountShow(amount: (double.parse(element.discountPrice.toString()) > 0.0 ? element.discountPrice : element.price.toString()))}</td>
-            <td style="width: 20%; border: 1px solid rgb(0, 0, 0);" rowspan="2">${amountShow(amount: element.extrasPrice.toString())}</td>
-            <td style="width: 20%; border: 1px solid rgb(0, 0, 0);" rowspan="2">${amountShow(amount: ((double.parse(element.quantity.toString()) * double.parse(element.extrasPrice!) + (double.parse(element.quantity.toString()) * (double.parse((double.parse(element.discountPrice.toString()) > 0.0 ? element.discountPrice! : element.price!))))).toString()))}</td>
+            <td style="width: 20%; border: 1px solid rgb(0, 0, 0);" rowspan="2">${amountShow(amount: (double.parse(element.discountPrice.toString()) > 0.0 ? element.discountPrice : element.price.toString()), currency: orderCurrency)}</td>
+            <td style="width: 20%; border: 1px solid rgb(0, 0, 0);" rowspan="2">${amountShow(amount: element.extrasPrice.toString(), currency: orderCurrency)}</td>
+            <td style="width: 20%; border: 1px solid rgb(0, 0, 0);" rowspan="2">${amountShow(amount: ((double.parse(element.quantity.toString()) * double.parse(element.extrasPrice!) + (double.parse(element.quantity.toString()) * (double.parse((double.parse(element.discountPrice.toString()) > 0.0 ? element.discountPrice! : element.price!))))).toString()), currency: orderCurrency)}</td>
         </tr>
         <tr>
             <td style="width: 20%;">${extrasDisVal.isEmpty ? "" : "Extra Item : $extrasDisVal"}</td>
@@ -813,18 +822,18 @@ class Constant {
         for (var element in orderModel.taxSetting ?? []) {
           if (element.scope == 'product') {
             String taxHtml =
-                """<span style="font-size: 1rem;">${element.title} ${'Tax on item total'}: ${amountShow(amount: calculateTax(amount: (total - discount - specialDiscount).toString(), taxModel: element).toString())}</span>""";
+                """<span style="font-size: 1rem;">${element.title} ${'Tax on item total'}: ${amountShow(amount: calculateTax(amount: (total - discount - specialDiscount).toString(), taxModel: element).toString(), currency: orderCurrency)}</span>""";
             taxHtmlList.add(taxHtml);
           }
         }
       }
       if (orderModel.taxScope == "product") {
-        String taxHtml = """<br><span style="font-size: 1rem;">${'Tax on item total'}: ${amountShow(amount: productTaxAmount.toString())}</span>""";
+        String taxHtml = """<br><span style="font-size: 1rem;">${'Tax on item total'}: ${amountShow(amount: productTaxAmount.toString(), currency: orderCurrency)}</span>""";
         taxHtmlList.add(taxHtml);
       }
 
       if (orderModel.taxScope == "order") {
-        String taxHtml = """<br><span style="font-size: 1rem;">${'Tax on Order Total'}: ${amountShow(amount: orderTaxAmount.toString())}</span>""";
+        String taxHtml = """<br><span style="font-size: 1rem;">${'Tax on Order Total'}: ${amountShow(amount: orderTaxAmount.toString(), currency: orderCurrency)}</span>""";
         taxHtmlList.add(taxHtml);
       }
 
@@ -832,7 +841,7 @@ class Constant {
         for (var element in orderModel.driverDeliveryTax ?? []) {
           if (element.scope == 'delivery') {
             String taxHtml =
-                """<br><span style="font-size: 1rem;">${element.title} ${'Tax on Delivery Fee'}: ${amountShow(amount: calculateTax(amount: (orderModel.deliveryCharge).toString(), taxModel: element).toString())}</span>""";
+                """<br><span style="font-size: 1rem;">${element.title} ${'Tax on Delivery Fee'}: ${amountShow(amount: calculateTax(amount: (orderModel.deliveryCharge).toString(), taxModel: element).toString(), currency: orderCurrency)}</span>""";
             taxHtmlList.add(taxHtml);
           }
         }
@@ -842,7 +851,7 @@ class Constant {
         for (var element in orderModel.packagingTax ?? []) {
           if (element.scope == 'packaging') {
             String taxHtml =
-                """<br><span style="font-size: 1rem;">${element.title} ${'Tax on Packaging Fee'}: ${amountShow(amount: calculateTax(amount: (packagingCharge).toString(), taxModel: element).toString())}</span>""";
+                """<br><span style="font-size: 1rem;">${element.title} ${'Tax on Packaging Fee'}: ${amountShow(amount: calculateTax(amount: (packagingCharge).toString(), taxModel: element).toString(), currency: orderCurrency)}</span>""";
             taxHtmlList.add(taxHtml);
           }
         }
@@ -851,29 +860,29 @@ class Constant {
         for (var element in orderModel.platformTax ?? []) {
           if (element.scope == 'platform') {
             String taxHtml =
-                """<br><span style="font-size: 1rem;">${element.title} ${'Tax on Platform Fee'}: ${amountShow(amount: calculateTax(amount: (platformFee).toString(), taxModel: element).toString())}</span>""";
+                """<br><span style="font-size: 1rem;">${element.title} ${'Tax on Platform Fee'}: ${amountShow(amount: calculateTax(amount: (platformFee).toString(), taxModel: element).toString(), currency: orderCurrency)}</span>""";
             taxHtmlList.add(taxHtml);
           }
         }
       }
-      taxHtmlList.add("""<br><span style="font-size: 1rem;"> Total Tax: ${amountShow(amount: totalTaxAmount.toString())}</span>""");
+      taxHtmlList.add("""<br><span style="font-size: 1rem;"> Total Tax: ${amountShow(amount: totalTaxAmount.toString(), currency: orderCurrency)}</span>""");
 
-      newString = newString.replaceAll("{subtotal}", amountShow(amount: subTotal.toString()));
+      newString = newString.replaceAll("{subtotal}", amountShow(amount: subTotal.toString(), currency: orderCurrency));
       newString = newString.replaceAll("{coupon}", orderModel.couponId ?? '');
-      newString = newString.replaceAll("{discountamount}", amountShow(amount: orderModel.discount.toString()));
+      newString = newString.replaceAll("{discountamount}", amountShow(amount: orderModel.discount.toString(), currency: orderCurrency));
       newString = newString.replaceAll("{specialcoupon}", specialLabel);
-      newString = newString.replaceAll("{specialdiscountamount}", amountShow(amount: specialDiscount.toString()));
-      newString = newString.replaceAll("{shippingcharge}", amountShow(amount: deliveryCharges.toString()));
-      newString = newString.replaceAll("{packagingcharge}", amountShow(amount: packagingCharge.toString()));
-      newString = newString.replaceAll("{platformcharge}", amountShow(amount: platformFee.toString()));
-      newString = newString.replaceAll("{tipamount}", amountShow(amount: deliveryTips.toString()));
-      newString = newString.replaceAll("{totalAmount}", amountShow(amount: totalAmountData.toString()));
+      newString = newString.replaceAll("{specialdiscountamount}", amountShow(amount: specialDiscount.toString(), currency: orderCurrency));
+      newString = newString.replaceAll("{shippingcharge}", amountShow(amount: deliveryCharges.toString(), currency: orderCurrency));
+      newString = newString.replaceAll("{packagingcharge}", amountShow(amount: packagingCharge.toString(), currency: orderCurrency));
+      newString = newString.replaceAll("{platformcharge}", amountShow(amount: platformFee.toString(), currency: orderCurrency));
+      newString = newString.replaceAll("{tipamount}", amountShow(amount: deliveryTips.toString(), currency: orderCurrency));
+      newString = newString.replaceAll("{totalAmount}", amountShow(amount: totalAmountData.toString(), currency: orderCurrency));
 
       String tableHTML = htmlList.join();
       String lastHTML = "</tbody></table>";
       newString = newString.replaceAll("{productdetails}", firstHTML + tableHTML + lastHTML);
       newString = newString.replaceAll("{taxdetails}", taxHtmlList.join());
-      newString = newString.replaceAll("{newwalletbalance}.", amountShow(amount: Constant.userModel!.walletAmount.toString()));
+      newString = newString.replaceAll("{newwalletbalance}.", amountShow(amount: Constant.userModel!.walletAmount.toString(), currency: RegionService.customerCurrency));
 
       String subjectNewString = emailTemplateModel.subject.toString();
       subjectNewString = subjectNewString.replaceAll("{orderid}", orderModel.id.toString());
@@ -949,13 +958,13 @@ class Constant {
     return format.format(timestamp!.toDate());
   }
 
-  static String getTaxDisplayText(List<TaxModel>? taxes) {
+  static String getTaxDisplayText(List<TaxModel>? taxes, {CurrencyModel? currency}) {
     if (taxes == null || taxes.isEmpty) return '';
 
     return taxes
         .map((tax) {
           if (tax.type == "fix") {
-            return "${tax.title} (${Constant.amountShow(amount: tax.tax)})";
+            return "${tax.title} (${Constant.amountShow(amount: tax.tax, currency: currency)})";
           } else {
             return "${tax.title} (${tax.tax}%)";
           }

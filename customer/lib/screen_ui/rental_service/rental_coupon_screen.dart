@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/rental_coupon_controller.dart';
 import 'package:customer/controllers/theme_controller.dart';
@@ -71,7 +72,7 @@ class RentalCouponScreen extends StatelessWidget {
                                         child: RotatedBox(
                                           quarterTurns: -1,
                                           child: Text(
-                                            "${couponModel.discountType == "Fix Price" ? Constant.amountShow(amount: couponModel.discount) : "${couponModel.discount}%"} ${'Off'.tr}",
+                                            "${couponModel.discountType == "Fix Price" ? Constant.amountShow(amount: couponModel.discount, currency: RegionService.customerCurrency) : "${couponModel.discount}%"} ${'Off'.tr}",
                                             textAlign: TextAlign.start,
                                             style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50),
                                           ),

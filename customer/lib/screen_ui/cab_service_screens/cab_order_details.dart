@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/themes/responsive.dart';
 import 'package:customer/widget/my_separator.dart';
 import 'package:dotted_border/dotted_border.dart';
@@ -434,7 +435,7 @@ class CabOrderDetails extends StatelessWidget {
                             children: [
                               _iconTile("${double.parse(controller.cabOrder.value.distance.toString()).toStringAsFixed(2)} ${'KM'.tr}", "Distance".tr, "assets/icons/ic_distance_parcel.svg", isDark),
                               _iconTile(controller.cabOrder.value.duration ?? '--', "Duration".tr, "assets/icons/ic_duration.svg", isDark),
-                              _iconTile(Constant.amountShow(amount: controller.cabOrder.value.subTotal), "${controller.cabOrder.value.paymentMethod}".tr, "assets/icons/ic_rate_parcel.svg", isDark),
+                              _iconTile(Constant.amountShow(amount: controller.cabOrder.value.subTotal, currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)), "${controller.cabOrder.value.paymentMethod}".tr, "assets/icons/ic_rate_parcel.svg", isDark),
                             ],
                           ),
                         ),
@@ -453,10 +454,10 @@ class CabOrderDetails extends StatelessWidget {
                               const SizedBox(height: 8),
 
                               // Subtotal
-                              _summaryTile("Subtotal", Constant.amountShow(amount: controller.subTotal.value.toString()), isDark),
+                              _summaryTile("Subtotal", Constant.amountShow(amount: controller.subTotal.value.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)), isDark),
 
                               // Discount
-                              _summaryTile("Discount", Constant.amountShow(amount: controller.discount.value.toString()), isDark),
+                              _summaryTile("Discount", Constant.amountShow(amount: controller.discount.value.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)), isDark),
 
                               // Tax List
                               if (Constant.platformFeeModel?.enable == true)
@@ -467,7 +468,7 @@ class CabOrderDetails extends StatelessWidget {
                                     children: [
                                       Text("Platform fee".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
                                       Text(
-                                        Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString()),
+                                        Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)),
                                         style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                       ),
                                     ],
@@ -488,7 +489,7 @@ class CabOrderDetails extends StatelessWidget {
                                         style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, decoration: TextDecoration.underline),
                                       ),
                                       Text(
-                                        Constant.amountShow(amount: controller.taxAmount.value.toString()),
+                                        Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)),
                                         style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                       ),
                                     ],
@@ -499,7 +500,7 @@ class CabOrderDetails extends StatelessWidget {
                               const Divider(),
 
                               // Total
-                              _summaryTile("Order Total", Constant.amountShow(amount: controller.totalAmount.value.toString()), isDark),
+                              _summaryTile("Order Total", Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)), isDark),
                             ],
                           ),
                         ),
@@ -545,11 +546,11 @@ class CabOrderDetails extends StatelessWidget {
                   const SizedBox(height: 5),
                   sectionDivider(isDark),
                   const SizedBox(height: 5),
-                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString()), isDark: isDark),
+                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)), isDark: isDark),
                   sectionDivider(isDark),
-                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString()), isDark: isDark),
+                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)), isDark: isDark),
                   sectionDivider(isDark),
-                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString()), amountColor: AppThemeData.primary300, isDark: isDark),
+                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)), amountColor: AppThemeData.primary300, isDark: isDark),
                   const SizedBox(height: 10),
                   Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: Text("Close".tr))),
                 ],

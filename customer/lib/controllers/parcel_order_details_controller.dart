@@ -113,6 +113,7 @@ class ParcelOrderDetailsController extends GetxController {
         userId: FireStoreUtils.getCurrentUid(),
         isTopup: true,
         orderId: parcelOrder.value.id,
+        regionId: parcelOrder.value.regionId,
         note: "Refund for cancelled parcel order",
         paymentStatus: "success",
         serviceType: Constant.parcelServiceType,

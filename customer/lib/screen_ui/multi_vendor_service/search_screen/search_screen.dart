@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/search_controller.dart';
 import 'package:customer/models/product_model.dart';
@@ -312,7 +313,7 @@ class SearchScreen extends StatelessWidget {
                                                     ),
                                                     double.parse(disPrice) <= 0
                                                         ? Text(
-                                                          Constant.amountShow(amount: price),
+                                                          Constant.amountShow(amount: price, currency: RegionService.currencyForVendorId(productModel.vendorID)),
                                                           style: TextStyle(
                                                             fontSize: 16,
                                                             color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
@@ -323,7 +324,7 @@ class SearchScreen extends StatelessWidget {
                                                         : Row(
                                                           children: [
                                                             Text(
-                                                              Constant.amountShow(amount: disPrice),
+                                                              Constant.amountShow(amount: disPrice, currency: RegionService.currencyForVendorId(productModel.vendorID)),
                                                               style: TextStyle(
                                                                 fontSize: 16,
                                                                 color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
@@ -333,7 +334,7 @@ class SearchScreen extends StatelessWidget {
                                                             ),
                                                             const SizedBox(width: 5),
                                                             Text(
-                                                              Constant.amountShow(amount: price),
+                                                              Constant.amountShow(amount: price, currency: RegionService.currencyForVendorId(productModel.vendorID)),
                                                               style: TextStyle(
                                                                 fontSize: 14,
                                                                 decoration: TextDecoration.lineThrough,

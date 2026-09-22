@@ -1,3 +1,5 @@
+import 'package:customer/models/currency_model.dart';
+import 'package:customer/utils/region_service.dart';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
@@ -46,6 +48,19 @@ class WalletController extends GetxController {
 
   RxList<WalletTransactionModel> walletTransactionList = <WalletTransactionModel>[].obs;
 
+  /// orderId -> regionId for order-based rows without their own `regionId`.
+  RxMap<String, String> orderRegions = <String, String>{}.obs;
+
+  /// Currency of a wallet row: a row tied to an order uses that order's
+  /// region (history); a top-up uses the customer's region; otherwise global.
+  CurrencyModel? currencyFor(WalletTransactionModel transaction) {
+    final String? own = transaction.regionId;
+    if (own != null && own.isNotEmpty) return RegionService.currencyForRecord(own);
+    final String? orderId = transaction.orderId;
+    if (orderId == null || orderId.isEmpty) return RegionService.customerCurrency;
+    return RegionService.currencyForRecord(orderRegions[orderId]);
+  }
+
   Rx<UserModel> userModel = UserModel().obs;
   RxString selectedPaymentMethod = "".obs;
 
@@ -69,18 +84,21 @@ class WalletController extends GetxController {
   Rx<Xendit> xenditModel = Xendit().obs;
 
   Future<void> getPaymentSettings() async {
+    // A top-up is not tied to a store: methods of the customer's current
+    // region when it resolves to one, else all of them (spec 18.7).
+    await RegionService.ensureLoaded();
     await FireStoreUtils.getPaymentSettingsData().then((value) {
-      payFastModel.value = PayFastModel.fromJson(jsonDecode(Preferences.getString(Preferences.payFastSettings)));
-      mercadoPagoModel.value = MercadoPagoModel.fromJson(jsonDecode(Preferences.getString(Preferences.mercadoPago)));
-      payPalModel.value = PayPalModel.fromJson(jsonDecode(Preferences.getString(Preferences.paypalSettings)));
-      stripeModel.value = StripeModel.fromJson(jsonDecode(Preferences.getString(Preferences.stripeSettings)));
-      flutterWaveModel.value = FlutterWaveModel.fromJson(jsonDecode(Preferences.getString(Preferences.flutterWave)));
-      payStackModel.value = PayStackModel.fromJson(jsonDecode(Preferences.getString(Preferences.payStack)));
-      razorPayModel.value = RazorPayModel.fromJson(jsonDecode(Preferences.getString(Preferences.razorpaySettings)));
+      payFastModel.value = PayFastModel.fromJson(RegionService.gatewaySettings(Preferences.payFastSettings, RegionService.customerRegionId));
+      mercadoPagoModel.value = MercadoPagoModel.fromJson(RegionService.gatewaySettings(Preferences.mercadoPago, RegionService.customerRegionId));
+      payPalModel.value = PayPalModel.fromJson(RegionService.gatewaySettings(Preferences.paypalSettings, RegionService.customerRegionId));
+      stripeModel.value = StripeModel.fromJson(RegionService.gatewaySettings(Preferences.stripeSettings, RegionService.customerRegionId));
+      flutterWaveModel.value = FlutterWaveModel.fromJson(RegionService.gatewaySettings(Preferences.flutterWave, RegionService.customerRegionId));
+      payStackModel.value = PayStackModel.fromJson(RegionService.gatewaySettings(Preferences.payStack, RegionService.customerRegionId));
+      razorPayModel.value = RazorPayModel.fromJson(RegionService.gatewaySettings(Preferences.razorpaySettings, RegionService.customerRegionId));
 
-      midTransModel.value = MidTrans.fromJson(jsonDecode(Preferences.getString(Preferences.midTransSettings)));
-      orangeMoneyModel.value = OrangeMoney.fromJson(json.decode(Preferences.getString(Preferences.orangeMoneySettings)));
-      xenditModel.value = Xendit.fromJson(jsonDecode(Preferences.getString(Preferences.xenditSettings)));
+      midTransModel.value = MidTrans.fromJson(RegionService.gatewaySettings(Preferences.midTransSettings, RegionService.customerRegionId));
+      orangeMoneyModel.value = OrangeMoney.fromJson(RegionService.gatewaySettings(Preferences.orangeMoneySettings, RegionService.customerRegionId));
+      xenditModel.value = Xendit.fromJson(RegionService.gatewaySettings(Preferences.xenditSettings, RegionService.customerRegionId));
 
       Stripe.publishableKey = stripeModel.value.clientpublishableKey.toString();
       Stripe.merchantIdentifier = 'GoRide';
@@ -100,6 +118,10 @@ class WalletController extends GetxController {
           walletTransactionList.value = value;
         }
       });
+      // Region of order-based rows written before rows carried `regionId`.
+      orderRegions.value = await RegionService.orderRegionIds(
+        walletTransactionList.where((t) => (t.regionId ?? '').isEmpty && (t.orderId ?? '').isNotEmpty).map((t) => t.orderId),
+      );
       await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid()).then((value) {
         if (value != null) {
           userModel.value = value;

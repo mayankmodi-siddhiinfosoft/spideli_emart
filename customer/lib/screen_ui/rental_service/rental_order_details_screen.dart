@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/rental_order_model.dart';
 import 'package:customer/payment/create_razor_pay_order_model.dart';
@@ -157,7 +158,7 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                                             ),
                                             const SizedBox(width: 10),
                                             Text(
-                                              Constant.amountShow(amount: controller.order.value.rentalPackageModel!.baseFare.toString()),
+                                              Constant.amountShow(amount: controller.order.value.rentalPackageModel!.baseFare.toString(), currency: controller.bookingCurrency),
                                               style: AppThemeData.boldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                             ),
                                           ],
@@ -426,7 +427,7 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                                                 ),
                                               ),
                                               Text(
-                                                Constant.amountShow(amount: controller.order.value.rentalPackageModel!.baseFare.toString()).tr,
+                                                Constant.amountShow(amount: controller.order.value.rentalPackageModel!.baseFare.toString(), currency: controller.bookingCurrency).tr,
                                                 textAlign: TextAlign.start,
                                                 style: AppThemeData.boldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                               ),
@@ -549,19 +550,19 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                                       Text("Order Summary".tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: AppThemeData.grey500)),
                                       const SizedBox(height: 8),
 
-                                      _summaryTile("Subtotal".tr, Constant.amountShow(amount: controller.subTotal.value.toString()), isDark, null),
-                                      _summaryTile("Discount".tr, Constant.amountShow(amount: controller.discount.value.toString()), isDark, AppThemeData.dangerDark300),
+                                      _summaryTile("Subtotal".tr, Constant.amountShow(amount: controller.subTotal.value.toString(), currency: controller.bookingCurrency), isDark, null),
+                                      _summaryTile("Discount".tr, Constant.amountShow(amount: controller.discount.value.toString(), currency: controller.bookingCurrency), isDark, AppThemeData.dangerDark300),
                                       if (double.parse(controller.order.value.platformFee ?? '0.0') > 0)
-                                        _summaryTile("Platform fee".tr, Constant.amountShow(amount: controller.order.value.platformFee.toString()), isDark, null),
+                                        _summaryTile("Platform fee".tr, Constant.amountShow(amount: controller.order.value.platformFee.toString(), currency: controller.bookingCurrency), isDark, null),
                                       InkWell(
                                         onTap: () {
                                           showBillBifurcationDialog(context, isDark, controller);
                                         },
-                                        child: _summaryTile("Tax amount".tr, Constant.amountShow(amount: (controller.taxAmount.value).toString()), isDark, null, underline: true),
+                                        child: _summaryTile("Tax amount".tr, Constant.amountShow(amount: (controller.taxAmount.value).toString(), currency: controller.bookingCurrency), isDark, null, underline: true),
                                       ),
 
                                       const Divider(),
-                                      _summaryTile("Order Total".tr, Constant.amountShow(amount: controller.totalAmount.value.toString()), isDark, null),
+                                      _summaryTile("Order Total".tr, Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.bookingCurrency), isDark, null),
                                     ],
                                   ),
                                 ),
@@ -831,7 +832,7 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                               style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
                             ),
                             Text(
-                              Constant.amountShow(amount: Constant.userModel!.walletAmount == null ? '0.0' : Constant.userModel!.walletAmount.toString()),
+                              Constant.amountShow(amount: Constant.userModel!.walletAmount == null ? '0.0' : Constant.userModel!.walletAmount.toString(), currency: RegionService.customerCurrency),
                               textAlign: TextAlign.start,
                               style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
                             ),
@@ -883,11 +884,11 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                   const SizedBox(height: 5),
                   sectionDivider(isDark),
                   const SizedBox(height: 5),
-                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString()), isDark: isDark),
+                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: controller.bookingCurrency), isDark: isDark),
                   sectionDivider(isDark),
-                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString()), isDark: isDark),
+                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: controller.bookingCurrency), isDark: isDark),
                   sectionDivider(isDark),
-                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString()), amountColor: AppThemeData.primary300, isDark: isDark),
+                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: controller.bookingCurrency), amountColor: AppThemeData.primary300, isDark: isDark),
                   const SizedBox(height: 20),
                   Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: Text("Close".tr))),
                 ],

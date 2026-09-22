@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/gift_card_controller.dart';
 import 'package:customer/models/gift_cards_model.dart';
@@ -106,7 +107,7 @@ class GiftCardScreen extends StatelessWidget {
                             prefix: Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                               child: Text(
-                                Constant.currencyModel!.symbol.tr,
+                                (RegionService.customerCurrency ?? Constant.currencyModel!).symbol.tr,
                                 style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontSize: 18),
                               ),
                             ),
@@ -146,7 +147,7 @@ class GiftCardScreen extends StatelessWidget {
                                           padding: const EdgeInsets.symmetric(horizontal: 10),
                                           child: Center(
                                             child: Text(
-                                              Constant.amountShow(amount: controller.amountList[index]),
+                                              Constant.amountShow(amount: controller.amountList[index], currency: RegionService.customerCurrency),
                                               style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
                                             ),
                                           ),
@@ -261,7 +262,7 @@ class GiftCardScreen extends StatelessWidget {
                                               ),
                                             ),
                                             Text(
-                                              Constant.amountShow(amount: controller.amountController.value.text),
+                                              Constant.amountShow(amount: controller.amountController.value.text, currency: RegionService.customerCurrency),
                                               textAlign: TextAlign.start,
                                               style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
                                             ),
@@ -279,7 +280,7 @@ class GiftCardScreen extends StatelessWidget {
                                               ),
                                             ),
                                             Text(
-                                              Constant.amountShow(amount: controller.amountController.value.text),
+                                              Constant.amountShow(amount: controller.amountController.value.text, currency: RegionService.customerCurrency),
                                               textAlign: TextAlign.start,
                                               style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
                                             ),
@@ -309,7 +310,7 @@ class GiftCardScreen extends StatelessWidget {
                       child: Padding(
                         padding: const EdgeInsets.only(bottom: 20),
                         child: RoundedButtonFill(
-                          title: "${'Pay'.tr} ${Constant.amountShow(amount: controller.amountController.value.text)}",
+                          title: "${'Pay'.tr} ${Constant.amountShow(amount: controller.amountController.value.text, currency: RegionService.customerCurrency)}",
                           height: 5.5,
                           color: AppThemeData.primary300,
                           textColor: AppThemeData.grey50,

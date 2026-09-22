@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/cart_controller.dart';
 import 'package:customer/themes/app_them_data.dart';
@@ -132,7 +133,7 @@ class SelectPaymentScreen extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.only(bottom: 20),
               child: RoundedButtonFill(
-                title: "${'Pay Now'.tr} | ${Constant.amountShow(amount: controller.totalAmount.value.toString())}".tr,
+                title: "${'Pay Now'.tr} | ${Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.storeCurrency)}".tr,
                 height: 5,
                 color: AppThemeData.primary300,
                 textColor: AppThemeData.grey50,
@@ -178,7 +179,7 @@ class SelectPaymentScreen extends StatelessWidget {
                               style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
                             ),
                             Text(
-                              Constant.amountShow(amount: controller.userModel.value.walletAmount == null ? '0.0' : controller.userModel.value.walletAmount.toString()),
+                              Constant.amountShow(amount: controller.userModel.value.walletAmount == null ? '0.0' : controller.userModel.value.walletAmount.toString(), currency: RegionService.customerCurrency),
                               textAlign: TextAlign.start,
                               style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
                             ),

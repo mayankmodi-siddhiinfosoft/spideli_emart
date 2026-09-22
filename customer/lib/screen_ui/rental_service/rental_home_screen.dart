@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'dart:developer';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -382,7 +383,7 @@ class RentalHomeScreen extends StatelessWidget {
                                     ),
                                   ),
                                   Text(
-                                    Constant.amountShow(amount: package.baseFare.toString()),
+                                    Constant.amountShow(amount: package.baseFare.toString(), currency: controller.quoteCurrency),
                                     style: AppThemeData.boldTextStyle(
                                       fontSize: 18,
                                       color:
@@ -592,7 +593,7 @@ class RentalHomeScreen extends StatelessWidget {
                               style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
                             ),
                             Text(
-                              Constant.amountShow(amount: controller.userModel.value.walletAmount == null ? '0.0' : controller.userModel.value.walletAmount.toString()),
+                              Constant.amountShow(amount: controller.userModel.value.walletAmount == null ? '0.0' : controller.userModel.value.walletAmount.toString(), currency: RegionService.customerCurrency),
                               textAlign: TextAlign.start,
                               style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
                             ),

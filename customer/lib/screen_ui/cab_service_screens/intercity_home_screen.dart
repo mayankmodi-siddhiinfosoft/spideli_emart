@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:customer/controllers/intercity_home_controller.dart';
 import 'package:customer/models/coupon_model.dart';
@@ -441,7 +442,7 @@ class IntercityHomeScreen extends StatelessWidget {
                                         ),
                                       ),
                                       Text(
-                                        Constant.amountShow(amount: controller.getAmount(vehicleType).toString()),
+                                        Constant.amountShow(amount: controller.getAmount(vehicleType).toString(), currency: controller.rideCurrency),
                                         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1),
                                       ),
                                     ],
@@ -459,11 +460,11 @@ class IntercityHomeScreen extends StatelessWidget {
                       title: 'pay_amount'.trParams({
                         'amount':
                             controller.selectedVehicleType.value.id == null
-                                ? Constant.amountShow(amount: "0.0")
-                                : Constant.amountShow(amount: controller.getAmount(controller.selectedVehicleType.value).toString()),
+                                ? Constant.amountShow(amount: "0.0", currency: controller.rideCurrency)
+                                : Constant.amountShow(amount: controller.getAmount(controller.selectedVehicleType.value).toString(), currency: controller.rideCurrency),
                       }),
                       // title:
-                      // "Pay ${controller.selectedVehicleType.value.id == null ? Constant.amountShow(amount: "0.0") : Constant.amountShow(amount: controller.getAmount(controller.selectedVehicleType.value).toString())}",
+                      // "Pay ${controller.selectedVehicleType.value.id == null ? Constant.amountShow(amount: "0.0", currency: controller.rideCurrency) : Constant.amountShow(amount: controller.getAmount(controller.selectedVehicleType.value).toString(), currency: controller.rideCurrency)}",
                       onPress: () async {
                         if (controller.selectedVehicleType.value.id != null) {
                           controller.calculateTotalAmount();
@@ -876,7 +877,7 @@ class IntercityHomeScreen extends StatelessWidget {
                                       children: [
                                         Text("Subtotal".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
                                         Text(
-                                          Constant.amountShow(amount: controller.subTotal.value.toString()),
+                                          Constant.amountShow(amount: controller.subTotal.value.toString(), currency: controller.rideCurrency),
                                           style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                         ),
                                       ],
@@ -898,7 +899,7 @@ class IntercityHomeScreen extends StatelessWidget {
                                             ),
                                           ],
                                         ),
-                                        Text(Constant.amountShow(amount: controller.discount.value.toString()), style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: AppThemeData.danger300)),
+                                        Text(Constant.amountShow(amount: controller.discount.value.toString(), currency: controller.rideCurrency), style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: AppThemeData.danger300)),
                                       ],
                                     ),
                                   ),
@@ -911,7 +912,7 @@ class IntercityHomeScreen extends StatelessWidget {
                                         children: [
                                           Text("Platform fee".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
                                           Text(
-                                            Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString()),
+                                            Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: controller.rideCurrency),
                                             style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                           ),
                                         ],
@@ -932,7 +933,7 @@ class IntercityHomeScreen extends StatelessWidget {
                                             style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, decoration: TextDecoration.underline),
                                           ),
                                           Text(
-                                            Constant.amountShow(amount: controller.taxAmount.value.toString()),
+                                            Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: controller.rideCurrency),
                                             style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                           ),
                                         ],
@@ -948,7 +949,7 @@ class IntercityHomeScreen extends StatelessWidget {
                                       children: [
                                         Text("Order Total".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
                                         Text(
-                                          Constant.amountShow(amount: controller.totalAmount.value.toString()),
+                                          Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.rideCurrency),
                                           style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                         ),
                                       ],
@@ -1305,7 +1306,7 @@ class IntercityHomeScreen extends StatelessWidget {
                                   children: [
                                     Text("Subtotal".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
                                     Text(
-                                      Constant.amountShow(amount: controller.subTotal.value.toString()),
+                                      Constant.amountShow(amount: controller.subTotal.value.toString(), currency: controller.rideCurrency),
                                       style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                     ),
                                   ],
@@ -1318,7 +1319,7 @@ class IntercityHomeScreen extends StatelessWidget {
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text("Discount".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                                    Text(Constant.amountShow(amount: controller.discount.value.toString()), style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: AppThemeData.danger300)),
+                                    Text(Constant.amountShow(amount: controller.discount.value.toString(), currency: controller.rideCurrency), style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: AppThemeData.danger300)),
                                   ],
                                 ),
                               ),
@@ -1331,7 +1332,7 @@ class IntercityHomeScreen extends StatelessWidget {
                                     children: [
                                       Text("Platform fee".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
                                       Text(
-                                        Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString()),
+                                        Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: controller.rideCurrency),
                                         style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                       ),
                                     ],
@@ -1352,7 +1353,7 @@ class IntercityHomeScreen extends StatelessWidget {
                                         style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, decoration: TextDecoration.underline),
                                       ),
                                       Text(
-                                        Constant.amountShow(amount: controller.taxAmount.value.toString()),
+                                        Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: controller.rideCurrency),
                                         style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                       ),
                                     ],
@@ -1369,7 +1370,7 @@ class IntercityHomeScreen extends StatelessWidget {
                                   children: [
                                     Text("Order Total".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
                                     Text(
-                                      Constant.amountShow(amount: controller.totalAmount.value.toString()),
+                                      Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.rideCurrency),
                                       style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
                                     ),
                                   ],
@@ -1583,7 +1584,7 @@ class IntercityHomeScreen extends StatelessWidget {
                               style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
                             ),
                             Text(
-                              Constant.amountShow(amount: controller.userModel.value.walletAmount == null ? '0.0' : controller.userModel.value.walletAmount.toString()),
+                              Constant.amountShow(amount: controller.userModel.value.walletAmount == null ? '0.0' : controller.userModel.value.walletAmount.toString(), currency: RegionService.customerCurrency),
                               textAlign: TextAlign.start,
                               style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
                             ),
@@ -1635,11 +1636,11 @@ class IntercityHomeScreen extends StatelessWidget {
                   const SizedBox(height: 5),
                   sectionDivider(isDark),
                   const SizedBox(height: 5),
-                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString()), isDark: isDark),
+                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: controller.rideCurrency), isDark: isDark),
                   sectionDivider(isDark),
-                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString()), isDark: isDark),
+                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: controller.rideCurrency), isDark: isDark),
                   sectionDivider(isDark),
-                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString()), amountColor: AppThemeData.primary300, isDark: isDark),
+                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: controller.rideCurrency), amountColor: AppThemeData.primary300, isDark: isDark),
                   const SizedBox(height: 10),
                   Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: Text("Close".tr))),
                 ],

@@ -59,4 +59,5 @@ class CollectionName {
   static const String sos = 'SOS';
   static const String complaints = 'complaints';
   static const String chat = "chat";
+  static const String regions = "regions";
 }

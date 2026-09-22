@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get/get.dart';
 import '../constant/collection_name.dart';
 import '../service/fire_store_utils.dart';
+import '../utils/region_service.dart';
 
 class GlobalSettingController extends GetxController {
   @override
@@ -25,7 +26,9 @@ class GlobalSettingController extends GetxController {
         Constant.currencyModel = CurrencyModel(id: "", code: "USD", decimal: 2, isactive: true, name: "US Dollar", symbol: "\$", symbolatright: false);
       }
     });
-    await FireStoreUtils.getSettings();
+    // Regions, their currencies and zones (spec 18.4 / 18.5): loaded once,
+    // alongside the settings. Without region data nothing changes.
+    await Future.wait([FireStoreUtils.getSettings(), RegionService.ensureLoaded()]);
   }
 
   NotificationService notificationService = NotificationService();

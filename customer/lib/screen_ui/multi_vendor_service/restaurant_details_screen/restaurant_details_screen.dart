@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:badges/badges.dart' as badges;
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/restaurant_details_controller.dart';
@@ -788,7 +789,7 @@ class CouponListView extends StatelessWidget {
                         decoration: const BoxDecoration(image: DecorationImage(image: AssetImage("assets/images/offer_gif.gif"), fit: BoxFit.fill)),
                         child: Center(
                           child: Text(
-                            offerModel.discountType == "Fix Price" ? Constant.amountShow(amount: offerModel.discount) : "${offerModel.discount}%",
+                            offerModel.discountType == "Fix Price" ? Constant.amountShow(amount: offerModel.discount, currency: RegionService.currencyForVendor(controller.vendorModel.value)) : "${offerModel.discount}%",
                             style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey50, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, fontSize: 12),
                           ),
                         ),
@@ -937,18 +938,18 @@ class ProductListView extends StatelessWidget {
                                 ),
                                 double.parse(disPrice) <= 0
                                     ? Text(
-                                      Constant.amountShow(amount: price),
+                                      Constant.amountShow(amount: price, currency: RegionService.currencyForVendor(controller.vendorModel.value)),
                                       style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
                                     )
                                     : Row(
                                       children: [
                                         Text(
-                                          Constant.amountShow(amount: disPrice),
+                                          Constant.amountShow(amount: disPrice, currency: RegionService.currencyForVendor(controller.vendorModel.value)),
                                           style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
                                         ),
                                         const SizedBox(width: 5),
                                         Text(
-                                          Constant.amountShow(amount: price),
+                                          Constant.amountShow(amount: price, currency: RegionService.currencyForVendor(controller.vendorModel.value)),
                                           style: TextStyle(
                                             fontSize: 14,
                                             decoration: TextDecoration.lineThrough,
@@ -1738,7 +1739,7 @@ class ProductDetailsView extends StatelessWidget {
                                           ),
                                         ),
                                         Text(
-                                          Constant.amountShow(amount: Constant.productCommissionPrice(controller.vendorModel.value, price)),
+                                          Constant.amountShow(amount: Constant.productCommissionPrice(controller.vendorModel.value, price), currency: RegionService.currencyForVendor(controller.vendorModel.value)),
                                           textAlign: TextAlign.start,
                                           maxLines: 1,
                                           style: TextStyle(
@@ -1854,7 +1855,7 @@ class ProductDetailsView extends StatelessWidget {
                   Expanded(
                     flex: 2,
                     child: RoundedButtonFill(
-                      title: "${'Add item'.tr} ${Constant.amountShow(amount: controller.calculatePrice(productModel))}".tr,
+                      title: "${'Add item'.tr} ${Constant.amountShow(amount: controller.calculatePrice(productModel), currency: RegionService.currencyForVendor(controller.vendorModel.value))}".tr,
                       height: 5.5,
                       color: AppThemeData.primary300,
                       textColor: AppThemeData.grey50,

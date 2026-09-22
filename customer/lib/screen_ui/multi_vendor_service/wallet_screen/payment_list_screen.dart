@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/wallet_controller.dart';
 import 'package:customer/payment/create_razor_pay_order_model.dart';
@@ -40,7 +41,7 @@ class PaymentListScreen extends StatelessWidget {
                     hintText: 'Enter Amount'.tr,
                     controller: controller.topUpAmountController.value,
                     textInputType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-                    prefix: Padding(padding: const EdgeInsets.all(12.0), child: Text(Constant.currencyModel!.symbol.toString(), style: const TextStyle(fontSize: 20, color: AppThemeData.grey800))),
+                    prefix: Padding(padding: const EdgeInsets.all(12.0), child: Text((RegionService.customerCurrency ?? Constant.currencyModel!).symbol.toString(), style: const TextStyle(fontSize: 20, color: AppThemeData.grey800))),
                     inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]'))],
                   ),
                 ),
@@ -128,7 +129,7 @@ class PaymentListScreen extends StatelessWidget {
                         ShowToastDialog.showToast("Please select payment method".tr);
                       }
                     } else {
-                      ShowToastDialog.showToast("${'Please Enter minimum amount of'.tr} ${Constant.amountShow(amount: Constant.minimumAmountToDeposit)}");
+                      ShowToastDialog.showToast("${'Please Enter minimum amount of'.tr} ${Constant.amountShow(amount: Constant.minimumAmountToDeposit, currency: RegionService.customerCurrency)}");
                     }
                   }
                 },

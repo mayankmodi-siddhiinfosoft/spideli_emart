@@ -20,15 +20,19 @@ class CurrencyModel {
   });
 
   factory CurrencyModel.fromJson(Map<String, dynamic> parsedJson) {
+    // Tolerant parsing: the admin panel writes `decimal_degits`, some rows
+    // carry `decimalDigits`, and numbers may arrive as strings.
+    final dynamic digits = parsedJson['decimal_degits'] ?? parsedJson['decimalDigits'];
+    final dynamic rounding = parsedJson['rounding'];
     return CurrencyModel(
-      code: parsedJson['code'] ?? '',
-      decimal: parsedJson['decimal_degits'] ?? 0,
-      isactive: parsedJson['isActive'] ?? '',
-      id: parsedJson['id'] ?? '',
-      name: parsedJson['name'] ?? '',
-      rounding: parsedJson['rounding'] ?? 0,
-      symbol: parsedJson['symbol'] ?? '',
-      symbolatright: parsedJson['symbolAtRight'] ?? '',
+      code: parsedJson['code']?.toString() ?? '',
+      decimal: digits is num ? digits.toInt() : int.tryParse(digits?.toString() ?? '') ?? 0,
+      isactive: parsedJson['isActive'] == true,
+      id: parsedJson['id']?.toString() ?? '',
+      name: parsedJson['name']?.toString() ?? '',
+      rounding: rounding is num ? rounding : num.tryParse(rounding?.toString() ?? '') ?? 0,
+      symbol: parsedJson['symbol']?.toString() ?? '',
+      symbolatright: parsedJson['symbolAtRight'] == true,
     );
   }
 

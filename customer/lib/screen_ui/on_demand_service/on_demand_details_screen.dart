@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/screen_ui/on_demand_service/provider_screen.dart';
@@ -111,19 +112,19 @@ class OnDemandDetailsScreen extends StatelessWidget {
                           children: [
                             provider.disPrice == "" || provider.disPrice == "0"
                                 ? Text(
-                                  provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.price ?? '0') : '${Constant.amountShow(amount: provider.price ?? '0')}/${'hr'.tr}',
+                                  provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.price ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.price ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
                                   style: TextStyle(fontSize: 18, fontFamily: AppThemeData.regular, fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppThemeData.primary300),
                                 )
                                 : Row(
                                   children: [
                                     Text(
-                                      provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.disPrice ?? '0') : '${Constant.amountShow(amount: provider.disPrice ?? '0')}/${'hr'.tr}',
+                                      provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.disPrice ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.disPrice ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
                                       style: TextStyle(fontSize: 18, fontFamily: AppThemeData.regular, fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppThemeData.primary300),
                                     ),
                                     Padding(
                                       padding: const EdgeInsets.only(left: 8.0),
                                       child: Text(
-                                        provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.price ?? '0') : '${Constant.amountShow(amount: provider.price ?? '0')}/${'hr'.tr}',
+                                        provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.price ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.price ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
                                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.grey, decoration: TextDecoration.lineThrough),
                                       ),
                                     ),

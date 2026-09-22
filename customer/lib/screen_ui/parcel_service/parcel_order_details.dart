@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/screen_ui/parcel_service/parcel_review_screen.dart';
 import 'package:customer/themes/responsive.dart';
 import 'package:customer/widget/my_separator.dart';
@@ -225,7 +226,7 @@ class ParcelOrderDetails extends StatelessWidget {
                             children: [
                               _iconTile("${controller.parcelOrder.value.distance ?? '--'} ${Constant.distanceType}", "Distance".tr, "assets/icons/ic_distance_parcel.svg", isDark),
                               _iconTile(controller.parcelOrder.value.parcelWeight ?? '--', "Weight".tr, "assets/icons/ic_weight_parcel.svg", isDark),
-                              _iconTile(Constant.amountShow(amount: controller.parcelOrder.value.subTotal), "Rate".tr, "assets/icons/ic_rate_parcel.svg", isDark),
+                              _iconTile(Constant.amountShow(amount: controller.parcelOrder.value.subTotal, currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), "Rate".tr, "assets/icons/ic_rate_parcel.svg", isDark),
                             ],
                           ),
                         ),
@@ -381,24 +382,24 @@ class ParcelOrderDetails extends StatelessWidget {
                               const SizedBox(height: 8),
 
                               // Subtotal
-                              _summaryTile("Subtotal".tr, Constant.amountShow(amount: controller.subTotal.value.toString()), isDark),
+                              _summaryTile("Subtotal".tr, Constant.amountShow(amount: controller.subTotal.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark),
 
                               // Discount
-                              _summaryTile("Discount".tr, "-${(Constant.amountShow(amount: controller.discount.value.toString()))}", isDark),
+                              _summaryTile("Discount".tr, "-${(Constant.amountShow(amount: controller.discount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))))}", isDark),
 
                               // Tax List
                               if (double.parse(controller.parcelOrder.value.platformFee ?? '0.0') > 0.0)
-                                _summaryTile("Platform fee".tr, Constant.amountShow(amount: controller.parcelOrder.value.platformFee ?? '0.0'), isDark),
+                                _summaryTile("Platform fee".tr, Constant.amountShow(amount: controller.parcelOrder.value.platformFee ?? '0.0', currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark),
                               InkWell(
                                 onTap: () {
                                   showBillBifurcationDialog(context, isDark, controller);
                                 },
-                                child: _summaryTile("Tax amount".tr, Constant.amountShow(amount: (controller.taxAmount.value).toString()), isDark, underline: true),
+                                child: _summaryTile("Tax amount".tr, Constant.amountShow(amount: (controller.taxAmount.value).toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark, underline: true),
                               ),
                               const Divider(),
 
                               // Total
-                              _summaryTile("Order Total".tr, Constant.amountShow(amount: controller.totalAmount.value.toString()), isDark),
+                              _summaryTile("Order Total".tr, Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark),
                             ],
                           ),
                         ),
@@ -558,11 +559,11 @@ class ParcelOrderDetails extends StatelessWidget {
                   const SizedBox(height: 5),
                   sectionDivider(isDark),
                   const SizedBox(height: 5),
-                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString()), isDark: isDark),
+                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark: isDark),
                   sectionDivider(isDark),
-                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString()), isDark: isDark),
+                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark: isDark),
                   sectionDivider(isDark),
-                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString()), amountColor: AppThemeData.primary300, isDark: isDark),
+                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), amountColor: AppThemeData.primary300, isDark: isDark),
                   const SizedBox(height: 20),
                   Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: Text("Close".tr))),
                 ],

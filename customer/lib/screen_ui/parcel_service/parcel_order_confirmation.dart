@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/models/coupon_model.dart';
 import 'package:customer/screen_ui/parcel_service/parcel_coupon_screen.dart';
 import 'package:customer/themes/responsive.dart';
@@ -135,7 +136,7 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                             children: [
                               _iconTile("${controller.parcelOrder.value.distance ?? '--'} ${'KM'.tr}", "Distance".tr, "assets/icons/ic_distance_parcel.svg", isDark),
                               _iconTile(controller.parcelOrder.value.parcelWeight ?? '--', "Weight".tr, "assets/icons/ic_weight_parcel.svg", isDark),
-                              _iconTile(Constant.amountShow(amount: controller.parcelOrder.value.subTotal), "Rate".tr, "assets/icons/ic_rate_parcel.svg", isDark),
+                              _iconTile(Constant.amountShow(amount: controller.parcelOrder.value.subTotal, currency: controller.parcelCurrency), "Rate".tr, "assets/icons/ic_rate_parcel.svg", isDark),
                             ],
                           ),
                         ),
@@ -236,31 +237,31 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                               const SizedBox(height: 8),
 
                               // Subtotal
-                              _summaryTile("Subtotal".tr, Constant.amountShow(amount: controller.subTotal.value.toString()), isDark, null),
+                              _summaryTile("Subtotal".tr, Constant.amountShow(amount: controller.subTotal.value.toString(), currency: controller.parcelCurrency), isDark, null),
 
                               // Discount
-                              _summaryTile("Discount".tr, "-${Constant.amountShow(amount: controller.discount.value.toString())}", isDark, AppThemeData.dangerDark300),
-                              if (Constant.platformFeeModel?.enable == true) _summaryTile("Platform fee".tr, Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString()), isDark, null),
+                              _summaryTile("Discount".tr, "-${Constant.amountShow(amount: controller.discount.value.toString(), currency: controller.parcelCurrency)}", isDark, AppThemeData.dangerDark300),
+                              if (Constant.platformFeeModel?.enable == true) _summaryTile("Platform fee".tr, Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: controller.parcelCurrency), isDark, null),
 
                               // Tax List
                               InkWell(
                                 onTap: () {
                                   showBillBifurcationDialog(context, isDark, controller);
                                 },
-                                child: _summaryTile("Tax amount".tr, Constant.amountShow(amount: (controller.taxAmount.value).toString()), isDark, null, underline: true),
+                                child: _summaryTile("Tax amount".tr, Constant.amountShow(amount: (controller.taxAmount.value).toString(), currency: controller.parcelCurrency), isDark, null, underline: true),
                               ),
 
                               // ...List.generate(Constant.orderProductTaxList!.length, (index) {
                               //                                 final taxModel = Constant.orderProductTaxList![index];
-                              //                                 final taxTitle = "${taxModel.title} ${taxModel.type == 'fix' ? '(${Constant.amountShow(amount: taxModel.tax)})' : '(${taxModel.tax}%)'}";
+                              //                                 final taxTitle = "${taxModel.title} ${taxModel.type == 'fix' ? '(${Constant.amountShow(amount: taxModel.tax, currency: controller.parcelCurrency)})' : '(${taxModel.tax}%)'}";
                               //                                 final taxAmount = Constant.getTaxValue(amount: (controller.subTotal.value - controller.discount.value).toString(), taxModel: taxModel).toString();
 
-                              //                                 return _summaryTile(taxTitle, Constant.amountShow(amount: (double.parse(taxAmount) + controller.platformTaxAmount.value).toString()), isDark, null);
+                              //                                 return _summaryTile(taxTitle, Constant.amountShow(amount: (double.parse(taxAmount) + controller.platformTaxAmount.value).toString(), currency: controller.parcelCurrency), isDark, null);
                               //                               })
                               const Divider(),
 
                               // Total
-                              _summaryTile("Order Total".tr, Constant.amountShow(amount: controller.totalAmount.value.toString()), isDark, null),
+                              _summaryTile("Order Total".tr, Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.parcelCurrency), isDark, null),
                             ],
                           ),
                         ),
@@ -576,7 +577,7 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                           style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
                         ),
                         Text(
-                          Constant.amountShow(amount: Constant.userModel?.walletAmount == null ? '0.0' : Constant.userModel?.walletAmount.toString()),
+                          Constant.amountShow(amount: Constant.userModel?.walletAmount == null ? '0.0' : Constant.userModel?.walletAmount.toString(), currency: RegionService.customerCurrency),
                           textAlign: TextAlign.start,
                           style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
                         ),
@@ -625,11 +626,11 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                   const SizedBox(height: 5),
                   sectionDivider(isDark),
                   const SizedBox(height: 5),
-                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString()), isDark: isDark),
+                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: controller.parcelCurrency), isDark: isDark),
                   sectionDivider(isDark),
-                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString()), isDark: isDark),
+                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: controller.parcelCurrency), isDark: isDark),
                   sectionDivider(isDark),
-                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString()), amountColor: AppThemeData.primary300, isDark: isDark),
+                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: controller.parcelCurrency), amountColor: AppThemeData.primary300, isDark: isDark),
                   const SizedBox(height: 20),
                   Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: Text("Close".tr))),
                 ],

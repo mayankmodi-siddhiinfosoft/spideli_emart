@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/favourite_ondemmand_controller.dart';
@@ -272,19 +273,19 @@ class FavouriteOndemandScreen extends StatelessWidget {
   Widget _buildPrice(ProviderServiceModel provider, {bool isDark = false}) {
     if (provider.disPrice == "" || provider.disPrice == "0") {
       return Text(
-        provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.price) : '${Constant.amountShow(amount: provider.price ?? "0")}/${'hr'.tr}',
+        provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.price, currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.price ?? "0", currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppThemeData.primary300),
       );
     } else {
       return Row(
         children: [
           Text(
-            provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.disPrice ?? '0') : '${Constant.amountShow(amount: provider.disPrice)}/${'hr'.tr}',
+            provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.disPrice ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.disPrice, currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppThemeData.primary300),
           ),
           const SizedBox(width: 5),
           Text(
-            provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.price) : '${Constant.amountShow(amount: provider.price ?? "0")}/${'hr'.tr}',
+            provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.price, currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.price ?? "0", currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
             style: const TextStyle(fontSize: 12, color: Colors.grey, decoration: TextDecoration.lineThrough),
           ),
         ],

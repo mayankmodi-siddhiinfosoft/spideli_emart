@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -155,7 +156,7 @@ class MyBookingOnDemandScreen extends StatelessWidget {
     final price = hasDiscount ? order.provider.disPrice.toString() : order.provider.price.toString();
 
     return Text(
-      order.provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: price) : "${Constant.amountShow(amount: price)}/${'hr'.tr}",
+      order.provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: price, currency: RegionService.currencyForRecord(order.regionId)) : "${Constant.amountShow(amount: price, currency: RegionService.currencyForRecord(order.regionId))}/${'hr'.tr}",
       style: AppThemeData.mediumTextStyle(fontSize: 16, color: AppThemeData.primary300),
     );
   }

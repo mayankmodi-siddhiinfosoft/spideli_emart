@@ -112,6 +112,7 @@ class ParcelMyBookingController extends GetxController {
           isTopup: true,
           // refund
           orderId: order.id,
+          regionId: order.regionId,
           note: "Refund for cancelled parcel order",
           paymentStatus: "success",
           serviceType: Constant.parcelServiceType,

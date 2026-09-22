@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'dart:developer';
 
 import 'package:badges/badges.dart' as badges;
@@ -1384,7 +1385,7 @@ class OfferView extends StatelessWidget {
                                     ),
                                   ),
                                   Text(
-                                    "${offerModel.discountType == "Fix Price" ? Constant.currencyModel!.symbol : ""}${offerModel.discount}${offerModel.discountType == "Percentage" ? "% off".tr : "off".tr}",
+                                    "${offerModel.discountType == "Fix Price" ? (RegionService.currencyForVendorId(offerModel.vendorID) ?? Constant.currencyModel!).symbol : ""}${offerModel.discount}${offerModel.discountType == "Percentage" ? "% off".tr : "off".tr}",
                                     textAlign: TextAlign.start,
                                     maxLines: 1,
                                     style: TextStyle(overflow: TextOverflow.ellipsis, fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50),

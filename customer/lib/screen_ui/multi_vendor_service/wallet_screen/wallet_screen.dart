@@ -1,3 +1,4 @@
+import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/wallet_controller.dart';
 import 'package:customer/models/wallet_transaction_model.dart';
@@ -122,7 +123,7 @@ class WalletScreen extends StatelessWidget {
                                         ),
                                       ),
                                       Text(
-                                        Constant.amountShow(amount: controller.userModel.value.walletAmount.toString()),
+                                        Constant.amountShow(amount: controller.userModel.value.walletAmount.toString(), currency: RegionService.customerCurrency),
                                         maxLines: 1,
                                         style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey50, fontSize: 40, overflow: TextOverflow.ellipsis, fontFamily: AppThemeData.bold),
                                       ),
@@ -243,7 +244,7 @@ class WalletScreen extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            Constant.amountShow(amount: transactionModel.amount.toString()),
+                            Constant.amountShow(amount: transactionModel.amount.toString(), currency: controller.currencyFor(transactionModel)),
                             style: TextStyle(fontSize: 16, fontFamily: AppThemeData.medium, color: transactionModel.isTopup == true ? AppThemeData.success400 : AppThemeData.danger300),
                           ),
                         ],

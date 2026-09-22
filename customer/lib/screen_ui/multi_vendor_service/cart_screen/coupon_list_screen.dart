@@ -93,7 +93,7 @@ class CouponListScreen extends StatelessWidget {
                                 child: RotatedBox(
                                   quarterTurns: -1,
                                   child: Text(
-                                    "${couponModel.discountType == "Fix Price" ? Constant.amountShow(amount: couponModel.discount) : "${couponModel.discount}%"} ${'Off'.tr}",
+                                    "${couponModel.discountType == "Fix Price" ? Constant.amountShow(amount: couponModel.discount, currency: controller.storeCurrency) : "${couponModel.discount}%"} ${'Off'.tr}",
                                     textAlign: TextAlign.start,
                                     style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50),
                                   ),
