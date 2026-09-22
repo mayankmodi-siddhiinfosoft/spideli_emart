@@ -37,10 +37,20 @@ class AddProductController extends GetxController {
   Rx<TextEditingController> proteinController = TextEditingController().obs;
   Rx<TextEditingController> fatsController = TextEditingController().obs;
 
-  // Wholesale pricing
+  // Wholesale pricing: several tiers (min quantity -> unit price).
   RxBool wholesaleEnabled = false.obs;
-  Rx<TextEditingController> wholesalePriceController = TextEditingController().obs;
-  Rx<TextEditingController> wholesaleMinQtyController = TextEditingController().obs;
+  RxList<WholesaleTierInput> wholesaleTierInputs = <WholesaleTierInput>[].obs;
+
+  /// Bumped on every tier text change so the live preview rebuilds.
+  RxInt wholesaleTierRevision = 0.obs;
+
+  /// "retail" | "wholesale" | "both" (see [ProductModel.saleType]).
+  RxString saleType = ProductModel.saleTypeRetail.obs;
+  RxBool wholesaleBusinessOnly = false.obs;
+
+  // Fulfilment modes offered for this product (at least one).
+  RxBool fulfilDelivery = true.obs;
+  RxBool fulfilTakeaway = true.obs;
 
   Rx<ItemAttribute?> itemAttributes = ItemAttribute(attributes: [], variants: []).obs;
 
@@ -127,6 +137,9 @@ class AddProductController extends GetxController {
   void dispose() {
     regularPriceController.value.dispose();
     discountedPriceController.value.dispose();
+    for (final tier in wholesaleTierInputs) {
+      tier.dispose();
+    }
     super.dispose();
   }
 
@@ -187,8 +200,18 @@ class AddProductController extends GetxController {
       isNonVeg.value = productModel.value.nonveg ?? false;
       takeAway.value = productModel.value.takeawayOption ?? false;
       wholesaleEnabled.value = productModel.value.wholesaleEnabled == true;
-      wholesalePriceController.value.text = productModel.value.wholesalePrice ?? '';
-      wholesaleMinQtyController.value.text = productModel.value.wholesaleMinQty ?? '';
+      wholesaleTierInputs.clear();
+      if (wholesaleEnabled.value) {
+        for (final tier in productModel.value.sortedWholesaleTiers.take(ProductModel.maxWholesaleTiers)) {
+          wholesaleTierInputs.add(_newTierInput(minQty: tier.minQty, price: tier.price));
+        }
+        if (wholesaleTierInputs.isEmpty) wholesaleTierInputs.add(_newTierInput());
+      }
+      saleType.value = productModel.value.effectiveSaleType;
+      wholesaleBusinessOnly.value = productModel.value.wholesaleBusinessOnly == true;
+      final fulfilment = productModel.value.effectiveFulfilment;
+      fulfilDelivery.value = fulfilment.contains(ProductModel.fulfilmentDelivery);
+      fulfilTakeaway.value = fulfilment.contains(ProductModel.fulfilmentTakeaway);
       if (productModel.value.productSpecification != null) {
         productModel.value.productSpecification!.forEach((key, value) {
           specificationList.add(ProductSpecificationModel(lable: key, value: value));
@@ -261,6 +284,8 @@ class AddProductController extends GetxController {
       ShowToastDialog.showToast("Please upload digital product".tr);
     } else if (validateWholesale() case final String wholesaleError) {
       ShowToastDialog.showToast(wholesaleError);
+    } else if (!fulfilDelivery.value && !fulfilTakeaway.value) {
+      ShowToastDialog.showToast("Select at least one of Delivery or Takeaway".tr);
     } else {
       specification.clear();
       for (var element in specificationList) {
@@ -342,21 +367,135 @@ class AddProductController extends GetxController {
     }
   }
 
-  /// Same rules as the store panel. Returns the first error, or null when valid
-  /// (always valid when wholesale pricing is switched off).
+  WholesaleTierInput _newTierInput({String minQty = '', String price = ''}) {
+    final input = WholesaleTierInput(minQty: minQty, price: price);
+    input.minQtyController.addListener(_onTierChanged);
+    input.priceController.addListener(_onTierChanged);
+    return input;
+  }
+
+  void _onTierChanged() => wholesaleTierRevision.value++;
+
+  void addWholesaleTier() {
+    if (wholesaleTierInputs.length >= ProductModel.maxWholesaleTiers) {
+      ShowToastDialog.showToast("You can add up to 5 wholesale tiers".tr);
+      return;
+    }
+    wholesaleTierInputs.add(_newTierInput());
+    _onTierChanged();
+  }
+
+  void removeWholesaleTier(int index) {
+    if (index < 0 || index >= wholesaleTierInputs.length) return;
+    final removed = wholesaleTierInputs.removeAt(index);
+    // Dispose after the frame so the removed TextFields are unmounted first.
+    WidgetsBinding.instance.addPostFrameCallback((_) => removed.dispose());
+    if (wholesaleTierInputs.isEmpty) {
+      // No tier left: the product goes back to retail only.
+      setSaleType(ProductModel.saleTypeRetail);
+    }
+    _onTierChanged();
+  }
+
+  /// Wholesale switch: on = "both" (or keeps "wholesale"), off = "retail".
+  void setWholesaleEnabled(bool value) {
+    if (!value) {
+      setSaleType(ProductModel.saleTypeRetail);
+    } else {
+      setSaleType(saleType.value == ProductModel.saleTypeWholesale ? ProductModel.saleTypeWholesale : ProductModel.saleTypeBoth);
+    }
+  }
+
+  /// Retail turns wholesale off; Wholesale/Both turn it on (tiers required).
+  void setSaleType(String type) {
+    saleType.value = type;
+    wholesaleEnabled.value = type != ProductModel.saleTypeRetail;
+    if (wholesaleEnabled.value && wholesaleTierInputs.isEmpty) {
+      wholesaleTierInputs.add(_newTierInput());
+    }
+  }
+
+  /// Toggles a fulfilment mode; the last remaining mode can't be switched off.
+  void toggleFulfilment(String mode, bool value) {
+    final bool isDelivery = mode == ProductModel.fulfilmentDelivery;
+    final bool other = isDelivery ? fulfilTakeaway.value : fulfilDelivery.value;
+    if (!value && !other) {
+      ShowToastDialog.showToast("Select at least one of Delivery or Takeaway".tr);
+      return;
+    }
+    if (isDelivery) {
+      fulfilDelivery.value = value;
+    } else {
+      fulfilTakeaway.value = value;
+    }
+  }
+
+  /// Non-blank tier rows, sorted by minimum quantity (unparseable rows last).
+  List<WholesaleTier> get enteredWholesaleTiers {
+    const int unparsed = 0x7fffffff;
+    final tiers = wholesaleTierInputs
+        .map((e) => WholesaleTier(minQty: e.minQtyController.text.trim(), price: e.priceController.text.trim()))
+        .where((t) => t.minQty.isNotEmpty || t.price.isNotEmpty)
+        .toList();
+    tiers.sort((a, b) => (int.tryParse(a.minQty) ?? unparsed).compareTo(int.tryParse(b.minQty) ?? unparsed));
+    return tiers;
+  }
+
+  /// Live preview, e.g. "1+ : 1,000 · 10+ : 700 · 50+ : 650". Only complete
+  /// rows are shown; the retail step is left out for wholesale-only products.
+  String get wholesalePreview {
+    final List<String> parts = [];
+    if (saleType.value != ProductModel.saleTypeWholesale) {
+      final double retail = discountPrice.value > 0 ? discountPrice.value : regularPrice.value;
+      if (retail > 0) parts.add("1+ : ${Constant.amountShow(amount: retail.toString())}");
+    }
+    for (final tier in enteredWholesaleTiers) {
+      final int? qty = int.tryParse(tier.minQty);
+      final double? price = double.tryParse(tier.price);
+      if (qty == null || price == null || price <= 0) continue;
+      parts.add("$qty+ : ${Constant.amountShow(amount: tier.price)}");
+    }
+    return parts.join(' · ');
+  }
+
+  /// Returns the first error, or null when valid (always valid when wholesale
+  /// pricing is off). Tiers are sorted by min quantity before checking:
+  /// price > 0 and below the regular price, minQty an integer >= 2, minQty
+  /// strictly increasing and price strictly decreasing as quantity rises.
+  /// Variant wholesale prices keep the single-tier rules and only replace the
+  /// FIRST tier's price for that variant.
   String? validateWholesale() {
     if (!wholesaleEnabled.value) return null;
     final double retail = double.tryParse(regularPriceController.value.text.trim()) ?? 0;
-    final double? wholesale = double.tryParse(wholesalePriceController.value.text.trim());
-    if (wholesale == null || wholesale <= 0) {
-      return "Please enter a valid wholesale price".tr;
+    final tiers = enteredWholesaleTiers;
+    if (tiers.isEmpty) {
+      return "Add at least one wholesale price tier".tr;
     }
-    if (wholesale >= retail) {
-      return "Wholesale price must be lower than the regular price".tr;
+    if (tiers.length > ProductModel.maxWholesaleTiers) {
+      return "You can add up to 5 wholesale tiers".tr;
     }
-    final int? minQty = int.tryParse(wholesaleMinQtyController.value.text.trim());
-    if (minQty == null || minQty < 2) {
-      return "Wholesale minimum quantity must be a whole number of at least 2".tr;
+    for (int i = 0; i < tiers.length; i++) {
+      final tier = tiers[i];
+      final int? minQty = int.tryParse(tier.minQty);
+      if (minQty == null || minQty < 2) {
+        return "Wholesale minimum quantity must be a whole number of at least 2".tr;
+      }
+      final double? wholesale = double.tryParse(tier.price);
+      if (wholesale == null || wholesale <= 0) {
+        return "${"Please enter a valid wholesale price".tr} (${"from".tr} $minQty)";
+      }
+      if (wholesale >= retail) {
+        return "${"Wholesale price must be lower than the regular price".tr} (${"from".tr} $minQty)";
+      }
+      if (i > 0) {
+        final previous = tiers[i - 1];
+        if (minQty <= int.parse(previous.minQty)) {
+          return "${"Two wholesale tiers have the same minimum quantity".tr} ($minQty)";
+        }
+        if (wholesale >= double.parse(previous.price)) {
+          return "${"A bigger wholesale tier must have a lower price".tr} (${"from".tr} $minQty)";
+        }
+      }
     }
     for (final variant in itemAttributes.value?.variants ?? <Variants>[]) {
       final String raw = (variant.variantWholesalePrice ?? '').trim();
@@ -373,13 +512,22 @@ class AddProductController extends GetxController {
     return null;
   }
 
-  /// Copies the wholesale inputs onto [productModel]. When disabled, the
-  /// product values AND every variant wholesale price are cleared to "".
+  /// Copies the wholesale, sale type and fulfilment inputs onto [productModel].
+  /// When wholesale is off, tiers become [], the legacy fields "" and every
+  /// variant wholesale price is cleared. The legacy wholesalePrice /
+  /// wholesaleMinQty always mirror the first (lowest-quantity) tier.
   void applyWholesaleToProduct() {
     final bool enabled = wholesaleEnabled.value;
+    final List<WholesaleTier> tiers = enabled
+        ? enteredWholesaleTiers.map((t) => WholesaleTier(minQty: int.parse(t.minQty).toString(), price: t.price)).toList()
+        : <WholesaleTier>[];
     productModel.value.wholesaleEnabled = enabled;
-    productModel.value.wholesalePrice = enabled ? wholesalePriceController.value.text.trim() : '';
-    productModel.value.wholesaleMinQty = enabled ? int.parse(wholesaleMinQtyController.value.text.trim()).toString() : '';
+    productModel.value.wholesaleTiers = tiers;
+    productModel.value.wholesalePrice = tiers.isNotEmpty ? tiers.first.price : '';
+    productModel.value.wholesaleMinQty = tiers.isNotEmpty ? tiers.first.minQty : '';
+    productModel.value.saleType = enabled ? saleType.value : ProductModel.saleTypeRetail;
+    productModel.value.wholesaleBusinessOnly = enabled && wholesaleBusinessOnly.value;
+    productModel.value.fulfilment = [if (fulfilDelivery.value) ProductModel.fulfilmentDelivery, if (fulfilTakeaway.value) ProductModel.fulfilmentTakeaway];
     for (final variant in productModel.value.itemAttribute?.variants ?? <Variants>[]) {
       variant.variantWholesalePrice = enabled ? (variant.variantWholesalePrice ?? '').trim() : '';
     }
@@ -643,4 +791,19 @@ class AddProductController extends GetxController {
   }
 
   List<TaxModel> get selectedTaxes => taxList.where((e) => e.isSelected).toList();
+}
+
+/// Editable row of the wholesale tiers list.
+class WholesaleTierInput {
+  final TextEditingController minQtyController;
+  final TextEditingController priceController;
+
+  WholesaleTierInput({String minQty = '', String price = ''})
+      : minQtyController = TextEditingController(text: minQty),
+        priceController = TextEditingController(text: price);
+
+  void dispose() {
+    minQtyController.dispose();
+    priceController.dispose();
+  }
 }

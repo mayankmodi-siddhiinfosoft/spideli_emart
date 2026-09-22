@@ -42,6 +42,33 @@ class ProductModel {
   String? wholesalePrice;
   String? wholesaleMinQty;
 
+  /// Wholesale price tiers, sorted by minQty ascending (max [maxWholesaleTiers]).
+  /// Stored as `wholesaleTiers: [{minQty: "5", price: "6557127"}, ...]`.
+  /// For compatibility, [wholesalePrice]/[wholesaleMinQty] always mirror the
+  /// FIRST (lowest-quantity) tier. Products that only have the legacy fields
+  /// load as a single tier.
+  List<WholesaleTier>? wholesaleTiers;
+
+  /// "retail" | "wholesale" | "both". Absent: "retail" when wholesale is off,
+  /// "both" when it is on. For "wholesale" the minimum order quantity is the
+  /// first tier's minQty.
+  String? saleType;
+
+  /// When true, only verified Business customers get wholesale prices
+  /// (enforced by the customer app).
+  bool? wholesaleBusinessOnly;
+
+  /// Subset of ["delivery", "takeaway"]; absent/empty = both.
+  List<String>? fulfilment;
+
+  static const int maxWholesaleTiers = 5;
+  static const String saleTypeRetail = 'retail';
+  static const String saleTypeWholesale = 'wholesale';
+  static const String saleTypeBoth = 'both';
+  static const String fulfilmentDelivery = 'delivery';
+  static const String fulfilmentTakeaway = 'takeaway';
+  static const List<String> allFulfilmentModes = [fulfilmentDelivery, fulfilmentTakeaway];
+
   ProductModel({
     this.fats,
     this.vendorID,
@@ -77,6 +104,10 @@ class ProductModel {
     this.wholesaleEnabled,
     this.wholesalePrice,
     this.wholesaleMinQty,
+    this.wholesaleTiers,
+    this.saleType,
+    this.wholesaleBusinessOnly,
+    this.fulfilment,
   });
 
   ProductModel.fromJson(Map<String, dynamic> json) {
@@ -119,10 +150,50 @@ class ProductModel {
     wholesaleEnabled = parseWholesaleBool(json['wholesaleEnabled']);
     wholesalePrice = parseWholesaleString(json['wholesalePrice']);
     wholesaleMinQty = parseWholesaleString(json['wholesaleMinQty']);
+    wholesaleTiers = WholesaleTier.parseList(json['wholesaleTiers']);
+    if (wholesaleTiers!.isEmpty && (wholesalePrice ?? '').isNotEmpty && (wholesaleMinQty ?? '').isNotEmpty) {
+      wholesaleTiers = [WholesaleTier(minQty: wholesaleMinQty!, price: wholesalePrice!)];
+    }
+    final String rawSaleType = parseWholesaleString(json['saleType']).toLowerCase();
+    saleType = rawSaleType.isEmpty ? null : rawSaleType;
+    wholesaleBusinessOnly = parseWholesaleBool(json['wholesaleBusinessOnly']);
+    fulfilment = parseFulfilment(json['fulfilment']);
   }
 
+  /// Tiers to use/write: [wholesaleTiers] sorted, or the legacy single tier.
+  List<WholesaleTier> get sortedWholesaleTiers {
+    final List<WholesaleTier> tiers = [...?wholesaleTiers];
+    if (tiers.isEmpty && (wholesalePrice ?? '').isNotEmpty && (wholesaleMinQty ?? '').isNotEmpty) {
+      tiers.add(WholesaleTier(minQty: wholesaleMinQty!, price: wholesalePrice!));
+    }
+    tiers.sort((a, b) => a.minQtyValue.compareTo(b.minQtyValue));
+    return tiers;
+  }
+
+  /// Usable tiers (price > 0, minQty >= 2) when wholesale is on, else empty.
+  List<WholesaleTier> get activeWholesaleTiers => wholesaleEnabled == true ? sortedWholesaleTiers.where((t) => t.isUsable).toList() : <WholesaleTier>[];
+
   /// True when the product has a usable wholesale tier configured.
-  bool get hasWholesaleTier => wholesaleEnabled == true && (double.tryParse(wholesalePrice ?? '') ?? 0) > 0 && (int.tryParse(wholesaleMinQty ?? '') ?? 0) >= 2;
+  bool get hasWholesaleTier => activeWholesaleTiers.isNotEmpty;
+
+  /// Normalised sale type, see [saleType].
+  String get effectiveSaleType {
+    if (wholesaleEnabled != true) return saleTypeRetail;
+    return saleType == saleTypeWholesale ? saleTypeWholesale : saleTypeBoth;
+  }
+
+  /// Normalised fulfilment modes, see [fulfilment].
+  List<String> get effectiveFulfilment {
+    final List<String> modes = allFulfilmentModes.where((m) => fulfilment?.contains(m) == true).toList();
+    return modes.isEmpty ? List<String>.from(allFulfilmentModes) : modes;
+  }
+
+  /// Minimum order quantity: first tier's minQty for wholesale-only products, else 1.
+  int get minOrderQuantity {
+    if (effectiveSaleType != saleTypeWholesale) return 1;
+    final tiers = activeWholesaleTiers;
+    return tiers.isEmpty ? 1 : tiers.first.minQtyValue;
+  }
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
@@ -164,9 +235,16 @@ class ProductModel {
     if (taxSetting != null) {
       data['taxSetting'] = taxSetting!.map((v) => v.toJson()).toList();
     }
-    data['wholesaleEnabled'] = wholesaleEnabled ?? false;
-    data['wholesalePrice'] = wholesaleEnabled == true ? (wholesalePrice ?? '') : '';
-    data['wholesaleMinQty'] = wholesaleEnabled == true ? (wholesaleMinQty ?? '') : '';
+    final bool enabled = wholesaleEnabled ?? false;
+    final List<WholesaleTier> tiers = enabled ? sortedWholesaleTiers : <WholesaleTier>[];
+    data['wholesaleEnabled'] = enabled;
+    data['wholesaleTiers'] = tiers.map((t) => t.toJson()).toList();
+    // Legacy single-tier mirror of the first tier (web panels, POS, customer app).
+    data['wholesalePrice'] = tiers.isNotEmpty ? tiers.first.price : '';
+    data['wholesaleMinQty'] = tiers.isNotEmpty ? tiers.first.minQty : '';
+    data['saleType'] = effectiveSaleType;
+    data['wholesaleBusinessOnly'] = enabled && wholesaleBusinessOnly == true;
+    data['fulfilment'] = effectiveFulfilment;
     return data;
   }
 }
@@ -264,6 +342,53 @@ bool parseWholesaleBool(dynamic value) {
   if (value is num) return value != 0;
   if (value is String) return value.trim().toLowerCase() == 'true' || value.trim() == '1';
   return false;
+}
+
+/// Parses `fulfilment`: a list (or comma-separated string) of modes; keeps
+/// only known modes. Returns null when absent/empty (= both modes).
+List<String>? parseFulfilment(dynamic value) {
+  Iterable<dynamic> raw;
+  if (value is List) {
+    raw = value;
+  } else if (value is String) {
+    raw = value.split(',');
+  } else {
+    return null;
+  }
+  final List<String> modes = raw.map((e) => e.toString().trim().toLowerCase()).map((e) => e == 'take_away' || e == 'take-away' ? ProductModel.fulfilmentTakeaway : e).toSet().where(ProductModel.allFulfilmentModes.contains).toList();
+  return modes.isEmpty ? null : modes;
+}
+
+/// One wholesale price tier: from [minQty] units the unit price is [price].
+class WholesaleTier {
+  String minQty;
+  String price;
+
+  WholesaleTier({required this.minQty, required this.price});
+
+  factory WholesaleTier.fromJson(Map<String, dynamic> json) =>
+      WholesaleTier(minQty: parseWholesaleString(json['minQty'] ?? json['min_qty']), price: parseWholesaleString(json['price']));
+
+  Map<String, dynamic> toJson() => {'minQty': minQty, 'price': price};
+
+  int get minQtyValue => int.tryParse(minQty) ?? (double.tryParse(minQty)?.toInt() ?? 0);
+
+  double get priceValue => double.tryParse(price) ?? 0;
+
+  bool get isUsable => minQtyValue >= 2 && priceValue > 0;
+
+  static List<WholesaleTier> parseList(dynamic value) {
+    if (value is! List) return <WholesaleTier>[];
+    final List<WholesaleTier> tiers = [];
+    for (final item in value) {
+      if (item is Map) {
+        final tier = WholesaleTier.fromJson(Map<String, dynamic>.from(item));
+        if (tier.minQty.isNotEmpty || tier.price.isNotEmpty) tiers.add(tier);
+      }
+    }
+    tiers.sort((a, b) => a.minQtyValue.compareTo(b.minQtyValue));
+    return tiers;
+  }
 }
 
 String parseWholesaleString(dynamic value) {

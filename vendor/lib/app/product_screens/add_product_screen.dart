@@ -529,7 +529,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                                                 label: SizedBox(
                                                                   width: Responsive.width(20, context),
                                                                   child: Text(
-                                                                    "Wholesale price".tr,
+                                                                    "Wholesale price (1st tier)".tr,
                                                                     style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600),
                                                                   ),
                                                                 ),
@@ -1161,6 +1161,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                 ],
                               ),
                         const SizedBox(height: 20),
+                        _buildFulfilmentSection(controller, isDark),
+                        const SizedBox(height: 20),
                         Text(
                           "Specifications and Addons".tr,
                           style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium, fontSize: 18),
@@ -1622,78 +1624,220 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
-  /// Wholesale pricing block: once a cart line reaches the minimum quantity,
-  /// every unit on that line is charged the wholesale price.
+  /// Sale type (retail / wholesale / both) + wholesale price tiers. Once a cart
+  /// line reaches a tier's minimum quantity, every unit on that line is charged
+  /// that tier's price (the biggest tier reached wins).
   Widget _buildWholesaleSection(AddProductController controller, bool isDark) {
     final bool enabled = controller.wholesaleEnabled.value;
+    final String saleType = controller.saleType.value;
+    // Read so the preview rebuilds on every keystroke in a tier row.
+    controller.wholesaleTierRevision.value;
+    final List<WholesaleTierInput> tiers = controller.wholesaleTierInputs.toList();
+    final String preview = controller.wholesalePreview;
+    final TextStyle hintStyle = TextStyle(color: isDark ? AppThemeData.grey400 : AppThemeData.grey500, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400, fontSize: 12);
+    final String firstMinQty = controller.enteredWholesaleTiers.isEmpty ? '' : controller.enteredWholesaleTiers.first.minQty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Text(
+          "Sold as".tr,
+          style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, fontSize: 18),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _saleTypeOption(controller, isDark, ProductModel.saleTypeRetail, "Retail".tr, saleType),
+            const SizedBox(width: 8),
+            _saleTypeOption(controller, isDark, ProductModel.saleTypeWholesale, "Wholesale".tr, saleType),
+            const SizedBox(width: 8),
+            _saleTypeOption(controller, isDark, ProductModel.saleTypeBoth, "Both".tr, saleType),
+          ],
+        ),
+        if (saleType == ProductModel.saleTypeWholesale) ...[
+          const SizedBox(height: 6),
+          Text(
+            firstMinQty.isEmpty
+                ? "Wholesale only: the minimum order quantity is the first tier's minimum quantity.".tr
+                : "${"Wholesale only: customers must order at least".tr} $firstMinQty ${"units".tr}.",
+            style: hintStyle,
+          ),
+        ],
+        const SizedBox(height: 16),
         Row(
           children: [
             Expanded(
               child: Text(
                 "Wholesale pricing".tr,
-                style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium, fontSize: 18),
+                style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, fontSize: 18),
               ),
             ),
             Transform.scale(
               scale: 0.8,
-              child: CupertinoSwitch(
-                activeTrackColor: AppThemeData.primary300,
-                value: enabled,
-                onChanged: (value) {
-                  controller.wholesaleEnabled.value = value;
-                },
-              ),
+              child: CupertinoSwitch(activeTrackColor: AppThemeData.primary300, value: enabled, onChanged: controller.setWholesaleEnabled),
             ),
           ],
         ),
-        Text(
-          "Charge a lower unit price when a customer orders at least the minimum quantity of this product.".tr,
-          style: TextStyle(color: isDark ? AppThemeData.grey400 : AppThemeData.grey500, fontFamily: AppThemeData.regular, fontSize: 12),
-        ),
+        Text("Charge lower unit prices when a customer orders larger quantities of this product.".tr, style: hintStyle),
         if (enabled) ...[
           const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextFieldWidget(
-                  title: 'Wholesale Price'.tr,
-                  controller: controller.wholesalePriceController.value,
-                  hintText: 'Enter Wholesale Price'.tr,
-                  textInputAction: TextInputAction.done,
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9.]'))],
-                  textInputType: const TextInputType.numberWithOptions(decimal: true),
-                  prefix: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    child: Text(
-                      "${Constant.currencyModel!.symbol}",
-                      style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontSize: 18),
+          for (int i = 0; i < tiers.length; i++)
+            Row(
+              key: ObjectKey(tiers[i]),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextFieldWidget(
+                    title: 'From quantity'.tr,
+                    controller: tiers[i].minQtyController,
+                    hintText: 'e.g. 10'.tr,
+                    textInputAction: TextInputAction.done,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    textInputType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextFieldWidget(
+                    title: 'Unit price'.tr,
+                    controller: tiers[i].priceController,
+                    hintText: 'Enter Wholesale Price'.tr,
+                    textInputAction: TextInputAction.done,
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9.]'))],
+                    textInputType: const TextInputType.numberWithOptions(decimal: true),
+                    prefix: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                      child: Text(
+                        "${Constant.currencyModel!.symbol}",
+                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, fontSize: 16),
+                      ),
                     ),
                   ),
                 ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 30),
+                  child: IconButton(
+                    tooltip: "Remove tier".tr,
+                    onPressed: () => controller.removeWholesaleTier(i),
+                    icon: Icon(Icons.delete_outline, color: isDark ? AppThemeData.danger300 : AppThemeData.danger300),
+                  ),
+                ),
+              ],
+            ),
+          if (tiers.length < ProductModel.maxWholesaleTiers)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: controller.addWholesaleTier,
+                icon: Icon(Icons.add, color: AppThemeData.primary300, size: 18),
+                label: Text(
+                  "Add tier".tr,
+                  style: TextStyle(color: AppThemeData.primary300, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, fontSize: 14),
+                ),
               ),
-              const SizedBox(width: 10),
+            ),
+          if (preview.isNotEmpty)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 4, bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(color: isDark ? AppThemeData.primary50 : AppThemeData.primary600, borderRadius: BorderRadius.circular(8)),
+              child: Text(
+                preview,
+                style: TextStyle(color: AppThemeData.primary300, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, fontSize: 13),
+              ),
+            ),
+          Text(
+            "Up to 5 tiers. Each tier needs a minimum quantity of at least 2 and a price below the regular price; a bigger quantity must have a lower price. A variant's own wholesale price (in the variants table) replaces the first tier's price for that variant."
+                .tr,
+            style: hintStyle,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
               Expanded(
-                child: TextFieldWidget(
-                  title: 'Minimum Quantity'.tr,
-                  controller: controller.wholesaleMinQtyController.value,
-                  hintText: 'e.g. 10'.tr,
-                  textInputAction: TextInputAction.done,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  textInputType: TextInputType.number,
+                child: Text(
+                  "Only verified Business customers get wholesale prices".tr,
+                  style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, fontSize: 14),
+                ),
+              ),
+              Transform.scale(
+                scale: 0.8,
+                child: CupertinoSwitch(
+                  activeTrackColor: AppThemeData.primary300,
+                  value: controller.wholesaleBusinessOnly.value,
+                  onChanged: (value) => controller.wholesaleBusinessOnly.value = value,
                 ),
               ),
             ],
           ),
-          Text(
-            "Must be lower than the regular price. Minimum quantity is at least 2. A variant's own wholesale price (in the variants table) overrides this price; the minimum quantity applies to all variants."
-                .tr,
-            style: TextStyle(color: isDark ? AppThemeData.grey400 : AppThemeData.grey500, fontFamily: AppThemeData.regular, fontSize: 12),
-          ),
         ],
+      ],
+    );
+  }
+
+  Widget _saleTypeOption(AddProductController controller, bool isDark, String type, String label, String selected) {
+    final bool isSelected = type == selected;
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => controller.setSaleType(type),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSelected ? AppThemeData.primary300 : (isDark ? AppThemeData.grey900 : AppThemeData.grey50),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: isSelected ? AppThemeData.primary300 : (isDark ? AppThemeData.grey700 : AppThemeData.grey200)),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? AppThemeData.grey50 : (isDark ? AppThemeData.grey100 : AppThemeData.grey800),
+              fontFamily: AppThemeData.semiBold,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Delivery / Takeaway availability for this product (at least one).
+  Widget _buildFulfilmentSection(AddProductController controller, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "Available for".tr,
+          style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, fontSize: 18),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            FilterChip(
+              label: Text("Delivery".tr),
+              selected: controller.fulfilDelivery.value,
+              selectedColor: isDark ? AppThemeData.primary50 : AppThemeData.primary600,
+              checkmarkColor: AppThemeData.primary300,
+              labelStyle: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
+              onSelected: (value) => controller.toggleFulfilment(ProductModel.fulfilmentDelivery, value),
+            ),
+            FilterChip(
+              label: Text("Takeaway".tr),
+              selected: controller.fulfilTakeaway.value,
+              selectedColor: isDark ? AppThemeData.primary50 : AppThemeData.primary600,
+              checkmarkColor: AppThemeData.primary300,
+              labelStyle: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
+              onSelected: (value) => controller.toggleFulfilment(ProductModel.fulfilmentTakeaway, value),
+            ),
+          ],
+        ),
+        Text(
+          "Customers can only order this product with the selected options.".tr,
+          style: TextStyle(color: isDark ? AppThemeData.grey400 : AppThemeData.grey500, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400, fontSize: 12),
+        ),
       ],
     );
   }

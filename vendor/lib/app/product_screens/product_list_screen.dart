@@ -7,6 +7,7 @@ import 'package:vendor/models/product_model.dart';
 import 'package:vendor/themes/theme_controller.dart';
 import 'package:vendor/app/add_restaurant_screen/add_restaurant_screen.dart';
 import 'package:vendor/app/product_screens/add_product_screen.dart';
+import 'package:vendor/app/product_screens/product_sale_labels.dart';
 import 'package:vendor/app/verification_screen/verification_screen.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
@@ -237,20 +238,13 @@ class ProductListScreen extends StatelessWidget {
                         disPrice = controller.productList[index].disPrice.toString();
                       }
 
-                      // Wholesale tier badge: the displayed variant's own wholesale price wins
-                      // over the product's; the product's minimum quantity applies to all variants.
-                      String? wholesaleBadge;
+                      // Wholesale tiers badge: the displayed variant's own wholesale price
+                      // replaces the FIRST tier's price; the tier quantities apply to all variants.
                       final product = controller.productList[index];
-                      if (product.wholesaleEnabled == true && (int.tryParse(product.wholesaleMinQty ?? '') ?? 0) >= 2) {
-                        String wholesalePrice = product.wholesalePrice ?? '';
-                        final displayedVariant = product.itemAttribute?.variants?.where((element) => element.variantSku == selectedVariants.join('-')).firstOrNull;
-                        if ((displayedVariant?.variantWholesalePrice ?? '').isNotEmpty) {
-                          wholesalePrice = displayedVariant!.variantWholesalePrice!;
-                        }
-                        if ((double.tryParse(wholesalePrice) ?? 0) > 0) {
-                          wholesaleBadge = "${Constant.amountShow(amount: wholesalePrice)} ${"from".tr} ${product.wholesaleMinQty} ${"units".tr}";
-                        }
-                      }
+                      final displayedVariant = product.itemAttribute?.variants?.where((element) => element.variantSku == selectedVariants.join('-')).firstOrNull;
+                      final String? wholesaleBadge = wholesaleTiersBadge(product, variantWholesalePrice: displayedVariant?.variantWholesalePrice);
+                      final String? fulfilmentBadge = fulfilmentRestrictionLabel(product);
+                      final bool wholesaleOnly = product.effectiveSaleType == ProductModel.saleTypeWholesale && product.hasWholesaleTier;
 
                       bool isDisplayItemAlert = false;
                       if ((Constant.isSubscriptionModelApplied == true || Constant.selectedSection!.adminCommision?.isEnabled == true)) {
@@ -367,8 +361,34 @@ class ProductListScreen extends StatelessWidget {
                                                     borderRadius: BorderRadius.circular(6),
                                                   ),
                                                   child: Text(
-                                                    wholesaleBadge,
-                                                    style: TextStyle(fontSize: 12, color: AppThemeData.primary300, fontFamily: AppThemeData.medium),
+                                                    wholesaleOnly ? "${"Wholesale only".tr} · $wholesaleBadge" : wholesaleBadge,
+                                                    maxLines: 2,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: TextStyle(fontSize: 12, color: AppThemeData.primary300, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
+                                                  ),
+                                                ),
+                                              if (fulfilmentBadge != null)
+                                                Container(
+                                                  margin: const EdgeInsets.only(top: 2, bottom: 2),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: isDark ? AppThemeData.grey800 : AppThemeData.grey100,
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(
+                                                        product.effectiveFulfilment.contains(ProductModel.fulfilmentDelivery) ? Icons.delivery_dining_outlined : Icons.storefront_outlined,
+                                                        size: 14,
+                                                        color: isDark ? AppThemeData.grey200 : AppThemeData.grey700,
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        fulfilmentBadge,
+                                                        style: TextStyle(fontSize: 12, color: isDark ? AppThemeData.grey200 : AppThemeData.grey700, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
+                                                      ),
+                                                    ],
                                                   ),
                                                 ),
                                               Row(
