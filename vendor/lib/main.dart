@@ -9,7 +9,7 @@ import 'package:vendor/controller/global_setting_controller.dart';
 import 'package:vendor/firebase_options.dart';
 import 'package:vendor/service/audio_player_service.dart';
 import 'package:vendor/service/localization_service.dart';
-import 'package:vendor/themes/app_them_data.dart';
+import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/themes/easy_loading_config.dart';
 import 'package:vendor/themes/theme_controller.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
@@ -56,46 +56,20 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         title: 'spideli Store'.tr,
         debugShowCheckedModeBanner: false,
         themeMode: themeController.themeMode,
-        theme: ThemeData(
-          scaffoldBackgroundColor: AppThemeData.surface,
-          textTheme: TextTheme(bodyLarge: TextStyle(color: AppThemeData.grey900)),
-          appBarTheme: AppBarTheme(
-            backgroundColor: AppThemeData.surface,
-            foregroundColor: AppThemeData.grey900,
-            iconTheme: IconThemeData(color: AppThemeData.grey900),
-          ),
-          bottomNavigationBarTheme: BottomNavigationBarThemeData(
-            backgroundColor: AppThemeData.surface,
-            selectedItemColor: AppThemeData.primary300,
-            unselectedItemColor: AppThemeData.grey600,
-            selectedLabelStyle: TextStyle(fontFamily: AppThemeData.bold, fontSize: 12),
-            unselectedLabelStyle: TextStyle(fontFamily: AppThemeData.bold, fontSize: 12),
-            type: BottomNavigationBarType.fixed,
-          ),
-        ),
-        darkTheme: ThemeData(
-          scaffoldBackgroundColor: AppThemeData.surfaceDark,
-          textTheme: TextTheme(bodyLarge: TextStyle(color: AppThemeData.greyDark900)),
-          appBarTheme: AppBarTheme(
-            backgroundColor: AppThemeData.surfaceDark,
-            foregroundColor: AppThemeData.greyDark900,
-            iconTheme: IconThemeData(color: AppThemeData.greyDark900),
-          ),
-          bottomNavigationBarTheme: BottomNavigationBarThemeData(
-            backgroundColor: AppThemeData.grey900,
-            selectedItemColor: AppThemeData.primary300,
-            unselectedItemColor: AppThemeData.grey300,
-            selectedLabelStyle: TextStyle(fontFamily: AppThemeData.bold, fontSize: 12),
-            unselectedLabelStyle: TextStyle(fontFamily: AppThemeData.bold, fontSize: 12),
-            type: BottomNavigationBarType.fixed,
-          ),
-        ),
+        // Design-system themes (lib/themes/ds). Brand color is read from
+        // AppThemeData.primary300 and refreshed by DsBrandTheme below.
+        theme: DsTheme.light(),
+        darkTheme: DsTheme.dark(),
+        // App-wide page transition (shared-axis on Android, native swipe on iOS).
+        customTransition: DsPageTransition(),
+        transitionDuration: DsMotion.page,
+        navigatorObservers: [DsBrandTheme.observer],
         localizationsDelegates: const [CountryLocalizations.delegate],
         locale: LocalizationService.locale,
         fallbackLocale: LocalizationService.locale,
         translations: LocalizationService(),
         builder: (context, child) {
-          return SafeArea(bottom: true, top: false, child: EasyLoading.init()(context, child));
+          return DsBrandTheme(child: SafeArea(bottom: true, top: false, child: EasyLoading.init()(context, child)));
         },
         home: GetBuilder<GlobalSettingController>(
           init: GlobalSettingController(),

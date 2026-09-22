@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/themes/responsive.dart';
 
 import 'app_them_data.dart';
 
+/// Legacy outlined button (kept for existing screens). Visuals follow the
+/// design system; the constructor API and sizing behaviour are unchanged.
+/// New code should use `DsButton.secondary` / `DsButton.tonal`.
 class RoundedButtonBorder extends StatelessWidget {
   final String title;
   final double? width;
@@ -34,44 +38,57 @@ class RoundedButtonBorder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        FocusManager.instance.primaryFocus?.unfocus();
-        onPress?.call();
-      },
-      child: Container(
-        width: Responsive.width(width ?? 100, context),
-        height: Responsive.height(height ?? 6, context),
-        decoration: ShapeDecoration(
-          color: color ?? Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(50),
-            side: BorderSide(color: borderColor ?? AppThemeData.danger300),
+    final c = DsColors.of(context);
+    final fg = textColor ?? AppThemeData.grey800;
+    final shape = RoundedRectangleBorder(
+      borderRadius: DsRadius.brMd,
+      side: BorderSide(color: borderColor ?? AppThemeData.danger300, width: 1.2),
+    );
+    final fitted = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(
+        title.tr,
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        style: AppThemeData.semiBoldTextStyle(fontSize: fontSizes ?? 14, color: fg),
+      ),
+    );
+
+    return Semantics(
+      button: true,
+      child: DsPressable(
+        child: SizedBox(
+          width: Responsive.width(width ?? 100, context),
+          height: Responsive.height(height ?? 6, context),
+          child: Material(
+            color: color ?? Colors.transparent,
+            shape: shape,
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+                onPress?.call();
+              },
+              splashColor: (borderColor ?? c.brand).withValues(alpha: 0.10),
+              highlightColor: (borderColor ?? c.brand).withValues(alpha: 0.05),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (isRight == false) Padding(padding: const EdgeInsets.only(right: 10, left: 20), child: icon),
+                  isCenter == true
+                      ? Flexible(child: fitted)
+                      : Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.only(right: isRight == null ? 0 : 30),
+                            child: Center(child: fitted),
+                          ),
+                        ),
+                  if (isRight == true) Padding(padding: const EdgeInsets.only(left: 10, right: 20), child: icon),
+                ],
+              ),
+            ),
           ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (isRight == false) Padding(padding: const EdgeInsets.only(right: 10, left: 20), child: icon),
-            isCenter == true
-                ? Text(
-                    title.tr,
-                    textAlign: TextAlign.center,
-                    style: AppThemeData.semiBoldTextStyle(fontSize: fontSizes ?? 14, color: textColor ?? AppThemeData.grey800),
-                  )
-                : Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(right: isRight == null ? 0 : 30),
-                      child: Text(
-                        title.tr,
-                        textAlign: TextAlign.center,
-                        style: AppThemeData.semiBoldTextStyle(fontSize: fontSizes ?? 14, color: textColor ?? AppThemeData.grey800),
-                      ),
-                    ),
-                  ),
-            if (isRight == true) Padding(padding: const EdgeInsets.only(left: 10, right: 20), child: icon),
-          ],
         ),
       ),
     );

@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:vendor/themes/app_them_data.dart';
+import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/themes/theme_controller.dart';
 
+/// Legacy labelled text field (kept for existing screens). Visuals follow
+/// the design system; the constructor API and behaviour are unchanged.
+/// New code should use [DsTextField].
 class TextFieldWidget extends StatelessWidget {
   final String? title;
   final String? initialValue;
@@ -50,6 +54,12 @@ class TextFieldWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final themeController = Get.find<ThemeController>();
     final isDark = themeController.isDark.value;
+    final c = DsColors.resolve(isDark);
+    final enabled = enable ?? true;
+
+    OutlineInputBorder border(Color color, [double width = 1]) =>
+        OutlineInputBorder(borderRadius: DsRadius.brMd, borderSide: BorderSide(color: color, width: width));
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
@@ -62,9 +72,15 @@ class TextFieldWidget extends StatelessWidget {
               children: [
                 Text(
                   title ?? "".tr,
-                  style: TextStyle(fontFamily: fontFamilyTitle ?? AppThemeData.medium, fontSize: fontSizeTitle ?? 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
+                  style: TextStyle(
+                    fontFamily: fontFamilyTitle ?? AppThemeData.medium,
+                    fontSize: fontSizeTitle ?? 13,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                    color: c.textSecondary,
+                  ),
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: DsSpace.sm),
               ],
             ),
           ),
@@ -83,46 +99,27 @@ class TextFieldWidget extends StatelessWidget {
             obscuringCharacter: '●',
             onChanged: onchange,
             maxLength: maxLength,
-            style: TextStyle(fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium),
+            style: TextStyle(fontSize: 14, height: 1.4, color: enabled ? c.textPrimary : c.textSecondary, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
             decoration: InputDecoration(
-              errorStyle: const TextStyle(color: Colors.red),
+              errorStyle: DsTypography.caption.copyWith(color: c.danger),
+              errorMaxLines: 3,
               filled: true,
-              enabled: enable ?? true,
-              contentPadding: EdgeInsets.symmetric(
-                vertical: title == null
-                    ? 12
-                    : prefix != null
-                    ? 16
-                    : enable == false
-                    ? 14
-                    : 8,
-                horizontal: 10,
-              ),
-              fillColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
+              enabled: enabled,
+              isDense: false,
+              contentPadding: EdgeInsets.symmetric(vertical: prefix != null ? 16 : 14, horizontal: DsSpace.lg),
+              fillColor: enabled ? c.surfaceAlt : Color.alphaBlend(c.surfaceAlt.withValues(alpha: 0.5), c.surface),
               prefixIcon: prefix,
               suffixIcon: suffix,
-              disabledBorder: UnderlineInputBorder(
-                borderRadius: const BorderRadius.all(Radius.circular(10)),
-                borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: const BorderRadius.all(Radius.circular(10)),
-                borderSide: BorderSide(color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, width: 1),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: const BorderRadius.all(Radius.circular(10)),
-                borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
-              ),
-              errorBorder: OutlineInputBorder(
-                borderRadius: const BorderRadius.all(Radius.circular(10)),
-                borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
-              ),
-              border: OutlineInputBorder(
-                borderRadius: const BorderRadius.all(Radius.circular(10)),
-                borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
-              ),
+              prefixIconColor: c.textMuted,
+              suffixIconColor: c.textMuted,
+              disabledBorder: border(Colors.transparent),
+              focusedBorder: border(AppThemeData.primary300, 1.6),
+              enabledBorder: border(isDark ? c.border : c.surfaceAlt),
+              errorBorder: border(c.danger),
+              focusedErrorBorder: border(c.danger, 1.6),
+              border: border(isDark ? c.border : c.surfaceAlt),
               hintText: hintText.tr,
-              hintStyle: TextStyle(fontSize: 14, color: isDark ? AppThemeData.grey600 : AppThemeData.grey400, fontFamily: AppThemeData.regular),
+              hintStyle: TextStyle(fontSize: 14, height: 1.4, color: c.textMuted, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
             ),
           ),
         ],
