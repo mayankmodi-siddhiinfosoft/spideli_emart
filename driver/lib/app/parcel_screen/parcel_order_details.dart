@@ -1,3 +1,4 @@
+import 'package:driver/app/parcel_screen/parcel_tracking/parcel_shipment_info_card.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:driver/themes/responsive.dart';
@@ -59,6 +60,7 @@ class ParcelOrderDetails extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 16),
+                      ParcelShipmentInfoCard(order: controller.parcelOrder.value, isDark: isDark),
                       Container(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(15),

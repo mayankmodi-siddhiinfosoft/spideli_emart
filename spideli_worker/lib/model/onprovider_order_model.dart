@@ -40,6 +40,8 @@ class OnProviderOrderModel {
   // targeted update, FireStoreUtils.updateOrderFields).
   String? regionId;
   List<String> completionPhotos;
+  // `completionSignature` = PNG URL of the customer's signature (optional).
+  String? completionSignature;
 
   OnProviderOrderModel({
     this.sectionId = '',
@@ -73,6 +75,7 @@ class OnProviderOrderModel {
     this.workerId,
     this.regionId,
     this.completionPhotos = const [],
+    this.completionSignature,
   })  : author = author ?? User(),
         createdAt = createdAt ?? Timestamp.now(),
         provider = provider ?? ProviderServiceModel(),
@@ -117,6 +120,7 @@ class OnProviderOrderModel {
       extraPaymentStatus: parsedJson['extraPaymentStatus'],
       workerId: parsedJson['workerId'] ?? "",
       regionId: (parsedJson['regionId']?.toString().isNotEmpty == true) ? parsedJson['regionId'].toString() : null,
+      completionSignature: (parsedJson['completionSignature'] ?? '').toString().isEmpty ? null : parsedJson['completionSignature'].toString(),
       completionPhotos: parsedJson['completionPhotos'] is List ? (parsedJson['completionPhotos'] as List).map((e) => e.toString()).toList() : const [],
     );
   }

@@ -1,3 +1,4 @@
+import 'package:spideliprovider/services/provider_verification_gate.dart';
 import 'package:bottom_picker/bottom_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:spideliprovider/constant/constants.dart';
@@ -708,6 +709,7 @@ class BookingDetailsScreen extends StatelessWidget {
                                                           controller.dateTimeController.value = TextEditingController();
                                                           controller.selectedDateTime.value = onProviderOrder.scheduleDateTime!.toDate();
                                                           controller.dateTimeController.value.text = DateFormat('dd-MM-yyyy HH:mm').format(onProviderOrder.scheduleDateTime!.toDate());
+                                                          if (await ProviderVerificationGate.blocks()) return;
                                                           showDialog(
                                                               context: context,
                                                               builder: (BuildContext context) =>
@@ -780,6 +782,7 @@ class BookingDetailsScreen extends StatelessWidget {
                                                         ),
                                                         onPressed: () async {
                                                           if (onProviderOrder.newScheduleDateTime!.toDate().isBefore(Timestamp.now().toDate())) {
+                                                            if (await ProviderVerificationGate.blocks()) return;
                                                             ShowToastDialog.showLoader('Please wait...');
                                                             onProviderOrder.status = ORDER_STATUS_ONGOING;
                                                             if (onProviderOrder.provider.priceUnit == "Hourly") {
@@ -922,6 +925,7 @@ class BookingDetailsScreen extends StatelessWidget {
                                                                       ),
                                                                     ),
                                                                     onPressed: () async {
+                                                                      if (await ProviderVerificationGate.blocks()) return;
                                                                       ShowToastDialog.showLoader('Please wait...');
                                                                       onProviderOrder.status = ORDER_STATUS_ASSIGNED;
                                                                       await FireStoreUtils.updateOrder(onProviderOrder);

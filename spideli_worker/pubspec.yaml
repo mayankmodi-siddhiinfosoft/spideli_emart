@@ -69,6 +69,7 @@ dependencies:
   cloud_firestore: ^6.10.0
   uuid: ^4.6.0
   http: ^1.6.0
+  signature: ^6.4.0
   
 
 dev_dependencies:

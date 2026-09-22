@@ -1,12 +1,11 @@
-import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
-import 'package:driver/app/wallet_screen/payment_list_screen.dart';
+import 'package:driver/app/parcel_screen/parcel_tracking/parcel_proof_sheet.dart';
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
-import 'package:driver/constant/send_notification.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/parcel_order_model.dart';
 import 'package:driver/models/user_model.dart';
-import 'package:driver/models/wallet_transaction_model.dart';
+import 'package:driver/services/parcel_tracking_service.dart';
+import 'package:flutter/material.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:get/get.dart';
 
@@ -60,101 +59,42 @@ class ParcelHomeController extends GetxController {
 
   Future<void> pickupParcel(ParcelOrderModel parcelBookingData) async {
     ShowToastDialog.showLoader("Please wait".tr);
-    parcelBookingData.status = Constant.orderInTransit;
-    await FireStoreUtils.setParcelOrder(parcelBookingData);
-    await getParcelList();
+    // Existing "In Transit" status, plus the tracking event `Collected` (spec 4.2 step 8) — field updates only.
+    final error = await ParcelTrackingService.onLegacyPickup(parcelBookingData);
     ShowToastDialog.closeLoader();
+    if (error != null) {
+      ShowToastDialog.showToast(error.tr);
+      return;
+    }
+    await getParcelList();
   }
 
-  Future<void> completeParcel(ParcelOrderModel parcelBookingData) async {
-    ShowToastDialog.showLoader("Please wait");
-    parcelBookingData.status = Constant.orderCompleted;
-
-    await updateCabWalletAmount(parcelBookingData);
-    await FireStoreUtils.setParcelOrder(parcelBookingData);
-    Map<String, dynamic> payLoad = <String, dynamic>{"type": "parcel_order", "orderId": parcelBookingData.id};
-    await SendNotification.sendFcmMessage(Constant.parcelCompleted, parcelBookingData.author!.fcmToken.toString(), payLoad);
+  /// Existing "Deliver Parcel": for a contract parcel delivered at home the driver first records proof
+  /// (receiver code or photo); for pickup-point delivery the last step is the hand-over at that point.
+  /// Parcels created before the contract complete exactly as before (plus a `Delivered` tracking event).
+  Future<void> completeParcel(ParcelOrderModel parcelBookingData, {BuildContext? context, bool isDark = false}) async {
+    Map<String, dynamic>? proof;
+    if (parcelBookingData.deliveryMethod == 'pickup_point') {
+      final ok = await Get.dialog<bool>(AlertDialog(
+        title: Text("Hand over at the pickup point".tr),
+        content: Text("Confirm the parcel was handed over at the destination pickup point. This completes your delivery.".tr),
+        actions: [
+          TextButton(onPressed: () => Get.back(result: false), child: Text("Cancel".tr)),
+          TextButton(onPressed: () => Get.back(result: true), child: Text("Confirm".tr)),
+        ],
+      ));
+      if (ok != true) return;
+    } else if (parcelBookingData.hasTrackingContract && context != null) {
+      proof = await showParcelProofSheet(context, parcelBookingData, isDark: isDark);
+      if (proof == null) return;
+    }
+    ShowToastDialog.showLoader("Please wait".tr);
+    try {
+      await ParcelTrackingService.onLegacyDeliver(parcelBookingData, deliveryProof: proof);
+    } finally {
+      ShowToastDialog.closeLoader();
+    }
     await getParcelList();
-    await FireStoreUtils.getParcelFirstOrderOrNOt(parcelBookingData).then((value) async {
-      if (value == true) {
-        await FireStoreUtils.updateParcelReferralAmount(parcelBookingData);
-      }
-    });
-
-    ShowToastDialog.closeLoader();
-  }
-
-  Future<void> updateCabWalletAmount(ParcelOrderModel orderModel) async {
-    double totalTax = 0.0;
-    double adminComm = 0.0;
-    double discount = 0.0;
-    double subTotal = 0.0;
-    double totalAmount = 0.0;
-
-    subTotal = double.parse(orderModel.subTotal ?? '0.0');
-    discount = double.parse(orderModel.discount ?? '0.0');
-
-    for (var element in orderModel.taxSetting!) {
-      totalTax = totalTax + Constant.calculateTax(amount: (subTotal - discount).toString(), taxModel: element);
-    }
-
-    if (orderModel.adminCommission!.isNotEmpty) {
-      adminComm = Constant.calculateAdminCommission(
-          amount: (subTotal - discount).toString(),
-          adminCommissionType: orderModel.adminCommissionType.toString(),
-          adminCommission: orderModel.adminCommission ?? '0');
-    }
-
-    totalAmount = ((subTotal - discount) + totalTax);
-    if (orderModel.paymentMethod.toString() != PaymentGateway.cod.name) {
-      WalletTransactionModel transactionModel = WalletTransactionModel(
-          id: Constant.getUuid(),
-          amount: totalAmount,
-          date: Timestamp.now(),
-          paymentMethod: orderModel.paymentMethod!,
-          transactionUser: "driver",
-          userId: orderModel.driver!.ownerId != null && orderModel.driver!.ownerId!.isNotEmpty
-              ? orderModel.driver!.ownerId.toString()
-              : FireStoreUtils.getCurrentUid(),
-          isTopup: true,
-          orderId: orderModel.id,
-          note: "Booking amount credited",
-          paymentStatus: "success");
-
-      await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-        if (value == true) {
-          await FireStoreUtils.updateUserWallet(
-              amount: totalAmount.toString(),
-              userId: orderModel.driver!.ownerId != null && orderModel.driver!.ownerId!.isNotEmpty
-                  ? orderModel.driver!.ownerId.toString()
-                  : FireStoreUtils.getCurrentUid());
-        }
-      });
-    }
-
-    WalletTransactionModel transactionModel = WalletTransactionModel(
-        id: Constant.getUuid(),
-        amount: adminComm,
-        date: Timestamp.now(),
-        paymentMethod: orderModel.paymentMethod!,
-        transactionUser: "driver",
-        userId: orderModel.driver!.ownerId != null && orderModel.driver!.ownerId!.isNotEmpty
-            ? orderModel.driver!.ownerId.toString()
-            : FireStoreUtils.getCurrentUid(),
-        isTopup: false,
-        orderId: orderModel.id,
-        note: "Admin commission deducted",
-        paymentStatus: "success");
-
-    await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-      if (value == true) {
-        await FireStoreUtils.updateUserWallet(
-            amount: "-${adminComm.toString()}",
-            userId: orderModel.driver!.ownerId != null && orderModel.driver!.ownerId!.isNotEmpty
-                ? orderModel.driver!.ownerId.toString()
-                : FireStoreUtils.getCurrentUid());
-      }
-    });
   }
 
   String calculateParcelTotalAmountBooking(ParcelOrderModel parcelBookingData) {

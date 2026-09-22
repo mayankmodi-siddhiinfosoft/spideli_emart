@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:signature/signature.dart';
 import 'package:spideliworker/constant/constants.dart';
 import 'package:spideliworker/constant/show_toast_dialog.dart';
 import 'package:spideliworker/controller/verification_controller.dart';
@@ -79,10 +81,11 @@ class JobActions {
     final isComplete = await Navigator.of(Get.context!).push(MaterialPageRoute(builder: (context) => VerifyOtpScreen(otp: order.otp)));
     if (isComplete != true) return;
 
-    // Completion proof: photos (optional). No signature capture -- no
-    // signature package is a dependency of this app.
-    final List<File>? photos = await Navigator.of(Get.context!).push<List<File>>(MaterialPageRoute(builder: (context) => const CompleteJobScreen()));
-    if (photos == null) return;
+    // Completion proof (spec 11 "Complete (photos, signature)"): photos and
+    // the customer's signature, both optional.
+    final CompleteJobResult? proof = await Navigator.of(Get.context!).push<CompleteJobResult>(MaterialPageRoute(builder: (context) => const CompleteJobScreen()));
+    if (proof == null) return;
+    final List<File> photos = proof.photos;
 
     ShowToastDialog.showLoader('Please wait...'.tr);
     try {
@@ -90,12 +93,17 @@ class JobActions {
       for (final file in photos) {
         urls.add(await FireStoreUtils.uploadCompletionPhoto(file, order.id));
       }
+      String? signatureUrl;
+      if (proof.signaturePng != null) {
+        signatureUrl = await FireStoreUtils.uploadCompletionSignature(proof.signaturePng!, order.id);
+      }
       order.status = ORDER_STATUS_COMPLETED;
       // Complete first, then pay: if anything after this fails, a retry can't
       // pay the provider again (the credit below is claimed once per booking).
       await FireStoreUtils.updateOrderFields(order.id, {
         'status': ORDER_STATUS_COMPLETED,
         if (urls.isNotEmpty) 'completionPhotos': FieldValue.arrayUnion(urls),
+        'completionSignature': ?signatureUrl,
       });
       if (order.provider.priceUnit != "Fixed") {
         await FireStoreUtils.providerWalletSet(order, true);
@@ -119,8 +127,17 @@ class JobActions {
   }
 }
 
-/// Last step of "Complete": optional photos of the finished work. Pops with
-/// the picked files (possibly empty), or null when the worker goes back.
+/// What the worker attached on "Complete".
+class CompleteJobResult {
+  final List<File> photos;
+  final Uint8List? signaturePng;
+
+  const CompleteJobResult(this.photos, this.signaturePng);
+}
+
+/// Last step of "Complete": optional photos of the finished work and an
+/// optional customer signature. Pops with a [CompleteJobResult], or null when
+/// the worker goes back.
 class CompleteJobScreen extends StatefulWidget {
   const CompleteJobScreen({super.key});
 
@@ -132,6 +149,20 @@ class _CompleteJobScreenState extends State<CompleteJobScreen> {
   static const int maxPhotos = 6;
   final ImagePicker _picker = ImagePicker();
   final List<File> _photos = [];
+  final SignatureController _signature = SignatureController(penStrokeWidth: 3, penColor: Colors.black, exportBackgroundColor: Colors.white);
+
+  @override
+  void dispose() {
+    _signature.dispose();
+    super.dispose();
+  }
+
+  Future<void> _finish() async {
+    Uint8List? png;
+    if (_signature.isNotEmpty) png = await _signature.toPngBytes();
+    if (!mounted) return;
+    Navigator.pop(context, CompleteJobResult(List<File>.from(_photos), png));
+  }
 
   Future<void> _add(ImageSource source) async {
     try {
@@ -207,6 +238,21 @@ class _CompleteJobScreenState extends State<CompleteJobScreen> {
                 ),
             ],
           ),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(child: Text("Customer signature (optional)".tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark, fontFamily: AppColors.semiBold))),
+              TextButton(onPressed: () => _signature.clear(), child: Text("Clear".tr)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(8)),
+              child: Signature(controller: _signature, height: 180, backgroundColor: Colors.white),
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -214,7 +260,7 @@ class _CompleteJobScreenState extends State<CompleteJobScreen> {
           padding: const EdgeInsets.all(16),
           child: ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.colorPrimary, padding: const EdgeInsets.all(14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-            onPressed: () => Navigator.pop(context, List<File>.from(_photos)),
+            onPressed: _finish,
             child: Text("Complete".tr, style: const TextStyle(color: AppColors.colorWhite, fontFamily: AppColors.semiBold)),
           ),
         ),

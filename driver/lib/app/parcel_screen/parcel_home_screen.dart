@@ -2,6 +2,7 @@ import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/parcel_screen/parcel_order_details.dart';
 import 'package:driver/app/parcel_screen/parcel_search_screen.dart';
 import 'package:driver/app/parcel_screen/parcel_tracking_screen.dart';
+import 'package:driver/app/parcel_screen/parcel_tracking/parcel_scan_screen.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/parcel_dashboard_controller.dart';
 import 'package:driver/controllers/parcel_home_controller.dart';
@@ -32,8 +33,18 @@ class ParcelHomeScreen extends StatelessWidget {
       return GetX(
           init: ParcelHomeController(),
           builder: (controller) {
+            final bool isVerified = !(Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false);
             return Scaffold(
               backgroundColor: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
+              floatingActionButton: controller.isLoading.value || !isVerified
+                  ? null
+                  : FloatingActionButton.extended(
+                      heroTag: 'parcelScan',
+                      backgroundColor: AppThemeData.primary300,
+                      onPressed: () => Get.to(() => const ParcelScanScreen())!.then((_) => controller.getParcelList()),
+                      icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+                      label: Text("Scan parcel".tr, style: const TextStyle(color: Colors.white)),
+                    ),
               body: controller.isLoading.value
                   ? Constant.loader()
                   : Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false
@@ -476,7 +487,7 @@ class ParcelHomeScreen extends StatelessWidget {
                                                           color: AppThemeData.success400,
                                                           textColor: AppThemeData.grey50,
                                                           onPress: () async {
-                                                            controller.completeParcel(parcelBookingData);
+                                                            controller.completeParcel(parcelBookingData, context: context, isDark: isDark);
                                                           },
                                                         ),
                                                       ),

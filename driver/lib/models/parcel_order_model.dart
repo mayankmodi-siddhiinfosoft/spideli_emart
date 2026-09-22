@@ -51,6 +51,32 @@ class ParcelOrderModel {
   List<TaxModel>? taxSetting;
   List<TaxModel>? platformTax;
 
+  // ── Parcel / mail contract (PARCEL-CONTRACT.md). Read-only in this model:
+  // they are NOT written back by toJson(), so the merge writes of the
+  // existing eMart flow never touch them. Writes go through
+  // ParcelTrackingService as field updates.
+  String? shipmentType;
+  String? scope;
+  Map<String, dynamic>? origin;
+  Map<String, dynamic>? destination;
+  String? trackingNumber;
+  String? qrValue;
+  String? pickupMethod;
+  String? originPickupPointId;
+  String? deliveryMethod;
+  String? destinationPickupPointId;
+  String? pickupCode;
+  String? declaredValue;
+  Map<String, dynamic>? dimensions;
+  String? contentDescription;
+  String? carrierId;
+  String? carrierName;
+  bool? quoteRequested;
+  num? manualPrice;
+  String? parcelStatus;
+  List<ParcelTrackingEvent> trackingEvents = [];
+  Map<String, dynamic>? deliveryProof;
+
   ParcelOrderModel({
     this.author,
     this.sender,
@@ -149,7 +175,39 @@ class ParcelOrderModel {
       });
     }
     regionId = json['regionId']?.toString();
+
+    String? str(dynamic v) => v?.toString();
+    Map<String, dynamic>? map(dynamic v) => v is Map ? Map<String, dynamic>.from(v) : null;
+    shipmentType = str(json['shipmentType']);
+    scope = str(json['scope']);
+    origin = map(json['origin']);
+    destination = map(json['destination']);
+    trackingNumber = str(json['trackingNumber']);
+    qrValue = str(json['qrValue']);
+    pickupMethod = str(json['pickupMethod']);
+    originPickupPointId = str(json['originPickupPointId']);
+    deliveryMethod = str(json['deliveryMethod']);
+    destinationPickupPointId = str(json['destinationPickupPointId']);
+    pickupCode = str(json['pickupCode']);
+    declaredValue = str(json['declaredValue']);
+    dimensions = map(json['dimensions']);
+    contentDescription = str(json['contentDescription']);
+    carrierId = str(json['carrierId']);
+    carrierName = str(json['carrierName']);
+    quoteRequested = json['quoteRequested'] is bool ? json['quoteRequested'] as bool : null;
+    manualPrice = json['manualPrice'] is num ? json['manualPrice'] as num : num.tryParse('${json['manualPrice']}');
+    parcelStatus = str(json['parcelStatus']);
+    deliveryProof = map(json['deliveryProof']);
+    trackingEvents = [];
+    if (json['trackingEvents'] is List) {
+      for (final e in json['trackingEvents'] as List) {
+        if (e is Map) trackingEvents.add(ParcelTrackingEvent.fromMap(Map<String, dynamic>.from(e)));
+      }
+    }
   }
+
+  /// True when the order was created with the parcel/mail contract fields.
+  bool get hasTrackingContract => parcelStatus != null || trackingNumber != null || qrValue != null;
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
@@ -224,13 +282,15 @@ class LocationInformation {
   String? address;
   String? name;
   String? phone;
+  String? email;
 
-  LocationInformation({this.address, this.name, this.phone});
+  LocationInformation({this.address, this.name, this.phone, this.email});
 
   LocationInformation.fromJson(Map<String, dynamic> json) {
     address = json['address'];
     name = json['name'];
     phone = json['phone'];
+    email = json['email']?.toString();
   }
 
   Map<String, dynamic> toJson() {
@@ -238,6 +298,7 @@ class LocationInformation {
     data['address'] = address;
     data['name'] = name;
     data['phone'] = phone;
+    if (email != null) data['email'] = email;
     return data;
   }
 }
@@ -254,5 +315,32 @@ class ParcelStatus {
 
   Map<String, dynamic> toMap() {
     return {'status': status, 'time': time != null ? Timestamp.fromDate(time!) : null};
+  }
+}
+
+/// One entry of `parcel_orders.trackingEvents` (append-only, newest last).
+class ParcelTrackingEvent {
+  final String? status;
+  final Timestamp? at;
+  final String? by;
+  final String? role;
+  final String? pickupPointId;
+  final String? note;
+  final num? lat;
+  final num? lng;
+
+  ParcelTrackingEvent({this.status, this.at, this.by, this.role, this.pickupPointId, this.note, this.lat, this.lng});
+
+  factory ParcelTrackingEvent.fromMap(Map<String, dynamic> map) {
+    return ParcelTrackingEvent(
+      status: map['status']?.toString(),
+      at: map['at'] is Timestamp ? map['at'] as Timestamp : null,
+      by: map['by']?.toString(),
+      role: map['role']?.toString(),
+      pickupPointId: map['pickupPointId']?.toString(),
+      note: map['note']?.toString(),
+      lat: map['lat'] is num ? map['lat'] as num : null,
+      lng: map['lng'] is num ? map['lng'] as num : null,
+    );
   }
 }

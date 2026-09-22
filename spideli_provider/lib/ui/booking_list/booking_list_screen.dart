@@ -1,3 +1,4 @@
+import 'package:spideliprovider/services/provider_verification_gate.dart';
 import 'package:bottom_picker/bottom_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:spideliprovider/constant/constants.dart';
@@ -564,6 +565,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                     dateTimeController = TextEditingController();
                                                                     selectedDateTime = onProviderOrder.scheduleDateTime!.toDate();
                                                                     dateTimeController.text = DateFormat('dd-MM-yyyy HH:mm').format(onProviderOrder.scheduleDateTime!.toDate());
+                                                                    if (await ProviderVerificationGate.blocks()) return;
                                                                     showDialog(context: context, builder: (BuildContext context) => acceptDialog(onProviderOrder, themeChange));
                                                                   },
                                                                   child: Text(
@@ -634,6 +636,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                   ),
                                                                   onPressed: () async {
                                                                     if (onProviderOrder.newScheduleDateTime!.toDate().isBefore(Timestamp.now().toDate())) {
+                                                                      if (await ProviderVerificationGate.blocks()) return;
                                                                       ShowToastDialog.showLoader('Please wait...');
                                                                       onProviderOrder.status = ORDER_STATUS_ONGOING;
                                                                       if (onProviderOrder.provider.priceUnit == "Hourly") {
@@ -778,6 +781,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                                 ),
                                                                               ),
                                                                               onPressed: () async {
+                                                                                if (await ProviderVerificationGate.blocks()) return;
                                                                                 ShowToastDialog.showLoader('Please wait...');
                                                                                 onProviderOrder.status = ORDER_STATUS_ASSIGNED;
                                                                                 await FireStoreUtils.updateOrder(onProviderOrder);
@@ -1283,6 +1287,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                     dateTimeController = TextEditingController();
                                                                     selectedDateTime = onProviderOrder.scheduleDateTime!.toDate();
                                                                     dateTimeController.text = DateFormat('dd-MM-yyyy HH:mm').format(onProviderOrder.scheduleDateTime!.toDate());
+                                                                    if (await ProviderVerificationGate.blocks()) return;
                                                                     showDialog(context: context, builder: (BuildContext context) => acceptDialog(onProviderOrder, themeChange));
                                                                   },
                                                                   child: Text(
@@ -1353,6 +1358,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                   ),
                                                                   onPressed: () async {
                                                                     if (onProviderOrder.newScheduleDateTime!.toDate().isBefore(Timestamp.now().toDate())) {
+                                                                      if (await ProviderVerificationGate.blocks()) return;
                                                                       ShowToastDialog.showLoader('Please wait...');
                                                                       onProviderOrder.status = ORDER_STATUS_ONGOING;
                                                                       if (onProviderOrder.provider.priceUnit == "Hourly") {
@@ -1496,6 +1502,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                                 ),
                                                                               ),
                                                                               onPressed: () async {
+                                                                                if (await ProviderVerificationGate.blocks()) return;
                                                                                 ShowToastDialog.showLoader('Please wait...');
                                                                                 onProviderOrder.status = ORDER_STATUS_ASSIGNED;
                                                                                 await FireStoreUtils.updateOrder(onProviderOrder);
@@ -2002,6 +2009,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                     dateTimeController = TextEditingController();
                                                                     selectedDateTime = onProviderOrder.scheduleDateTime!.toDate();
                                                                     dateTimeController.text = DateFormat('dd-MM-yyyy HH:mm').format(onProviderOrder.scheduleDateTime!.toDate());
+                                                                    if (await ProviderVerificationGate.blocks()) return;
                                                                     showDialog(context: context, builder: (BuildContext context) => acceptDialog(onProviderOrder, themeChange));
                                                                   },
                                                                   child: Text(
@@ -2071,6 +2079,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                   ),
                                                                   onPressed: () async {
                                                                     if (onProviderOrder.newScheduleDateTime!.toDate().isBefore(Timestamp.now().toDate())) {
+                                                                      if (await ProviderVerificationGate.blocks()) return;
                                                                       ShowToastDialog.showLoader('Please wait...');
                                                                       onProviderOrder.status = ORDER_STATUS_ONGOING;
                                                                       if (onProviderOrder.provider.priceUnit == "Hourly") {
@@ -2214,6 +2223,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                                 ),
                                                                               ),
                                                                               onPressed: () async {
+                                                                                if (await ProviderVerificationGate.blocks()) return;
                                                                                 ShowToastDialog.showLoader('Please wait...');
                                                                                 onProviderOrder.status = ORDER_STATUS_ASSIGNED;
                                                                                 await FireStoreUtils.updateOrder(onProviderOrder);
@@ -2682,6 +2692,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                     dateTimeController = TextEditingController();
                                                                     selectedDateTime = onProviderOrder.scheduleDateTime!.toDate();
                                                                     dateTimeController.text = DateFormat('dd-MM-yyyy HH:mm').format(onProviderOrder.scheduleDateTime!.toDate());
+                                                                    if (await ProviderVerificationGate.blocks()) return;
                                                                     showDialog(context: context, builder: (BuildContext context) => acceptDialog(onProviderOrder, themeChange));
                                                                   },
                                                                   child: Text(
@@ -2751,6 +2762,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                   ),
                                                                   onPressed: () async {
                                                                     if (onProviderOrder.newScheduleDateTime!.toDate().isBefore(Timestamp.now().toDate())) {
+                                                                      if (await ProviderVerificationGate.blocks()) return;
                                                                       ShowToastDialog.showLoader('Please wait...');
                                                                       onProviderOrder.status = ORDER_STATUS_ONGOING;
                                                                       if (onProviderOrder.provider.priceUnit == "Hourly") {
@@ -2894,6 +2906,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                                 ),
                                                                               ),
                                                                               onPressed: () async {
+                                                                                if (await ProviderVerificationGate.blocks()) return;
                                                                                 ShowToastDialog.showLoader('Please wait...');
                                                                                 onProviderOrder.status = ORDER_STATUS_ASSIGNED;
                                                                                 await FireStoreUtils.updateOrder(onProviderOrder);
@@ -3408,6 +3421,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                     dateTimeController = TextEditingController();
                                                                     selectedDateTime = onProviderOrder.scheduleDateTime!.toDate();
                                                                     dateTimeController.text = DateFormat('dd-MM-yyyy HH:mm').format(onProviderOrder.scheduleDateTime!.toDate());
+                                                                    if (await ProviderVerificationGate.blocks()) return;
                                                                     showDialog(context: context, builder: (BuildContext context) => acceptDialog(onProviderOrder, themeChange));
                                                                   },
                                                                   child: Text(
@@ -3477,6 +3491,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                   ),
                                                                   onPressed: () async {
                                                                     if (onProviderOrder.newScheduleDateTime!.toDate().isBefore(Timestamp.now().toDate())) {
+                                                                      if (await ProviderVerificationGate.blocks()) return;
                                                                       ShowToastDialog.showLoader('Please wait...');
                                                                       onProviderOrder.status = ORDER_STATUS_ONGOING;
                                                                       if (onProviderOrder.provider.priceUnit == "Hourly") {
@@ -3621,6 +3636,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                                                                                 ),
                                                                               ),
                                                                               onPressed: () async {
+                                                                                if (await ProviderVerificationGate.blocks()) return;
                                                                                 ShowToastDialog.showLoader('Please wait...');
                                                                                 onProviderOrder.status = ORDER_STATUS_ASSIGNED;
                                                                                 await FireStoreUtils.updateOrder(onProviderOrder);

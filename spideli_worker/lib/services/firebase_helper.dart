@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
@@ -322,6 +323,14 @@ class FireStoreUtils {
   static Future<String> uploadCompletionPhoto(File image, String orderId) async {
     final Reference upload = storage.child('$STORAGE_ROOT/jobCompletion/$orderId/${const Uuid().v4()}.jpg');
     final TaskSnapshot task = await upload.putFile(image, SettableMetadata(contentType: 'image/jpeg'));
+    return task.ref.getDownloadURL();
+  }
+
+  /// Customer signature captured on "Complete" (PNG), stored as
+  /// `provider_orders.completionSignature`.
+  static Future<String> uploadCompletionSignature(Uint8List png, String orderId) async {
+    final Reference upload = storage.child('$STORAGE_ROOT/jobCompletion/$orderId/signature_${const Uuid().v4()}.png');
+    final TaskSnapshot task = await upload.putData(png, SettableMetadata(contentType: 'image/png'));
     return task.ref.getDownloadURL();
   }
 

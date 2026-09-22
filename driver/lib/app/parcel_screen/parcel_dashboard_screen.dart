@@ -1,3 +1,4 @@
+import 'package:driver/app/parcel_screen/parcel_tracking/parcel_run_screen.dart';
 import 'package:driver/app/auth_screen/login_screen.dart';
 import 'package:driver/app/change_language/change_language_screen.dart';
 import 'package:driver/app/chat_screens/driver_inbox_screen.dart';
@@ -315,6 +316,24 @@ class DrawerView extends StatelessWidget {
                       onTap: () {
                         Get.back();
                         controller.drawerIndex.value = 1;
+                      },
+                    ),
+                    ListTile(
+                      visualDensity: const VisualDensity(horizontal: 0, vertical: -2),
+                      contentPadding: const EdgeInsets.only(left: 0.0, right: 0.0),
+                      leading: Icon(Icons.qr_code_scanner, color: AppThemeData.primary300),
+                      trailing: const Icon(Icons.keyboard_arrow_right_rounded, size: 24),
+                      dense: true,
+                      title: Text(
+                        'Parcel run'.tr,
+                        style: TextStyle(
+                          color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
+                          fontFamily: AppThemeData.semiBold,
+                        ),
+                      ),
+                      onTap: () {
+                        Get.back();
+                        Get.to(() => const ParcelRunScreen());
                       },
                     ),
                     Constant.userModel!.ownerId != null && Constant.userModel!.ownerId!.isNotEmpty

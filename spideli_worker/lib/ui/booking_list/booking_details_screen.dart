@@ -835,7 +835,7 @@ class BookingDetailsScreen extends StatelessWidget {
 
   /// Photos attached by the worker when completing the job.
   Widget completionPhotosWidget(OnProviderOrderModel onProviderOrder, bool dark) {
-    if (onProviderOrder.completionPhotos.isEmpty) return const SizedBox();
+    if (onProviderOrder.completionPhotos.isEmpty && onProviderOrder.completionSignature == null) return const SizedBox();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -855,6 +855,19 @@ class BookingDetailsScreen extends StatelessWidget {
             ),
           ),
         ),
+        if (onProviderOrder.completionSignature != null) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Text("Customer signature".tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark, fontFamily: AppColors.bold)),
+          ),
+          InkWell(
+            onTap: () => Get.to(() => FullScreenImageViewer(imageUrl: onProviderOrder.completionSignature!)),
+            child: Container(
+              color: Colors.white,
+              child: NetworkImageWidget(imageUrl: onProviderOrder.completionSignature!, height: 90, width: 180, fit: BoxFit.contain, borderRadius: 8),
+            ),
+          ),
+        ],
       ],
     );
   }

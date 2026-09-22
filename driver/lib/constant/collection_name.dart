@@ -40,6 +40,7 @@ class CollectionName {
   static const String sections = "sections";
   static const String parcelCoupons = 'parcel_coupons';
   static const String parcelOrders = "parcel_orders";
+  static const String pickupPoints = "pickup_points";
   static const String parcelCategory = 'parcel_categories';
   static const String rentalOrders = 'rental_orders';
   static const String itemsReview = 'items_review';
