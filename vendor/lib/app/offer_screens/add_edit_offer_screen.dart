@@ -1,310 +1,202 @@
-import 'dart:io';
-
 import 'package:datetime_picker_formfield_new/datetime_picker_formfield.dart';
 import 'package:dotted_border/dotted_border.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:vendor/themes/theme_controller.dart';
+import 'package:vendor/app/add_restaurant_screen/widgets/form_media_widgets.dart';
+import 'package:vendor/app/offer_screens/widgets/coupon_ticket.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/controller/add_edit_coupon_controller.dart';
-import 'package:vendor/themes/app_them_data.dart';
-import 'package:vendor/themes/responsive.dart';
-import 'package:vendor/themes/round_button_fill.dart';
-import 'package:vendor/themes/text_field_widget.dart';
-import 'package:vendor/utils/network_image_widget.dart';
+import 'package:vendor/themes/ds/ds.dart';
 
 class AddEditOfferScreen extends StatelessWidget {
   const AddEditOfferScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: AddEditCouponController(),
       builder: (controller) {
-        return Scaffold(
-          backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-          appBar: AppBar(
-            backgroundColor: AppThemeData.primary300,
-            centerTitle: false,
-            iconTheme: const IconThemeData(color: AppThemeData.grey50, size: 20),
-            title: Text(
-              Get.arguments == null ? "Create Offer".tr : "Edit Offer".tr,
-              style: TextStyle(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, fontSize: 18, fontFamily: AppThemeData.medium),
-            ),
-          ),
+        final c = context.dsColors;
+        final t = context.dsText;
+        final isPercent = controller.selectCouponType.value == "Percentage" || controller.selectCouponType.value == "Percent";
+        return DsScaffold(
+          title: Get.arguments == null ? "Create Offer".tr : "Edit Offer".tr,
+          maxContentWidth: null,
           body: controller.isLoading.value
-              ? Constant.loader()
-              : Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ? const DsResponsive(
                   child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        DottedBorder(
-                          options: RoundedRectDottedBorderOptions(radius: const Radius.circular(12), dashPattern: const [6, 6, 6, 6], color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                          child: Container(
-                            decoration: BoxDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, borderRadius: const BorderRadius.all(Radius.circular(12))),
-                            child: SizedBox(
-                              height: Responsive.height(20, context),
-                              width: Responsive.width(90, context),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  SvgPicture.asset('assets/icons/ic_folder.svg'),
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    "Choose a image and upload here".tr,
-                                    style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.medium, fontSize: 16),
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    "JPEG, PNG".tr,
-                                    style: TextStyle(fontSize: 12, color: isDark ? AppThemeData.grey200 : AppThemeData.grey700, fontFamily: AppThemeData.regular),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  RoundedButtonFill(
-                                    title: "Brows Image".tr,
-                                    color: AppThemeData.secondary50,
-                                    width: 30,
-                                    height: 5,
-                                    textColor: AppThemeData.primary300,
-                                    onPress: () async {
-                                      buildBottomSheet(context, controller);
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        controller.images.isEmpty
-                            ? const SizedBox()
-                            : SizedBox(
-                                height: 90,
-                                child: Column(
-                                  children: [
-                                    Expanded(
-                                      child: ListView.builder(
-                                        itemCount: controller.images.length,
-                                        shrinkWrap: true,
-                                        scrollDirection: Axis.horizontal,
-                                        physics: const NeverScrollableScrollPhysics(),
-                                        itemBuilder: (context, index) {
-                                          return Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 5),
-                                            child: Stack(
+                    padding: EdgeInsets.all(DsSpace.lg),
+                    child: Column(children: [DsSkeletonCard(height: 130), DsGap(DsSpace.lg), DsSkeletonForm(fields: 5)]),
+                  ),
+                )
+              : SingleChildScrollView(
+                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                  child: DsResponsive(
+                    padded: true,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: DsSpace.md, bottom: DsSpace.xxl),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: DsFadeSlideIn.stagger([
+                          _LivePreview(controller: controller, isPercent: isPercent),
+                          const DsGap(DsSpace.lg),
+                          // ── Artwork ─────────────────────────────────────
+                          DsFormSection(
+                            title: "Offer image".tr,
+                            icon: Icons.image_outlined,
+                            children: [
+                              AnimatedSwitcher(
+                                duration: DsMotion.of(context, DsMotion.base),
+                                child: controller.images.isEmpty
+                                    ? FormUploadZone(
+                                        key: const ValueKey('zone'),
+                                        title: "Choose a image and upload here".tr,
+                                        caption: "JPEG, PNG".tr,
+                                        buttonLabel: "Brows Image".tr,
+                                        icon: Icons.add_photo_alternate_outlined,
+                                        onPressed: () async {
+                                          buildBottomSheet(context, controller);
+                                        },
+                                      )
+                                    : Row(
+                                        key: const ValueKey('thumbs'),
+                                        children: [
+                                          for (int index = 0; index < controller.images.length; index++)
+                                            Padding(
+                                              padding: const EdgeInsetsDirectional.only(end: DsSpace.sm),
+                                              child: FormMediaThumb(
+                                                size: 96,
+                                                onRemove: () {
+                                                  controller.images.removeAt(index);
+                                                },
+                                                child: FormPickedImage(source: controller.images[index], width: 96, height: 96),
+                                              ),
+                                            ),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                ClipRRect(
-                                                  borderRadius: const BorderRadius.all(Radius.circular(10)),
-                                                  child: controller.images[index].runtimeType == XFile
-                                                      ? Image.file(File(controller.images[index].path), fit: BoxFit.cover, width: 80, height: 80)
-                                                      : NetworkImageWidget(imageUrl: controller.images[index], fit: BoxFit.cover, width: 80, height: 80),
-                                                ),
-                                                Positioned(
-                                                  bottom: 0,
-                                                  top: 0,
-                                                  left: 0,
-                                                  right: 0,
-                                                  child: InkWell(
-                                                    onTap: () {
-                                                      controller.images.removeAt(index);
-                                                    },
-                                                    child: const Icon(Icons.remove_circle, size: 28, color: AppThemeData.danger300),
-                                                  ),
+                                                Text("JPEG, PNG".tr, style: t.caption),
+                                                const DsGap(DsSpace.sm),
+                                                DsButton.tonal(
+                                                  label: "Brows Image".tr,
+                                                  icon: Icons.swap_horiz_rounded,
+                                                  size: DsButtonSize.sm,
+                                                  onPressed: () async {
+                                                    buildBottomSheet(context, controller);
+                                                  },
                                                 ),
                                               ],
                                             ),
-                                          );
-                                        },
+                                          ),
+                                        ],
                                       ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                  ],
+                              ),
+                            ],
+                          ),
+                          // ── Coupon details ──────────────────────────────
+                          DsFormSection(
+                            title: "Coupon details".tr,
+                            icon: Icons.confirmation_number_outlined,
+                            children: [
+                              FormInput(label: 'Title'.tr, controller: controller.titleController.value, hint: 'Title'.tr, maxLength: 30, prefixIcon: Icons.title_rounded),
+                              FormInput(label: 'Coupon Code'.tr, controller: controller.couponCodeController.value, hint: 'Coupon Code'.tr, prefixIcon: Icons.qr_code_rounded, bottomSpacing: 0),
+                            ],
+                          ),
+                          // ── Discount ────────────────────────────────────
+                          DsFormSection(
+                            title: 'Select Coupon Type'.tr,
+                            icon: Icons.discount_outlined,
+                            children: [
+                              DsSegmentedTabs(
+                                segments: [
+                                  DsSegment('Fix Price'.tr, icon: Icons.payments_outlined),
+                                  DsSegment('Percentage'.tr, icon: Icons.percent_rounded),
+                                ],
+                                index: isPercent ? 1 : 0,
+                                onChanged: (i) {
+                                  if (i == 0) {
+                                    controller.selectCouponType.value = "Fix Price";
+                                  } else {
+                                    controller.selectCouponType.value = "Percentage";
+                                  }
+                                },
+                              ),
+                              const DsGap(DsSpace.lg),
+                              FormInput(
+                                controller: controller.priceController.value,
+                                hint: 'Enter price'.tr,
+                                keyboardType: TextInputType.number,
+                                bottomSpacing: 0,
+                                prefix: FormAffix(
+                                  controller.selectCouponType.value == "Percentage" || controller.selectCouponType.value == "Percent" ? "%" : "${Constant.currencyModel!.symbol}".tr,
                                 ),
                               ),
-                        const SizedBox(height: 10),
-                        TextFieldWidget(title: 'Title'.tr, controller: controller.titleController.value, hintText: 'Title'.tr, maxLength: 30),
-                        TextFieldWidget(title: 'Coupon Code'.tr, controller: controller.couponCodeController.value, hintText: 'Coupon Code'.tr),
-                        Text(
-                          'Select Coupon Type'.tr,
-                          style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                        ),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  Radio(
-                                    value: "Fix Price",
-                                    groupValue: controller.selectCouponType.value,
-                                    activeColor: AppThemeData.primary300,
-                                    onChanged: (value) {
-                                      controller.selectCouponType.value = value!;
-                                    },
-                                  ),
-                                  InkWell(
-                                    onTap: () {
-                                      controller.selectCouponType.value = "Fix Price";
-                                    },
-                                    child: Text(
-                                      'Fix Price'.tr,
-                                      style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  Radio(
-                                    value: "Percentage",
-                                    groupValue: controller.selectCouponType.value,
-                                    activeColor: AppThemeData.primary300,
-                                    onChanged: (value) {
-                                      controller.selectCouponType.value = value!;
-                                    },
-                                  ),
-                                  InkWell(
-                                    onTap: () {
-                                      controller.selectCouponType.value = "Percentage";
-                                    },
-                                    child: Text(
-                                      'Percentage'.tr,
-                                      style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        TextFieldWidget(
-                          controller: controller.priceController.value,
-                          hintText: 'Enter price'.tr,
-                          textInputType: TextInputType.number,
-                          prefix: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                            child: Text(
-                              controller.selectCouponType.value == "Percentage" || controller.selectCouponType.value == "Percent" ? "%" : "${Constant.currencyModel!.symbol}".tr,
-                              style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontSize: 18),
-                            ),
+                            ],
                           ),
-                        ),
-                        Text(
-                          'Expires at'.tr,
-                          style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                        ),
-                        DateTimeField(
-                          format: DateFormat("MMM dd, yyyy"),
-                          controller: controller.selectDateController.value,
-                          textInputAction: TextInputAction.done,
-                          style: TextStyle(fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium),
-                          decoration: InputDecoration(
-                            errorStyle: const TextStyle(color: Colors.red),
-                            filled: true,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 10),
-                            fillColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                            suffixIcon: Padding(padding: const EdgeInsets.all(10), child: SvgPicture.asset("assets/icons/ic_calender.svg")),
-                            disabledBorder: UnderlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, width: 1),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
-                            ),
-                            errorBorder: OutlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
-                            ),
-                            hintText: "Select date".tr,
-                            hintStyle: TextStyle(fontSize: 14, color: isDark ? AppThemeData.grey600 : AppThemeData.grey400, fontFamily: AppThemeData.regular),
-                          ),
-                          onShowPicker: (context, currentValue) {
-                            return showDatePicker(
-                              context: context,
-                              firstDate: DateTime.now(), // ✅ only today & future
-                              initialDate: currentValue ?? DateTime.now(), // ✅ reopen with last selected
-                              lastDate: DateTime(2100),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                "Active".tr,
-                                style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontSize: 18),
+                          // ── Validity & visibility ───────────────────────
+                          DsFormSection(
+                            title: 'Expires at'.tr,
+                            icon: Icons.event_available_outlined,
+                            children: [
+                              DateTimeField(
+                                format: DateFormat("MMM dd, yyyy"),
+                                controller: controller.selectDateController.value,
+                                textInputAction: TextInputAction.done,
+                                style: t.bodyStrong,
+                                decoration: DsInputDecoration.of(
+                                  context,
+                                  hint: "Select date".tr,
+                                  prefixIcon: Icons.calendar_month_outlined,
+                                  suffix: Icon(Icons.keyboard_arrow_down_rounded, color: c.textMuted),
+                                ),
+                                onShowPicker: (context, currentValue) {
+                                  return showDatePicker(
+                                    context: context,
+                                    firstDate: DateTime.now(), // ✅ only today & future
+                                    initialDate: currentValue ?? DateTime.now(), // ✅ reopen with last selected
+                                    lastDate: DateTime(2100),
+                                  );
+                                },
                               ),
-                            ),
-                            Transform.scale(
-                              scale: 0.8,
-                              child: CupertinoSwitch(
+                              const DsGap(DsSpace.lg),
+                              FormSwitchTile(
+                                title: "Active".tr,
+                                icon: Icons.toggle_on_outlined,
+                                tone: DsTone.success,
                                 value: controller.isActive.value,
                                 onChanged: (value) {
                                   controller.isActive.value = value;
                                 },
                               ),
-                            ),
-                          ],
-                        ),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                "Public".tr,
-                                style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontSize: 18),
-                              ),
-                            ),
-                            Transform.scale(
-                              scale: 0.8,
-                              child: CupertinoSwitch(
+                              const DsGap(DsSpace.sm),
+                              FormSwitchTile(
+                                title: "Public".tr,
+                                icon: Icons.public_rounded,
+                                tone: DsTone.info,
                                 value: controller.isPublic.value,
                                 onChanged: (value) {
                                   controller.isPublic.value = value;
                                 },
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
+                            ],
+                          ),
+                        ]),
+                      ),
                     ),
                   ),
                 ),
-          bottomNavigationBar: Container(
-            color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: RoundedButtonFill(
-                title: "Save Coupon".tr,
-                height: 5.5,
-                color: AppThemeData.primary300,
-                textColor: AppThemeData.grey50,
-                fontSizes: 16,
-                onPress: () async {
-                  controller.saveCoupon();
-                },
-              ),
+          bottomBar: DsStickyBar(
+            child: DsButton.primary(
+              label: "Save Coupon".tr,
+              icon: Icons.check_rounded,
+              expand: true,
+              size: DsButtonSize.lg,
+              onPressed: () async {
+                controller.saveCoupon();
+              },
             ),
           ),
         );
@@ -315,60 +207,114 @@ class AddEditOfferScreen extends StatelessWidget {
   Future buildBottomSheet(BuildContext context, AddEditCouponController controller) {
     return showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.transparent,
       builder: (context) {
-        final themeController = Get.find<ThemeController>();
-        final isDark = themeController.isDark.value;
         return StatefulBuilder(
           builder: (context, setState) {
-            return SizedBox(
-              height: Responsive.height(22, context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
+            return MediaSourceSheet(
+              onCamera: () => controller.pickFile(source: ImageSource.camera),
+              onGallery: () => controller.pickFile(source: ImageSource.gallery),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+/// Ticket preview that follows the form as the vendor types (display only).
+class _LivePreview extends StatelessWidget {
+  final AddEditCouponController controller;
+  final bool isPercent;
+  const _LivePreview({required this.controller, required this.isPercent});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        controller.titleController.value,
+        controller.couponCodeController.value,
+        controller.priceController.value,
+        controller.selectDateController.value,
+      ]),
+      builder: (context, _) {
+        final price = controller.priceController.value.text.trim();
+        String headline;
+        if (price.isEmpty) {
+          headline = isPercent ? "% ${"Off".tr}" : "${Constant.currencyModel?.symbol ?? ''} ${"Off".tr}";
+        } else if (isPercent) {
+          headline = "$price % ${"Off".tr}";
+        } else {
+          String amount;
+          try {
+            amount = Constant.amountShow(amount: price);
+          } catch (_) {
+            amount = price;
+          }
+          headline = "$amount ${"Off".tr}";
+        }
+        final code = controller.couponCodeController.value.text.trim();
+        final title = controller.titleController.value.text.trim();
+        final date = controller.selectDateController.value.text.trim();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: DsSpace.sm, left: DsSpace.xs),
+              child: Text("Preview".tr.toUpperCase(), style: t.overline),
+            ),
+            CouponTicket(
+              stubGradient: controller.isActive.value ? null : DsGradients.tone(context, DsTone.neutral),
+              stub: AnimatedSwitcher(
+                duration: DsMotion.of(context, DsMotion.fast),
+                child: CouponStubLabel(key: ValueKey(headline), text: headline, icon: isPercent ? Icons.percent_rounded : Icons.payments_outlined),
+              ),
+              body: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 15),
-                    child: Text(
-                      "Please Select".tr,
-                      style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.bold, fontSize: 16),
+                  Row(
+                    children: [
+                      if (controller.images.isNotEmpty) ...[
+                        ClipRRect(borderRadius: DsRadius.brSm, child: FormPickedImage(source: controller.images.first, width: 40, height: 40)),
+                        const DsGap(DsSpace.sm),
+                      ],
+                      Expanded(
+                        child: Text(title.isEmpty ? 'Title'.tr : title, maxLines: 2, overflow: TextOverflow.ellipsis, style: title.isEmpty ? t.titleSm.withColor(c.textMuted) : t.titleSm),
+                      ),
+                    ],
+                  ),
+                  const DsGap(DsSpace.sm),
+                  DottedBorder(
+                    options: RoundedRectDottedBorderOptions(radius: const Radius.circular(DsRadius.sm), dashPattern: const [5, 4], color: c.brand.withValues(alpha: 0.6)),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
+                      decoration: BoxDecoration(color: c.brandSoft, borderRadius: DsRadius.brSm),
+                      child: Text(
+                        code.isEmpty ? 'Coupon Code'.tr : code,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.label.copyWith(color: c.brandStrong, letterSpacing: 1.1),
+                      ),
                     ),
                   ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                  const DsGap(DsSpace.sm),
+                  Wrap(
+                    spacing: DsSpace.xs,
+                    runSpacing: DsSpace.xs,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.all(18.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            IconButton(
-                              onPressed: () => controller.pickFile(source: ImageSource.camera),
-                              icon: const Icon(Icons.camera_alt, size: 32),
-                            ),
-                            Padding(padding: const EdgeInsets.only(top: 3), child: Text("Camera".tr)),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(18.0),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            IconButton(
-                              onPressed: () => controller.pickFile(source: ImageSource.gallery),
-                              icon: const Icon(Icons.photo_library_sharp, size: 32),
-                            ),
-                            Padding(padding: const EdgeInsets.only(top: 3), child: Text("Gallery".tr)),
-                          ],
-                        ),
-                      ),
+                      if (date.isNotEmpty) DsBadge(label: date, tone: DsTone.neutral, icon: Icons.event_outlined, small: true),
+                      DsBadge(label: "Active".tr, tone: controller.isActive.value ? DsTone.success : DsTone.neutral, small: true),
+                      if (controller.isPublic.value) DsBadge(label: "Public".tr, tone: DsTone.info, icon: Icons.public_rounded, small: true),
                     ],
                   ),
                 ],
               ),
-            );
-          },
+            ),
+          ],
         );
       },
     );

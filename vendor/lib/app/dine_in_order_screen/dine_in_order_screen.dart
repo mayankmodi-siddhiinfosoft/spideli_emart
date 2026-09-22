@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
-import 'package:vendor/themes/theme_controller.dart';
+import 'package:intl/intl.dart';
 import 'package:vendor/app/add_restaurant_screen/add_restaurant_screen.dart';
 import 'package:vendor/app/dine_in_screen/dine_in_create_screen.dart';
 import 'package:vendor/app/verification_screen/verification_screen.dart';
@@ -10,221 +9,161 @@ import 'package:vendor/constant/send_notification.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/dine_in_order_controller.dart';
 import 'package:vendor/models/dine_in_booking_model.dart';
-import 'package:vendor/themes/app_them_data.dart';
-import 'package:vendor/themes/responsive.dart';
-import 'package:vendor/themes/round_button_fill.dart';
+import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
-import 'package:vendor/utils/network_image_widget.dart';
-import 'package:vendor/widget/my_separator.dart';
 
 class DineInOrderScreen extends StatelessWidget {
   const DineInOrderScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: DineInOrderController(),
       builder: (controller) {
+        final c = context.dsColors;
+        final t = context.dsText;
         return controller.isLoading.value
-            ? Constant.loader()
+            ? ColoredBox(
+                color: c.background,
+                child: const SafeArea(
+                  child: DsResponsive(
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.all(DsSpace.lg),
+                      child: Column(
+                        children: [
+                          DsSkeletonList(itemCount: 1, carded: false, padding: EdgeInsets.zero),
+                          DsGap(DsSpace.lg),
+                          DsSkeletonCard(height: 48),
+                          DsGap(DsSpace.lg),
+                          DsSkeletonCard(height: 220),
+                          DsGap(DsSpace.md),
+                          DsSkeletonCard(height: 220),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              )
             : DefaultTabController(
                 length: 2,
                 child: Scaffold(
-                  appBar: AppBar(
-                    backgroundColor: AppThemeData.primary300,
-                    centerTitle: false,
-                    title: Row(
+                  backgroundColor: c.background,
+                  appBar: DsAppBar(
+                    showBack: false,
+                    titleWidget: Row(
                       children: [
-                        ClipOval(
-                          child: NetworkImageWidget(imageUrl: controller.userModel.value.profilePictureURL.toString(), height: 42, width: 42, fit: BoxFit.cover),
-                        ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "Welcome to spideli Store".tr,
-                              style: TextStyle(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, fontSize: 12, fontFamily: AppThemeData.regular),
-                            ),
-                            Text(
-                              controller.userModel.value.fullName().tr,
-                              style: TextStyle(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, fontSize: 16, fontFamily: AppThemeData.semiBold),
-                            ),
-                          ],
+                        DsAvatar(imageUrl: controller.userModel.value.profilePictureURL.toString(), name: controller.userModel.value.fullName(), size: 42, ring: true),
+                        const DsGap(DsSpace.md),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text("Welcome to spideli Store".tr, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption),
+                              Text(controller.userModel.value.fullName().tr, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                    bottom: TabBar(
+                    bottom: DsTabBar(
                       onTap: (value) {
                         controller.selectedTabIndex.value = value;
                       },
-                      labelStyle: const TextStyle(fontFamily: AppThemeData.semiBold),
-                      labelColor: isDark ? AppThemeData.grey50 : AppThemeData.grey50,
-                      unselectedLabelStyle: const TextStyle(fontFamily: AppThemeData.medium),
-                      unselectedLabelColor: isDark ? AppThemeData.secondary100 : AppThemeData.secondary100,
-                      indicatorColor: AppThemeData.primary300,
-                      isScrollable: false,
-                      dividerColor: Colors.transparent,
-                      tabs: [
-                        Tab(text: "New".tr),
-                        Tab(text: "History".tr),
-                      ],
+                      tabs: ["New".tr, "History".tr],
                     ),
                   ),
                   body: controller.userModel.value.isAutoVerify == false && controller.userModel.value.isDocumentVerify == false
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Container(
-                                decoration: ShapeDecoration(
-                                  color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
-                                ),
-                                child: Padding(padding: const EdgeInsets.all(20), child: SvgPicture.asset("assets/icons/ic_document.svg")),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                "Document Verification in Pending".tr,
-                                style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                              ),
-                              const SizedBox(height: 5),
-                              Text(
-                                "Your documents are being reviewed. We will notify you once the verification is complete.".tr,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                              ),
-                              const SizedBox(height: 20),
-                              RoundedButtonFill(
-                                title: "View Status".tr,
-                                width: 55,
-                                height: 5.5,
-                                color: AppThemeData.primary300,
-                                textColor: AppThemeData.grey50,
-                                onPress: () async {
+                      ? Center(
+                          child: SingleChildScrollView(
+                            child: DsFadeSlideIn(
+                              child: DsEmptyState(
+                                icon: Icons.description_outlined,
+                                tone: DsTone.warning,
+                                title: "Document Verification in Pending".tr,
+                                message: "Your documents are being reviewed. We will notify you once the verification is complete.".tr,
+                                actionLabel: "View Status".tr,
+                                actionIcon: Icons.verified_user_outlined,
+                                onAction: () async {
                                   Get.to(const VerificationScreen());
                                 },
                               ),
-                            ],
+                            ),
                           ),
                         )
                       : controller.userModel.value.vendorID == null || controller.userModel.value.vendorID!.isEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Container(
-                                decoration: ShapeDecoration(
-                                  color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
-                                ),
-                                child: Padding(padding: const EdgeInsets.all(20), child: SvgPicture.asset("assets/icons/ic_building_two.svg")),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                "Add Your First Store".tr,
-                                style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                              ),
-                              const SizedBox(height: 5),
-                              Text(
-                                "Get started by adding your Store details to manage your menu, orders, and reservations.".tr,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                              ),
-                              const SizedBox(height: 20),
-                              RoundedButtonFill(
-                                title: "Add Store".tr,
-                                width: 55,
-                                height: 5.5,
-                                color: AppThemeData.primary300,
-                                textColor: AppThemeData.grey50,
-                                onPress: () async {
+                      ? Center(
+                          child: SingleChildScrollView(
+                            child: DsFadeSlideIn(
+                              child: DsEmptyState(
+                                icon: Icons.add_business_outlined,
+                                title: "Add Your First Store".tr,
+                                message: "Get started by adding your Store details to manage your menu, orders, and reservations.".tr,
+                                actionLabel: "Add Store".tr,
+                                actionIcon: Icons.add_rounded,
+                                onAction: () async {
                                   Get.to(const AddRestaurantScreen());
                                 },
                               ),
-                            ],
+                            ),
                           ),
                         )
                       : (controller.vendorModel.value.restaurantCost == null || controller.vendorModel.value.restaurantCost!.isEmpty)
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Container(
-                                decoration: ShapeDecoration(
-                                  color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
-                                ),
-                                child: Padding(padding: const EdgeInsets.all(20), child: SvgPicture.asset("assets/icons/ic_dinein.svg")),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                "Dine-In Details Missing".tr,
-                                style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                              ),
-                              const SizedBox(height: 5),
-                              Text(
-                                "Please add your store’s dine-in details to start accepting reservations.".tr,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                              ),
-                              const SizedBox(height: 20),
-                              RoundedButtonFill(
-                                title: "Add Dine in".tr,
-                                width: 55,
-                                height: 5.5,
-                                color: AppThemeData.primary300,
-                                textColor: AppThemeData.grey50,
-                                onPress: () async {
+                      ? Center(
+                          child: SingleChildScrollView(
+                            child: DsFadeSlideIn(
+                              child: DsEmptyState(
+                                icon: Icons.table_restaurant_outlined,
+                                tone: DsTone.info,
+                                title: "Dine-In Details Missing".tr,
+                                message: "Please add your store’s dine-in details to start accepting reservations.".tr,
+                                actionLabel: "Add Dine in".tr,
+                                actionIcon: Icons.add_rounded,
+                                onAction: () async {
                                   Get.to(const DineInCreateScreen());
                                 },
                               ),
-                            ],
+                            ),
                           ),
                         )
-                      : Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          child: TabBarView(
-                            children: [
-                              controller.featureList.isEmpty
-                                  ? Constant.showEmptyView(message: "Upcoming Booking not found.".tr, isDark: isDark)
-                                  : RefreshIndicator(
-                                      onRefresh: () => controller.getDineBooking(),
+                      : TabBarView(
+                          children: [
+                            controller.featureList.isEmpty
+                                ? DsEmptyState(icon: Icons.event_available_outlined, title: "Upcoming Booking not found.".tr)
+                                : RefreshIndicator(
+                                    color: c.brand,
+                                    backgroundColor: c.surface,
+                                    onRefresh: () => controller.getDineBooking(),
+                                    child: DsResponsive(
                                       child: ListView.builder(
-                                        shrinkWrap: true,
-                                        padding: EdgeInsets.zero,
+                                        padding: EdgeInsets.fromLTRB(context.dsLayout.gutter, DsSpace.sm, context.dsLayout.gutter, DsSpace.xxl),
                                         scrollDirection: Axis.vertical,
                                         itemCount: controller.featureList.length,
                                         itemBuilder: (BuildContext context, int index) {
                                           DineInBookingModel dineBookingModel = controller.featureList[index];
-                                          return itemView(isDark, context, dineBookingModel, true, controller);
+                                          return DsFadeSlideIn(index: index, child: itemView(context, dineBookingModel, true, controller));
                                         },
                                       ),
                                     ),
-                              controller.historyList.isEmpty
-                                  ? Constant.showEmptyView(message: "History not found.".tr, isDark: isDark)
-                                  : RefreshIndicator(
-                                      onRefresh: () => controller.getDineBooking(),
+                                  ),
+                            controller.historyList.isEmpty
+                                ? DsEmptyState(icon: Icons.history_rounded, tone: DsTone.neutral, title: "History not found.".tr)
+                                : RefreshIndicator(
+                                    color: c.brand,
+                                    backgroundColor: c.surface,
+                                    onRefresh: () => controller.getDineBooking(),
+                                    child: DsResponsive(
                                       child: ListView.builder(
                                         itemCount: controller.historyList.length,
-                                        shrinkWrap: true,
-                                        padding: EdgeInsets.zero,
+                                        padding: EdgeInsets.fromLTRB(context.dsLayout.gutter, DsSpace.sm, context.dsLayout.gutter, DsSpace.xxl),
                                         itemBuilder: (context, index) {
                                           DineInBookingModel dineBookingModel = controller.historyList[index];
-                                          return itemView(isDark, context, dineBookingModel, false, controller);
+                                          return DsFadeSlideIn(index: index, child: itemView(context, dineBookingModel, false, controller));
                                         },
                                       ),
                                     ),
-                            ],
-                          ),
+                                  ),
+                          ],
                         ),
                 ),
               );
@@ -232,210 +171,190 @@ class DineInOrderScreen extends StatelessWidget {
     );
   }
 
-  InkWell itemView(isDark, BuildContext context, DineInBookingModel orderModel, bool isNew, DineInOrderController controller) {
-    return InkWell(
-      onTap: () {},
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Container(
-          decoration: ShapeDecoration(
-            color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    ClipRRect(
-                      borderRadius: const BorderRadius.all(Radius.circular(16)),
-                      child: Stack(
-                        children: [
-                          NetworkImageWidget(imageUrl: orderModel.vendor!.photo.toString(), fit: BoxFit.cover, height: Responsive.height(10, context), width: Responsive.width(20, context)),
-                          Container(
-                            height: Responsive.height(10, context),
-                            width: Responsive.width(20, context),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(begin: const Alignment(0.00, 1.00), end: const Alignment(0, -1), colors: [Colors.black.withOpacity(0), AppThemeData.grey900]),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            orderModel.status.toString(),
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                              color: Constant.statusColor(status: orderModel.status.toString()),
-                              fontFamily: AppThemeData.semiBold,
-                              fontWeight: FontWeight.w500,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            orderModel.vendor!.title.toString(),
-                            style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w400),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            Constant.timestampToDateTime(orderModel.createdAt!),
-                            style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                ),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        "Name".tr,
-                        style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        "${orderModel.guestFirstName} ${orderModel.guestLastName}",
-                        textAlign: TextAlign.end,
-                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 5),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        "Phone number".tr,
-                        style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        "${orderModel.guestPhone}",
-                        textAlign: TextAlign.end,
-                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 5),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        "Date and Time".tr,
-                        style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        Constant.timestampToDateTime(orderModel.date!),
-                        textAlign: TextAlign.end,
-                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 5),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        "Guest".tr,
-                        style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        orderModel.totalGuest!,
-                        textAlign: TextAlign.end,
-                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 5),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        "Discount".tr,
-                        style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        "${orderModel.discountType == "amount" ? (Constant.currencyModel!.symbolAtRight == true ? "${orderModel.discount}${Constant.currencyModel!.symbol}" : "${Constant.currencyModel!.symbol}${orderModel.discount}") : "${orderModel.discount}%"} ${'Off'.tr}",
-                        textAlign: TextAlign.end,
-                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                isNew == false || (orderModel.status == Constant.orderAccepted || orderModel.status == Constant.orderRejected)
-                    ? const SizedBox()
-                    : Row(
-                        children: [
-                          Expanded(
-                            child: RoundedButtonFill(
-                              title: "Reject".tr,
-                              color: AppThemeData.danger300,
-                              textColor: AppThemeData.grey50,
-                              height: 5,
-                              onPress: () async {
-                                ShowToastDialog.showLoader("Please wait.".tr);
-                                orderModel.status = Constant.orderRejected;
-                                await FireStoreUtils.setBookedOrder(orderModel);
-                                SendNotification.sendFcmMessage(Constant.dineInCanceled, orderModel.author!.fcmToken.toString(), {});
-                                controller.getDineBooking();
-                                ShowToastDialog.closeLoader();
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: RoundedButtonFill(
-                              title: "Accept".tr,
-                              height: 5,
-                              color: AppThemeData.success400,
-                              textColor: AppThemeData.grey50,
-                              onPress: () async {
-                                ShowToastDialog.showLoader("Please wait.".tr);
-                                orderModel.status = Constant.orderAccepted;
-                                await FireStoreUtils.setBookedOrder(orderModel);
-                                SendNotification.sendFcmMessage(Constant.dineInAccepted, orderModel.author!.fcmToken.toString(), {});
-                                controller.getDineBooking();
-                                ShowToastDialog.closeLoader();
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-              ],
+  /// Reservation card: date block, guest, details grid and accept / reject.
+  Widget itemView(BuildContext context, DineInBookingModel orderModel, bool isNew, DineInOrderController controller) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final bookingDate = orderModel.date?.toDate();
+    final status = orderModel.status.toString();
+    final tone = DsTone.fromStatus(status);
+    final showActions = !(isNew == false || (orderModel.status == Constant.orderAccepted || orderModel.status == Constant.orderRejected));
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpace.md),
+      child: DsCard(
+        padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Top band tinted by status
+            Container(
+              height: 4,
+              decoration: BoxDecoration(gradient: DsGradients.tone(context, tone == DsTone.neutral ? DsTone.brand : tone)),
             ),
-          ),
+            Padding(
+              padding: const EdgeInsets.all(DsSpace.lg),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Date block
+                  Container(
+                    width: 64,
+                    padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
+                    decoration: BoxDecoration(color: c.brandSoft, borderRadius: DsRadius.brMd),
+                    child: Column(
+                      children: [
+                        Text(bookingDate == null ? '--' : DateFormat('MMM').format(bookingDate).toUpperCase(), style: t.overline.withColor(c.brandStrong)),
+                        Text(bookingDate == null ? '--' : DateFormat('dd').format(bookingDate), style: t.headline.withColor(c.brandStrong).tabular),
+                        Text(bookingDate == null ? '' : DateFormat('hh:mm a').format(bookingDate), style: t.caption.withColor(c.brandStrong), maxLines: 1),
+                      ],
+                    ),
+                  ),
+                  const DsGap(DsSpace.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                "${orderModel.guestFirstName} ${orderModel.guestLastName}",
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: t.titleSm,
+                              ),
+                            ),
+                            const DsGap(DsSpace.sm),
+                            DsStatusChip(label: status, status: status, pulse: isNew && showActions),
+                          ],
+                        ),
+                        const DsGap(DsSpace.xs),
+                        Row(
+                          children: [
+                            DsAvatar(imageUrl: orderModel.vendor!.photo.toString(), name: orderModel.vendor!.title.toString(), size: 20),
+                            const DsGap(DsSpace.xs),
+                            Expanded(child: Text(orderModel.vendor!.title.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySm)),
+                          ],
+                        ),
+                        const DsGap(DsSpace.xs),
+                        Text(Constant.timestampToDateTime(orderModel.createdAt!), style: t.caption),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
+              child: Container(
+                padding: const EdgeInsets.all(DsSpace.md),
+                decoration: BoxDecoration(color: c.surfaceAlt.withValues(alpha: c.isDark ? 0.5 : 0.7), borderRadius: DsRadius.brMd),
+                child: DsAdaptiveGrid(
+                  minItemWidth: 140,
+                  maxColumns: 2,
+                  equalHeight: false,
+                  runSpacing: DsSpace.md,
+                  children: [
+                    _Info(icon: Icons.person_outline_rounded, label: "Name".tr, value: "${orderModel.guestFirstName} ${orderModel.guestLastName}"),
+                    _Info(icon: Icons.phone_outlined, label: "Phone number".tr, value: "${orderModel.guestPhone}"),
+                    _Info(icon: Icons.groups_2_outlined, label: "Guest".tr, value: orderModel.totalGuest!),
+                    _Info(
+                      icon: Icons.sell_outlined,
+                      label: "Discount".tr,
+                      value:
+                          "${orderModel.discountType == "amount" ? (Constant.currencyModel!.symbolAtRight == true ? "${orderModel.discount}${Constant.currencyModel!.symbol}" : "${Constant.currencyModel!.symbol}${orderModel.discount}") : "${orderModel.discount}%"} ${'Off'.tr}",
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.lg),
+              child: Row(
+                children: [
+                  Icon(Icons.event_rounded, size: 16, color: c.textMuted),
+                  const DsGap(DsSpace.xs),
+                  Text("Date and Time".tr, style: t.caption),
+                  const DsGap(DsSpace.sm),
+                  Expanded(
+                    child: Text(Constant.timestampToDateTime(orderModel.date!), textAlign: TextAlign.end, style: t.label),
+                  ),
+                ],
+              ),
+            ),
+            if (showActions)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(DsSpace.lg, 0, DsSpace.lg, DsSpace.lg),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: DsButton.dangerTonal(
+                        label: "Reject".tr,
+                        icon: Icons.close_rounded,
+                        expand: true,
+                        onPressed: () async {
+                          ShowToastDialog.showLoader("Please wait.".tr);
+                          orderModel.status = Constant.orderRejected;
+                          await FireStoreUtils.setBookedOrder(orderModel);
+                          SendNotification.sendFcmMessage(Constant.dineInCanceled, orderModel.author!.fcmToken.toString(), {});
+                          controller.getDineBooking();
+                          ShowToastDialog.closeLoader();
+                        },
+                      ),
+                    ),
+                    const DsGap(DsSpace.md),
+                    Expanded(
+                      child: DsButton.primary(
+                        label: "Accept".tr,
+                        icon: Icons.check_rounded,
+                        expand: true,
+                        color: c.success,
+                        onPressed: () async {
+                          ShowToastDialog.showLoader("Please wait.".tr);
+                          orderModel.status = Constant.orderAccepted;
+                          await FireStoreUtils.setBookedOrder(orderModel);
+                          SendNotification.sendFcmMessage(Constant.dineInAccepted, orderModel.author!.fcmToken.toString(), {});
+                          controller.getDineBooking();
+                          ShowToastDialog.closeLoader();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+class _Info extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  const _Info({required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: c.textMuted),
+        const DsGap(DsSpace.sm),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: t.caption),
+              const DsGap(2),
+              Text(value, style: t.label),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

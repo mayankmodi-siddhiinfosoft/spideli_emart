@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:vendor/themes/theme_controller.dart';
 import 'package:vendor/app/chat_screens/chat_screen.dart';
 import 'package:vendor/constant/collection_name.dart';
 import 'package:vendor/constant/constant.dart';
@@ -8,10 +7,8 @@ import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/models/advertisement_model.dart';
 import 'package:vendor/models/inbox_model.dart';
 import 'package:vendor/models/vendor_model.dart';
-import 'package:vendor/themes/app_them_data.dart';
-import 'package:vendor/themes/responsive.dart';
+import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
-import 'package:vendor/utils/network_image_widget.dart';
 import 'package:vendor/widget/firebase_pagination/src/firestore_pagination.dart';
 import 'package:vendor/widget/firebase_pagination/src/models/view_type.dart';
 
@@ -20,123 +17,128 @@ class AdminInboxScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-        centerTitle: false,
-        titleSpacing: 0,
-        title: Text(
-          "Admin Chat Inbox".tr,
-          textAlign: TextAlign.start,
-          style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-        ),
-      ),
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsScaffold(
+      title: "Admin Chat Inbox".tr,
+      maxContentWidth: DsLayout.contentMax,
       body: FirestorePagination(
         //item builder type is compulsory.
         physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.sm, DsSpace.lg, DsSpace.xxl),
         itemBuilder: (context, documentSnapshots, index) {
           final data = documentSnapshots[index].data() as Map<String, dynamic>?;
           InboxModel inboxModel = InboxModel.fromJson(data!);
-          return InkWell(
-            onTap: () async {
-              ShowToastDialog.showLoader("Please wait".tr);
-              VendorModel? vendorModel = await FireStoreUtils.getVendorById(Constant.userModel!.vendorID.toString());
-              ShowToastDialog.closeLoader();
+          return DsFadeSlideIn(
+            index: index,
+            child: DsCard.outlined(
+              margin: const EdgeInsets.only(bottom: DsSpace.md),
+              padding: const EdgeInsets.all(DsSpace.md),
+              onTap: () async {
+                ShowToastDialog.showLoader("Please wait".tr);
+                VendorModel? vendorModel = await FireStoreUtils.getVendorById(Constant.userModel!.vendorID.toString());
+                ShowToastDialog.closeLoader();
 
-              Get.to(
-                const ChatScreen(),
-                arguments: {
-                  "senderName": vendorModel?.title,
-                  "senderId": Constant.userModel?.id,
-                  "senderProfileUrl": vendorModel?.photo,
-                  "receivedName": 'Admin',
-                  "receivedId": 'admin',
-                  "receivedProfileUrl": '',
-                  "orderId": inboxModel.orderId,
-                  "token": '',
-                  "chatType": 'admin',
-                },
-              );
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-              child: Container(
-                decoration: ShapeDecoration(
-                  color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: FutureBuilder(
-                    future: FireStoreUtils.getAdvertisementById(advertisementId: inboxModel.orderId!),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.done) {
-                        AdvertisementModel advertisementModel = snapshot.data!;
-                        return Row(
+                Get.to(
+                  const ChatScreen(),
+                  arguments: {
+                    "senderName": vendorModel?.title,
+                    "senderId": Constant.userModel?.id,
+                    "senderProfileUrl": vendorModel?.photo,
+                    "receivedName": 'Admin',
+                    "receivedId": 'admin',
+                    "receivedProfileUrl": '',
+                    "orderId": inboxModel.orderId,
+                    "token": '',
+                    "chatType": 'admin',
+                  },
+                );
+              },
+              child: FutureBuilder(
+                future: FireStoreUtils.getAdvertisementById(advertisementId: inboxModel.orderId!),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.done) {
+                    AdvertisementModel advertisementModel = snapshot.data!;
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Stack(
+                          clipBehavior: Clip.none,
                           children: [
-                            ClipRRect(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              child: NetworkImageWidget(
-                                imageUrl: advertisementModel.profileImage.toString(),
-                                fit: BoxFit.cover,
-                                height: Responsive.height(6, context),
-                                width: Responsive.width(12, context),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          "${advertisementModel.title}",
-                                          textAlign: TextAlign.start,
-                                          style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800),
-                                        ),
-                                      ),
-                                      Text(
-                                        Constant.timestampToDate(inboxModel.createdAt!),
-                                        textAlign: TextAlign.start,
-                                        style: TextStyle(fontFamily: AppThemeData.regular, fontSize: 16, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    "${inboxModel.lastMessage}",
-                                    textAlign: TextAlign.start,
-                                    style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: isDark ? AppThemeData.grey200 : AppThemeData.grey700),
-                                  ),
-                                ],
+                            DsImage(url: advertisementModel.profileImage.toString(), width: 64, height: 64, radius: DsRadius.md),
+                            Positioned(
+                              right: -4,
+                              bottom: -4,
+                              child: Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(color: c.surface, shape: BoxShape.circle),
+                                child: DsIconWell(icon: Icons.support_agent_rounded, size: 22, circle: true),
                               ),
                             ),
                           ],
-                        );
-                      } else {
-                        return Text(
-                          "",
-                          textAlign: TextAlign.start,
-                          style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 14, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
-                        );
-                      }
-                    },
-                  ),
-                ),
+                        ),
+                        const DsGap(DsSpace.md),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      "${advertisementModel.title}",
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: t.titleSm.withColor(c.textPrimary),
+                                    ),
+                                  ),
+                                  const DsGap(DsSpace.sm),
+                                  Text(Constant.timestampToDate(inboxModel.createdAt!), style: t.caption),
+                                ],
+                              ),
+                              const DsGap(DsSpace.xs),
+                              Text(
+                                "${inboxModel.lastMessage}",
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: t.bodySm.withColor(c.textSecondary),
+                              ),
+                              const DsGap(DsSpace.sm),
+                              DsBadge(label: 'Admin'.tr, tone: DsTone.info, icon: Icons.campaign_outlined, small: true),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  } else {
+                    return DsShimmer(
+                      child: Row(
+                        children: [
+                          DsSkeleton.box(width: 64, height: 64),
+                          const DsGap(DsSpace.md),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [DsSkeleton.line(width: 150), const DsGap(DsSpace.sm), DsSkeleton.line(width: 200), const DsGap(DsSpace.sm), DsSkeleton.line(width: 60)],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                },
               ),
             ),
           );
         },
         shrinkWrap: true,
-        onEmpty: Constant.showEmptyView(message: "No Conversion found".tr, isDark: isDark),
+        onEmpty: DsEmptyState(icon: Icons.support_agent_rounded, title: "No Conversion found".tr),
         // orderBy is compulsory to enable pagination
         query: FireStoreUtils.fireStore.collection(CollectionName.chatAdmin).where("restaurantId", isEqualTo: FireStoreUtils.getCurrentUid()).orderBy('createdAt', descending: true),
         //Change types customerId
-        initialLoader: Constant.loader(),
+        initialLoader: const DsSkeletonList(itemCount: 6),
+        bottomLoader: const Padding(padding: EdgeInsets.all(DsSpace.lg), child: Center(child: DsSpinner())),
         // to fetch real-time data
         isLive: true,
         viewType: ViewType.list,

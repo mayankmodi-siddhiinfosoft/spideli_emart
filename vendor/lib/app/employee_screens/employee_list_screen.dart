@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
@@ -8,377 +7,363 @@ import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/employee_list_controller.dart';
 import 'package:vendor/models/employee_role_model.dart';
-import 'package:vendor/themes/app_them_data.dart';
-import 'package:vendor/themes/responsive.dart';
-import 'package:vendor/themes/round_button_fill.dart';
-import 'package:vendor/themes/theme_controller.dart';
+import 'package:vendor/models/user_model.dart';
+import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
-import 'package:vendor/utils/network_image_widget.dart';
 
 class EmployeeListScreen extends StatelessWidget {
   const EmployeeListScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: EmployeeListController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            backgroundColor: AppThemeData.primary300,
-            centerTitle: false,
-            iconTheme: IconThemeData(color: AppThemeData.grey50, size: 20),
-            title: Text(
-              "Manage Employees".tr,
-              style: TextStyle(color: AppThemeData.grey50, fontSize: 18, fontFamily: AppThemeData.medium),
-            ),
-            actions: [
-              InkWell(
-                splashColor: Colors.transparent,
-                onTap: () async {
-                  if (Constant.userModel?.vendorID?.isEmpty == true || Constant.userModel?.vendorID == null) {
-                    ShowToastDialog.showToast("Please add your restaurant details before creating a employee user.".tr);
+        final c = context.dsColors;
+        return DsScaffold.collapsing(
+          title: "Manage Employees".tr,
+          backgroundColor: c.background,
+          actions: [
+            DsButton.tonal(
+              label: "Add".tr,
+              icon: Icons.person_add_alt_1_rounded,
+              size: DsButtonSize.sm,
+              onPressed: () async {
+                if (Constant.userModel?.vendorID?.isEmpty == true || Constant.userModel?.vendorID == null) {
+                  ShowToastDialog.showToast("Please add your restaurant details before creating a employee user.".tr);
+                } else {
+                  ShowToastDialog.showLoader("Please wait".tr);
+                  List<EmployeeRoleModel> employeeRolelList = await FireStoreUtils.getAllEmployeeRoles(isActive: true);
+                  ShowToastDialog.closeLoader();
+                  if (employeeRolelList.isEmpty == true) {
+                    ShowToastDialog.showToast("Please add at least one active employee role before creating an employee user.".tr);
                   } else {
-                    ShowToastDialog.showLoader("Please wait".tr);
-                    List<EmployeeRoleModel> employeeRolelList = await FireStoreUtils.getAllEmployeeRoles(isActive: true);
-                    ShowToastDialog.closeLoader();
-                    if (employeeRolelList.isEmpty == true) {
-                      ShowToastDialog.showToast("Please add at least one active employee role before creating an employee user.".tr);
-                    } else {
-                      Get.to(const AddEmployeeScreen())?.then((value) {
-                        if (value == true) {
-                          Get.back();
-                        }
-                      });
-                    }
+                    Get.to(const AddEmployeeScreen())?.then((value) {
+                      if (value == true) {
+                        Get.back();
+                      }
+                    });
                   }
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
+                }
+              },
+            ),
+          ],
+          slivers: [
+            if (controller.isLoading.value)
+              DsSliverResponsive(
+                maxWidth: DsLayout.wideMax,
+                top: DsSpace.sm,
+                sliver: SliverToBoxAdapter(
+                  child: DsShimmer(
+                    child: DsAdaptiveGrid(
+                      minItemWidth: 300,
+                      maxColumns: 3,
+                      children: List.generate(6, (_) => DsSkeleton.box(height: 170, radius: DsRadius.lg)),
+                    ),
+                  ),
+                ),
+              )
+            else if (Constant.userModel?.vendorID?.isEmpty == true || Constant.userModel?.vendorID == null)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: DsEmptyState(
+                  illustration: _SvgHalo(asset: "assets/icons/ic_building_two.svg"),
+                  title: "Add Your First Restaurant".tr,
+                  message: "Get started by adding your restaurant details to manage your employee men.".tr,
+                  actionLabel: "Add Store".tr,
+                  actionIcon: Icons.storefront_outlined,
+                  onAction: () async {
+                    Get.to(const AddRestaurantScreen())?.then((value) {
+                      controller.update();
+                    });
+                  },
+                ),
+              )
+            else if (controller.employeeUserList.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: DsEmptyState(
+                  illustration: Center(
+                    child: SvgPicture.asset("assets/icons/ic_employee.svg", height: 96, colorFilter: ColorFilter.mode(c.textMuted, BlendMode.srcIn)),
+                  ),
+                  title: "No Employees Available".tr,
+                  message: "No Employees found! Add your first employee to start managing your team.".tr,
+                  actionLabel: "Add Employees".tr,
+                  actionIcon: Icons.person_add_alt_1_rounded,
+                  onAction: () async {
+                    Get.to(const AddEmployeeScreen())?.then((value) {
+                      if (value == true) {
+                        Get.back();
+                      }
+                    });
+                  },
+                ),
+              )
+            else ...[
+              DsSliverResponsive(
+                maxWidth: DsLayout.wideMax,
+                top: DsSpace.sm,
+                sliver: SliverToBoxAdapter(
+                  child: GetBuilder<EmployeeListController>(
+                    builder: (controller) {
+                      final total = controller.employeeUserList.length;
+                      final active = controller.employeeUserList.where((e) => e.active == true).length;
+                      return DsAdaptiveGrid(
+                        minItemWidth: 150,
+                        children: DsFadeSlideIn.stagger([
+                          DsStatTile(label: "Total".tr, countTo: total, icon: Icons.groups_2_outlined, tone: DsTone.brand),
+                          DsStatTile(label: "Active".tr, countTo: active, icon: Icons.how_to_reg_outlined, tone: DsTone.success, variant: DsStatTileVariant.tinted),
+                        ]),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              DsSliverResponsive(
+                maxWidth: DsLayout.wideMax,
+                top: DsSpace.xl,
+                bottom: DsSpace.lg,
+                sliver: SliverToBoxAdapter(
+                  child: DsAdaptiveGrid(
+                    minItemWidth: 300,
+                    maxColumns: 3,
                     children: [
-                      Icon(Icons.add, color: AppThemeData.grey50),
-                      const SizedBox(width: 5),
-                      Text(
-                        "Add".tr,
-                        style: TextStyle(color: AppThemeData.grey50, fontSize: 18, fontFamily: AppThemeData.medium),
-                      ),
+                      for (int index = 0; index < controller.employeeUserList.length; index++)
+                        DsFadeSlideIn(
+                          index: index,
+                          child: _EmployeeCard(
+                            employee: controller.employeeUserList[index],
+                            onTap: () {
+                              Get.to(const AddEmployeeScreen(), arguments: {"employeemodel": controller.employeeUserList[index]})?.then((value) {
+                                if (value == true) {
+                                  controller.getAllEmployeeList();
+                                }
+                              });
+                            },
+                            role: FutureBuilder<EmployeeRoleModel?>(
+                              future: FireStoreUtils.getEmployeeRoleById(controller.employeeUserList[index].employeePermissionId!),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState == ConnectionState.waiting || snapshot.hasError) {
+                                  return const SizedBox(height: 18, width: 18, child: DsSpinner(size: 16));
+                                }
+                                if (!snapshot.hasData) {
+                                  return const DsBadge(
+                                    label: "Role not assigned.", // use actual field from EmployeeRoleModel
+                                    tone: DsTone.warning,
+                                    icon: Icons.help_outline_rounded,
+                                    small: true,
+                                  );
+                                }
+
+                                final role = snapshot.data;
+                                return Semantics(
+                                  button: true,
+                                  label: "Permissions".tr,
+                                  child: DsPressable(
+                                    onTap: () {
+                                      showDialog(
+                                        context: context,
+                                        builder: (BuildContext context) {
+                                          return showListOfRoleDialog(context, role!);
+                                        },
+                                      );
+                                    },
+                                    child: ConstrainedBox(
+                                      constraints: const BoxConstraints(minHeight: 32),
+                                      child: Center(
+                                        widthFactor: 1,
+                                        child: DsBadge(
+                                          label: role?.title ?? "Unknown Role", // use actual field from EmployeeRoleModel
+                                          tone: DsTone.brand,
+                                          icon: Icons.verified_user_outlined,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            toggle: GetBuilder<EmployeeListController>(
+                              builder: (controller) {
+                                return _ActiveToggle(
+                                  value: controller.employeeUserList[index].active ?? false,
+                                  onChanged: (value) {
+                                    controller.employeeUserList[index].active = value;
+                                    controller.updateEmployee(controller.employeeUserList[index]);
+                                    controller.update();
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
               ),
             ],
-          ),
-          body: controller.isLoading.value
-              ? Constant.loader()
-              : (Constant.userModel?.vendorID?.isEmpty == true || Constant.userModel?.vendorID == null)
-              ? Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Container(
-                        decoration: ShapeDecoration(
-                          color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
-                        ),
-                        child: Padding(padding: const EdgeInsets.all(20), child: SvgPicture.asset("assets/icons/ic_building_two.svg")),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        "Add Your First Restaurant".tr,
-                        style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        "Get started by adding your restaurant details to manage your employee men.".tr,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                      ),
-                      const SizedBox(height: 20),
-                      RoundedButtonFill(
-                        title: "Add Store".tr,
-                        width: 55,
-                        height: 5.5,
-                        color: AppThemeData.primary300,
-                        textColor: AppThemeData.grey50,
-                        onPress: () async {
-                          Get.to(const AddRestaurantScreen())?.then((value) {
-                            controller.update();
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                )
-              : controller.employeeUserList.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      SvgPicture.asset("assets/icons/ic_employee.svg", colorFilter: ColorFilter.mode(isDark ? AppThemeData.grey400 : AppThemeData.grey500, BlendMode.srcIn)),
-                      const SizedBox(height: 12),
-                      Text(
-                        "No Employees Available".tr,
-                        style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        "No Employees found! Add your first employee to start managing your team.".tr,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                      ),
-                      const SizedBox(height: 20),
-                      RoundedButtonFill(
-                        title: "Add Employees".tr,
-                        width: 55,
-                        height: 5.5,
-                        color: AppThemeData.primary300,
-                        textColor: AppThemeData.grey50,
-                        onPress: () async {
-                          Get.to(const AddEmployeeScreen())?.then((value) {
-                            if (value == true) {
-                              Get.back();
-                            }
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                )
-              : Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  child: ListView.builder(
-                    itemCount: controller.employeeUserList.length,
-                    shrinkWrap: true,
-                    itemBuilder: (context, index) {
-                      return InkWell(
-                        splashColor: Colors.transparent,
-                        onTap: () {
-                          Get.to(const AddEmployeeScreen(), arguments: {"employeemodel": controller.employeeUserList[index]})?.then((value) {
-                            if (value == true) {
-                              controller.getAllEmployeeList();
-                            }
-                          });
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 5),
-                          child: Container(
-                            decoration: ShapeDecoration(
-                              color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(8.0),
-                              child: Row(
-                                children: [
-                                  controller.employeeUserList[index].profilePictureURL == null || controller.employeeUserList[index].profilePictureURL == ''
-                                      ? ClipRRect(
-                                          borderRadius: BorderRadius.circular(60),
-                                          child: Image.asset(Constant.userPlaceHolder, height: Responsive.width(20, context), width: Responsive.width(20, context), fit: BoxFit.cover),
-                                        )
-                                      : ClipRRect(
-                                          borderRadius: const BorderRadius.all(Radius.circular(60)),
-                                          child: NetworkImageWidget(
-                                            imageUrl: controller.employeeUserList[index].profilePictureURL.toString(),
-                                            fit: BoxFit.cover,
-                                            height: Responsive.width(20, context),
-                                            width: Responsive.width(20, context),
-                                          ),
-                                        ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: SizedBox(
-                                      height: Responsive.width(18, context),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                        children: [
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  "${controller.employeeUserList[index].firstName ?? ''} ${controller.employeeUserList[index].lastName ?? ''}",
-                                                  maxLines: 1,
-                                                  style: TextStyle(
-                                                    fontSize: 18,
-                                                    color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                    fontFamily: AppThemeData.semiBold,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                              ),
-                                              FutureBuilder<EmployeeRoleModel?>(
-                                                future: FireStoreUtils.getEmployeeRoleById(controller.employeeUserList[index].employeePermissionId!),
-                                                builder: (context, snapshot) {
-                                                  if (snapshot.connectionState == ConnectionState.waiting || snapshot.hasError) {
-                                                    return const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2));
-                                                  }
-                                                  if (!snapshot.hasData) {
-                                                    return Container(
-                                                      margin: EdgeInsets.symmetric(horizontal: 4),
-                                                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                      decoration: BoxDecoration(
-                                                        color: isDark ? AppThemeData.grey800 : AppThemeData.grey100,
-                                                        borderRadius: BorderRadius.circular(4.0),
-                                                        boxShadow: [BoxShadow(color: isDark ? AppThemeData.grey800 : AppThemeData.grey100, blurRadius: 1, spreadRadius: 0.5)],
-                                                      ),
-                                                      child: Text(
-                                                        "Role not assigned.", // use actual field from EmployeeRoleModel
-                                                        style: TextStyle(
-                                                          fontSize: 14,
-                                                          color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                          fontFamily: AppThemeData.semiBold,
-                                                          fontWeight: FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                    );
-                                                  }
-
-                                                  final role = snapshot.data;
-                                                  return InkWell(
-                                                    onTap: () {
-                                                      showDialog(
-                                                        context: context,
-                                                        builder: (BuildContext context) {
-                                                          return showListOfRoleDialog(isDark, role!);
-                                                        },
-                                                      );
-                                                    },
-                                                    child: Container(
-                                                      margin: EdgeInsets.symmetric(horizontal: 4),
-                                                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                      decoration: BoxDecoration(
-                                                        color: isDark ? AppThemeData.grey800 : AppThemeData.grey100,
-                                                        borderRadius: BorderRadius.circular(4.0),
-                                                        boxShadow: [BoxShadow(color: isDark ? AppThemeData.grey800 : AppThemeData.grey100, blurRadius: 1, spreadRadius: 0.5)],
-                                                      ),
-                                                      child: Text(
-                                                        role?.title ?? "Unknown Role", // use actual field from EmployeeRoleModel
-                                                        style: TextStyle(
-                                                          fontSize: 14,
-                                                          color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                          fontFamily: AppThemeData.semiBold,
-                                                          fontWeight: FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    "${controller.employeeUserList[index].countryCode} ${controller.employeeUserList[index].phoneNumber}",
-                                                    maxLines: 1,
-                                                    style: TextStyle(fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular),
-                                                  ),
-                                                  Text(
-                                                    controller.employeeUserList[index].email.toString(),
-                                                    maxLines: 1,
-                                                    style: TextStyle(fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular),
-                                                  ),
-                                                ],
-                                              ),
-                                              GetBuilder<EmployeeListController>(
-                                                builder: (controller) {
-                                                  return Transform.scale(
-                                                    scale: 0.8,
-                                                    child: CupertinoSwitch(
-                                                      activeTrackColor: AppThemeData.primary300,
-                                                      value: controller.employeeUserList[index].active ?? false,
-                                                      onChanged: (value) {
-                                                        controller.employeeUserList[index].active = value;
-                                                        controller.updateEmployee(controller.employeeUserList[index]);
-                                                        controller.update();
-                                                      },
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
+          ],
         );
       },
     );
   }
 
-  Dialog showListOfRoleDialog(isDark, EmployeeRoleModel model) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      insetPadding: const EdgeInsets.all(10),
-      clipBehavior: Clip.antiAliasWithSaveLayer,
-      backgroundColor: isDark ? AppThemeData.grey800 : AppThemeData.surface,
-      child: SizedBox(
-        width: 500,
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Text(
-                  "Permissions".tr,
-                  textAlign: TextAlign.start,
-                  style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16),
+  Widget showListOfRoleDialog(BuildContext context, EmployeeRoleModel model) {
+    final active = model.permissions!.where((e) => e.title != null && e.title!.isNotEmpty && e.isActive == true).map((e) => e.title!).toList();
+    return DsDialog(
+      title: "Permissions".tr,
+      message: model.title,
+      icon: Icons.admin_panel_settings_outlined,
+      content: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: DsSpace.sm,
+        runSpacing: DsSpace.sm,
+        children: active.map((e) => DsBadge(label: e, tone: DsTone.success, icon: Icons.check_rounded)).toList(),
+      ),
+      secondaryLabel: "Close".tr,
+      onSecondary: () async {
+        Get.back();
+      },
+    );
+  }
+}
+
+/// Team member card: avatar + name + role on top, contact details, and a
+/// footer with the live active switch.
+class _EmployeeCard extends StatelessWidget {
+  final UserModel employee;
+  final VoidCallback onTap;
+  final Widget role;
+  final Widget toggle;
+  const _EmployeeCard({required this.employee, required this.onTap, required this.role, required this.toggle});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final name = "${employee.firstName ?? ''} ${employee.lastName ?? ''}";
+    return DsCard(
+      onTap: onTap,
+      padding: EdgeInsets.zero,
+      semanticLabel: name,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, DsSpace.md),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DsAvatar(
+                  imageUrl: employee.profilePictureURL == null || employee.profilePictureURL == '' ? null : employee.profilePictureURL.toString(),
+                  name: name,
+                  size: 52,
+                  ring: true,
                 ),
-              ),
-              SizedBox(height: 5),
-              PreferredSize(
-                preferredSize: const Size.fromHeight(4.0),
-                child: Container(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200, height: 3.0),
-              ),
-              SizedBox(height: 20),
-              Text(
-                model.permissions!.where((e) => e.title != null && e.title!.isNotEmpty && e.isActive == true).map((e) => e.title!).join(', '),
-                style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.medium),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  RoundedButtonFill(
-                    width: 30,
-                    title: "Close".tr,
-                    color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                    textColor: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                    onPress: () async {
-                      Get.back();
-                    },
+                const DsGap(DsSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm.withColor(c.textPrimary)),
+                      const DsGap(DsSpace.xs),
+                      Align(alignment: AlignmentDirectional.centerStart, child: role),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                ],
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
+            child: Column(
+              children: [
+                _InfoLine(icon: Icons.phone_outlined, text: "${employee.countryCode} ${employee.phoneNumber}"),
+                const DsGap(DsSpace.xs),
+                _InfoLine(icon: Icons.mail_outline_rounded, text: employee.email.toString()),
+              ],
+            ),
+          ),
+          const Spacer(),
+          const DsGap(DsSpace.md),
+          Container(
+            padding: const EdgeInsets.only(left: DsSpace.lg, right: DsSpace.sm),
+            decoration: BoxDecoration(
+              color: c.surfaceAlt.withValues(alpha: 0.5),
+              border: Border(top: BorderSide(color: c.divider)),
+            ),
+            child: toggle,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActiveToggle extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  const _ActiveToggle({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: AnimatedSwitcher(
+              duration: DsMotion.of(context, DsMotion.fast),
+              child: DsStatusChip(
+                key: ValueKey(value),
+                label: value ? "Active".tr : "Inactive".tr,
+                tone: value ? DsTone.success : DsTone.neutral,
               ),
-            ],
+            ),
           ),
         ),
+        Semantics(
+          label: "Active".tr,
+          child: Switch.adaptive(value: value, onChanged: onChanged),
+        ),
+      ],
+    );
+  }
+}
+
+class _InfoLine extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _InfoLine({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Row(
+      children: [
+        DsIconWell(icon: icon, size: 28, tone: DsTone.neutral),
+        const DsGap(DsSpace.sm),
+        Expanded(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySm.withColor(c.textSecondary))),
+      ],
+    );
+  }
+}
+
+class _SvgHalo extends StatelessWidget {
+  final String asset;
+  const _SvgHalo({required this.asset});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    return Center(
+      child: Container(
+        width: 120,
+        height: 120,
+        padding: const EdgeInsets.all(DsSpace.xxxl),
+        decoration: BoxDecoration(color: c.brandSoft, shape: BoxShape.circle, border: Border.all(color: c.brand.withValues(alpha: 0.2))),
+        child: SvgPicture.asset(asset),
       ),
     );
   }

@@ -1,15 +1,11 @@
 import 'package:country_code_picker/country_code_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
-import 'package:vendor/themes/theme_controller.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/add_driver_controller.dart';
-import 'package:vendor/themes/app_them_data.dart';
-import 'package:vendor/themes/round_button_fill.dart';
-import 'package:vendor/themes/text_field_widget.dart';
+import 'package:vendor/themes/ds/ds.dart';
 
 class AddDriverScreen extends StatefulWidget {
   const AddDriverScreen({super.key});
@@ -21,428 +17,250 @@ class AddDriverScreen extends StatefulWidget {
 class _AddDriverScreenState extends State<AddDriverScreen> {
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: AddDriverController(),
       builder: (controller) {
-        return controller.isLoading.value
-            ? Constant.loader()
-            : Scaffold(
-                appBar: AppBar(
-                  backgroundColor: AppThemeData.primary300,
-                  centerTitle: false,
-                  iconTheme: IconThemeData(
-                      color: isDark
-                          ? AppThemeData.grey900
-                          : AppThemeData.grey50),
-                  title: Text(
-                    controller.driverModel.value.id == null
-                        ? "Add Delivery Man".tr
-                        : "Edit Delivery Man".tr,
-                    style: TextStyle(
-                        color: isDark
-                            ? AppThemeData.grey900
-                            : AppThemeData.grey50,
-                        fontSize: 18,
-                        fontFamily: AppThemeData.medium),
+        final c = context.dsColors;
+        final t = context.dsText;
+        final isEdit = controller.driverModel.value.id != null;
+        final title = controller.driverModel.value.id == null ? "Add Delivery Man".tr : "Edit Delivery Man".tr;
+        if (controller.isLoading.value) {
+          return DsScaffold(
+            title: title,
+            maxContentWidth: DsLayout.contentMax,
+            body: const DsSkeletonForm(fields: 6),
+          );
+        }
+        return DsScaffold(
+          title: title,
+          maxContentWidth: DsLayout.contentMax,
+          body: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(context.dsLayout.gutter, DsSpace.sm, context.dsLayout.gutter, DsSpace.xxl),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: DsFadeSlideIn.stagger([
+                // ── Intro ────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.only(bottom: DsSpace.lg),
+                  child: Row(
+                    children: [
+                      DsIconWell(icon: isEdit ? Icons.manage_accounts_outlined : Icons.delivery_dining_rounded, size: 52),
+                      const DsGap(DsSpace.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(title, style: t.title.withColor(c.textPrimary)),
+                            if (isEdit)
+                              Text(controller.emailEditingController.value.text, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySm.withColor(c.textSecondary)),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                body: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 10),
-                  child: SingleChildScrollView(
-                    child: Column(
+
+                // ── Name fields ──────────────────────────
+                DsFormSection(
+                  title: 'Personal details'.tr,
+                  icon: Icons.person_outline_rounded,
+                  children: [
+                    Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // ── Name fields ──────────────────────────
-                        Padding(
-                          padding: const EdgeInsets.only(top: 20),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: TextFieldWidget(
-                                  title: 'First Name'.tr,
-                                  controller: controller
-                                      .firstNameEditingController.value,
-                                  hintText: 'Enter First Name'.tr,
-                                  prefix: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: SvgPicture.asset(
-                                        "assets/icons/ic_user.svg",
-                                        colorFilter: ColorFilter.mode(
-                                            isDark
-                                                ? AppThemeData.grey300
-                                                : AppThemeData.grey600,
-                                            BlendMode.srcIn)),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: TextFieldWidget(
-                                  title: 'Last Name'.tr,
-                                  controller: controller
-                                      .lastNameEditingController.value,
-                                  hintText: 'Enter Last Name'.tr,
-                                  prefix: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: SvgPicture.asset(
-                                        "assets/icons/ic_user.svg",
-                                        colorFilter: ColorFilter.mode(
-                                            isDark
-                                                ? AppThemeData.grey300
-                                                : AppThemeData.grey600,
-                                            BlendMode.srcIn)),
-                                  ),
-                                ),
-                              ),
-                            ],
+                        Expanded(
+                          child: DsTextField(
+                            label: 'First Name'.tr,
+                            controller: controller.firstNameEditingController.value,
+                            hint: 'Enter First Name'.tr,
+                            prefixIcon: Icons.person_outline_rounded,
+                            textCapitalization: TextCapitalization.words,
                           ),
                         ),
-
-                        // ── Email ────────────────────────────────
-                        TextFieldWidget(
-                          readOnly: (controller.driverModel.value.id !=
-                                  null &&
-                              controller.driverModel.value.id != ''),
-                          title: 'Email Address'.tr,
-                          textInputType: TextInputType.emailAddress,
-                          controller:
-                              controller.emailEditingController.value,
-                          hintText: 'Enter Email Address'.tr,
-                          enable: true,
-                          prefix: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: SvgPicture.asset(
-                                "assets/icons/ic_mail.svg",
-                                colorFilter: ColorFilter.mode(
-                                    isDark
-                                        ? AppThemeData.grey300
-                                        : AppThemeData.grey600,
-                                    BlendMode.srcIn)),
-                          ),
-                        ),
-
-                        // ── Phone ────────────────────────────────
-                        TextFieldWidget(
-                          title: 'Phone Number'.tr,
-                          controller: controller
-                              .phoneNUmberEditingController.value,
-                          hintText: 'Enter Phone Number'.tr,
-                          enable: true,
-                          textInputType:
-                              const TextInputType.numberWithOptions(
-                                  signed: true, decimal: true),
-                          textInputAction: TextInputAction.done,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                                RegExp('[0-9]'))
-                          ],
-                          prefix: CountryCodePicker(
-                            onInit: (value) {
-                              controller
-                                      .countryCodeEditingController
-                                      .value
-                                      .text =
-                                  value?.dialCode ??
-                                      Constant.defaultCountryCode;
-                              controller
-                                      .countryISOCodeEditingController
-                                      .value
-                                      .text =
-                                  value?.code ??
-                                      Constant.defaultCountryCode;
-                            },
-                            enabled: true,
-                            onChanged: (value) {
-                              controller
-                                      .countryCodeEditingController
-                                      .value
-                                      .text =
-                                  value.dialCode ??
-                                      Constant.defaultCountryCode;
-                              controller
-                                      .countryISOCodeEditingController
-                                      .value
-                                      .text =
-                                  value.code ??
-                                      Constant.defaultCountryCode;
-                            },
-                            dialogTextStyle: TextStyle(
-                                color: isDark
-                                    ? AppThemeData.grey50
-                                    : AppThemeData.grey900,
-                                fontWeight: FontWeight.w500,
-                                fontFamily: AppThemeData.medium),
-                            dialogBackgroundColor: isDark
-                                ? AppThemeData.grey800
-                                : AppThemeData.grey100,
-                            initialSelection: controller
-                                .countryISOCodeEditingController
-                                .value
-                                .text,
-                            comparator: (a, b) =>
-                                b.name!.compareTo(a.name.toString()),
-                            textStyle: TextStyle(
-                                fontSize: 14,
-                                color: isDark
-                                    ? AppThemeData.grey50
-                                    : AppThemeData.grey900,
-                                fontFamily: AppThemeData.medium),
-                            searchDecoration: InputDecoration(
-                                iconColor: isDark
-                                    ? AppThemeData.grey50
-                                    : AppThemeData.grey900),
-                            searchStyle: TextStyle(
-                                color: isDark
-                                    ? AppThemeData.grey50
-                                    : AppThemeData.grey900,
-                                fontWeight: FontWeight.w500,
-                                fontFamily: AppThemeData.medium),
-                          ),
-                        ),
-
-                        // ── Sections (display only) ──────────────
-                        if (controller.vendorSections.isNotEmpty) ...[
-                          const SizedBox(height: 10),
-                          Text(
-                            "Sections".tr,
-                            style: TextStyle(
-                              fontFamily: AppThemeData.semiBold,
-                              fontSize: 14,
-                              color: isDark
-                                  ? AppThemeData.grey100
-                                  : AppThemeData.grey800,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          ...controller.vendorSections.map((section) {
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.check_circle,
-                                      size: 20,
-                                      color: AppThemeData.primary300),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      "${section.name ?? section.id ?? ''} (${controller.serviceFlagLabel(section.serviceTypeFlag)})",
-                                      style: TextStyle(
-                                        fontFamily:
-                                            AppThemeData.medium,
-                                        fontSize: 14,
-                                        color: isDark
-                                            ? AppThemeData.grey50
-                                            : AppThemeData.grey900,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }),
-                          const SizedBox(height: 10),
-                        ],
-
-                        // ── Password fields (create only) ───────
-                        Visibility(
-                          visible:
-                              controller.driverModel.value.id == null,
-                          child: Column(
-                            children: [
-                              TextFieldWidget(
-                                title: 'Password'.tr,
-                                controller: controller
-                                    .passwordEditingController.value,
-                                hintText: 'Enter Password'.tr,
-                                obscureText:
-                                    controller.passwordVisible.value,
-                                prefix: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: SvgPicture.asset(
-                                      "assets/icons/ic_lock.svg",
-                                      colorFilter: ColorFilter.mode(
-                                          isDark
-                                              ? AppThemeData.grey300
-                                              : AppThemeData.grey600,
-                                          BlendMode.srcIn)),
-                                ),
-                                suffix: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: InkWell(
-                                    onTap: () {
-                                      controller.passwordVisible
-                                              .value =
-                                          !controller
-                                              .passwordVisible.value;
-                                    },
-                                    child: controller
-                                            .passwordVisible.value
-                                        ? SvgPicture.asset(
-                                            "assets/icons/ic_password_show.svg",
-                                            colorFilter:
-                                                ColorFilter.mode(
-                                                    isDark
-                                                        ? AppThemeData
-                                                            .grey300
-                                                        : AppThemeData
-                                                            .grey600,
-                                                    BlendMode.srcIn))
-                                        : SvgPicture.asset(
-                                            "assets/icons/ic_password_close.svg",
-                                            colorFilter:
-                                                ColorFilter.mode(
-                                                    isDark
-                                                        ? AppThemeData
-                                                            .grey300
-                                                        : AppThemeData
-                                                            .grey600,
-                                                    BlendMode.srcIn)),
-                                  ),
-                                ),
-                              ),
-                              TextFieldWidget(
-                                title: 'Confirm Password'.tr,
-                                controller: controller
-                                    .conformPasswordEditingController
-                                    .value,
-                                hintText: 'Enter Confirm Password'.tr,
-                                obscureText: controller
-                                    .conformPasswordVisible.value,
-                                prefix: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: SvgPicture.asset(
-                                      "assets/icons/ic_lock.svg",
-                                      colorFilter: ColorFilter.mode(
-                                          isDark
-                                              ? AppThemeData.grey300
-                                              : AppThemeData.grey600,
-                                          BlendMode.srcIn)),
-                                ),
-                                suffix: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: InkWell(
-                                    onTap: () {
-                                      controller.conformPasswordVisible
-                                              .value =
-                                          !controller
-                                              .conformPasswordVisible
-                                              .value;
-                                    },
-                                    child: controller
-                                            .conformPasswordVisible
-                                            .value
-                                        ? SvgPicture.asset(
-                                            "assets/icons/ic_password_show.svg",
-                                            colorFilter:
-                                                ColorFilter.mode(
-                                                    isDark
-                                                        ? AppThemeData
-                                                            .grey300
-                                                        : AppThemeData
-                                                            .grey600,
-                                                    BlendMode.srcIn))
-                                        : SvgPicture.asset(
-                                            "assets/icons/ic_password_close.svg",
-                                            colorFilter:
-                                                ColorFilter.mode(
-                                                    isDark
-                                                        ? AppThemeData
-                                                            .grey300
-                                                        : AppThemeData
-                                                            .grey600,
-                                                    BlendMode.srcIn)),
-                                  ),
-                                ),
-                              ),
-                            ],
+                        const DsGap(DsSpace.md),
+                        Expanded(
+                          child: DsTextField(
+                            label: 'Last Name'.tr,
+                            controller: controller.lastNameEditingController.value,
+                            hint: 'Enter Last Name'.tr,
+                            prefixIcon: Icons.person_outline_rounded,
+                            textCapitalization: TextCapitalization.words,
                           ),
                         ),
                       ],
                     ),
-                  ),
+                  ],
                 ),
-                bottomNavigationBar: Container(
-                  color: isDark
-                      ? AppThemeData.grey900
-                      : AppThemeData.grey50,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 20),
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 20),
-                    child: RoundedButtonFill(
-                      title: "Save Details".tr,
-                      height: 5.5,
-                      color: AppThemeData.primary300,
-                      textColor: isDark
-                          ? AppThemeData.grey900
-                          : AppThemeData.grey50,
-                      fontSizes: 16,
-                      onPress: () async {
-                        if (controller.firstNameEditingController
-                            .value.text.isEmpty) {
-                          ShowToastDialog.showToast(
-                              "Please enter first name".tr);
-                        } else if (controller
-                            .lastNameEditingController
-                            .value
-                            .text
-                            .isEmpty) {
-                          ShowToastDialog.showToast(
-                              "Please enter last name".tr);
-                        } else if (controller
-                            .emailEditingController
-                            .value
-                            .text
-                            .isEmpty) {
-                          ShowToastDialog.showToast(
-                              "Please enter valid email".tr);
-                        } else if (controller
-                            .phoneNUmberEditingController
-                            .value
-                            .text
-                            .isEmpty) {
-                          ShowToastDialog.showToast(
-                              "Please enter Phone number".tr);
-                        } else if (controller
-                                .passwordEditingController
-                                .value
-                                .text
-                                .isEmpty &&
-                            controller.driverModel.value.id == null) {
-                          ShowToastDialog.showToast(
-                              "Please enter password".tr);
-                        } else if (controller
-                                .conformPasswordEditingController
-                                .value
-                                .text
-                                .isEmpty &&
-                            controller.driverModel.value.id == null) {
-                          ShowToastDialog.showToast(
-                              "Please enter Confirm password".tr);
-                        } else if (controller
-                                    .passwordEditingController
-                                    .value
-                                    .text !=
-                                controller
-                                    .conformPasswordEditingController
-                                    .value
-                                    .text &&
-                            controller.driverModel.value.id == null) {
-                          ShowToastDialog.showToast(
-                              "Password and Confirm password doesn't match"
-                                  .tr);
-                        } else {
-                          controller.signUpWithEmailAndPassword();
-                        }
-                      },
+
+                // ── Email + Phone ────────────────────────
+                DsFormSection(
+                  title: 'Contact'.tr,
+                  icon: Icons.contact_phone_outlined,
+                  children: [
+                    DsTextField(
+                      readOnly: (controller.driverModel.value.id != null && controller.driverModel.value.id != ''),
+                      label: 'Email Address'.tr,
+                      keyboardType: TextInputType.emailAddress,
+                      controller: controller.emailEditingController.value,
+                      hint: 'Enter Email Address'.tr,
+                      prefixIcon: Icons.mail_outline_rounded,
+                      suffix: (controller.driverModel.value.id != null && controller.driverModel.value.id != '') ? Icon(Icons.lock_outline_rounded, size: 18, color: c.textMuted) : null,
                     ),
+                    DsTextField(
+                      label: 'Phone Number'.tr,
+                      controller: controller.phoneNUmberEditingController.value,
+                      hint: 'Enter Phone Number'.tr,
+                      keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                      textInputAction: TextInputAction.done,
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]'))],
+                      prefix: CountryCodePicker(
+                        onInit: (value) {
+                          controller.countryCodeEditingController.value.text = value?.dialCode ?? Constant.defaultCountryCode;
+                          controller.countryISOCodeEditingController.value.text = value?.code ?? Constant.defaultCountryCode;
+                        },
+                        enabled: true,
+                        onChanged: (value) {
+                          controller.countryCodeEditingController.value.text = value.dialCode ?? Constant.defaultCountryCode;
+                          controller.countryISOCodeEditingController.value.text = value.code ?? Constant.defaultCountryCode;
+                        },
+                        dialogTextStyle: t.bodyStrong.withColor(c.textPrimary),
+                        dialogBackgroundColor: c.surfaceRaised,
+                        initialSelection: controller.countryISOCodeEditingController.value.text,
+                        comparator: (a, b) => b.name!.compareTo(a.name.toString()),
+                        textStyle: t.bodyStrong.withColor(c.textPrimary),
+                        searchDecoration: DsInputDecoration.of(context, prefixIcon: Icons.search_rounded),
+                        searchStyle: t.bodyStrong.withColor(c.textPrimary),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // ── Sections (display only) ──────────────
+                if (controller.vendorSections.isNotEmpty)
+                  DsFormSection(
+                    title: "Sections".tr,
+                    icon: Icons.category_outlined,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: DsSpace.md),
+                        child: Wrap(
+                          spacing: DsSpace.sm,
+                          runSpacing: DsSpace.sm,
+                          children: controller.vendorSections.map((section) {
+                            return DsBadge(
+                              label: "${section.name ?? section.id ?? ''} (${controller.serviceFlagLabel(section.serviceTypeFlag)})",
+                              tone: DsTone.brand,
+                              icon: Icons.check_circle_rounded,
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                // ── Password fields (create only) ───────
+                Visibility(
+                  visible: controller.driverModel.value.id == null,
+                  child: DsFormSection(
+                    title: 'Security'.tr,
+                    icon: Icons.lock_outline_rounded,
+                    children: [
+                      _PasswordField(
+                        label: 'Password'.tr,
+                        hint: 'Enter Password'.tr,
+                        controller: controller.passwordEditingController.value,
+                        obscure: controller.passwordVisible.value,
+                        onToggle: () {
+                          controller.passwordVisible.value = !controller.passwordVisible.value;
+                        },
+                      ),
+                      _PasswordField(
+                        label: 'Confirm Password'.tr,
+                        hint: 'Enter Confirm Password'.tr,
+                        controller: controller.conformPasswordEditingController.value,
+                        obscure: controller.conformPasswordVisible.value,
+                        onToggle: () {
+                          controller.conformPasswordVisible.value = !controller.conformPasswordVisible.value;
+                        },
+                      ),
+                    ],
                   ),
                 ),
-              );
+              ]),
+            ),
+          ),
+          bottomBar: DsStickyBar(
+            child: DsButton.primary(
+              label: "Save Details".tr,
+              icon: Icons.check_rounded,
+              expand: true,
+              onPressed: () async {
+                if (controller.firstNameEditingController.value.text.isEmpty) {
+                  ShowToastDialog.showToast("Please enter first name".tr);
+                } else if (controller.lastNameEditingController.value.text.isEmpty) {
+                  ShowToastDialog.showToast("Please enter last name".tr);
+                } else if (controller.emailEditingController.value.text.isEmpty) {
+                  ShowToastDialog.showToast("Please enter valid email".tr);
+                } else if (controller.phoneNUmberEditingController.value.text.isEmpty) {
+                  ShowToastDialog.showToast("Please enter Phone number".tr);
+                } else if (controller.passwordEditingController.value.text.isEmpty && controller.driverModel.value.id == null) {
+                  ShowToastDialog.showToast("Please enter password".tr);
+                } else if (controller.conformPasswordEditingController.value.text.isEmpty && controller.driverModel.value.id == null) {
+                  ShowToastDialog.showToast("Please enter Confirm password".tr);
+                } else if (controller.passwordEditingController.value.text != controller.conformPasswordEditingController.value.text && controller.driverModel.value.id == null) {
+                  ShowToastDialog.showToast("Password and Confirm password doesn't match".tr);
+                } else {
+                  controller.signUpWithEmailAndPassword();
+                }
+              },
+            ),
+          ),
+        );
       },
+    );
+  }
+}
+
+/// Password input whose obscure state lives in the controller (so the
+/// existing `passwordVisible` toggles keep working).
+class _PasswordField extends StatelessWidget {
+  final String label;
+  final String hint;
+  final TextEditingController controller;
+  final bool obscure;
+  final VoidCallback onToggle;
+  const _PasswordField({required this.label, required this.hint, required this.controller, required this.obscure, required this.onToggle});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DsFieldLabel(label),
+          TextFormField(
+            controller: controller,
+            obscureText: obscure,
+            obscuringCharacter: '●',
+            cursorColor: c.brand,
+            style: t.bodyStrong.withColor(c.textPrimary),
+            decoration: DsInputDecoration.of(
+              context,
+              hint: hint,
+              prefixIcon: Icons.lock_outline_rounded,
+              suffix: DsIconButton(
+                icon: obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                semanticLabel: obscure ? 'Show password'.tr : 'Hide password'.tr,
+                onPressed: onToggle,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

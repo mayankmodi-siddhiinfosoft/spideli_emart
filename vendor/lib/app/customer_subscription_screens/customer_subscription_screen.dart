@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
@@ -11,12 +10,10 @@ import 'package:vendor/models/user_model.dart';
 import 'package:vendor/models/vendor_subscription_model.dart';
 import 'package:vendor/models/vendor_subscription_payment_model.dart';
 import 'package:vendor/models/vendor_subscription_plan_model.dart';
-import 'package:vendor/themes/app_them_data.dart';
-import 'package:vendor/themes/custom_dialog_box.dart';
+import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/themes/theme_controller.dart';
 import 'package:vendor/utils/customer_subscription_service.dart';
 import 'package:vendor/utils/network_image_widget.dart';
-import 'package:vendor/widget/my_separator.dart';
 
 /// "Customer Subscriptions": plans this store sells to its OWN customers,
 /// their subscribers and payments. Separate from the platform subscription the
@@ -53,52 +50,42 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
     return GetX(
       init: CustomerSubscriptionController(),
       builder: (controller) {
-        return Scaffold(
-          backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-          appBar: AppBar(
-            backgroundColor: AppThemeData.primary300,
-            centerTitle: false,
-            iconTheme: IconThemeData(color: isDark ? AppThemeData.grey800 : AppThemeData.grey100, size: 20),
-            title: Text(
-              "Customer Subscriptions".tr,
-              style: TextStyle(color: isDark ? AppThemeData.grey800 : AppThemeData.grey100, fontSize: 18, fontFamily: AppThemeData.medium),
-            ),
+        return DsScaffold(
+          maxContentWidth: null,
+          appBar: DsAppBar(
+            title: "Customer Subscriptions".tr,
             actions: [
-              IconButton(
-                tooltip: "Daily production list".tr,
-                icon: Icon(Icons.checklist_rtl, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100),
+              DsIconButton(
+                icon: Icons.checklist_rtl_rounded,
+                semanticLabel: "Daily production list".tr,
+                variant: DsIconButtonVariant.tonal,
                 onPressed: () => Get.to(() => const CustomerSubscriptionProductionScreen()),
               ),
+              const DsGap(DsSpace.sm),
             ],
-            bottom: TabBar(
-              controller: _tabController,
-              indicatorSize: TabBarIndicatorSize.tab,
-              labelStyle: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey900 : AppThemeData.grey50),
-              labelColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-              unselectedLabelStyle: TextStyle(fontFamily: AppThemeData.medium, color: isDark ? AppThemeData.grey900 : AppThemeData.grey50),
-              unselectedLabelColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-              indicatorColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-              dividerColor: Colors.transparent,
-              tabs: [
-                Tab(text: "Plans".tr),
-                Tab(text: "Subscribers".tr),
-                Tab(text: "Payments".tr),
-              ],
-            ),
+            bottom: DsTabBar(controller: _tabController, tabs: ["Plans".tr, "Subscribers".tr, "Payments".tr]),
           ),
-          body: TabBarView(controller: _tabController, children: [_plansTab(context, controller, isDark), _subscribersTab(controller, isDark), _paymentsTab(controller, isDark)]),
-          floatingActionButton: _tabController.index == 0
-              ? FloatingActionButton(
-                  shape: const CircleBorder(),
-                  backgroundColor: AppThemeData.primary300,
-                  onPressed: () {
-                    Get.to(const AddEditCustomerSubscriptionPlanScreen())!.then((value) {
-                      if (value == true) controller.getPlans();
-                    });
-                  },
-                  child: const Icon(Icons.add, color: AppThemeData.grey50),
-                )
-              : null,
+          body: TabBarView(
+            controller: _tabController,
+            children: [_plansTab(context, controller, isDark), _subscribersTab(controller, isDark), _paymentsTab(controller, isDark)],
+          ),
+          floatingActionButton: AnimatedScale(
+            duration: DsMotion.of(context, DsMotion.base),
+            curve: DsMotion.emphasized,
+            scale: _tabController.index == 0 ? 1 : 0,
+            child: _tabController.index == 0
+                ? FloatingActionButton(
+                    shape: const CircleBorder(),
+                    tooltip: "Add".tr,
+                    onPressed: () {
+                      Get.to(const AddEditCustomerSubscriptionPlanScreen())!.then((value) {
+                        if (value == true) controller.getPlans();
+                      });
+                    },
+                    child: const Icon(Icons.add_rounded),
+                  )
+                : null,
+          ),
         );
       },
     );
@@ -107,107 +94,143 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
   // ------------------------------------------------------------------ Plans
 
   Widget _plansTab(BuildContext context, CustomerSubscriptionController controller, bool isDark) {
-    if (controller.isPlansLoading.value) return Constant.loader();
+    if (controller.isPlansLoading.value) return const DsSkeletonList(itemCount: 4);
     if (controller.planList.isEmpty) {
-      return RefreshIndicator(onRefresh: controller.getPlans, child: _scrollableEmpty("No customer subscription plans yet. Tap + to create one.".tr, isDark));
+      return RefreshIndicator(
+        color: context.dsColors.brand,
+        onRefresh: controller.getPlans,
+        child: _scrollableEmpty("No customer subscription plans yet. Tap + to create one.".tr, isDark, icon: Icons.card_membership_outlined),
+      );
     }
     return RefreshIndicator(
+      color: context.dsColors.brand,
       onRefresh: controller.getPlans,
-      child: ListView.builder(
-        padding: const EdgeInsets.only(top: 10, bottom: 80),
-        itemCount: controller.planList.length,
-        itemBuilder: (context, index) {
-          final VendorSubscriptionPlanModel plan = controller.planList[index];
-          return _card(
-            isDark,
-            Column(
+      child: Builder(
+        builder: (context) {
+          final l = context.dsLayout;
+          return ListView(
+            padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.md, l.gutter, 96),
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              DsAdaptiveGrid(
+                minItemWidth: 340,
+                maxColumns: 2,
+                children: [
+                  for (var index = 0; index < controller.planList.length; index++)
+                    DsFadeSlideIn(index: index, child: _planCard(context, controller, controller.planList[index])),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _planCard(BuildContext context, CustomerSubscriptionController controller, VendorSubscriptionPlanModel plan) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final enabled = plan.isEnable ?? true;
+    return DsCard.outlined(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.sm, DsSpace.md),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: NetworkImageWidget(imageUrl: plan.photo ?? '', height: 72, width: 72),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            plan.title ?? '',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16, fontFamily: AppThemeData.semiBold),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            "${_money(plan.price)} / ${CustomerSubscriptionController.periodLabel(plan.expiryDay)}",
-                            style: TextStyle(color: AppThemeData.primary300, fontSize: 14, fontFamily: AppThemeData.medium),
-                          ),
-                          if (plan.hasSchedule) ...[
-                            const SizedBox(height: 6),
-                            _scheduleLine(Icons.event_repeat, "${CustomerSubscriptionController.frequencyLabel(plan.frequency)} · ${CustomerSubscriptionController.daysLabel(plan.effectiveDeliveryDays)}", isDark),
-                            if (plan.timeSlot?.isSet == true) _scheduleLine(Icons.schedule, plan.timeSlot!.label, isDark),
-                          ] else ...[
-                            const SizedBox(height: 6),
-                            _scheduleLine(Icons.info_outline, "No delivery schedule - edit to add one".tr, isDark),
-                          ],
-                          if (plan.items.isNotEmpty) _scheduleLine(Icons.inventory_2_outlined, CustomerSubscriptionController.itemsLabel(plan.items), isDark),
-                        ],
-                      ),
-                    ),
-                    _iconButton(isDark, SvgPicture.asset("assets/icons/ic_edit_coupon.svg"), () {
-                      Get.to(const AddEditCustomerSubscriptionPlanScreen(), arguments: {"planModel": plan})!.then((value) {
-                        if (value == true) controller.getPlans();
-                      });
-                    }),
-                    const SizedBox(width: 10),
-                    _iconButton(isDark, SvgPicture.asset("assets/icons/ic_delete-one.svg"), () {
-                      showDialog(
-                        context: context,
-                        builder: (BuildContext dialogContext) {
-                          return CustomDialogBox(
-                            title: "Delete Plan".tr,
-                            descriptions: "Are you sure you want to delete this plan? Existing subscribers keep their current subscription.".tr,
-                            positiveString: "Delete".tr,
-                            negativeString: "Cancel".tr,
-                            positiveClick: () async {
-                              Get.back();
-                              await controller.deletePlan(plan);
-                            },
-                            negativeClick: () {
-                              Get.back();
-                            },
-                          );
-                        },
-                      );
-                    }),
-                  ],
+                AnimatedOpacity(
+                  duration: DsMotion.of(context, DsMotion.base),
+                  opacity: enabled ? 1 : 0.45,
+                  child: ClipRRect(
+                    borderRadius: DsRadius.brMd,
+                    child: NetworkImageWidget(imageUrl: plan.photo ?? '', height: 76, width: 76, fit: BoxFit.cover),
+                  ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        (plan.isEnable ?? true) ? "Enabled".tr : "Disabled".tr,
-                        style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontSize: 14, fontFamily: AppThemeData.medium),
+                const DsGap(DsSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(plan.title ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                      const DsGap(DsSpace.xs),
+                      DsBadge(
+                        label: "${_money(plan.price)} / ${CustomerSubscriptionController.periodLabel(plan.expiryDay)}",
+                        tone: DsTone.brand,
+                        icon: Icons.sell_outlined,
                       ),
+                      const DsGap(DsSpace.sm),
+                      if (plan.hasSchedule) ...[
+                        _scheduleLine(
+                          Icons.event_repeat,
+                          "${CustomerSubscriptionController.frequencyLabel(plan.frequency)} · ${CustomerSubscriptionController.daysLabel(plan.effectiveDeliveryDays)}",
+                        ),
+                        if (plan.timeSlot?.isSet == true) _scheduleLine(Icons.schedule, plan.timeSlot!.label),
+                      ] else ...[
+                        _scheduleLine(Icons.info_outline, "No delivery schedule - edit to add one".tr, tone: DsTone.warning),
+                      ],
+                      if (plan.items.isNotEmpty) _scheduleLine(Icons.inventory_2_outlined, CustomerSubscriptionController.itemsLabel(plan.items)),
+                    ],
+                  ),
+                ),
+                Column(
+                  children: [
+                    _iconButton(
+                      SvgPicture.asset("assets/icons/ic_edit_coupon.svg", width: 18, height: 18, colorFilter: ColorFilter.mode(c.textPrimary, BlendMode.srcIn)),
+                      'Edit'.tr,
+                      () {
+                        Get.to(const AddEditCustomerSubscriptionPlanScreen(), arguments: {"planModel": plan})!.then((value) {
+                          if (value == true) controller.getPlans();
+                        });
+                      },
                     ),
-                    Transform.scale(
-                      scale: 0.8,
-                      child: CupertinoSwitch(value: plan.isEnable ?? true, activeTrackColor: AppThemeData.primary300, onChanged: (value) => controller.togglePlan(plan, value)),
+                    _iconButton(
+                      SvgPicture.asset("assets/icons/ic_delete-one.svg", width: 18, height: 18, colorFilter: ColorFilter.mode(c.dangerStrong, BlendMode.srcIn)),
+                      'Delete'.tr,
+                      () {
+                        showDialog(
+                          context: context,
+                          builder: (BuildContext dialogContext) {
+                            return DsDialog(
+                              title: "Delete Plan".tr,
+                              message: "Are you sure you want to delete this plan? Existing subscribers keep their current subscription.".tr,
+                              icon: Icons.delete_outline_rounded,
+                              tone: DsTone.danger,
+                              destructive: true,
+                              primaryLabel: "Delete".tr,
+                              secondaryLabel: "Cancel".tr,
+                              onPrimary: () async {
+                                Get.back();
+                                await controller.deletePlan(plan);
+                              },
+                              onSecondary: () {
+                                Get.back();
+                              },
+                            );
+                          },
+                        );
+                      },
                     ),
                   ],
                 ),
               ],
             ),
-          );
-        },
+          ),
+          const Spacer(),
+          Container(
+            color: c.surfaceAlt,
+            padding: const EdgeInsetsDirectional.fromSTEB(DsSpace.lg, DsSpace.xs, DsSpace.sm, DsSpace.xs),
+            child: Row(
+              children: [
+                DsStatusChip(label: enabled ? "Enabled".tr : "Disabled".tr, tone: enabled ? DsTone.success : DsTone.neutral),
+                const Spacer(),
+                Switch(value: plan.isEnable ?? true, onChanged: (value) => controller.togglePlan(plan, value)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -215,9 +238,12 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
   // ------------------------------------------------------------------ Subscribers (read-only)
 
   Widget _subscribersTab(CustomerSubscriptionController controller, bool isDark) {
-    if (controller.isSubscribersLoading.value) return Constant.loader();
+    if (controller.isSubscribersLoading.value) return const DsSkeletonList(itemCount: 5);
     if (controller.subscriberList.isEmpty) {
-      return RefreshIndicator(onRefresh: controller.getSubscribers, child: _scrollableEmpty("No subscribers yet".tr, isDark));
+      return RefreshIndicator(
+        onRefresh: controller.getSubscribers,
+        child: _scrollableEmpty("No subscribers yet".tr, isDark, icon: Icons.group_outlined),
+      );
     }
     final list = controller.filteredSubscribers;
     return Column(
@@ -227,11 +253,19 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
           child: RefreshIndicator(
             onRefresh: controller.getSubscribers,
             child: list.isEmpty
-                ? _scrollableEmpty("No subscribers in this list".tr, isDark)
-                : ListView.builder(
-                    padding: const EdgeInsets.only(top: 4, bottom: 10),
-                    itemCount: list.length,
-                    itemBuilder: (context, index) => _subscriberCard(controller, list[index], isDark),
+                ? _scrollableEmpty("No subscribers in this list".tr, isDark, icon: Icons.filter_list_off_rounded)
+                : Builder(
+                    builder: (context) {
+                      final l = context.dsLayout;
+                      return ListView.builder(
+                        padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.xs, l.gutter, DsSpace.xl),
+                        itemCount: list.length,
+                        itemBuilder: (context, index) => DsFadeSlideIn(
+                          index: index,
+                          child: DsResponsive(child: _subscriberCard(controller, list[index], isDark)),
+                        ),
+                      );
+                    },
                   ),
           ),
         ),
@@ -240,34 +274,20 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
   }
 
   Widget _subscriberFilters(CustomerSubscriptionController controller, bool isDark) {
-    return SizedBox(
-      height: 52,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        children: CustomerSubscriptionController.subscriberFilters.map((filter) {
-          final selected = controller.subscriberFilter.value == filter;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              label: Text("${CustomerSubscriptionController.filterLabel(filter)} (${controller.countFor(filter)})"),
-              selected: selected,
-              showCheckmark: false,
-              onSelected: (_) => controller.subscriberFilter.value = filter,
-              selectedColor: AppThemeData.primary300,
-              backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-              side: BorderSide(color: selected ? AppThemeData.primary300 : (isDark ? AppThemeData.grey700 : AppThemeData.grey200)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              labelStyle: TextStyle(
-                fontFamily: AppThemeData.medium,
-                fontWeight: FontWeight.w500,
-                fontSize: 13,
-                color: selected ? AppThemeData.grey50 : (isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
+    const filters = CustomerSubscriptionController.subscriberFilters;
+    return Builder(
+      builder: (context) {
+        final l = context.dsLayout;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.sm, l.gutter, DsSpace.sm),
+          child: DsSegmentedTabs(
+            scrollable: true,
+            segments: [for (final filter in filters) DsSegment(CustomerSubscriptionController.filterLabel(filter), count: controller.countFor(filter))],
+            index: filters.indexOf(controller.subscriberFilter.value).clamp(0, filters.length - 1),
+            onChanged: (i) => controller.subscriberFilter.value = filters[i],
+          ),
+        );
+      },
     );
   }
 
@@ -276,134 +296,161 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
     final relative = CustomerSubscriptionController.expiryRelativeLabel(sub);
     final expiringSoon = sub.isExpiringSoon;
     final renewed = controller.renewedIds.contains(sub.id);
-    return _card(
-            isDark,
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    return Builder(
+      builder: (context) {
+        final c = context.dsColors;
+        return _card(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: _customerInfo(sub.customerId, isDark)),
+                  const DsGap(DsSpace.sm),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _statusChip(status, isDark),
+                      if (expiringSoon) ...[const DsGap(DsSpace.xs), _tagChip("Expiring soon".tr, DsTone.warning)],
+                      if (renewed) ...[const DsGap(DsSpace.xs), _tagChip("Renewed".tr, DsTone.brand)],
+                    ],
+                  ),
+                ],
+              ),
+              const DsGap(DsSpace.md),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+                decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brMd),
+                child: Column(
                   children: [
-                    Expanded(child: _customerInfo(sub.customerId, isDark)),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        _statusChip(status, isDark),
-                        if (expiringSoon) ...[
-                          const SizedBox(height: 4),
-                          _tagChip("Expiring soon".tr, AppThemeData.warning400),
-                        ],
-                        if (renewed) ...[
-                          const SizedBox(height: 4),
-                          _tagChip("Renewed".tr, AppThemeData.primary300),
-                        ],
-                      ],
+                    // Plan title/price come from the stored snapshot, never the live plan.
+                    _labelValue("Plan".tr, sub.plan?.title ?? '-', isDark),
+                    _labelValue(
+                      "Price".tr,
+                      sub.plan?.price == null
+                          ? '-'
+                          : "${_money(sub.plan!.price, regionId: sub.regionId)} / ${CustomerSubscriptionController.periodLabel(sub.plan!.expiryDay)}",
+                      isDark,
                     ),
+                    _labelValue("Start date".tr, sub.startDate == null ? '-' : Constant.timestampToDate(sub.startDate!), isDark),
+                    _labelValue("Expiry date".tr, sub.expiryDate == null ? '-' : Constant.timestampToDate(sub.expiryDate!), isDark),
+                    if (relative.isNotEmpty)
+                      _labelValue("", relative, isDark, valueColor: status == 'expired' ? c.dangerStrong : (expiringSoon ? c.warningStrong : c.successStrong)),
+                    if (sub.plan?.hasSchedule == true)
+                      _labelValue(
+                        "Delivery".tr,
+                        [
+                          CustomerSubscriptionController.daysLabel(sub.plan!.effectiveDeliveryDays),
+                          if (sub.plan!.timeSlot?.isSet == true) sub.plan!.timeSlot!.label,
+                        ].join(" · "),
+                        isDark,
+                      ),
                   ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                ),
-                // Plan title/price come from the stored snapshot, never the live plan.
-                _labelValue("Plan".tr, sub.plan?.title ?? '-', isDark),
-                _labelValue("Price".tr, sub.plan?.price == null ? '-' : "${_money(sub.plan!.price, regionId: sub.regionId)} / ${CustomerSubscriptionController.periodLabel(sub.plan!.expiryDay)}", isDark),
-                _labelValue("Start date".tr, sub.startDate == null ? '-' : Constant.timestampToDate(sub.startDate!), isDark),
-                _labelValue("Expiry date".tr, sub.expiryDate == null ? '-' : Constant.timestampToDate(sub.expiryDate!), isDark),
-                if (relative.isNotEmpty)
-                  _labelValue(
-                    "",
-                    relative,
-                    isDark,
-                    valueColor: status == 'expired' ? AppThemeData.danger300 : (expiringSoon ? AppThemeData.warning400 : AppThemeData.success400),
-                  ),
-                if (sub.plan?.hasSchedule == true)
-                  _labelValue(
-                    "Delivery".tr,
-                    [
-                      CustomerSubscriptionController.daysLabel(sub.plan!.effectiveDeliveryDays),
-                      if (sub.plan!.timeSlot?.isSet == true) sub.plan!.timeSlot!.label,
-                    ].join(" · "),
-                    isDark,
-                  ),
-              ],
-            ),
-          );
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   // ------------------------------------------------------------------ Payments (read-only)
 
   Widget _paymentsTab(CustomerSubscriptionController controller, bool isDark) {
-    if (controller.isPaymentsLoading.value) return Constant.loader();
+    if (controller.isPaymentsLoading.value) return const DsSkeletonList(itemCount: 5, leading: false);
     if (controller.paymentList.isEmpty) {
-      return RefreshIndicator(onRefresh: controller.getPayments, child: _scrollableEmpty("No payments yet".tr, isDark));
+      return RefreshIndicator(
+        onRefresh: controller.getPayments,
+        child: _scrollableEmpty("No payments yet".tr, isDark, icon: Icons.payments_outlined),
+      );
     }
     return RefreshIndicator(
       onRefresh: controller.getPayments,
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        itemCount: controller.paymentList.length + 1,
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-              child: Container(
-                width: double.infinity,
-                decoration: ShapeDecoration(
-                  color: AppThemeData.primary300,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Total earned".tr,
-                      style: const TextStyle(color: AppThemeData.grey50, fontSize: 14, fontFamily: AppThemeData.medium),
+      child: Builder(
+        builder: (context) {
+          final l = context.dsLayout;
+          return ListView.builder(
+            padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.md, l.gutter, DsSpace.xl),
+            itemCount: controller.paymentList.length + 1,
+            itemBuilder: (context, index) {
+              final c = context.dsColors;
+              final t = context.dsText;
+              if (index == 0) {
+                return DsFadeSlideIn(
+                  child: DsResponsive(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: DsSpace.lg),
+                      child: DsCard.gradient(
+                        gradient: DsGradients.deep(context),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text("Total earned".tr, style: t.label.withColor(Colors.white.withValues(alpha: 0.8))),
+                                  const DsGap(DsSpace.sm),
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: DsAnimatedCounter(
+                                      value: controller.totalEarned,
+                                      format: (v) => _money(v.toString()),
+                                      style: t.metricLg.withColor(Colors.white),
+                                    ),
+                                  ),
+                                  const DsGap(DsSpace.xs),
+                                  DsBadge(
+                                    label: "${controller.paymentList.length} ${"payments".tr}",
+                                    icon: Icons.receipt_long_rounded,
+                                    tone: DsTone.neutral,
+                                    small: true,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const DsIconWell(icon: Icons.savings_rounded, onBrand: true, size: 56),
+                          ],
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _money(controller.totalEarned.toString()),
-                      style: const TextStyle(color: AppThemeData.grey50, fontSize: 24, fontFamily: AppThemeData.semiBold),
+                  ),
+                );
+              }
+              final VendorSubscriptionPaymentModel payment = controller.paymentList[index - 1];
+              return DsFadeSlideIn(
+                index: index,
+                child: DsResponsive(
+                  child: _card(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(child: _customerInfo(payment.customerId, isDark)),
+                            const DsGap(DsSpace.sm),
+                            Text(_money(payment.amount, regionId: payment.regionId), style: t.titleSm.tabular.withColor(c.textPrimary)),
+                          ],
+                        ),
+                        const DsGap(DsSpace.md),
+                        Divider(height: 1, thickness: 1, color: c.divider),
+                        const DsGap(DsSpace.sm),
+                        _labelValue("Amount".tr, _money(payment.amount, regionId: payment.regionId), isDark),
+                        _labelValue("Admin commission".tr, _money(payment.adminCommission, regionId: payment.regionId), isDark),
+                        if ((payment.adminCommissionType ?? '').isNotEmpty)
+                          _labelValue("Commission type".tr, payment.adminCommissionType!.capitalizeFirst ?? payment.adminCommissionType!, isDark),
+                        _labelValue("Store earning".tr, _money(payment.vendorEarning, regionId: payment.regionId), isDark, valueColor: c.successStrong),
+                        _labelValue("Payment method".tr, (payment.paymentMethod ?? '').isEmpty ? '-' : payment.paymentMethod!, isDark),
+                        if ((payment.status ?? '').isNotEmpty) _labelValue("Status".tr, payment.status!.capitalizeFirst ?? payment.status!, isDark),
+                        _labelValue("Date".tr, payment.createdAt == null ? '-' : Constant.timestampToDateTime(payment.createdAt!), isDark),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      "${controller.paymentList.length} ${"payments".tr}",
-                      style: const TextStyle(color: AppThemeData.grey50, fontSize: 12, fontFamily: AppThemeData.regular),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            );
-          }
-          final VendorSubscriptionPaymentModel payment = controller.paymentList[index - 1];
-          return _card(
-            isDark,
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(child: _customerInfo(payment.customerId, isDark)),
-                    Text(
-                      _money(payment.amount, regionId: payment.regionId),
-                      style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16, fontFamily: AppThemeData.semiBold),
-                    ),
-                  ],
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                ),
-                _labelValue("Amount".tr, _money(payment.amount, regionId: payment.regionId), isDark),
-                _labelValue("Admin commission".tr, _money(payment.adminCommission, regionId: payment.regionId), isDark),
-                if ((payment.adminCommissionType ?? '').isNotEmpty) _labelValue("Commission type".tr, payment.adminCommissionType!.capitalizeFirst ?? payment.adminCommissionType!, isDark),
-                _labelValue("Store earning".tr, _money(payment.vendorEarning, regionId: payment.regionId), isDark, valueColor: AppThemeData.success400),
-                _labelValue("Payment method".tr, (payment.paymentMethod ?? '').isEmpty ? '-' : payment.paymentMethod!, isDark),
-                if ((payment.status ?? '').isNotEmpty) _labelValue("Status".tr, payment.status!.capitalizeFirst ?? payment.status!, isDark),
-                _labelValue("Date".tr, payment.createdAt == null ? '-' : Constant.timestampToDateTime(payment.createdAt!), isDark),
-              ],
-            ),
+              );
+            },
           );
         },
       ),
@@ -423,16 +470,16 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
     );
   }
 
-  Widget _scrollableEmpty(String message, bool isDark) {
+  Widget _scrollableEmpty(String message, bool isDark, {IconData icon = Icons.inbox_outlined}) {
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         child: SizedBox(
           height: constraints.maxHeight,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
+            padding: const EdgeInsets.symmetric(horizontal: DsSpace.xxl),
             child: Center(
-              child: Constant.showEmptyView(message: message, isDark: isDark),
+              child: DsEmptyState(icon: icon, title: message, compact: true),
             ),
           ),
         ),
@@ -440,112 +487,81 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
     );
   }
 
-  Widget _card(bool isDark, Widget child) {
+  Widget _card(Widget child) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-      child: Container(
-        decoration: ShapeDecoration(
-          color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        ),
-        child: Padding(padding: const EdgeInsets.all(12), child: child),
-      ),
+      padding: const EdgeInsets.only(bottom: DsSpace.md),
+      child: DsCard.outlined(child: child),
     );
   }
 
-  Widget _iconButton(bool isDark, Widget icon, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        decoration: ShapeDecoration(
-          shape: RoundedRectangleBorder(
-            side: BorderSide(width: 1, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100),
-            borderRadius: BorderRadius.circular(120),
-          ),
-        ),
-        child: Padding(padding: const EdgeInsets.all(8.0), child: icon),
-      ),
-    );
+  Widget _iconButton(Widget icon, String label, VoidCallback onTap) {
+    return DsIconButton(semanticLabel: label, variant: DsIconButtonVariant.plain, onPressed: onTap, child: icon);
   }
 
   Widget _labelValue(String label, String value, bool isDark, {Color? valueColor}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontSize: 14, fontFamily: AppThemeData.regular),
-            ),
+    return Builder(
+      builder: (context) {
+        final c = context.dsColors;
+        final t = context.dsText;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: Text(label, style: t.bodySm.withColor(c.textSecondary))),
+              const DsGap(DsSpace.md),
+              Flexible(
+                child: Text(value, textAlign: TextAlign.end, style: t.bodyStrong.tabular.withColor(valueColor ?? c.textPrimary)),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              style: TextStyle(color: valueColor ?? (isDark ? AppThemeData.grey50 : AppThemeData.grey900), fontSize: 14, fontFamily: AppThemeData.medium),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _tagChip(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
-      child: Text(
-        label,
-        style: TextStyle(color: color, fontSize: 11, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-      ),
-    );
+  Widget _tagChip(String label, DsTone tone) {
+    return DsBadge(label: label, tone: tone, small: true);
   }
 
-  Widget _scheduleLine(IconData icon, String text, bool isDark) {
-    final color = isDark ? AppThemeData.grey300 : AppThemeData.grey600;
-    return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(padding: const EdgeInsets.only(top: 1), child: Icon(icon, size: 14, color: color)),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              text,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: color, fontSize: 12, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
-            ),
+  Widget _scheduleLine(IconData icon, String text, {DsTone? tone}) {
+    return Builder(
+      builder: (context) {
+        final c = context.dsColors;
+        final color = tone == null ? c.textSecondary : c.tone(tone).strong;
+        return Padding(
+          padding: const EdgeInsets.only(top: DsSpace.xs),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(icon, size: 14, color: color),
+              ),
+              const DsGap(6),
+              Expanded(
+                child: Text(text, maxLines: 2, overflow: TextOverflow.ellipsis, style: context.dsText.caption.withColor(color)),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _statusChip(String status, bool isDark) {
-    Color color;
+    DsTone tone;
     switch (status) {
       case 'active':
-        color = AppThemeData.success400;
+        tone = DsTone.success;
         break;
       case 'cancelled':
-        color = AppThemeData.danger300;
+        tone = DsTone.danger;
         break;
       default:
-        color = isDark ? AppThemeData.grey400 : AppThemeData.grey500;
+        tone = DsTone.neutral;
     }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
-      child: Text(
-        (status.capitalizeFirst ?? status).tr,
-        style: TextStyle(color: color, fontSize: 12, fontFamily: AppThemeData.semiBold),
-      ),
-    );
+    return DsStatusChip(label: (status.capitalizeFirst ?? status).tr, tone: tone, pulse: status == 'active');
   }
 
   /// Customer name/phone, looked up lazily from users/{customerId}; tolerates a
@@ -554,24 +570,37 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
     return FutureBuilder<UserModel?>(
       future: CustomerSubscriptionService.getCustomer(customerId),
       builder: (context, snapshot) {
+        final c = context.dsColors;
+        final t = context.dsText;
         final user = snapshot.data;
         final name = user == null ? '' : user.fullName().trim();
         final phone = user == null || (user.phoneNumber ?? '').isEmpty ? '' : "${user.countryCode ?? ''} ${user.phoneNumber}".trim();
         final waiting = snapshot.connectionState == ConnectionState.waiting;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        return Row(
           children: [
-            Text(
-              waiting ? "Loading...".tr : (name.isEmpty ? "Unknown customer".tr : name),
-              style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16, fontFamily: AppThemeData.semiBold),
-            ),
-            if (phone.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              Text(
-                phone,
-                style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontSize: 13, fontFamily: AppThemeData.regular),
+            DsAvatar(name: waiting ? null : name, imageUrl: user?.profilePictureURL, size: 44),
+            const DsGap(DsSpace.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    waiting ? "Loading...".tr : (name.isEmpty ? "Unknown customer".tr : name),
+                    style: waiting ? t.bodyStrong.withColor(c.textMuted) : t.titleSm,
+                  ),
+                  if (phone.isNotEmpty) ...[
+                    const DsGap(DsSpace.xxs),
+                    Row(
+                      children: [
+                        Icon(Icons.phone_outlined, size: 13, color: c.textMuted),
+                        const DsGap(DsSpace.xs),
+                        Flexible(child: Text(phone, style: t.bodySm.withColor(c.textSecondary))),
+                      ],
+                    ),
+                  ],
+                ],
               ),
-            ],
+            ),
           ],
         );
       },

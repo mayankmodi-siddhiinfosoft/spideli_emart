@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
 import 'package:video_player/video_player.dart';
+import 'package:vendor/themes/ds/ds.dart';
 
 class FullScreenVideoViewer extends StatefulWidget {
   final String videoUrl;
@@ -33,9 +35,13 @@ class _FullScreenVideoViewerState extends State<FullScreenVideoViewer> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         elevation: 0.0,
-        backgroundColor: Colors.black,
+        backgroundColor: Colors.transparent,
+        automaticallyImplyLeading: false,
+        leading: const DsBackButton(color: Colors.white),
         iconTheme: const IconThemeData(color: Colors.white),
         systemOverlayStyle: SystemUiOverlayStyle.light,
       ),
@@ -44,12 +50,13 @@ class _FullScreenVideoViewerState extends State<FullScreenVideoViewer> {
         child: Hero(
           tag: widget.videoUrl,
           child: Center(
-            child: _controller.value.isInitialized ? AspectRatio(aspectRatio: _controller.value.aspectRatio, child: VideoPlayer(_controller)) : Container(),
+            child: _controller.value.isInitialized ? AspectRatio(aspectRatio: _controller.value.aspectRatio, child: VideoPlayer(_controller)) : const DsSpinner(size: 32, color: Colors.white),
           ),
         ),
       ),
       floatingActionButton: FloatingActionButton(
         heroTag: widget.heroTag,
+        tooltip: _controller.value.isPlaying ? 'Pause'.tr : 'Play'.tr,
         onPressed: () {
           setState(() {
             _controller.value.isPlaying ? _controller.pause() : _controller.play();

@@ -1,83 +1,83 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
-import 'package:vendor/constant/constant.dart';
 import 'package:vendor/controller/change_password_controller.dart';
-import 'package:vendor/themes/app_them_data.dart';
-import 'package:vendor/themes/round_button_fill.dart';
-import 'package:vendor/themes/text_field_widget.dart';
-import 'package:vendor/themes/theme_controller.dart';
+import 'package:vendor/themes/ds/ds.dart';
 
 class ChangePasswordScreen extends StatelessWidget {
   const ChangePasswordScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
     return GetX(
       init: ChangePasswordController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(backgroundColor: themeController.isDark.value == true ? AppThemeData.surfaceDark : AppThemeData.surface, centerTitle: false, titleSpacing: 0),
+        final t = context.dsText;
+        final l = context.dsLayout;
+        return DsScaffold(
+          title: "Change Password".tr,
+          maxContentWidth: DsLayout.contentMax,
+          bottomBar: controller.isLoading.value
+              ? null
+              : DsStickyBar(
+                  child: DsButton.primary(
+                    label: "Change Password".tr,
+                    size: DsButtonSize.lg,
+                    expand: true,
+                    icon: Icons.lock_reset_rounded,
+                    onPressed: () async {
+                      controller.forgotPassword();
+                    },
+                  ),
+                ),
           body: controller.isLoading.value
-              ? Constant.loader()
-              : Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+              ? const DsSkeletonForm(fields: 1)
+              : SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.sm, l.gutter, DsSpace.xxl),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Change Password".tr,
-                        style: TextStyle(
-                          fontSize: 24,
-                          color: themeController.isDark.value == true ? AppThemeData.grey50 : AppThemeData.grey900,
-                          fontFamily: AppThemeData.semiBold,
-                          fontWeight: FontWeight.w500,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: DsFadeSlideIn.stagger([
+                      // Security hero
+                      DsCard.gradient(
+                        gradient: DsGradients.deep(context),
+                        child: Row(
+                          children: [
+                            const DsIconWell(icon: Icons.shield_outlined, onBrand: true, size: 56),
+                            const DsGap(DsSpace.lg),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Account security'.tr, style: t.overline.withColor(Colors.white.withValues(alpha: 0.75))),
+                                  const DsGap(DsSpace.xs),
+                                  Text("Update your password to keep your account secure.".tr, style: t.titleSm.withColor(Colors.white)),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      Text(
-                        "Update your password to keep your account secure.".tr,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: themeController.isDark.value == true ? AppThemeData.grey50 : AppThemeData.grey900,
-                          fontFamily: AppThemeData.regular,
-                          fontWeight: FontWeight.w400,
-                        ),
+                      const DsGap(DsSpace.lg),
+                      DsInlineAlert(
+                        tone: DsTone.warning,
+                        icon: Icons.mark_email_unread_outlined,
+                        message: "Enter your registered email address and we’ll send you a secure link to reset your password. Open the link in your inbox and follow the steps to create a new password."
+                            .tr,
                       ),
-                      const SizedBox(height: 20),
-                      Text(
-                        "Enter your registered email address and we’ll send you a secure link to reset your password. Open the link in your inbox and follow the steps to create a new password.".tr,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: themeController.isDark.value == true ? AppThemeData.danger300 : AppThemeData.danger300,
-                          fontFamily: AppThemeData.regular,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      TextFieldWidget(
+                      const DsGap(DsSpace.lg),
+                      DsFormSection(
                         title: 'Email Address'.tr,
-                        textInputType: TextInputType.emailAddress,
-                        controller: controller.emailEditingController.value,
-                        hintText: 'Enter Email Address'.tr,
-                        prefix: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: SvgPicture.asset(
-                            "assets/icons/ic_mail.svg",
-                            colorFilter: ColorFilter.mode(themeController.isDark.value == true ? AppThemeData.grey300 : AppThemeData.grey600, BlendMode.srcIn),
+                        icon: Icons.alternate_email_rounded,
+                        children: [
+                          DsTextField(
+                            label: 'Email Address'.tr,
+                            keyboardType: TextInputType.emailAddress,
+                            controller: controller.emailEditingController.value,
+                            hint: 'Enter Email Address'.tr,
+                            prefixIcon: Icons.mail_outline_rounded,
                           ),
-                        ),
+                        ],
                       ),
-                      const SizedBox(height: 20),
-                      RoundedButtonFill(
-                        title: "Change Password".tr,
-                        color: AppThemeData.primary300,
-                        textColor: AppThemeData.grey50,
-                        onPress: () async {
-                          controller.forgotPassword();
-                        },
-                      ),
-                    ],
+                    ]),
                   ),
                 ),
         );

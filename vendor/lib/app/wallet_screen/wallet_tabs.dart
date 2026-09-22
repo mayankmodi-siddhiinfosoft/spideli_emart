@@ -1,19 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
+import 'package:intl/intl.dart';
 import 'package:vendor/app/Home_screen/order_details_screen.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/controller/wallet_controller.dart';
 import 'package:vendor/models/currency_model.dart';
 import 'package:vendor/models/wallet_transaction_model.dart';
 import 'package:vendor/models/withdrawal_model.dart';
-import 'package:vendor/themes/app_them_data.dart';
+import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
-import 'package:vendor/widget/my_separator.dart';
 
 /// Pull-to-refresh wrapper whose empty state still scrolls (so it can refresh).
 class _RefreshableList extends StatelessWidget {
-  const _RefreshableList({required this.controller, required this.isDark, required this.header, required this.itemCount, required this.itemBuilder, required this.emptyMessage});
+  const _RefreshableList({
+    required this.controller,
+    required this.isDark,
+    required this.header,
+    required this.itemCount,
+    required this.itemBuilder,
+    required this.emptyMessage,
+    this.emptyIcon = Icons.receipt_long_outlined,
+    this.grouped = true,
+  });
 
   final WalletController controller;
   final bool isDark;
@@ -21,40 +30,47 @@ class _RefreshableList extends StatelessWidget {
   final int itemCount;
   final Widget Function(BuildContext, int) itemBuilder;
   final String emptyMessage;
+  final IconData emptyIcon;
+
+  /// Rows share one card with hairline dividers (ledger look). When false,
+  /// every row renders as its own card.
+  final bool grouped;
 
   @override
   Widget build(BuildContext context) {
+    final c = context.dsColors;
     return RefreshIndicator(
-      color: AppThemeData.primary300,
+      color: c.brand,
+      backgroundColor: c.surface,
       onRefresh: controller.refreshAll,
       child: LayoutBuilder(
         builder: (context, constraints) {
+          final l = context.dsLayout;
           return ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.xs, l.gutter, DsSpace.xxxl),
             children: [
-              if (header != null) ...[header!, const SizedBox(height: 10)],
+              if (header != null) ...[DsFadeSlideIn(child: header!), const DsGap(DsSpace.lg)],
               if (itemCount == 0)
-                SizedBox(height: constraints.maxHeight * 0.5, child: Constant.showEmptyView(message: emptyMessage, isDark: isDark))
+                SizedBox(
+                  height: constraints.maxHeight * 0.5,
+                  child: Center(
+                    child: DsEmptyState(icon: emptyIcon, title: emptyMessage, compact: true),
+                  ),
+                )
+              else if (grouped)
+                DsCard(
+                  padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+                  child: Column(
+                    children: [for (var i = 0; i < itemCount; i++) DsFadeSlideIn(index: i, child: itemBuilder(context, i))],
+                  ),
+                )
               else
-                Container(
-                  decoration: ShapeDecoration(
-                    color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                for (var i = 0; i < itemCount; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: DsSpace.md),
+                    child: DsFadeSlideIn(index: i, child: itemBuilder(context, i)),
                   ),
-                  padding: const EdgeInsets.all(8),
-                  child: ListView.separated(
-                    padding: EdgeInsets.zero,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: itemCount,
-                    itemBuilder: itemBuilder,
-                    separatorBuilder: (context, index) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 5),
-                      child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                    ),
-                  ),
-                ),
             ],
           );
         },
@@ -65,84 +81,105 @@ class _RefreshableList extends StatelessWidget {
 
 /// Today / This week / This month selector plus one headline figure.
 class _PeriodSummary extends StatelessWidget {
-  const _PeriodSummary({required this.controller, required this.isDark, required this.label, required this.value, this.caption});
+  const _PeriodSummary({
+    required this.controller,
+    required this.isDark,
+    required this.label,
+    required this.value,
+    this.caption,
+    this.icon = Icons.trending_up_rounded,
+    this.tone = DsTone.success,
+  });
 
   final WalletController controller;
   final bool isDark;
   final String label;
   final String value;
   final String? caption;
+  final IconData icon;
+  final DsTone tone;
 
   @override
   Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
     final periods = {WalletPeriod.today: "Today".tr, WalletPeriod.week: "This week".tr, WalletPeriod.month: "This month".tr};
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: ShapeDecoration(
-        color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
+    final keys = periods.keys.toList();
+    return DsCard(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: periods.entries.map((entry) {
-              final selected = controller.selectedPeriod.value == entry.key;
-              return ChoiceChip(
-                label: Text(entry.value),
-                selected: selected,
-                showCheckmark: false,
-                onSelected: (_) => controller.selectedPeriod.value = entry.key,
-                selectedColor: AppThemeData.primary300,
-                backgroundColor: isDark ? AppThemeData.grey800 : AppThemeData.grey100,
-                side: BorderSide.none,
-                labelStyle: TextStyle(
-                  fontSize: 13,
-                  fontFamily: AppThemeData.medium,
-                  fontWeight: FontWeight.w500,
-                  color: selected ? AppThemeData.grey50 : (isDark ? AppThemeData.grey200 : AppThemeData.grey700),
+          DsSegmentedTabs(
+            segments: [for (final e in periods.values) DsSegment(e)],
+            index: keys.indexOf(controller.selectedPeriod.value).clamp(0, keys.length - 1),
+            onChanged: (i) => controller.selectedPeriod.value = keys[i],
+          ),
+          const DsGap(DsSpace.lg),
+          Row(
+            children: [
+              DsIconWell(icon: icon, tone: tone, size: 48),
+              const DsGap(DsSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: t.labelSm.withColor(c.textSecondary)),
+                    const DsGap(DsSpace.xxs),
+                    AnimatedSwitcher(
+                      duration: DsMotion.of(context, DsMotion.base),
+                      transitionBuilder: (child, anim) => FadeTransition(
+                        opacity: anim,
+                        child: SlideTransition(
+                          position: Tween(begin: const Offset(0, 0.25), end: Offset.zero).animate(anim),
+                          child: child,
+                        ),
+                      ),
+                      layoutBuilder: (current, previous) => Stack(alignment: AlignmentDirectional.centerStart, children: [...previous, ?current]),
+                      child: FittedBox(
+                        key: ValueKey(value),
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(value, style: t.metric.withColor(c.textPrimary)),
+                      ),
+                    ),
+                  ],
                 ),
-              );
-            }).toList(),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            label,
-            style: TextStyle(fontSize: 13, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: TextStyle(fontSize: 22, fontFamily: AppThemeData.bold, fontWeight: FontWeight.w700, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-          ),
-          if (caption != null) ...[
-            const SizedBox(height: 2),
-            Text(
-              caption!,
-              style: TextStyle(fontSize: 12, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
-            ),
-          ],
+          if (caption != null) ...[const DsGap(DsSpace.sm), Text(caption!, style: t.caption)],
         ],
       ),
     );
   }
 }
 
-TextStyle _titleStyle(bool isDark) => TextStyle(fontSize: 16, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800);
+/// Day header used to group ledger rows ("Mon, 12 Aug 2026").
+class _DayHeader extends StatelessWidget {
+  const _DayHeader(this.label);
+  final String label;
 
-TextStyle _metaStyle(bool isDark) => TextStyle(fontSize: 12, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, color: isDark ? AppThemeData.grey200 : AppThemeData.grey700);
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsetsDirectional.fromSTEB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xs),
+      child: Text(label.toUpperCase(), style: context.dsText.overline.withColor(c.textMuted)),
+    );
+  }
+}
 
-Widget _iconBox(bool isDark, String asset) {
-  return Container(
-    decoration: ShapeDecoration(
-      shape: RoundedRectangleBorder(
-        side: BorderSide(width: 1, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100),
-        borderRadius: BorderRadius.circular(8),
-      ),
-    ),
-    child: Padding(padding: const EdgeInsets.all(16), child: SvgPicture.asset(asset, height: 16, width: 16)),
+Widget _iconWell(String asset, DsTone tone) {
+  return Builder(
+    builder: (context) {
+      final tc = context.dsColors.tone(tone);
+      return DsIconWell(
+        tone: tone,
+        size: 44,
+        child: SvgPicture.asset(asset, height: 18, width: 18, colorFilter: ColorFilter.mode(tc.strong, BlendMode.srcIn)),
+      );
+    },
   );
 }
 
@@ -171,71 +208,78 @@ class WalletEarningsTab extends StatelessWidget {
         ),
         itemCount: rows.length,
         emptyMessage: "Transaction history not found".tr,
-        itemBuilder: (context, index) => _transactionCard(rows[index]),
+        emptyIcon: Icons.account_balance_wallet_outlined,
+        itemBuilder: (context, index) {
+          final row = rows[index];
+          final day = row.date == null ? null : DateFormat('EEE, d MMM yyyy').format(row.date!.toDate());
+          final prev = index == 0 || rows[index - 1].date == null ? null : DateFormat('EEE, d MMM yyyy').format(rows[index - 1].date!.toDate());
+          final showHeader = day != null && (index == 0 || day != prev);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (showHeader) ...[if (index != 0) Divider(height: DsSpace.sm, thickness: 1, color: context.dsColors.divider), _DayHeader(day)],
+              _transactionCard(context, row),
+            ],
+          );
+        },
       );
     });
   }
 
-  Widget _transactionCard(WalletTransactionModel transactionModel) {
+  Widget _transactionCard(BuildContext context, WalletTransactionModel transactionModel) {
+    final c = context.dsColors;
+    final t = context.dsText;
     final hasOrder = (transactionModel.orderId ?? '').isNotEmpty && transactionModel.orderId != 'null';
     final amount = Constant.amountShow(amount: transactionModel.amount.toString(), currency: controller.currencyForTransaction(transactionModel));
-    return InkWell(
-      onTap: hasOrder
-          ? () async {
-              await FireStoreUtils.getOrderByOrderId(transactionModel.orderId.toString()).then((value) {
-                if (value != null) {
-                  Get.to(const OrderDetailsScreen(), arguments: {"orderModel": value});
-                }
-              });
-            }
-          : null,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
-          children: [
-            _iconBox(isDark, transactionModel.isTopup == false ? "assets/icons/ic_debit.svg" : "assets/icons/ic_credit.svg"),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+    final isCredit = transactionModel.isTopup == true;
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: hasOrder
+            ? () async {
+                await FireStoreUtils.getOrderByOrderId(transactionModel.orderId.toString()).then((value) {
+                  if (value != null) {
+                    Get.to(const OrderDetailsScreen(), arguments: {"orderModel": value});
+                  }
+                });
+              }
+            : null,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 64),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+            child: Row(
+              children: [
+                _iconWell(
+                  transactionModel.isTopup == false ? "assets/icons/ic_debit.svg" : "assets/icons/ic_credit.svg",
+                  isCredit ? DsTone.success : DsTone.danger,
+                ),
+                const DsGap(DsSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: Text(transactionModel.note.toString(), style: _titleStyle(isDark))),
-                      Text(
-                        transactionModel.isTopup == false ? "-$amount" : amount,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontFamily: AppThemeData.medium,
-                          fontWeight: FontWeight.w500,
-                          color: transactionModel.isTopup == true ? AppThemeData.success400 : AppThemeData.danger300,
-                        ),
+                      Text(transactionModel.note.toString(), style: t.bodyStrong),
+                      const DsGap(DsSpace.xxs),
+                      Wrap(
+                        spacing: DsSpace.sm,
+                        runSpacing: DsSpace.xxs,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          if (transactionModel.date != null) Text(Constant.timestampToDateTime(transactionModel.date!), style: t.caption),
+                          if (hasOrder) Text(WalletController.orderLabel(transactionModel.orderId), style: t.caption.withColor(c.textSecondary)),
+                          if (controller.isAccountRow(transactionModel)) DsBadge(label: "Account".tr, small: true),
+                        ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(transactionModel.date == null ? '' : Constant.timestampToDateTime(transactionModel.date!), style: _metaStyle(isDark)),
-                      ),
-                      if (hasOrder) Text(WalletController.orderLabel(transactionModel.orderId), style: _metaStyle(isDark)),
-                      if (controller.isAccountRow(transactionModel))
-                        Container(
-                          margin: const EdgeInsets.only(left: 6),
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: isDark ? AppThemeData.grey800 : AppThemeData.grey100, borderRadius: BorderRadius.circular(6)),
-                          child: Text(
-                            "Account".tr,
-                            style: TextStyle(fontSize: 11, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
+                ),
+                const DsGap(DsSpace.sm),
+                Text(transactionModel.isTopup == false ? "-$amount" : amount, style: t.titleSm.tabular.withColor(isCredit ? c.successStrong : c.dangerStrong)),
+                if (hasOrder) ...[const DsGap(DsSpace.xxs), Icon(Icons.chevron_right_rounded, size: 18, color: c.textMuted)],
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -258,70 +302,101 @@ class WalletCommissionsTab extends StatelessWidget {
       return _RefreshableList(
         controller: controller,
         isDark: isDark,
+        grouped: false,
         header: _PeriodSummary(
           controller: controller,
           isDark: isDark,
+          icon: Icons.pie_chart_outline_rounded,
+          tone: DsTone.warning,
           label: "Total commission".tr,
           value: Constant.amountShow(amount: controller.periodCommission.toString(), currency: controller.periodCommissionCurrency),
           caption: "@count completed orders".trParams({'count': periodRows.length.toString()}),
         ),
         itemCount: rows.length,
         emptyMessage: "No completed orders yet".tr,
-        itemBuilder: (context, index) => _commissionCard(rows[index]),
+        emptyIcon: Icons.pie_chart_outline_rounded,
+        itemBuilder: (context, index) => _commissionCard(context, rows[index]),
       );
     });
   }
 
-  Widget _line(String label, String value, {Color? color, bool bold = false}) {
+  Widget _line(BuildContext context, String label, String value, {Color? color, bool bold = false}) {
+    final c = context.dsColors;
+    final t = context.dsText;
     return Padding(
-      padding: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.only(top: DsSpace.sm),
       child: Row(
         children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(fontSize: 13, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600),
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 14,
-              fontFamily: bold ? AppThemeData.semiBold : AppThemeData.medium,
-              fontWeight: bold ? FontWeight.w600 : FontWeight.w500,
-              color: color ?? (isDark ? AppThemeData.grey100 : AppThemeData.grey800),
-            ),
-          ),
+          Expanded(child: Text(label, style: t.bodySm.withColor(c.textSecondary))),
+          const DsGap(DsSpace.sm),
+          Text(value, style: (bold ? t.label : t.bodyStrong).tabular.withColor(color ?? c.textPrimary)),
         ],
       ),
     );
   }
 
-  Widget _commissionCard(OrderCommissionRow row) {
+  Widget _commissionCard(BuildContext context, OrderCommissionRow row) {
+    final c = context.dsColors;
+    final t = context.dsText;
     final CurrencyModel? currency = controller.currencyForOrder(row.order);
     String money(double v) => Constant.amountShow(amount: v.toString(), currency: currency);
     final percent = row.commissionPercent % 1 == 0 ? row.commissionPercent.toStringAsFixed(0) : row.commissionPercent.toStringAsFixed(2);
     final commissionLabel = row.commissionApplied ? "${"Admin commission".tr} ($percent%)" : "Admin commission".tr;
-    return InkWell(
+    return DsCard.outlined(
       onTap: () => Get.to(const OrderDetailsScreen(), arguments: {"orderModel": row.order}),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, DsSpace.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(child: Text("${"Order".tr} ${WalletController.orderLabel(row.order.id)}", style: _titleStyle(isDark))),
-                Text(row.order.createdAt == null ? '' : Constant.timestampToDateTime(row.order.createdAt!), style: _metaStyle(isDark)),
+                Row(
+                  children: [
+                    const DsIconWell(icon: Icons.receipt_rounded, tone: DsTone.info, size: 36),
+                    const DsGap(DsSpace.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("${"Order".tr} ${WalletController.orderLabel(row.order.id)}", style: t.titleSm),
+                          if (row.order.createdAt != null) Text(Constant.timestampToDateTime(row.order.createdAt!), style: t.caption),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded, color: c.textMuted),
+                  ],
+                ),
+                const DsGap(DsSpace.xs),
+                _line(context, "Order subtotal".tr, money(row.subTotal)),
+                _line(
+                  context,
+                  commissionLabel,
+                  row.commissionAmount > 0 ? "-${money(row.commissionAmount)}" : money(0),
+                  color: row.commissionAmount > 0 ? c.dangerStrong : null,
+                ),
+                if (row.taxAmount != 0) _line(context, "Tax".tr, money(row.taxAmount)),
               ],
             ),
-            const SizedBox(height: 2),
-            _line("Order subtotal".tr, money(row.subTotal)),
-            _line(commissionLabel, row.commissionAmount > 0 ? "-${money(row.commissionAmount)}" : money(0), color: row.commissionAmount > 0 ? AppThemeData.danger300 : null),
-            if (row.taxAmount != 0) _line("Tax".tr, money(row.taxAmount)),
-            _line(row.storeReceivedFromCredit ? "Store received".tr : "Store receives (estimated)".tr, money(row.storeReceived), color: AppThemeData.success400, bold: true),
-          ],
-        ),
+          ),
+          Container(
+            color: c.successSoft,
+            padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.md),
+            child: Row(
+              children: [
+                Icon(Icons.storefront_rounded, size: 18, color: c.successStrong),
+                const DsGap(DsSpace.sm),
+                Expanded(
+                  child: Text(row.storeReceivedFromCredit ? "Store received".tr : "Store receives (estimated)".tr, style: t.labelSm.withColor(c.successStrong)),
+                ),
+                const DsGap(DsSpace.sm),
+                Text(money(row.storeReceived), style: t.titleSm.tabular.withColor(c.successStrong)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -343,80 +418,76 @@ class WalletPayoutsTab extends StatelessWidget {
         controller: controller,
         isDark: isDark,
         header: null,
+        grouped: false,
         itemCount: rows.length,
         emptyMessage: "No payout requests yet".tr,
-        itemBuilder: (context, index) => _payoutCard(rows[index]),
+        emptyIcon: Icons.payments_outlined,
+        itemBuilder: (context, index) => _payoutCard(context, rows[index]),
       );
     });
   }
 
-  Widget _payoutCard(WithdrawalModel transactionModel) {
+  Widget _payoutCard(BuildContext context, WithdrawalModel transactionModel) {
+    final c = context.dsColors;
+    final t = context.dsText;
     final status = transactionModel.paymentStatus ?? '';
     final method = (transactionModel.withdrawMethod ?? '').isEmpty ? '' : transactionModel.withdrawMethod!.capitalizeString();
     final adminNote = (transactionModel.adminNote ?? '').trim();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final tone = status == "Success"
+        ? DsTone.success
+        : status == "Pending"
+        ? DsTone.warning
+        : DsTone.danger;
+    return DsCard.outlined(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _iconBox(isDark, "assets/icons/ic_debit.svg"),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _iconWell("assets/icons/ic_debit.svg", tone),
+              const DsGap(DsSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text((transactionModel.note ?? '').isEmpty ? "Withdrawal".tr : transactionModel.note!, style: _titleStyle(isDark)),
-                          if (method.isNotEmpty)
-                            Text(
-                              "($method)",
-                              style: TextStyle(fontSize: 14, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w600, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800),
-                            ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      "-${Constant.amountShow(amount: (transactionModel.amount ?? '').isEmpty ? "0.0" : transactionModel.amount.toString())}",
-                      style: const TextStyle(fontSize: 16, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, color: AppThemeData.danger300),
-                    ),
+                    Text((transactionModel.note ?? '').isEmpty ? "Withdrawal".tr : transactionModel.note!, style: t.bodyStrong),
+                    const DsGap(DsSpace.xxs),
+                    Text(transactionModel.paidDate == null ? '' : Constant.timestampToDateTime(transactionModel.paidDate!), style: t.caption),
                   ],
                 ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        status,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontFamily: AppThemeData.semiBold,
-                          fontWeight: FontWeight.w600,
-                          color: status == "Success"
-                              ? AppThemeData.success400
-                              : status == "Pending"
-                              ? AppThemeData.primary300
-                              : AppThemeData.danger300,
-                        ),
-                      ),
-                    ),
-                    Text(transactionModel.paidDate == null ? '' : Constant.timestampToDateTime(transactionModel.paidDate!), style: _metaStyle(isDark)),
-                  ],
-                ),
-                if (adminNote.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    "${"Admin note".tr}: $adminNote",
-                    style: TextStyle(fontSize: 13, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600),
-                  ),
-                ],
-              ],
-            ),
+              ),
+              const DsGap(DsSpace.sm),
+              Text(
+                "-${Constant.amountShow(amount: (transactionModel.amount ?? '').isEmpty ? "0.0" : transactionModel.amount.toString())}",
+                style: t.titleSm.tabular.withColor(c.dangerStrong),
+              ),
+            ],
           ),
+          const DsGap(DsSpace.md),
+          Wrap(
+            spacing: DsSpace.sm,
+            runSpacing: DsSpace.xs,
+            children: [
+              if (status.isNotEmpty) DsStatusChip(label: status, tone: tone, pulse: status == "Pending"),
+              if (method.isNotEmpty) DsBadge(label: "($method)", icon: Icons.account_balance_outlined, style: DsBadgeStyle.outline),
+            ],
+          ),
+          if (adminNote.isNotEmpty) ...[
+            const DsGap(DsSpace.md),
+            Container(
+              padding: const EdgeInsets.all(DsSpace.md),
+              decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brMd),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.sticky_note_2_outlined, size: 16, color: c.textMuted),
+                  const DsGap(DsSpace.sm),
+                  Expanded(child: Text("${"Admin note".tr}: $adminNote", style: t.bodySm.withColor(c.textSecondary))),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

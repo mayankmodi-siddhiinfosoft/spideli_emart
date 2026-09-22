@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:vendor/themes/theme_controller.dart';
-import 'package:vendor/constant/constant.dart';
 import 'package:vendor/controller/verification_controller.dart';
 import 'package:vendor/models/document_model.dart';
 import 'package:vendor/models/driver_document_model.dart';
-import 'package:vendor/themes/app_them_data.dart';
+import 'package:vendor/themes/ds/ds.dart';
+
 import 'verification_details_upload_screen.dart';
 
 class VerificationScreen extends StatelessWidget {
@@ -13,127 +12,138 @@ class VerificationScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetBuilder<VerificationController>(
       init: VerificationController(),
       builder: (controller) {
-        return Scaffold(
-          backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-          appBar: AppBar(
-            backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-            centerTitle: false,
-            automaticallyImplyLeading: false,
-            titleSpacing: 0,
-            leading: InkWell(
-              onTap: () {
-                Get.back();
-              },
-              child: Icon(Icons.chevron_left_outlined, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-            ),
-            elevation: 0,
-          ),
-          body: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: controller.isLoading.value
-                ? Constant.loader()
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Document Verification".tr,
-                        style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.bold, fontSize: 22),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        "Upload your ID Proof to complete the verification process and ensure compliance.".tr,
-                        style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey200 : AppThemeData.grey700, fontFamily: AppThemeData.regular),
-                      ),
-                      const SizedBox(height: 40),
-                      Container(
-                        decoration: ShapeDecoration(
-                          color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        final c = context.dsColors;
+        final t = context.dsText;
+        final l = context.dsLayout;
+
+        // Presentation-only summary of the existing document statuses.
+        Documents documentFor(DocumentModel documentModel) {
+          Documents documents = Documents();
+          var contain = controller.driverDocumentList.where((element) => element.documentId == documentModel.id);
+          if (contain.isNotEmpty) {
+            documents = controller.driverDocumentList.firstWhere((itemToCheck) => itemToCheck.documentId == documentModel.id);
+          }
+          return documents;
+        }
+
+        final total = controller.documentList.length;
+        final verified = controller.isLoading.value ? 0 : controller.documentList.where((d) => documentFor(d as DocumentModel).status == "approved").length;
+
+        return DsScaffold(
+          title: "Document Verification".tr,
+          onBack: () {
+            Get.back();
+          },
+          maxContentWidth: DsLayout.contentMax,
+          body: controller.isLoading.value
+              ? const SingleChildScrollView(
+                  physics: NeverScrollableScrollPhysics(),
+                  child: Column(children: [DsSkeletonCard(height: 132), DsSkeletonList(itemCount: 4)]),
+                )
+              : ListView(
+                  padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.sm, l.gutter, DsSpace.xxxl),
+                  children: [
+                    DsFadeSlideIn(
+                      child: DsCard.gradient(
+                        child: Row(
+                          children: [
+                            DsProgressRing(
+                              value: total == 0 ? 0 : verified / total,
+                              size: 84,
+                              onBrand: true,
+                              center: Text("$verified/$total", style: t.titleSm.tabular.withColor(Colors.white)),
+                            ),
+                            const DsGap(DsSpace.xl),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Verified'.tr, style: t.overline.withColor(Colors.white.withValues(alpha: 0.8))),
+                                  const DsGap(DsSpace.xs),
+                                  Text("Upload your ID Proof to complete the verification process and ensure compliance.".tr, style: t.body.withColor(Colors.white)),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                          child: ListView.separated(
-                            itemCount: controller.documentList.length,
-                            shrinkWrap: true,
-                            padding: EdgeInsets.zero,
-                            itemBuilder: (context, index) {
-                              DocumentModel documentModel = controller.documentList[index];
-                              Documents documents = Documents();
-
-                              var contain = controller.driverDocumentList.where((element) => element.documentId == documentModel.id);
-                              if (contain.isNotEmpty) {
-                                documents = controller.driverDocumentList.firstWhere((itemToCheck) => itemToCheck.documentId == documentModel.id);
-                              }
-
-                              return InkWell(
-                                onTap: () {
-                                  Get.to(const VerificationDetailsUploadScreen(), arguments: {'documentModel': documentModel})!.then((value) {
-                                    if (value == true) {
-                                      controller.getDocument();
-                                    }
-                                  });
-                                },
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            "${documentModel.title}",
-                                            style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.bold, fontSize: 16),
-                                          ),
-                                          const SizedBox(height: 5),
-                                          Text(
-                                            "${documentModel.frontSide == true ? "Front".tr : ""} ${documentModel.backSide == true ? "And Back".tr : ""} ${'Photo'.tr}",
-                                            style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontFamily: AppThemeData.regular),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                      child: Text(
-                                        documents.status == "approved"
-                                            ? "Verified".tr
-                                            : documents.status == "rejected"
-                                            ? "Rejected".tr
-                                            : documents.status == "uploaded"
-                                            ? "Uploaded".tr
-                                            : "Pending".tr,
-                                        style: TextStyle(
-                                          color: documents.status == "approved"
-                                              ? Colors.green
-                                              : documents.status == "rejected"
-                                              ? Colors.red
-                                              : documents.status == "uploaded"
-                                              ? AppThemeData.primary300
-                                              : Colors.orange,
-                                          fontFamily: AppThemeData.medium,
-                                          fontSize: 16,
+                      ),
+                    ),
+                    const DsGap(DsSpace.xl),
+                    DsSectionHeader(
+                      title: 'Documents'.tr,
+                      icon: Icons.folder_copy_outlined,
+                      padding: const EdgeInsets.only(bottom: DsSpace.sm),
+                    ),
+                    if (controller.documentList.isEmpty) DsEmptyState(icon: Icons.description_outlined, title: 'No documents found'.tr, compact: true),
+                    for (int index = 0; index < controller.documentList.length; index++)
+                      Builder(
+                        builder: (context) {
+                          DocumentModel documentModel = controller.documentList[index];
+                          Documents documents = documentFor(documentModel);
+                          final label = documents.status == "approved"
+                              ? "Verified".tr
+                              : documents.status == "rejected"
+                              ? "Rejected".tr
+                              : documents.status == "uploaded"
+                              ? "Uploaded".tr
+                              : "Pending".tr;
+                          final tone = documents.status == "approved"
+                              ? DsTone.success
+                              : documents.status == "rejected"
+                              ? DsTone.danger
+                              : documents.status == "uploaded"
+                              ? DsTone.info
+                              : DsTone.warning;
+                          final icon = documents.status == "approved"
+                              ? Icons.verified_rounded
+                              : documents.status == "rejected"
+                              ? Icons.error_outline_rounded
+                              : documents.status == "uploaded"
+                              ? Icons.hourglass_top_rounded
+                              : Icons.upload_file_rounded;
+                          return DsFadeSlideIn(
+                            index: index + 1,
+                            child: DsCard.outlined(
+                              margin: const EdgeInsets.only(bottom: DsSpace.md),
+                              semanticLabel: "${documentModel.title}",
+                              onTap: () {
+                                Get.to(const VerificationDetailsUploadScreen(), arguments: {'documentModel': documentModel})!.then((value) {
+                                  if (value == true) {
+                                    controller.getDocument();
+                                  }
+                                });
+                              },
+                              child: Row(
+                                children: [
+                                  DsIconWell(icon: icon, tone: tone, size: 48),
+                                  const DsGap(DsSpace.md),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text("${documentModel.title}", style: t.titleSm.withColor(c.textPrimary)),
+                                        const DsGap(DsSpace.xxs),
+                                        Text(
+                                          "${documentModel.frontSide == true ? "Front".tr : ""} ${documentModel.backSide == true ? "And Back".tr : ""} ${'Photo'.tr}",
+                                          style: t.bodySm.withColor(c.textSecondary),
                                         ),
-                                      ),
+                                        const DsGap(DsSpace.sm),
+                                        DsStatusChip(label: label, tone: tone),
+                                      ],
                                     ),
-                                    const Icon(Icons.arrow_forward_ios_rounded, size: 20),
-                                  ],
-                                ),
-                              );
-                            },
-                            separatorBuilder: (BuildContext context, int index) {
-                              return const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Divider());
-                            },
-                          ),
-                        ),
+                                  ),
+                                  Icon(Icons.chevron_right_rounded, color: c.textMuted),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    ],
-                  ),
-          ),
+                  ],
+                ),
         );
       },
     );

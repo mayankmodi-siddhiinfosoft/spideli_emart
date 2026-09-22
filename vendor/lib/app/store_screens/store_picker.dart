@@ -5,8 +5,7 @@ import 'package:vendor/app/store_screens/my_stores_screen.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/controller/my_stores_controller.dart';
 import 'package:vendor/models/vendor_model.dart';
-import 'package:vendor/themes/app_them_data.dart';
-import 'package:vendor/utils/network_image_widget.dart';
+import 'package:vendor/themes/ds/ds.dart';
 
 /// The store picker in the home header (app-spec-multiple-stores: "Switch
 /// store - a picker in the header. It writes the chosen id to users.vendorID
@@ -29,77 +28,49 @@ class CurrentStoreCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool canSwitch = CurrentStoreCard.canSwitch;
-    final Color surface = isDark ? AppThemeData.grey900 : AppThemeData.grey50;
-    final Color title = isDark ? AppThemeData.grey50 : AppThemeData.grey900;
-    final Color muted = isDark ? AppThemeData.grey400 : AppThemeData.grey500;
-    return Material(
-      color: surface,
-      borderRadius: BorderRadius.circular(14),
-      elevation: 0,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: canSwitch ? () => showStorePicker(isDark) : null,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: (storePhoto ?? '').isEmpty
-                      ? Container(
-                          color: isDark ? AppThemeData.grey800 : AppThemeData.primary600,
-                          child: Icon(Icons.storefront_rounded, color: AppThemeData.primary300, size: 24),
-                        )
-                      : NetworkImageWidget(imageUrl: storePhoto!, width: 44, height: 44, fit: BoxFit.cover),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
+    final c = context.dsColors;
+    final t = context.dsText;
+    final String name = (storeName ?? '').isNotEmpty ? storeName! : "Unnamed store".tr;
+    return DsCard(
+      padding: const EdgeInsets.fromLTRB(DsSpace.md, DsSpace.md, DsSpace.md, DsSpace.md),
+      radius: DsRadius.lg,
+      semanticLabel: canSwitch ? "${"CURRENT STORE".tr}: $name. ${"Switch".tr}" : "${"CURRENT STORE".tr}: $name",
+      onTap: canSwitch ? () => showStorePicker(isDark) : null,
+      child: Row(
+        children: [
+          (storePhoto ?? '').isEmpty
+              ? const DsIconWell(icon: Icons.storefront_rounded, size: 48)
+              : DsImage(url: storePhoto!, width: 48, height: 48, radius: DsRadius.md, errorIcon: Icons.storefront_rounded),
+          DsGap.md,
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("CURRENT STORE".tr, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.overline),
+                const DsGap(DsSpace.xxs),
+                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm),
+              ],
+            ),
+          ),
+          if (canSwitch) ...[
+            DsGap.sm,
+            ExcludeSemantics(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+                decoration: BoxDecoration(color: c.brandSoft, borderRadius: DsRadius.brPill),
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      "CURRENT STORE".tr,
-                      style: TextStyle(color: muted, fontSize: 11, letterSpacing: 0.8, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      (storeName ?? '').isNotEmpty ? storeName! : "Unnamed store".tr,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: title, fontSize: 16, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                    ),
+                    Icon(Icons.swap_horiz_rounded, size: 18, color: c.brandStrong),
+                    const DsGap(DsSpace.xs),
+                    Text("Switch".tr, style: t.label.copyWith(color: c.brandStrong)),
                   ],
                 ),
               ),
-              if (canSwitch) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: isDark ? AppThemeData.grey800 : AppThemeData.primary600,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.swap_horiz_rounded, size: 18, color: AppThemeData.primary300),
-                      const SizedBox(width: 4),
-                      Text(
-                        "Switch".tr,
-                        style: TextStyle(color: AppThemeData.primary300, fontSize: 14, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -109,9 +80,9 @@ class CurrentStoreCard extends StatelessWidget {
     final controller = Get.put(MyStoresController(withOverview: false), tag: 'storePicker');
     Get.bottomSheet(
       _StorePickerSheet(controller: controller, isDark: isDark),
-      backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
     ).whenComplete(() => Get.delete<MyStoresController>(tag: 'storePicker'));
   }
 }
@@ -124,72 +95,134 @@ class _StorePickerSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color titleColor = isDark ? AppThemeData.grey50 : AppThemeData.grey900;
-    final Color subColor = isDark ? AppThemeData.grey400 : AppThemeData.grey500;
-    return SafeArea(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text("Switch store".tr, style: TextStyle(color: titleColor, fontSize: 18, fontFamily: AppThemeData.semiBold)),
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsSheet(
+      title: "Switch store".tr,
+      showClose: true,
+      padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Obx(
+            () => AnimatedSwitcher(
+              duration: DsMotion.of(context, DsMotion.base),
+              child: controller.isLoading.value
+                  ? const _PickerSkeleton()
+                  : Column(
+                      key: const ValueKey('stores'),
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (int i = 0; i < controller.stores.length; i++)
+                          Builder(
+                            builder: (context) {
+                              final VendorModel store = controller.stores[i];
+                              final bool isCurrent = store.id == controller.currentStoreId;
+                              return DsFadeSlideIn(
+                                index: i,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(bottom: DsSpace.sm),
+                                  child: DsCard.outlined(
+                                    padding: const EdgeInsets.all(DsSpace.md),
+                                    color: isCurrent ? c.brandSoft : null,
+                                    borderColor: isCurrent ? c.brand : null,
+                                    onTap: isCurrent
+                                        ? null
+                                        : () {
+                                            Get.back();
+                                            controller.switchTo(store);
+                                          },
+                                    child: Row(
+                                      children: [
+                                        DsImage(url: store.photo ?? '', width: 44, height: 44, radius: DsRadius.sm, errorIcon: Icons.storefront_rounded),
+                                        DsGap.md,
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                (store.title ?? '').isNotEmpty ? store.title! : "Unnamed store".tr,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: t.bodyStrong,
+                                              ),
+                                              if ((store.location ?? '').isNotEmpty)
+                                                Text(store.location!, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption),
+                                            ],
+                                          ),
+                                        ),
+                                        DsGap.sm,
+                                        isCurrent
+                                            ? Icon(Icons.check_circle_rounded, color: c.brand)
+                                            : Icon(Directionality.of(context) == TextDirection.rtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: c.textMuted),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                    ),
             ),
-            Flexible(
-              child: Obx(
-                () => controller.isLoading.value
-                    ? Padding(padding: const EdgeInsets.all(24), child: Constant.loader())
-                    : ListView(
-                        shrinkWrap: true,
-                        children: controller.stores.map((VendorModel store) {
-                          final bool isCurrent = store.id == controller.currentStoreId;
-                          return ListTile(
-                            leading: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: NetworkImageWidget(imageUrl: store.photo ?? '', height: 40, width: 40, fit: BoxFit.cover),
-                            ),
-                            title: Text(
-                              (store.title ?? '').isNotEmpty ? store.title! : "Unnamed store".tr,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: titleColor, fontFamily: AppThemeData.medium),
-                            ),
-                            subtitle: (store.location ?? '').isEmpty
-                                ? null
-                                : Text(store.location!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: subColor, fontSize: 12)),
-                            trailing: isCurrent ? Icon(Icons.check_circle, color: AppThemeData.primary300) : null,
-                            onTap: isCurrent
-                                ? null
-                                : () {
-                                    Get.back();
-                                    controller.switchTo(store);
-                                  },
-                          );
-                        }).toList(),
-                      ),
+          ),
+          const DsGap(DsSpace.sm),
+          DsTileGroup(
+            dividerIndent: 64,
+            children: [
+              DsListTile(
+                leadingIcon: Icons.add_business_outlined,
+                leadingTone: DsTone.brand,
+                title: "Add Store".tr,
+                showChevron: true,
+                onTap: () {
+                  Get.back();
+                  Get.to(const AddRestaurantScreen(), arguments: {'newStore': true});
+                },
+              ),
+              DsListTile(
+                leadingIcon: Icons.store_mall_directory_outlined,
+                leadingTone: DsTone.brand,
+                title: "Manage stores".tr,
+                showChevron: true,
+                onTap: () {
+                  Get.back();
+                  Get.to(const MyStoresScreen());
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PickerSkeleton extends StatelessWidget {
+  const _PickerSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return DsShimmer(
+      child: Column(
+        children: [
+          for (int i = 0; i < 3; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: DsSpace.sm),
+              child: Row(
+                children: [
+                  DsSkeleton.box(width: 44, height: 44, radius: DsRadius.sm),
+                  DsGap.md,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [DsSkeleton.line(width: 160, height: 14), DsGap.sm, DsSkeleton.line(width: 110)],
+                    ),
+                  ),
+                ],
               ),
             ),
-            const Divider(height: 1),
-            ListTile(
-              leading: Icon(Icons.add_business_outlined, color: AppThemeData.primary300),
-              title: Text("Add Store".tr, style: TextStyle(color: titleColor, fontFamily: AppThemeData.medium)),
-              onTap: () {
-                Get.back();
-                Get.to(const AddRestaurantScreen(), arguments: {'newStore': true});
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.store_mall_directory_outlined, color: AppThemeData.primary300),
-              title: Text("Manage stores".tr, style: TextStyle(color: titleColor, fontFamily: AppThemeData.medium)),
-              onTap: () {
-                Get.back();
-                Get.to(const MyStoresScreen());
-              },
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }

@@ -1,61 +1,104 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:vendor/themes/theme_controller.dart';
 import 'package:vendor/controller/bank_details_controller.dart';
-import 'package:vendor/themes/app_them_data.dart';
-import 'package:vendor/themes/round_button_fill.dart';
-import 'package:vendor/themes/text_field_widget.dart';
+import 'package:vendor/themes/ds/ds.dart';
 
 class BankDetailsScreen extends StatelessWidget {
   const BankDetailsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: BankDetailsController(),
       builder: (controller) {
-        return Scaffold(
-          backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-          appBar: AppBar(
-            backgroundColor: AppThemeData.primary300,
-            centerTitle: false,
-            iconTheme: IconThemeData(color: isDark ? AppThemeData.grey800 : AppThemeData.grey100, size: 20),
-            title: Text(
-              "Bank Setup".tr,
-              style: TextStyle(color: isDark ? AppThemeData.grey800 : AppThemeData.grey100, fontSize: 18, fontFamily: AppThemeData.medium),
-            ),
-          ),
-          body: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: SingleChildScrollView(
+        final l = context.dsLayout;
+        final t = context.dsText;
+        return DsScaffold(
+          title: "Bank Setup".tr,
+          body: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.md, l.gutter, DsSpace.xxl),
+            child: DsResponsive(
               child: Column(
-                children: [
-                  TextFieldWidget(title: 'Bank Name'.tr, controller: controller.bankNameController.value, hintText: 'Enter Bank Name'.tr),
-                  TextFieldWidget(title: 'Branch Name'.tr, controller: controller.branchNameController.value, hintText: 'Enter Branch Name'.tr),
-                  TextFieldWidget(title: 'Holder Name'.tr, controller: controller.holderNameController.value, hintText: 'Enter Holder Name'.tr),
-                  TextFieldWidget(title: 'Account Number'.tr, controller: controller.accountNoController.value, hintText: 'Enter Account Number'.tr),
-                  TextFieldWidget(title: 'Other Information'.tr, controller: controller.otherInfoController.value, hintText: 'Enter Other Information'.tr),
-                ],
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: DsFadeSlideIn.stagger([
+                  DsCard.tinted(
+                    tone: DsTone.info,
+                    child: Row(
+                      children: [
+                        const DsIconWell(icon: Icons.account_balance_rounded, tone: DsTone.info, size: 48),
+                        const DsGap(DsSpace.md),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("Bank Transfer".tr, style: t.titleSm),
+                              const DsGap(DsSpace.xxs),
+                              Text("Withdrawals are paid out to this account.".tr, style: t.bodySm.withColor(context.dsColors.textSecondary)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const DsGap(DsSpace.lg),
+                  DsFormSection(
+                    title: "Account details".tr,
+                    icon: Icons.badge_outlined,
+                    children: [
+                      DsAdaptiveGrid(
+                        minItemWidth: 260,
+                        maxColumns: 2,
+                        spacing: DsSpace.md,
+                        runSpacing: 0,
+                        equalHeight: false,
+                        children: [
+                          DsTextField(
+                            label: 'Bank Name'.tr,
+                            controller: controller.bankNameController.value,
+                            hint: 'Enter Bank Name'.tr,
+                            prefixIcon: Icons.account_balance_outlined,
+                          ),
+                          DsTextField(
+                            label: 'Branch Name'.tr,
+                            controller: controller.branchNameController.value,
+                            hint: 'Enter Branch Name'.tr,
+                            prefixIcon: Icons.location_city_outlined,
+                          ),
+                          DsTextField(
+                            label: 'Holder Name'.tr,
+                            controller: controller.holderNameController.value,
+                            hint: 'Enter Holder Name'.tr,
+                            prefixIcon: Icons.person_outline_rounded,
+                          ),
+                          DsTextField(
+                            label: 'Account Number'.tr,
+                            controller: controller.accountNoController.value,
+                            hint: 'Enter Account Number'.tr,
+                            prefixIcon: Icons.numbers_rounded,
+                          ),
+                        ],
+                      ),
+                      DsTextField(
+                        label: 'Other Information'.tr,
+                        controller: controller.otherInfoController.value,
+                        hint: 'Enter Other Information'.tr,
+                        prefixIcon: Icons.notes_rounded,
+                      ),
+                    ],
+                  ),
+                ]),
               ),
             ),
           ),
-          bottomNavigationBar: Container(
-            color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: RoundedButtonFill(
-                title: "Add Bank".tr,
-                height: 5.5,
-                color: AppThemeData.primary300,
-                textColor: AppThemeData.grey50,
-                fontSizes: 16,
-                onPress: () async {
-                  controller.saveBank();
-                },
-              ),
+          bottomBar: DsStickyBar(
+            child: DsButton.primary(
+              label: "Add Bank".tr,
+              icon: Icons.check_rounded,
+              expand: true,
+              size: DsButtonSize.lg,
+              onPressed: () async {
+                controller.saveBank();
+              },
             ),
           ),
         );

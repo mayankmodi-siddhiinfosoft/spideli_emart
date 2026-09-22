@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:vendor/app/add_restaurant_screen/add_restaurant_screen.dart';
-import 'package:vendor/constant/constant.dart';
 import 'package:vendor/controller/my_stores_controller.dart';
 import 'package:vendor/models/vendor_model.dart';
-import 'package:vendor/themes/app_them_data.dart';
+import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/themes/theme_controller.dart';
-import 'package:vendor/utils/network_image_widget.dart';
 
 /// The stores this vendor account owns: switch between them, or add another.
 /// Owners only - an employee always works on the one store they belong to.
+///
+/// Layout: a portfolio hero (consolidated figures across every store) over a
+/// list of store cards, each with its own figures (2 columns on tablets).
 class MyStoresScreen extends StatelessWidget {
   const MyStoresScreen({super.key});
 
@@ -24,63 +25,77 @@ class MyStoresScreen extends StatelessWidget {
         // built lazily, outside this builder).
         final bool overviewLoading = controller.isOverviewLoading.value;
         final Map<String, StoreOverview> overviews = Map.of(controller.overviews);
-        return Scaffold(
-          appBar: AppBar(
-            backgroundColor: AppThemeData.primary300,
-            centerTitle: false,
-            iconTheme: IconThemeData(color: AppThemeData.grey50, size: 20),
-            title: Text(
-              "My Stores".tr,
-              style: TextStyle(color: AppThemeData.grey50, fontSize: 18, fontFamily: AppThemeData.medium),
+        final bool isLoading = controller.isLoading.value;
+        final List<VendorModel> stores = controller.stores.toList();
+        final l = context.dsLayout;
+        final int columns = l.isWide ? 2 : 1;
+
+        return DsScaffold.hero(
+          title: "My Stores".tr,
+          subtitle: isLoading ? null : "${stores.length} ${stores.length == 1 ? "store".tr : "stores".tr}",
+          onRefresh: !isLoading && stores.isNotEmpty ? controller.getStores : null,
+          actions: [
+            _HeroAction(
+              icon: Icons.add_rounded,
+              label: "Add Store".tr,
+              onTap: () {
+                Get.to(const AddRestaurantScreen(), arguments: {'newStore': true})?.then((_) => controller.getStores());
+              },
             ),
-            actions: [
-              InkWell(
-                splashColor: Colors.transparent,
-                onTap: () {
-                  Get.to(const AddRestaurantScreen(), arguments: {'newStore': true})?.then((_) => controller.getStores());
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    children: [
-                      Icon(Icons.add, color: AppThemeData.grey50),
-                      const SizedBox(width: 5),
-                      Text(
-                        "Add Store".tr,
-                        style: TextStyle(color: AppThemeData.grey50, fontSize: 18, fontFamily: AppThemeData.medium),
-                      ),
-                    ],
-                  ),
+          ],
+          hero: isLoading
+              ? const _HeroSkeleton()
+              : stores.isEmpty
+              ? const SizedBox.shrink()
+              : _ConsolidatedOverview(controller: controller, loading: overviewLoading, isDark: isDark),
+          slivers: [
+            if (isLoading)
+              const SliverToBoxAdapter(child: DsSkeletonList(itemCount: 4))
+            else if (stores.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: DsEmptyState(icon: Icons.storefront_outlined, title: "No stores found".tr),
+              )
+            else
+              DsSliverResponsive(
+                maxWidth: DsLayout.wideMax,
+                top: DsSpace.xl,
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate((context, row) {
+                    Widget tile(int index) {
+                      final VendorModel store = stores[index];
+                      final bool isCurrent = store.id == controller.currentStoreId;
+                      return DsFadeSlideIn(
+                        index: index,
+                        child: StoreListTile(
+                          store: store,
+                          isCurrent: isCurrent,
+                          isDark: isDark,
+                          overview: overviews[store.id],
+                          isOverviewLoading: overviewLoading,
+                          onTap: isCurrent ? null : () => _confirmSwitch(context, controller, store, isDark),
+                        ),
+                      );
+                    }
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: DsSpace.md),
+                      child: columns == 1
+                          ? tile(row)
+                          : Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                for (int j = 0; j < columns; j++) ...[
+                                  if (j > 0) DsGap.md,
+                                  Expanded(child: row * columns + j < stores.length ? tile(row * columns + j) : const SizedBox.shrink()),
+                                ],
+                              ],
+                            ),
+                    );
+                  }, childCount: (stores.length / columns).ceil()),
                 ),
               ),
-            ],
-          ),
-          body: controller.isLoading.value
-              ? Constant.loader()
-              : controller.stores.isEmpty
-              ? Constant.showEmptyView(message: "No stores found".tr, isDark: isDark)
-              : RefreshIndicator(
-                  onRefresh: controller.getStores,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    // The consolidated overview first, then one tile per store.
-                    itemCount: controller.stores.length + 1,
-                    separatorBuilder: (_, index) => SizedBox(height: index == 0 ? 18 : 10),
-                    itemBuilder: (context, index) {
-                      if (index == 0) return _ConsolidatedOverview(controller: controller, loading: overviewLoading, isDark: isDark);
-                      final VendorModel store = controller.stores[index - 1];
-                      final bool isCurrent = store.id == controller.currentStoreId;
-                      return StoreListTile(
-                        store: store,
-                        isCurrent: isCurrent,
-                        isDark: isDark,
-                        overview: overviews[store.id],
-                        isOverviewLoading: overviewLoading,
-                        onTap: isCurrent ? null : () => _confirmSwitch(context, controller, store, isDark),
-                      );
-                    },
-                  ),
-                ),
+          ],
         );
       },
     );
@@ -89,29 +104,17 @@ class MyStoresScreen extends StatelessWidget {
   void _confirmSwitch(BuildContext context, MyStoresController controller, VendorModel store, bool isDark) {
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-        title: Text(
-          "Switch store".tr,
-          style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontSize: 18),
-        ),
-        content: Text(
-          "${"The app will reload to manage".tr} ${store.title ?? ''}.",
-          style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontFamily: AppThemeData.regular),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text("Cancel".tr, style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              controller.switchTo(store);
-            },
-            child: Text("Switch".tr, style: TextStyle(color: AppThemeData.primary300, fontFamily: AppThemeData.semiBold)),
-          ),
-        ],
+      builder: (dialogContext) => DsDialog(
+        icon: Icons.swap_horiz_rounded,
+        title: "Switch store".tr,
+        message: "${"The app will reload to manage".tr} ${store.title ?? ''}.",
+        secondaryLabel: "Cancel".tr,
+        onSecondary: () => Navigator.of(dialogContext).pop(),
+        primaryLabel: "Switch".tr,
+        onPrimary: () {
+          Navigator.of(dialogContext).pop();
+          controller.switchTo(store);
+        },
       ),
     );
   }
@@ -142,72 +145,49 @@ class StoreListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard(
+      padding: const EdgeInsets.all(DsSpace.md),
+      borderColor: isCurrent ? c.brand : null,
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: ShapeDecoration(
-          color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: isCurrent ? AppThemeData.primary300 : (isDark ? AppThemeData.grey800 : AppThemeData.grey200)),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: NetworkImageWidget(imageUrl: store.photo ?? '', height: 52, width: 52, fit: BoxFit.cover),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        store.title?.isNotEmpty == true ? store.title! : "Unnamed store".tr,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontSize: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              DsImage(url: store.photo ?? '', height: 56, width: 56, radius: DsRadius.md, errorIcon: Icons.storefront_rounded),
+              DsGap.md,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(store.title?.isNotEmpty == true ? store.title! : "Unnamed store".tr, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                    if ((store.location ?? '').isNotEmpty) ...[
+                      const DsGap(DsSpace.xxs),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(padding: const EdgeInsets.only(top: 1), child: Icon(Icons.location_on_outlined, size: 14, color: c.textMuted)),
+                          const DsGap(DsSpace.xs),
+                          Expanded(child: Text(store.location!, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySm)),
+                        ],
                       ),
-                      if ((store.location ?? '').isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          store.location!,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: isDark ? AppThemeData.grey400 : AppThemeData.grey500, fontFamily: AppThemeData.regular, fontSize: 13),
-                        ),
-                      ],
                     ],
-                  ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                isCurrent
-                    ? Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: ShapeDecoration(
-                          color: isDark ? AppThemeData.grey800 : AppThemeData.primary600,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        ),
-                        child: Text(
-                          badgeLabel ?? "Current".tr,
-                          style: TextStyle(color: AppThemeData.primary300, fontFamily: AppThemeData.semiBold, fontSize: 12),
-                        ),
-                      )
-                    : Icon(Icons.chevron_right, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
-              ],
-            ),
-            if (overview != null || isOverviewLoading) ...[
-              const SizedBox(height: 12),
-              _StoreFigures(overview: overview, isDark: isDark),
+              ),
+              DsGap.sm,
+              isCurrent
+                  ? DsBadge(label: badgeLabel ?? "Current".tr, tone: DsTone.brand, icon: Icons.check_circle_rounded)
+                  : Icon(Directionality.of(context) == TextDirection.rtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: c.textMuted),
             ],
+          ),
+          if (overview != null || isOverviewLoading) ...[
+            DsGap.md,
+            _StoreFigures(overview: overview, isDark: isDark),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -232,58 +212,63 @@ class _ConsolidatedOverview extends StatelessWidget {
     }
 
     final String? totalBalance = loading ? '...' : controller.totalBalanceText;
-    final Color title = isDark ? AppThemeData.grey50 : AppThemeData.grey900;
-    final Color muted = isDark ? AppThemeData.grey400 : AppThemeData.grey500;
+    final double scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.6);
+    final white = Colors.white;
+    final muted = Colors.white.withValues(alpha: 0.8);
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: ShapeDecoration(
-        color: isDark ? AppThemeData.grey900 : AppThemeData.primary600,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: DsFadeSlideIn.stagger([
+        Row(
+          children: [
+            Icon(Icons.dashboard_outlined, color: white, size: 18),
+            DsGap.sm,
+            Expanded(child: Text("All stores".tr.toUpperCase(), style: DsTypography.overline.copyWith(color: muted))),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: DsSpace.md),
+          child: DsAdaptiveGrid(
+            minItemWidth: 96 * scale,
+            spacing: DsSpace.sm,
+            runSpacing: DsSpace.sm,
             children: [
-              Icon(Icons.dashboard_outlined, color: AppThemeData.primary300, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  "All stores".tr,
-                  style: TextStyle(color: title, fontSize: 16, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
+              _HeroFigure(label: "Orders today".tr, value: count((o) => o.ordersToday), loading: loading),
+              _HeroFigure(label: "In progress".tr, value: count((o) => o.inProgress), loading: loading),
+              _HeroFigure(label: "Completed today".tr, value: count((o) => o.completedToday), loading: loading),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: DsSpace.sm),
+          child: DsCard.glass(
+            padding: const EdgeInsets.all(DsSpace.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    DsIconWell(icon: Icons.account_balance_wallet_outlined, onBrand: true, size: 36),
+                    DsGap.md,
+                    Expanded(child: Text("Total store balance".tr, style: DsTypography.labelSm.copyWith(color: muted))),
+                  ],
                 ),
-              ),
-              Text(
-                "${controller.stores.length} ${controller.stores.length == 1 ? "store".tr : "stores".tr}",
-                style: TextStyle(color: muted, fontSize: 13, fontFamily: AppThemeData.regular),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: _StatBox(label: "Orders today".tr, value: count((o) => o.ordersToday), isDark: isDark)),
-              const SizedBox(width: 8),
-              Expanded(child: _StatBox(label: "In progress".tr, value: count((o) => o.inProgress), isDark: isDark)),
-              const SizedBox(width: 8),
-              Expanded(child: _StatBox(label: "Completed today".tr, value: count((o) => o.completedToday), isDark: isDark)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _StatBox(
-            label: "Total store balance".tr,
-            value: totalBalance ?? "Mixed currencies".tr,
-            isDark: isDark,
-            wide: true,
-            footer: totalBalance == null
-                ? Column(
+                DsGap.md,
+                loading
+                    ? const _GlassBar(width: 140, height: 28)
+                    : FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(totalBalance ?? "Mixed currencies".tr, maxLines: 1, style: DsTypography.metricLg.copyWith(color: white, fontSize: 30)),
+                      ),
+                if (totalBalance == null)
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       for (final store in controller.stores)
                         if (controller.overviews[store.id] != null)
                           Padding(
-                            padding: const EdgeInsets.only(top: 6),
+                            padding: const EdgeInsets.only(top: DsSpace.sm),
                             child: Row(
                               children: [
                                 Expanded(
@@ -291,22 +276,129 @@ class _ConsolidatedOverview extends StatelessWidget {
                                     store.title?.isNotEmpty == true ? store.title! : "Unnamed store".tr,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(color: muted, fontSize: 13, fontFamily: AppThemeData.regular),
+                                    style: DsTypography.bodySm.copyWith(color: muted),
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  controller.overviews[store.id]!.balanceText,
-                                  style: TextStyle(color: title, fontSize: 13, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
-                                ),
+                                DsGap.sm,
+                                Text(controller.overviews[store.id]!.balanceText, style: DsTypography.label.copyWith(color: white).tabular),
                               ],
                             ),
                           ),
                     ],
-                  )
-                : null,
+                  ),
+              ],
+            ),
           ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _HeroFigure extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool loading;
+
+  const _HeroFigure({required this.label, required this.value, required this.loading});
+
+  @override
+  Widget build(BuildContext context) {
+    return DsCard.glass(
+      padding: const EdgeInsets.all(DsSpace.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          loading
+              ? const _GlassBar(width: 36, height: 24)
+              : Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: DsTypography.metric.copyWith(color: Colors.white, fontSize: 22)),
+          const DsGap(DsSpace.xs),
+          Text(label, maxLines: 2, style: DsTypography.labelSm.copyWith(color: Colors.white.withValues(alpha: 0.82))),
         ],
+      ),
+    );
+  }
+}
+
+/// Pulsing translucent placeholder for a figure that is still loading on the
+/// gradient hero (a grey shimmer would look out of place there).
+class _GlassBar extends StatelessWidget {
+  final double width;
+  final double height;
+  const _GlassBar({required this.width, required this.height});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.12, end: 0.3),
+      duration: DsMotion.of(context, DsMotion.slower),
+      curve: Curves.easeInOut,
+      builder: (_, v, _) => Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: v), borderRadius: DsRadius.brSm),
+      ),
+    );
+  }
+}
+
+class _HeroSkeleton extends StatelessWidget {
+  const _HeroSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _GlassBar(width: 90, height: 12),
+        DsGap.md,
+        Row(
+          children: [
+            for (int i = 0; i < 3; i++) ...[if (i > 0) DsGap.sm, const Expanded(child: _GlassBar(width: double.infinity, height: 72))],
+          ],
+        ),
+        DsGap.sm,
+        const _GlassBar(width: double.infinity, height: 96),
+      ],
+    );
+  }
+}
+
+/// Glass pill button for the gradient header.
+class _HeroAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _HeroAction({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return DsPressable(
+      onTap: onTap,
+      semanticLabel: label,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: Center(
+          heightFactor: 1,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: DsRadius.brPill,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: Colors.white, size: 18),
+                const DsGap(DsSpace.xs),
+                Text(label, style: DsTypography.label.copyWith(color: Colors.white)),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -321,14 +413,23 @@ class _StoreFigures extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.dsColors;
     String show(int? value) => overview == null ? '...' : (value == null ? '-' : value.toString());
-    return Row(
-      children: [
-        Expanded(child: _MiniFigure(label: "Today".tr, value: show(overview?.ordersToday), isDark: isDark)),
-        Expanded(child: _MiniFigure(label: "In progress".tr, value: show(overview?.inProgress), isDark: isDark)),
-        Expanded(child: _MiniFigure(label: "Completed".tr, value: show(overview?.completedToday), isDark: isDark)),
-        Expanded(flex: 2, child: _MiniFigure(label: "Balance".tr, value: overview?.balanceText ?? '...', isDark: isDark, alignEnd: true)),
-      ],
+    Widget divider() => Container(width: 1, height: 28, color: c.border);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+      decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brMd),
+      child: Row(
+        children: [
+          Expanded(child: _MiniFigure(label: "Today".tr, value: show(overview?.ordersToday), loading: overview == null)),
+          divider(),
+          Expanded(child: _MiniFigure(label: "In progress".tr, value: show(overview?.inProgress), loading: overview == null)),
+          divider(),
+          Expanded(child: _MiniFigure(label: "Completed".tr, value: show(overview?.completedToday), loading: overview == null)),
+          divider(),
+          Expanded(flex: 2, child: _MiniFigure(label: "Balance".tr, value: overview?.balanceText ?? '...', alignEnd: true, loading: overview == null, strong: true)),
+        ],
+      ),
     );
   }
 }
@@ -336,68 +437,26 @@ class _StoreFigures extends StatelessWidget {
 class _MiniFigure extends StatelessWidget {
   final String label;
   final String value;
-  final bool isDark;
   final bool alignEnd;
+  final bool loading;
+  final bool strong;
 
-  const _MiniFigure({required this.label, required this.value, required this.isDark, this.alignEnd = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-      children: [
-        Text(
-          value,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 15, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: isDark ? AppThemeData.grey400 : AppThemeData.grey500, fontSize: 12, fontFamily: AppThemeData.regular),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatBox extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool isDark;
-  final bool wide;
-  final Widget? footer;
-
-  const _StatBox({required this.label, required this.value, required this.isDark, this.wide = false, this.footer});
+  const _MiniFigure({required this.label, required this.value, this.alignEnd = false, this.loading = false, this.strong = false});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: wide ? double.infinity : null,
-      padding: const EdgeInsets.all(10),
-      decoration: ShapeDecoration(
-        color: isDark ? AppThemeData.grey800 : AppThemeData.grey50,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: DsSpace.xs),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.center,
         children: [
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: wide ? 18 : 20, fontFamily: AppThemeData.bold, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            maxLines: 2,
-            style: TextStyle(color: isDark ? AppThemeData.grey400 : AppThemeData.grey500, fontSize: 12, fontFamily: AppThemeData.regular),
-          ),
-          ?footer,
+          loading
+              ? DsShimmer(child: DsSkeleton.line(width: 28, height: 14))
+              : Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.label.tabular.copyWith(color: strong ? c.brandStrong : c.textPrimary)),
+          const DsGap(DsSpace.xxs),
+          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption),
         ],
       ),
     );

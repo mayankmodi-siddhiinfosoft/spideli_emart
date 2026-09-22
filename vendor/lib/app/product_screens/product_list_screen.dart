@@ -1,9 +1,8 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:vendor/app/product_screens/admin_product_screen.dart';
 import 'package:vendor/models/product_model.dart';
+import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/themes/theme_controller.dart';
 import 'package:vendor/app/add_restaurant_screen/add_restaurant_screen.dart';
 import 'package:vendor/app/product_screens/add_product_screen.dart';
@@ -12,12 +11,10 @@ import 'package:vendor/app/verification_screen/verification_screen.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/product_list_controller.dart';
-import 'package:vendor/themes/app_them_data.dart';
-import 'package:vendor/themes/responsive.dart';
-import 'package:vendor/themes/round_button_fill.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
-import 'package:vendor/utils/network_image_widget.dart';
 
+/// Catalogue (archetype B – list/feed): collapsing title, catalogue health
+/// summary, image-led product cards (1 column on phones, 2–3 on tablets).
 class ProductListScreen extends StatelessWidget {
   const ProductListScreen({super.key});
 
@@ -28,516 +25,151 @@ class ProductListScreen extends StatelessWidget {
     return GetX(
       init: ProductListController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            backgroundColor: AppThemeData.primary300,
-            centerTitle: false,
-            title: Text(
-              "Manage Products".tr,
-              style: TextStyle(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, fontSize: 18, fontFamily: AppThemeData.medium),
+        final l = context.dsLayout;
+        final bool canAdd =
+            !((controller.userModel.value.isDocumentVerify == false && controller.userModel.value.isAutoVerify == false) ||
+                (controller.userModel.value.vendorID == null || controller.userModel.value.vendorID!.isEmpty));
+        final bool showList = !controller.isLoading.value &&
+            !(controller.userModel.value.isAutoVerify == false && true && controller.userModel.value.isDocumentVerify == false) &&
+            !(controller.userModel.value.vendorID == null || controller.userModel.value.vendorID!.isEmpty) &&
+            controller.productList.isNotEmpty;
+
+        final List<Widget> slivers;
+        if (controller.isLoading.value) {
+          slivers = [
+            DsSliverResponsive(
+              maxWidth: DsLayout.wideMax,
+              gutter: false,
+              sliver: const SliverToBoxAdapter(child: DsSkeletonList(itemCount: 5)),
             ),
-            actions: [
-              (controller.userModel.value.isDocumentVerify == false && controller.userModel.value.isAutoVerify == false) ||
-                      (controller.userModel.value.vendorID == null || controller.userModel.value.vendorID!.isEmpty)
-                  ? const SizedBox()
-                  : InkWell(
-                      onTap: () {
-                        if ((Constant.isSubscriptionModelApplied == true || Constant.selectedSection!.adminCommision?.isEnabled == true) &&
-                            controller.vendorModel.value.subscriptionPlan?.itemLimit != '-1' &&
-                            int.parse(
-                                  controller.vendorModel.value.subscriptionPlan?.itemLimit != null && controller.vendorModel.value.subscriptionPlan?.itemLimit.toString() != "null"
-                                      ? "${controller.vendorModel.value.subscriptionPlan?.itemLimit}"
-                                      : '0',
-                                ) <=
-                                controller.productList.length) {
-                          ShowToastDialog.showToast("Your current subscription plan has reached its maximum product limit. Upgrade now to add more products.".tr);
-                        } else {
-                          showAddProductBottomSheet(context, controller, isDark);
-                        }
-                      },
+          ];
+        } else if (controller.userModel.value.isAutoVerify == false && true && controller.userModel.value.isDocumentVerify == false) {
+          slivers = [
+            _statusFill(
+              DsEmptyState(
+                icon: Icons.pending_actions_rounded,
+                tone: DsTone.warning,
+                title: "Document Verification in Pending".tr,
+                message: "Your documents are being reviewed. We will notify you once the verification is complete.".tr,
+                actionLabel: "View Status".tr,
+                actionIcon: Icons.verified_user_outlined,
+                onAction: () async {
+                  Get.to(const VerificationScreen());
+                },
+              ),
+            ),
+          ];
+        } else if (controller.userModel.value.vendorID == null || controller.userModel.value.vendorID!.isEmpty) {
+          slivers = [
+            _statusFill(
+              DsEmptyState(
+                icon: Icons.storefront_outlined,
+                title: "Add Your First Store".tr,
+                message: "Get started by adding your store details to manage your menu, orders.".tr,
+                actionLabel: "Add Store".tr,
+                actionIcon: Icons.add_business_outlined,
+                onAction: () async {
+                  Get.to(const AddRestaurantScreen());
+                },
+              ),
+            ),
+          ];
+        } else if (controller.productList.isEmpty) {
+          slivers = [
+            _statusFill(
+              DsEmptyState(
+                icon: Icons.inventory_2_outlined,
+                title: "No Products Available".tr,
+                message: "Your menu is currently empty. Create your first product to start showcasing your offerings.".tr,
+                actionLabel: "Add Product".tr,
+                actionIcon: Icons.add_rounded,
+                onAction: () async {
+                  _onAddProduct(context, controller, isDark);
+                },
+              ),
+            ),
+          ];
+        } else {
+          final int columns = l.value(phone: 1, tablet: 2, desktop: 3);
+          final int rows = (controller.productList.length / columns).ceil();
+          slivers = [
+            DsSliverResponsive(
+              maxWidth: DsLayout.wideMax,
+              top: DsSpace.sm,
+              sliver: SliverToBoxAdapter(child: DsFadeSlideIn(child: _CatalogueSummary(controller: controller))),
+            ),
+            DsSliverResponsive(
+              maxWidth: DsLayout.wideMax,
+              top: DsSpace.lg,
+              bottom: DsSpace.huge + DsSpace.xxxl,
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, row) {
+                    final List<Widget> cells = [];
+                    for (int j = 0; j < columns; j++) {
+                      final int index = row * columns + j;
+                      if (j > 0) cells.add(const DsGap(DsSpace.md));
+                      cells.add(Expanded(child: index < controller.productList.length ? _productCard(context, controller, index) : const SizedBox.shrink()));
+                    }
+                    return DsFadeSlideIn(
+                      index: row,
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Row(
-                          children: [
-                            Icon(Icons.add, color: isDark ? AppThemeData.grey900 : AppThemeData.grey50),
-                            const SizedBox(width: 5),
-                            Text(
-                              "Add".tr,
-                              style: TextStyle(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, fontSize: 18, fontFamily: AppThemeData.medium),
-                            ),
-                          ],
-                        ),
+                        padding: const EdgeInsets.only(bottom: DsSpace.md),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: cells),
                       ),
-                    ),
-            ],
-          ),
-          body: controller.isLoading.value
-              ? Constant.loader()
-              : controller.userModel.value.isAutoVerify == false && true && controller.userModel.value.isDocumentVerify == false
-              ? Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Container(
-                        decoration: ShapeDecoration(
-                          color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
-                        ),
-                        child: Padding(padding: const EdgeInsets.all(20), child: SvgPicture.asset("assets/icons/ic_document.svg")),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        "Document Verification in Pending".tr,
-                        style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        "Your documents are being reviewed. We will notify you once the verification is complete.".tr,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                      ),
-                      const SizedBox(height: 20),
-                      RoundedButtonFill(
-                        title: "View Status".tr,
-                        width: 55,
-                        height: 5.5,
-                        color: AppThemeData.primary300,
-                        textColor: AppThemeData.grey50,
-                        onPress: () async {
-                          Get.to(const VerificationScreen());
-                        },
-                      ),
-                    ],
-                  ),
-                )
-              : controller.userModel.value.vendorID == null || controller.userModel.value.vendorID!.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Container(
-                        decoration: ShapeDecoration(
-                          color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
-                        ),
-                        child: Padding(padding: const EdgeInsets.all(20), child: SvgPicture.asset("assets/icons/ic_building_two.svg")),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        "Add Your First Store".tr,
-                        style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        "Get started by adding your store details to manage your menu, orders.".tr,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                      ),
-                      const SizedBox(height: 20),
-                      RoundedButtonFill(
-                        title: "Add Store".tr,
-                        width: 55,
-                        height: 5.5,
-                        color: AppThemeData.primary300,
-                        textColor: AppThemeData.grey50,
-                        onPress: () async {
-                          Get.to(const AddRestaurantScreen());
-                        },
-                      ),
-                    ],
-                  ),
-                )
-              : controller.productList.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Container(
-                        decoration: ShapeDecoration(
-                          color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: SvgPicture.asset("assets/icons/ic_menu.svg", colorFilter: ColorFilter.mode(isDark ? AppThemeData.grey400 : AppThemeData.grey500, BlendMode.srcIn)),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        "No Products Available".tr,
-                        style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        "Your menu is currently empty. Create your first product to start showcasing your offerings.".tr,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                      ),
-                      const SizedBox(height: 20),
-                      RoundedButtonFill(
-                        title: "Add Product".tr,
-                        width: 55,
-                        height: 5.5,
-                        color: AppThemeData.primary300,
-                        textColor: AppThemeData.grey50,
-                        onPress: () async {
-                          if ((Constant.isSubscriptionModelApplied == true || Constant.selectedSection!.adminCommision?.isEnabled == true) &&
-                              controller.vendorModel.value.subscriptionPlan?.itemLimit != '-1' &&
-                              int.parse(
-                                    controller.vendorModel.value.subscriptionPlan?.itemLimit != null && controller.vendorModel.value.subscriptionPlan?.itemLimit.toString() != "null"
-                                        ? "${controller.vendorModel.value.subscriptionPlan?.itemLimit}"
-                                        : '0',
-                                  ) <=
-                                  controller.productList.length) {
-                            ShowToastDialog.showToast("Your current subscription plan has reached its maximum product limit. Upgrade now to add more products.".tr);
-                          } else {
-                            showAddProductBottomSheet(context, controller, isDark);
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                )
-              : Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  child: ListView.builder(
-                    itemCount: controller.productList.length,
-                    shrinkWrap: true,
-                    itemBuilder: (context, index) {
-                      String price = "0.0";
-                      String disPrice = "0.0";
-                      List<String> selectedVariants = [];
-                      List<String> selectedIndexVariants = [];
-                      List<String> selectedIndexArray = [];
-                      if (controller.productList[index].itemAttribute != null) {
-                        if (controller.productList[index].itemAttribute!.attributes!.isNotEmpty) {
-                          for (var element in controller.productList[index].itemAttribute!.attributes!) {
-                            if (element.attributeOptions!.isNotEmpty) {
-                              selectedVariants.add(
-                                controller.productList[index].itemAttribute!.attributes![controller.productList[index].itemAttribute!.attributes!.indexOf(element)].attributeOptions![0].toString(),
-                              );
-                              selectedIndexVariants.add(
-                                '${controller.productList[index].itemAttribute!.attributes!.indexOf(element)} _${controller.productList[index].itemAttribute!.attributes![0].attributeOptions![0].toString()}',
-                              );
-                              selectedIndexArray.add('${controller.productList[index].itemAttribute!.attributes!.indexOf(element)}_0');
-                            }
-                          }
-                        }
-                        if (controller.productList[index].itemAttribute!.variants!.where((element) => element.variantSku == selectedVariants.join('-')).isNotEmpty) {
-                          price = controller.productList[index].itemAttribute!.variants!.where((element) => element.variantSku == selectedVariants.join('-')).first.variantPrice ?? '0';
-                          disPrice = '0';
-                        }
-                      } else {
-                        price = controller.productList[index].price.toString();
-                        disPrice = controller.productList[index].disPrice.toString();
-                      }
-
-                      // Wholesale tiers badge: the displayed variant's own wholesale price
-                      // replaces the FIRST tier's price; the tier quantities apply to all variants.
-                      final product = controller.productList[index];
-                      final displayedVariant = product.itemAttribute?.variants?.where((element) => element.variantSku == selectedVariants.join('-')).firstOrNull;
-                      final String? wholesaleBadge = wholesaleTiersBadge(product, variantWholesalePrice: displayedVariant?.variantWholesalePrice);
-                      final String? fulfilmentBadge = fulfilmentRestrictionLabel(product);
-                      final bool wholesaleOnly = product.effectiveSaleType == ProductModel.saleTypeWholesale && product.hasWholesaleTier;
-
-                      bool isDisplayItemAlert = false;
-                      if ((Constant.isSubscriptionModelApplied == true || Constant.selectedSection!.adminCommision?.isEnabled == true)) {
-                        if (controller.vendorModel.value.subscriptionPlan?.itemLimit == '-1') {
-                          isDisplayItemAlert = false;
-                        } else {
-                          isDisplayItemAlert = (index < int.parse(controller.userModel.value.subscriptionPlan?.itemLimit ?? '0') == true) ? false : true;
-                        }
-                      }
-
-                      return InkWell(
-                        splashColor: Colors.transparent,
-                        onTap: () {
-                          Get.to(const AddProductScreen(), arguments: {"productModel": controller.productList[index]})!.then((value) {
-                            if (value == true) {
-                              controller.getProduct();
-                            }
-                          });
-                        },
-                        child: Obx(
-                          () => Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 5),
-                            child: Container(
-                              decoration: ShapeDecoration(
-                                color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(8.0),
-                                child: Column(
-                                  children: [
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        ClipRRect(
-                                          borderRadius: const BorderRadius.all(Radius.circular(16)),
-                                          child: Stack(
-                                            children: [
-                                              NetworkImageWidget(
-                                                imageUrl: controller.productList[index].photo.toString(),
-                                                fit: BoxFit.cover,
-                                                height: Responsive.height(12, context),
-                                                width: Responsive.width(24, context),
-                                              ),
-                                              Container(
-                                                height: Responsive.height(12, context),
-                                                width: Responsive.width(24, context),
-                                                decoration: BoxDecoration(
-                                                  gradient: LinearGradient(
-                                                    begin: const Alignment(-0.00, -1.00),
-                                                    end: const Alignment(0, 1),
-                                                    colors: [Colors.black.withOpacity(0), const Color(0xFF111827)],
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                controller.productList[index].name.toString(),
-                                                style: TextStyle(
-                                                  fontSize: 18,
-                                                  color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                  fontFamily: AppThemeData.semiBold,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                              double.parse(disPrice) <= 0
-                                                  ? Text(
-                                                      Constant.amountShow(amount: price),
-                                                      style: TextStyle(
-                                                        fontSize: 16,
-                                                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                        fontFamily: AppThemeData.semiBold,
-                                                        fontWeight: FontWeight.w600,
-                                                      ),
-                                                    )
-                                                  : Row(
-                                                      children: [
-                                                        Text(
-                                                          Constant.amountShow(amount: disPrice),
-                                                          style: TextStyle(
-                                                            fontSize: 16,
-                                                            color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                            fontFamily: AppThemeData.semiBold,
-                                                            fontWeight: FontWeight.w600,
-                                                          ),
-                                                        ),
-                                                        const SizedBox(width: 5),
-                                                        Text(
-                                                          Constant.amountShow(amount: price),
-                                                          style: TextStyle(
-                                                            fontSize: 14,
-                                                            decoration: TextDecoration.lineThrough,
-                                                            decorationColor: isDark ? AppThemeData.grey500 : AppThemeData.grey400,
-                                                            color: isDark ? AppThemeData.grey500 : AppThemeData.grey400,
-                                                            fontFamily: AppThemeData.semiBold,
-                                                            fontWeight: FontWeight.w600,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                              if (wholesaleBadge != null)
-                                                Container(
-                                                  margin: const EdgeInsets.only(top: 4, bottom: 2),
-                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: isDark ? AppThemeData.primary50 : AppThemeData.primary600,
-                                                    borderRadius: BorderRadius.circular(6),
-                                                  ),
-                                                  child: Text(
-                                                    wholesaleOnly ? "${"Wholesale only".tr} · $wholesaleBadge" : wholesaleBadge,
-                                                    maxLines: 2,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: TextStyle(fontSize: 12, color: AppThemeData.primary300, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
-                                                  ),
-                                                ),
-                                              if (fulfilmentBadge != null)
-                                                Container(
-                                                  margin: const EdgeInsets.only(top: 2, bottom: 2),
-                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: isDark ? AppThemeData.grey800 : AppThemeData.grey100,
-                                                    borderRadius: BorderRadius.circular(6),
-                                                  ),
-                                                  child: Row(
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    children: [
-                                                      Icon(
-                                                        product.effectiveFulfilment.contains(ProductModel.fulfilmentDelivery) ? Icons.delivery_dining_outlined : Icons.storefront_outlined,
-                                                        size: 14,
-                                                        color: isDark ? AppThemeData.grey200 : AppThemeData.grey700,
-                                                      ),
-                                                      const SizedBox(width: 4),
-                                                      Text(
-                                                        fulfilmentBadge,
-                                                        style: TextStyle(fontSize: 12, color: isDark ? AppThemeData.grey200 : AppThemeData.grey700, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              Row(
-                                                children: [
-                                                  SvgPicture.asset("assets/icons/ic_star.svg", colorFilter: const ColorFilter.mode(AppThemeData.warning300, BlendMode.srcIn)),
-                                                  const SizedBox(width: 5),
-                                                  Text(
-                                                    "${Constant.calculateReview(reviewCount: controller.productList[index].reviewsCount!.toStringAsFixed(0), reviewSum: controller.productList[index].reviewsSum.toString())} (${controller.productList[index].reviewsCount!.toStringAsFixed(0)})",
-                                                    style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w500),
-                                                  ),
-                                                ],
-                                              ),
-                                              Constant.taxScope == "product"
-                                                  ? controller.productList[index].taxSetting?.isEmpty == true
-                                                        ? Text(
-                                                            controller.productList[index].description.toString(),
-                                                            maxLines: 1,
-                                                            style: TextStyle(fontSize: 12, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular),
-                                                          )
-                                                        : Text(
-                                                            controller.getTaxDisplayText(controller.productList[index].taxSetting) == ''
-                                                                ? controller.productList[index].description.toString()
-                                                                : "${'Tax:'.tr} ${controller.getTaxDisplayText(controller.productList[index].taxSetting)}",
-                                                            maxLines: 2,
-                                                            overflow: TextOverflow.ellipsis,
-                                                            style: controller.getTaxDisplayText(controller.productList[index].taxSetting) == ''
-                                                                ? TextStyle(fontSize: 12, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular)
-                                                                : TextStyle(fontSize: 14, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, fontFamily: AppThemeData.semiBold),
-                                                          )
-                                                  : Text(
-                                                      controller.productList[index].description.toString(),
-                                                      maxLines: 1,
-                                                      style: TextStyle(fontSize: 12, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular),
-                                                    ),
-                                            ],
-                                          ),
-                                        ),
-                                        Constant.taxScope == "product" && controller.taxList.isNotEmpty == true
-                                            ? Checkbox(
-                                                value: controller.selectedProductIds.contains(controller.productList[index].id),
-                                                onChanged: (value) {
-                                                  controller.toggleProductSelection(controller.productList[index]);
-                                                },
-                                              )
-                                            : SizedBox(),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                      children: [
-                                        Expanded(
-                                          child: InkWell(
-                                            splashColor: Colors.transparent,
-                                            onTap: () async {
-                                              ShowToastDialog.showLoader("Please wait..".tr);
-                                              await FireStoreUtils.deleteProduct(controller.productList[index]).then((value) {
-                                                controller.getProduct();
-                                                ShowToastDialog.closeLoader();
-                                              });
-                                            },
-                                            child: Row(
-                                              mainAxisAlignment: MainAxisAlignment.center,
-                                              crossAxisAlignment: CrossAxisAlignment.center,
-                                              children: [
-                                                SvgPicture.asset("assets/icons/ic_delete-one.svg"),
-                                                const SizedBox(width: 10),
-                                                Text(
-                                                  "Delete".tr,
-                                                  textAlign: TextAlign.center,
-                                                  style: TextStyle(color: isDark ? AppThemeData.danger300 : AppThemeData.danger300, fontSize: 16, fontFamily: AppThemeData.bold),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            crossAxisAlignment: CrossAxisAlignment.center,
-                                            children: [
-                                              Text(
-                                                "Publish".tr,
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 16, fontFamily: AppThemeData.bold),
-                                              ),
-                                              Transform.scale(
-                                                scale: 0.6,
-                                                child: CupertinoSwitch(
-                                                  activeTrackColor: AppThemeData.primary300,
-                                                  value: controller.productList[index].publish ?? false,
-                                                  onChanged: (value) async {
-                                                    controller.updateList(index, controller.productList[index].publish!);
-                                                  },
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    Visibility(
-                                      visible: isDisplayItemAlert,
-                                      child: Text(
-                                        "This product will not be displayed to customers due to your current subscription limitations.".tr,
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(color: isDark ? AppThemeData.danger300 : AppThemeData.danger300, fontSize: 12, fontFamily: AppThemeData.regular),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                    );
+                  },
+                  childCount: rows,
                 ),
+              ),
+            ),
+          ];
+        }
 
+        return DsScaffold.collapsing(
+          title: "Manage Products".tr,
+          subtitle: showList ? "${controller.productList.length} ${'Products'.tr}" : null,
+          onRefresh: showList ? controller.getProduct : null,
+          actions: [
+            canAdd
+                ? DsButton.tonal(
+                    label: "Add".tr,
+                    icon: Icons.add_rounded,
+                    size: DsButtonSize.sm,
+                    onPressed: () {
+                      _onAddProduct(context, controller, isDark);
+                    },
+                  )
+                : const SizedBox(),
+          ],
+          slivers: slivers,
           floatingActionButton: Obx(() {
             if (controller.selectedProductIds.isEmpty) {
               return const SizedBox.shrink();
             }
-
-            return SizedBox(
-              height: 45, // 🔥 increase height here
-              child: FloatingActionButton.extended(
-                backgroundColor: AppThemeData.primary300,
-                icon: const Icon(Icons.receipt_long, color: Colors.white),
-                label: Text("${'Assign Tax'.tr} (${controller.selectedProductIds.length})", style: const TextStyle(color: Colors.white)),
-                onPressed: () {
-                  for (var tax in controller.taxList) {
-                    tax.isSelected = false;
-                  }
-                  if (controller.selectedProducts.length == 1) {
-                    if (controller.taxList.isNotEmpty == true && controller.selectedProducts[0].taxSetting?.isNotEmpty == true) {
-                      for (var tax in controller.taxList) {
-                        for (var item in controller.selectedProducts[0].taxSetting!) {
-                          if (tax.id == item.id) {
-                            tax.isSelected = true;
-                          }
+            final c = context.dsColors;
+            return FloatingActionButton.extended(
+              backgroundColor: c.brand,
+              foregroundColor: c.onBrand,
+              icon: const Icon(Icons.receipt_long_rounded),
+              label: Text("${'Assign Tax'.tr} (${controller.selectedProductIds.length})", style: DsTypography.label.copyWith(color: c.onBrand)),
+              onPressed: () {
+                for (var tax in controller.taxList) {
+                  tax.isSelected = false;
+                }
+                if (controller.selectedProducts.length == 1) {
+                  if (controller.taxList.isNotEmpty == true && controller.selectedProducts[0].taxSetting?.isNotEmpty == true) {
+                    for (var tax in controller.taxList) {
+                      for (var item in controller.selectedProducts[0].taxSetting!) {
+                        if (tax.id == item.id) {
+                          tax.isSelected = true;
                         }
                       }
                     }
                   }
-                  Get.bottomSheet(MultiProductTaxBottomSheet(products: controller.selectedProducts), isScrollControlled: true, backgroundColor: Colors.transparent);
-                },
-              ),
+                }
+                Get.bottomSheet(MultiProductTaxBottomSheet(products: controller.selectedProducts), isScrollControlled: true, backgroundColor: Colors.transparent);
+              },
             );
           }),
         );
@@ -545,12 +177,350 @@ class ProductListScreen extends StatelessWidget {
     );
   }
 
+  /// Subscription item-limit check, then the add-product chooser (unchanged logic).
+  void _onAddProduct(BuildContext context, ProductListController controller, bool isDark) {
+    if ((Constant.isSubscriptionModelApplied == true || Constant.selectedSection!.adminCommision?.isEnabled == true) &&
+        controller.vendorModel.value.subscriptionPlan?.itemLimit != '-1' &&
+        int.parse(
+              controller.vendorModel.value.subscriptionPlan?.itemLimit != null && controller.vendorModel.value.subscriptionPlan?.itemLimit.toString() != "null"
+                  ? "${controller.vendorModel.value.subscriptionPlan?.itemLimit}"
+                  : '0',
+            ) <=
+            controller.productList.length) {
+      ShowToastDialog.showToast("Your current subscription plan has reached its maximum product limit. Upgrade now to add more products.".tr);
+    } else {
+      showAddProductBottomSheet(context, controller, isDark);
+    }
+  }
+
+  Widget _statusFill(Widget child) {
+    return SliverFillRemaining(
+      hasScrollBody: false,
+      child: Center(
+        child: DsResponsive(
+          padded: true,
+          child: DsFadeSlideIn(child: Padding(padding: const EdgeInsets.only(bottom: DsSpace.huge), child: child)),
+        ),
+      ),
+    );
+  }
+
+  Widget _productCard(BuildContext context, ProductListController controller, int index) {
+    String price = "0.0";
+    String disPrice = "0.0";
+    List<String> selectedVariants = [];
+    List<String> selectedIndexVariants = [];
+    List<String> selectedIndexArray = [];
+    if (controller.productList[index].itemAttribute != null) {
+      if (controller.productList[index].itemAttribute!.attributes!.isNotEmpty) {
+        for (var element in controller.productList[index].itemAttribute!.attributes!) {
+          if (element.attributeOptions!.isNotEmpty) {
+            selectedVariants.add(
+              controller.productList[index].itemAttribute!.attributes![controller.productList[index].itemAttribute!.attributes!.indexOf(element)].attributeOptions![0].toString(),
+            );
+            selectedIndexVariants.add(
+              '${controller.productList[index].itemAttribute!.attributes!.indexOf(element)} _${controller.productList[index].itemAttribute!.attributes![0].attributeOptions![0].toString()}',
+            );
+            selectedIndexArray.add('${controller.productList[index].itemAttribute!.attributes!.indexOf(element)}_0');
+          }
+        }
+      }
+      if (controller.productList[index].itemAttribute!.variants!.where((element) => element.variantSku == selectedVariants.join('-')).isNotEmpty) {
+        price = controller.productList[index].itemAttribute!.variants!.where((element) => element.variantSku == selectedVariants.join('-')).first.variantPrice ?? '0';
+        disPrice = '0';
+      }
+    } else {
+      price = controller.productList[index].price.toString();
+      disPrice = controller.productList[index].disPrice.toString();
+    }
+
+    // Wholesale tiers badge: the displayed variant's own wholesale price
+    // replaces the FIRST tier's price; the tier quantities apply to all variants.
+    final product = controller.productList[index];
+    final displayedVariant = product.itemAttribute?.variants?.where((element) => element.variantSku == selectedVariants.join('-')).firstOrNull;
+    final String? wholesaleBadge = wholesaleTiersBadge(product, variantWholesalePrice: displayedVariant?.variantWholesalePrice);
+    final String? fulfilmentBadge = fulfilmentRestrictionLabel(product);
+    final bool wholesaleOnly = product.effectiveSaleType == ProductModel.saleTypeWholesale && product.hasWholesaleTier;
+
+    bool isDisplayItemAlert = false;
+    if ((Constant.isSubscriptionModelApplied == true || Constant.selectedSection!.adminCommision?.isEnabled == true)) {
+      if (controller.vendorModel.value.subscriptionPlan?.itemLimit == '-1') {
+        isDisplayItemAlert = false;
+      } else {
+        isDisplayItemAlert = (index < int.parse(controller.userModel.value.subscriptionPlan?.itemLimit ?? '0') == true) ? false : true;
+      }
+    }
+
+    return Obx(() {
+      final c = context.dsColors;
+      final t = context.dsText;
+      final bool isPublished = controller.productList[index].publish ?? false;
+      final String taxText = Constant.taxScope == "product" && controller.productList[index].taxSetting?.isEmpty != true
+          ? controller.getTaxDisplayText(controller.productList[index].taxSetting)
+          : '';
+      return DsCard.outlined(
+        padding: const EdgeInsets.fromLTRB(DsSpace.md, DsSpace.md, DsSpace.md, DsSpace.sm),
+        semanticLabel: controller.productList[index].name.toString(),
+        onTap: () {
+          Get.to(const AddProductScreen(), arguments: {"productModel": controller.productList[index]})!.then((value) {
+            if (value == true) {
+              controller.getProduct();
+            }
+          });
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Image with a live/hidden indicator.
+                Stack(
+                  children: [
+                    AnimatedOpacity(
+                      duration: DsMotion.of(context, DsMotion.base),
+                      opacity: isPublished ? 1 : 0.55,
+                      child: DsImage(url: controller.productList[index].photo.toString(), width: 96, height: 96, radius: DsRadius.md, errorIcon: Icons.fastfood_outlined),
+                    ),
+                    PositionedDirectional(
+                      top: DsSpace.xs + 2,
+                      start: DsSpace.xs + 2,
+                      child: AnimatedContainer(
+                        duration: DsMotion.of(context, DsMotion.base),
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isPublished ? c.success : c.textDisabled,
+                          border: Border.all(color: c.surface, width: 2),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const DsGap(DsSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(controller.productList[index].name.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                      const DsGap(DsSpace.xs),
+                      double.parse(disPrice) <= 0
+                          ? Text(Constant.amountShow(amount: price), style: t.titleSm.withColor(c.brandStrong).tabular)
+                          : Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: DsSpace.sm,
+                              children: [
+                                Text(Constant.amountShow(amount: disPrice), style: t.titleSm.withColor(c.brandStrong).tabular),
+                                Text(Constant.amountShow(amount: price), style: t.bodySm.withColor(c.textMuted).strike),
+                              ],
+                            ),
+                      const DsGap(DsSpace.xs),
+                      Row(
+                        children: [
+                          Icon(Icons.star_rounded, size: 18, color: c.warning),
+                          const DsGap(DsSpace.xs),
+                          Flexible(
+                            child: Text(
+                              "${Constant.calculateReview(reviewCount: controller.productList[index].reviewsCount!.toStringAsFixed(0), reviewSum: controller.productList[index].reviewsSum.toString())} (${controller.productList[index].reviewsCount!.toStringAsFixed(0)})",
+                              style: t.labelSm.withColor(c.textPrimary),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const DsGap(DsSpace.xs),
+                      Constant.taxScope == "product"
+                          ? controller.productList[index].taxSetting?.isEmpty == true
+                                ? Text(controller.productList[index].description.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption)
+                                : taxText == ''
+                                ? Text(controller.productList[index].description.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.caption)
+                                : Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Padding(padding: const EdgeInsets.only(top: 1), child: Icon(Icons.receipt_long_outlined, size: 14, color: c.brandStrong)),
+                                      const DsGap(DsSpace.xs),
+                                      Expanded(
+                                        child: Text(
+                                          "${'Tax:'.tr} $taxText",
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: t.labelSm.withColor(c.brandStrong),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                          : Text(controller.productList[index].description.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption),
+                    ],
+                  ),
+                ),
+                Constant.taxScope == "product" && controller.taxList.isNotEmpty == true
+                    ? Checkbox(
+                        value: controller.selectedProductIds.contains(controller.productList[index].id),
+                        onChanged: (value) {
+                          controller.toggleProductSelection(controller.productList[index]);
+                        },
+                      )
+                    : const SizedBox(),
+              ],
+            ),
+            if (wholesaleBadge != null || fulfilmentBadge != null) ...[
+              const DsGap(DsSpace.md),
+              Wrap(
+                spacing: DsSpace.sm,
+                runSpacing: DsSpace.sm,
+                children: [
+                  if (wholesaleBadge != null)
+                    _WholesaleTag(text: wholesaleOnly ? "${"Wholesale only".tr} · $wholesaleBadge" : wholesaleBadge, strong: wholesaleOnly),
+                  if (fulfilmentBadge != null)
+                    DsBadge(
+                      label: fulfilmentBadge,
+                      tone: DsTone.info,
+                      icon: product.effectiveFulfilment.contains(ProductModel.fulfilmentDelivery) ? Icons.delivery_dining_outlined : Icons.storefront_outlined,
+                    ),
+                ],
+              ),
+            ],
+            if (isDisplayItemAlert) ...[
+              const DsGap(DsSpace.md),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+                decoration: BoxDecoration(color: c.dangerSoft, borderRadius: DsRadius.brSm),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.visibility_off_outlined, size: 16, color: c.dangerStrong),
+                    const DsGap(DsSpace.sm),
+                    Expanded(
+                      child: Text(
+                        "This product will not be displayed to customers due to your current subscription limitations.".tr,
+                        style: t.caption.withColor(c.dangerStrong),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const DsGap(DsSpace.sm),
+            Divider(height: 1, color: c.divider),
+            const DsGap(DsSpace.xs),
+            Row(
+              children: [
+                DsButton.ghost(
+                  label: "Delete".tr,
+                  icon: Icons.delete_outline_rounded,
+                  size: DsButtonSize.sm,
+                  color: c.dangerStrong,
+                  onPressed: () async {
+                    ShowToastDialog.showLoader("Please wait..".tr);
+                    await FireStoreUtils.deleteProduct(controller.productList[index]).then((value) {
+                      controller.getProduct();
+                      ShowToastDialog.closeLoader();
+                    });
+                  },
+                ),
+                const Spacer(),
+                Flexible(
+                  child: Text("Publish".tr, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.label.withColor(isPublished ? c.textPrimary : c.textSecondary)),
+                ),
+                const DsGap(DsSpace.xs),
+                Switch.adaptive(
+                  value: controller.productList[index].publish ?? false,
+                  onChanged: (value) async {
+                    controller.updateList(index, controller.productList[index].publish!);
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
   void showAddProductBottomSheet(BuildContext context, ProductListController controller, bool isDarkMode) {
     showModalBottomSheet(
-      backgroundColor: isDarkMode ? AppThemeData.grey900 : AppThemeData.surface,
+      backgroundColor: context.dsColors.surfaceRaised,
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(borderRadius: DsRadius.sheetTop),
       builder: (_) => AddProductBottomSheet(controller: controller),
+    );
+  }
+}
+
+/// Wholesale tier summary tag (brand tinted, wraps to two lines).
+class _WholesaleTag extends StatelessWidget {
+  final String text;
+  final bool strong;
+
+  const _WholesaleTag({required this.text, required this.strong});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm + 2, vertical: DsSpace.xs),
+      decoration: BoxDecoration(
+        color: c.brandSoft,
+        borderRadius: DsRadius.brPill,
+        border: strong ? Border.all(color: c.brandMuted) : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.inventory_2_outlined, size: 14, color: c.brandStrong),
+          const DsGap(DsSpace.xs),
+          Flexible(
+            child: Text(text, maxLines: 2, overflow: TextOverflow.ellipsis, style: DsTypography.labelSm.copyWith(color: c.brandStrong)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Catalogue health: total / published / hidden with a "live" progress bar.
+class _CatalogueSummary extends StatelessWidget {
+  final ProductListController controller;
+
+  const _CatalogueSummary({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final int total = controller.productList.length;
+    final int published = controller.productList.where((p) => p.publish == true).length;
+    final int hidden = total - published;
+    Widget metric(String label, int value, Color color) {
+      return Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DsAnimatedCounter(value: value, style: DsTypography.metric.copyWith(color: color, fontSize: 24)),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: DsTypography.caption.copyWith(color: c.textSecondary)),
+          ],
+        ),
+      );
+    }
+
+    return DsCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          IntrinsicHeight(
+            child: Row(
+              children: [
+                metric('Products'.tr, total, c.textPrimary),
+                const DsDivider(vertical: true, spacing: DsSpace.md),
+                metric('Published'.tr, published, c.successStrong),
+                const DsDivider(vertical: true, spacing: DsSpace.md),
+                metric('Hidden'.tr, hidden, c.textMuted),
+              ],
+            ),
+          ),
+          const DsGap(DsSpace.lg),
+          DsProgressBar(value: total == 0 ? 0 : published / total, tone: DsTone.success, label: 'Live in store'.tr, showPercent: true, height: 6),
+        ],
+      ),
     );
   }
 }
@@ -564,69 +534,86 @@ class MultiProductTaxBottomSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      padding: const EdgeInsets.all(16),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        children: [
-          /// HEADER
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text("${'Assign Tax to'.tr} ${products.length} ${'Products'.tr}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              IconButton(icon: const Icon(Icons.close), onPressed: () => Get.back()),
-            ],
-          ),
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Align(
+      alignment: Alignment.bottomCenter,
+      heightFactor: 1,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: DsLayout.contentMax),
+        child: Container(
+          height: MediaQuery.of(context).size.height * 0.7,
+          padding: const EdgeInsets.fromLTRB(DsSpace.xl, DsSpace.sm, DsSpace.xl, DsSpace.lg),
+          decoration: BoxDecoration(color: c.surfaceRaised, borderRadius: DsRadius.sheetTop),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(bottom: DsSpace.sm),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(color: c.borderStrong, borderRadius: DsRadius.brPill),
+                ),
 
-          const Divider(),
+                /// HEADER
+                Row(
+                  children: [
+                    const DsIconWell(icon: Icons.receipt_long_rounded, size: 40),
+                    const DsGap(DsSpace.md),
+                    Expanded(child: Text("${'Assign Tax to'.tr} ${products.length} ${'Products'.tr}", style: t.title)),
+                    DsIconButton(icon: Icons.close_rounded, semanticLabel: 'Close'.tr, onPressed: () => Get.back()),
+                  ],
+                ),
+                const DsGap(DsSpace.sm),
+                Divider(color: c.divider),
 
-          Expanded(
-            child: Obx(
-              () => ListView.builder(
-                itemCount: controller.taxList.length,
-                itemBuilder: (context, index) {
-                  final tax = controller.taxList[index];
-                  return CheckboxListTile(
-                    value: tax.isSelected,
-                    contentPadding: EdgeInsets.zero,
-                    visualDensity: VisualDensity.compact,
-                    onChanged: (value) {
-                      controller.toggleSelection(index, value!);
-                    },
-                    title: Text("${tax.title} (${tax.type == "fix" ? Constant.amountShow(amount: tax.tax) : "${tax.tax}%"})"),
-                  );
-                },
-              ),
+                Expanded(
+                  child: Obx(
+                    () => ListView.builder(
+                      itemCount: controller.taxList.length,
+                      itemBuilder: (context, index) {
+                        final tax = controller.taxList[index];
+                        return CheckboxListTile(
+                          value: tax.isSelected,
+                          contentPadding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                          onChanged: (value) {
+                            controller.toggleSelection(index, value!);
+                          },
+                          title: Text("${tax.title} (${tax.type == "fix" ? Constant.amountShow(amount: tax.tax) : "${tax.tax}%"})", style: t.bodyStrong),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                const DsGap(DsSpace.md),
+
+                /// APPLY BUTTON
+                DsButton.primary(
+                  label: "Apply Tax",
+                  icon: Icons.check_rounded,
+                  expand: true,
+                  onPressed: () async {
+                    ShowToastDialog.showLoader("Updating...".tr);
+
+                    final selectedTaxes = controller.selectedTaxes;
+
+                    for (var product in products) {
+                      product.taxSetting = List.from(selectedTaxes);
+                      await FireStoreUtils.updateProduct(product);
+                    }
+
+                    controller.clearSelection();
+                    ShowToastDialog.closeLoader();
+                    ShowToastDialog.showToast("Tax applied successfully".tr);
+                    Get.back();
+                  },
+                ),
+              ],
             ),
           ),
-
-          /// APPLY BUTTON
-          RoundedButtonFill(
-            title: "Apply Tax",
-            color: AppThemeData.primary300,
-            height: 4.2,
-            textColor: AppThemeData.grey50,
-            onPress: () async {
-              ShowToastDialog.showLoader("Updating...".tr);
-
-              final selectedTaxes = controller.selectedTaxes;
-
-              for (var product in products) {
-                product.taxSetting = List.from(selectedTaxes);
-                await FireStoreUtils.updateProduct(product);
-              }
-
-              controller.clearSelection();
-              ShowToastDialog.closeLoader();
-              ShowToastDialog.showToast("Tax applied successfully".tr);
-              Get.back();
-            },
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -639,92 +626,105 @@ class AddProductBottomSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 30),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          /// Drag Handle
-          Container(
-            width: 50,
-            height: 5,
-            decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(10)),
-          ),
+    final c = context.dsColors;
+    final t = context.dsText;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(DsSpace.xl, DsSpace.sm, DsSpace.xl, DsSpace.xxl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            /// Drag Handle
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(color: c.borderStrong, borderRadius: DsRadius.brPill),
+              ),
+            ),
 
-          const SizedBox(height: 20),
+            const DsGap(DsSpace.xl),
+            Text("Add Product".tr, style: t.title),
+            const DsGap(DsSpace.lg),
 
-          /// Create New Product
-          _optionTile(
-            isDark: isDark,
-            icon: Icons.add_box_rounded,
-            title: "Create a new product",
-            subtitle: "Add your own custom product",
-            onTap: () {
-              Get.back();
-              Get.to(const AddProductScreen())!.then((value) {
-                if (value == true) {
-                  controller.getProduct();
-                }
-              });
-            },
-          ),
+            /// Create New Product
+            DsFadeSlideIn(
+              index: 0,
+              child: _optionTile(
+                context: context,
+                icon: Icons.add_box_rounded,
+                tone: DsTone.brand,
+                title: "Create a new product",
+                subtitle: "Add your own custom product",
+                onTap: () {
+                  Get.back();
+                  Get.to(const AddProductScreen())!.then((value) {
+                    if (value == true) {
+                      controller.getProduct();
+                    }
+                  });
+                },
+              ),
+            ),
 
-          const SizedBox(height: 12),
+            const DsGap(DsSpace.md),
 
-          /// Import From Admin
-          _optionTile(
-            isDark: isDark,
-            icon: Icons.cloud_download_rounded,
-            title: "Import products from Global Menu",
-            subtitle: "Select from admin created Food products",
-            onTap: () {
-              Get.back();
-              // Navigate to Admin Product List Screen
-              Get.to(() => AdminProductScreen())?.then((value) {
-                controller.getProduct();
-              });
-            },
-          ),
-        ],
+            /// Import From Admin
+            DsFadeSlideIn(
+              index: 1,
+              child: _optionTile(
+                context: context,
+                icon: Icons.cloud_download_rounded,
+                tone: DsTone.info,
+                title: "Import products from Global Menu",
+                subtitle: "Select from admin created Food products",
+                onTap: () {
+                  Get.back();
+                  // Navigate to Admin Product List Screen
+                  Get.to(() => AdminProductScreen())?.then((value) {
+                    controller.getProduct();
+                  });
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _optionTile({required bool isDark, required IconData icon, required String title, required String subtitle, required VoidCallback onTap}) {
-    return InkWell(
+  Widget _optionTile({
+    required BuildContext context,
+    required IconData icon,
+    required DsTone tone,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard.outlined(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey.shade300),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: AppThemeData.primary300.withOpacity(0.1),
-              child: Icon(icon, color: AppThemeData.primary300),
+      padding: const EdgeInsets.all(DsSpace.lg),
+      child: Row(
+        children: [
+          DsIconWell(icon: icon, tone: tone, size: 48),
+          const DsGap(DsSpace.lg),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title.tr, style: t.titleSm),
+                const DsGap(DsSpace.xxs),
+                Text(subtitle.tr, style: t.bodySm),
+              ],
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title.tr,
-                    style: TextStyle(fontSize: 15, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontWeight: FontWeight.w600),
-                  ),
-                  Text(subtitle.tr, style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                ],
-              ),
-            ),
-            const Icon(Icons.arrow_forward_ios_rounded, size: 16),
-          ],
-        ),
+          ),
+          const DsGap(DsSpace.sm),
+          Icon(Icons.chevron_right_rounded, color: c.textMuted),
+        ],
       ),
     );
   }

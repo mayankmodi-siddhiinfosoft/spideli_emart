@@ -7,9 +7,7 @@ import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/role_controller.dart';
 import 'package:vendor/models/employee_role_model.dart';
-import 'package:vendor/themes/app_them_data.dart';
-import 'package:vendor/themes/round_button_fill.dart';
-import 'package:vendor/themes/theme_controller.dart';
+import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 
 class RoleScreen extends StatelessWidget {
@@ -17,129 +15,90 @@ class RoleScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: RoleController(),
       builder: (controller) {
-        return Scaffold(
-          backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-          appBar: AppBar(
-            backgroundColor: AppThemeData.primary300,
-            centerTitle: false,
-            iconTheme: IconThemeData(color: AppThemeData.grey50, size: 20),
-            title: Text(
-              "Employee Role".tr,
-              style: TextStyle(color: AppThemeData.grey50, fontSize: 18, fontFamily: AppThemeData.medium),
-            ),
-          ),
-          body: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: controller.isLoading.value
-                ? Constant.loader()
-                : Constant.userModel?.vendorID == null || Constant.userModel?.vendorID?.isEmpty == true
-                    ? Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Container(
-                              decoration: ShapeDecoration(
-                                color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
-                              ),
-                              child: Padding(padding: const EdgeInsets.all(20), child: SvgPicture.asset("assets/icons/ic_building_two.svg")),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              "Add Your First Store".tr,
-                              style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                            ),
-                            const SizedBox(height: 5),
-                            Text(
-                              "Get started by adding your store details to manage your menu, orders.".tr,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                            ),
-                            const SizedBox(height: 20),
-                            RoundedButtonFill(
-                              title: "Add Store".tr,
-                              width: 55,
-                              height: 5.5,
-                              color: AppThemeData.primary300,
-                              textColor: AppThemeData.grey50,
-                              onPress: () async {
-                                Get.to(const AddRestaurantScreen())?.then((value) {
-                                  controller.update();
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                      )
-                    : controller.employeeRolelList.isEmpty
-                        ? Constant.showEmptyView(message: "No employee role found".tr, isDark: isDark)
-                        : ListView.builder(
-                            itemCount: controller.employeeRolelList.length,
-                            shrinkWrap: true,
-                            itemBuilder: (context, index) {
+        final c = context.dsColors;
+        return DsScaffold.collapsing(
+          title: "Employee Role".tr,
+          backgroundColor: c.background,
+          slivers: [
+            if (controller.isLoading.value)
+              const DsSliverResponsive(
+                maxWidth: DsLayout.wideMax,
+                top: DsSpace.sm,
+                sliver: SliverToBoxAdapter(child: DsSkeletonGrid(minItemWidth: 280, imageAspectRatio: 3, padding: EdgeInsets.zero)),
+              )
+            else if (Constant.userModel?.vendorID == null || Constant.userModel?.vendorID?.isEmpty == true)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: DsEmptyState(
+                  illustration: Center(
+                    child: Container(
+                      width: 120,
+                      height: 120,
+                      padding: const EdgeInsets.all(DsSpace.xxxl),
+                      decoration: BoxDecoration(color: c.brandSoft, shape: BoxShape.circle, border: Border.all(color: c.brand.withValues(alpha: 0.2))),
+                      child: SvgPicture.asset("assets/icons/ic_building_two.svg"),
+                    ),
+                  ),
+                  title: "Add Your First Store".tr,
+                  message: "Get started by adding your store details to manage your menu, orders.".tr,
+                  actionLabel: "Add Store".tr,
+                  actionIcon: Icons.storefront_outlined,
+                  onAction: () async {
+                    Get.to(const AddRestaurantScreen())?.then((value) {
+                      controller.update();
+                    });
+                  },
+                ),
+              )
+            else if (controller.employeeRolelList.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: DsEmptyState(icon: Icons.admin_panel_settings_outlined, title: "No employee role found".tr, compact: true),
+              )
+            else
+              DsSliverResponsive(
+                maxWidth: DsLayout.wideMax,
+                top: DsSpace.sm,
+                bottom: 96,
+                sliver: SliverToBoxAdapter(
+                  child: DsAdaptiveGrid(
+                    minItemWidth: 280,
+                    maxColumns: 3,
+                    children: [
+                      for (int index = 0; index < controller.employeeRolelList.length; index++)
+                        DsFadeSlideIn(
+                          index: index,
+                          child: Builder(
+                            builder: (context) {
                               EmployeeRoleModel model = controller.employeeRolelList[index];
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-                                child: InkWell(
-                                  splashColor: Colors.transparent,
-                                  onTap: () {
-                                    Get.to(const AddEditRoleScreen(), arguments: {"employeeRoleModel": model})!.then((value) {
-                                      if (value == true) {
-                                        controller.getAllEmployeeRoles();
-                                      }
-                                    });
-                                  },
-                                  child: Container(
-                                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: isDark ? AppThemeData.grey800 : AppThemeData.grey100,
-                                      borderRadius: BorderRadius.circular(6),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withOpacity(0.08), // subtle shadow
-                                          blurRadius: 12, // soft edges
-                                          offset: const Offset(0, 4), // shadow position
-                                          spreadRadius: 1, // light spread
-                                        ),
-                                      ],
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          model.title ?? '',
-                                          style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                        ),
-                                        Row(
-                                          children: [
-                                            Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: SvgPicture.asset("assets/icons/ic_edit_coupon.svg", width: 22, height: 22)),
-                                            IconButton(
-                                              onPressed: () {
-                                                FireStoreUtils.deleteEmployeeRole(model.id!);
-                                                controller.employeeRolelList.remove(model);
-                                              },
-                                              icon: SvgPicture.asset("assets/icons/ic_delete.svg", width: 22, height: 22),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
+                              return _RoleCard(
+                                model: model,
+                                onTap: () {
+                                  Get.to(const AddEditRoleScreen(), arguments: {"employeeRoleModel": model})!.then((value) {
+                                    if (value == true) {
+                                      controller.getAllEmployeeRoles();
+                                    }
+                                  });
+                                },
+                                onDelete: () {
+                                  FireStoreUtils.deleteEmployeeRole(model.id!);
+                                  controller.employeeRolelList.remove(model);
+                                },
                               );
                             },
                           ),
-          ),
-          floatingActionButton: FloatingActionButton(
-            shape: const CircleBorder(),
-            backgroundColor: AppThemeData.primary300,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+          floatingActionButton: FloatingActionButton.extended(
+            backgroundColor: c.brand,
+            foregroundColor: c.onBrand,
             onPressed: () {
               if (Constant.userModel?.vendorID == null || Constant.userModel?.vendorID == '') {
                 ShowToastDialog.showToast("Please add your restaurant details before creating a employee role.".tr);
@@ -151,10 +110,76 @@ class RoleScreen extends StatelessWidget {
                 });
               }
             },
-            child: const Icon(Icons.add, color: AppThemeData.grey50),
+            icon: const Icon(Icons.add_rounded),
+            label: Text("Create Role".tr),
           ),
         );
       },
+    );
+  }
+}
+
+/// Role card: key icon, title, status, permission coverage bar, edit/delete.
+class _RoleCard extends StatelessWidget {
+  final EmployeeRoleModel model;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+  const _RoleCard({required this.model, required this.onTap, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final permissions = model.permissions ?? [];
+    final granted = permissions.where((p) => p.isActive == true).length;
+    final isEnabled = model.isEnable ?? true;
+    return DsCard.outlined(
+      onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.xs, DsSpace.lg),
+      semanticLabel: model.title ?? '',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DsIconWell(icon: Icons.key_rounded, tone: isEnabled ? DsTone.brand : DsTone.neutral),
+              const DsGap(DsSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(model.title ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: t.titleSm.withColor(c.textPrimary)),
+                    const DsGap(DsSpace.xs),
+                    DsStatusChip(label: isEnabled ? "Active".tr : "Inactive".tr, tone: isEnabled ? DsTone.success : DsTone.neutral),
+                  ],
+                ),
+              ),
+              DsIconButton(icon: Icons.edit_outlined, semanticLabel: 'Edit Role'.tr, onPressed: onTap),
+              DsIconButton(icon: Icons.delete_outline_rounded, semanticLabel: 'Delete'.tr, color: c.danger, onPressed: onDelete),
+            ],
+          ),
+          if (permissions.isNotEmpty) ...[
+            const DsGap(DsSpace.md),
+            Padding(
+              padding: const EdgeInsets.only(right: DsSpace.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: Text("Permissions".tr, style: t.caption)),
+                      Text('$granted / ${permissions.length}', style: t.labelSm.withColor(c.textSecondary).tabular),
+                    ],
+                  ),
+                  const DsGap(DsSpace.xs),
+                  DsProgressBar(value: granted / permissions.length, height: 6, tone: isEnabled ? DsTone.brand : DsTone.neutral),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

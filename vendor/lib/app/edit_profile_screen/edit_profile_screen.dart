@@ -1,16 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:vendor/themes/theme_controller.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/controller/edit_profile_controller.dart';
-import 'package:vendor/themes/app_them_data.dart';
-import 'package:vendor/themes/responsive.dart';
-import 'package:vendor/themes/round_button_fill.dart';
-import 'package:vendor/themes/text_field_widget.dart';
+import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/utils/network_image_widget.dart';
 
 class EditProfileScreen extends StatelessWidget {
@@ -18,95 +13,138 @@ class EditProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: EditProfileController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            backgroundColor: AppThemeData.primary300,
-            centerTitle: false,
-            titleSpacing: 0,
-            iconTheme: const IconThemeData(color: AppThemeData.grey50, size: 20),
+        final t = context.dsText;
+        const double avatar = 104;
+
+        Widget photo() => controller.profileImage.isEmpty
+            ? Image.asset(Constant.userPlaceHolder, height: avatar, width: avatar, fit: BoxFit.cover)
+            : Constant().hasValidUrl(controller.profileImage.value) == false
+            ? Image.file(File(controller.profileImage.value), height: avatar, width: avatar, fit: BoxFit.cover)
+            : NetworkImageWidget(
+                fit: BoxFit.cover,
+                imageUrl: controller.profileImage.value,
+                height: avatar,
+                width: avatar,
+                errorWidget: Image.asset(Constant.userPlaceHolder, fit: BoxFit.cover, height: avatar, width: avatar),
+              );
+
+        return DsScaffold.hero(
+          title: "Edit Profile".tr,
+          bottomBar: DsStickyBar(
+            child: DsButton.primary(
+              label: "Save Details".tr,
+              size: DsButtonSize.lg,
+              expand: true,
+              icon: Icons.check_rounded,
+              onPressed: () async {
+                controller.saveData();
+              },
+            ),
           ),
-          body: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Stack(
-                      children: [
-                        controller.profileImage.isEmpty
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(60),
-                                child: Image.asset(Constant.userPlaceHolder, height: Responsive.width(24, context), width: Responsive.width(24, context), fit: BoxFit.cover),
-                              )
-                            : Constant().hasValidUrl(controller.profileImage.value) == false
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(60),
-                                child: Image.file(File(controller.profileImage.value), height: Responsive.width(24, context), width: Responsive.width(24, context), fit: BoxFit.cover),
-                              )
-                            : ClipRRect(
-                                borderRadius: BorderRadius.circular(60),
-                                child: NetworkImageWidget(
-                                  fit: BoxFit.cover,
-                                  imageUrl: controller.profileImage.value,
-                                  height: Responsive.width(24, context),
-                                  width: Responsive.width(24, context),
-                                  errorWidget: Image.asset(Constant.userPlaceHolder, fit: BoxFit.cover, height: Responsive.width(24, context), width: Responsive.width(24, context)),
-                                ),
-                              ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: InkWell(
-                            onTap: () {
-                              buildBottomSheet(context, controller);
-                            },
-                            child: SvgPicture.asset("assets/icons/ic_edit.svg"),
-                          ),
+          hero: Center(
+            child: Column(
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.28)),
+                      child: ClipOval(
+                        child: AnimatedSwitcher(
+                          duration: DsMotion.of(context, DsMotion.base),
+                          child: SizedBox.square(key: ValueKey(controller.profileImage.value), dimension: avatar, child: photo()),
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 40),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFieldWidget(title: 'First Name'.tr, controller: controller.firstNameController.value, hintText: 'First Name'.tr),
+                    PositionedDirectional(
+                      bottom: -4,
+                      end: -4,
+                      child: DsIconButton(
+                        icon: Icons.photo_camera_rounded,
+                        semanticLabel: 'Change photo'.tr,
+                        variant: DsIconButtonVariant.filled,
+                        size: 40,
+                        onPressed: () {
+                          buildBottomSheet(context, controller);
+                        },
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextFieldWidget(title: 'Last Name'.tr, controller: controller.lastNameController.value, hintText: 'Last Name'.tr),
-                      ),
-                    ],
-                  ),
-                  TextFieldWidget(title: 'Email'.tr, textInputType: TextInputType.emailAddress, controller: controller.emailController.value, hintText: 'Email'.tr, enable: false),
-                  TextFieldWidget(title: 'Phone Number'.tr, textInputType: TextInputType.emailAddress, controller: controller.phoneNumberController.value, hintText: 'Phone Number'.tr, enable: false),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+                const DsGap(DsSpace.md),
+                Text(
+                  "${controller.firstNameController.value.text} ${controller.lastNameController.value.text}".trim(),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.title.withColor(Colors.white),
+                ),
+                const DsGap(DsSpace.sm),
+              ],
             ),
           ),
-          bottomNavigationBar: Container(
-            color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: RoundedButtonFill(
-                title: "Save Details".tr,
-                height: 5.5,
-                color: AppThemeData.primary300,
-                textColor: AppThemeData.grey50,
-                fontSizes: 16,
-                onPress: () async {
-                  controller.saveData();
-                },
+          slivers: [
+            DsSliverResponsive(
+              top: DsSpace.xl,
+              sliver: SliverToBoxAdapter(
+                child: controller.isLoading.value
+                    ? const DsSkeletonForm(fields: 4)
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: DsFadeSlideIn.stagger([
+                          DsFormSection(
+                            title: 'Personal details'.tr,
+                            icon: Icons.person_outline_rounded,
+                            children: [
+                              DsAdaptiveGrid(
+                                minItemWidth: 240,
+                                equalHeight: false,
+                                children: [
+                                  DsTextField(
+                                    label: 'First Name'.tr,
+                                    controller: controller.firstNameController.value,
+                                    hint: 'First Name'.tr,
+                                    textInputAction: TextInputAction.next,
+                                  ),
+                                  DsTextField(label: 'Last Name'.tr, controller: controller.lastNameController.value, hint: 'Last Name'.tr),
+                                ],
+                              ),
+                            ],
+                          ),
+                          DsFormSection(
+                            title: 'Contact'.tr,
+                            subtitle: 'These details are linked to your account and can’t be edited here.'.tr,
+                            icon: Icons.contact_mail_outlined,
+                            children: [
+                              DsTextField(
+                                label: 'Email'.tr,
+                                keyboardType: TextInputType.emailAddress,
+                                controller: controller.emailController.value,
+                                hint: 'Email'.tr,
+                                enabled: false,
+                                prefixIcon: Icons.mail_outline_rounded,
+                                suffix: const Icon(Icons.lock_outline_rounded, size: 18),
+                              ),
+                              DsTextField(
+                                label: 'Phone Number'.tr,
+                                keyboardType: TextInputType.emailAddress,
+                                controller: controller.phoneNumberController.value,
+                                hint: 'Phone Number'.tr,
+                                enabled: false,
+                                prefixIcon: Icons.phone_outlined,
+                                suffix: const Icon(Icons.lock_outline_rounded, size: 18),
+                              ),
+                            ],
+                          ),
+                        ]),
+                      ),
               ),
             ),
-          ),
+          ],
         );
       },
     );
@@ -118,55 +156,41 @@ class EditProfileScreen extends StatelessWidget {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setState) {
-            return SizedBox(
-              height: Responsive.height(22, context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 15),
-                    child: Text("please select".tr, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(18.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            IconButton(
-                              onPressed: () => controller.pickFile(source: ImageSource.camera),
-                              icon: const Icon(Icons.camera_alt, size: 32),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(top: 3),
-                              child: Text("camera".tr, style: const TextStyle()),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(18.0),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            IconButton(
-                              onPressed: () => controller.pickFile(source: ImageSource.gallery),
-                              icon: const Icon(Icons.photo_library_sharp, size: 32),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(top: 3),
-                              child: Text("gallery".tr, style: const TextStyle()),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+            final c = context.dsColors;
+            final t = context.dsText;
+            Widget option(IconData icon, String label, VoidCallback onTap) => Expanded(
+              child: DsCard.outlined(
+                onTap: onTap,
+                semanticLabel: label,
+                padding: const EdgeInsets.symmetric(vertical: DsSpace.xl, horizontal: DsSpace.md),
+                child: Column(
+                  children: [
+                    DsIconWell(icon: icon, size: 52, circle: true),
+                    const DsGap(DsSpace.sm),
+                    Text(label, textAlign: TextAlign.center, style: t.label.withColor(c.textPrimary)),
+                  ],
+                ),
+              ),
+            );
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(DsSpace.xl, DsSpace.xl, DsSpace.xl, DsSpace.lg),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text("please select".tr, textAlign: TextAlign.center, style: t.title.withColor(c.textPrimary)),
+                    const DsGap(DsSpace.lg),
+                    Row(
+                      children: [
+                        option(Icons.photo_camera_outlined, "camera".tr, () => controller.pickFile(source: ImageSource.camera)),
+                        const DsGap(DsSpace.md),
+                        option(Icons.photo_library_outlined, "gallery".tr, () => controller.pickFile(source: ImageSource.gallery)),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             );
           },

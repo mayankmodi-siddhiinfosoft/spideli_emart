@@ -3,12 +3,10 @@ import 'dart:developer';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
-import 'package:vendor/themes/theme_controller.dart';
 import 'package:vendor/app/chat_screens/chat_video_container.dart';
 import 'package:vendor/app/chat_screens/full_screen_image_viewer.dart';
 import 'package:vendor/app/chat_screens/full_screen_video_viewer.dart';
@@ -16,7 +14,7 @@ import 'package:vendor/constant/collection_name.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/controller/chat_controller.dart';
 import 'package:vendor/models/conversation_model.dart';
-import 'package:vendor/themes/app_them_data.dart';
+import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/network_image_widget.dart';
 import 'package:vendor/widget/firebase_pagination/firebase_pagination.dart';
@@ -26,33 +24,42 @@ class ChatScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: ChatController(),
       builder: (controller) {
+        final c = context.dsColors;
+        final t = context.dsText;
+        final isAdmin = controller.receivedId.value == 'admin';
+        final title = controller.receivedId.value == 'admin' ? 'Admin' : controller.receiverUser.value!.fullName();
         return Scaffold(
-          appBar: AppBar(
-            backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-            centerTitle: false,
-            titleSpacing: 0,
-            title: Text(
-              controller.receivedId.value == 'admin' ? 'Admin' : controller.receiverUser.value!.fullName(),
-              textAlign: TextAlign.start,
-              style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-            ),
-            bottom: PreferredSize(
-              preferredSize: Size.fromHeight(10), // height of the bottom section
-              child: Padding(
-                padding: const EdgeInsets.only(left: 55, bottom: 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    "${controller.sectionType.value == 'adv' ? "AvdId" : "OrderId".tr} ${Constant.orderId(orderId: controller.orderId.value.toString())}",
-                    style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: isDark ? AppThemeData.grey200 : AppThemeData.grey700),
+          backgroundColor: c.background,
+          appBar: DsAppBar(
+            backgroundColor: c.surface,
+            titleWidget: Row(
+              children: [
+                DsAvatar(
+                  imageUrl: isAdmin ? null : controller.receiverUser.value?.profilePictureURL,
+                  name: isAdmin ? null : title,
+                  size: 40,
+                  fallbackIcon: isAdmin ? Icons.support_agent_rounded : Icons.person_rounded,
+                ),
+                const DsGap(DsSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm.withColor(c.textPrimary)),
+                      Text(
+                        "${controller.sectionType.value == 'adv' ? "AvdId" : "OrderId".tr} ${Constant.orderId(orderId: controller.orderId.value.toString())}",
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.caption,
+                      ),
+                    ],
                   ),
                 ),
-              ),
+              ],
             ),
           ),
           body: Column(
@@ -62,83 +69,48 @@ class ChatScreen extends StatelessWidget {
                   onTap: () {
                     FocusScope.of(context).unfocus();
                   },
-                  child: FirestorePagination(
-                    reverse: true,
-                    controller: controller.scrollController.value,
-                    physics: const BouncingScrollPhysics(),
-                    itemBuilder: (context, documentSnapshots, index) {
-                      ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
-                      log("chatmodel :: ${chatmodel.id}");
-                      return chatItemView(isDark, chatmodel.senderId == FireStoreUtils.getCurrentUid(), chatmodel);
-                    },
-                    onEmpty: Constant.showEmptyView(message: "No conversion found".tr, isDark: isDark),
-                    query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
-                    isLive: true,
-                    viewType: ViewType.list,
-                  ),
-                ),
-              ),
-              Container(
-                color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          InkWell(
-                            onTap: () {
-                              onCameraClick(context, controller);
-                            },
-                            child: SvgPicture.asset("assets/icons/ic_picture_one.svg"),
-                          ),
-                          Flexible(
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 10),
-                              child: TextField(
-                                textInputAction: TextInputAction.send,
-                                keyboardType: TextInputType.text,
-                                textCapitalization: TextCapitalization.sentences,
-                                controller: controller.messageController.value,
-                                decoration: InputDecoration(
-                                  contentPadding: const EdgeInsets.only(top: 3, left: 10),
-                                  focusedBorder: InputBorder.none,
-                                  enabledBorder: InputBorder.none,
-                                  hintText: 'Type message here....'.tr,
-                                ),
-                                onSubmitted: (value) async {
-                                  if (controller.messageController.value.text.isNotEmpty) {
-                                    controller.sendMessage(controller.messageController.value.text, null, '', 'text');
-                                    Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
-                                    controller.messageController.value.clear();
-                                  }
-                                },
-                              ),
-                            ),
-                          ),
-                          InkWell(
-                            onTap: () {
-                              if (controller.messageController.value.text.isNotEmpty) {
-                                controller.sendMessage(controller.messageController.value.text, null, '', 'text');
-                                Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
-                                controller.messageController.value.clear();
-                              }
-                            },
-                            child: Container(
-                              margin: const EdgeInsets.only(left: 10),
-                              decoration: BoxDecoration(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200, borderRadius: BorderRadius.circular(30)),
-                              child: Padding(padding: const EdgeInsets.all(10), child: SvgPicture.asset("assets/icons/ic_send.svg")),
-                            ),
-                          ),
-                        ],
+                  child: DsResponsive(
+                    maxWidth: DsLayout.contentMax,
+                    child: FirestorePagination(
+                      reverse: true,
+                      controller: controller.scrollController.value,
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+                      itemBuilder: (context, documentSnapshots, index) {
+                        ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+                        log("chatmodel :: ${chatmodel.id}");
+                        // Neighbours: list is reversed, so index + 1 is the message shown above.
+                        final ConversationModel? older = index + 1 < documentSnapshots.length
+                            ? ConversationModel.fromJson(documentSnapshots[index + 1].data() as Map<String, dynamic>)
+                            : null;
+                        final ConversationModel? newer = index - 1 >= 0 ? ConversationModel.fromJson(documentSnapshots[index - 1].data() as Map<String, dynamic>) : null;
+                        return chatItemView(
+                          context,
+                          chatmodel.senderId == FireStoreUtils.getCurrentUid(),
+                          chatmodel,
+                          groupedWithOlder: _isGrouped(chatmodel, older),
+                          groupedWithNewer: _isGrouped(chatmodel, newer),
+                          showDateHeader: older == null || !_sameDay(older.createdAt?.toDate(), chatmodel.createdAt?.toDate()),
+                        );
+                      },
+                      onEmpty: DsEmptyState(
+                        icon: Icons.forum_outlined,
+                        title: "No conversion found".tr,
+                        compact: true,
                       ),
-                      const SizedBox(height: 20),
-                    ],
+                      initialLoader: const _ChatSkeleton(),
+                      bottomLoader: const Padding(
+                        padding: EdgeInsets.all(DsSpace.lg),
+                        child: Center(child: DsSpinner()),
+                      ),
+                      query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
+                      isLive: true,
+                      viewType: ViewType.list,
+                    ),
                   ),
                 ),
               ),
+              _Composer(controller: controller, onAttach: () => onCameraClick(context, controller)),
             ],
           ),
         );
@@ -146,118 +118,142 @@ class ChatScreen extends StatelessWidget {
     );
   }
 
-  Widget chatItemView(bool isDark, bool isMe, ConversationModel data) {
-    return Container(
-      padding: EdgeInsets.only(left: isMe ? 80 : 10, right: isMe ? 10 : 80, top: 10, bottom: 10),
-      child: isMe
-          ? Align(
-              alignment: Alignment.topRight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+  static bool _sameDay(DateTime? a, DateTime? b) {
+    if (a == null || b == null) return false;
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  static bool _isGrouped(ConversationModel a, ConversationModel? b) {
+    if (b == null || a.senderId != b.senderId) return false;
+    final da = a.createdAt?.toDate();
+    final db = b.createdAt?.toDate();
+    if (da == null || db == null || !_sameDay(da, db)) return false;
+    return da.difference(db).inMinutes.abs() < 5;
+  }
+
+  Widget chatItemView(
+    BuildContext context,
+    bool isMe,
+    ConversationModel data, {
+    bool groupedWithOlder = false,
+    bool groupedWithNewer = false,
+    bool showDateHeader = false,
+  }) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    const big = Radius.circular(DsRadius.lg);
+    const small = Radius.circular(DsRadius.xs);
+    final radius = isMe
+        ? BorderRadius.only(topLeft: big, bottomLeft: big, topRight: groupedWithOlder ? small : big, bottomRight: small)
+        : BorderRadius.only(topRight: big, bottomRight: big, topLeft: groupedWithOlder ? small : big, bottomLeft: small);
+    final created = DateTime.fromMillisecondsSinceEpoch(data.createdAt!.millisecondsSinceEpoch);
+
+    Widget bubble;
+    if (data.messageType == "text") {
+      bubble = Container(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          color: isMe ? c.brand : c.surface,
+          border: isMe ? null : Border.all(color: c.border),
+          boxShadow: isMe ? null : DsShadows.xs(context),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md - 2),
+        child: Text(
+          data.message.toString(),
+          maxLines: null,
+          style: t.bodyLg.withColor(isMe ? c.onBrand : c.textPrimary),
+        ),
+      );
+    } else if (data.messageType == "image") {
+      bubble = ClipRRect(
+        borderRadius: radius,
+        child: GestureDetector(
+          onTap: () {
+            Get.to(FullScreenImageViewer(imageUrl: data.url!.url));
+          },
+          child: Semantics(
+            button: true,
+            label: 'Image'.tr,
+            child: Hero(
+              tag: data.url!.url,
+              child: NetworkImageWidget(imageUrl: data.url!.url, height: 200, width: 200, fit: BoxFit.cover),
+            ),
+          ),
+        ),
+      );
+    } else {
+      Widget play = Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(color: c.brand, shape: BoxShape.circle, boxShadow: DsShadows.md(context)),
+        child: Icon(Icons.play_arrow_rounded, color: c.onBrand, size: 30),
+      );
+      if (data.id != null) play = Hero(tag: data.id!, child: play);
+      final hasThumb = (data.videoThumbnail ?? '').isNotEmpty;
+      bubble = Semantics(
+        button: true,
+        label: 'Play video'.tr,
+        child: DsPressable(
+          onTap: () {
+            Get.to(FullScreenVideoViewer(heroTag: data.id.toString(), videoUrl: data.url!.url));
+          },
+          child: ClipRRect(
+            borderRadius: radius,
+            child: SizedBox(
+              width: 200,
+              height: 140,
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  data.messageType == "text"
-                      ? Container(
-                          decoration: BoxDecoration(
-                            borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12), bottomLeft: Radius.circular(12)),
-                            color: AppThemeData.primary300,
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          child: Text(
-                            data.message.toString(),
-                            style: const TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: AppThemeData.grey50),
-                          ),
-                        )
-                      : data.messageType == "image"
-                      ? ClipRRect(
-                          borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12), bottomLeft: Radius.circular(12)),
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              GestureDetector(
-                                onTap: () {
-                                  Get.to(FullScreenImageViewer(imageUrl: data.url!.url));
-                                },
-                                child: Hero(
-                                  tag: data.url!.url,
-                                  child: NetworkImageWidget(imageUrl: data.url!.url, height: 100, width: 100, fit: BoxFit.cover),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : FloatingActionButton(
-                          mini: true,
-                          heroTag: data.id,
-                          backgroundColor: AppThemeData.primary300,
-                          onPressed: () {
-                            Get.to(FullScreenVideoViewer(heroTag: data.id.toString(), videoUrl: data.url!.url));
-                          },
-                          child: const Icon(Icons.play_arrow, color: Colors.white),
-                        ),
-                  const SizedBox(height: 5),
-                  Text(
-                    DateFormat('MMM d, yyyy hh:mm aa').format(DateTime.fromMillisecondsSinceEpoch(data.createdAt!.millisecondsSinceEpoch)),
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                ],
-              ),
-            )
-          : Align(
-              alignment: Alignment.topLeft,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  data.messageType == "text"
-                      ? Container(
-                          decoration: BoxDecoration(
-                            borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12), bottomRight: Radius.circular(12)),
-                            color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          child: Text(
-                            data.message.toString(),
-                            maxLines: null,
-                            style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800),
-                          ),
-                        )
-                      : data.messageType == "image"
-                      ? ConstrainedBox(
-                          constraints: const BoxConstraints(minWidth: 50, maxWidth: 200),
-                          child: ClipRRect(
-                            borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12), bottomRight: Radius.circular(12)),
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                GestureDetector(
-                                  onTap: () {
-                                    Get.to(FullScreenImageViewer(imageUrl: data.url!.url));
-                                  },
-                                  child: Hero(
-                                    tag: data.url!.url,
-                                    child: NetworkImageWidget(imageUrl: data.url!.url),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : FloatingActionButton(
-                          mini: true,
-                          heroTag: data.id,
-                          backgroundColor: AppThemeData.primary300,
-                          onPressed: () {
-                            Get.to(FullScreenVideoViewer(heroTag: data.id.toString(), videoUrl: data.url!.url));
-                          },
-                          child: const Icon(Icons.play_arrow, color: Colors.white),
-                        ),
-                  const SizedBox(height: 5),
-                  Text(
-                    DateFormat('MMM d, yyyy hh:mm aa').format(DateTime.fromMillisecondsSinceEpoch(data.createdAt!.millisecondsSinceEpoch)),
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
+                  hasThumb
+                      ? NetworkImageWidget(imageUrl: data.videoThumbnail!, height: 140, width: 200, fit: BoxFit.cover)
+                      : DecoratedBox(decoration: BoxDecoration(gradient: DsGradients.deep(context))),
+                  const DecoratedBox(decoration: BoxDecoration(gradient: DsGradients.imageScrim)),
+                  Center(child: play),
                 ],
               ),
             ),
+          ),
+        ),
+      );
+    }
+
+    final column = Column(
+      crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        bubble,
+        if (!groupedWithNewer)
+          Padding(
+            padding: const EdgeInsets.only(top: DsSpace.xs, left: DsSpace.xs, right: DsSpace.xs),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(DateFormat('hh:mm aa').format(created), style: t.caption),
+                if (isMe && data.seen == true) ...[
+                  const DsGap(DsSpace.xs),
+                  Icon(Icons.done_all_rounded, size: 14, color: c.brand),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+
+    return DsFadeSlideIn(
+      offset: Offset(isMe ? 16 : -16, 8),
+      child: Column(
+        children: [
+          if (showDateHeader) _DateHeader(date: created),
+          Padding(
+            padding: EdgeInsets.only(
+              left: isMe ? 56 : 0,
+              right: isMe ? 0 : 56,
+              top: groupedWithOlder ? DsSpace.xxs : DsSpace.md,
+            ),
+            child: Align(alignment: isMe ? Alignment.centerRight : Alignment.centerLeft, child: column),
+          ),
+        ],
+      ),
     );
   }
 
@@ -335,5 +331,137 @@ class ChatScreen extends StatelessWidget {
       ),
     );
     showCupertinoModalPopup(context: context, builder: (context) => action);
+  }
+}
+
+/// Sticky message composer: attach button, pill text field and send button.
+class _Composer extends StatelessWidget {
+  final ChatController controller;
+  final VoidCallback onAttach;
+  const _Composer({required this.controller, required this.onAttach});
+
+  void _send() {
+    if (controller.messageController.value.text.isNotEmpty) {
+      controller.sendMessage(controller.messageController.value.text, null, '', 'text');
+      Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
+      controller.messageController.value.clear();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final pill = OutlineInputBorder(borderRadius: DsRadius.brPill, borderSide: BorderSide(color: c.isDark ? c.border : c.surfaceAlt));
+    return DsStickyBar(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          DsIconButton(
+            icon: Icons.add_photo_alternate_outlined,
+            semanticLabel: 'Send Media'.tr,
+            variant: DsIconButtonVariant.tonal,
+            size: 44,
+            onPressed: onAttach,
+          ),
+          const DsGap(DsSpace.sm),
+          Expanded(
+            child: TextField(
+              textInputAction: TextInputAction.send,
+              keyboardType: TextInputType.text,
+              textCapitalization: TextCapitalization.sentences,
+              controller: controller.messageController.value,
+              cursorColor: c.brand,
+              style: t.bodyStrong.withColor(c.textPrimary),
+              decoration: DsInputDecoration.of(
+                context,
+                hint: 'Type message here....'.tr,
+                contentPadding: const EdgeInsets.symmetric(horizontal: DsSpace.xl, vertical: DsSpace.md),
+              ).copyWith(
+                border: pill,
+                enabledBorder: pill,
+                focusedBorder: OutlineInputBorder(borderRadius: DsRadius.brPill, borderSide: BorderSide(color: c.brand, width: 1.6)),
+              ),
+              onSubmitted: (value) async {
+                _send();
+              },
+            ),
+          ),
+          const DsGap(DsSpace.sm),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: controller.messageController.value,
+            builder: (context, value, _) {
+              final hasText = value.text.isNotEmpty;
+              return AnimatedSwitcher(
+                duration: DsMotion.of(context, DsMotion.fast),
+                transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
+                child: DsIconButton(
+                  key: ValueKey(hasText),
+                  icon: Icons.send_rounded,
+                  semanticLabel: 'Send'.tr,
+                  size: 44,
+                  variant: hasText ? DsIconButtonVariant.filled : DsIconButtonVariant.tonal,
+                  onPressed: _send,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DateHeader extends StatelessWidget {
+  final DateTime date;
+  const _DateHeader({required this.date});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(date.year, date.month, date.day);
+    final diff = today.difference(day).inDays;
+    final label = diff == 0
+        ? 'Today'.tr
+        : diff == 1
+        ? 'Yesterday'.tr
+        : DateFormat('MMM d, yyyy').format(date);
+    return Padding(
+      padding: const EdgeInsets.only(top: DsSpace.lg, bottom: DsSpace.xs),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
+          decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brPill),
+          child: Text(label, style: t.labelSm.withColor(c.textSecondary)),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatSkeleton extends StatelessWidget {
+  const _ChatSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    const widths = [180.0, 120.0, 220.0, 150.0, 200.0, 110.0];
+    return DsShimmer(
+      child: ListView.builder(
+        reverse: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(DsSpace.lg),
+        itemCount: widths.length,
+        itemBuilder: (context, i) => Padding(
+          padding: const EdgeInsets.only(top: DsSpace.md),
+          child: Align(
+            alignment: i.isEven ? Alignment.centerRight : Alignment.centerLeft,
+            child: DsSkeleton.box(width: widths[i], height: 44, radius: DsRadius.lg),
+          ),
+        ),
+      ),
+    );
   }
 }
