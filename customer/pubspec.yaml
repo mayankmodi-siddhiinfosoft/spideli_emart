@@ -117,8 +117,8 @@ flutter:
   fonts:
     - family: EssentialSans
       fonts:
-        - asset: assets/fonts/essential_sans_Regular.otf
-          weight: 600
+        - asset: assets/fonts/essential_sans_regular.otf
+          weight: 400
         - asset: assets/fonts/essential_sans_medium.otf
           weight: 500
         - asset: assets/fonts/essential_sans_semi_bold.otf

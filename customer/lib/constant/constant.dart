@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:customer/controllers/theme_controller.dart';
 import 'package:customer/models/currency_model.dart';
 import 'package:customer/models/order_model.dart';
 import 'package:customer/models/platform_fee_model.dart';
@@ -12,6 +11,8 @@ import 'package:customer/models/user_model.dart';
 import 'package:customer/models/vendor_model.dart';
 import 'package:customer/models/zone_model.dart';
 import 'package:customer/themes/app_them_data.dart';
+import 'package:customer/themes/ds/components/ds_feedback.dart';
+import 'package:customer/themes/ds/loading/ds_loaders.dart';
 import 'package:customer/utils/preferences.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
@@ -399,14 +400,15 @@ class Constant {
     return const Uuid().v4();
   }
 
+  /// App-wide loading indicator (design-system brand loader; it follows the
+  /// active service section color).
   static Widget loader() {
-    return Center(child: CircularProgressIndicator(color: AppThemeData.primary300));
+    return const Center(child: DsBrandLoader());
   }
 
+  /// App-wide empty placeholder (design-system empty state, light / dark).
   static Widget showEmptyView({required String message}) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return Center(child: Text(message, style: TextStyle(fontFamily: AppThemeData.fontFamily, fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)));
+    return DsEmptyState(icon: Icons.inbox_outlined, title: message, compact: true);
   }
 
   static String maskingString(String documentId, int maskingDigit) {

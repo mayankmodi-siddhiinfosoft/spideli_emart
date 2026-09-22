@@ -1,9 +1,11 @@
-import 'package:customer/themes/responsive.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../controllers/theme_controller.dart';
-import 'app_them_data.dart';
 
+/// Legacy confirmation dialog (kept for existing screens and controllers).
+/// Visuals follow the design system; the constructor API, texts and
+/// callbacks are unchanged (the positive button shows [positiveString], falling back to 'Confirm', and
+/// keeps its success tone). New code should use [DsDialog].
 class CustomDialogBox extends StatelessWidget {
   final String title, descriptions, positiveString, negativeString;
   final Widget? img;
@@ -23,59 +25,56 @@ class CustomDialogBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeController themeController = Get.find<ThemeController>();
-
-    return Obx(() {
-      final isDark = themeController.isDark.value;
-
-      return Dialog(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), elevation: 0, backgroundColor: Colors.transparent, child: contentBox(context, isDark));
-    });
+    // Theme brightness follows ThemeController through GetMaterialApp.themeMode.
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: DsRadius.brXl),
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: DsSpace.xxl, vertical: DsSpace.xxl),
+      child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 420), child: contentBox(context, context.dsIsDark)),
+    );
   }
 
   Widget contentBox(BuildContext context, bool isDark) {
+    final c = DsColors.of(context);
     return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(shape: BoxShape.rectangle, color: isDark ? AppThemeData.greyDark100 : AppThemeData.grey100, borderRadius: BorderRadius.circular(20)),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          img ?? const SizedBox(),
-          const SizedBox(height: 20),
-          if (title.isNotEmpty) Text(title.tr, style: AppThemeData.boldTextStyle(fontSize: 20, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-          const SizedBox(height: 5),
-          if (descriptions.isNotEmpty)
-            Text(descriptions.tr, textAlign: TextAlign.center, style: AppThemeData.regularTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: InkWell(
-                  onTap: negativeClick,
-                  child: Container(
-                    width: Responsive.width(100, context),
-                    height: Responsive.height(5, context),
-                    decoration: BoxDecoration(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, borderRadius: BorderRadius.circular(200)),
-                    child: Center(
-                      child: Text(negativeString.tr, textAlign: TextAlign.center, style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark100 : AppThemeData.grey100)),
-                    ),
-                  ),
-                ),
+      decoration: BoxDecoration(
+        color: c.surfaceRaised,
+        borderRadius: DsRadius.brXl,
+        border: isDark ? Border.all(color: c.border) : null,
+        boxShadow: DsShadows.lg(context),
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(DsSpace.xxl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (img != null)
+              TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.7, end: 1),
+                duration: DsMotion.of(context, DsMotion.slow),
+                curve: DsMotion.spring,
+                builder: (_, v, child) => Transform.scale(scale: v, child: child),
+                child: img!,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: InkWell(
-                  onTap: positiveClick,
-                  child: Container(
-                    width: Responsive.width(100, context),
-                    height: Responsive.height(5, context),
-                    decoration: BoxDecoration(color: AppThemeData.success300, borderRadius: BorderRadius.circular(200)),
-                    child: Center(child: Text('Confirm'.tr, textAlign: TextAlign.center, style: AppThemeData.mediumTextStyle(fontSize: 14, color: AppThemeData.grey100))),
-                  ),
-                ),
+            const SizedBox(height: DsSpace.lg),
+            if (title.isNotEmpty)
+              Semantics(
+                header: true,
+                child: Text(title.tr, textAlign: TextAlign.center, style: DsTypography.title.copyWith(color: c.textPrimary)),
               ),
-            ],
-          ),
-        ],
+            const SizedBox(height: DsSpace.sm),
+            if (descriptions.isNotEmpty) Text(descriptions.tr, textAlign: TextAlign.center, style: DsTypography.body.copyWith(color: c.textSecondary)),
+            const SizedBox(height: DsSpace.xxl),
+            Row(
+              children: [
+                Expanded(child: DsButton.secondary(label: negativeString.tr, expand: true, onPressed: () => negativeClick())),
+                const SizedBox(width: DsSpace.md),
+                Expanded(child: DsButton.primary(label: positiveString.isEmpty ? 'Confirm'.tr : positiveString.tr, color: c.success, expand: true, onPressed: () => positiveClick())),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
