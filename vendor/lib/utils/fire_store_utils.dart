@@ -708,14 +708,22 @@ class FireStoreUtils {
     });
   }
 
-  static Future restaurantVendorWalletSet(OrderModel orderModel) async {
-    // Credit each order once. Takeaway orders reached this twice - on Accept
-    // and again on Delivered - paying the store double. The vendor credit row
-    // in `wallet` (payment_method 'Wallet', isTopUp) marks it as already done.
-    if (orderModel.id != null && await _isOrderAlreadyCredited(orderModel.id!)) {
-      log("restaurantVendorWalletSet: order ${orderModel.id} already credited, skipping");
-      return;
-    }
+  /// What [restaurantVendorWalletSet] credits a store for an order, and the
+  /// admin commission embedded in the item prices. The single source of the
+  /// credit formula: the Wallet screen's Commissions tab uses it too, so the
+  /// two can never disagree. Pure - reads the order and the current section.
+  static ({
+    double subTotal,
+    double couponAmount,
+    double specialDiscountAmount,
+    double packagingCharge,
+    double totalTaxAmount,
+    double basePrice,
+    bool commissionApplied,
+    double adminCommissionPercent,
+    double commissionAmount,
+  })
+  vendorOrderCredit(OrderModel orderModel) {
     double subTotal = 0.0;
     double specialDiscountAmount = 0.0;
     double couponAmount = 0.0;
@@ -800,7 +808,32 @@ class FireStoreUtils {
       basePrice = subTotal - couponAmount - specialDiscountAmount + double.parse(orderModel.vendor?.packagingCharge ?? '0.0');
     }
 
-    subTotal = subTotal + packagingCharge;
+    final bool commissionApplied = Constant.selectedSection?.adminCommision?.isEnabled == true;
+    return (
+      subTotal: subTotal,
+      couponAmount: couponAmount,
+      specialDiscountAmount: specialDiscountAmount,
+      packagingCharge: packagingCharge,
+      totalTaxAmount: totalTaxAmount,
+      basePrice: basePrice,
+      commissionApplied: commissionApplied,
+      adminCommissionPercent: commissionApplied ? adminCommission : 0.0,
+      // The part of the item subtotal the base price leaves out: the commission.
+      commissionAmount: commissionApplied ? subTotal - (subTotal / (1 + (adminCommission / 100))) : 0.0,
+    );
+  }
+
+  static Future restaurantVendorWalletSet(OrderModel orderModel) async {
+    // Credit each order once. Takeaway orders reached this twice - on Accept
+    // and again on Delivered - paying the store double. The vendor credit row
+    // in `wallet` (payment_method 'Wallet', isTopUp) marks it as already done.
+    if (orderModel.id != null && await _isOrderAlreadyCredited(orderModel.id!)) {
+      log("restaurantVendorWalletSet: order ${orderModel.id} already credited, skipping");
+      return;
+    }
+    final credit = vendorOrderCredit(orderModel);
+    final double basePrice = credit.basePrice;
+    final double totalTaxAmount = credit.totalTaxAmount;
 
     WalletTransactionModel historyModel = WalletTransactionModel(
       amount: basePrice,

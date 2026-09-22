@@ -5,18 +5,16 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:vendor/themes/theme_controller.dart';
 import 'package:syncfusion_flutter_datepicker/datepicker.dart';
-import 'package:vendor/app/Home_screen/order_details_screen.dart';
+import 'package:vendor/app/wallet_screen/wallet_tabs.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/wallet_controller.dart';
-import 'package:vendor/models/wallet_transaction_model.dart';
 import 'package:vendor/models/withdrawal_model.dart';
 import 'package:vendor/themes/app_them_data.dart';
 import 'package:vendor/themes/responsive.dart';
 import 'package:vendor/themes/round_button_fill.dart';
 import 'package:vendor/themes/text_field_widget.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
-import 'package:vendor/widget/my_separator.dart';
 
 class WalletScreen extends StatelessWidget {
   const WalletScreen({super.key});
@@ -169,7 +167,8 @@ class WalletScreen extends StatelessWidget {
                     ),
                     Expanded(
                       child: DefaultTabController(
-                        length: 2,
+                        length: 3,
+                        initialIndex: controller.selectedTabIndex.value,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
@@ -180,78 +179,24 @@ class WalletScreen extends StatelessWidget {
                                   controller.selectedTabIndex.value = value;
                                 },
                                 padding: EdgeInsets.zero,
-                                labelStyle: const TextStyle(fontFamily: AppThemeData.semiBold),
-                                labelColor: isDark ? AppThemeData.primary300 : AppThemeData.primary300,
-                                unselectedLabelStyle: const TextStyle(fontFamily: AppThemeData.medium),
+                                labelStyle: const TextStyle(fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
+                                labelColor: AppThemeData.primary300,
+                                unselectedLabelStyle: const TextStyle(fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
                                 unselectedLabelColor: isDark ? AppThemeData.grey400 : AppThemeData.grey500,
                                 indicatorColor: AppThemeData.primary300,
                                 tabs: [
-                                  Tab(text: "Transaction History".tr),
-                                  Tab(text: "Withdrawal History".tr),
+                                  Tab(text: "Earnings".tr),
+                                  Tab(text: "Commissions".tr),
+                                  Tab(text: "Payouts".tr),
                                 ],
                               ),
                             ),
                             Expanded(
                               child: TabBarView(
                                 children: [
-                                  controller.walletTransactionList.isEmpty
-                                      ? Constant.showEmptyView(message: "Transaction history not found".tr, isDark: isDark)
-                                      : Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                          child: Container(
-                                            decoration: ShapeDecoration(
-                                              color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                            ),
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(8.0),
-                                              child: ListView.separated(
-                                                padding: EdgeInsets.zero,
-                                                shrinkWrap: true,
-                                                itemCount: controller.walletTransactionList.length,
-                                                itemBuilder: (context, index) {
-                                                  WalletTransactionModel walletTractionModel = controller.walletTransactionList[index];
-                                                  return transactionCard(controller, isDark, walletTractionModel);
-                                                },
-                                                separatorBuilder: (BuildContext context, int index) {
-                                                  return Padding(
-                                                    padding: const EdgeInsets.symmetric(vertical: 5),
-                                                    child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                  );
-                                                },
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                  controller.withdrawalList.isEmpty
-                                      ? Constant.showEmptyView(message: "Transaction history not found".tr, isDark: isDark)
-                                      : Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                          child: Container(
-                                            decoration: ShapeDecoration(
-                                              color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                            ),
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(8.0),
-                                              child: ListView.separated(
-                                                padding: EdgeInsets.zero,
-                                                shrinkWrap: true,
-                                                itemCount: controller.withdrawalList.length,
-                                                itemBuilder: (context, index) {
-                                                  WithdrawalModel walletTractionModel = controller.withdrawalList[index];
-                                                  return transactionCardWithdrawal(controller, isDark, walletTractionModel);
-                                                },
-                                                separatorBuilder: (BuildContext context, int index) {
-                                                  return Padding(
-                                                    padding: const EdgeInsets.symmetric(vertical: 5),
-                                                    child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                  );
-                                                },
-                                              ),
-                                            ),
-                                          ),
-                                        ),
+                                  WalletEarningsTab(controller: controller, isDark: isDark),
+                                  WalletCommissionsTab(controller: controller, isDark: isDark),
+                                  WalletPayoutsTab(controller: controller, isDark: isDark),
                                 ],
                               ),
                             ),
@@ -661,143 +606,6 @@ class WalletScreen extends StatelessWidget {
               ),
             );
           },
-        ),
-      ),
-    );
-  }
-
-  InkWell transactionCardWithdrawal(WalletController controller, isDark, WithdrawalModel transactionModel) {
-    return InkWell(
-      onTap: () async {},
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
-          children: [
-            Container(
-              decoration: ShapeDecoration(
-                shape: RoundedRectangleBorder(
-                  side: BorderSide(width: 1, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: Padding(padding: const EdgeInsets.all(16), child: SvgPicture.asset("assets/icons/ic_debit.svg", height: 16, width: 16)),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              transactionModel.note.toString(),
-                              style: TextStyle(fontSize: 16, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800),
-                            ),
-                            Text(
-                              "(${transactionModel.withdrawMethod!.capitalizeString()})",
-                              style: TextStyle(fontSize: 14, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w600, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        "-${Constant.amountShow(amount: transactionModel.amount!.isEmpty ? "0.0" : transactionModel.amount.toString())}",
-                        style: const TextStyle(fontSize: 16, fontFamily: AppThemeData.medium, color: AppThemeData.danger300),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          transactionModel.paymentStatus.toString(),
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontFamily: AppThemeData.semiBold,
-                            fontWeight: FontWeight.w600,
-                            color: transactionModel.paymentStatus == "Success"
-                                ? AppThemeData.success400
-                                : transactionModel.paymentStatus == "Pending"
-                                ? AppThemeData.primary300
-                                : AppThemeData.danger300,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        Constant.timestampToDateTime(transactionModel.paidDate!),
-                        style: TextStyle(fontSize: 12, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, color: isDark ? AppThemeData.grey200 : AppThemeData.grey700),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  InkWell transactionCard(WalletController controller, isDark, WalletTransactionModel transactionModel) {
-    return InkWell(
-      onTap: () async {
-        await FireStoreUtils.getOrderByOrderId(transactionModel.orderId.toString()).then((value) {
-          if (value != null) {
-            Get.to(const OrderDetailsScreen(), arguments: {"orderModel": value});
-          }
-        });
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
-          children: [
-            Container(
-              decoration: ShapeDecoration(
-                shape: RoundedRectangleBorder(
-                  side: BorderSide(width: 1, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: transactionModel.isTopup == false ? SvgPicture.asset("assets/icons/ic_debit.svg", height: 16, width: 16) : SvgPicture.asset("assets/icons/ic_credit.svg", height: 16, width: 16),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          transactionModel.note.toString(),
-                          style: TextStyle(fontSize: 16, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800),
-                        ),
-                      ),
-                      Text(
-                        transactionModel.isTopup == false
-                            ? "-${Constant.amountShow(amount: transactionModel.amount.toString(), currency: controller.currencyForTransaction(transactionModel))}"
-                            : Constant.amountShow(amount: transactionModel.amount.toString(), currency: controller.currencyForTransaction(transactionModel)),
-                        style: TextStyle(fontSize: 16, fontFamily: AppThemeData.medium, color: transactionModel.isTopup == true ? AppThemeData.success400 : AppThemeData.danger300),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    Constant.timestampToDateTime(transactionModel.date!),
-                    style: TextStyle(fontSize: 12, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, color: isDark ? AppThemeData.grey200 : AppThemeData.grey700),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ),
       ),
     );
