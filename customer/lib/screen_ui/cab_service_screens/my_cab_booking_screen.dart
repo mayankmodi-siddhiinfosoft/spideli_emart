@@ -4,255 +4,104 @@ import 'package:customer/payment/create_razor_pay_order_model.dart';
 import 'package:customer/payment/rozorpay_conroller.dart';
 import 'package:customer/screen_ui/auth_screens/login_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
-import 'package:customer/themes/round_button_fill.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+
 import '../../constant/constant.dart';
 import '../../controllers/my_cab_booking_controller.dart';
-import '../../controllers/theme_controller.dart';
-import '../../themes/app_them_data.dart';
-import 'package:dotted_border/dotted_border.dart';
+import 'widget/cab_ride_options_widgets.dart';
 
 import 'cab_order_details.dart';
 
+/// Ride history (archetype F — booking history): DS pill tabs over route
+/// cards that read as A → B with a status chip, the trip OTP and an inline
+/// "Pay Now" when the fare is still open.
 class MyCabBookingScreen extends StatelessWidget {
   const MyCabBookingScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-
     return GetX(
       init: MyCabBookingController(),
       builder: (controller) {
+        final c = context.dsColors;
         return DefaultTabController(
           // length: controller.tabTitles.length,
           // initialIndex: controller.tabTitles.indexOf(controller.selectedTab.value),
           length: controller.tabKeys.length,
           initialIndex: controller.tabKeys.indexOf(controller.selectedTab.value),
           child: Scaffold(
-            appBar: AppBar(
-              automaticallyImplyLeading: false,
-              backgroundColor: AppThemeData.primary300,
-              title: Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(children: [const SizedBox(width: 10), Text("Ride History".tr, style: AppThemeData.boldTextStyle(fontSize: 18, color: AppThemeData.grey900))]),
-              ),
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(48),
-                child: TabBar(
-                  isScrollable: false,
-                  onTap: (index) {
-                    controller.selectTab(controller.tabKeys[index]);
-                  },
-                  indicatorColor: AppThemeData.taxiBooking500,
-                  labelColor: AppThemeData.taxiBooking500,
-                  unselectedLabelColor: AppThemeData.taxiBooking500,
-                  labelStyle: AppThemeData.boldTextStyle(fontSize: 14),
-                  unselectedLabelStyle: AppThemeData.mediumTextStyle(fontSize: 14),
-                  tabs:
-                      controller.tabKeys
-                          .map(
-                            (key) => Tab(
-                              child: SizedBox.expand(
-                                child: Center(
-                                  child: Text(
-                                    controller.getLocalizedTabTitle(key),
-                                    textAlign: TextAlign.center,
-                                    overflow: TextOverflow.visible, // 👈 show full text
-                                  ),
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                ),
+            backgroundColor: c.background,
+            appBar: DsAppBar(
+              title: "Ride History".tr,
+              showBack: false,
+              bottom: DsTabBar(
+                scrollable: controller.tabKeys.length > 3,
+                onTap: (index) {
+                  controller.selectTab(controller.tabKeys[index]);
+                },
+                tabs: controller.tabKeys.map((key) => controller.getLocalizedTabTitle(key)).toList(),
               ),
             ),
-            body:
-                controller.isLoading.value
-                    ? Constant.loader()
-                    : Constant.userModel == null
-                    ? Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Text("Please Log In to Continue".tr, style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold)),
-                          const SizedBox(height: 5),
-                          Text(
-                            "You’re not logged in. Please sign in to access your account and explore all features.".tr,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                          ),
-                          const SizedBox(height: 20),
-                          RoundedButtonFill(
-                            title: "Log in".tr,
-                            width: 55,
-                            height: 5.5,
-                            color: AppThemeData.primary300,
-                            textColor: AppThemeData.grey50,
-                            onPress: () async {
-                              Get.offAll(const LoginScreen());
-                            },
-                          ),
-                        ],
-                      ),
-                    )
-                    : TabBarView(
-                      children:
-                          controller.tabKeys.map((title) {
-                            final orders = controller.getOrdersForTab(title);
+            body: controller.isLoading.value
+                ? const DsSkeletonList(itemCount: 4, leading: false)
+                : Constant.userModel == null
+                ? DsEmptyState(
+                    icon: Icons.lock_outline_rounded,
+                    title: "Please Log In to Continue".tr,
+                    message: "You’re not logged in. Please sign in to access your account and explore all features.".tr,
+                    actionLabel: "Log in".tr,
+                    actionIcon: Icons.login_rounded,
+                    onAction: () async {
+                      Get.offAll(const LoginScreen());
+                    },
+                  )
+                : TabBarView(
+                    children: controller.tabKeys.map((title) {
+                      final orders = controller.getOrdersForTab(title);
 
-                            if (orders.isEmpty) {
-                              return Center(child: Text("No order found".tr, style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)));
-                            }
+                      if (orders.isEmpty) {
+                        return DsEmptyState(icon: Icons.local_taxi_outlined, title: "No order found".tr, compact: true);
+                      }
 
-                            return ListView.builder(
-                              padding: const EdgeInsets.all(16),
-                              itemCount: orders.length,
-                              itemBuilder: (context, index) {
-                                CabOrderModel order = orders[index];
-                                return GestureDetector(
-                                  onTap: () {
-                                    Get.to(() => CabOrderDetails(), arguments: {"cabOrderModel": order});
-                                  },
-                                  child: Container(
-                                    margin: const EdgeInsets.only(bottom: 16),
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                                      borderRadius: BorderRadius.circular(15),
-                                      border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          "${'Booking Date:'.tr} ${controller.formatDate(order.scheduleDateTime!)}".tr,
-                                          textAlign: TextAlign.start,
-                                          style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                                        ),
-                                        Row(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Column(
-                                              children: [
-                                                Icon(Icons.stop_circle_outlined, color: Colors.green),
-                                                DottedBorder(
-                                                  options: CustomPathDottedBorderOptions(
-                                                    color: Colors.grey.shade400,
-                                                    strokeWidth: 2,
-                                                    dashPattern: [4, 4],
-                                                    customPath:
-                                                        (size) =>
-                                                            Path()
-                                                              ..moveTo(size.width / 2, 0)
-                                                              ..lineTo(size.width / 2, size.height),
-                                                  ),
-                                                  child: const SizedBox(width: 20, height: 55),
-                                                ),
-                                                Icon(Icons.radio_button_checked, color: Colors.red),
-                                              ],
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Row(
-                                                    children: [
-                                                      // Source Location Name
-                                                      Expanded(
-                                                        child: Text(
-                                                          order.sourceLocationName.toString(),
-                                                          style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                                          maxLines: 2,
-                                                          overflow: TextOverflow.ellipsis,
-                                                        ),
-                                                      ),
-                                                      const SizedBox(width: 8),
-                                                      Container(
-                                                        decoration: BoxDecoration(
-                                                          borderRadius: BorderRadius.circular(10),
-                                                          border: Border.all(color: AppThemeData.warning300, width: 1),
-                                                          color: AppThemeData.warning50,
-                                                        ),
-                                                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                                                        child: Text(
-                                                          order.status.toString(),
-                                                          style: AppThemeData.boldTextStyle(fontSize: 14, color: AppThemeData.warning500),
-                                                          overflow: TextOverflow.ellipsis,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  SizedBox(height: 15),
-                                                  DottedBorder(
-                                                    options: CustomPathDottedBorderOptions(
-                                                      color: Colors.grey.shade400,
-                                                      strokeWidth: 2,
-                                                      dashPattern: [4, 4],
-                                                      customPath:
-                                                          (size) =>
-                                                              Path()
-                                                                ..moveTo(0, size.height / 2) // start from left center
-                                                                ..lineTo(size.width, size.height / 2), // draw to right center
-                                                    ),
-                                                    child: const SizedBox(width: 295, height: 3),
-                                                  ),
-                                                  SizedBox(height: 15),
-                                                  Text(
-                                                    order.destinationLocationName.toString(),
-                                                    style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        if (Constant.isEnableOTPTripStart == true)
-                                          Row(
-                                            //mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            crossAxisAlignment: CrossAxisAlignment.center,
-                                            children: [
-                                              Text("Otp :".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800)),
-                                              SizedBox(width: 5),
-                                              Text(order.otpCode ?? '', style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                                            ],
-                                          ),
-                                        if (order.status == Constant.orderInTransit && order.paymentStatus == false) SizedBox(height: 14),
-                                        order.status == Constant.orderInTransit && order.paymentStatus == false
-                                            ? RoundedButtonFill(
-                                              title: "Pay Now".tr,
-                                              onPress: () async {
-                                                controller.selectedPaymentMethod.value = order.paymentMethod.toString();
-                                                await controller.preparePaymentFor(order);
-                                                controller.calculateTotalAmount(order);
-                                                Get.bottomSheet(paymentBottomSheet(context, controller, isDark), isScrollControlled: true, backgroundColor: Colors.transparent);
-                                              },
-                                              color: AppThemeData.primary300,
-                                              textColor: AppThemeData.grey900,
-                                            )
-                                            : SizedBox(),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
+                      return DsResponsive(
+                        maxWidth: DsLayout.contentMax,
+                        child: ListView.separated(
+                          padding: EdgeInsets.fromLTRB(context.dsLayout.gutter, DsSpace.lg, context.dsLayout.gutter, DsSpace.xxxl),
+                          itemCount: orders.length,
+                          separatorBuilder: (context, index) => const DsGap(DsSpace.md),
+                          itemBuilder: (context, index) {
+                            final CabOrderModel order = orders[index];
+                            return DsFadeSlideIn(
+                              index: index,
+                              child: _RideHistoryCard(
+                                order: order,
+                                controller: controller,
+                                onTap: () {
+                                  Get.to(() => CabOrderDetails(), arguments: {"cabOrderModel": order});
+                                },
+                                onPayNow: () async {
+                                  controller.selectedPaymentMethod.value = order.paymentMethod.toString();
+                                  await controller.preparePaymentFor(order);
+                                  controller.calculateTotalAmount(order);
+                                  Get.bottomSheet(paymentBottomSheet(context, controller), isScrollControlled: true, backgroundColor: Colors.transparent);
+                                },
+                              ),
                             );
-                          }).toList(),
-                    ),
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  ),
           ),
         );
       },
     );
   }
 
-  Widget paymentBottomSheet(BuildContext context, MyCabBookingController controller, bool isDark) {
+  Widget paymentBottomSheet(BuildContext context, MyCabBookingController controller) {
     return DraggableScrollableSheet(
       initialChildSize: 0.70,
       // Start height
@@ -263,220 +112,266 @@ class MyCabBookingScreen extends StatelessWidget {
       expand: false,
       //Prevents full-screen takeover
       builder: (context, scrollController) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-          decoration: BoxDecoration(color: isDark ? AppThemeData.grey500 : Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        // Built lazily by the sheet, after the enclosing observer has run:
+        // DsObserve tracks the settings observables read below.
+        return DsObserve(
+          builder: (context) {
+            final c = context.dsColors;
+            final t = context.dsText;
+            final hasPreferred = controller.walletSettingModel.value.isEnabled == true || controller.cashOnDeliverySettingModel.value.isEnabled == true;
+            return Container(
+              decoration: BoxDecoration(color: c.surfaceRaised, borderRadius: DsRadius.sheetTop),
+              padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xl),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Select Payment Method".tr, style: AppThemeData.mediumTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                  GestureDetector(
-                    onTap: () {
-                      Get.back();
-                    },
-                    child: Icon(Icons.close),
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: DsSpace.md),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(color: c.borderStrong, borderRadius: DsRadius.brPill),
+                    ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Expanded(
-                child: ListView(
-                  padding: EdgeInsets.zero,
-                  controller: scrollController,
-                  children: [
-                    Text("Preferred Payment".tr, textAlign: TextAlign.start, style: AppThemeData.boldTextStyle(fontSize: 15, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500)),
-                    const SizedBox(height: 10),
-                    if (controller.walletSettingModel.value.isEnabled == true || controller.cashOnDeliverySettingModel.value.isEnabled == true)
-                      Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(15),
-                          color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                          border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(8.0),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(child: Text("Select Payment Method".tr, style: t.title)),
+                      DsIconButton(
+                        icon: Icons.close_rounded,
+                        semanticLabel: "Close".tr,
+                        variant: DsIconButtonVariant.tonal,
+                        size: 36,
+                        onPressed: () {
+                          Get.back();
+                        },
+                      ),
+                    ],
+                  ),
+                  const DsGap(DsSpace.lg),
+                  Expanded(
+                    child: ListView(
+                      padding: EdgeInsets.zero,
+                      controller: scrollController,
+                      children: [
+                        if (hasPreferred) ...[
+                          Text("Preferred Payment".tr, textAlign: TextAlign.start, style: t.overline),
+                          const DsGap(DsSpace.sm),
+                          DsCard.outlined(
+                            padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
+                            child: Column(
+                              children: [
+                                Visibility(visible: controller.walletSettingModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.wallet, "assets/images/ic_wallet.png")),
+                                Visibility(visible: controller.cashOnDeliverySettingModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.cod, "assets/images/ic_cash.png")),
+                              ],
+                            ),
+                          ),
+                          const DsGap(DsSpace.lg),
+                          Text("Other Payment Options".tr, textAlign: TextAlign.start, style: t.overline),
+                          const DsGap(DsSpace.sm),
+                        ],
+                        DsCard.outlined(
+                          padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
                           child: Column(
                             children: [
+                              Visibility(visible: controller.stripeModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.stripe, "assets/images/stripe.png")),
+                              Visibility(visible: controller.payPalModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.paypal, "assets/images/paypal.png")),
+                              Visibility(visible: controller.payStackModel.value.isEnable == true, child: cardDecoration(controller, PaymentGateway.payStack, "assets/images/paystack.png")),
+                              Visibility(visible: controller.mercadoPagoModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.mercadoPago, "assets/images/mercado-pago.png")),
                               Visibility(
-                                visible: controller.walletSettingModel.value.isEnabled == true,
-                                child: cardDecoration(controller, PaymentGateway.wallet, isDark, "assets/images/ic_wallet.png"),
+                                visible: controller.flutterWaveModel.value.isEnable == true,
+                                child: cardDecoration(controller, PaymentGateway.flutterWave, "assets/images/flutterwave_logo.png"),
                               ),
-                              Visibility(
-                                visible: controller.cashOnDeliverySettingModel.value.isEnabled == true,
-                                child: cardDecoration(controller, PaymentGateway.cod, isDark, "assets/images/ic_cash.png"),
-                              ),
+                              Visibility(visible: controller.payFastModel.value.isEnable == true, child: cardDecoration(controller, PaymentGateway.payFast, "assets/images/payfast.png")),
+                              Visibility(visible: controller.razorPayModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.razorpay, "assets/images/razorpay.png")),
+                              Visibility(visible: controller.midTransModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.midTrans, "assets/images/midtrans.png")),
+                              Visibility(visible: controller.orangeMoneyModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.orangeMoney, "assets/images/orange_money.png")),
+                              Visibility(visible: controller.xenditModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.xendit, "assets/images/xendit.png")),
                             ],
                           ),
                         ),
-                      ),
-                    if (controller.walletSettingModel.value.isEnabled == true || controller.cashOnDeliverySettingModel.value.isEnabled == true)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 10),
-                          Text(
-                            "Other Payment Options".tr,
-                            textAlign: TextAlign.start,
-                            style: AppThemeData.boldTextStyle(fontSize: 15, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500),
-                          ),
-                          const SizedBox(height: 10),
-                        ],
-                      ),
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(15),
-                        color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                        border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Column(
-                          children: [
-                            Visibility(visible: controller.stripeModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.stripe, isDark, "assets/images/stripe.png")),
-                            Visibility(visible: controller.payPalModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.paypal, isDark, "assets/images/paypal.png")),
-                            Visibility(visible: controller.payStackModel.value.isEnable == true, child: cardDecoration(controller, PaymentGateway.payStack, isDark, "assets/images/paystack.png")),
-                            Visibility(
-                              visible: controller.mercadoPagoModel.value.isEnabled == true,
-                              child: cardDecoration(controller, PaymentGateway.mercadoPago, isDark, "assets/images/mercado-pago.png"),
-                            ),
-                            Visibility(
-                              visible: controller.flutterWaveModel.value.isEnable == true,
-                              child: cardDecoration(controller, PaymentGateway.flutterWave, isDark, "assets/images/flutterwave_logo.png"),
-                            ),
-                            Visibility(visible: controller.payFastModel.value.isEnable == true, child: cardDecoration(controller, PaymentGateway.payFast, isDark, "assets/images/payfast.png")),
-                            Visibility(visible: controller.razorPayModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.razorpay, isDark, "assets/images/razorpay.png")),
-                            Visibility(visible: controller.midTransModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.midTrans, isDark, "assets/images/midtrans.png")),
-                            Visibility(
-                              visible: controller.orangeMoneyModel.value.enable == true,
-                              child: cardDecoration(controller, PaymentGateway.orangeMoney, isDark, "assets/images/orange_money.png"),
-                            ),
-                            Visibility(visible: controller.xenditModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.xendit, isDark, "assets/images/xendit.png")),
-                          ],
-                        ),
-                      ),
+                        const DsGap(DsSpace.xl),
+                      ],
                     ),
-                    SizedBox(height: 20),
-                  ],
-                ),
-              ),
-              RoundedButtonFill(
-                title: "Continue".tr,
-                color: AppThemeData.primary300,
-                textColor: AppThemeData.grey900,
-                onPress: () async {
-                  if (controller.selectedPaymentMethod.value.isEmpty) {
-                    ShowToastDialog.showToast("Please select a payment method".tr);
-                  } else {
-                    if (controller.selectedPaymentMethod.value == PaymentGateway.stripe.name) {
-                      controller.stripeMakePayment(amount: controller.totalAmount.value.toString());
-                    } else if (controller.selectedPaymentMethod.value == PaymentGateway.paypal.name) {
-                      controller.paypalPaymentSheet(controller.totalAmount.value.toString(), context);
-                    } else if (controller.selectedPaymentMethod.value == PaymentGateway.payStack.name) {
-                      controller.payStackPayment(controller.totalAmount.value.toString());
-                    } else if (controller.selectedPaymentMethod.value == PaymentGateway.mercadoPago.name) {
-                      controller.mercadoPagoMakePayment(context: context, amount: controller.totalAmount.value.toString());
-                    } else if (controller.selectedPaymentMethod.value == PaymentGateway.flutterWave.name) {
-                      controller.flutterWaveInitiatePayment(context: context, amount: controller.totalAmount.value.toString());
-                    } else if (controller.selectedPaymentMethod.value == PaymentGateway.payFast.name) {
-                      controller.payFastPayment(context: context, amount: controller.totalAmount.value.toString());
-                    } else if (controller.selectedPaymentMethod.value == PaymentGateway.cod.name) {
-                      controller.completeOrder();
-                    } else if (controller.selectedPaymentMethod.value == PaymentGateway.wallet.name) {
-                      if (Constant.userModel!.walletAmount == null || Constant.userModel!.walletAmount! < controller.totalAmount.value) {
-                        ShowToastDialog.showToast("You do not have sufficient wallet balance".tr);
+                  ),
+                  DsButton.primary(
+                    label: "Continue".tr,
+                    size: DsButtonSize.lg,
+                    expand: true,
+                    onPressed: () async {
+                      if (controller.selectedPaymentMethod.value.isEmpty) {
+                        ShowToastDialog.showToast("Please select a payment method".tr);
                       } else {
-                        controller.completeOrder();
-                      }
-                    } else if (controller.selectedPaymentMethod.value == PaymentGateway.midTrans.name) {
-                      controller.midtransMakePayment(context: context, amount: controller.totalAmount.value.toString());
-                    } else if (controller.selectedPaymentMethod.value == PaymentGateway.orangeMoney.name) {
-                      controller.orangeMakePayment(context: context, amount: controller.totalAmount.value.toString());
-                    } else if (controller.selectedPaymentMethod.value == PaymentGateway.xendit.name) {
-                      controller.xenditPayment(context, controller.totalAmount.value.toString());
-                    } else if (controller.selectedPaymentMethod.value == PaymentGateway.razorpay.name) {
-                      RazorPayController().createOrderRazorPay(amount: double.parse(controller.totalAmount.value.toString()), razorpayModel: controller.razorPayModel.value).then((value) {
-                        if (value == null) {
-                          Get.back();
-                          ShowToastDialog.showToast("Something went wrong, please contact admin.".tr);
+                        if (controller.selectedPaymentMethod.value == PaymentGateway.stripe.name) {
+                          controller.stripeMakePayment(amount: controller.totalAmount.value.toString());
+                        } else if (controller.selectedPaymentMethod.value == PaymentGateway.paypal.name) {
+                          controller.paypalPaymentSheet(controller.totalAmount.value.toString(), context);
+                        } else if (controller.selectedPaymentMethod.value == PaymentGateway.payStack.name) {
+                          controller.payStackPayment(controller.totalAmount.value.toString());
+                        } else if (controller.selectedPaymentMethod.value == PaymentGateway.mercadoPago.name) {
+                          controller.mercadoPagoMakePayment(context: context, amount: controller.totalAmount.value.toString());
+                        } else if (controller.selectedPaymentMethod.value == PaymentGateway.flutterWave.name) {
+                          controller.flutterWaveInitiatePayment(context: context, amount: controller.totalAmount.value.toString());
+                        } else if (controller.selectedPaymentMethod.value == PaymentGateway.payFast.name) {
+                          controller.payFastPayment(context: context, amount: controller.totalAmount.value.toString());
+                        } else if (controller.selectedPaymentMethod.value == PaymentGateway.cod.name) {
+                          controller.completeOrder();
+                        } else if (controller.selectedPaymentMethod.value == PaymentGateway.wallet.name) {
+                          if (Constant.userModel!.walletAmount == null || Constant.userModel!.walletAmount! < controller.totalAmount.value) {
+                            ShowToastDialog.showToast("You do not have sufficient wallet balance".tr);
+                          } else {
+                            controller.completeOrder();
+                          }
+                        } else if (controller.selectedPaymentMethod.value == PaymentGateway.midTrans.name) {
+                          controller.midtransMakePayment(context: context, amount: controller.totalAmount.value.toString());
+                        } else if (controller.selectedPaymentMethod.value == PaymentGateway.orangeMoney.name) {
+                          controller.orangeMakePayment(context: context, amount: controller.totalAmount.value.toString());
+                        } else if (controller.selectedPaymentMethod.value == PaymentGateway.xendit.name) {
+                          controller.xenditPayment(context, controller.totalAmount.value.toString());
+                        } else if (controller.selectedPaymentMethod.value == PaymentGateway.razorpay.name) {
+                          RazorPayController().createOrderRazorPay(amount: double.parse(controller.totalAmount.value.toString()), razorpayModel: controller.razorPayModel.value).then((value) {
+                            if (value == null) {
+                              Get.back();
+                              ShowToastDialog.showToast("Something went wrong, please contact admin.".tr);
+                            } else {
+                              CreateRazorPayOrderModel result = value;
+                              controller.openCheckout(amount: controller.totalAmount.value.toString(), orderId: result.id);
+                            }
+                          });
                         } else {
-                          CreateRazorPayOrderModel result = value;
-                          controller.openCheckout(amount: controller.totalAmount.value.toString(), orderId: result.id);
+                          ShowToastDialog.showToast("Please select payment method".tr);
                         }
-                      });
-                    } else {
-                      ShowToastDialog.showToast("Please select payment method".tr);
-                    }
-                  }
-                },
+                      }
+                    },
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
   }
 
-  Obx cardDecoration(MyCabBookingController controller, PaymentGateway value, isDark, String image) {
-    return Obx(
-      () => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Column(
-          children: [
-            InkWell(
+  /// One gateway row. [DsObserve] (not `Obx(() => Builder(...))`) so the
+  /// `selectedPaymentMethod` read below is tracked by the observer that is
+  /// actually running when it happens.
+  Widget cardDecoration(MyCabBookingController controller, PaymentGateway value, String image) {
+    return DsObserve(
+      builder: (context) {
+        final c = context.dsColors;
+        final t = context.dsText;
+        final selected = controller.selectedPaymentMethod.value == value.name;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              borderRadius: DsRadius.brMd,
               onTap: () {
                 controller.selectedPaymentMethod.value = value.name;
               },
-              child: Row(
-                children: [
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: ShapeDecoration(shape: RoundedRectangleBorder(side: const BorderSide(width: 1, color: Color(0xFFE5E7EB)), borderRadius: BorderRadius.circular(8))),
-                    child: Padding(padding: EdgeInsets.all(value.name == "payFast" ? 0 : 8.0), child: Image.asset(image)),
-                  ),
-                  const SizedBox(width: 10),
-                  value.name == "wallet"
-                      ? Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              value.name.capitalizeString(),
-                              textAlign: TextAlign.start,
-                              style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                            ),
-                            Text(
-                              Constant.amountShow(amount: Constant.userModel!.walletAmount == null ? '0.0' : Constant.userModel!.walletAmount.toString(), currency: RegionService.customerCurrency),
-                              textAlign: TextAlign.start,
-                              style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
-                            ),
-                          ],
-                        ),
-                      )
-                      : Expanded(
-                        child: Text(
-                          value.name.capitalizeString(),
-                          textAlign: TextAlign.start,
-                          style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                        ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: DsSpace.xs, vertical: DsSpace.xs),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        borderRadius: DsRadius.brSm,
+                        border: Border.all(color: selected ? c.brand : c.border),
+                        color: c.surface,
                       ),
-                  const Expanded(child: SizedBox()),
-                  Radio(
-                    value: value.name,
-                    groupValue: controller.selectedPaymentMethod.value,
-                    activeColor: isDark ? AppThemeData.primary300 : AppThemeData.primary300,
-                    onChanged: (value) {
-                      controller.selectedPaymentMethod.value = value.toString();
-                    },
-                  ),
-                ],
+                      child: Padding(padding: EdgeInsets.all(value.name == "payFast" ? 0 : DsSpace.sm), child: Image.asset(image)),
+                    ),
+                    const DsGap(DsSpace.md),
+                    value.name == "wallet"
+                        ? Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(value.name.capitalizeString(), textAlign: TextAlign.start, style: t.bodyStrong),
+                                Text(
+                                  Constant.amountShow(amount: Constant.userModel!.walletAmount == null ? '0.0' : Constant.userModel!.walletAmount.toString(), currency: RegionService.customerCurrency),
+                                  textAlign: TextAlign.start,
+                                  style: t.labelSm.withColor(c.brandStrong).tabular,
+                                ),
+                              ],
+                            ),
+                          )
+                        : Expanded(
+                            child: Text(value.name.capitalizeString(), textAlign: TextAlign.start, style: t.bodyStrong),
+                          ),
+                    Radio(
+                      value: value.name,
+                      groupValue: controller.selectedPaymentMethod.value,
+                      activeColor: c.brand,
+                      onChanged: (value) {
+                        controller.selectedPaymentMethod.value = value.toString();
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// One ride in the history: date + status, the A → B route, the trip OTP and
+/// the outstanding-fare action.
+class _RideHistoryCard extends StatelessWidget {
+  final CabOrderModel order;
+  final MyCabBookingController controller;
+  final VoidCallback onTap;
+  final Future<void> Function() onPayNow;
+
+  const _RideHistoryCard({required this.order, required this.controller, required this.onTap, required this.onPayNow});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final showPay = order.status == Constant.orderInTransit && order.paymentStatus == false;
+    return DsCard.outlined(
+      onTap: onTap,
+      padding: const EdgeInsets.all(DsSpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text("${'Booking Date:'.tr} ${controller.formatDate(order.scheduleDateTime!)}".tr, textAlign: TextAlign.start, style: t.labelSm),
+              ),
+              const DsGap(DsSpace.sm),
+              DsStatusChip(label: order.status.toString(), status: order.status),
+            ],
+          ),
+          const DsGap(DsSpace.md),
+          CabRouteRail(source: order.sourceLocationName.toString(), destination: order.destinationLocationName.toString()),
+          if (Constant.isEnableOTPTripStart == true) ...[
+            const DsGap(DsSpace.md),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text("Otp :".tr, style: t.bodySecondary),
+                const DsGap(DsSpace.sm),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
+                  decoration: BoxDecoration(color: c.brandSoft, borderRadius: DsRadius.brSm),
+                  child: Text(order.otpCode ?? '', style: t.titleSm.withColor(c.brandStrong).tabular),
+                ),
+              ],
+            ),
           ],
-        ),
+          if (showPay) ...[const DsGap(DsSpace.lg), DsButton.primary(label: "Pay Now".tr, icon: Icons.account_balance_wallet_outlined, expand: true, onPressed: () => onPayNow())],
+        ],
       ),
     );
   }

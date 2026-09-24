@@ -1,55 +1,52 @@
 import 'package:customer/utils/region_service.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/screen_ui/on_demand_service/provider_screen.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
-import '../../controllers/theme_controller.dart';
 import '../../models/provider_serivce_model.dart';
 import '../../controllers/on_demand_details_controller.dart';
-import '../../themes/app_them_data.dart';
-import '../../themes/round_button_fill.dart';
 import '../auth_screens/login_screen.dart';
 import 'on_demand_booking_screen.dart';
 
+/// Archetype B – service detail: media hero under a transparent bar, an
+/// identity block, segmented About / Gallery / Review tabs and a sticky CTA.
 class OnDemandDetailsScreen extends StatelessWidget {
   const OnDemandDetailsScreen({super.key});
 
+  static const List<String> _tabs = ["About", "Gallery", "Review"];
+
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX<OnDemandDetailsController>(
       init: OnDemandDetailsController(),
       builder: (controller) {
+        final c = context.dsColors;
+        final bool isOpen = controller.isOpen.value;
+
         return Scaffold(
-          body: buildSliverScrollView(context, controller, controller.provider, controller.userModel, isDark),
+          backgroundColor: c.background,
+          body: buildSliverScrollView(context, controller, controller.provider, isOpen),
           bottomNavigationBar:
-              controller.isOpen.value == false
+              isOpen == false
                   ? SizedBox()
-                  : Padding(
-                    padding: const EdgeInsets.all(20.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        RoundedButtonFill(
-                          title: "Book Now".tr,
-                          color: AppThemeData.primary300,
-                          textColor: AppThemeData.grey50,
-                          onPress: () async {
-                            if (Constant.userModel == null) {
-                              Get.offAll(const LoginScreen());
-                            } else {
-                              print("providerModel ::::::::${controller.provider.title ?? 'No provider'}");
-                              print("categoryTitle ::::::: ${controller.categoryTitle.value}");
-                              Get.to(() => OnDemandBookingScreen(), arguments: {'providerModel': controller.provider, 'categoryTitle': controller.categoryTitle.value});
-                            }
-                          },
-                        ),
-                      ],
+                  : DsStickyBar(
+                    child: DsButton.primary(
+                      label: "Book Now".tr,
+                      icon: Icons.event_available_rounded,
+                      size: DsButtonSize.lg,
+                      expand: true,
+                      onPressed: () async {
+                        if (Constant.userModel == null) {
+                          Get.offAll(const LoginScreen());
+                        } else {
+                          print("providerModel ::::::::${controller.provider.title ?? 'No provider'}");
+                          print("categoryTitle ::::::: ${controller.categoryTitle.value}");
+                          Get.to(() => OnDemandBookingScreen(), arguments: {'providerModel': controller.provider, 'categoryTitle': controller.categoryTitle.value});
+                        }
+                      },
                     ),
                   ),
         );
@@ -57,282 +54,227 @@ class OnDemandDetailsScreen extends StatelessWidget {
     );
   }
 
-  SingleChildScrollView buildSliverScrollView(BuildContext context, OnDemandDetailsController controller, ProviderServiceModel provider, user, isDark) {
-    final width = MediaQuery.of(context).size.width;
+  Widget buildSliverScrollView(BuildContext context, OnDemandDetailsController controller, ProviderServiceModel provider, bool isOpen) {
+    final c = context.dsColors;
     final height = MediaQuery.of(context).size.height;
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Stack(
-            children: [
-              CachedNetworkImage(
-                imageUrl: provider.photos.isNotEmpty ? provider.photos.first : "",
-                placeholder: (context, url) => Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation(AppThemeData.primary300))),
-                errorWidget: (context, url, error) => Image.network(Constant.placeHolderImage, fit: BoxFit.fitWidth),
-                fit: BoxFit.fitWidth,
-                width: width,
-                height: height * 0.45,
-              ),
-              Positioned(top: height * 0.05, left: width * 0.03, child: _circleButton(context, icon: Icons.arrow_back, onTap: () => Get.back())),
-              Positioned(
-                top: height * 0.05,
-                right: width * 0.03,
-                child: Container(
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(40), color: controller.isOpen.value ? Colors.green : Colors.red),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  child: Text(controller.isOpen.value ? "Open".tr : "Close".tr, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14)),
-                ),
-              ),
-            ],
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+      slivers: [
+        SliverAppBar(
+          pinned: true,
+          expandedHeight: (height * 0.38).clamp(220.0, 360.0),
+          automaticallyImplyLeading: false,
+          backgroundColor: c.surface,
+          surfaceTintColor: Colors.transparent,
+          foregroundColor: c.textPrimary,
+          elevation: 0,
+          leading: Padding(
+            padding: const EdgeInsets.all(DsSpace.sm),
+            child: DsIconButton(
+              icon: Icons.arrow_back_rounded,
+              semanticLabel: 'Back'.tr,
+              variant: DsIconButtonVariant.filled,
+              onPressed: () => Get.back(),
+            ),
           ),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 15),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+              child: DsStatusChip(label: isOpen ? "Open".tr : "Close".tr, tone: isOpen ? DsTone.success : DsTone.danger, pulse: isOpen),
+            ),
+          ],
+          flexibleSpace: FlexibleSpaceBar(
+            background: Stack(
+              fit: StackFit.expand,
+              children: [
+                DsImage(url: provider.photos.isNotEmpty ? provider.photos.first : "", radius: 0, fit: BoxFit.cover, heroTag: 'service_${provider.id}'),
+                DecoratedBox(decoration: BoxDecoration(gradient: DsGradients.imageScrim)),
+              ],
+            ),
+          ),
+        ),
+        DsSliverResponsive(
+          maxWidth: DsLayout.wideMax,
+          top: DsSpace.lg,
+          bottom: DsSpace.xxl,
+          sliver: SliverToBoxAdapter(
             child: GetBuilder<OnDemandDetailsController>(
               builder: (controller) {
                 final provider = controller.provider;
                 final categoryTitle = controller.categoryTitle.value;
                 final subCategoryTitle = controller.subCategoryTitle.value;
                 // final tabString = controller.tabString.value;
+                final t = context.dsText;
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                  children: DsFadeSlideIn.stagger([
+                    Text(provider.title.toString(), style: t.headline),
+                    const DsGap(DsSpace.sm),
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Expanded(
-                          child: Text(
-                            provider.title.toString(),
-                            style: TextStyle(fontSize: 20, fontFamily: AppThemeData.regular, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black),
-                          ),
+                        Expanded(child: _price(context, provider)),
+                        DsBadge(
+                          label: provider.reviewsCount != 0 ? ((provider.reviewsSum ?? 0.0) / (provider.reviewsCount ?? 0.0)).toStringAsFixed(1) : '0',
+                          tone: DsTone.warning,
+                          icon: Icons.star_rounded,
                         ),
-                        Row(
-                          children: [
-                            provider.disPrice == "" || provider.disPrice == "0"
-                                ? Text(
-                                  provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.price ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.price ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
-                                  style: TextStyle(fontSize: 18, fontFamily: AppThemeData.regular, fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppThemeData.primary300),
-                                )
-                                : Row(
-                                  children: [
-                                    Text(
-                                      provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.disPrice ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.disPrice ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
-                                      style: TextStyle(fontSize: 18, fontFamily: AppThemeData.regular, fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppThemeData.primary300),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.only(left: 8.0),
-                                      child: Text(
-                                        provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.price ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.price ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.grey, decoration: TextDecoration.lineThrough),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                          ],
+                        const DsGap(DsSpace.sm),
+                        Text("(${provider.reviewsCount} ${'Reviews'.tr})", style: t.bodySm),
+                      ],
+                    ),
+                    if (categoryTitle.isNotEmpty) ...[
+                      const DsGap(DsSpace.sm),
+                      Text(categoryTitle, style: t.bodySecondary),
+                    ],
+                    const DsGap(DsSpace.md),
+                    Wrap(
+                      spacing: DsSpace.sm,
+                      runSpacing: DsSpace.sm,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (subCategoryTitle.isNotEmpty) DsBadge(label: subCategoryTitle, tone: DsTone.brand),
+                        DsButton.tonal(
+                          label: "View Timing".tr,
+                          icon: Icons.schedule_rounded,
+                          size: DsButtonSize.sm,
+                          onPressed: () {
+                            showModalBottomSheet(
+                              isScrollControlled: true,
+                              isDismissible: true,
+                              context: context,
+                              backgroundColor: Colors.transparent,
+                              enableDrag: true,
+                              builder: (context) => showTiming(context, controller),
+                            );
+                          },
                         ),
                       ],
                     ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 5),
-                            child: Text(categoryTitle, style: TextStyle(fontSize: 14, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400, color: isDark ? Colors.white : Colors.black)),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8.0),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.star, size: 16, color: AppThemeData.warning400),
-                              const SizedBox(width: 3),
-                              Text(
-                                provider.reviewsCount != 0 ? ((provider.reviewsSum ?? 0.0) / (provider.reviewsCount ?? 0.0)).toStringAsFixed(1) : '0',
-                                style: const TextStyle(letterSpacing: 0.5, fontSize: 16, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w500, color: AppThemeData.warning400),
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                "(${provider.reviewsCount} ${'Reviews'.tr})",
-                                style: TextStyle(letterSpacing: 0.5, fontSize: 16, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w500, color: isDark ? Colors.white : Colors.black),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 5),
-                      child: Row(
-                        children: [
-                          subCategoryTitle.isNotEmpty
-                              ? Container(
-                                decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: AppThemeData.primary300.withOpacity(0.20)),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                  child: Text(subCategoryTitle, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, fontFamily: AppThemeData.regular, color: AppThemeData.primary300)),
-                                ),
-                              )
-                              : Container(),
-                          const SizedBox(width: 10),
-                          Container(
-                            decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: Colors.green.withOpacity(0.20)),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              child: InkWell(
-                                onTap: () {
-                                  showModalBottomSheet(
-                                    isScrollControlled: true,
-                                    isDismissible: true,
-                                    context: context,
-                                    backgroundColor: Colors.transparent,
-                                    enableDrag: true,
-                                    builder: (context) => showTiming(context, controller, isDark),
-                                  );
-                                },
-                                child: Text("View Timing".tr, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, letterSpacing: 0.5)),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    const DsGap(DsSpace.md),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.location_on_outlined, color: isDark ? Colors.white : Colors.black, size: 20),
-                        const SizedBox(width: 5),
-                        Expanded(
-                          child: Text(
-                            provider.address.toString(),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400, color: isDark ? Colors.white : Colors.black),
-                          ),
-                        ),
+                        Icon(Icons.location_on_outlined, color: context.dsColors.iconDefault, size: 20),
+                        const DsGap(DsSpace.sm),
+                        Expanded(child: Text(provider.address.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySecondary)),
                       ],
                     ),
-
-                    const SizedBox(height: 10),
-                    const Divider(),
+                    const DsGap(DsSpace.lg),
+                    const DsDivider(spacing: DsSpace.xs),
+                    const DsGap(DsSpace.md),
                     _tabBar(controller),
                     Obx(() {
                       if (controller.tabString.value == "About") {
-                        return aboutTabViewWidget(controller, controller.provider, isDark);
+                        return aboutTabViewWidget(context, controller, controller.provider);
                       } else if (controller.tabString.value == "Gallery") {
                         return galleryTabViewWidget(controller);
                       } else {
-                        return reviewTabViewWidget(controller, isDark);
+                        return reviewTabViewWidget(context, controller);
                       }
                     }),
-                    const SizedBox(height: 15),
-                  ],
+                    const DsGap(DsSpace.lg),
+                  ]),
                 );
               },
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _circleButton(BuildContext context, {required IconData icon, required VoidCallback onTap}) {
-    return ClipOval(
-      child: Container(color: Colors.black.withOpacity(0.7), child: InkWell(onTap: onTap, child: Padding(padding: const EdgeInsets.all(8.0), child: Icon(icon, size: 30, color: Colors.white)))),
+  Widget _price(BuildContext context, ProviderServiceModel provider) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    if (provider.disPrice == "" || provider.disPrice == "0") {
+      return Text(
+        provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.price ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.price ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: t.title.withColor(c.brandStrong).tabular,
+      );
+    }
+    return Row(
+      children: [
+        Flexible(
+          child: Text(
+            provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.disPrice ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.disPrice ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: t.title.withColor(c.brandStrong).tabular,
+          ),
+        ),
+        const DsGap(DsSpace.sm),
+        Flexible(
+          child: Text(
+            provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.price ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.price ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: t.bodyStrong.strike.tabular,
+          ),
+        ),
+      ],
     );
   }
 
   Widget _tabBar(OnDemandDetailsController controller) {
-    return Obx(() => Row(children: [_tabItem("About", controller), _tabItem("Gallery", controller), _tabItem("Review", controller)]));
+    return Obx(() {
+      final current = controller.tabString.value;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: DsSpace.md),
+        child: DsSegmentedTabs(
+          segments: [for (final tab in _tabs) DsSegment(tab.tr)],
+          index: _tabs.contains(current) ? _tabs.indexOf(current) : 0,
+          onChanged: (i) => controller.changeTab(_tabs[i]),
+        ),
+      );
+    });
   }
 
-  Widget _tabItem(String title, OnDemandDetailsController controller) {
-    return GestureDetector(
-      onTap: () => controller.changeTab(title),
-      child: Container(
-        margin: const EdgeInsets.only(right: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(color: controller.tabString.value == title ? AppThemeData.primary300 : Colors.grey.shade200, borderRadius: BorderRadius.circular(10)),
-        child: Text(title.tr, style: TextStyle(fontWeight: FontWeight.bold, color: controller.tabString.value == title ? Colors.white : Colors.black)),
-      ),
-    );
-  }
-
-  Widget aboutTabViewWidget(OnDemandDetailsController controller, ProviderServiceModel providerModel, bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text((providerModel.description ?? '').tr, style: TextStyle(color: isDark ? Colors.white : Colors.black, fontSize: 14, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w500)),
-          const SizedBox(height: 10),
-          Obx(() {
-            final user = controller.userModel.value;
-            if (user == null) return const SizedBox();
-            return InkWell(
-              onTap: () {
-                Get.to(() => ProviderScreen(), arguments: {'providerId': user.id});
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: isDark ? AppThemeData.grey500 : Colors.grey.shade100, width: 1),
-                    color: isDark ? AppThemeData.grey500 : Colors.white,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Row(
-                            children: [
-                              CircleAvatar(radius: 30, backgroundImage: NetworkImage(user.profilePictureURL?.isNotEmpty == true ? user.profilePictureURL! : Constant.placeHolderImage)),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(user.fullName(), style: TextStyle(color: isDark ? Colors.white : Colors.black, fontFamily: AppThemeData.regular, fontSize: 14, fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 5),
-                                    Text(user.email ?? '', style: TextStyle(color: isDark ? Colors.white : Colors.black, fontFamily: AppThemeData.regular, fontSize: 14)),
-                                    const SizedBox(height: 10),
-                                    // Rating Box
-                                    Container(
-                                      decoration: BoxDecoration(color: AppThemeData.warning400, borderRadius: BorderRadius.circular(16)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(Icons.star, size: 16, color: Colors.white),
-                                          const SizedBox(width: 3),
-                                          Text(
-                                            double.parse(user.reviewsCount.toString()) != 0
-                                                ? (double.parse(user.reviewsSum.toString()) / double.parse(user.reviewsCount.toString())).toStringAsFixed(1)
-                                                : '0',
-                                            style: const TextStyle(letterSpacing: 0.5, fontSize: 12, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w500, color: Colors.white),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(Icons.chevron_right),
-                      ],
-                    ),
+  Widget aboutTabViewWidget(BuildContext context, OnDemandDetailsController controller, ProviderServiceModel providerModel) {
+    final t = context.dsText;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text((providerModel.description ?? '').tr, style: t.body.copyWith(height: 1.55)),
+        const DsGap(DsSpace.lg),
+        Obx(() {
+          final user = controller.userModel.value;
+          if (user == null) return const SizedBox();
+          final c = context.dsColors;
+          final rating =
+              double.parse(user.reviewsCount.toString()) != 0 ? (double.parse(user.reviewsSum.toString()) / double.parse(user.reviewsCount.toString())).toStringAsFixed(1) : '0';
+          return DsCard.outlined(
+            padding: const EdgeInsets.all(DsSpace.md),
+            semanticLabel: user.fullName(),
+            onTap: () {
+              Get.to(() => ProviderScreen(), arguments: {'providerId': user.id});
+            },
+            child: Row(
+              children: [
+                DsAvatar(imageUrl: user.profilePictureURL ?? '', name: user.fullName(), size: 56, ring: true),
+                const DsGap(DsSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(user.fullName(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                      const DsGap(DsSpace.xxs),
+                      Text(user.email ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySm),
+                      const DsGap(DsSpace.sm),
+                      DsBadge(label: rating, tone: DsTone.warning, icon: Icons.star_rounded, small: true),
+                    ],
                   ),
                 ),
-              ),
-            );
-          }),
-        ],
-      ),
+                Icon(Icons.chevron_right_rounded, color: c.textMuted),
+              ],
+            ),
+          );
+        }),
+      ],
     );
   }
 
@@ -340,7 +282,7 @@ class OnDemandDetailsScreen extends StatelessWidget {
     final photos = controller.provider.photos;
 
     if (photos.isEmpty) {
-      return Center(child: Text("No Image Found".tr));
+      return DsEmptyState(compact: true, icon: Icons.photo_library_outlined, title: "No Image Found".tr);
     }
 
     return GridView.builder(
@@ -348,33 +290,21 @@ class OnDemandDetailsScreen extends StatelessWidget {
       shrinkWrap: true,
       padding: EdgeInsets.zero,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 0, crossAxisSpacing: 8, mainAxisExtent: 180),
+      gridDelegate: DsLayout.gridDelegate(maxItemWidth: 220, mainAxisExtent: 170),
       itemBuilder: (context, index) {
         final imageUrl = photos[index];
-        return Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: CachedNetworkImage(
-              imageUrl: imageUrl,
-              height: 60,
-              width: 60,
-              imageBuilder: (context, imageProvider) => Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), image: DecorationImage(image: imageProvider, fit: BoxFit.cover))),
-              placeholder: (context, url) => Center(child: CircularProgressIndicator.adaptive(valueColor: AlwaysStoppedAnimation(AppThemeData.primary300))),
-              errorWidget: (context, url, error) => Image.network(Constant.placeHolderImage, fit: BoxFit.cover),
-              fit: BoxFit.cover,
-            ),
-          ),
-        );
+        return DsFadeSlideIn(index: index, child: DsImage(url: imageUrl, radius: DsRadius.md, fit: BoxFit.cover));
       },
     );
   }
 
-  Widget reviewTabViewWidget(OnDemandDetailsController controller, bool isDark) {
+  Widget reviewTabViewWidget(BuildContext context, OnDemandDetailsController controller) {
     final reviews = controller.ratingService;
+    final c = context.dsColors;
+    final t = context.dsText;
 
     if (reviews.isEmpty) {
-      return SizedBox(height: 200, child: Center(child: Text("No review Found".tr, style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900))));
+      return DsEmptyState(compact: true, icon: Icons.reviews_outlined, title: "No review Found".tr);
     }
 
     return ListView.builder(
@@ -384,45 +314,37 @@ class OnDemandDetailsScreen extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       itemBuilder: (context, index) {
         final review = reviews[index];
-        return Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: Container(
-            clipBehavior: Clip.antiAlias,
-            decoration: ShapeDecoration(
-              color: isDark ? AppThemeData.grey700 : AppThemeData.grey50,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              shadows: const [BoxShadow(color: Color(0x0A000000), blurRadius: 32, offset: Offset(0, 0), spreadRadius: 0)],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(review.uname ?? '', style: TextStyle(fontSize: 16, letterSpacing: 1, fontWeight: FontWeight.w600, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                      Text(
-                        review.createdAt != null ? DateFormat('dd MMM').format(review.createdAt!.toDate()) : '',
-                        style: TextStyle(fontSize: 12, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  RatingBar.builder(
-                    initialRating: double.tryParse(review.rating.toString()) ?? 0,
-                    direction: Axis.horizontal,
-                    itemSize: 20,
-                    ignoreGestures: true,
-                    itemPadding: const EdgeInsets.symmetric(horizontal: 4.0),
-                    itemBuilder: (context, _) => Icon(Icons.star, color: AppThemeData.primary300),
-                    onRatingUpdate: (rate) {},
-                  ),
-                  const Divider(),
-                  const SizedBox(height: 5),
-                  Text(review.comment ?? '', style: TextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
+        return DsFadeSlideIn(
+          index: index,
+          child: DsCard.outlined(
+            margin: const EdgeInsets.only(bottom: DsSpace.md),
+            padding: const EdgeInsets.all(DsSpace.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    DsAvatar(name: review.uname ?? '', size: 36),
+                    const DsGap(DsSpace.sm),
+                    Expanded(child: Text(review.uname ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodyStrong)),
+                    Text(review.createdAt != null ? DateFormat('dd MMM').format(review.createdAt!.toDate()) : '', style: t.caption),
+                  ],
+                ),
+                const DsGap(DsSpace.sm),
+                RatingBar.builder(
+                  initialRating: double.tryParse(review.rating.toString()) ?? 0,
+                  direction: Axis.horizontal,
+                  itemSize: 18,
+                  ignoreGestures: true,
+                  itemPadding: const EdgeInsets.only(right: DsSpace.xs),
+                  itemBuilder: (context, _) => Icon(Icons.star_rounded, color: c.tone(DsTone.warning).main),
+                  onRatingUpdate: (rate) {},
+                ),
+                if ((review.comment ?? '').isNotEmpty) ...[
+                  const DsGap(DsSpace.sm),
+                  Text(review.comment ?? '', style: t.body),
                 ],
-              ),
+              ],
             ),
           ),
         );
@@ -430,70 +352,48 @@ class OnDemandDetailsScreen extends StatelessWidget {
     );
   }
 
-  Widget showTiming(BuildContext context, OnDemandDetailsController controller, bool isDark) {
+  Widget showTiming(BuildContext context, OnDemandDetailsController controller) {
     final provider = controller.provider;
-    return Container(
-      decoration: BoxDecoration(color: isDark ? AppThemeData.grey300 : Colors.white, borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20))),
+    final t = context.dsText;
+    return DsSheet(
+      title: "Service Timing".tr,
+      showClose: true,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-            child: Text("Service Timing".tr, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: AppThemeData.regular, color: AppThemeData.primary300)),
+        children: [
+          Row(
+            children: [
+              Expanded(child: _timeCard(context, "Start Time : ".tr, provider.startTime.toString())),
+              const DsGap(DsSpace.md),
+              Expanded(child: _timeCard(context, "End Time : ".tr, provider.endTime.toString())),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(child: _timeCard(context, "Start Time : ".tr, provider.startTime.toString(), isDark)),
-                const SizedBox(width: 10),
-                Expanded(child: _timeCard(context, "End Time : ".tr, provider.endTime.toString(), isDark)),
-              ],
-            ),
+          const DsGap(DsSpace.xl),
+          Text("Service Days".tr, style: t.titleSm),
+          const DsGap(DsSpace.md),
+          Wrap(
+            spacing: DsSpace.sm,
+            runSpacing: DsSpace.sm,
+            children: provider.days.map((day) => DsBadge(label: day, tone: DsTone.brand, style: DsBadgeStyle.outline)).toList(),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-            child: Text("Service Days".tr, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: AppThemeData.regular, color: AppThemeData.primary300)),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Wrap(
-              spacing: 6.0,
-              runSpacing: 6.0,
-              children:
-                  provider.days
-                      .map(
-                        (day) => Card(
-                          elevation: 2,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6), side: BorderSide(color: isDark ? const Color(0XFF3c3a2e) : const Color(0XFFC3C5D1), width: 1)),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 20),
-                            child: Text(day, style: TextStyle(color: isDark ? const Color(0XFFa5a292) : const Color(0XFF5A5D6D))),
-                          ),
-                        ),
-                      )
-                      .toList(),
-            ),
-          ),
-          const SizedBox(height: 10),
         ],
       ),
     );
   }
 
-  Widget _timeCard(BuildContext context, String title, String value, bool isDark) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6), side: BorderSide(color: isDark ? const Color(0XFF3c3a2e) : const Color(0XFFC3C5D1), width: 1)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 20),
-        child: Row(
-          children: [
-            Text(title, style: TextStyle(color: isDark ? const Color(0XFFa5a292) : const Color(0XFF5A5D6D))),
-            Text(value, style: TextStyle(color: isDark ? const Color(0XFFa5a292) : const Color(0XFF5A5D6D))),
-          ],
-        ),
+  Widget _timeCard(BuildContext context, String title, String value) {
+    final t = context.dsText;
+    return DsCard.tinted(
+      tone: DsTone.brand,
+      padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: t.caption),
+          const DsGap(DsSpace.xxs),
+          Text(value, style: t.titleSm.tabular),
+        ],
       ),
     );
   }

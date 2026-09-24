@@ -1,11 +1,14 @@
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/cab_dashboard_controller.dart';
 import 'package:customer/controllers/theme_controller.dart';
-import 'package:customer/themes/app_them_data.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 
+/// Cab section shell: the tab host for Home / My Bookings / (Wallet) /
+/// Profile. The bar sits on a DS surface with a hairline separator and the
+/// active tab gets a soft brand well behind its icon.
 class CabDashboardScreen extends StatelessWidget {
   const CabDashboardScreen({super.key});
 
@@ -14,41 +17,57 @@ class CabDashboardScreen extends StatelessWidget {
     final themeController = Get.find<ThemeController>();
     return Obx(() {
       final isDark = themeController.isDark.value;
+      final c = DsColors.resolve(isDark);
       return GetX(
         init: CabDashboardController(),
         builder: (controller) {
           return Scaffold(
+            backgroundColor: c.background,
             body: controller.pageList[controller.selectedIndex.value],
-            bottomNavigationBar: BottomNavigationBar(
-              type: BottomNavigationBarType.fixed,
-              showUnselectedLabels: true,
-              showSelectedLabels: true,
-              selectedFontSize: 12,
-              selectedLabelStyle: const TextStyle(fontFamily: AppThemeData.bold),
-              unselectedLabelStyle: const TextStyle(fontFamily: AppThemeData.bold),
-              currentIndex: controller.selectedIndex.value,
-              backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-              selectedItemColor: isDark ? AppThemeData.primary300 : AppThemeData.primary300,
-              unselectedItemColor: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-              onTap: (int index) {
-                if (index == 0) {
-                  Get.put(CabDashboardController());
-                }
-                controller.selectedIndex.value = index;
-              },
-              items:
-                  Constant.walletSetting == false
-                      ? [
+            bottomNavigationBar: DecoratedBox(
+              decoration: BoxDecoration(
+                color: c.surface,
+                border: Border(top: BorderSide(color: c.divider)),
+                boxShadow: [
+                  BoxShadow(
+                    color: c.shadow.withValues(alpha: isDark ? 0.3 : 0.05),
+                    blurRadius: 16,
+                    offset: const Offset(0, -4),
+                  ),
+                ],
+              ),
+              child: BottomNavigationBar(
+                type: BottomNavigationBarType.fixed,
+                showUnselectedLabels: true,
+                showSelectedLabels: true,
+                selectedFontSize: 12,
+                unselectedFontSize: 12,
+                elevation: 0,
+                selectedLabelStyle: DsTypography.labelSm.copyWith(fontSize: 12),
+                unselectedLabelStyle: DsTypography.labelSm.copyWith(fontSize: 12, fontWeight: FontWeight.w500),
+                currentIndex: controller.selectedIndex.value,
+                backgroundColor: Colors.transparent,
+                selectedItemColor: c.brandStrong,
+                unselectedItemColor: c.textMuted,
+                onTap: (int index) {
+                  if (index == 0) {
+                    Get.put(CabDashboardController());
+                  }
+                  controller.selectedIndex.value = index;
+                },
+                items: Constant.walletSetting == false
+                    ? [
                         navigationBarItem(isDark, index: 0, assetIcon: "assets/icons/ic_home_cab.svg", label: 'Home'.tr, controller: controller),
                         navigationBarItem(isDark, index: 1, assetIcon: "assets/icons/ic_booking_cab.svg", label: 'My Bookings'.tr, controller: controller),
                         navigationBarItem(isDark, index: 2, assetIcon: "assets/icons/ic_profile.svg", label: 'Profile'.tr, controller: controller),
                       ]
-                      : [
+                    : [
                         navigationBarItem(isDark, index: 0, assetIcon: "assets/icons/ic_home_cab.svg", label: 'Home'.tr, controller: controller),
                         navigationBarItem(isDark, index: 1, assetIcon: "assets/icons/ic_booking_cab.svg", label: 'My Bookings'.tr, controller: controller),
                         navigationBarItem(isDark, index: 2, assetIcon: "assets/icons/ic_wallet_cab.svg", label: 'Wallet'.tr, controller: controller),
                         navigationBarItem(isDark, index: 3, assetIcon: "assets/icons/ic_profile.svg", label: 'Profile'.tr, controller: controller),
                       ],
+              ),
             ),
           );
         },
@@ -56,23 +75,18 @@ class CabDashboardScreen extends StatelessWidget {
     });
   }
 
-  BottomNavigationBarItem navigationBarItem(isDark, {required int index, required String label, required String assetIcon, required CabDashboardController controller}) {
+  BottomNavigationBarItem navigationBarItem(bool isDark, {required int index, required String label, required String assetIcon, required CabDashboardController controller}) {
+    final c = DsColors.resolve(isDark);
+    final selected = controller.selectedIndex.value == index;
+    final tint = selected ? c.brandStrong : c.textMuted;
     return BottomNavigationBarItem(
-      icon: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: SvgPicture.asset(
-          assetIcon,
-          height: 22,
-          width: 22,
-          color:
-              controller.selectedIndex.value == index
-                  ? isDark
-                      ? AppThemeData.primary300
-                      : AppThemeData.primary300
-                  : isDark
-                  ? AppThemeData.grey300
-                  : AppThemeData.grey600,
-        ),
+      icon: AnimatedContainer(
+        duration: DsMotion.base,
+        curve: DsMotion.emphasized,
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: 5),
+        decoration: BoxDecoration(color: selected ? c.brandSoft : Colors.transparent, borderRadius: DsRadius.brPill),
+        child: SvgPicture.asset(assetIcon, height: 22, width: 22, colorFilter: ColorFilter.mode(tint, BlendMode.srcIn)),
       ),
       label: label,
     );

@@ -1,5 +1,5 @@
 import 'package:customer/controllers/theme_controller.dart';
-import 'package:customer/themes/app_them_data.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
@@ -9,26 +9,44 @@ class MaintenanceModeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<ThemeController>(context);
+    // Keeps the screen rebuilding on theme change (unchanged behaviour).
+    Provider.of<ThemeController>(context);
+    final c = context.dsColors;
+    final t = context.dsText;
+    final warn = c.tone(DsTone.warning);
+
     return Scaffold(
-      backgroundColor: themeChange.isDark.value == true ? AppThemeData.surfaceDark : AppThemeData.surface,
-      body: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Center(child: Image.asset('assets/images/maintenance.png', height: 200, width: 200)),
-          const SizedBox(height: 20),
-          Text("We'll be back soon!".tr, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: themeChange.isDark.value ? AppThemeData.grey100 : AppThemeData.grey800)),
-          const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20.0),
-            child: Text(
-              "Sorry for the inconvenience but we're performing some maintenance at the moment. We'll be back online shortly!".tr,
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: themeChange.isDark.value ? AppThemeData.grey100 : AppThemeData.grey800),
+      backgroundColor: c.background,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(horizontal: context.dsLayout.gutter, vertical: DsSpace.xxxl),
+            child: DsResponsive(
+              maxWidth: 520,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: DsFadeSlideIn.stagger([
+                  Container(
+                    padding: const EdgeInsets.all(DsSpace.xxl),
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: warn.soft),
+                    child: Image.asset('assets/images/maintenance.png', height: 160, width: 160),
+                  ),
+                  const DsGap(DsSpace.xxl),
+                  DsBadge(label: "Scheduled maintenance".tr, tone: DsTone.warning, icon: Icons.build_rounded),
+                  const DsGap(DsSpace.md),
+                  Text("We'll be back soon!".tr, textAlign: TextAlign.center, style: t.display.withColor(c.textPrimary)),
+                  const DsGap(DsSpace.md),
+                  Text(
+                    "Sorry for the inconvenience but we're performing some maintenance at the moment. We'll be back online shortly!".tr,
+                    textAlign: TextAlign.center,
+                    style: t.bodyLg.withColor(c.textSecondary),
+                  ),
+                ]),
+              ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }

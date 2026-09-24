@@ -1,208 +1,251 @@
 import 'package:customer/screen_ui/auth_screens/login_screen.dart';
 import 'package:customer/screen_ui/parcel_service/parcel_order_details.dart';
-import 'package:customer/themes/round_button_fill.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../constant/constant.dart';
 import '../../controllers/parcel_my_booking_controller.dart';
-import '../../controllers/theme_controller.dart';
-import '../../themes/app_them_data.dart';
-import 'package:dotted_border/dotted_border.dart';
+import '../../models/parcel_order_model.dart';
 
+/// Parcel history (archetype F — booking history): pill tabs over a list of
+/// route cards. Every row reads as a shipment: a vertical sender → receiver
+/// rail, a status chip and the booking date.
 class MyBookingScreen extends StatelessWidget {
   const MyBookingScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-
     return GetX<ParcelMyBookingController>(
       init: ParcelMyBookingController(),
       builder: (controller) {
+        final bool loading = controller.isLoading.value;
+        final List<String> tabs = controller.tabTitles.toList();
         return DefaultTabController(
           length: controller.tabTitles.length,
           initialIndex: controller.tabTitles.indexOf(controller.selectedTab.value),
-          child: Scaffold(
-            appBar: AppBar(
-              automaticallyImplyLeading: false,
-              backgroundColor: AppThemeData.primary300,
-              title: Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(children: [const SizedBox(width: 10), Text("Parcel History".tr, style: AppThemeData.boldTextStyle(fontSize: 18, color: AppThemeData.grey900))]),
-              ),
-              bottom: TabBar(
+          child: DsScaffold(
+            appBar: DsAppBar(
+              title: "Parcel History".tr,
+              showBack: false,
+              bottom: DsTabBar(
+                tabs: tabs,
                 // don't re-subscribe onTap — just update selectedTab (optional)
                 onTap: (index) {
                   controller.selectTab(controller.tabTitles[index]);
                 },
-                indicatorColor: AppThemeData.parcelService500,
-                labelColor: AppThemeData.parcelService500,
-                unselectedLabelColor: AppThemeData.parcelService500,
-                labelStyle: AppThemeData.boldTextStyle(fontSize: 15),
-                unselectedLabelStyle: AppThemeData.mediumTextStyle(fontSize: 15),
-                tabs: controller.tabTitles.map((title) => Tab(child: Center(child: Text(title)))).toList(),
               ),
             ),
+            body: loading
+                ? const DsSkeletonList(itemCount: 4)
+                : Constant.userModel == null
+                ? const _LoginPrompt()
+                : TabBarView(
+                    children: tabs.map((title) {
+                      final orders = controller.getOrdersForTab(title);
 
-            body:
-                controller.isLoading.value
-                    ? Constant.loader()
-                    : Constant.userModel == null
-                    ? Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Text("Please Log In to Continue".tr, style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold)),
-                          const SizedBox(height: 5),
-                          Text(
-                            "You’re not logged in. Please sign in to access your account and explore all features.".tr,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                          ),
-                          const SizedBox(height: 20),
-                          RoundedButtonFill(
-                            title: "Log in".tr,
-                            width: 55,
-                            height: 5.5,
-                            color: AppThemeData.primary300,
-                            textColor: AppThemeData.grey50,
-                            onPress: () async {
-                              Get.offAll(const LoginScreen());
-                            },
-                          ),
-                        ],
-                      ),
-                    )
-                    : TabBarView(
-                      children:
-                          controller.tabTitles.map((title) {
-                            final orders = controller.getOrdersForTab(title);
+                      if (orders.isEmpty) {
+                        return DsEmptyState(
+                          icon: Icons.local_shipping_outlined,
+                          title: "No orders found".tr,
+                          message: "Your parcel bookings will show up here.".tr,
+                        );
+                      }
 
-                            if (orders.isEmpty) {
-                              return Center(child: Text("No orders found".tr, style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)));
-                            }
+                      final List<String> dates = [
+                        for (final order in orders)
+                          "${'Order Date:'.tr}${order.isSchedule == true ? controller.formatDate(order.createdAt!) : controller.formatDate(order.senderPickupDateTime!)}",
+                      ];
 
-                            return ListView.builder(
-                              padding: const EdgeInsets.all(16),
-                              itemCount: orders.length,
-                              itemBuilder: (context, index) {
-                                final order = orders[index];
-                                return GestureDetector(
-                                  onTap: () {
-                                    Get.to(() => const ParcelOrderDetails(), arguments: order);
-                                  },
-                                  child: Container(
-                                    margin: const EdgeInsets.only(bottom: 16),
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                                      borderRadius: BorderRadius.circular(15),
-                                      border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Padding(
-                                          padding: const EdgeInsets.only(bottom: 8.0),
-                                          child: Text(
-                                            "${'Order Date:'.tr}${order.isSchedule == true ? controller.formatDate(order.createdAt!) : controller.formatDate(order.senderPickupDateTime!)}",
-                                            style: AppThemeData.mediumTextStyle(fontSize: 14, color: AppThemeData.info400),
-                                          ),
-                                        ),
-                                        Row(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Column(
-                                              children: [
-                                                Image.asset("assets/images/image_parcel.png", height: 32, width: 32),
-                                                DottedBorder(
-                                                  options: CustomPathDottedBorderOptions(
-                                                    color: Colors.grey.shade400,
-                                                    strokeWidth: 2,
-                                                    dashPattern: [4, 4],
-                                                    customPath:
-                                                        (size) =>
-                                                            Path()
-                                                              ..moveTo(size.width / 2, 0)
-                                                              ..lineTo(size.width / 2, size.height),
-                                                  ),
-                                                  child: const SizedBox(width: 20, height: 95),
-                                                ),
-                                                Image.asset("assets/images/image_parcel.png", height: 32, width: 32),
-                                              ],
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  _infoSection(
-                                                    "Pickup Address (Sender):".tr,
-                                                    order.sender?.name ?? '',
-                                                    order.sender?.address ?? '',
-                                                    order.sender?.phone ?? '',
-                                                    // order.senderPickupDateTime != null
-                                                    //     ? "Pickup Time: ${controller.formatDate(order.senderPickupDateTime!)}"
-                                                    //     : '',
-                                                    order.status,
-                                                    isDark,
-                                                  ),
-                                                  const SizedBox(height: 16),
-                                                  _infoSection(
-                                                    "Delivery Address (Receiver):".tr,
-                                                    order.receiver?.name ?? '',
-                                                    order.receiver?.address ?? '',
-                                                    order.receiver?.phone ?? '',
-                                                    // order.receiverPickupDateTime != null
-                                                    //     ? "Delivery Time: ${controller.formatDate(order.receiverPickupDateTime!)}"
-                                                    //     : '',
-                                                    null,
-                                                    isDark,
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            );
-                          }).toList(),
-                    ),
+                      return ListView.builder(
+                        padding: EdgeInsets.fromLTRB(context.dsLayout.gutter, DsSpace.lg, context.dsLayout.gutter, DsSpace.xxxl),
+                        itemCount: orders.length,
+                        itemBuilder: (context, index) {
+                          return DsFadeSlideIn(
+                            index: index,
+                            child: _BookingCard(order: orders[index], dateLabel: dates[index]),
+                          );
+                        },
+                      );
+                    }).toList(),
+                  ),
           ),
         );
       },
     );
   }
+}
 
-  Widget _infoSection(String title, String name, String address, String phone, String? status, bool isDark) {
+/// Logged-out state for the history tab.
+class _LoginPrompt extends StatelessWidget {
+  const _LoginPrompt();
+
+  @override
+  Widget build(BuildContext context) {
+    return DsEmptyState(
+      icon: Icons.lock_outline_rounded,
+      title: "Please Log In to Continue".tr,
+      message: "You’re not logged in. Please sign in to access your account and explore all features.".tr,
+      actionLabel: "Log in".tr,
+      actionIcon: Icons.login_rounded,
+      onAction: () async {
+        Get.offAll(const LoginScreen());
+      },
+    );
+  }
+}
+
+/// One shipment: pickup → delivery rail, contacts and the live status chip.
+class _BookingCard extends StatelessWidget {
+  final ParcelOrderModel order;
+  final String dateLabel;
+
+  const _BookingCard({required this.order, required this.dateLabel});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard.outlined(
+      margin: const EdgeInsets.only(bottom: DsSpace.md),
+      padding: const EdgeInsets.all(DsSpace.lg),
+      semanticLabel: order.sender?.address ?? '',
+      onTap: () {
+        Get.to(() => const ParcelOrderDetails(), arguments: order);
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.event_outlined, size: 14, color: c.textMuted),
+              const DsGap(DsSpace.xs),
+              Expanded(child: Text(dateLabel, style: t.caption)),
+              if (order.status != null) DsStatusChip(label: order.status!.tr, status: order.status),
+            ],
+          ),
+          const DsGap(DsSpace.md),
+          _RouteBlock(order: order),
+        ],
+      ),
+    );
+  }
+}
+
+/// The sender → receiver rail shared by the list row.
+class _RouteBlock extends StatelessWidget {
+  final ParcelOrderModel order;
+
+  const _RouteBlock({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _RouteRail(),
+          const DsGap(DsSpace.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+              ParcelPartyBlock(
+                title: "Pickup Address (Sender):".tr,
+                name: order.sender?.name ?? '',
+                address: order.sender?.address ?? '',
+                phone: order.sender?.phone ?? '',
+              ),
+              const DsGap(DsSpace.lg),
+              ParcelPartyBlock(
+                title: "Delivery Address (Receiver):".tr,
+                name: order.receiver?.name ?? '',
+                address: order.receiver?.address ?? '',
+                phone: order.receiver?.phone ?? '',
+              ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Two dots joined by a dashed line, drawn with DS colors.
+class _RouteRail extends StatelessWidget {
+  const _RouteRail();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    return SizedBox(
+      width: 22,
+      child: Column(
+        children: [
+          Icon(Icons.trip_origin_rounded, size: 16, color: c.brandStrong),
+          Expanded(child: CustomPaint(size: const Size(2, 68), painter: _DashedLinePainter(color: c.border))),
+          Icon(Icons.place_rounded, size: 18, color: c.brandStrong),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashedLinePainter extends CustomPainter {
+  final Color color;
+
+  const _DashedLinePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    const double dash = 4;
+    const double gap = 4;
+    double y = 2;
+    while (y < size.height - 2) {
+      canvas.drawLine(Offset(size.width / 2, y), Offset(size.width / 2, (y + dash).clamp(0, size.height)), paint);
+      y += dash + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedLinePainter oldDelegate) => oldDelegate.color != color;
+}
+
+/// Name / address / phone block for a sender or receiver.
+class ParcelPartyBlock extends StatelessWidget {
+  final String title;
+  final String name;
+  final String address;
+  final String phone;
+
+  const ParcelPartyBlock({super.key, required this.title, required this.name, required this.address, required this.phone});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(title, style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900), maxLines: 1, overflow: TextOverflow.ellipsis),
+        Text(title, style: t.overline),
+        const DsGap(DsSpace.xxs),
+        if (name.isNotEmpty) Text(name, style: t.titleSm),
+        if (address.isNotEmpty) Text(address, style: t.bodySecondary),
+        if (phone.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: DsSpace.xxs),
+            child: Row(
+              children: [
+                Icon(Icons.call_outlined, size: 13, color: c.textMuted),
+                const DsGap(DsSpace.xs),
+                Text(phone, style: t.bodySm.tabular),
+              ],
             ),
-            if (status != null) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                decoration: BoxDecoration(color: AppThemeData.info50, border: Border.all(color: AppThemeData.info300), borderRadius: BorderRadius.circular(12)),
-                child: Text(status, style: AppThemeData.boldTextStyle(fontSize: 14, color: AppThemeData.info500)),
-              ),
-            ],
-          ],
-        ),
-        Text(name, style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-        Text(address, style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-        Text(phone, style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-        //Text(time, style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
+          ),
       ],
     );
   }

@@ -1,177 +1,150 @@
 import 'package:customer/controllers/cab_review_controller.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:get/get.dart';
-import '../../constant/constant.dart';
-import '../../controllers/theme_controller.dart';
-import '../../themes/app_them_data.dart';
-import '../../themes/round_button_fill.dart';
-import '../../themes/text_field_widget.dart';
-import '../../utils/network_image_widget.dart';
 
+import '../../themes/text_field_widget.dart';
+
+/// Rate the driver (archetype K — review): a gradient hero carrying the
+/// driver's avatar and vehicle, an overlapping rating card with a large star
+/// row, then the comment and a sticky submit bar.
 class CabReviewScreen extends StatelessWidget {
   const CabReviewScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-
     return GetX<CabReviewController>(
       init: CabReviewController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            centerTitle: true,
-            elevation: 0,
-            backgroundColor: AppThemeData.primary300,
-            leading: GestureDetector(onTap: () => Get.back(), child: Icon(Icons.arrow_back_ios, color: isDark ? Colors.white : Colors.black)),
-            title: Text(controller.ratingModel.value != null ? "Update Review".tr : "Add Review".tr, style: TextStyle(color: isDark ? Colors.white : Colors.black, fontSize: 16)),
-          ),
-          body: Obx(
-            () =>
-                controller.isLoading.value
-                    ? Constant.loader()
-                    : Padding(
-                      padding: const EdgeInsets.only(top: 20),
-                      child: Stack(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(left: 20, right: 20, top: 50, bottom: 20),
-                            child: Card(
-                              elevation: 2,
-                              color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              child: SingleChildScrollView(
-                                child: Padding(
-                                  padding: const EdgeInsets.only(top: 65),
-                                  child: Column(
-                                    children: [
-                                      // Driver Name
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 8.0),
-                                        child: Text(
-                                          controller.order.value!.driver?.fullName() ?? "",
-                                          style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontFamily: AppThemeData.medium, fontSize: 18),
-                                        ),
-                                      ),
-                                      // Car info
-                                      Builder(builder: (_) {
-                                        final sid = controller.order.value?.sectionId ?? '';
-                                        final vehicle = controller.driverUser.value?.vehicleDetails?[sid];
-                                        final vType = vehicle?['vehicleType']?.toString() ?? '';
-                                        final brand = vehicle?['carBrand']?.toString() ?? '';
-                                        final carModel = vehicle?['carModel']?.toString() ?? '';
-                                        final plate = vehicle?['carPlateNumber']?.toString() ?? '';
-                                        return Column(
-                                          children: [
-                                            if (vType.isNotEmpty)
-                                              Text(
-                                                vType,
-                                                style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontFamily: AppThemeData.medium),
-                                              ),
-                                            Row(
-                                              mainAxisAlignment: MainAxisAlignment.center,
-                                              children: [
-                                                if (plate.isNotEmpty)
-                                                  Text(
-                                                    plate.toUpperCase(),
-                                                    style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontFamily: AppThemeData.medium),
-                                                  ),
-                                                if (plate.isNotEmpty && (brand.isNotEmpty || carModel.isNotEmpty))
-                                                  const SizedBox(width: 8),
-                                                if (brand.isNotEmpty || carModel.isNotEmpty)
-                                                  Text(
-                                                    "$brand $carModel".trim(),
-                                                    style: TextStyle(color: isDark ? Colors.white : Colors.black38, fontFamily: AppThemeData.medium),
-                                                  ),
-                                              ],
-                                            ),
-                                          ],
-                                        );
-                                      }),
-
-                                      const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(color: Colors.grey)),
-
-                                      // Title
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 16),
-                                        child: Text('How is your trip?'.tr, style: TextStyle(fontSize: 18, color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, letterSpacing: 2)),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 8),
-                                        child: Text(
-                                          'Your feedback will help us improve \n driving experience better'.tr,
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(color: isDark ? Colors.white : Colors.black.withOpacity(0.60), letterSpacing: 0.8),
-                                        ),
-                                      ),
-
-                                      // Rating
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 20),
-                                        child: Text('Rate for'.tr, style: TextStyle(fontSize: 16, color: isDark ? Colors.white : Colors.black.withOpacity(0.60), letterSpacing: 0.8)),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 8),
-                                        child: Text(
-                                          controller.order.value!.driver?.fullName() ?? "",
-                                          style: TextStyle(fontSize: 18, color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, letterSpacing: 2),
-                                        ),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 10),
-                                        child: RatingBar.builder(
-                                          initialRating: controller.ratings.value,
-                                          minRating: 1,
-                                          direction: Axis.horizontal,
-                                          allowHalfRating: true,
-                                          itemCount: 5,
-                                          itemBuilder: (context, _) => const Icon(Icons.star, color: Colors.amber),
-                                          unratedColor: isDark ? AppThemeData.greyDark400 : AppThemeData.grey400,
-                                          onRatingUpdate: (rating) => controller.ratings.value = rating,
-                                        ),
-                                      ),
-
-                                      // Comment
-                                      Padding(padding: const EdgeInsets.all(20.0), child: TextFieldWidget(hintText: "Type comment....".tr, controller: controller.comment.value, maxLine: 5)),
-
-                                      // Submit Button
-                                      Padding(
-                                        padding: const EdgeInsets.all(20.0),
-                                        child: RoundedButtonFill(
-                                          title: controller.ratingModel.value != null ? "Update Review".tr : "Add Review".tr,
-                                          color: AppThemeData.primary300,
-                                          textColor: isDark ? Colors.white : Colors.black,
-                                          onPress: controller.submitReview,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          Align(
-                            alignment: Alignment.topCenter,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(60),
-                                color: Colors.white,
-                                boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.15), blurRadius: 8, spreadRadius: 6)],
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(60),
-                                child: NetworkImageWidget(imageUrl: controller.order.value?.driver?.profilePictureURL ?? '', fit: BoxFit.cover, height: 110, width: 110),
-                              ),
-                            ),
-                          ),
-                        ],
+        final isUpdate = controller.ratingModel.value != null;
+        final title = isUpdate ? "Update Review".tr : "Add Review".tr;
+        return Obx(
+          () => controller.isLoading.value
+              ? DsScaffold(title: title, onBack: () => Get.back(), body: const DsSkeletonDetail(mediaHeight: 180))
+              : DsScaffold.hero(
+                  title: title,
+                  onBack: () => Get.back(),
+                  hero: _DriverHero(controller: controller),
+                  heroOverlap: _RatingCard(controller: controller),
+                  slivers: [
+                    DsSliverResponsive(
+                      maxWidth: DsLayout.contentMax,
+                      top: DsSpace.lg,
+                      bottom: DsSpace.xxxl,
+                      sliver: SliverToBoxAdapter(
+                        child: DsFormSection(
+                          title: 'Your comment'.tr,
+                          icon: Icons.chat_bubble_outline_rounded,
+                          children: [
+                            Obx(() => TextFieldWidget(hintText: "Type comment....".tr, controller: controller.comment.value, maxLine: 5)),
+                            const DsGap(DsSpace.sm),
+                          ],
+                        ),
                       ),
                     ),
-          ),
+                  ],
+                  bottomBar: DsStickyBar(
+                    child: DsButton.primary(label: title, icon: Icons.star_rounded, size: DsButtonSize.lg, expand: true, onPressed: controller.submitReview),
+                  ),
+                ),
         );
       },
+    );
+  }
+}
+
+/// Driver avatar, name and vehicle on the gradient hero.
+class _DriverHero extends StatelessWidget {
+  final CabReviewController controller;
+
+  const _DriverHero({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.dsText;
+    return DsObserve(
+      builder: (_) {
+        final driverName = controller.order.value!.driver?.fullName() ?? "";
+        final sid = controller.order.value?.sectionId ?? '';
+        final vehicle = controller.driverUser.value?.vehicleDetails?[sid];
+        final vType = vehicle?['vehicleType']?.toString() ?? '';
+        final brand = vehicle?['carBrand']?.toString() ?? '';
+        final carModel = vehicle?['carModel']?.toString() ?? '';
+        final plate = vehicle?['carPlateNumber']?.toString() ?? '';
+        final car = "$brand $carModel".trim();
+        return Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.28)),
+              child: DsAvatar(imageUrl: controller.order.value?.driver?.profilePictureURL ?? '', name: driverName, size: 96),
+            ),
+            const DsGap(DsSpace.md),
+            Text(driverName, textAlign: TextAlign.center, style: t.headline.withColor(Colors.white)),
+            if (vType.isNotEmpty || car.isNotEmpty) ...[
+              const DsGap(DsSpace.xxs),
+              Text([if (vType.isNotEmpty) vType, if (car.isNotEmpty) car].join(' · '), textAlign: TextAlign.center, style: t.bodySm.withColor(Colors.white.withValues(alpha: 0.86))),
+            ],
+            if (plate.isNotEmpty) ...[
+              const DsGap(DsSpace.sm),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
+                decoration: BoxDecoration(
+                  borderRadius: DsRadius.brSm,
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
+                ),
+                child: Text(plate.toUpperCase(), style: t.label.withColor(Colors.white).tabular),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Overlapping card with the prompt and the 5-star row.
+class _RatingCard extends StatelessWidget {
+  final CabReviewController controller;
+
+  const _RatingCard({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final star = c.tone(DsTone.warning);
+    return DsCard(
+      padding: const EdgeInsets.symmetric(horizontal: DsSpace.xl, vertical: DsSpace.xxl),
+      child: Column(
+        children: [
+          Text('How is your trip?'.tr, textAlign: TextAlign.center, style: t.title),
+          const DsGap(DsSpace.sm),
+          Text('Your feedback will help us improve \n driving experience better'.tr, textAlign: TextAlign.center, style: t.bodySecondary),
+          const DsGap(DsSpace.xl),
+          Text('Rate for'.tr, textAlign: TextAlign.center, style: t.labelSm),
+          const DsGap(DsSpace.xs),
+          DsObserve(
+            builder: (_) => Text(controller.order.value!.driver?.fullName() ?? "", textAlign: TextAlign.center, style: t.titleSm),
+          ),
+          const DsGap(DsSpace.lg),
+          DsObserve(
+            builder: (_) => RatingBar.builder(
+              initialRating: controller.ratings.value,
+              minRating: 1,
+              direction: Axis.horizontal,
+              allowHalfRating: true,
+              itemCount: 5,
+              itemSize: 40,
+              glow: false,
+              itemBuilder: (context, _) => Icon(Icons.star_rounded, color: star.main),
+              unratedColor: c.borderStrong,
+              onRatingUpdate: (rating) => controller.ratings.value = rating,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,168 +1,165 @@
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/cart_controller.dart';
 import 'package:customer/models/coupon_model.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/responsive.dart';
-import 'package:customer/themes/text_field_widget.dart';
-import 'package:customer/widget/my_separator.dart';
-import 'package:dotted_border/dotted_border.dart';
+import 'package:customer/models/currency_model.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../../../controllers/theme_controller.dart';
+
 import '../../../themes/show_toast_dialog.dart';
 
+/// Archetype C — checkout helper. A redeem field pinned under the app bar,
+/// then coupons as tear-off tickets: the discount sits on a brand stub, the
+/// code and terms on the paper.
 class CouponListScreen extends StatelessWidget {
   const CouponListScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: CartController(),
       builder: (controller) {
-        return Scaffold(
-          backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-          appBar: AppBar(
-            backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-            centerTitle: false,
-            titleSpacing: 0,
-            title: Text("Coupon Code".tr, textAlign: TextAlign.start, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
+        final List<CouponModel> coupons = controller.couponList.toList();
+        return DsScaffold(
+          maxContentWidth: DsLayout.contentMax,
+          appBar: DsAppBar(
+            title: "Coupon Code".tr,
             bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(55),
+              preferredSize: const Size.fromHeight(72),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: TextFieldWidget(
-                  hintText: 'Enter coupon code'.tr,
+                padding: const EdgeInsets.fromLTRB(DsSpace.lg, 0, DsSpace.lg, DsSpace.md),
+                child: DsTextField(
+                  hint: 'Enter coupon code'.tr,
                   controller: controller.couponCodeController.value,
-                  suffix: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    child: InkWell(
-                      onTap: () {
-                        if (controller.couponCodeController.value.text.isEmpty) {
-                          ShowToastDialog.showToast("Please enter coupon code".tr);
-                          return;
-                        }
-                        CouponModel? matchedCoupon = controller.couponList.firstWhereOrNull((coupon) => coupon.code!.toLowerCase() == controller.couponCodeController.value.text.toLowerCase());
-                        if (matchedCoupon != null) {
-                          double couponAmount = Constant.calculateDiscount(amount: controller.subTotal.value.toString(), offerModel: matchedCoupon);
+                  prefixIcon: Icons.confirmation_number_outlined,
+                  bottomSpacing: 0,
+                  suffix: DsButton.ghost(
+                    label: "Apply".tr,
+                    size: DsButtonSize.sm,
+                    onPressed: () {
+                      if (controller.couponCodeController.value.text.isEmpty) {
+                        ShowToastDialog.showToast("Please enter coupon code".tr);
+                        return;
+                      }
+                      CouponModel? matchedCoupon = controller.couponList.firstWhereOrNull((coupon) => coupon.code!.toLowerCase() == controller.couponCodeController.value.text.toLowerCase());
+                      if (matchedCoupon != null) {
+                        double couponAmount = Constant.calculateDiscount(amount: controller.subTotal.value.toString(), offerModel: matchedCoupon);
 
-                          if (couponAmount < controller.subTotal.value) {
-                            controller.selectedCouponModel.value = matchedCoupon;
-                            controller.calculatePrice();
-                            Get.back();
-                          } else {
-                            ShowToastDialog.showToast("Coupon code not applied".tr);
-                          }
+                        if (couponAmount < controller.subTotal.value) {
+                          controller.selectedCouponModel.value = matchedCoupon;
+                          controller.calculatePrice();
+                          Get.back();
                         } else {
-                          ShowToastDialog.showToast("Invalid Coupon".tr);
+                          ShowToastDialog.showToast("Coupon code not applied".tr);
                         }
-                      },
-                      child: Text(
-                        "Apply".tr,
-                        textAlign: TextAlign.start,
-                        style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
-                      ),
-                    ),
+                      } else {
+                        ShowToastDialog.showToast("Invalid Coupon".tr);
+                      }
+                    },
                   ),
                 ),
               ),
             ),
           ),
-          body: ListView.builder(
-            shrinkWrap: true,
-            itemCount: controller.couponList.length,
-            itemBuilder: (context, index) {
-              CouponModel couponModel = controller.couponList[index];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Container(
-                  height: Responsive.height(16, context),
-                  decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                  child: Row(
-                    children: [
-                      ClipRRect(
-                        borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), bottomLeft: Radius.circular(10)),
-                        child: Stack(
-                          children: [
-                            Image.asset("assets/images/ic_coupon_image.png", height: Responsive.height(16, context), fit: BoxFit.fill),
-                            Padding(
-                              padding: const EdgeInsets.only(left: 10),
-                              child: Align(
-                                alignment: Alignment.center,
-                                child: RotatedBox(
-                                  quarterTurns: -1,
-                                  child: Text(
-                                    "${couponModel.discountType == "Fix Price" ? Constant.amountShow(amount: couponModel.discount, currency: controller.storeCurrency) : "${couponModel.discount}%"} ${'Off'.tr}",
-                                    textAlign: TextAlign.start,
-                                    style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  DottedBorder(
-                                    options: RoundedRectDottedBorderOptions(strokeWidth: 1, radius: const Radius.circular(6), color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                                      child: Text(
-                                        "${couponModel.code}",
-                                        textAlign: TextAlign.start,
-                                        style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
-                                      ),
-                                    ),
-                                  ),
-                                  const Expanded(child: SizedBox(height: 10)),
-                                  InkWell(
-                                    onTap: () {
-                                      double couponAmount = Constant.calculateDiscount(amount: controller.subTotal.value.toString(), offerModel: couponModel);
+          body: coupons.isEmpty
+              ? DsEmptyState(icon: Icons.local_offer_outlined, title: "Coupon Code".tr, message: "Enter coupon code".tr)
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxl),
+                  itemCount: coupons.length,
+                  itemBuilder: (context, index) {
+                    final CouponModel couponModel = coupons[index];
+                    return DsFadeSlideIn(
+                      index: index,
+                      child: _CouponTicket(
+                        couponModel: couponModel,
+                        currency: controller.storeCurrency,
+                        onApply: () {
+                          double couponAmount = Constant.calculateDiscount(amount: controller.subTotal.value.toString(), offerModel: couponModel);
 
-                                      if (couponAmount < controller.subTotal.value) {
-                                        controller.selectedCouponModel.value = couponModel;
-                                        controller.calculatePrice();
-                                        Get.back();
-                                      } else {
-                                        ShowToastDialog.showToast("Coupon code not applied".tr);
-                                      }
-                                    },
-                                    child: Text(
-                                      "Tap To Apply".tr,
-                                      textAlign: TextAlign.start,
-                                      style: TextStyle(fontFamily: AppThemeData.medium, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 20),
-                              MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                              const SizedBox(height: 20),
-                              Text(
-                                "${couponModel.description}",
-                                textAlign: TextAlign.start,
-                                style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                              ),
-                            ],
-                          ),
-                        ),
+                          if (couponAmount < controller.subTotal.value) {
+                            controller.selectedCouponModel.value = couponModel;
+                            controller.calculatePrice();
+                            Get.back();
+                          } else {
+                            ShowToastDialog.showToast("Coupon code not applied".tr);
+                          }
+                        },
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         );
       },
+    );
+  }
+}
+
+class _CouponTicket extends StatelessWidget {
+  final CouponModel couponModel;
+  final CurrencyModel? currency;
+  final VoidCallback onApply;
+  const _CouponTicket({required this.couponModel, required this.currency, required this.onApply});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard.outlined(
+      margin: const EdgeInsets.only(bottom: DsSpace.md),
+      padding: EdgeInsets.zero,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              width: 76,
+              decoration: BoxDecoration(gradient: DsGradients.brand(context)),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(vertical: DsSpace.lg, horizontal: DsSpace.sm),
+              child: RotatedBox(
+                quarterTurns: -1,
+                child: Text(
+                  "${couponModel.discountType == "Fix Price" ? Constant.amountShow(amount: couponModel.discount, currency: currency) : "${couponModel.discount}%"} ${'Off'.tr}",
+                  textAlign: TextAlign.center,
+                  style: t.titleSm.tabular.withColor(c.onBrand),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(DsSpace.lg),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
+                            decoration: BoxDecoration(
+                              color: c.surfaceAlt,
+                              borderRadius: DsRadius.brSm,
+                              border: Border.all(color: c.borderStrong, style: BorderStyle.solid),
+                            ),
+                            child: Text("${couponModel.code}", maxLines: 1, overflow: TextOverflow.ellipsis, style: t.label.tabular),
+                          ),
+                        ),
+                        const Expanded(child: SizedBox(height: DsSpace.md)),
+                        DsButton.ghost(label: "Tap To Apply".tr, size: DsButtonSize.sm, onPressed: onApply),
+                      ],
+                    ),
+                    const DsGap(DsSpace.md),
+                    const DsDivider(spacing: 0),
+                    const DsGap(DsSpace.md),
+                    Text("${couponModel.description}", style: t.bodySecondary),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

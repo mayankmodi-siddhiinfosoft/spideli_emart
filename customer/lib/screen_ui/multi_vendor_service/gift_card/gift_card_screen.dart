@@ -1,195 +1,187 @@
-import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/gift_card_controller.dart';
 import 'package:customer/models/gift_cards_model.dart';
 import 'package:customer/screen_ui/multi_vendor_service/gift_card/redeem_gift_card_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/gift_card/select_gift_payment_screen.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/responsive.dart';
-import 'package:customer/themes/round_button_fill.dart';
-import 'package:customer/themes/text_field_widget.dart';
-import 'package:customer/utils/network_image_widget.dart';
+import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/region_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
-import '../../../controllers/theme_controller.dart';
 import '../../../themes/show_toast_dialog.dart';
 import 'history_gift_card.dart';
 
+/// Archetype G — gift cards. The card art is the hero (a peeking carousel),
+/// the amount is entered as a big tabular figure with quick-pick chips, and
+/// the personal message sits in its own block.
 class GiftCardScreen extends StatelessWidget {
   const GiftCardScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: GiftCardController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-            centerTitle: false,
-            titleSpacing: 0,
-            title: Text(
-              "Customize Gift Card".tr,
-              textAlign: TextAlign.start,
-              style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-            ),
+        final c = context.dsColors;
+        final t = context.dsText;
+        final bool isLoading = controller.isLoading.value;
+        final List<GiftCardsModel> cards = controller.giftCardList;
+
+        return DsScaffold(
+          maxContentWidth: DsLayout.contentMax,
+          appBar: DsAppBar(
+            title: "Customize Gift Card".tr,
             actions: [
-              InkWell(
-                onTap: () {
+              DsIconButton(
+                semanticLabel: "History".tr,
+                child: SvgPicture.asset("assets/icons/ic_history.svg", width: 20, height: 20),
+                onPressed: () {
                   Get.to(const HistoryGiftCard());
                 },
-                child: SvgPicture.asset("assets/icons/ic_history.svg"),
               ),
-              const SizedBox(width: 10),
-              InkWell(
-                onTap: () {
+              DsIconButton(
+                semanticLabel: "Redeem".tr,
+                child: SvgPicture.asset("assets/icons/ic_redeem.svg", width: 20, height: 20),
+                onPressed: () {
                   Get.to(const RedeemGiftCardScreen());
                 },
-                child: SvgPicture.asset("assets/icons/ic_redeem.svg"),
               ),
-              const SizedBox(width: 10),
+              const DsGap(DsSpace.sm),
             ],
           ),
-          body:
-              controller.isLoading.value
-                  ? Constant.loader()
-                  : Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            height: Responsive.height(22, context),
-                            child: PageView.builder(
-                              itemCount: controller.giftCardList.length,
-                              onPageChanged: (value) {
-                                controller.selectedPageIndex.value = value;
-                                controller.selectedGiftCard.value = controller.giftCardList[controller.selectedPageIndex.value];
-
-                                controller.messageController.value.text = controller.giftCardList[controller.selectedPageIndex.value].message.toString();
-                              },
-                              scrollDirection: Axis.horizontal,
-                              controller: controller.pageController,
-                              itemBuilder: (context, index) {
-                                GiftCardsModel giftCardModel = controller.giftCardList[index];
-                                return InkWell(
-                                  onTap: () {
-                                    controller.selectedGiftCard.value = giftCardModel;
-                                    controller.messageController.value.text = controller.selectedGiftCard.value.message.toString();
-                                  },
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                                    child: Container(
-                                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: AppThemeData.primary300)),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(10),
-                                        child: NetworkImageWidget(imageUrl: giftCardModel.image.toString(), width: Responsive.width(80, context), fit: BoxFit.cover),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          TextFieldWidget(
-                            title: 'Choose an amount'.tr,
-                            controller: controller.amountController.value,
-                            hintText: 'Enter gift card amount'.tr,
-                            textInputType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                            textInputAction: TextInputAction.done,
-                            inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]'))],
-                            prefix: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              child: Text(
-                                (RegionService.customerCurrency ?? Constant.currencyModel!).symbol.tr,
-                                style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontSize: 18),
-                              ),
-                            ),
-                            onchange: (value) {
-                              controller.selectedAmount.value = value;
-                            },
-                          ),
-                          SizedBox(
-                            height: 40,
-                            child: ListView.builder(
-                              itemCount: controller.amountList.length,
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              scrollDirection: Axis.horizontal,
-                              itemBuilder: (context, index) {
-                                return Obx(
-                                  () => InkWell(
-                                    onTap: () {
-                                      controller.selectedAmount.value = controller.amountList[index];
-                                      controller.amountController.value.text = controller.amountList[index];
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 5),
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius: const BorderRadius.all(Radius.circular(40)),
-                                          border: Border.all(
-                                            color:
-                                                controller.selectedAmount == controller.amountList[index]
-                                                    ? AppThemeData.primary300
-                                                    : isDark
-                                                    ? AppThemeData.grey400
-                                                    : AppThemeData.grey200,
-                                          ),
-                                        ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                                          child: Center(
-                                            child: Text(
-                                              Constant.amountShow(amount: controller.amountList[index], currency: RegionService.customerCurrency),
-                                              style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: 40),
-                          TextFieldWidget(title: 'Add Message (Optional)'.tr, controller: controller.messageController.value, hintText: 'Add message here....'.tr, maxLine: 6),
-                        ],
-                      ),
-                    ),
-                  ),
-          bottomNavigationBar: Container(
-            color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: RoundedButtonFill(
-                title: "Continue".tr,
-                height: 5.5,
-                color: AppThemeData.primary300,
-                textColor: AppThemeData.grey50,
-                fontSizes: 16,
-                onPress: () async {
-                  if (controller.amountController.value.text.isNotEmpty) {
-                    if (Constant.userModel == null) {
-                      ShowToastDialog.showToast("Please log in to the application. You are not logged in.".tr);
-                    } else {
-                      giftCardBottomSheet(context, controller);
-                    }
+          bottomBar: DsStickyBar(
+            child: DsButton.primary(
+              label: "Continue".tr,
+              size: DsButtonSize.lg,
+              expand: true,
+              trailingIcon: Icons.arrow_forward_rounded,
+              onPressed: () async {
+                if (controller.amountController.value.text.isNotEmpty) {
+                  if (Constant.userModel == null) {
+                    ShowToastDialog.showToast("Please log in to the application. You are not logged in.".tr);
                   } else {
-                    ShowToastDialog.showToast("Please enter Amount".tr);
+                    giftCardBottomSheet(context, controller);
                   }
-                },
-              ),
+                } else {
+                  ShowToastDialog.showToast("Please enter Amount".tr);
+                }
+              },
             ),
           ),
+          body: isLoading
+              ? const SingleChildScrollView(child: DsSkeletonDetail(mediaHeight: 180))
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.only(bottom: DsSpace.xxxl),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: DsFadeSlideIn.stagger([
+                      SizedBox(
+                        height: 190,
+                        child: PageView.builder(
+                          itemCount: cards.length,
+                          onPageChanged: (value) {
+                            controller.selectedPageIndex.value = value;
+                            controller.selectedGiftCard.value = controller.giftCardList[controller.selectedPageIndex.value];
+
+                            controller.messageController.value.text = controller.giftCardList[controller.selectedPageIndex.value].message.toString();
+                          },
+                          scrollDirection: Axis.horizontal,
+                          controller: controller.pageController,
+                          itemBuilder: (context, index) {
+                            GiftCardsModel giftCardModel = cards[index];
+                            return DsPressable(
+                              onTap: () {
+                                controller.selectedGiftCard.value = giftCardModel;
+                                controller.messageController.value.text = controller.selectedGiftCard.value.message.toString();
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+                                child: Container(
+                                  decoration: BoxDecoration(borderRadius: DsRadius.brLg, boxShadow: DsShadows.md(context)),
+                                  child: DsImage(url: giftCardModel.image.toString(), radius: DsRadius.lg, errorIcon: Icons.card_giftcard_rounded),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const DsGap(DsSpace.lg),
+                            DsTextField(
+                              label: 'Choose an amount'.tr,
+                              controller: controller.amountController.value,
+                              hint: 'Enter gift card amount'.tr,
+                              keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                              textInputAction: TextInputAction.done,
+                              inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]'))],
+                              bottomSpacing: DsSpace.md,
+                              prefix: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: 14),
+                                child: Text((RegionService.customerCurrency ?? Constant.currencyModel!).symbol.tr, style: t.titleSm.tabular),
+                              ),
+                              onChanged: (value) {
+                                controller.selectedAmount.value = value;
+                              },
+                            ),
+                            SizedBox(
+                              height: 44,
+                              child: ListView.builder(
+                                itemCount: controller.amountList.length,
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                padding: EdgeInsets.zero,
+                                scrollDirection: Axis.horizontal,
+                                itemBuilder: (context, index) {
+                                  // The chip reads `selectedAmount` lazily, so it
+                                  // needs its own observer.
+                                  return Obx(() {
+                                    final bool selected = controller.selectedAmount == controller.amountList[index];
+                                    return Padding(
+                                      padding: const EdgeInsets.only(right: DsSpace.sm),
+                                      child: DsPressable(
+                                        onTap: () {
+                                          controller.selectedAmount.value = controller.amountList[index];
+                                          controller.amountController.value.text = controller.amountList[index];
+                                        },
+                                        child: AnimatedContainer(
+                                          duration: DsMotion.of(context, DsMotion.fast),
+                                          alignment: Alignment.center,
+                                          padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
+                                          decoration: BoxDecoration(
+                                            color: selected ? c.brandSoft : c.surface,
+                                            borderRadius: DsRadius.brPill,
+                                            border: Border.all(color: selected ? c.brand : c.border),
+                                          ),
+                                          child: Text(
+                                            Constant.amountShow(amount: controller.amountList[index], currency: RegionService.customerCurrency),
+                                            style: t.label.tabular.withColor(selected ? c.brandStrong : c.textSecondary),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  });
+                                },
+                              ),
+                            ),
+                            const DsGap(DsSpace.xxl),
+                            DsTextField(
+                              label: 'Add Message (Optional)'.tr,
+                              controller: controller.messageController.value,
+                              hint: 'Add message here....'.tr,
+                              maxLines: 6,
+                              bottomSpacing: 0,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ]),
+                  ),
+                ),
         );
       },
     );
@@ -200,132 +192,73 @@ class GiftCardScreen extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       isDismissible: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
+      backgroundColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(borderRadius: DsRadius.sheetTop),
       clipBehavior: Clip.antiAliasWithSaveLayer,
-      builder:
-          (context) => FractionallySizedBox(
-            heightFactor: 0.7,
-            child: StatefulBuilder(
-              builder: (context1, setState) {
-                final themeController = Get.find<ThemeController>();
-                final isDark = themeController.isDark.value;
-                return Obx(
-                  () => Scaffold(
-                    body: SingleChildScrollView(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
+      builder: (context) => StatefulBuilder(
+        builder: (context1, setState) {
+          final c = context.dsColors;
+          final t = context.dsText;
+          return Obx(
+            () => DsSheet(
+              title: "Bill Details".tr,
+              showClose: true,
+              actions: DsButton.primary(
+                label: "${'Pay'.tr} ${Constant.amountShow(amount: controller.amountController.value.text, currency: RegionService.customerCurrency)}",
+                size: DsButtonSize.lg,
+                expand: true,
+                onPressed: () async {
+                  Get.off(const SelectGiftPaymentScreen());
+                },
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DsImage(url: controller.selectedGiftCard.value.image.toString(), height: 150, radius: DsRadius.lg, errorIcon: Icons.card_giftcard_rounded),
+                  const DsGap(DsSpace.lg),
+                  DsInlineAlert(
+                    tone: DsTone.info,
+                    icon: Icons.card_giftcard_rounded,
+                    message: 'Complete payment and share this e-gift card with loved ones using any app'.tr,
+                  ),
+                  const DsGap(DsSpace.lg),
+                  DsCard.outlined(
+                    child: Column(
+                      children: [
+                        Row(
                           children: [
-                            const SizedBox(height: 20),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: NetworkImageWidget(imageUrl: controller.selectedGiftCard.value.image.toString(), height: Responsive.height(20, context), width: Responsive.width(100, context)),
-                            ),
-                            const SizedBox(height: 10),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: ShapeDecoration(color: AppThemeData.ecommerce50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                                child: Text(
-                                  'Complete payment and share this e-gift card with loved ones using any app'.tr,
-                                  style: TextStyle(color: AppThemeData.ecommerce300, fontSize: 14, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
-                                ),
-                              ),
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  "Bill Details".tr,
-                                  textAlign: TextAlign.start,
-                                  style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
-                                ),
-                                const SizedBox(height: 10),
-                                Container(
-                                  width: Responsive.width(100, context),
-                                  decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-                                    child: Column(
-                                      children: [
-                                        Row(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                "Sub Total".tr,
-                                                textAlign: TextAlign.start,
-                                                style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontSize: 16),
-                                              ),
-                                            ),
-                                            Text(
-                                              Constant.amountShow(amount: controller.amountController.value.text, currency: RegionService.customerCurrency),
-                                              textAlign: TextAlign.start,
-                                              style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Row(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                "Grand Total".tr,
-                                                textAlign: TextAlign.start,
-                                                style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontSize: 16),
-                                              ),
-                                            ),
-                                            Text(
-                                              Constant.amountShow(amount: controller.amountController.value.text, currency: RegionService.customerCurrency),
-                                              textAlign: TextAlign.start,
-                                              style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-                            Center(
-                              child: Text(
-                                "${'Gift Card expire'.tr} ${controller.selectedGiftCard.value.expiryDay} ${'days after purchase'.tr}".tr,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey500 : AppThemeData.grey400),
-                              ),
+                            Expanded(child: Text("Sub Total".tr, style: t.bodySecondary)),
+                            Text(Constant.amountShow(amount: controller.amountController.value.text, currency: RegionService.customerCurrency), style: t.bodyStrong.tabular),
+                          ],
+                        ),
+                        const DsDivider(spacing: DsSpace.md),
+                        Row(
+                          children: [
+                            Expanded(child: Text("Grand Total".tr, style: t.titleSm)),
+                            Text(
+                              Constant.amountShow(amount: controller.amountController.value.text, currency: RegionService.customerCurrency),
+                              style: t.title.tabular.withColor(c.brandStrong),
                             ),
                           ],
                         ),
-                      ),
-                    ),
-                    bottomNavigationBar: Container(
-                      color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 20),
-                        child: RoundedButtonFill(
-                          title: "${'Pay'.tr} ${Constant.amountShow(amount: controller.amountController.value.text, currency: RegionService.customerCurrency)}",
-                          height: 5.5,
-                          color: AppThemeData.primary300,
-                          textColor: AppThemeData.grey50,
-                          fontSizes: 16,
-                          onPress: () async {
-                            Get.off(const SelectGiftPaymentScreen());
-                          },
-                        ),
-                      ),
+                      ],
                     ),
                   ),
-                );
-              },
+                  const DsGap(DsSpace.lg),
+                  Center(
+                    child: Text(
+                      "${'Gift Card expire'.tr} ${controller.selectedGiftCard.value.expiryDay} ${'days after purchase'.tr}".tr,
+                      textAlign: TextAlign.center,
+                      style: t.bodySm,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          );
+        },
+      ),
     );
   }
 }

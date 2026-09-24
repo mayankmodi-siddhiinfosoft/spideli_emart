@@ -1,316 +1,304 @@
 import 'package:customer/utils/region_service.dart';
 import 'package:bottom_picker/bottom_picker.dart';
-import 'package:customer/themes/responsive.dart';
-import 'package:customer/widget/my_separator.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import '../../constant/constant.dart';
-import '../../controllers/theme_controller.dart';
 import '../../controllers/on_demand_booking_controller.dart';
 import '../../models/user_model.dart';
-import '../../themes/app_them_data.dart';
-import '../../themes/round_button_fill.dart';
 import '../../themes/show_toast_dialog.dart';
-import '../../themes/text_field_widget.dart';
 import '../../widget/osm_map/map_picker_page.dart';
 import '../../widget/place_picker/location_picker_screen.dart';
 import '../../widget/place_picker/selected_location_model.dart';
 import '../location_enable_screens/address_list_screen.dart';
 
+/// Archetype E – booking wizard: service summary, address, notes, schedule,
+/// offers and the bill, with a sticky confirm bar.
 class OnDemandBookingScreen extends StatelessWidget {
   const OnDemandBookingScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: OnDemandBookingController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            automaticallyImplyLeading: false,
-            backgroundColor: AppThemeData.primary300,
-            title: Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => Get.back(),
-                    child: Container(
-                      height: 42,
-                      width: 42,
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: AppThemeData.grey50),
-                      child: Center(child: Padding(padding: const EdgeInsets.only(left: 5), child: Icon(Icons.arrow_back_ios, color: AppThemeData.grey900, size: 20))),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text("Book Service".tr, style: AppThemeData.boldTextStyle(fontSize: 18, color: AppThemeData.grey900)),
-                ],
-              ),
-            ),
-          ),
+        final c = context.dsColors;
+        final t = context.dsText;
+        final l = context.dsLayout;
+
+        return DsScaffold(
+          title: "Book Service".tr,
+          maxContentWidth: DsLayout.contentMax,
           body: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.xxl),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+              children: DsFadeSlideIn.stagger([
                 // Services Section
-                Text("Services".tr, style: AppThemeData.semiBoldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                const SizedBox(height: 10),
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: isDark ? AppThemeData.greyDark400 : AppThemeData.grey100),
-                    color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                  ),
-                  padding: const EdgeInsets.all(8),
+                Text("Services".tr, style: t.titleSm),
+                const DsGap(DsSpace.sm),
+                DsCard.outlined(
+                  padding: const EdgeInsets.all(DsSpace.md),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(controller.provider.value?.title ?? '', style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                            const SizedBox(height: 5),
-                            Text(controller.categoryTitle.value, style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
+                            Text(controller.provider.value?.title ?? '', style: t.titleSm),
+                            const DsGap(DsSpace.xs),
+                            Text(controller.categoryTitle.value, style: t.bodySm),
                             if (controller.provider.value?.priceUnit == "Fixed") ...[
-                              const SizedBox(height: 20),
+                              const DsGap(DsSpace.lg),
                               Row(
                                 children: [
-                                  GestureDetector(onTap: controller.decrementQuantity, child: Icon(Icons.remove_circle_outline, color: AppThemeData.primary300, size: 30)),
-                                  const SizedBox(width: 10),
-                                  Text('${controller.quantity.value}', style: AppThemeData.mediumTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                                  const SizedBox(width: 10),
-                                  GestureDetector(onTap: controller.incrementQuantity, child: Icon(Icons.add_circle_outline, color: AppThemeData.primary300, size: 30)),
+                                  DsIconButton(
+                                    icon: Icons.remove_rounded,
+                                    semanticLabel: 'Remove'.tr,
+                                    variant: DsIconButtonVariant.tonal,
+                                    size: 36,
+                                    onPressed: controller.decrementQuantity,
+                                  ),
+                                  const DsGap(DsSpace.md),
+                                  Text('${controller.quantity.value}', style: t.titleSm.tabular),
+                                  const DsGap(DsSpace.md),
+                                  DsIconButton(
+                                    icon: Icons.add_rounded,
+                                    semanticLabel: 'Add'.tr,
+                                    variant: DsIconButtonVariant.brand,
+                                    size: 36,
+                                    onPressed: controller.incrementQuantity,
+                                  ),
                                 ],
                               ),
                             ],
                           ],
                         ),
                       ),
-                      SizedBox(width: 10),
-                      Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          color: Colors.grey.shade300,
-                          image: controller.provider.value!.photos.isNotEmpty ? DecorationImage(image: NetworkImage(controller.provider.value?.photos.first), fit: BoxFit.cover) : null,
-                        ),
+                      const DsGap(DsSpace.md),
+                      DsImage(
+                        url: (controller.provider.value?.photos.isNotEmpty ?? false) ? controller.provider.value!.photos.first : Constant.placeHolderImage,
+                        height: 96,
+                        width: 96,
+                        radius: DsRadius.lg,
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 15),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: isDark ? AppThemeData.greyDark400 : AppThemeData.grey100),
-                    color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text("Address".tr, style: AppThemeData.semiBoldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                            SizedBox(height: 5),
-                            InkWell(
-                              onTap: () async {
-                                if (Constant.userModel != null) {
-                                  Get.to(AddressListScreen())!.then((value) {
-                                    if (value != null) {
-                                      ShippingAddress shippingAddress = value;
-                                      if (Constant.checkZoneCheck(shippingAddress.location!.latitude ?? 0.0, shippingAddress.location!.longitude ?? 0.0)) {
-                                        controller.selectedAddress.value = shippingAddress;
-                                        controller.calculatePrice();
-                                      } else {
-                                        ShowToastDialog.showToast("Service not available in this area".tr);
-                                      }
-                                    }
-                                  });
-                                } else {
-                                  Constant.checkPermission(
-                                    onTap: () async {
-                                      ShowToastDialog.showLoader("Please wait...".tr);
-
-                                      ShippingAddress shippingAddress = ShippingAddress();
-
-                                      try {
-                                        await Geolocator.requestPermission();
-                                        await Geolocator.getCurrentPosition();
-                                        ShowToastDialog.closeLoader();
-
-                                        if (Constant.selectedMapType == 'osm') {
-                                          final result = await Get.to(() => MapPickerPage());
-                                          if (result != null) {
-                                            final firstPlace = result;
-                                            final lat = firstPlace.coordinates.latitude;
-                                            final lng = firstPlace.coordinates.longitude;
-                                            final address = firstPlace.address;
-
-                                            shippingAddress.addressAs = "Home";
-                                            shippingAddress.locality = address.toString();
-                                            shippingAddress.location = UserLocation(latitude: lat, longitude: lng);
-
-                                            controller.selectedAddress.value = shippingAddress;
-                                            Get.back();
-                                          }
-                                        } else {
-                                          Get.to(LocationPickerScreen())!.then((value) async {
-                                            if (value != null) {
-                                              SelectedLocationModel selectedLocationModel = value;
-
-                                              shippingAddress.addressAs = "Home";
-                                              shippingAddress.location = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
-                                              shippingAddress.locality = "Picked from Map";
-
-                                              controller.selectedAddress.value = shippingAddress;
-                                            }
-                                          });
-                                        }
-                                      } catch (e) {
-                                        await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
-                                          Placemark placeMark = valuePlaceMaker[0];
-                                          shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
-                                          String currentLocation =
-                                              "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
-                                          shippingAddress.locality = currentLocation;
-                                        });
-
-                                        controller.selectedAddress.value = shippingAddress;
-                                        ShowToastDialog.closeLoader();
-                                      }
-                                    },
-                                    context: context,
-                                  );
-                                }
-                              },
-                              child: Text(
-                                controller.selectedAddress.value.getFullAddress(),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                const DsGap(DsSpace.lg),
+                DsCard.outlined(
+                  padding: EdgeInsets.zero,
+                  onTap: () => _pickAddress(context, controller),
+                  semanticLabel: "Address".tr,
+                  child: DsListTile(
+                    title: "Address".tr,
+                    subtitle: controller.selectedAddress.value.getFullAddress(),
+                    leadingIcon: Icons.location_on_outlined,
+                    leadingTone: DsTone.brand,
+                    trailing: Text("Change".tr, style: t.link),
+                    onTap: () => _pickAddress(context, controller),
                   ),
                 ),
-                const SizedBox(height: 15),
-                TextFieldWidget(title: "Description".tr, hintText: "Enter Description".tr, controller: controller.descriptionController.value, maxLine: 5),
-                const SizedBox(height: 10),
-                GestureDetector(
-                  onTap: () {
-                    BottomPicker<DateTime>.dateTime(
-                      onSubmit: (date) {
-                        controller.setDateTime(date!);
+                const DsGap(DsSpace.lg),
+                DsFormSection(
+                  title: "Description".tr,
+                  icon: Icons.notes_rounded,
+                  children: [
+                    DsTextField(hint: "Enter Description".tr, controller: controller.descriptionController.value, maxLines: 5, minLines: 3, bottomSpacing: 0),
+                  ],
+                ),
+                const DsGap(DsSpace.lg),
+                DsFormSection(
+                  title: "Booking Date & Slot".tr,
+                  icon: Icons.event_rounded,
+                  children: [
+                    DsTextField(
+                      hint: "Choose Date and Time".tr,
+                      controller: controller.dateTimeController.value,
+                      readOnly: true,
+                      bottomSpacing: 0,
+                      suffix: Icon(Icons.calendar_month_rounded, color: c.brand, size: 20),
+                      onTap: () {
+                        BottomPicker<DateTime>.dateTime(
+                          onSubmit: (date) {
+                            controller.setDateTime(date!);
+                          },
+                          minDateTime: DateTime.now(),
+                          buttonAlignment: MainAxisAlignment.center,
+                          displaySubmitButton: true,
+                          buttonSingleColor: c.brand,
+                          buttonPadding: 10,
+                          buttonWidth: 70,
+                          // bottom_picker 5 dropped pickerTitle/closeIconColor and the built-in close icon; rebuild the same header.
+                          headerBuilder: (context) => Row(
+                            children: [
+                              Expanded(child: Text("", style: t.bodyStrong)),
+                              DsIconButton(icon: Icons.close_rounded, semanticLabel: 'Close'.tr, size: 36, onPressed: () => Navigator.pop(context)),
+                            ],
+                          ),
+                          backgroundColor: c.surfaceRaised,
+                          pickerTextStyle: t.bodyStrong,
+                        ).show(context);
                       },
-                      minDateTime: DateTime.now(),
-                      buttonAlignment: MainAxisAlignment.center,
-                      displaySubmitButton: true,
-                      buttonSingleColor: AppThemeData.primary300,
-                      buttonPadding: 10,
-                      buttonWidth: 70,
-                      // bottom_picker 5 dropped pickerTitle/closeIconColor and the built-in close icon; rebuild the same header.
-                      headerBuilder: (context) => Row(
-                        children: [
-                          Expanded(child: Text("", style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900))),
-                          InkWell(onTap: () => Navigator.pop(context), child: Icon(Icons.close, color: isDark ? Colors.white : Colors.black, size: 20)),
-                        ],
-                      ),
-                      backgroundColor: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                      pickerTextStyle: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                    ).show(context);
-                  },
-                  child: TextFieldWidget(title: "Booking Date & Slot".tr, hintText: "Choose Date and Time".tr, controller: controller.dateTimeController.value, enable: false),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 15),
+                const DsGap(DsSpace.lg),
                 controller.provider.value?.priceUnit == "Fixed"
                     ? Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         controller.couponList.isNotEmpty
                             ? SizedBox(
-                              height: 85,
+                              height: 92,
                               child: ListView.builder(
                                 itemCount: controller.couponList.length,
                                 scrollDirection: Axis.horizontal,
+                                padding: EdgeInsets.zero,
                                 itemBuilder: (context, index) {
                                   final coupon = controller.couponList[index];
-                                  return GestureDetector(onTap: () => controller.applyCoupon(coupon), child: buildOfferItem(controller, index, isDark));
+                                  return GestureDetector(onTap: () => controller.applyCoupon(coupon), child: buildOfferItem(context, controller, index));
                                 },
                               ),
                             )
                             : Container(),
-                        buildPromoCode(controller, isDark),
+                        buildPromoCode(context, controller),
                         Padding(
-                          padding: EdgeInsets.symmetric(vertical: 10),
-                          child: Text("Price Detail".tr, style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
+                          padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
+                          child: Text("Price Detail".tr, style: t.titleSm),
                         ),
-                        priceTotalRow(context, controller, isDark),
+                        priceTotalRow(context, controller),
                       ],
                     )
                     : SizedBox(),
-              ],
+              ]),
             ),
           ),
-          bottomNavigationBar: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: RoundedButtonFill(title: "Confirm".tr, color: AppThemeData.primary300, textColor: AppThemeData.grey50, onPress: () => controller.confirmBooking(context)),
+          bottomBar: DsStickyBar(
+            child: DsButton.primary(
+              label: "Confirm".tr,
+              icon: Icons.check_circle_outline_rounded,
+              size: DsButtonSize.lg,
+              expand: true,
+              onPressed: () => controller.confirmBooking(context),
+            ),
           ),
         );
       },
     );
   }
 
-  Widget buildOfferItem(OnDemandBookingController controller, int index, bool isDark) {
+  /// Address picker – behaviour moved verbatim from the old address row.
+  Future<void> _pickAddress(BuildContext context, OnDemandBookingController controller) async {
+    if (Constant.userModel != null) {
+      Get.to(AddressListScreen())!.then((value) {
+        if (value != null) {
+          ShippingAddress shippingAddress = value;
+          if (Constant.checkZoneCheck(shippingAddress.location!.latitude ?? 0.0, shippingAddress.location!.longitude ?? 0.0)) {
+            controller.selectedAddress.value = shippingAddress;
+            controller.calculatePrice();
+          } else {
+            ShowToastDialog.showToast("Service not available in this area".tr);
+          }
+        }
+      });
+    } else {
+      Constant.checkPermission(
+        onTap: () async {
+          ShowToastDialog.showLoader("Please wait...".tr);
+
+          ShippingAddress shippingAddress = ShippingAddress();
+
+          try {
+            await Geolocator.requestPermission();
+            await Geolocator.getCurrentPosition();
+            ShowToastDialog.closeLoader();
+
+            if (Constant.selectedMapType == 'osm') {
+              final result = await Get.to(() => MapPickerPage());
+              if (result != null) {
+                final firstPlace = result;
+                final lat = firstPlace.coordinates.latitude;
+                final lng = firstPlace.coordinates.longitude;
+                final address = firstPlace.address;
+
+                shippingAddress.addressAs = "Home";
+                shippingAddress.locality = address.toString();
+                shippingAddress.location = UserLocation(latitude: lat, longitude: lng);
+
+                controller.selectedAddress.value = shippingAddress;
+                Get.back();
+              }
+            } else {
+              Get.to(LocationPickerScreen())!.then((value) async {
+                if (value != null) {
+                  SelectedLocationModel selectedLocationModel = value;
+
+                  shippingAddress.addressAs = "Home";
+                  shippingAddress.location = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
+                  shippingAddress.locality = "Picked from Map";
+
+                  controller.selectedAddress.value = shippingAddress;
+                }
+              });
+            }
+          } catch (e) {
+            await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
+              Placemark placeMark = valuePlaceMaker[0];
+              shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
+              String currentLocation =
+                  "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
+              shippingAddress.locality = currentLocation;
+            });
+
+            controller.selectedAddress.value = shippingAddress;
+            ShowToastDialog.closeLoader();
+          }
+        },
+        context: context,
+      );
+    }
+  }
+
+  /// Ticket-style coupon chip.
+  Widget buildOfferItem(BuildContext context, OnDemandBookingController controller, int index) {
     return Obx(() {
       final coupon = controller.couponList[index];
+      final c = context.dsColors;
+      final t = context.dsText;
 
       return Container(
-        margin: const EdgeInsets.fromLTRB(7, 10, 7, 10),
-        height: 85,
+        margin: const EdgeInsetsDirectional.only(end: DsSpace.md, top: DsSpace.sm, bottom: DsSpace.sm),
         child: DottedBorder(
-          options: RoundedRectDottedBorderOptions(strokeWidth: 1, radius: const Radius.circular(10), color: AppThemeData.primary300),
+          options: RoundedRectDottedBorderOptions(strokeWidth: 1, radius: const Radius.circular(DsRadius.md), color: c.brand),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 5, 12, 0),
+            padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    const Image(image: AssetImage('assets/images/offer_icon.png'), height: 25, width: 25),
-                    const SizedBox(width: 10),
-                    Container(
-                      margin: const EdgeInsets.only(top: 3),
-                      child: Text(
-                        coupon.discountType == "Fix Price" ? "${Constant.amountShow(amount: coupon.discount.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId))} ${'OFF'.tr}" : "${coupon.discount} ${'% Off'.tr}",
-                        style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.7, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                      ),
+                    const Image(image: AssetImage('assets/images/offer_icon.png'), height: 22, width: 22),
+                    const DsGap(DsSpace.sm),
+                    Text(
+                      coupon.discountType == "Fix Price" ? "${Constant.amountShow(amount: coupon.discount.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId))} ${'OFF'.tr}" : "${coupon.discount} ${'% Off'.tr}",
+                      style: t.titleSm.tabular,
                     ),
                   ],
                 ),
-                const SizedBox(height: 5),
+                const DsGap(DsSpace.sm),
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(coupon.code ?? '', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.normal, letterSpacing: 0.5, color: Colors.orange)),
-                    Container(margin: const EdgeInsets.only(left: 15, right: 15, top: 3), width: 1, color: AppThemeData.grey50),
-                    Text(
-                      "valid till ".tr + controller.getDate(coupon.expiresAt!.toDate().toString()),
-                      style: TextStyle(letterSpacing: 0.5, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                    ),
+                    Text(coupon.code ?? '', style: t.labelSm.withColor(c.brandStrong)),
+                    Container(margin: const EdgeInsets.symmetric(horizontal: DsSpace.md), width: 1, height: 12, color: c.border),
+                    Text("valid till ".tr + controller.getDate(coupon.expiresAt!.toDate().toString()), style: t.caption),
                   ],
                 ),
               ],
@@ -321,174 +309,106 @@ class OnDemandBookingScreen extends StatelessWidget {
     });
   }
 
-  Widget buildPromoCode(OnDemandBookingController controller, bool isDark) {
-    return GestureDetector(
-      child: Container(
-        margin: const EdgeInsets.only(top: 10, bottom: 13),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: isDark ? AppThemeData.greyDark400 : AppThemeData.grey100),
-          color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 15.0, horizontal: 15),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Image.asset("assets/images/reedem.png", height: 50, width: 50),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("Promo Code".tr, style: AppThemeData.mediumTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900), overflow: TextOverflow.ellipsis),
-                          const SizedBox(height: 5),
-                          Text(
-                            "Apply promo code".tr,
-                            style: AppThemeData.mediumTextStyle(fontSize: 15, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+  Widget buildPromoCode(BuildContext context, OnDemandBookingController controller) {
+    final t = context.dsText;
+    return Padding(
+      padding: const EdgeInsets.only(top: DsSpace.sm),
+      child: DsCard.outlined(
+        padding: const EdgeInsets.all(DsSpace.md),
+        onTap: () {
+          Get.bottomSheet(promoCodeSheet(context, controller), isScrollControlled: true, isDismissible: true, backgroundColor: Colors.transparent, enableDrag: true);
+        },
+        child: Row(
+          children: [
+            Image.asset("assets/images/reedem.png", height: 44, width: 44),
+            const DsGap(DsSpace.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Promo Code".tr, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                  const DsGap(DsSpace.xxs),
+                  Text("Apply promo code".tr, overflow: TextOverflow.ellipsis, style: t.bodySm),
+                ],
               ),
-              FloatingActionButton(
-                onPressed: () {
-                  Get.bottomSheet(promoCodeSheet(controller, isDark), isScrollControlled: true, isDismissible: true, backgroundColor: Colors.transparent, enableDrag: true);
-                },
-                mini: true,
-                backgroundColor: Colors.blueGrey.shade50,
-                elevation: 0,
-                child: const Icon(Icons.add, color: Colors.black54),
-              ),
-            ],
-          ),
+            ),
+            DsIconButton(
+              icon: Icons.add_rounded,
+              semanticLabel: "Apply promo code".tr,
+              variant: DsIconButtonVariant.tonal,
+              onPressed: () {
+                Get.bottomSheet(promoCodeSheet(context, controller), isScrollControlled: true, isDismissible: true, backgroundColor: Colors.transparent, enableDrag: true);
+              },
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget promoCodeSheet(OnDemandBookingController controller, bool isDark) {
-    return Container(
-      padding: EdgeInsets.only(bottom: Get.height / 4.3, left: 25, right: 25),
-      height: Get.height * 0.88,
-      decoration: BoxDecoration(color: Colors.transparent, border: Border.all(style: BorderStyle.none)),
+  Widget promoCodeSheet(BuildContext context, OnDemandBookingController controller) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsSheet(
+      title: 'Redeem Your Coupons'.tr,
+      showClose: true,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          InkWell(
-            onTap: () => Get.back(),
-            child: Container(
-              height: 45,
-              decoration: BoxDecoration(
-                border: Border.all(color: isDark ? AppThemeData.greyDark400 : AppThemeData.grey100, width: 0.3),
-                color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Icon(
-                  Icons.close,
-                  color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, // ✅ visible color
-                  size: 28,
-                ),
+          const Image(image: AssetImage('assets/images/redeem_coupon.png'), width: 100),
+          const DsGap(DsSpace.lg),
+          Text("Voucher or Coupon code".tr, textAlign: TextAlign.center, style: t.bodySecondary),
+          const DsGap(DsSpace.lg),
+          DottedBorder(
+            options: RoundedRectDottedBorderOptions(strokeWidth: 1, radius: const Radius.circular(DsRadius.md), color: c.brand),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+              child: TextFormField(
+                textAlign: TextAlign.center,
+                style: t.titleSm.tabular,
+                controller: controller.couponTextController.value,
+                decoration: InputDecoration(border: InputBorder.none, hintText: "Write Coupon Code".tr, hintStyle: t.bodySecondary),
               ),
             ),
           ),
-          const SizedBox(height: 25),
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50),
-              alignment: Alignment.center,
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    Container(padding: const EdgeInsets.only(top: 30), child: const Image(image: AssetImage('assets/images/redeem_coupon.png'), width: 100)),
-                    Container(
-                      padding: const EdgeInsets.only(top: 20),
-                      child: Text('Redeem Your Coupons'.tr, style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 16)),
-                    ),
-                    Center(
-                      child: Container(
-                        padding: const EdgeInsets.only(top: 10, left: 22, right: 22),
-                        child: Text("Voucher or Coupon code".tr, style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.only(left: 20, right: 20, top: 20),
-                      child: DottedBorder(
-                        options: RoundedRectDottedBorderOptions(strokeWidth: 1, radius: const Radius.circular(12), color: AppThemeData.primary300),
-                        child: ClipRRect(
-                          borderRadius: const BorderRadius.all(Radius.circular(12)),
-                          child: Container(
-                            padding: const EdgeInsets.all(20),
-                            color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                            alignment: Alignment.center,
-                            child: TextFormField(
-                              textAlign: TextAlign.center,
-                              style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                              controller: controller.couponTextController.value,
-                              decoration: InputDecoration(
-                                border: InputBorder.none,
-                                hintText: "Write Coupon Code".tr,
-                                hintStyle: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark400 : AppThemeData.grey400),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 30, bottom: 30, left: 15, right: 15),
-                      child: RoundedButtonFill(
-                        title: "REDEEM NOW".tr,
-                        color: AppThemeData.primary300,
-                        textColor: AppThemeData.grey50,
-                        onPress: () {
-                          final inputCode = controller.couponTextController.value.text.trim().toLowerCase();
+          const DsGap(DsSpace.xl),
+          DsButton.primary(
+            label: "REDEEM NOW".tr,
+            size: DsButtonSize.lg,
+            expand: true,
+            onPressed: () {
+              final inputCode = controller.couponTextController.value.text.trim().toLowerCase();
 
-                          final matchingCoupon = controller.couponList.firstWhereOrNull((c) => c.code?.toLowerCase() == inputCode);
+              final matchingCoupon = controller.couponList.firstWhereOrNull((c) => c.code?.toLowerCase() == inputCode);
 
-                          if (matchingCoupon != null) {
-                            controller.applyCoupon(matchingCoupon);
-                            Get.back();
-                          } else {
-                            ShowToastDialog.showToast("Applied coupon not valid.".tr);
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+              if (matchingCoupon != null) {
+                controller.applyCoupon(matchingCoupon);
+                Get.back();
+              } else {
+                ShowToastDialog.showToast("Applied coupon not valid.".tr);
+              }
+            },
           ),
         ],
       ),
     );
   }
 
-  Widget priceTotalRow(BuildContext context, OnDemandBookingController controller, bool isDark) {
+  Widget priceTotalRow(BuildContext context, OnDemandBookingController controller) {
     return Obx(() {
-      return Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: isDark ? AppThemeData.greyDark400 : AppThemeData.grey100),
-          color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-        ),
+      final c = context.dsColors;
+      final t = context.dsText;
+      return DsCard.outlined(
+        padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
         child: Column(
           children: [
-            const SizedBox(height: 5),
-            rowText("Price".tr, Constant.amountShow(amount: controller.price.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), isDark),
-            controller.discountAmount.value != 0 ? const Divider() : const SizedBox(),
+            rowText(context, "Price".tr, Constant.amountShow(amount: controller.price.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId))),
+            controller.discountAmount.value != 0 ? const DsDivider(spacing: DsSpace.xs) : const SizedBox(),
             controller.discountAmount.value != 0
                 ? Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: Column(
@@ -496,108 +416,92 @@ class OnDemandBookingScreen extends StatelessWidget {
                           children: [
                             Text(
                               "${"Discount".tr} ${controller.discountType.value == 'Percentage' || controller.discountType.value == 'Percent' ? "(${controller.discountLabel.value}%)" : "(${Constant.amountShow(amount: controller.discountLabel.value, currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId))})"}",
-                              style: TextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
+                              style: t.body,
                             ),
-                            Text(controller.offerCode.value, style: TextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
+                            Text(controller.offerCode.value, style: t.caption),
                           ],
                         ),
                       ),
-                      Text("(-${Constant.amountShow(amount: controller.discountAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId))})", style: const TextStyle(color: Colors.red)),
+                      Text(
+                        "(-${Constant.amountShow(amount: controller.discountAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId))})",
+                        style: t.bodyStrong.withColor(c.dangerStrong).tabular,
+                      ),
                     ],
                   ),
                 )
                 : const SizedBox(),
-            const Divider(),
-            if (Constant.platformFeeModel?.enable == true) rowText("Platform fee".tr, Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), isDark),
-            if (Constant.platformFeeModel?.enable == true) const Divider(),
+            const DsDivider(spacing: DsSpace.xs),
+            if (Constant.platformFeeModel?.enable == true) rowText(context, "Platform fee".tr, Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId))),
+            if (Constant.platformFeeModel?.enable == true) const DsDivider(spacing: DsSpace.xs),
             InkWell(
               onTap: () {
-                showBillBifurcationDialog(context, isDark, controller);
+                showBillBifurcationDialog(context, controller);
               },
-              child: rowText("Tax amount".tr, Constant.amountShow(amount: (controller.taxAmount.value).toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), isDark, underline: true),
+              child: rowText(context, "Tax amount".tr, Constant.amountShow(amount: (controller.taxAmount.value).toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), underline: true),
             ),
-            const Divider(),
-            rowText("Total Amount".tr, Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), isDark),
-            const SizedBox(height: 5),
+            const DsDivider(spacing: DsSpace.xs),
+            rowText(context, "Total Amount".tr, Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), total: true),
           ],
         ),
       );
     });
   }
 
-  Widget rowText(String title, String value, bool isDark, {bool? underline}) {
+  Widget rowText(BuildContext context, String title, String value, {bool? underline, bool total = false}) {
+    final c = context.dsColors;
+    final t = context.dsText;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+      padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title.tr,
-            style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, decoration: underline == true ? TextDecoration.underline : TextDecoration.none),
+          Expanded(
+            child: Text(
+              title.tr,
+              style: (total ? t.titleSm : t.body).copyWith(decoration: underline == true ? TextDecoration.underline : TextDecoration.none, decorationColor: c.textSecondary),
+            ),
           ),
-          Text(value.tr, style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
+          const DsGap(DsSpace.md),
+          Text(value.tr, style: total ? t.title.withColor(c.brandStrong).tabular : t.bodyStrong.tabular),
         ],
       ),
     );
   }
 
-  void showBillBifurcationDialog(BuildContext context, bool isDark, OnDemandBookingController controller) {
+  void showBillBifurcationDialog(BuildContext context, OnDemandBookingController controller) {
     showDialog(
       context: context,
       builder: (context) {
-        return Dialog(
-          backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 10), // 🔥 KEY FIX
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: SizedBox(
-            width: Responsive.width(100, context), // ✅ 90% width
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(height: 10),
-                  Text("Tax Details".tr, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
-                  const SizedBox(height: 5),
-                  sectionDivider(isDark),
-                  const SizedBox(height: 5),
-                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), isDark: isDark),
-                  sectionDivider(isDark),
-                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), isDark: isDark),
-                  sectionDivider(isDark),
-                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), amountColor: AppThemeData.primary300, isDark: isDark),
-                  const SizedBox(height: 20),
-                  Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: Text("Close".tr))),
-                ],
-              ),
-            ),
+        return DsDialog(
+          title: "Tax Details".tr,
+          icon: Icons.receipt_long_outlined,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              amountRow(context, title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId))),
+              const DsDivider(spacing: DsSpace.sm),
+              amountRow(context, title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId))),
+              const DsDivider(spacing: DsSpace.sm),
+              amountRow(context, title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId)), highlight: true),
+            ],
           ),
+          primaryLabel: "Close".tr,
+          onPrimary: () => Navigator.pop(context),
         );
       },
     );
   }
 
-  Widget amountRow({required String title, required String amount, required bool isDark, Color? textColour, Color? amountColor, bool? underline, Widget? trailing}) {
+  Widget amountRow(BuildContext context, {required String title, required String amount, bool highlight = false}) {
+    final c = context.dsColors;
+    final t = context.dsText;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Text(
-            title.tr,
-            style: TextStyle(
-              fontFamily: AppThemeData.regular,
-              color: textColour ?? (isDark ? AppThemeData.grey300 : AppThemeData.grey600),
-              fontSize: 16,
-              decoration: underline == true ? TextDecoration.underline : TextDecoration.none,
-            ),
-          ),
-        ),
-        trailing ?? Text(amount, style: TextStyle(fontFamily: AppThemeData.regular, color: amountColor ?? (isDark ? AppThemeData.grey50 : AppThemeData.grey900), fontSize: 16)),
+        Expanded(child: Text(title.tr, style: t.bodySecondary)),
+        const DsGap(DsSpace.md),
+        Text(amount, style: highlight ? t.titleSm.withColor(c.brandStrong).tabular : t.bodyStrong.tabular),
       ],
     );
-  }
-
-  Widget sectionDivider(bool isDark) {
-    return Column(children: [const SizedBox(height: 10), MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200), const SizedBox(height: 10)]);
   }
 }

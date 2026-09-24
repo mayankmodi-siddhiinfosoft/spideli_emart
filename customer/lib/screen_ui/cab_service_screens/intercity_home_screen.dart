@@ -8,74 +8,74 @@ import 'package:customer/payment/rozorpay_conroller.dart';
 import 'package:customer/screen_ui/cab_service_screens/cab_coupon_code_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
-import 'package:customer/themes/responsive.dart';
-import 'package:customer/themes/round_button_border.dart';
-import 'package:customer/utils/network_image_widget.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/utils.dart';
-import 'package:customer/widget/my_separator.dart';
-import 'package:dotted_border/dotted_border.dart';
 import 'package:flutter/material.dart';
 import 'package:customer/controllers/cab_ride_options.dart';
 import 'package:customer/screen_ui/cab_service_screens/widget/cab_ride_options_widgets.dart';
 import 'package:customer/widget/cancel_reason_sheet.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:geocoding/geocoding.dart' as get_cord_address;
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:flutter_map/flutter_map.dart' as flutterMap;
+import 'package:flutter_map/flutter_map.dart' as flutter_map;
 import 'package:latlong2/latlong.dart' as latlong;
 import 'package:location/location.dart';
+
 import '../../constant/constant.dart';
 import '../../controllers/cab_dashboard_controller.dart';
-import '../../controllers/theme_controller.dart';
 import '../../models/user_model.dart';
 import '../../service/fire_store_utils.dart';
-import '../../themes/app_them_data.dart';
-import '../../themes/round_button_fill.dart';
 import '../../themes/show_toast_dialog.dart';
-import '../../themes/text_field_widget.dart';
 import '../../widget/osm_map/map_picker_page.dart';
 import '../../widget/place_picker/location_picker_screen.dart';
 import '../../widget/place_picker/selected_location_model.dart';
 
+/// Intercity / outstation booking (archetype D — live ride / map tracking).
+///
+/// Same panel-over-map skeleton as the city ride, but this screen leads with
+/// trip planning: a wider first panel with a popular-destinations rail of
+/// image cards, so intercity never reads as a recolour of the city flow.
+///
+/// Each panel is built lazily by [DraggableScrollableSheet] — after the
+/// enclosing `GetX` builder has stopped tracking — so every one runs in its
+/// own [DsObserve] and the controller reads inside stay reactive.
 class IntercityHomeScreen extends StatelessWidget {
   const IntercityHomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: IntercityHomeController(),
       builder: (controller) {
         return Scaffold(
-          body:
-              controller.isLoading.value
-                  ? Constant.loader()
-                  : Stack(
-                    children: [
-                      Constant.selectedMapType == "osm"
-                          ? flutterMap.FlutterMap(
+          body: controller.isLoading.value
+              ? Constant.loader()
+              : Stack(
+                  children: [
+                    Constant.selectedMapType == "osm"
+                        ? flutter_map.FlutterMap(
                             mapController: controller.mapOsmController,
-                            options: flutterMap.MapOptions(
-                              initialCenter:
-                                  Constant.currentLocation != null
-                                      ? latlong.LatLng(Constant.currentLocation!.latitude, Constant.currentLocation!.longitude)
-                                      : controller.currentOrder.value.id != null
-                                      ? latlong.LatLng(
-                                        double.parse(controller.currentOrder.value.sourceLocation!.latitude.toString()),
-                                        double.parse(controller.currentOrder.value.sourceLocation!.longitude.toString()),
-                                      )
-                                      : latlong.LatLng(41.4219057, -102.0840772),
+                            options: flutter_map.MapOptions(
+                              initialCenter: Constant.currentLocation != null
+                                  ? latlong.LatLng(Constant.currentLocation!.latitude, Constant.currentLocation!.longitude)
+                                  : controller.currentOrder.value.id != null
+                                  ? latlong.LatLng(
+                                      double.parse(controller.currentOrder.value.sourceLocation!.latitude.toString()),
+                                      double.parse(controller.currentOrder.value.sourceLocation!.longitude.toString()),
+                                    )
+                                  : latlong.LatLng(41.4219057, -102.0840772),
                               initialZoom: 14,
                             ),
                             children: [
-                              flutterMap.TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.spideli.customer'),
-                              flutterMap.MarkerLayer(markers: controller.osmMarker),
-                              if (controller.routePoints.isNotEmpty) flutterMap.PolylineLayer(polylines: [flutterMap.Polyline(points: controller.routePoints, strokeWidth: 5.0, color: Colors.blue)]),
+                              flutter_map.TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.spideli.customer'),
+                              flutter_map.MarkerLayer(markers: controller.osmMarker),
+                              if (controller.routePoints.isNotEmpty)
+                                flutter_map.PolylineLayer(
+                                  polylines: [flutter_map.Polyline(points: controller.routePoints, strokeWidth: 5.0, color: Colors.blue)],
+                                ),
                             ],
                           )
-                          : GoogleMap(
+                        : GoogleMap(
                             onMapCreated: (googleMapController) {
                               controller.mapController = googleMapController;
 
@@ -91,54 +91,51 @@ class IntercityHomeScreen extends StatelessWidget {
                             polylines: Set<Polyline>.of(controller.polyLines.values),
                             markers: controller.markers.toSet(), // reactive marker set
                           ),
-                      Positioned(
-                        top: 50,
-                        left: Constant.isRtl ? null : 20,
-                        right: Constant.isRtl ? 20 : null,
-                        child: InkWell(
-                          onTap: () {
-                            if (controller.bottomSheetType.value == "vehicleSelection") {
-                              controller.bottomSheetType.value = "location";
-                            } else if (controller.bottomSheetType.value == "payment") {
-                              controller.bottomSheetType.value = "vehicleSelection";
-                            } else if (controller.bottomSheetType.value == "conformRide") {
-                              controller.bottomSheetType.value = "payment";
-                            } else if (controller.bottomSheetType.value == "waitingDriver" || controller.bottomSheetType.value == "driverDetails") {
-                              Get.back(result: true);
-                            } else {
-                              Get.offAll(const ServiceListScreen());
-                            }
-                          },
-                          child: Container(
-                            decoration: BoxDecoration(color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50, borderRadius: BorderRadius.circular(30)),
-                            child: Padding(
-                              padding: const EdgeInsets.all(10),
-                              child: Center(child: Icon(Icons.arrow_back_ios_new, size: 20, color: isDark ? AppThemeData.grey50 : AppThemeData.greyDark50)),
-                            ),
-                          ),
-                        ),
+                    Positioned(
+                      top: 50,
+                      left: Constant.isRtl ? null : 20,
+                      right: Constant.isRtl ? 20 : null,
+                      child: CabMapButton(
+                        icon: Icons.arrow_back_ios_new_rounded,
+                        semanticLabel: "Back".tr,
+                        onPressed: () {
+                          if (controller.bottomSheetType.value == "vehicleSelection") {
+                            controller.bottomSheetType.value = "location";
+                          } else if (controller.bottomSheetType.value == "payment") {
+                            controller.bottomSheetType.value = "vehicleSelection";
+                          } else if (controller.bottomSheetType.value == "conformRide") {
+                            controller.bottomSheetType.value = "payment";
+                          } else if (controller.bottomSheetType.value == "waitingDriver" || controller.bottomSheetType.value == "driverDetails") {
+                            Get.back(result: true);
+                          } else {
+                            Get.offAll(const ServiceListScreen());
+                          }
+                        },
                       ),
-                      controller.bottomSheetType.value == "location"
-                          ? searchLocationBottomSheet(context, controller, isDark)
-                          : controller.bottomSheetType.value == "vehicleSelection"
-                          ? vehicleSelection(context, controller, isDark)
-                          : controller.bottomSheetType.value == "payment"
-                          ? paymentBottomSheet(context, controller, isDark)
-                          : controller.bottomSheetType.value == "conformRide"
-                          ? conformBottomSheet(context, isDark)
-                          : controller.bottomSheetType.value == "waitingForDriver"
-                          ? waitingDialog(context, controller, isDark)
-                          : controller.bottomSheetType.value == "driverDetails"
-                          ? driverDialog(context, controller, isDark)
-                          : SizedBox(),
-                    ],
-                  ),
+                    ),
+                    controller.bottomSheetType.value == "location"
+                        ? searchLocationBottomSheet(context, controller)
+                        : controller.bottomSheetType.value == "vehicleSelection"
+                        ? vehicleSelection(context, controller)
+                        : controller.bottomSheetType.value == "payment"
+                        ? paymentBottomSheet(context, controller)
+                        : controller.bottomSheetType.value == "conformRide"
+                        ? conformBottomSheet(context)
+                        : controller.bottomSheetType.value == "waitingForDriver"
+                        ? waitingDialog(context, controller)
+                        : controller.bottomSheetType.value == "driverDetails"
+                        ? driverDialog(context, controller)
+                        : SizedBox(),
+                  ],
+                ),
         );
       },
     );
   }
 
-  Widget searchLocationBottomSheet(BuildContext context, IntercityHomeController controller, bool isDark) {
+  // ---------------------------------------------------------------- step 1
+
+  Widget searchLocationBottomSheet(BuildContext context, IntercityHomeController controller) {
     return Positioned.fill(
       child: DraggableScrollableSheet(
         initialChildSize: 0.54,
@@ -146,209 +143,164 @@ class IntercityHomeScreen extends StatelessWidget {
         maxChildSize: 0.8,
         expand: false,
         builder: (context, scrollController) {
-          return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: isDark ? AppThemeData.grey700 : Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(35))),
-            child: ListView(
-              controller: scrollController,
-              padding: EdgeInsets.zero,
-              children: [
-                Center(child: Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: AppThemeData.grey400), height: 4, width: 33)),
-                SizedBox(height: 10),
-                Stack(
+          return DsObserve(
+            builder: (context) {
+              final t = context.dsText;
+              return CabSheetShell(
+                child: ListView(
+                  controller: scrollController,
+                  padding: EdgeInsets.zero,
                   children: [
-                    Container(
-                      decoration: BoxDecoration(color: isDark ? AppThemeData.grey700 : Colors.white, borderRadius: BorderRadius.circular(12)),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Pickup Location
-                          InkWell(
-                            onTap: () async {
-                              if (Constant.selectedMapType == 'osm') {
-                                final result = await Get.to(() => MapPickerPage());
-                                controller.sourceTextEditController.value.text = '';
-                                final firstPlace = result;
-                                if (result != null) {
-                                  if (Constant.checkZoneCheck(firstPlace.coordinates.latitude, firstPlace.coordinates.longitude) == true) {
-                                    final lat = firstPlace.coordinates.latitude;
-                                    final lng = firstPlace.coordinates.longitude;
-                                    final address = firstPlace.address;
-                                    controller.sourceTextEditController.value.text = address.toString();
-                                    controller.setDepartureMarker(lat, lng);
-                                  } else {
-                                    ShowToastDialog.showToast("Service is unavailable at the selected address.".tr);
-                                  }
-                                }
+                    Row(
+                      children: [
+                        DsIconWell(icon: DsSection.cab.icon, size: 36),
+                        const DsGap(DsSpace.md),
+                        Expanded(child: Text("Plan your intercity trip".tr, style: t.title)),
+                      ],
+                    ),
+                    const DsGap(DsSpace.md),
+                    CabRouteFields(
+                      pickup: CabAddressRow(
+                        controller: controller.sourceTextEditController.value,
+                        hint: "Pickup Location".tr,
+                        isPickup: true,
+                        onTap: () async {
+                          if (Constant.selectedMapType == 'osm') {
+                            final result = await Get.to(() => MapPickerPage());
+                            controller.sourceTextEditController.value.text = '';
+                            final firstPlace = result;
+                            if (result != null) {
+                              if (Constant.checkZoneCheck(firstPlace.coordinates.latitude, firstPlace.coordinates.longitude) == true) {
+                                final lat = firstPlace.coordinates.latitude;
+                                final lng = firstPlace.coordinates.longitude;
+                                final address = firstPlace.address;
+                                controller.sourceTextEditController.value.text = address.toString();
+                                controller.setDepartureMarker(lat, lng);
                               } else {
-                                Get.to(LocationPickerScreen())!.then((value) async {
-                                  if (value != null) {
-                                    SelectedLocationModel selectedLocationModel = value;
-
-                                    if (Constant.checkZoneCheck(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude) == true) {
-                                      controller.sourceTextEditController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
-                                      controller.setDepartureMarker(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude);
-                                    } else {
-                                      ShowToastDialog.showToast("Service is unavailable at the selected address.".tr);
-                                    }
-                                  }
-                                });
+                                ShowToastDialog.showToast("Service is unavailable at the selected address.".tr);
                               }
-                            },
-                            child: TextFieldWidget(
-                              controller: controller.sourceTextEditController.value,
-                              hintText: "Pickup Location".tr,
-                              enable: false,
-                              prefix: Padding(padding: EdgeInsets.only(left: 10, right: 10), child: Image.asset("assets/icons/pickup.png", height: 22, width: 22)),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          // Destination Location
-                          InkWell(
-                            onTap: () async {
-                              if (Constant.selectedMapType == 'osm') {
-                                final result = await Get.to(() => MapPickerPage());
-                                if (result != null) {
-                                  controller.destinationTextEditController.value.text = '';
-                                  final firstPlace = result;
-                                  final lat = firstPlace.coordinates.latitude;
-                                  final lng = firstPlace.coordinates.longitude;
-                                  final address = firstPlace.address;
-                                  controller.destinationTextEditController.value.text = address.toString();
-                                  controller.setDestinationMarker(lat, lng);
+                            }
+                          } else {
+                            Get.to(LocationPickerScreen())!.then((value) async {
+                              if (value != null) {
+                                SelectedLocationModel selectedLocationModel = value;
+
+                                if (Constant.checkZoneCheck(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude) == true) {
+                                  controller.sourceTextEditController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
+                                  controller.setDepartureMarker(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude);
+                                } else {
+                                  ShowToastDialog.showToast("Service is unavailable at the selected address.".tr);
                                 }
-                              } else {
-                                Get.to(LocationPickerScreen())!.then((value) async {
-                                  if (value != null) {
-                                    SelectedLocationModel selectedLocationModel = value;
-
-                                    controller.destinationTextEditController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
-                                    controller.setDestinationMarker(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude);
-                                  }
-                                });
                               }
-                            },
-                            child: TextFieldWidget(
-                              controller: controller.destinationTextEditController.value,
-                              // backgroundColor: AppThemeData.grey50,
-                              // borderColor: AppThemeData.grey50,
-                              hintText: "Destination Location".tr,
-                              enable: false,
-                              prefix: const Padding(padding: EdgeInsets.only(left: 10, right: 10), child: Icon(Icons.radio_button_checked, color: Colors.red)),
-                            ),
-                          ),
-                        ],
+                            });
+                          }
+                        },
+                      ),
+                      destination: CabAddressRow(
+                        controller: controller.destinationTextEditController.value,
+                        hint: "Destination Location".tr,
+                        isPickup: false,
+                        onTap: () async {
+                          if (Constant.selectedMapType == 'osm') {
+                            final result = await Get.to(() => MapPickerPage());
+                            if (result != null) {
+                              controller.destinationTextEditController.value.text = '';
+                              final firstPlace = result;
+                              final lat = firstPlace.coordinates.latitude;
+                              final lng = firstPlace.coordinates.longitude;
+                              final address = firstPlace.address;
+                              controller.destinationTextEditController.value.text = address.toString();
+                              controller.setDestinationMarker(lat, lng);
+                            }
+                          } else {
+                            Get.to(LocationPickerScreen())!.then((value) async {
+                              if (value != null) {
+                                SelectedLocationModel selectedLocationModel = value;
+
+                                controller.destinationTextEditController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
+                                controller.setDestinationMarker(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude);
+                              }
+                            });
+                          }
+                        },
                       ),
                     ),
-                    Positioned(
-                      left: 10,
-                      top: 33,
-                      child: DottedBorder(
-                        options: CustomPathDottedBorderOptions(
-                          color: Colors.grey.shade400,
-                          strokeWidth: 2,
-                          dashPattern: [4, 4],
-                          customPath:
-                              (size) =>
-                                  Path()
-                                    ..moveTo(size.width / 2, 0)
-                                    ..lineTo(size.width / 2, size.height),
-                        ),
-                        child: const SizedBox(width: 20, height: 40),
+                    const DsGap(DsSpace.md),
+                    // Stops A, B, … (spec 4.8): route and fare go through them.
+                    CabStopsEditor(controller: controller),
+                    const DsGap(DsSpace.md),
+                    DsSectionHeader(
+                      title: "Popular Destinations".tr,
+                      padding: const EdgeInsets.only(bottom: DsSpace.md),
+                    ),
+                    SizedBox(
+                      height: 132,
+                      child: ListView.separated(
+                        itemCount: controller.popularDestination.length,
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.zero,
+                        separatorBuilder: (context, index) => const DsGap(DsSpace.md),
+                        itemBuilder: (context, index) {
+                          return DsFadeSlideIn(
+                            index: index,
+                            child: _PopularDestinationTile(
+                              title: controller.popularDestination[index].title.toString(),
+                              image: (controller.popularDestination[index].image != null && controller.popularDestination[index].image!.isNotEmpty)
+                                  ? controller.popularDestination[index].image!
+                                  : Constant.placeHolderImage,
+                              onTap: () async {
+                                if (controller.popularDestination[index].latitude != null || controller.popularDestination[index].longitude != null) {
+                                  List<get_cord_address.Placemark> placeMarks = await get_cord_address.Geocoding().placemarkFromCoordinates(
+                                    controller.popularDestination[index].latitude ?? 0.0,
+                                    controller.popularDestination[index].longitude ?? 0.0,
+                                  );
+
+                                  final address =
+                                      (placeMarks.first.subLocality!.isEmpty ? '' : "${placeMarks.first.subLocality}, ") +
+                                      (placeMarks.first.street!.isEmpty ? '' : "${placeMarks.first.street}, ") +
+                                      (placeMarks.first.name!.isEmpty ? '' : "${placeMarks.first.name}, ") +
+                                      (placeMarks.first.subAdministrativeArea!.isEmpty ? '' : "${placeMarks.first.subAdministrativeArea}, ") +
+                                      (placeMarks.first.administrativeArea!.isEmpty ? '' : "${placeMarks.first.administrativeArea}, ") +
+                                      (placeMarks.first.country!.isEmpty ? '' : "${placeMarks.first.country}, ") +
+                                      (placeMarks.first.postalCode!.isEmpty ? '' : "${placeMarks.first.postalCode}, ");
+                                  controller.destinationTextEditController.value.text = address;
+                                  controller.setDestinationMarker(controller.popularDestination[index].latitude ?? 0.0, controller.popularDestination[index].longitude ?? 0.0);
+                                }
+                              },
+                            ),
+                          );
+                        },
                       ),
+                    ),
+                    const DsGap(DsSpace.lg),
+                    DsButton.primary(
+                      label: "Continue".tr,
+                      size: DsButtonSize.lg,
+                      expand: true,
+                      trailingIcon: Icons.arrow_forward_rounded,
+                      onPressed: () {
+                        if (controller.sourceTextEditController.value.text.isEmpty) {
+                          ShowToastDialog.showToast("Please select source location".tr);
+                        } else if (controller.destinationTextEditController.value.text.isEmpty) {
+                          ShowToastDialog.showToast("Please select destination location".tr);
+                        } else {
+                          controller.bottomSheetType.value = "vehicleSelection";
+                        }
+                      },
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                // Stops A, B, … (spec 4.8): route and fare go through them.
-                CabStopsEditor(controller: controller, isDark: isDark),
-                SizedBox(height: 15),
-                Align(alignment: Alignment.centerLeft, child: Text("Popular Destinations".tr, style: AppThemeData.boldTextStyle(fontSize: 16, color: AppThemeData.grey900))),
-                SizedBox(
-                  height: 120,
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: ListView.builder(
-                      itemCount: controller.popularDestination.length,
-                      scrollDirection: Axis.horizontal,
-                      itemBuilder: (context, index) {
-                        return InkWell(
-                          onTap: () async {
-                            if (controller.popularDestination[index].latitude != null || controller.popularDestination[index].longitude != null) {
-                              List<get_cord_address.Placemark> placeMarks = await get_cord_address.Geocoding().placemarkFromCoordinates(
-                                controller.popularDestination[index].latitude ?? 0.0,
-                                controller.popularDestination[index].longitude ?? 0.0,
-                              );
-
-                              final address =
-                                  (placeMarks.first.subLocality!.isEmpty ? '' : "${placeMarks.first.subLocality}, ") +
-                                  (placeMarks.first.street!.isEmpty ? '' : "${placeMarks.first.street}, ") +
-                                  (placeMarks.first.name!.isEmpty ? '' : "${placeMarks.first.name}, ") +
-                                  (placeMarks.first.subAdministrativeArea!.isEmpty ? '' : "${placeMarks.first.subAdministrativeArea}, ") +
-                                  (placeMarks.first.administrativeArea!.isEmpty ? '' : "${placeMarks.first.administrativeArea}, ") +
-                                  (placeMarks.first.country!.isEmpty ? '' : "${placeMarks.first.country}, ") +
-                                  (placeMarks.first.postalCode!.isEmpty ? '' : "${placeMarks.first.postalCode}, ");
-                              controller.destinationTextEditController.value.text = address;
-                              controller.setDestinationMarker(controller.popularDestination[index].latitude ?? 0.0, controller.popularDestination[index].longitude ?? 0.0);
-                            }
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: 10),
-                            child: Stack(
-                              children: [
-                                CachedNetworkImage(
-                                  imageUrl:
-                                      (controller.popularDestination[index].image != null && controller.popularDestination[index].image!.isNotEmpty)
-                                          ? controller.popularDestination[index].image!
-                                          : Constant.placeHolderImage,
-                                  height: 160,
-                                  width: 120,
-                                  imageBuilder:
-                                      (context, imageProvider) =>
-                                          Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), image: DecorationImage(image: imageProvider, fit: BoxFit.cover))),
-                                  placeholder: (context, url) => Center(child: CircularProgressIndicator.adaptive(valueColor: AlwaysStoppedAnimation(AppThemeData.primary300))),
-                                  errorWidget:
-                                      (context, url, error) =>
-                                          ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.network(Constant.placeHolderImage, fit: BoxFit.cover, cacheHeight: 80, cacheWidth: 80)),
-                                  fit: BoxFit.cover,
-                                ),
-                                Positioned(
-                                  left: 5,
-                                  top: 80,
-                                  child: Text(controller.popularDestination[index].title.toString(), style: AppThemeData.boldTextStyle(fontSize: 15, color: AppThemeData.surface)),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                SizedBox(height: 10),
-                RoundedButtonFill(
-                  title: "Continue".tr,
-                  onPress: () {
-                    if (controller.sourceTextEditController.value.text.isEmpty) {
-                      ShowToastDialog.showToast("Please select source location".tr);
-                    } else if (controller.destinationTextEditController.value.text.isEmpty) {
-                      ShowToastDialog.showToast("Please select destination location".tr);
-                    } else {
-                      controller.bottomSheetType.value = "vehicleSelection";
-                    }
-                  },
-                  color: AppThemeData.primary300,
-                  textColor: AppThemeData.grey900,
-                ),
-              ],
-            ),
+              );
+            },
           );
         },
       ),
     );
   }
 
-  Widget vehicleSelection(BuildContext context, IntercityHomeController controller, bool isDark) {
+  // ---------------------------------------------------------------- step 2
+
+  Widget vehicleSelection(BuildContext context, IntercityHomeController controller) {
     return Positioned.fill(
       child: DraggableScrollableSheet(
         initialChildSize: 0.40,
@@ -356,144 +308,80 @@ class IntercityHomeScreen extends StatelessWidget {
         maxChildSize: 0.8,
         expand: false,
         builder: (context, scrollController) {
-          return Container(
-            decoration: BoxDecoration(color: isDark ? AppThemeData.grey700 : Colors.white, borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24))),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 15.0, vertical: 10),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: AppThemeData.grey400), height: 4, width: 33),
-                  Align(
-                    alignment: Alignment.topLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      child: Text(
-                        "Select Your Vehicle Type".tr,
-                        style: AppThemeData.boldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                        textAlign: TextAlign.start,
+          return DsObserve(
+            builder: (context) {
+              final t = context.dsText;
+              return CabSheetShell(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: DsSpace.md),
+                        child: Text("Select Your Vehicle Type".tr, style: t.title, textAlign: TextAlign.start),
                       ),
                     ),
-                  ),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: controller.vehicleTypes.length,
-                      shrinkWrap: true,
-                      padding: EdgeInsets.only(bottom: 20),
-                      controller: scrollController,
-                      scrollDirection: Axis.vertical,
-                      itemBuilder: (context, index) {
-                        VehicleType vehicleType = controller.vehicleTypes[index];
-                        return Obx(
-                          () => InkWell(
-                            onTap: () {
-                              controller.selectedVehicleType.value = controller.vehicleTypes[index];
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(15),
-                                  border: Border.all(
-                                    color:
-                                        isDark
-                                            ? controller.selectedVehicleType.value.id == vehicleType.id
-                                                ? Colors.white
-                                                : AppThemeData.grey500
-                                            : controller.selectedVehicleType.value.id == vehicleType.id
-                                            ? AppThemeData.grey300
-                                            : Colors.transparent,
-                                    width: 1,
-                                  ),
-                                  color:
-                                      controller.selectedVehicleType.value.id == vehicleType.id
-                                          ? AppThemeData.grey50
-                                          : isDark
-                                          ? AppThemeData.grey300
-                                          : Colors.white,
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-                                  child: Row(
-                                    children: [
-                                      ClipRRect(
-                                        //borderRadius: BorderRadius.circular(10),
-                                        child: CachedNetworkImage(
-                                          imageUrl: vehicleType.vehicleIcon.toString(),
-                                          height: 60,
-                                          width: 60,
-                                          imageBuilder:
-                                              (context, imageProvider) =>
-                                                  Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), image: DecorationImage(image: imageProvider, fit: BoxFit.cover))),
-                                          placeholder: (context, url) => Center(child: CircularProgressIndicator.adaptive(valueColor: AlwaysStoppedAnimation(AppThemeData.primary300))),
-                                          errorWidget: (context, url, error) => ClipRRect(borderRadius: BorderRadius.circular(20), child: Image.network(Constant.userPlaceHolder, fit: BoxFit.cover)),
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                "${vehicleType.name} | ${controller.distance.toStringAsFixed(2)}km",
-                                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1),
-                                              ),
-                                              Padding(
-                                                padding: const EdgeInsets.only(top: 2.0),
-                                                child: Text(controller.duration.value, style: const TextStyle(fontWeight: FontWeight.w400, letterSpacing: 1)),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                      Text(
-                                        Constant.amountShow(amount: controller.getAmount(vehicleType).toString(), currency: controller.rideCurrency),
-                                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: controller.vehicleTypes.length,
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.only(bottom: DsSpace.xl),
+                        controller: scrollController,
+                        scrollDirection: Axis.vertical,
+                        itemBuilder: (context, index) {
+                          VehicleType vehicleType = controller.vehicleTypes[index];
+                          return Obx(
+                            () => Padding(
+                              padding: const EdgeInsets.only(bottom: DsSpace.md),
+                              child: _VehicleRow(
+                                vehicleType: vehicleType,
+                                selected: controller.selectedVehicleType.value.id == vehicleType.id,
+                                distanceLabel: "${controller.distance.toStringAsFixed(2)}km",
+                                durationLabel: controller.duration.value,
+                                fare: Constant.amountShow(amount: controller.getAmount(vehicleType).toString(), currency: controller.rideCurrency),
+                                onTap: () {
+                                  controller.selectedVehicleType.value = controller.vehicleTypes[index];
+                                },
                               ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                  Obx(
-                    () => RoundedButtonFill(
-                      title: 'pay_amount'.trParams({
-                        'amount':
-                            controller.selectedVehicleType.value.id == null
-                                ? Constant.amountShow(amount: "0.0", currency: controller.rideCurrency)
-                                : Constant.amountShow(amount: controller.getAmount(controller.selectedVehicleType.value).toString(), currency: controller.rideCurrency),
-                      }),
-                      // title:
-                      // "Pay ${controller.selectedVehicleType.value.id == null ? Constant.amountShow(amount: "0.0", currency: controller.rideCurrency) : Constant.amountShow(amount: controller.getAmount(controller.selectedVehicleType.value).toString(), currency: controller.rideCurrency)}",
-                      onPress: () async {
-                        if (controller.selectedVehicleType.value.id != null) {
-                          controller.calculateTotalAmount();
-                          controller.bottomSheetType.value = "payment";
-                        } else {
-                          ShowToastDialog.showToast("Please select a vehicle type first.".tr);
-                        }
-                      },
-                      color: AppThemeData.primary300,
-                      textColor: AppThemeData.grey900,
+                    Obx(
+                      () => DsButton.primary(
+                        label: 'pay_amount'.trParams({
+                          'amount': controller.selectedVehicleType.value.id == null
+                              ? Constant.amountShow(amount: "0.0", currency: controller.rideCurrency)
+                              : Constant.amountShow(amount: controller.getAmount(controller.selectedVehicleType.value).toString(), currency: controller.rideCurrency),
+                        }),
+                        size: DsButtonSize.lg,
+                        expand: true,
+                        onPressed: () async {
+                          if (controller.selectedVehicleType.value.id != null) {
+                            controller.calculateTotalAmount();
+                            controller.bottomSheetType.value = "payment";
+                          } else {
+                            ShowToastDialog.showToast("Please select a vehicle type first.".tr);
+                          }
+                        },
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
+                  ],
+                ),
+              );
+            },
           );
         },
       ),
     );
   }
 
-  Widget paymentBottomSheet(BuildContext context, IntercityHomeController controller, bool isDark) {
+  // ---------------------------------------------------------------- step 3
+
+  Widget paymentBottomSheet(BuildContext context, IntercityHomeController controller) {
     return Positioned.fill(
       child: DraggableScrollableSheet(
         initialChildSize: 0.70,
@@ -501,153 +389,117 @@ class IntercityHomeScreen extends StatelessWidget {
         maxChildSize: 0.8,
         expand: false,
         builder: (context, scrollController) {
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-            decoration: BoxDecoration(color: isDark ? AppThemeData.grey700 : Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          return DsObserve(
+            builder: (context) {
+              final t = context.dsText;
+              final hasPreferred = controller.walletSettingModel.value.isEnabled == true || controller.cashOnDeliverySettingModel.value.isEnabled == true;
+              return CabSheetShell(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text("Select Payment Method".tr, style: AppThemeData.mediumTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                    GestureDetector(
-                      onTap: () {
-                        Get.back();
-                      },
-                      child: Icon(Icons.close, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(child: Text("Select Payment Method".tr, style: t.title)),
+                        DsIconButton(
+                          icon: Icons.close_rounded,
+                          semanticLabel: "Close".tr,
+                          variant: DsIconButtonVariant.tonal,
+                          size: 36,
+                          onPressed: () {
+                            Get.back();
+                          },
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Expanded(
-                  child: ListView(
-                    padding: EdgeInsets.zero,
-                    controller: scrollController,
-                    children: [
-                      Text("Preferred Payment".tr, textAlign: TextAlign.start, style: AppThemeData.boldTextStyle(fontSize: 15, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500)),
-                      const SizedBox(height: 10),
-                      if (controller.walletSettingModel.value.isEnabled == true || controller.cashOnDeliverySettingModel.value.isEnabled == true)
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(15),
-                            color: isDark ? AppThemeData.greyDark100 : AppThemeData.grey50,
-                            border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
+                    const DsGap(DsSpace.lg),
+                    Expanded(
+                      child: ListView(
+                        padding: EdgeInsets.zero,
+                        controller: scrollController,
+                        children: [
+                          if (hasPreferred) ...[
+                            Text("Preferred Payment".tr, textAlign: TextAlign.start, style: t.overline),
+                            const DsGap(DsSpace.sm),
+                            DsCard.outlined(
+                              padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
+                              child: Column(
+                                children: [
+                                  Visibility(visible: controller.walletSettingModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.wallet, "assets/images/ic_wallet.png")),
+                                  Visibility(
+                                    visible: controller.cashOnDeliverySettingModel.value.isEnabled == true,
+                                    child: cardDecoration(controller, PaymentGateway.cod, "assets/images/ic_cash.png"),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const DsGap(DsSpace.lg),
+                            Text("Other Payment Options".tr, textAlign: TextAlign.start, style: t.overline),
+                            const DsGap(DsSpace.sm),
+                          ],
+                          DsCard.outlined(
+                            padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
                             child: Column(
                               children: [
+                                Visibility(visible: controller.stripeModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.stripe, "assets/images/stripe.png")),
+                                Visibility(visible: controller.payPalModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.paypal, "assets/images/paypal.png")),
+                                Visibility(visible: controller.payStackModel.value.isEnable == true, child: cardDecoration(controller, PaymentGateway.payStack, "assets/images/paystack.png")),
                                 Visibility(
-                                  visible: controller.walletSettingModel.value.isEnabled == true,
-                                  child: cardDecoration(controller, PaymentGateway.wallet, isDark, "assets/images/ic_wallet.png"),
+                                  visible: controller.mercadoPagoModel.value.isEnabled == true,
+                                  child: cardDecoration(controller, PaymentGateway.mercadoPago, "assets/images/mercado-pago.png"),
                                 ),
                                 Visibility(
-                                  visible: controller.cashOnDeliverySettingModel.value.isEnabled == true,
-                                  child: cardDecoration(controller, PaymentGateway.cod, isDark, "assets/images/ic_cash.png"),
+                                  visible: controller.flutterWaveModel.value.isEnable == true,
+                                  child: cardDecoration(controller, PaymentGateway.flutterWave, "assets/images/flutterwave_logo.png"),
                                 ),
+                                Visibility(visible: controller.payFastModel.value.isEnable == true, child: cardDecoration(controller, PaymentGateway.payFast, "assets/images/payfast.png")),
+                                Visibility(visible: controller.razorPayModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.razorpay, "assets/images/razorpay.png")),
+                                Visibility(visible: controller.midTransModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.midTrans, "assets/images/midtrans.png")),
+                                Visibility(visible: controller.orangeMoneyModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.orangeMoney, "assets/images/orange_money.png")),
+                                Visibility(visible: controller.xenditModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.xendit, "assets/images/xendit.png")),
                               ],
                             ),
                           ),
-                        ),
-                      if (controller.walletSettingModel.value.isEnabled == true || controller.cashOnDeliverySettingModel.value.isEnabled == true)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 10),
-                            Text(
-                              "Other Payment Options".tr,
-                              textAlign: TextAlign.start,
-                              style: AppThemeData.boldTextStyle(fontSize: 15, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500),
-                            ),
-                            const SizedBox(height: 10),
-                          ],
-                        ),
-                      Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(15),
-                          color: isDark ? AppThemeData.greyDark100 : AppThemeData.grey50,
-                          border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Column(
-                            children: [
-                              Visibility(visible: controller.stripeModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.stripe, isDark, "assets/images/stripe.png")),
-                              Visibility(visible: controller.payPalModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.paypal, isDark, "assets/images/paypal.png")),
-                              Visibility(visible: controller.payStackModel.value.isEnable == true, child: cardDecoration(controller, PaymentGateway.payStack, isDark, "assets/images/paystack.png")),
-                              Visibility(
-                                visible: controller.mercadoPagoModel.value.isEnabled == true,
-                                child: cardDecoration(controller, PaymentGateway.mercadoPago, isDark, "assets/images/mercado-pago.png"),
-                              ),
-                              Visibility(
-                                visible: controller.flutterWaveModel.value.isEnable == true,
-                                child: cardDecoration(controller, PaymentGateway.flutterWave, isDark, "assets/images/flutterwave_logo.png"),
-                              ),
-                              Visibility(visible: controller.payFastModel.value.isEnable == true, child: cardDecoration(controller, PaymentGateway.payFast, isDark, "assets/images/payfast.png")),
-                              Visibility(visible: controller.razorPayModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.razorpay, isDark, "assets/images/razorpay.png")),
-                              Visibility(visible: controller.midTransModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.midTrans, isDark, "assets/images/midtrans.png")),
-                              Visibility(
-                                visible: controller.orangeMoneyModel.value.enable == true,
-                                child: cardDecoration(controller, PaymentGateway.orangeMoney, isDark, "assets/images/orange_money.png"),
-                              ),
-                              Visibility(visible: controller.xenditModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.xendit, isDark, "assets/images/xendit.png")),
-                            ],
-                          ),
-                        ),
+                          const DsGap(DsSpace.xl),
+                        ],
                       ),
-                      SizedBox(height: 20),
-                    ],
-                  ),
+                    ),
+                    DsButton.primary(
+                      label: "Continue".tr,
+                      size: DsButtonSize.lg,
+                      expand: true,
+                      onPressed: () async {
+                        if (controller.selectedPaymentMethod.value.isEmpty) {
+                          ShowToastDialog.showToast("Please select a payment method".tr);
+                          return;
+                        }
+                        if (controller.selectedPaymentMethod.value == "wallet") {
+                          num walletAmount = controller.userModel.value.walletAmount ?? 0;
+                          if (walletAmount <= 0) {
+                            ShowToastDialog.showToast("Insufficient wallet balance. Please select another payment method.".tr);
+                            return;
+                          }
+                        }
+                        if (controller.currentOrder.value.id != null) {
+                          controller.bottomSheetType.value = "driverDetails";
+                        } else {
+                          controller.bottomSheetType.value = "conformRide";
+                        }
+                      },
+                    ),
+                  ],
                 ),
-                RoundedButtonFill(
-                  title: "Continue".tr,
-                  color: AppThemeData.primary300,
-                  textColor: AppThemeData.grey900,
-                  onPress: () async {
-                    if (controller.selectedPaymentMethod.value.isEmpty) {
-                      ShowToastDialog.showToast("Please select a payment method".tr);
-                      return;
-                    }
-                    if (controller.selectedPaymentMethod.value == "wallet") {
-                      num walletAmount = controller.userModel.value.walletAmount ?? 0;
-                      if (walletAmount <= 0) {
-                        ShowToastDialog.showToast("Insufficient wallet balance. Please select another payment method.".tr);
-                        return;
-                      }
-                    }
-                    if (controller.currentOrder.value.id != null) {
-                      controller.bottomSheetType.value = "driverDetails";
-                    } else {
-                      controller.bottomSheetType.value = "conformRide";
-                    }
-                  },
-                ),
-                // RoundedButtonFill(
-                //   title: "Continue".tr,
-                //   color: AppThemeData.primary300,
-                //   textColor: AppThemeData.grey900,
-                //   onPress: () async {
-                //     if (controller.selectedPaymentMethod.value.isEmpty) {
-                //       ShowToastDialog.showToast("Please select a payment method");
-                //     } else {
-                //       if (controller.currentOrder.value.id != null) {
-                //         controller.bottomSheetType.value = "driverDetails";
-                //       } else {
-                //         controller.bottomSheetType.value = "conformRide";
-                //       }
-                //     }
-                //   },
-                // ),
-              ],
-            ),
+              );
+            },
           );
         },
       ),
     );
   }
 
-  Widget conformBottomSheet(BuildContext context, bool isDark) {
+  // ---------------------------------------------------------------- step 4
+
+  Widget conformBottomSheet(BuildContext context) {
     return Positioned.fill(
       child: DraggableScrollableSheet(
         initialChildSize: 0.7,
@@ -658,378 +510,284 @@ class IntercityHomeScreen extends StatelessWidget {
           return GetX(
             init: IntercityHomeController(),
             builder: (controller) {
-              return Container(
-                decoration: BoxDecoration(color: isDark ? AppThemeData.grey700 : Colors.white, borderRadius: BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30))),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 15.0, vertical: 10),
+              final c = context.dsColors;
+              final t = context.dsText;
+              return CabSheetShell(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: ListView(
+                        controller: scrollController,
+                        padding: EdgeInsets.zero,
+                        children: [
+                          Text("Review your trip".tr, style: t.title),
+                          const DsGap(DsSpace.md),
+                          CabRouteFields(
+                            pickup: CabAddressRow(
+                              controller: controller.sourceTextEditController.value,
+                              hint: "Pickup Location".tr,
+                              isPickup: true,
+                              onTap: () async {
+                                if (Constant.selectedMapType == 'osm') {
+                                  final result = await Get.to(() => MapPickerPage());
+                                  if (result != null) {
+                                    controller.sourceTextEditController.value.text = '';
+                                    final firstPlace = result;
+                                    final lat = firstPlace.coordinates.latitude;
+                                    final lng = firstPlace.coordinates.longitude;
+                                    final address = firstPlace.address;
+                                    controller.sourceTextEditController.value.text = address.toString();
+                                    controller.setDepartureMarker(lat, lng);
+                                  }
+                                } else {
+                                  Get.to(LocationPickerScreen())!.then((value) async {
+                                    if (value != null) {
+                                      SelectedLocationModel selectedLocationModel = value;
+
+                                      controller.sourceTextEditController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
+                                      controller.setDepartureMarker(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude);
+                                    }
+                                  });
+                                }
+                              },
+                            ),
+                            destination: CabAddressRow(
+                              controller: controller.destinationTextEditController.value,
+                              hint: "Destination Location".tr,
+                              isPickup: false,
+                              onTap: () async {
+                                if (Constant.selectedMapType == 'osm') {
+                                  final result = await Get.to(() => MapPickerPage());
+                                  if (result != null) {
+                                    controller.destinationTextEditController.value.text = '';
+                                    final firstPlace = result;
+                                    final lat = firstPlace.coordinates.latitude;
+                                    final lng = firstPlace.coordinates.longitude;
+                                    final address = firstPlace.address;
+                                    controller.destinationTextEditController.value.text = address.toString();
+                                    controller.setDestinationMarker(lat, lng);
+                                  }
+                                } else {
+                                  Get.to(LocationPickerScreen())!.then((value) async {
+                                    if (value != null) {
+                                      SelectedLocationModel selectedLocationModel = value;
+
+                                      controller.destinationTextEditController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
+                                      controller.setDestinationMarker(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude);
+                                    }
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          const DsGap(DsSpace.md),
+
+                          if (controller.stops.isNotEmpty) ...[DsCard.outlined(child: CabStopsSummary(controller: controller)), const DsGap(DsSpace.md)],
+                          CabTripOptionsSection(controller: controller),
+                          const DsGap(DsSpace.md),
+                          _PromoSection(
+                            couponController: controller.couponCodeTextEditController.value,
+                            onViewAll: () {
+                              Get.to(CabCouponCodeScreen())!.then((value) {
+                                if (value != null) {
+                                  double couponAmount = Constant.calculateDiscount(amount: controller.subTotal.value.toString(), offerModel: value);
+                                  if (couponAmount < controller.subTotal.value) {
+                                    controller.selectedCouponModel.value = value;
+                                    controller.calculateTotalAmount();
+                                  } else {
+                                    ShowToastDialog.showToast("This offer not eligible for this booking".tr);
+                                  }
+                                }
+                              });
+                            },
+                            onRedeem: () async {
+                              if (controller.cabCouponList.where((element) => element.code!.toLowerCase() == controller.couponCodeTextEditController.value.text.toLowerCase()).isNotEmpty) {
+                                CouponModel couponModel = controller.cabCouponList.firstWhere((p0) => p0.code!.toLowerCase() == controller.couponCodeTextEditController.value.text.toLowerCase());
+                                if (couponModel.expiresAt!.toDate().isAfter(DateTime.now())) {
+                                  double couponAmount = Constant.calculateDiscount(amount: controller.subTotal.value.toString(), offerModel: couponModel);
+                                  if (couponAmount < controller.subTotal.value) {
+                                    controller.selectedCouponModel.value = couponModel;
+                                    controller.calculateTotalAmount();
+                                    controller.update();
+                                  } else {
+                                    ShowToastDialog.showToast("This offer not eligible for this booking".tr);
+                                  }
+                                } else {
+                                  ShowToastDialog.showToast("This coupon code has been expired".tr);
+                                }
+                              } else {
+                                ShowToastDialog.showToast("Invalid coupon code".tr);
+                              }
+                            },
+                          ),
+                          const DsGap(DsSpace.md),
+
+                          DsCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text("Order Summary".tr, style: t.overline),
+                                const DsGap(DsSpace.md),
+                                CabBillRow(
+                                  label: "Subtotal".tr,
+                                  value: Constant.amountShow(amount: controller.subTotal.value.toString(), currency: controller.rideCurrency),
+                                ),
+                                CabBillRow(
+                                  label: "Discount".tr,
+                                  labelSuffix: controller.selectedCouponModel.value.id == null ? "" : "(${controller.selectedCouponModel.value.code})",
+                                  value: Constant.amountShow(amount: controller.discount.value.toString(), currency: controller.rideCurrency),
+                                  valueColor: c.dangerStrong,
+                                ),
+                                if (Constant.platformFeeModel?.enable == true)
+                                  CabBillRow(
+                                    label: "Platform fee".tr,
+                                    value: Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: controller.rideCurrency),
+                                  ),
+                                CabBillRow(
+                                  label: "Tax amount".tr,
+                                  value: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: controller.rideCurrency),
+                                  onTap: () {
+                                    showBillBifurcationDialog(context, controller);
+                                  },
+                                ),
+                                const DsDivider(spacing: DsSpace.lg),
+                                CabBillRow(
+                                  label: "Order Total".tr,
+                                  value: Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.rideCurrency),
+                                  emphasize: true,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const DsGap(DsSpace.xl),
+                          DsCard.outlined(
+                            padding: const EdgeInsets.all(DsSpace.md),
+                            child: Row(
+                              children: [
+                                CabGatewayLogo(
+                                  method: controller.selectedPaymentMethod.value,
+                                  image: controller.selectedPaymentMethod.value == '' ? '' : cabGatewayAsset(controller.selectedPaymentMethod.value),
+                                ),
+                                const DsGap(DsSpace.lg),
+                                Expanded(
+                                  child: Text(controller.selectedPaymentMethod.value.tr, textAlign: TextAlign.start, style: t.bodyStrong),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const DsGap(DsSpace.md),
+                    DsButton.primary(
+                      label: "Confirm Booking".tr,
+                      size: DsButtonSize.lg,
+                      expand: true,
+                      onPressed: () async {
+                        final error = controller.validateRideOptions();
+                        if (error != null) {
+                          ShowToastDialog.showToast(error);
+                          return;
+                        }
+                        controller.placeOrder();
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------- step 5
+
+  Widget waitingDialog(BuildContext context, IntercityHomeController controller) {
+    return Positioned.fill(
+      child: DraggableScrollableSheet(
+        initialChildSize: 0.4,
+        minChildSize: 0.4,
+        maxChildSize: 0.4,
+        expand: false,
+        builder: (context, scrollController) {
+          return DsObserve(
+            builder: (context) {
+              return CabSheetShell(
+                child: SingleChildScrollView(
+                  controller: scrollController,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: AppThemeData.grey400), height: 4, width: 33),
-                      Expanded(
-                        child: ListView(
-                          controller: scrollController,
-                          padding: EdgeInsets.zero,
-                          children: [
-                            const SizedBox(height: 10),
-                            Stack(
-                              children: [
-                                Container(
-                                  decoration: BoxDecoration(color: isDark ? Colors.transparent : Colors.white, borderRadius: BorderRadius.circular(12)),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      // Pickup Location
-                                      InkWell(
-                                        onTap: () async {
-                                          if (Constant.selectedMapType == 'osm') {
-                                            final result = await Get.to(() => MapPickerPage());
-                                            if (result != null) {
-                                              controller.sourceTextEditController.value.text = '';
-                                              final firstPlace = result;
-                                              final lat = firstPlace.coordinates.latitude;
-                                              final lng = firstPlace.coordinates.longitude;
-                                              final address = firstPlace.address;
-                                              controller.sourceTextEditController.value.text = address.toString();
-                                              controller.setDepartureMarker(lat, lng);
-                                            }
-                                          } else {
-                                            Get.to(LocationPickerScreen())!.then((value) async {
-                                              if (value != null) {
-                                                SelectedLocationModel selectedLocationModel = value;
-
-                                                controller.sourceTextEditController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
-                                                controller.setDepartureMarker(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude);
-                                              }
-                                            });
-                                          }
-                                        },
-                                        child: TextFieldWidget(
-                                          controller: controller.sourceTextEditController.value,
-                                          hintText: "Pickup Location".tr,
-                                          enable: false,
-                                          prefix: const Padding(padding: EdgeInsets.only(left: 10, right: 10), child: Icon(Icons.stop_circle_outlined, color: Colors.green)),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      // Destination Location
-                                      InkWell(
-                                        onTap: () async {
-                                          if (Constant.selectedMapType == 'osm') {
-                                            final result = await Get.to(() => MapPickerPage());
-                                            if (result != null) {
-                                              controller.destinationTextEditController.value.text = '';
-                                              final firstPlace = result;
-                                              final lat = firstPlace.coordinates.latitude;
-                                              final lng = firstPlace.coordinates.longitude;
-                                              final address = firstPlace.address;
-                                              controller.destinationTextEditController.value.text = address.toString();
-                                              controller.setDestinationMarker(lat, lng);
-                                            }
-                                          } else {
-                                            Get.to(LocationPickerScreen())!.then((value) async {
-                                              if (value != null) {
-                                                SelectedLocationModel selectedLocationModel = value;
-
-                                                controller.destinationTextEditController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
-                                                controller.setDestinationMarker(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude);
-                                              }
-                                            });
-                                          }
-                                        },
-                                        child: TextFieldWidget(
-                                          controller: controller.destinationTextEditController.value,
-                                          // backgroundColor: AppThemeData.grey50,
-                                          // borderColor: AppThemeData.grey50,
-                                          hintText: "Destination Location".tr,
-                                          enable: false,
-                                          prefix: const Padding(padding: EdgeInsets.only(left: 10, right: 10), child: Icon(Icons.radio_button_checked, color: Colors.red)),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Positioned(
-                                  left: 10,
-                                  top: 33,
-                                  child: DottedBorder(
-                                    options: CustomPathDottedBorderOptions(
-                                      color: Colors.grey.shade400,
-                                      strokeWidth: 2,
-                                      dashPattern: [4, 4],
-                                      customPath:
-                                          (size) =>
-                                              Path()
-                                                ..moveTo(size.width / 2, 0)
-                                                ..lineTo(size.width / 2, size.height),
-                                    ),
-                                    child: const SizedBox(width: 20, height: 40),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-
-                            if (controller.stops.isNotEmpty) ...[
-                              CabStopsSummary(controller: controller, isDark: isDark),
-                              const SizedBox(height: 10),
-                            ],
-                            CabTripOptionsSection(controller: controller, isDark: isDark),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(child: Text("Promo code".tr, style: AppThemeData.boldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900))),
-                                InkWell(
-                                  onTap: () {
-                                    Get.to(CabCouponCodeScreen())!.then((value) {
-                                      if (value != null) {
-                                        double couponAmount = Constant.calculateDiscount(amount: controller.subTotal.value.toString(), offerModel: value);
-                                        if (couponAmount < controller.subTotal.value) {
-                                          controller.selectedCouponModel.value = value;
-                                          controller.calculateTotalAmount();
-                                        } else {
-                                          ShowToastDialog.showToast("This offer not eligible for this booking".tr);
-                                        }
-                                      }
-                                    });
-                                  },
-                                  child: Text(
-                                    "View All".tr,
-                                    style: AppThemeData.boldTextStyle(decoration: TextDecoration.underline, fontSize: 14, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 5),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: Container(
-                                width: Responsive.width(100, context),
-                                height: Responsive.height(6, context),
-                                color: AppThemeData.carRent50,
-                                child: DottedBorder(
-                                  options: RectDottedBorderOptions(dashPattern: [10, 5], strokeWidth: 1, padding: EdgeInsets.all(0), color: AppThemeData.carRent400),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                      children: [
-                                        SvgPicture.asset("assets/icons/ic_coupon.svg"),
-                                        Expanded(
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                                            child: TextFormField(
-                                              controller: controller.couponCodeTextEditController.value,
-                                              style: AppThemeData.semiBoldTextStyle(color: AppThemeData.parcelService500, fontSize: 16),
-                                              decoration: InputDecoration(
-                                                border: InputBorder.none,
-                                                hintText: 'Write coupon Code'.tr,
-                                                contentPadding: EdgeInsets.only(bottom: 10),
-                                                hintStyle: AppThemeData.semiBoldTextStyle(color: AppThemeData.parcelService500, fontSize: 16),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        RoundedButtonFill(
-                                          title: "Redeem now".tr,
-                                          width: 27,
-                                          borderRadius: 10,
-                                          fontSizes: 14,
-                                          onPress: () async {
-                                            if (controller.cabCouponList
-                                                .where((element) => element.code!.toLowerCase() == controller.couponCodeTextEditController.value.text.toLowerCase())
-                                                .isNotEmpty) {
-                                              CouponModel couponModel = controller.cabCouponList.firstWhere(
-                                                (p0) => p0.code!.toLowerCase() == controller.couponCodeTextEditController.value.text.toLowerCase(),
-                                              );
-                                              if (couponModel.expiresAt!.toDate().isAfter(DateTime.now())) {
-                                                double couponAmount = Constant.calculateDiscount(amount: controller.subTotal.value.toString(), offerModel: couponModel);
-                                                if (couponAmount < controller.subTotal.value) {
-                                                  controller.selectedCouponModel.value = couponModel;
-                                                  controller.calculateTotalAmount();
-                                                  controller.update();
-                                                } else {
-                                                  ShowToastDialog.showToast("This offer not eligible for this booking".tr);
-                                                }
-                                              } else {
-                                                ShowToastDialog.showToast("This coupon code has been expired".tr);
-                                              }
-                                            } else {
-                                              ShowToastDialog.showToast("Invalid coupon code".tr);
-                                            }
-                                          },
-                                          color: AppThemeData.parcelService300,
-                                          textColor: AppThemeData.grey50,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-
-                            Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(15),
-                                color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                                border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                              ),
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text("Order Summary".tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500)),
-                                  const SizedBox(height: 8),
-
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 4),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text("Subtotal".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                                        Text(
-                                          Constant.amountShow(amount: controller.subTotal.value.toString(), currency: controller.rideCurrency),
-                                          style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 4),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Text("Discount".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                                            SizedBox(width: 5),
-                                            Text(
-                                              controller.selectedCouponModel.value.id == null ? "" : "(${controller.selectedCouponModel.value.code})",
-                                              style: AppThemeData.mediumTextStyle(fontSize: 16, color: AppThemeData.primary300),
-                                            ),
-                                          ],
-                                        ),
-                                        Text(Constant.amountShow(amount: controller.discount.value.toString(), currency: controller.rideCurrency), style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: AppThemeData.danger300)),
-                                      ],
-                                    ),
-                                  ),
-
-                                  if (Constant.platformFeeModel?.enable == true)
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 4),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text("Platform fee".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                                          Text(
-                                            Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: controller.rideCurrency),
-                                            style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-
-                                  InkWell(
-                                    onTap: () {
-                                      showBillBifurcationDialog(context, isDark, controller);
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 4),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            "Tax amount".tr,
-                                            style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, decoration: TextDecoration.underline),
-                                          ),
-                                          Text(
-                                            Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: controller.rideCurrency),
-                                            style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  const Divider(),
-
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 4),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text("Order Total".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                                        Text(
-                                          Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.rideCurrency),
-                                          style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(15),
-                                color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                                border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                              ),
-                              padding: const EdgeInsets.all(10),
-                              child: Row(
-                                children: [
-                                  controller.selectedPaymentMethod.value == ''
-                                      ? cardDecorationScreen(controller, PaymentGateway.wallet, isDark, "")
-                                      : controller.selectedPaymentMethod.value == PaymentGateway.wallet.name
-                                      ? cardDecorationScreen(controller, PaymentGateway.wallet, isDark, "assets/images/ic_wallet.png")
-                                      : controller.selectedPaymentMethod.value == PaymentGateway.cod.name
-                                      ? cardDecorationScreen(controller, PaymentGateway.cod, isDark, "assets/images/ic_cash.png")
-                                      : controller.selectedPaymentMethod.value == PaymentGateway.stripe.name
-                                      ? cardDecorationScreen(controller, PaymentGateway.stripe, isDark, "assets/images/stripe.png")
-                                      : controller.selectedPaymentMethod.value == PaymentGateway.paypal.name
-                                      ? cardDecorationScreen(controller, PaymentGateway.paypal, isDark, "assets/images/paypal.png")
-                                      : controller.selectedPaymentMethod.value == PaymentGateway.payStack.name
-                                      ? cardDecorationScreen(controller, PaymentGateway.payStack, isDark, "assets/images/paystack.png")
-                                      : controller.selectedPaymentMethod.value == PaymentGateway.mercadoPago.name
-                                      ? cardDecorationScreen(controller, PaymentGateway.mercadoPago, isDark, "assets/images/mercado-pago.png")
-                                      : controller.selectedPaymentMethod.value == PaymentGateway.flutterWave.name
-                                      ? cardDecorationScreen(controller, PaymentGateway.flutterWave, isDark, "assets/images/flutterwave_logo.png")
-                                      : controller.selectedPaymentMethod.value == PaymentGateway.payFast.name
-                                      ? cardDecorationScreen(controller, PaymentGateway.payFast, isDark, "assets/images/payfast.png")
-                                      : controller.selectedPaymentMethod.value == PaymentGateway.midTrans.name
-                                      ? cardDecorationScreen(controller, PaymentGateway.midTrans, isDark, "assets/images/midtrans.png")
-                                      : controller.selectedPaymentMethod.value == PaymentGateway.orangeMoney.name
-                                      ? cardDecorationScreen(controller, PaymentGateway.orangeMoney, isDark, "assets/images/orange_money.png")
-                                      : controller.selectedPaymentMethod.value == PaymentGateway.xendit.name
-                                      ? cardDecorationScreen(controller, PaymentGateway.xendit, isDark, "assets/images/xendit.png")
-                                      : cardDecorationScreen(controller, PaymentGateway.razorpay, isDark, "assets/images/razorpay.png"),
-                                  SizedBox(width: 22),
-                                  Text(
-                                    controller.selectedPaymentMethod.value.tr,
-                                    textAlign: TextAlign.start,
-                                    style: AppThemeData.boldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                      // The assigned driver cancelled: back to dispatch, not final.
+                      DriverCancelledBanner(order: controller.currentOrder.value),
+                      const DsGap(DsSpace.sm),
+                      Center(
+                        child: DsStatusChip(label: "Waiting for driver....".tr, tone: DsTone.info, pulse: true),
                       ),
-                      RoundedButtonFill(
-                        title: "Confirm Booking".tr,
-                        onPress: () async {
-                          final error = controller.validateRideOptions();
-                          if (error != null) {
-                            ShowToastDialog.showToast(error);
-                            return;
+                      Center(child: Image.asset('assets/loader.gif', width: controller.currentOrder.value.isDriverCancelledRedispatch ? 150 : 250)),
+                      DsButton.dangerTonal(
+                        label: "Cancel Ride".tr,
+                        icon: Icons.close_rounded,
+                        size: DsButtonSize.lg,
+                        expand: true,
+                        onPressed: () async {
+                          // Mandatory reason (spec 4.8); field update guarded by the ride's
+                          // current status (a driver acceptance that just landed wins).
+                          final reason = await CancelReasonSheet.show();
+                          if (reason == null) return;
+                          try {
+                            if (controller.currentOrder.value.id != null) {
+                              ShowToastDialog.showLoader("Please wait".tr);
+                              final error = await CabRideCancellation.cancel(controller.currentOrder.value.id!, reason.toFields());
+                              ShowToastDialog.closeLoader();
+                              if (error != null) {
+                                ShowToastDialog.showToast(error);
+                                return;
+                              }
+                            }
+                            controller.currentOrder.update((order) {
+                              if (order != null) {
+                                order.status = Constant.orderRejected;
+                                order.cancelReason = reason.reason;
+                                order.cancelReasonCode = reason.code;
+                                order.cancelledBy = 'customer';
+                              }
+                            });
+                            controller.resetRideOptions();
+
+                            // 3. Reset controller states
+                            controller.bottomSheetType.value = "";
+                            controller.polyLines.clear();
+                            controller.markers.clear();
+                            controller.osmMarker.clear();
+                            controller.routePoints.clear();
+                            controller.sourceTextEditController.value.clear();
+                            controller.destinationTextEditController.value.clear();
+                            controller.departureLatLong.value = const LatLng(0.0, 0.0);
+                            controller.destinationLatLong.value = const LatLng(0.0, 0.0);
+                            controller.departureLatLongOsm.value = latlong.LatLng(0.0, 0.0);
+                            controller.destinationLatLongOsm.value = latlong.LatLng(0.0, 0.0);
+
+                            // 4. Reset user’s in-progress order
+                            if (Constant.userModel != null) {
+                              Constant.userModel!.inProgressOrderID = null;
+                              await FireStoreUtils.updateUser(Constant.userModel!);
+                            }
+
+                            // 5. Optional feedback
+                            ShowToastDialog.showToast("Ride cancelled successfully".tr);
+                            Get.back();
+                            CabDashboardController cabDashboardController = Get.put(CabDashboardController());
+                            cabDashboardController.selectedIndex.value = 0;
+                          } catch (e) {
+                            ShowToastDialog.showToast("Failed to cancel ride".tr);
                           }
-                          controller.placeOrder();
                         },
-                        color: AppThemeData.primary300,
-                        textColor: AppThemeData.grey900,
                       ),
                     ],
                   ),
@@ -1042,95 +800,9 @@ class IntercityHomeScreen extends StatelessWidget {
     );
   }
 
-  Widget waitingDialog(BuildContext context, IntercityHomeController controller, bool isDark) {
-    return Positioned.fill(
-      child: DraggableScrollableSheet(
-        initialChildSize: 0.4,
-        minChildSize: 0.4,
-        maxChildSize: 0.4,
-        expand: false,
-        builder: (context, scrollController) {
-          return Container(
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30))),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 15.0, vertical: 10),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: AppThemeData.grey400), height: 4, width: 33),
-                  SizedBox(height: 30),
-                  // The assigned driver cancelled: back to dispatch, not final.
-                  DriverCancelledBanner(order: controller.currentOrder.value),
-                  Text("Waiting for driver....".tr, style: AppThemeData.mediumTextStyle(fontSize: 18, color: AppThemeData.grey900)),
-                  Image.asset('assets/loader.gif', width: controller.currentOrder.value.isDriverCancelledRedispatch ? 150 : 250),
-                  RoundedButtonFill(
-                    title: "Cancel Ride".tr,
-                    onPress: () async {
-                      // Mandatory reason (spec 4.8); field update guarded by the ride's
-                      // current status (a driver acceptance that just landed wins).
-                      final reason = await CancelReasonSheet.show();
-                      if (reason == null) return;
-                      try {
-                        if (controller.currentOrder.value.id != null) {
-                          ShowToastDialog.showLoader("Please wait".tr);
-                          final error = await CabRideCancellation.cancel(controller.currentOrder.value.id!, reason.toFields());
-                          ShowToastDialog.closeLoader();
-                          if (error != null) {
-                            ShowToastDialog.showToast(error);
-                            return;
-                          }
-                        }
-                        controller.currentOrder.update((order) {
-                          if (order != null) {
-                            order.status = Constant.orderRejected;
-                            order.cancelReason = reason.reason;
-                            order.cancelReasonCode = reason.code;
-                            order.cancelledBy = 'customer';
-                          }
-                        });
-                        controller.resetRideOptions();
+  // ---------------------------------------------------------------- step 6
 
-                        // 3. Reset controller states
-                        controller.bottomSheetType.value = "";
-                        controller.polyLines.clear();
-                        controller.markers.clear();
-                        controller.osmMarker.clear();
-                        controller.routePoints.clear();
-                        controller.sourceTextEditController.value.clear();
-                        controller.destinationTextEditController.value.clear();
-                        controller.departureLatLong.value = const LatLng(0.0, 0.0);
-                        controller.destinationLatLong.value = const LatLng(0.0, 0.0);
-                        controller.departureLatLongOsm.value = latlong.LatLng(0.0, 0.0);
-                        controller.destinationLatLongOsm.value = latlong.LatLng(0.0, 0.0);
-
-                        // 4. Reset user’s in-progress order
-                        if (Constant.userModel != null) {
-                          Constant.userModel!.inProgressOrderID = null;
-                          await FireStoreUtils.updateUser(Constant.userModel!);
-                        }
-
-                        // 5. Optional feedback
-                        ShowToastDialog.showToast("Ride cancelled successfully".tr);
-                        Get.back();
-                        CabDashboardController cabDashboardController = Get.put(CabDashboardController());
-                        cabDashboardController.selectedIndex.value = 0;
-                      } catch (e) {
-                        ShowToastDialog.showToast("Failed to cancel ride".tr);
-                      }
-                    },
-                    color: AppThemeData.danger300,
-                    textColor: AppThemeData.surface,
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget driverDialog(BuildContext context, IntercityHomeController controller, bool isDark) {
+  Widget driverDialog(BuildContext context, IntercityHomeController controller) {
     return Positioned.fill(
       child: DraggableScrollableSheet(
         initialChildSize: 0.7,
@@ -1138,546 +810,262 @@ class IntercityHomeScreen extends StatelessWidget {
         maxChildSize: 0.8,
         expand: false,
         builder: (context, scrollController) {
-          return Container(
-            decoration: BoxDecoration(color: isDark ? AppThemeData.grey700 : Colors.white, borderRadius: BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30))),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 15.0, vertical: 10),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: AppThemeData.grey400), height: 4, width: 33),
-                  Expanded(
-                    child: ListView(
-                      controller: scrollController,
-                      padding: EdgeInsets.zero,
-                      children: [
-                        const SizedBox(height: 10),
-                        Stack(
-                          children: [
-                            Container(
-                              decoration: BoxDecoration(color: isDark ? Colors.transparent : Colors.white, borderRadius: BorderRadius.circular(12)),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  // Pickup Location
-                                  InkWell(
-                                    onTap: () async {
-                                      // if (Constant.selectedMapType == 'osm') {
-                                      //   final result = await Get.to(() => MapPickerPage());
-                                      //   if (result != null) {
-                                      //     controller.sourceTextEditController.value.text = '';
-                                      //     final firstPlace = result;
-                                      //     final lat = firstPlace.coordinates.latitude;
-                                      //     final lng = firstPlace.coordinates.longitude;
-                                      //     final address = firstPlace.address;
-                                      //     controller.sourceTextEditController.value.text = address.toString();
-                                      //     controller.setDepartureMarker(lat, lng);
-                                      //   }
-                                      // } else {
-                                      //   Get.to(LocationPickerScreen())!.then((value) async {
-                                      //     if (value != null) {
-                                      //       SelectedLocationModel selectedLocationModel = value;
-                                      //
-                                      //       controller.sourceTextEditController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
-                                      //       controller.setDepartureMarker(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude);
-                                      //     }
-                                      //   });
-                                      // }
-                                    },
-                                    child: TextFieldWidget(
-                                      controller: controller.sourceTextEditController.value,
-                                      hintText: "Pickup Location".tr,
-                                      enable: false,
-                                      readOnly: true,
-                                      prefix: const Padding(padding: EdgeInsets.only(left: 10, right: 10), child: Icon(Icons.stop_circle_outlined, color: Colors.green)),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  // Destination Location
-                                  InkWell(
-                                    onTap: () async {
-                                      // if (Constant.selectedMapType == 'osm') {
-                                      //   final result = await Get.to(() => MapPickerPage());
-                                      //   if (result != null) {
-                                      //     controller.destinationTextEditController.value.text = '';
-                                      //     final firstPlace = result;
-                                      //     final lat = firstPlace.coordinates.latitude;
-                                      //     final lng = firstPlace.coordinates.longitude;
-                                      //     final address = firstPlace.address;
-                                      //     controller.destinationTextEditController.value.text = address.toString();
-                                      //     controller.setDestinationMarker(lat, lng);
-                                      //   }
-                                      // } else {
-                                      //   Get.to(LocationPickerScreen())!.then((value) async {
-                                      //     if (value != null) {
-                                      //       SelectedLocationModel selectedLocationModel = value;
-                                      //
-                                      //       controller.destinationTextEditController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
-                                      //       controller.setDestinationMarker(selectedLocationModel.latLng!.latitude, selectedLocationModel.latLng!.longitude);
-                                      //     }
-                                      //   });
-                                      // }
-                                    },
-                                    child: TextFieldWidget(
-                                      controller: controller.destinationTextEditController.value,
-                                      // backgroundColor: AppThemeData.grey50,
-                                      // borderColor: AppThemeData.grey50,
-                                      hintText: "Destination Location".tr,
-                                      enable: false,
-                                      readOnly: true,
-                                      prefix: const Padding(padding: EdgeInsets.only(left: 10, right: 10), child: Icon(Icons.radio_button_checked, color: Colors.red)),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Positioned(
-                              left: 10,
-                              top: 33,
-                              child: DottedBorder(
-                                options: CustomPathDottedBorderOptions(
-                                  color: Colors.grey.shade400,
-                                  strokeWidth: 2,
-                                  dashPattern: [4, 4],
-                                  customPath:
-                                      (size) =>
-                                          Path()
-                                            ..moveTo(size.width / 2, 0)
-                                            ..lineTo(size.width / 2, size.height),
-                                ),
-                                child: const SizedBox(width: 20, height: 40),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        // Stops progress, passengers, instructions, rider (spec 4.8).
-                        CabRideExtrasView(order: controller.currentOrder.value, isDark: isDark),
-                        const SizedBox(height: 14),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadiusGeometry.circular(10),
-                              child: NetworkImageWidget(imageUrl: controller.currentOrder.value.driver?.profilePictureURL ?? '', height: 70, width: 70, borderRadius: 35),
-                            ),
-                            SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    controller.currentOrder.value.driver?.fullName() ?? '',
-                                    style: AppThemeData.boldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 18),
-                                  ),
-                                  Builder(builder: (_) {
-                                    final sid = controller.currentOrder.value.sectionId ?? '';
-                                    final vehicle = controller.currentOrder.value.driver?.vehicleDetails?[sid];
-                                    if (vehicle == null) return const SizedBox.shrink();
-                                    final vType = vehicle['vehicleType']?.toString() ?? '';
-                                    final brand = vehicle['carBrand']?.toString() ?? '';
-                                    final carModel = vehicle['carModel']?.toString() ?? '';
-                                    final plate = vehicle['carPlateNumber']?.toString() ?? '';
-                                    return Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        if (vType.isNotEmpty)
-                                          Text(
-                                            vType,
-                                            style: TextStyle(fontFamily: AppThemeData.medium, color: isDark ? AppThemeData.greyDark700 : AppThemeData.grey700, fontSize: 14),
-                                          ),
-                                        if (brand.isNotEmpty || carModel.isNotEmpty)
-                                          Text(
-                                            "$brand $carModel".trim(),
-                                            style: TextStyle(fontFamily: AppThemeData.medium, color: isDark ? AppThemeData.greyDark700 : AppThemeData.grey700, fontSize: 14),
-                                          ),
-                                        if (plate.isNotEmpty)
-                                          Text(
-                                            plate.toUpperCase(),
-                                            style: AppThemeData.boldTextStyle(color: isDark ? AppThemeData.greyDark700 : AppThemeData.grey700, fontSize: 16),
-                                          ),
-                                      ],
-                                    );
-                                  }),
-                                ],
-                              ),
-                            ),
-                            RoundedButtonBorder(
-                              title: controller.driverModel.value.averageRating.toStringAsFixed(1),
-                              width: 20,
-                              height: 3.5,
-                              radius: 10,
-                              isRight: false,
-                              isCenter: true,
-                              textColor: AppThemeData.warning400,
-                              borderColor: AppThemeData.warning400,
-                              color: AppThemeData.warning50,
-                              icon: SvgPicture.asset("assets/icons/ic_start.svg"),
-                              onPress: () {},
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(15),
-                            color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                            border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
+          return DsObserve(
+            builder: (context) {
+              final c = context.dsColors;
+              final t = context.dsText;
+              final order = controller.currentOrder.value;
+              return CabSheetShell(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: ListView(
+                        controller: scrollController,
+                        padding: EdgeInsets.zero,
+                        children: [
+                          CabRouteFields(
+                            pickup: CabAddressRow(controller: controller.sourceTextEditController.value, hint: "Pickup Location".tr, isPickup: true),
+                            destination: CabAddressRow(controller: controller.destinationTextEditController.value, hint: "Destination Location".tr, isPickup: false),
                           ),
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text("Order Summary".tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500)),
-                              const SizedBox(height: 8),
-
-                              Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text("Subtotal".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                                    Text(
-                                      Constant.amountShow(amount: controller.subTotal.value.toString(), currency: controller.rideCurrency),
-                                      style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                              Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text("Discount".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                                    Text(Constant.amountShow(amount: controller.discount.value.toString(), currency: controller.rideCurrency), style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: AppThemeData.danger300)),
-                                  ],
-                                ),
-                              ),
-
-                              if (Constant.platformFeeModel?.enable == true)
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 4),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text("Platform fee".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                                      Text(
-                                        Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: controller.rideCurrency),
-                                        style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-
-                              InkWell(
-                                onTap: () {
-                                  showBillBifurcationDialog(context, isDark, controller);
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 4),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        "Tax amount".tr,
-                                        style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, decoration: TextDecoration.underline),
-                                      ),
-                                      Text(
-                                        Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: controller.rideCurrency),
-                                        style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-
-                              const Divider(),
-
-                              Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text("Order Total".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                                    Text(
-                                      Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.rideCurrency),
-                                      style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
+                          const DsGap(DsSpace.md),
+                          // Stops progress, passengers, instructions, rider (spec 4.8).
+                          CabRideExtrasView(order: order),
+                          const DsGap(DsSpace.md),
+                          DsCard.outlined(
+                            child: CabDriverIdentity(
+                              name: order.driver?.fullName(),
+                              photoUrl: order.driver?.profilePictureURL,
+                              vehicle: order.driver?.vehicleDetails?[order.sectionId ?? ''],
+                              rating: controller.driverModel.value.averageRating.toStringAsFixed(1),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 20),
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(15),
-                            color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                            border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
+                          const DsGap(DsSpace.xl),
+                          DsCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text("Order Summary".tr, style: t.overline),
+                                const DsGap(DsSpace.md),
+                                CabBillRow(
+                                  label: "Subtotal".tr,
+                                  value: Constant.amountShow(amount: controller.subTotal.value.toString(), currency: controller.rideCurrency),
+                                ),
+                                CabBillRow(
+                                  label: "Discount".tr,
+                                  value: Constant.amountShow(amount: controller.discount.value.toString(), currency: controller.rideCurrency),
+                                  valueColor: c.dangerStrong,
+                                ),
+                                if (Constant.platformFeeModel?.enable == true)
+                                  CabBillRow(
+                                    label: "Platform fee".tr,
+                                    value: Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: controller.rideCurrency),
+                                  ),
+                                CabBillRow(
+                                  label: "Tax amount".tr,
+                                  value: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: controller.rideCurrency),
+                                  onTap: () {
+                                    showBillBifurcationDialog(context, controller);
+                                  },
+                                ),
+                                const DsDivider(spacing: DsSpace.lg),
+                                CabBillRow(
+                                  label: "Order Total".tr,
+                                  value: Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.rideCurrency),
+                                  emphasize: true,
+                                ),
+                              ],
+                            ),
                           ),
-                          padding: const EdgeInsets.all(10),
-                          child: InkWell(
+                          const DsGap(DsSpace.xl),
+                          DsCard.outlined(
+                            padding: const EdgeInsets.all(DsSpace.md),
                             onTap: () {
                               controller.bottomSheetType.value = 'payment';
                             },
                             child: Row(
                               children: [
-                                controller.selectedPaymentMethod.value == PaymentGateway.wallet.name
-                                    ? cardDecorationScreen(controller, PaymentGateway.wallet, isDark, "assets/images/ic_wallet.png")
-                                    : controller.selectedPaymentMethod.value == PaymentGateway.cod.name
-                                    ? cardDecorationScreen(controller, PaymentGateway.cod, isDark, "assets/images/ic_cash.png")
-                                    : controller.selectedPaymentMethod.value == PaymentGateway.stripe.name
-                                    ? cardDecorationScreen(controller, PaymentGateway.stripe, isDark, "assets/images/stripe.png")
-                                    : controller.selectedPaymentMethod.value == PaymentGateway.paypal.name
-                                    ? cardDecorationScreen(controller, PaymentGateway.paypal, isDark, "assets/images/paypal.png")
-                                    : controller.selectedPaymentMethod.value == PaymentGateway.payStack.name
-                                    ? cardDecorationScreen(controller, PaymentGateway.payStack, isDark, "assets/images/paystack.png")
-                                    : controller.selectedPaymentMethod.value == PaymentGateway.mercadoPago.name
-                                    ? cardDecorationScreen(controller, PaymentGateway.mercadoPago, isDark, "assets/images/mercado-pago.png")
-                                    : controller.selectedPaymentMethod.value == PaymentGateway.flutterWave.name
-                                    ? cardDecorationScreen(controller, PaymentGateway.flutterWave, isDark, "assets/images/flutterwave_logo.png")
-                                    : controller.selectedPaymentMethod.value == PaymentGateway.payFast.name
-                                    ? cardDecorationScreen(controller, PaymentGateway.payFast, isDark, "assets/images/payfast.png")
-                                    : controller.selectedPaymentMethod.value == PaymentGateway.midTrans.name
-                                    ? cardDecorationScreen(controller, PaymentGateway.midTrans, isDark, "assets/images/midtrans.png")
-                                    : controller.selectedPaymentMethod.value == PaymentGateway.orangeMoney.name
-                                    ? cardDecorationScreen(controller, PaymentGateway.orangeMoney, isDark, "assets/images/orange_money.png")
-                                    : controller.selectedPaymentMethod.value == PaymentGateway.xendit.name
-                                    ? cardDecorationScreen(controller, PaymentGateway.xendit, isDark, "assets/images/xendit.png")
-                                    : cardDecorationScreen(controller, PaymentGateway.razorpay, isDark, "assets/images/razorpay.png"),
-                                SizedBox(width: 22),
-                                Text(
-                                  controller.selectedPaymentMethod.value.tr,
-                                  textAlign: TextAlign.start,
-                                  style: AppThemeData.boldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
+                                CabGatewayLogo(method: controller.selectedPaymentMethod.value, image: cabGatewayAsset(controller.selectedPaymentMethod.value)),
+                                const DsGap(DsSpace.lg),
+                                Expanded(
+                                  child: Text(controller.selectedPaymentMethod.value.tr, textAlign: TextAlign.start, style: t.bodyStrong),
                                 ),
                               ],
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 20),
-                        Obx(() {
-                          if (controller.currentOrder.value.status == Constant.orderInTransit) {
-                            return Column(
-                              children: [
-                                RoundedButtonFill(
-                                  title: "SOS".tr,
-                                  color: Colors.red.withOpacity(0.50),
-                                  textColor: AppThemeData.grey50,
-                                  isCenter: true,
-                                  icon: Icon(Icons.call, color: Colors.white),
-                                  onPress: () async {
-                                    ShowToastDialog.showLoader("Please wait...".tr);
+                          const DsGap(DsSpace.xl),
+                          Obx(() {
+                            if (controller.currentOrder.value.status == Constant.orderInTransit) {
+                              return Column(
+                                children: [
+                                  DsButton.danger(
+                                    label: "SOS".tr,
+                                    icon: Icons.call,
+                                    expand: true,
+                                    onPressed: () async {
+                                      final messenger = ScaffoldMessenger.of(context);
+                                      ShowToastDialog.showLoader("Please wait...".tr);
 
-                                    LocationData location = await controller.currentLocation.value.getLocation();
+                                      LocationData location = await controller.currentLocation.value.getLocation();
 
-                                    await FireStoreUtils.getSOS(controller.currentOrder.value.id ?? '').then((value) async {
-                                      if (value == false) {
-                                        await FireStoreUtils.setSos(controller.currentOrder.value.id ?? '', UserLocation(latitude: location.latitude, longitude: location.longitude)).then((value) {
+                                      await FireStoreUtils.getSOS(controller.currentOrder.value.id ?? '').then((value) async {
+                                        if (value == false) {
+                                          await FireStoreUtils.setSos(controller.currentOrder.value.id ?? '', UserLocation(latitude: location.latitude, longitude: location.longitude)).then((value) {
+                                            ShowToastDialog.closeLoader();
+                                            messenger.showSnackBar(
+                                              SnackBar(
+                                                content: Builder(
+                                                  builder: (context) {
+                                                    return Text("Your SOS request has been submitted to admin".tr);
+                                                  },
+                                                ),
+                                                backgroundColor: Colors.green,
+                                                duration: const Duration(seconds: 3),
+                                              ),
+                                            );
+                                          });
+                                        } else {
                                           ShowToastDialog.closeLoader();
-                                          ScaffoldMessenger.of(context).showSnackBar(
+                                          messenger.showSnackBar(
                                             SnackBar(
                                               content: Builder(
                                                 builder: (context) {
-                                                  return Text("Your SOS request has been submitted to admin".tr);
+                                                  return Text("Your SOS request is already submitted".tr);
                                                 },
                                               ),
-                                              backgroundColor: Colors.green,
+                                              backgroundColor: Colors.red,
                                               duration: const Duration(seconds: 3),
                                             ),
                                           );
-                                        });
-                                      } else {
-                                        ShowToastDialog.closeLoader();
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Builder(
-                                              builder: (context) {
-                                                return Text("Your SOS request is already submitted".tr);
-                                              },
-                                            ),
-                                            backgroundColor: Colors.red,
-                                            duration: const Duration(seconds: 3),
-                                          ),
-                                        );
-                                      }
-                                    });
-                                  },
-                                ),
-                                const SizedBox(height: 20),
-                              ],
-                            );
-                          } else {
-                            return const SizedBox.shrink();
-                          }
-                        }),
-                      ],
+                                        }
+                                      });
+                                    },
+                                  ),
+                                  const DsGap(DsSpace.xl),
+                                ],
+                              );
+                            } else {
+                              return const SizedBox.shrink();
+                            }
+                          }),
+                        ],
+                      ),
                     ),
-                  ),
-                  Obx(() {
-                    if (controller.currentOrder.value.status == Constant.orderInTransit && controller.currentOrder.value.paymentStatus == false) {
-                      return RoundedButtonFill(
-                        title: "Pay Now".tr,
-                        onPress: () async {
-                          if (controller.selectedPaymentMethod.value == PaymentGateway.stripe.name) {
-                            controller.stripeMakePayment(amount: controller.totalAmount.value.toString());
-                          } else if (controller.selectedPaymentMethod.value == PaymentGateway.paypal.name) {
-                            controller.paypalPaymentSheet(controller.totalAmount.value.toString(), context);
-                          } else if (controller.selectedPaymentMethod.value == PaymentGateway.payStack.name) {
-                            controller.payStackPayment(controller.totalAmount.value.toString());
-                          } else if (controller.selectedPaymentMethod.value == PaymentGateway.mercadoPago.name) {
-                            controller.mercadoPagoMakePayment(context: context, amount: controller.totalAmount.value.toString());
-                          } else if (controller.selectedPaymentMethod.value == PaymentGateway.flutterWave.name) {
-                            controller.flutterWaveInitiatePayment(context: context, amount: controller.totalAmount.value.toString());
-                          } else if (controller.selectedPaymentMethod.value == PaymentGateway.payFast.name) {
-                            controller.payFastPayment(context: context, amount: controller.totalAmount.value.toString());
-                          } else if (controller.selectedPaymentMethod.value == PaymentGateway.cod.name) {
-                            controller.completeOrder();
-                          } else if (controller.selectedPaymentMethod.value == PaymentGateway.wallet.name) {
-                            controller.completeOrder();
-                          } else if (controller.selectedPaymentMethod.value == PaymentGateway.midTrans.name) {
-                            controller.midtransMakePayment(context: context, amount: controller.totalAmount.value.toString());
-                          } else if (controller.selectedPaymentMethod.value == PaymentGateway.orangeMoney.name) {
-                            controller.orangeMakePayment(context: context, amount: controller.totalAmount.value.toString());
-                          } else if (controller.selectedPaymentMethod.value == PaymentGateway.xendit.name) {
-                            controller.xenditPayment(context, controller.totalAmount.value.toString());
-                          } else if (controller.selectedPaymentMethod.value == PaymentGateway.razorpay.name) {
-                            RazorPayController().createOrderRazorPay(amount: double.parse(controller.totalAmount.value.toString()), razorpayModel: controller.razorPayModel.value).then((value) {
-                              if (value == null) {
-                                Get.back();
-                                ShowToastDialog.showToast("Something went wrong, please contact admin.".tr);
-                              } else {
-                                CreateRazorPayOrderModel result = value;
-                                controller.openCheckout(amount: controller.totalAmount.value.toString(), orderId: result.id);
-                              }
-                            });
-                          } else {
-                            ShowToastDialog.showToast("Please select payment method".tr);
-                          }
-                        },
-                        color: AppThemeData.primary300,
-                        textColor: AppThemeData.grey900,
-                      );
-                    } else {
-                      return const SizedBox.shrink();
-                    }
-                  }),
-                ],
-              ),
-            ),
+                    Obx(() {
+                      if (controller.currentOrder.value.status == Constant.orderInTransit && controller.currentOrder.value.paymentStatus == false) {
+                        return DsButton.primary(
+                          label: "Pay Now".tr,
+                          size: DsButtonSize.lg,
+                          expand: true,
+                          onPressed: () async {
+                            if (controller.selectedPaymentMethod.value == PaymentGateway.stripe.name) {
+                              controller.stripeMakePayment(amount: controller.totalAmount.value.toString());
+                            } else if (controller.selectedPaymentMethod.value == PaymentGateway.paypal.name) {
+                              controller.paypalPaymentSheet(controller.totalAmount.value.toString(), context);
+                            } else if (controller.selectedPaymentMethod.value == PaymentGateway.payStack.name) {
+                              controller.payStackPayment(controller.totalAmount.value.toString());
+                            } else if (controller.selectedPaymentMethod.value == PaymentGateway.mercadoPago.name) {
+                              controller.mercadoPagoMakePayment(context: context, amount: controller.totalAmount.value.toString());
+                            } else if (controller.selectedPaymentMethod.value == PaymentGateway.flutterWave.name) {
+                              controller.flutterWaveInitiatePayment(context: context, amount: controller.totalAmount.value.toString());
+                            } else if (controller.selectedPaymentMethod.value == PaymentGateway.payFast.name) {
+                              controller.payFastPayment(context: context, amount: controller.totalAmount.value.toString());
+                            } else if (controller.selectedPaymentMethod.value == PaymentGateway.cod.name) {
+                              controller.completeOrder();
+                            } else if (controller.selectedPaymentMethod.value == PaymentGateway.wallet.name) {
+                              controller.completeOrder();
+                            } else if (controller.selectedPaymentMethod.value == PaymentGateway.midTrans.name) {
+                              controller.midtransMakePayment(context: context, amount: controller.totalAmount.value.toString());
+                            } else if (controller.selectedPaymentMethod.value == PaymentGateway.orangeMoney.name) {
+                              controller.orangeMakePayment(context: context, amount: controller.totalAmount.value.toString());
+                            } else if (controller.selectedPaymentMethod.value == PaymentGateway.xendit.name) {
+                              controller.xenditPayment(context, controller.totalAmount.value.toString());
+                            } else if (controller.selectedPaymentMethod.value == PaymentGateway.razorpay.name) {
+                              RazorPayController().createOrderRazorPay(amount: double.parse(controller.totalAmount.value.toString()), razorpayModel: controller.razorPayModel.value).then((value) {
+                                if (value == null) {
+                                  Get.back();
+                                  ShowToastDialog.showToast("Something went wrong, please contact admin.".tr);
+                                } else {
+                                  CreateRazorPayOrderModel result = value;
+                                  controller.openCheckout(amount: controller.totalAmount.value.toString(), orderId: result.id);
+                                }
+                              });
+                            } else {
+                              ShowToastDialog.showToast("Please select payment method".tr);
+                            }
+                          },
+                        );
+                      } else {
+                        return const SizedBox.shrink();
+                      }
+                    }),
+                  ],
+                ),
+              );
+            },
           );
         },
       ),
     );
   }
 
-  Padding cardDecorationScreen(IntercityHomeController controller, PaymentGateway value, isDark, String image) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: ShapeDecoration(shape: RoundedRectangleBorder(side: const BorderSide(width: 1, color: Color(0xFFE5E7EB)), borderRadius: BorderRadius.circular(8))),
-        child: Padding(padding: EdgeInsets.all(value.name == "payFast" ? 0 : 8.0), child: image == '' ? Container(color: isDark ? AppThemeData.grey800 : AppThemeData.grey100) : Image.asset(image)),
-      ),
-    );
-  }
+  // ------------------------------------------------------------- fragments
 
-  Obx cardDecoration(IntercityHomeController controller, PaymentGateway value, isDark, String image) {
-    return Obx(
-      () => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Column(
-          children: [
-            InkWell(
+  /// One gateway row. [DsObserve] (not `Obx(() => Builder(...))`) so the
+  /// `selectedPaymentMethod` read below is tracked by the observer that is
+  /// running while it happens.
+  Widget cardDecoration(IntercityHomeController controller, PaymentGateway value, String image) {
+    return DsObserve(
+      builder: (context) {
+        final c = context.dsColors;
+        final t = context.dsText;
+        final selected = controller.selectedPaymentMethod.value == value.name;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              borderRadius: DsRadius.brMd,
               onTap: () {
                 controller.selectedPaymentMethod.value = value.name;
               },
-              child: Row(
-                children: [
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: ShapeDecoration(shape: RoundedRectangleBorder(side: const BorderSide(width: 1, color: Color(0xFFE5E7EB)), borderRadius: BorderRadius.circular(8))),
-                    child: Padding(padding: EdgeInsets.all(value.name == "payFast" ? 0 : 8.0), child: Image.asset(image)),
-                  ),
-                  const SizedBox(width: 10),
-                  value.name == "wallet"
-                      ? Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              value.name.capitalizeString(),
-                              textAlign: TextAlign.start,
-                              style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
+              child: Padding(
+                padding: const EdgeInsets.all(DsSpace.xs),
+                child: Row(
+                  children: [
+                    CabGatewayLogo(image: image, method: value.name, size: 50, selected: selected),
+                    const DsGap(DsSpace.md),
+                    value.name == "wallet"
+                        ? Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(value.name.capitalizeString(), textAlign: TextAlign.start, style: t.bodyStrong),
+                                Text(
+                                  Constant.amountShow(
+                                    amount: controller.userModel.value.walletAmount == null ? '0.0' : controller.userModel.value.walletAmount.toString(),
+                                    currency: RegionService.customerCurrency,
+                                  ),
+                                  textAlign: TextAlign.start,
+                                  style: t.labelSm.withColor(c.brandStrong).tabular,
+                                ),
+                              ],
                             ),
-                            Text(
-                              Constant.amountShow(amount: controller.userModel.value.walletAmount == null ? '0.0' : controller.userModel.value.walletAmount.toString(), currency: RegionService.customerCurrency),
-                              textAlign: TextAlign.start,
-                              style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
-                            ),
-                          ],
-                        ),
-                      )
-                      : Expanded(
-                        child: Text(
-                          value.name.capitalizeString(),
-                          textAlign: TextAlign.start,
-                          style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                        ),
-                      ),
-                  const Expanded(child: SizedBox()),
-                  Radio(
-                    value: value.name,
-                    groupValue: controller.selectedPaymentMethod.value,
-                    activeColor: isDark ? AppThemeData.primary300 : AppThemeData.primary300,
-                    onChanged: (value) {
-                      controller.selectedPaymentMethod.value = value.toString();
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void showBillBifurcationDialog(BuildContext context, bool isDark, IntercityHomeController controller) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 10), // 🔥 KEY FIX
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: SizedBox(
-            width: Responsive.width(100, context), // ✅ 90% width
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(height: 10),
-                  Text("Tax Details".tr, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
-                  const SizedBox(height: 5),
-                  sectionDivider(isDark),
-                  const SizedBox(height: 5),
-                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: controller.rideCurrency), isDark: isDark),
-                  sectionDivider(isDark),
-                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: controller.rideCurrency), isDark: isDark),
-                  sectionDivider(isDark),
-                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: controller.rideCurrency), amountColor: AppThemeData.primary300, isDark: isDark),
-                  const SizedBox(height: 10),
-                  Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: Text("Close".tr))),
-                ],
+                          )
+                        : Expanded(
+                            child: Text(value.name.capitalizeString(), textAlign: TextAlign.start, style: t.bodyStrong),
+                          ),
+                    Radio(
+                      value: value.name,
+                      groupValue: controller.selectedPaymentMethod.value,
+                      activeColor: c.brand,
+                      onChanged: (value) {
+                        controller.selectedPaymentMethod.value = value.toString();
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1686,27 +1074,212 @@ class IntercityHomeScreen extends StatelessWidget {
     );
   }
 
-  Widget amountRow({required String title, required String amount, required bool isDark, Color? textColour, Color? amountColor, bool? underline, Widget? trailing}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Text(
-            title.tr,
-            style: TextStyle(
-              fontFamily: AppThemeData.regular,
-              color: textColour ?? (isDark ? AppThemeData.grey300 : AppThemeData.grey600),
-              fontSize: 16,
-              decoration: underline == true ? TextDecoration.underline : TextDecoration.none,
-            ),
+  void showBillBifurcationDialog(BuildContext context, IntercityHomeController controller) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return DsDialog(
+          title: "Tax Details".tr,
+          icon: Icons.receipt_long_rounded,
+          tone: DsTone.info,
+          content: Column(
+            children: [
+              CabBillRow(
+                label: "Tax on Order Total".tr,
+                value: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: controller.rideCurrency),
+              ),
+              const DsDivider(spacing: DsSpace.xl),
+              CabBillRow(
+                label: "Tax on Platform Fee".tr,
+                value: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: controller.rideCurrency),
+              ),
+              const DsDivider(spacing: DsSpace.xl),
+              CabBillRow(
+                label: "Total Tax Amount".tr,
+                value: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: controller.rideCurrency),
+                valueColor: context.dsColors.brandStrong,
+                emphasize: true,
+              ),
+            ],
           ),
-        ),
-        trailing ?? Text(amount, style: TextStyle(fontFamily: AppThemeData.regular, color: amountColor ?? (isDark ? AppThemeData.grey50 : AppThemeData.grey900), fontSize: 16)),
-      ],
+          primaryLabel: "Close".tr,
+          onPrimary: () => Navigator.pop(context),
+        );
+      },
     );
   }
+}
 
-  Widget sectionDivider(bool isDark) {
-    return Column(children: [const SizedBox(height: 10), MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200), const SizedBox(height: 10)]);
+/// Image card for a popular intercity destination.
+class _PopularDestinationTile extends StatelessWidget {
+  final String title;
+  final String image;
+  final VoidCallback onTap;
+
+  const _PopularDestinationTile({required this.title, required this.image, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.dsText;
+    return DsPressable(
+      onTap: onTap,
+      semanticLabel: title,
+      child: ClipRRect(
+        borderRadius: DsRadius.brMd,
+        child: SizedBox(
+          width: 120,
+          height: 132,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              CachedNetworkImage(
+                imageUrl: image,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => DsSkeleton.box(height: 132, width: 120, radius: 0),
+                errorWidget: (context, url, error) => Image.network(Constant.placeHolderImage, fit: BoxFit.cover, cacheHeight: 80, cacheWidth: 80),
+              ),
+              const DecoratedBox(decoration: BoxDecoration(gradient: DsGradients.imageScrim)),
+              Padding(
+                padding: const EdgeInsets.all(DsSpace.sm),
+                child: Align(
+                  alignment: AlignmentDirectional.bottomStart,
+                  child: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.labelSm.withColor(Colors.white)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One vehicle class in the selection list: artwork, name, distance and
+/// duration, and the fare for this trip.
+class _VehicleRow extends StatelessWidget {
+  final VehicleType vehicleType;
+  final bool selected;
+  final String distanceLabel;
+  final String durationLabel;
+  final String fare;
+  final VoidCallback onTap;
+
+  const _VehicleRow({required this.vehicleType, required this.selected, required this.distanceLabel, required this.durationLabel, required this.fare, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard.outlined(
+      onTap: onTap,
+      semanticLabel: "${vehicleType.name}",
+      color: selected ? c.brandSoft : null,
+      borderColor: selected ? c.brand : null,
+      padding: const EdgeInsets.all(DsSpace.md),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: DsRadius.brSm,
+            child: CachedNetworkImage(
+              imageUrl: vehicleType.vehicleIcon.toString(),
+              height: 60,
+              width: 60,
+              imageBuilder: (context, imageProvider) => Container(
+                decoration: BoxDecoration(
+                  borderRadius: DsRadius.brSm,
+                  image: DecorationImage(image: imageProvider, fit: BoxFit.cover),
+                ),
+              ),
+              placeholder: (context, url) => DsSkeleton.box(height: 60, width: 60, radius: DsRadius.sm),
+              errorWidget: (context, url, error) => ClipRRect(
+                borderRadius: DsRadius.brSm,
+                child: Image.network(Constant.userPlaceHolder, fit: BoxFit.cover),
+              ),
+              fit: BoxFit.cover,
+            ),
+          ),
+          const DsGap(DsSpace.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("${vehicleType.name}", style: t.titleSm),
+                const DsGap(DsSpace.xxs),
+                Row(
+                  children: [
+                    Icon(Icons.straighten_rounded, size: 14, color: c.textMuted),
+                    const DsGap(DsSpace.xs),
+                    Text(distanceLabel, style: t.caption.tabular),
+                    const DsGap(DsSpace.md),
+                    Icon(Icons.schedule_rounded, size: 14, color: c.textMuted),
+                    const DsGap(DsSpace.xs),
+                    Flexible(
+                      child: Text(durationLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption.tabular),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const DsGap(DsSpace.sm),
+          Text(fare, style: t.titleSm.tabular),
+        ],
+      ),
+    );
+  }
+}
+
+/// Promo code: jump to the coupon list or type a code and redeem it.
+class _PromoSection extends StatelessWidget {
+  final TextEditingController couponController;
+  final VoidCallback onViewAll;
+  final Future<void> Function() onRedeem;
+
+  const _PromoSection({required this.couponController, required this.onViewAll, required this.onRedeem});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text("Promo code".tr, style: t.titleSm)),
+            DsButton.ghost(label: "View All".tr, size: DsButtonSize.sm, trailingIcon: Icons.chevron_right_rounded, onPressed: onViewAll),
+          ],
+        ),
+        const DsGap(DsSpace.sm),
+        DsCard.tinted(
+          tone: DsTone.success,
+          padding: const EdgeInsets.fromLTRB(DsSpace.md, DsSpace.sm, DsSpace.sm, DsSpace.sm),
+          child: Row(
+            children: [
+              Icon(Icons.local_offer_outlined, size: 20, color: c.successStrong),
+              const DsGap(DsSpace.md),
+              Expanded(
+                child: TextFormField(
+                  controller: couponController,
+                  style: DsTypography.bodyStrong.copyWith(color: c.textPrimary),
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                    hintText: 'Write coupon Code'.tr,
+                    hintStyle: DsTypography.bodyStrong.copyWith(color: c.textMuted),
+                  ),
+                ),
+              ),
+              const DsGap(DsSpace.sm),
+              DsButton.primary(label: "Redeem now".tr, size: DsButtonSize.sm, onPressed: () => onRedeem()),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }

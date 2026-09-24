@@ -2,34 +2,27 @@ import 'package:customer/constant/collection_name.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/inbox_model.dart';
 import 'package:customer/models/user_model.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/responsive.dart';
-import 'package:customer/utils/network_image_widget.dart';
-import 'package:customer/widget/firebase_pagination/src/fireStore_pagination.dart';
+import 'package:customer/screen_ui/multi_vendor_service/chat_screens/widgets/chat_widgets.dart';
+import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/widget/firebase_pagination/src/firestore_pagination.dart';
 import 'package:customer/widget/firebase_pagination/src/models/view_type.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../../controllers/theme_controller.dart';
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
 import 'chat_screen.dart';
 
+/// Archetype **J — inbox**. Same rows as the driver inbox, with a store
+/// avatar and its own empty copy.
 class RestaurantInboxScreen extends StatelessWidget {
   const RestaurantInboxScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-        centerTitle: false,
-        titleSpacing: 0,
-        title: Text("Restaurant Inbox".tr, textAlign: TextAlign.start, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
-      ),
+    return DsScaffold(
+      title: "Restaurant Inbox".tr,
+      maxContentWidth: DsLayout.contentMax,
       body: FirestorePagination(
         query: FireStoreUtils.fireStore
             .collection(CollectionName.chat)
@@ -39,6 +32,7 @@ class RestaurantInboxScreen extends StatelessWidget {
             .orderBy('createdAt', descending: true),
         //item builder type is compulsory.
         physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
         itemBuilder: (context, documentSnapshots, index) {
           final data = documentSnapshots[index].data() as Map<String, dynamic>?;
           InboxModel inboxModel = InboxModel.fromJson(data!);
@@ -47,77 +41,37 @@ class RestaurantInboxScreen extends StatelessWidget {
             future: FireStoreUtils.getUserProfile(inboxModel.receiverId == FireStoreUtils.getCurrentUid() ? inboxModel.senderId! : inboxModel.receiverId!),
             builder: (context, snapshot) {
               if (!snapshot.hasData || snapshot.hasError || snapshot.connectionState == ConnectionState.waiting) {
-                return SizedBox();
+                return const _InboxRowSkeleton();
               } else {
                 UserModel? restaurant = snapshot.data;
-                return InkWell(
-                  onTap: () async {
-                    ShowToastDialog.showLoader("Please wait".tr);
-                    UserModel? customer = await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid());
+                return DsFadeSlideIn(
+                  index: index,
+                  child: ChatInboxRow(
+                    name: "${restaurant?.fullName()}",
+                    imageUrl: restaurant?.profilePictureURL,
+                    time: Constant.timestampToDate(inboxModel.createdAt!),
+                    subtitle: "${"Order".tr} ${Constant.orderId(orderId: inboxModel.orderId.toString())}",
+                    onTap: () async {
+                      ShowToastDialog.showLoader("Please wait".tr);
+                      UserModel? customer = await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid());
 
-                    ShowToastDialog.closeLoader();
+                      ShowToastDialog.closeLoader();
 
-                    Get.to(
-                      const ChatScreen(),
-                      arguments: {
-                        "senderName": '${customer!.fullName()}',
-                        "senderId": customer.id,
-                        "senderProfileUrl": customer.profilePictureURL,
-                        "receivedName": restaurant!.fullName(),
-                        "receivedId": restaurant.id,
-                        "receivedProfileUrl": restaurant.profilePictureURL,
-                        "orderId": inboxModel.orderId,
-                        "token": restaurant.fcmToken,
-                        "chatType": Constant.userRoleVendor,
-                      },
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-                    child: Container(
-                      decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Row(
-                          children: [
-                            ClipRRect(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              child: NetworkImageWidget(imageUrl: restaurant?.profilePictureURL ?? '', fit: BoxFit.cover, height: Responsive.height(6, context), width: Responsive.width(12, context)),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          "${restaurant?.fullName()}",
-                                          textAlign: TextAlign.start,
-                                          style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800),
-                                        ),
-                                      ),
-                                      Text(
-                                        Constant.timestampToDate(inboxModel.createdAt!),
-                                        textAlign: TextAlign.start,
-                                        style: TextStyle(fontFamily: AppThemeData.regular, fontSize: 16, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    "${"Order".tr} ${Constant.orderId(orderId: inboxModel.orderId.toString())}",
-                                    textAlign: TextAlign.start,
-                                    style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: isDark ? AppThemeData.grey200 : AppThemeData.grey700),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                      Get.to(
+                        const ChatScreen(),
+                        arguments: {
+                          "senderName": '${customer!.fullName()}',
+                          "senderId": customer.id,
+                          "senderProfileUrl": customer.profilePictureURL,
+                          "receivedName": restaurant!.fullName(),
+                          "receivedId": restaurant.id,
+                          "receivedProfileUrl": restaurant.profilePictureURL,
+                          "orderId": inboxModel.orderId,
+                          "token": restaurant.fcmToken,
+                          "chatType": Constant.userRoleVendor,
+                        },
+                      );
+                    },
                   ),
                 );
               }
@@ -126,13 +80,43 @@ class RestaurantInboxScreen extends StatelessWidget {
         },
 
         shrinkWrap: true,
-        onEmpty: Constant.showEmptyView(message: "No Conversion found".tr),
+        onEmpty: DsEmptyState(icon: Icons.storefront_outlined, title: "No Conversion found".tr, message: "Messages with stores appear here.".tr),
         // orderBy is compulsory to enable pagination
         //Change types customerId
         viewType: ViewType.list,
-        initialLoader: Constant.loader(),
+        initialLoader: const DsSkeletonList(itemCount: 5),
         // to fetch real-time data
         isLive: true,
+      ),
+    );
+  }
+}
+
+/// Placeholder while a conversation's profile is being resolved.
+class _InboxRowSkeleton extends StatelessWidget {
+  const _InboxRowSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.xs),
+      child: DsShimmer(
+        child: Row(
+          children: [
+            DsSkeleton.circle(size: 48),
+            const DsGap(DsSpace.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: double.infinity, child: DsSkeleton.line(height: 14)),
+                  const DsGap(DsSpace.sm),
+                  DsSkeleton.line(width: 140),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

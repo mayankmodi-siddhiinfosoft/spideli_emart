@@ -1,7 +1,6 @@
 import 'package:customer/constant/constant.dart';
-import 'package:customer/controllers/theme_controller.dart';
 import 'package:customer/screen_ui/subscriptions/subscription_ui.dart';
-import 'package:customer/themes/app_them_data.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/utils/saved_payment_methods.dart';
@@ -11,6 +10,9 @@ import 'package:get/get.dart';
 /// Profile > Payment methods (spec 3.4 / 7.8): saved Mobile Money numbers
 /// and Wave accounts; set a default, delete. Only methods usable in the
 /// current region are listed. Cards are not saved (see [SavedPaymentMethods]).
+///
+/// Archetype **H — settings list**: method cards with a default badge and an
+/// overflow menu, an "Add" FAB and a DS sheet for the form.
 class SavedPaymentMethodsScreen extends StatefulWidget {
   const SavedPaymentMethodsScreen({super.key});
 
@@ -51,55 +53,87 @@ class _SavedPaymentMethodsScreenState extends State<SavedPaymentMethodsScreen> {
   }
 
   Future<void> _add() async {
-    final method = await Get.bottomSheet<SavedPaymentMethod>(const _AddMethodSheet(), isScrollControlled: true);
+    final method = await Get.bottomSheet<SavedPaymentMethod>(const _AddMethodSheet(), isScrollControlled: true, backgroundColor: Colors.transparent);
     if (method != null) await _run(() => SavedPaymentMethods.add(method));
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Get.find<ThemeController>().isDark.value;
-    return Scaffold(
-      backgroundColor: SubUi.surface(isDark),
-      appBar: SubUi.appBar("Payment methods".tr, isDark),
-      floatingActionButton: FloatingActionButton.extended(backgroundColor: AppThemeData.primary300, onPressed: _add, icon: const Icon(Icons.add, color: Colors.white), label: Text("Add".tr, style: const TextStyle(color: Colors.white))),
-      body:
-          _loading
-              ? Constant.loader()
-              : ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
-                children: [
-                  if (_methods.isEmpty) SubUi.empty("No saved Mobile Money number or Wave account.".tr, isDark),
-                  ..._methods.map(
-                    (m) => SubUi.card(
-                      isDark,
-                      Row(
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsScaffold(
+      title: "Payment methods".tr,
+      maxContentWidth: DsLayout.contentMax,
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: c.brand,
+        foregroundColor: c.onBrand,
+        onPressed: _add,
+        icon: const Icon(Icons.add_rounded),
+        label: Text("Add".tr, style: DsTypography.label.copyWith(color: c.onBrand)),
+      ),
+      body: DsAsync(
+        isLoading: _loading,
+        skeleton: const DsSkeletonList(itemCount: 3, trailing: false),
+        builder: (_) => ListView(
+          padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, 96),
+          children: DsFadeSlideIn.stagger([
+            if (_methods.isEmpty)
+              DsEmptyState(
+                icon: Icons.account_balance_wallet_outlined,
+                title: "Payment methods".tr,
+                message: "No saved Mobile Money number or Wave account.".tr,
+                actionLabel: "Add".tr,
+                onAction: _add,
+              ),
+            ..._methods.map(
+              (m) => SubUi.card(
+                context,
+                Row(
+                  children: [
+                    DsIconWell(icon: m.type == SavedPaymentMethod.typeWave ? Icons.waves_rounded : Icons.smartphone_rounded, tone: DsTone.brand, size: 44),
+                    const DsGap(DsSpace.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(m.type == SavedPaymentMethod.typeWave ? Icons.waves : Icons.phone_android, color: AppThemeData.primary300),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(children: [Flexible(child: SubUi.title((m.label ?? '').isNotEmpty ? m.label! : m.title, isDark)), if (m.isDefault) ...[const SizedBox(width: 6), SubUi.chip("Default".tr, AppThemeData.success400)]]),
-                                SubUi.body("${m.title} · ${m.number}", isDark),
-                              ],
-                            ),
+                          Row(
+                            children: [
+                              Flexible(child: SubUi.title(context, (m.label ?? '').isNotEmpty ? m.label! : m.title)),
+                              if (m.isDefault) ...[const DsGap(DsSpace.sm), SubUi.chip("Default".tr, DsTone.success)],
+                            ],
                           ),
-                          PopupMenuButton<String>(
-                            onSelected: (v) {
-                              if (v == 'default') _run(() => SavedPaymentMethods.setDefault(m.id));
-                              if (v == 'delete') _run(() => SavedPaymentMethods.remove(m.id));
-                            },
-                            itemBuilder: (_) => [if (!m.isDefault) PopupMenuItem(value: 'default', child: Text("Set as default".tr)), PopupMenuItem(value: 'delete', child: Text("Delete".tr))],
-                          ),
+                          const DsGap(DsSpace.xxs),
+                          Text("${m.title} · ${m.number}", style: t.bodySm.tabular),
                         ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  SubUi.body("The default number is prefilled when a payment gateway asks for a phone number. Bank cards are never saved in the app: card storage requires the payment gateway's tokenisation service, which is not available yet.".tr, isDark),
-                ],
+                    PopupMenuButton<String>(
+                      icon: Icon(Icons.more_vert_rounded, color: c.textMuted),
+                      tooltip: "Payment methods".tr,
+                      onSelected: (v) {
+                        if (v == 'default') _run(() => SavedPaymentMethods.setDefault(m.id));
+                        if (v == 'delete') _run(() => SavedPaymentMethods.remove(m.id));
+                      },
+                      itemBuilder: (_) => [
+                        if (!m.isDefault) PopupMenuItem(value: 'default', child: Text("Set as default".tr, style: t.body)),
+                        PopupMenuItem(value: 'delete', child: Text("Delete".tr, style: t.body.withColor(c.dangerStrong))),
+                      ],
+                    ),
+                  ],
+                ),
               ),
+            ),
+            const DsGap(DsSpace.sm),
+            DsInlineAlert(
+              tone: DsTone.info,
+              icon: Icons.shield_outlined,
+              message:
+                  "The default number is prefilled when a payment gateway asks for a phone number. Bank cards are never saved in the app: card storage requires the payment gateway's tokenisation service, which is not available yet."
+                      .tr,
+            ),
+          ]),
+        ),
+      ),
     );
   }
 }
@@ -146,37 +180,46 @@ class _AddMethodSheetState extends State<_AddMethodSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Get.find<ThemeController>().isDark.value;
-    return Container(
-      padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + MediaQuery.of(context).viewInsets.bottom),
-      decoration: BoxDecoration(color: SubUi.surface(isDark), borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
-      child: SingleChildScrollView(
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsSheet(
+      title: "Add payment method".tr,
+      showClose: true,
+      actions: DsButton.primary(label: "Save".tr, size: DsButtonSize.lg, expand: true, icon: Icons.check_rounded, onPressed: _save),
+      child: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SubUi.title("Add payment method".tr, isDark),
-            const SizedBox(height: 12),
-            SegmentedButton<String>(
-              segments: [ButtonSegment(value: SavedPaymentMethod.typeMobileMoney, label: Text("Mobile Money".tr)), const ButtonSegment(value: SavedPaymentMethod.typeWave, label: Text("Wave"))],
-              selected: {_type},
-              onSelectionChanged: (s) => setState(() => _type = s.first),
+            DsSegmentedTabs(
+              segments: [DsSegment("Mobile Money".tr), const DsSegment("Wave")],
+              index: _type == SavedPaymentMethod.typeMobileMoney ? 0 : 1,
+              onChanged: (i) => setState(() => _type = i == 0 ? SavedPaymentMethod.typeMobileMoney : SavedPaymentMethod.typeWave),
             ),
-            const SizedBox(height: 12),
+            const DsGap(DsSpace.xl),
             if (_type == SavedPaymentMethod.typeMobileMoney)
-              DropdownButtonFormField<String>(
-                initialValue: _operator,
-                decoration: InputDecoration(labelText: "Operator".tr),
-                items: SavedPaymentMethod.operators.map((o) => DropdownMenuItem(value: o, child: Text(o.tr))).toList(),
+              DsDropdown<String>(
+                label: "Operator".tr,
+                value: _operator,
+                items: SavedPaymentMethod.operators.map((o) => DropdownMenuItem(value: o, child: Text(o.tr, style: t.body))).toList(),
                 onChanged: (v) => setState(() => _operator = v ?? _operator),
               ),
-            TextField(controller: _number, keyboardType: TextInputType.phone, decoration: InputDecoration(labelText: "Phone number (with country code)".tr)),
-            TextField(controller: _label, decoration: InputDecoration(labelText: "Label (optional)".tr)),
-            CheckboxListTile(contentPadding: EdgeInsets.zero, value: _default, onChanged: (v) => setState(() => _default = v ?? false), title: Text("Use as default".tr)),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppThemeData.primary300), onPressed: _save, child: Text("Save".tr, style: const TextStyle(color: Colors.white))),
+            DsTextField(
+              label: "Phone number (with country code)".tr,
+              controller: _number,
+              keyboardType: TextInputType.phone,
+              prefixIcon: Icons.smartphone_rounded,
+              requiredMark: true,
+            ),
+            DsTextField(label: "Label (optional)".tr, controller: _label, prefixIcon: Icons.label_outline_rounded),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _default,
+              activeColor: c.brand,
+              controlAffinity: ListTileControlAffinity.leading,
+              onChanged: (v) => setState(() => _default = v ?? false),
+              title: Text("Use as default".tr, style: t.bodyStrong),
             ),
           ],
         ),

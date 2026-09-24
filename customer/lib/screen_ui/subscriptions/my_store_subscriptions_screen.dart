@@ -1,11 +1,10 @@
 import 'package:customer/constant/constant.dart';
-import 'package:customer/controllers/theme_controller.dart';
 import 'package:customer/models/vendor_model.dart';
 import 'package:customer/models/vendor_subscription_model.dart';
 import 'package:customer/screen_ui/subscriptions/store_plans_section.dart';
 import 'package:customer/screen_ui/subscriptions/subscription_ui.dart';
 import 'package:customer/service/fire_store_utils.dart';
-import 'package:customer/themes/app_them_data.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/utils/store_subscription_service.dart';
@@ -14,6 +13,8 @@ import 'package:get/get.dart';
 
 /// Profile > My subscriptions (spec 4.7 step 5 / 7.9): the customer's store
 /// subscriptions with Pause / Resume / Skip a day / Cancel, and payments.
+///
+/// Archetype **F — history**: two tabs, status-chipped cards, inline actions.
 class MyStoreSubscriptionsScreen extends StatefulWidget {
   const MyStoreSubscriptionsScreen({super.key});
 
@@ -95,13 +96,15 @@ class _MyStoreSubscriptionsScreenState extends State<MyStoreSubscriptionsScreen>
     final from = await showDatePicker(context: context, helpText: "Pause from".tr, initialDate: first, firstDate: first, lastDate: last);
     if (from == null || !mounted) return;
     final open = await Get.dialog<bool>(
-      AlertDialog(
-        title: Text("Pause until".tr),
-        content: Text("Pause until a date, or until you resume?".tr),
-        actions: [
-          TextButton(onPressed: () => Get.back(result: true), child: Text("Until I resume".tr)),
-          TextButton(onPressed: () => Get.back(result: false), child: Text("Choose a date".tr)),
-        ],
+      DsDialog(
+        title: "Pause until".tr,
+        message: "Pause until a date, or until you resume?".tr,
+        icon: Icons.pause_circle_outline_rounded,
+        tone: DsTone.warning,
+        primaryLabel: "Until I resume".tr,
+        onPrimary: () => Get.back(result: true),
+        secondaryLabel: "Choose a date".tr,
+        onSecondary: () => Get.back(result: false),
       ),
     );
     if (open == null || !mounted) return;
@@ -135,13 +138,16 @@ class _MyStoreSubscriptionsScreenState extends State<MyStoreSubscriptionsScreen>
 
   Future<void> _cancel(VendorSubscriptionModel s) async {
     final ok = await Get.dialog<bool>(
-      AlertDialog(
-        title: Text("Cancel subscription".tr),
-        content: Text("Deliveries stop and the subscription will not be renewed. Payments already made are not refunded.".tr),
-        actions: [
-          TextButton(onPressed: () => Get.back(result: false), child: Text("Keep".tr)),
-          TextButton(onPressed: () => Get.back(result: true), child: Text("Cancel subscription".tr, style: TextStyle(color: AppThemeData.danger300))),
-        ],
+      DsDialog(
+        title: "Cancel subscription".tr,
+        message: "Deliveries stop and the subscription will not be renewed. Payments already made are not refunded.".tr,
+        icon: Icons.cancel_outlined,
+        tone: DsTone.danger,
+        destructive: true,
+        primaryLabel: "Cancel subscription".tr,
+        onPrimary: () => Get.back(result: true),
+        secondaryLabel: "Keep".tr,
+        onSecondary: () => Get.back(result: false),
       ),
     );
     if (ok == true) await _run(() => StoreSubscriptionService.cancel(s.id!), "Subscription cancelled".tr);
@@ -149,59 +155,96 @@ class _MyStoreSubscriptionsScreenState extends State<MyStoreSubscriptionsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Get.find<ThemeController>().isDark.value;
+    final c = context.dsColors;
     return DefaultTabController(
       length: 2,
-      child: Scaffold(
-        backgroundColor: SubUi.surface(isDark),
-        appBar: SubUi.appBar(
-          "My subscriptions".tr,
-          isDark,
-          bottom: TabBar(
-            labelColor: AppThemeData.primary300,
-            unselectedLabelColor: SubUi.muted(isDark),
-            indicatorColor: AppThemeData.primary300,
-            tabs: [Tab(text: "Subscriptions".tr), Tab(text: "Payments".tr)],
+      child: DsScaffold(
+        maxContentWidth: DsLayout.contentMax,
+        appBar: DsAppBar(
+          title: "My subscriptions".tr,
+          bottom: DsTabBar(tabs: ["Subscriptions".tr, "Payments".tr]),
+        ),
+        body: DsAsync(
+          isLoading: _loading,
+          skeleton: const DsSkeletonList(itemCount: 3, leading: false, trailing: false),
+          builder: (_) => TabBarView(
+            children: [
+              RefreshIndicator(
+                onRefresh: _load,
+                color: c.brand,
+                child: _subs.isEmpty
+                    ? ListView(
+                        padding: const EdgeInsets.all(DsSpace.lg),
+                        children: [
+                          DsEmptyState(
+                            icon: Icons.event_repeat_rounded,
+                            title: "Subscriptions".tr,
+                            message: "You have no store subscriptions yet. Stores that sell them show a Subscriptions section on their page.".tr,
+                          ),
+                        ],
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, DsSpace.xxxl),
+                        children: [
+                          for (var i = 0; i < _subs.length; i++) DsFadeSlideIn(index: i, child: _subCard(context, _subs[i])),
+                        ],
+                      ),
+              ),
+              RefreshIndicator(
+                onRefresh: _load,
+                color: c.brand,
+                child: _payments.isEmpty
+                    ? ListView(
+                        padding: const EdgeInsets.all(DsSpace.lg),
+                        children: [DsEmptyState(icon: Icons.receipt_long_outlined, title: "Payments".tr, message: "No payments yet.".tr)],
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, DsSpace.xxxl),
+                        children: [
+                          for (var i = 0; i < _payments.length; i++) DsFadeSlideIn(index: i, child: _paymentCard(context, _payments[i])),
+                        ],
+                      ),
+              ),
+            ],
           ),
         ),
-        body:
-            _loading
-                ? Constant.loader()
-                : TabBarView(
-                  children: [
-                    RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: _subs.isEmpty ? [SubUi.empty("You have no store subscriptions yet. Stores that sell them show a Subscriptions section on their page.".tr, isDark)] : _subs.map((s) => _subCard(s, isDark)).toList(),
-                      ),
-                    ),
-                    RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView(padding: const EdgeInsets.all(16), children: _payments.isEmpty ? [SubUi.empty("No payments yet.".tr, isDark)] : _payments.map((p) => _paymentCard(p, isDark)).toList()),
-                    ),
-                  ],
-                ),
       ),
     );
+  }
+
+  DsTone _statusTone(String status) {
+    switch (status) {
+      case VendorSubscriptionModel.statusActive:
+        return DsTone.success;
+      case VendorSubscriptionModel.statusPaused:
+        return DsTone.warning;
+      case VendorSubscriptionModel.statusCancelled:
+        return DsTone.danger;
+      case VendorSubscriptionModel.statusExpired:
+        return DsTone.neutral;
+      default:
+        return DsTone.neutral;
+    }
   }
 
   Widget _statusChip(String status) {
     switch (status) {
       case VendorSubscriptionModel.statusActive:
-        return SubUi.chip("Active".tr, AppThemeData.success400);
+        return DsStatusChip(label: "Active".tr, tone: DsTone.success, pulse: true);
       case VendorSubscriptionModel.statusPaused:
-        return SubUi.chip("Paused".tr, AppThemeData.warning400);
+        return DsStatusChip(label: "Paused".tr, tone: DsTone.warning);
       case VendorSubscriptionModel.statusCancelled:
-        return SubUi.chip("Cancelled".tr, AppThemeData.danger300);
+        return DsStatusChip(label: "Cancelled".tr, tone: DsTone.danger);
       case VendorSubscriptionModel.statusExpired:
-        return SubUi.chip("Expired".tr, AppThemeData.grey500);
+        return DsStatusChip(label: "Expired".tr, tone: DsTone.neutral);
       default:
-        return SubUi.chip(status.capitalizeFirst ?? status, AppThemeData.grey500);
+        return DsStatusChip(label: status.capitalizeFirst ?? status, tone: DsTone.neutral);
     }
   }
 
-  Widget _subCard(VendorSubscriptionModel s, bool isDark) {
+  Widget _subCard(BuildContext context, VendorSubscriptionModel s) {
+    final c = DsColors.of(context);
+    final t = context.dsText;
     final status = s.effectiveStatus;
     final plan = s.plan;
     final currency = RegionService.currencyForRecord(s.regionId);
@@ -211,90 +254,128 @@ class _MyStoreSubscriptionsScreenState extends State<MyStoreSubscriptionsScreen>
     // From the effective status: a pause whose pausedUntil has passed is active.
     final bool pausedNow = status == VendorSubscriptionModel.statusPaused;
     return SubUi.card(
-      isDark,
+      context,
+      borderColor: running ? c.tone(_statusTone(status)).main : null,
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [Expanded(child: SubUi.title(plan?.title ?? '-', isDark)), _statusChip(status)]),
-          const SizedBox(height: 4),
-          SubUi.body(_storeName(s.vendorID), isDark),
-          const SizedBox(height: 6),
-          if (plan != null) SubUi.row("Price".tr, "${Constant.amountShow(amount: plan.price, currency: currency)} / ${StoreSubscriptionService.periodLabel(plan.expiryDay).tr}", isDark),
-          if (plan != null && plan.items.isNotEmpty) SubUi.row("Each delivery".tr, storePlanItemsText(plan), isDark),
-          if (plan != null && plan.hasSchedule) SubUi.row("Schedule".tr, storePlanScheduleText(plan), isDark),
-          SubUi.row("Period".tr, "${s.startDate == null ? '-' : Constant.timestampToDate(s.startDate!)}  →  ${s.expiryDate == null ? '-' : Constant.timestampToDate(s.expiryDate!)}", isDark),
-          if (s.deliveryAddressText.isNotEmpty) SubUi.row("Deliver to".tr, s.deliveryAddressText, isDark),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DsIconWell(icon: pausedNow ? Icons.pause_rounded : Icons.event_repeat_rounded, tone: _statusTone(status), size: 44),
+              const DsGap(DsSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SubUi.title(context, plan?.title ?? '-'),
+                    const DsGap(DsSpace.xxs),
+                    Text(_storeName(s.vendorID), style: t.bodySm),
+                  ],
+                ),
+              ),
+              const DsGap(DsSpace.sm),
+              _statusChip(status),
+            ],
+          ),
+          const DsGap(DsSpace.md),
+          DsDivider(spacing: DsSpace.xs),
+          const DsGap(DsSpace.sm),
+          if (plan != null) SubUi.row(context, "Price".tr, "${Constant.amountShow(amount: plan.price, currency: currency)} / ${StoreSubscriptionService.periodLabel(plan.expiryDay).tr}"),
+          if (plan != null && plan.items.isNotEmpty) SubUi.row(context, "Each delivery".tr, storePlanItemsText(plan)),
+          if (plan != null && plan.hasSchedule) SubUi.row(context, "Schedule".tr, storePlanScheduleText(plan)),
+          SubUi.row(context, "Period".tr, "${s.startDate == null ? '-' : Constant.timestampToDate(s.startDate!)}  →  ${s.expiryDate == null ? '-' : Constant.timestampToDate(s.expiryDate!)}"),
+          if (s.deliveryAddressText.isNotEmpty) SubUi.row(context, "Deliver to".tr, s.deliveryAddressText),
           if (pausedNow)
             SubUi.row(
+              context,
               "Paused".tr,
               "${s.pausedFrom == null ? '' : Constant.timestampToDate(s.pausedFrom!)} → ${s.pausedUntil == null ? "until resumed".tr : Constant.timestampToDate(s.pausedUntil!)}",
-              isDark,
             ),
-          if (running && next != null) SubUi.row("Next delivery".tr, VendorSubscriptionModel.dayFormat.format(next), isDark),
+          if (running && next != null) SubUi.row(context, "Next delivery".tr, VendorSubscriptionModel.dayFormat.format(next)),
           if (upcomingSkips.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.only(top: DsSpace.sm),
               child: Wrap(
-                spacing: 6,
-                runSpacing: 4,
+                spacing: DsSpace.sm,
+                runSpacing: DsSpace.xs,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  SubUi.body("${"Skipped".tr}:", isDark),
+                  Text("${"Skipped".tr}:", style: t.bodySm),
                   ...upcomingSkips.map(
                     (d) => InputChip(
-                      label: Text(d, style: const TextStyle(fontSize: 12)),
+                      label: Text(d, style: t.labelSm.withColor(c.textPrimary)),
+                      backgroundColor: c.surfaceAlt,
+                      side: BorderSide(color: c.border),
                       onDeleted: running ? () => _run(() => StoreSubscriptionService.unskipDay(s.id!, d), "Delivery restored".tr) : null,
                     ),
                   ),
                 ],
               ),
             ),
-          if (s.cancelledAt != null) SubUi.row("Cancelled on".tr, Constant.timestampToDate(s.cancelledAt!), isDark),
+          if (s.cancelledAt != null) SubUi.row(context, "Cancelled on".tr, Constant.timestampToDate(s.cancelledAt!)),
           if (running) ...[
-            const SizedBox(height: 8),
+            const DsGap(DsSpace.lg),
             Wrap(
-              spacing: 8,
-              runSpacing: 4,
+              spacing: DsSpace.sm,
+              runSpacing: DsSpace.sm,
               children: [
                 if (pausedNow)
-                  OutlinedButton(onPressed: () => _run(() => StoreSubscriptionService.resume(s.id!), "Subscription resumed".tr), child: Text("Resume".tr))
+                  DsButton.tonal(
+                    label: "Resume".tr,
+                    icon: Icons.play_arrow_rounded,
+                    size: DsButtonSize.sm,
+                    onPressed: () => _run(() => StoreSubscriptionService.resume(s.id!), "Subscription resumed".tr),
+                  )
                 else
-                  OutlinedButton(onPressed: () => _pause(s), child: Text("Pause".tr)),
-                OutlinedButton(onPressed: () => _skip(s), child: Text("Skip a day".tr)),
-                OutlinedButton(onPressed: () => _cancel(s), child: Text("Cancel".tr, style: TextStyle(color: AppThemeData.danger300))),
+                  DsButton.tonal(label: "Pause".tr, icon: Icons.pause_rounded, size: DsButtonSize.sm, onPressed: () => _pause(s)),
+                DsButton.secondary(label: "Skip a day".tr, icon: Icons.event_busy_outlined, size: DsButtonSize.sm, onPressed: () => _skip(s)),
+                DsButton.dangerTonal(label: "Cancel".tr, icon: Icons.close_rounded, size: DsButtonSize.sm, onPressed: () => _cancel(s)),
               ],
             ),
           ],
           if (status == VendorSubscriptionModel.statusExpired && plan != null && _vendors[s.vendorID ?? ''] != null)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(onPressed: () => Get.to(() => StoreSubscribeScreen(plan: plan, vendor: _vendors[s.vendorID!]!)), child: Text("Subscribe again".tr)),
+            Padding(
+              padding: const EdgeInsets.only(top: DsSpace.sm),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: DsButton.ghost(
+                  label: "Subscribe again".tr,
+                  trailingIcon: Icons.arrow_forward_rounded,
+                  size: DsButtonSize.sm,
+                  onPressed: () => Get.to(() => StoreSubscribeScreen(plan: plan, vendor: _vendors[s.vendorID!]!)),
+                ),
+              ),
             ),
         ],
       ),
     );
   }
 
-  Widget _paymentCard(VendorSubscriptionPaymentModel p, bool isDark) {
+  Widget _paymentCard(BuildContext context, VendorSubscriptionPaymentModel p) {
     final currency = RegionService.currencyForRecord(p.regionId);
     final sub = _subs.firstWhereOrNull((s) => s.id == p.subscriptionId);
     return SubUi.card(
-      isDark,
+      context,
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: SubUi.title(sub?.plan?.title ?? _storeName(p.vendorID), isDark)),
-              Text(Constant.amountShow(amount: p.amount, currency: currency), style: TextStyle(fontFamily: AppThemeData.semiBold, color: SubUi.text(isDark))),
+              DsIconWell(icon: Icons.payments_outlined, tone: DsTone.success, size: 40),
+              const DsGap(DsSpace.md),
+              Expanded(child: SubUi.title(context, sub?.plan?.title ?? _storeName(p.vendorID))),
+              const DsGap(DsSpace.sm),
+              SubUi.price(context, Constant.amountShow(amount: p.amount, currency: currency)),
             ],
           ),
-          const SizedBox(height: 4),
-          SubUi.row("Store".tr, _storeName(p.vendorID), isDark),
-          SubUi.row("Date".tr, p.createdAt == null ? '-' : Constant.timestampToDateTime(p.createdAt!), isDark),
-          SubUi.row("Paid with".tr, (p.paymentMethod ?? '-').capitalizeFirst ?? '-', isDark),
-          SubUi.row("Status".tr, (p.status ?? '-').capitalizeFirst ?? '-', isDark),
-          SubUi.row("Reference".tr, p.id ?? '-', isDark),
+          const DsGap(DsSpace.md),
+          SubUi.row(context, "Store".tr, _storeName(p.vendorID)),
+          SubUi.row(context, "Date".tr, p.createdAt == null ? '-' : Constant.timestampToDateTime(p.createdAt!)),
+          SubUi.row(context, "Paid with".tr, (p.paymentMethod ?? '-').capitalizeFirst ?? '-'),
+          SubUi.row(context, "Status".tr, (p.status ?? '-').capitalizeFirst ?? '-'),
+          SubUi.row(context, "Reference".tr, p.id ?? '-'),
         ],
       ),
     );

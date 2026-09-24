@@ -1,6 +1,7 @@
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/service/fire_store_utils.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/utils.dart';
 import 'package:customer/widget/osm_map/map_picker_page.dart';
@@ -10,232 +11,287 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../controllers/enter_manually_location_controller.dart';
-import '../../controllers/theme_controller.dart';
-import '../../themes/app_them_data.dart';
-import '../../themes/round_button_fill.dart';
-import '../../themes/text_field_widget.dart';
 
+/// Archetype E — address form: a map-picker card on top, then the grouped
+/// address fields and the "save as" chips, with the CTA in a sticky bar.
 class EnterManuallyLocationScreen extends StatelessWidget {
   const EnterManuallyLocationScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX<EnterManuallyLocationController>(
       init: EnterManuallyLocationController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            leading: InkWell(
-              onTap: () {
-                Get.back();
-              },
-              child: Icon(Icons.arrow_back, size: 24, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-            ),
-          ),
-          body:
-              controller.isLoading.value
-                  ? Constant.loader()
-                  : Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            controller.mode == "Edit" ? "Edit Address".tr : "Add a New Address".tr,
-                            style: AppThemeData.boldTextStyle(fontSize: 24, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            "Enter your location details so we can deliver your orders quickly and accurately.".tr,
-                            style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey600),
-                          ),
-                          const SizedBox(height: 24),
-                          Row(
-                            children: [
-                              Expanded(child: Text("Set as Default Address".tr, style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900))),
-                              Transform.scale(
-                                scale: 0.7, // Decrease the size (try 0.5, 0.6, etc.)
-                                child: Switch(
-                                  value: controller.isDefault.value,
-                                  onChanged: (value) {
-                                    controller.isDefault.value = value;
-                                  },
-                                  activeThumbColor: Colors.green,
-                                  inactiveThumbColor: Colors.grey,
-                                ),
-                              ),
-                            ],
-                          ),
-                          GestureDetector(
-                            onTap: () {
-                              Constant.checkPermission(
-                                context: context,
-                                onTap: () async {
-                                  if (Constant.selectedMapType == 'osm') {
-                                    final result = await Get.to(() => MapPickerPage());
-                                    if (result != null) {
-                                      final firstPlace = result;
-                                      final lat = firstPlace.coordinates.latitude;
-                                      final lng = firstPlace.coordinates.longitude;
-                                      final address = firstPlace.address;
+        final c = context.dsColors;
+        final t = context.dsText;
+        final l = context.dsLayout;
+        final isLoading = controller.isLoading.value;
+        final isDefault = controller.isDefault.value;
+        final selectedSaveAs = controller.selectedSaveAs.value;
+        final saveAsList = controller.saveAsList.toList();
 
-                                      controller.localityEditingController.value.text = address.toString();
-                                      controller.location.value = UserLocation(latitude: lat, longitude: lng);
-                                    }
-                                  } else {
-                                    Get.to(LocationPickerScreen())!.then((value) async {
-                                      if (value != null) {
-                                        SelectedLocationModel selectedLocationModel = value;
+        return DsScaffold(
+          title: controller.mode == "Edit" ? "Edit Address".tr : "Add a New Address".tr,
+          // Keep the screen's original back action.
+          onBack: () {
+            Get.back();
+          },
+          maxContentWidth: DsLayout.contentMax,
+          body: isLoading
+              ? const DsSkeletonForm(fields: 4)
+              : SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.sm, l.gutter, DsSpace.xxl),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: DsFadeSlideIn.stagger([
+                      Text(
+                        "Enter your location details so we can deliver your orders quickly and accurately.".tr,
+                        style: t.bodySm.withColor(c.textSecondary),
+                      ),
+                      const DsGap(DsSpace.xl),
 
-                                        controller.localityEditingController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
-                                        controller.location.value = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
-                                      }
-                                    });
-                                  }
-                                },
-                              );
-                            },
-                            child: TextFieldWidget(
-                              title: "Choose Location".tr,
-                              hintText: "Choose Location".tr,
-                              readOnly: true,
-                              enable: false,
-                              controller: null,
-                              suffix: GestureDetector(
-                                onTap: () {
-                                  Constant.checkPermission(
-                                    context: context,
-                                    onTap: () async {
-                                      if (Constant.selectedMapType == 'osm') {
-                                        final result = await Get.to(() => MapPickerPage());
-                                        if (result != null) {
-                                          final firstPlace = result;
-                                          final lat = firstPlace.coordinates.latitude;
-                                          final lng = firstPlace.coordinates.longitude;
-                                          final address = firstPlace.address;
+                      // Map picker. The row and the GPS button keep their own
+                      // (slightly different) original handlers.
+                      DsCard.outlined(
+                        padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+                        onTap: () {
+                          Constant.checkPermission(
+                            context: context,
+                            onTap: () async {
+                              if (Constant.selectedMapType == 'osm') {
+                                final result = await Get.to(() => MapPickerPage());
+                                if (result != null) {
+                                  final firstPlace = result;
+                                  final lat = firstPlace.coordinates.latitude;
+                                  final lng = firstPlace.coordinates.longitude;
+                                  final address = firstPlace.address;
 
-                                          controller.localityEditingController.value.text = address.toString();
-                                          controller.location.value = UserLocation(latitude: lat, longitude: lng);
-                                        }
-                                      } else {
-                                        Get.to(LocationPickerScreen())!.then((value) async {
-                                          if (value != null) {
-                                            SelectedLocationModel selectedLocationModel = value;
-
-                                            controller.localityEditingController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
-                                            controller.location.value = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
-                                            Get.back();
-                                          }
-                                        });
-                                      }
-                                    },
-                                  );
-                                },
-                                child: Padding(padding: const EdgeInsets.only(right: 10), child: Icon(Icons.gps_fixed, size: 24, color: AppThemeData.ecommerce300)),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 15),
-                          TextFieldWidget(title: "Flat/House/Floor/Building*".tr, hintText: "Enter address details".tr, controller: controller.houseBuildingTextEditingController.value),
-                          const SizedBox(height: 15),
-                          TextFieldWidget(title: "Area/Sector/Locality*".tr, hintText: "Enter area/locality".tr, controller: controller.localityEditingController.value),
-                          const SizedBox(height: 15),
-                          TextFieldWidget(title: "Nearby Landmark".tr, hintText: "Add a landmark".tr, controller: controller.landmarkEditingController.value),
-                          const SizedBox(height: 30),
-                          Container(height: 1, color: AppThemeData.grey200),
-                          const SizedBox(height: 25),
-                          Text("Save Address As".tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: AppThemeData.grey900)),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 10,
-                            children:
-                                controller.saveAsList
-                                    .map(
-                                      (item) => GestureDetector(
-                                        onTap: () {
-                                          controller.selectedSaveAs.value = item;
-                                        },
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            color: controller.selectedSaveAs.value == item ? AppThemeData.primary300 : AppThemeData.grey100,
-                                            borderRadius: BorderRadius.circular(10),
-                                          ),
-                                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                                          child: Text(
-                                            controller.getLocalizedSaveAs(item),
-                                            style: AppThemeData.mediumTextStyle(color: controller.selectedSaveAs.value == item ? AppThemeData.grey50 : AppThemeData.grey600),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                          ),
-                          const SizedBox(height: 30),
-                          RoundedButtonFill(
-                            title: "Save Address".tr,
-                            color: AppThemeData.primary300,
-                            textColor: AppThemeData.grey50,
-                            onPress: () async {
-                              if (controller.location.value.latitude == null || controller.location.value.longitude == null) {
-                                ShowToastDialog.showToast("Please select Location".tr);
-                              } else if (controller.houseBuildingTextEditingController.value.text.isEmpty) {
-                                ShowToastDialog.showToast("Please Enter Flat / House / Floor / Building".tr);
-                              } else if (controller.localityEditingController.value.text.isEmpty) {
-                                ShowToastDialog.showToast("Please Enter Area / Sector / Locality".tr);
+                                  controller.localityEditingController.value.text = address.toString();
+                                  controller.location.value = UserLocation(latitude: lat, longitude: lng);
+                                }
                               } else {
-                                ShowToastDialog.showLoader("Please wait...".tr);
+                                Get.to(LocationPickerScreen())!.then((value) async {
+                                  if (value != null) {
+                                    SelectedLocationModel selectedLocationModel = value;
 
-                                //Common values
-                                controller.shippingModel.value.location = controller.location.value;
-                                controller.shippingModel.value.addressAs = controller.selectedSaveAs.value;
-                                controller.shippingModel.value.address = controller.houseBuildingTextEditingController.value.text;
-                                controller.shippingModel.value.locality = controller.localityEditingController.value.text;
-                                controller.shippingModel.value.landmark = controller.landmarkEditingController.value.text;
-
-                                if (controller.mode.value == "Edit") {
-                                  //Edit Mode
-                                  controller.shippingAddressList.value =
-                                      controller.shippingAddressList.map((address) {
-                                        if (address.id == controller.shippingModel.value.id) {
-                                          return controller.shippingModel.value; // replace existing one
-                                        }
-                                        return address;
-                                      }).toList();
-                                  Constant.selectedLocation = controller.shippingModel.value;
-                                } else {
-                                  //Add Mode
-                                  controller.shippingModel.value.id = Constant.getUuid();
-                                  controller.shippingModel.value.isDefault = controller.shippingAddressList.isEmpty ? true : false;
-                                  controller.shippingAddressList.add(controller.shippingModel.value);
-                                }
-
-                                //Handle default address switch
-                                if (controller.isDefault.value) {
-                                  controller.shippingAddressList.value =
-                                      controller.shippingAddressList.map((address) {
-                                        address.isDefault = address.id == controller.shippingModel.value.id ? true : false;
-                                        return address;
-                                      }).toList();
-                                }
-
-                                controller.userModel.value.shippingAddress = controller.shippingAddressList;
-                                await FireStoreUtils.updateUser(controller.userModel.value);
-
-                                ShowToastDialog.closeLoader();
-                                Get.back(result: true);
+                                    controller.localityEditingController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
+                                    controller.location.value = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
+                                  }
+                                });
                               }
                             },
+                          );
+                        },
+                        child: Row(
+                          children: [
+                            const DsIconWell(icon: Icons.map_outlined, size: 42, circle: true),
+                            const DsGap(DsSpace.md),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text("Choose Location".tr, style: t.bodyStrong),
+                                  const DsGap(DsSpace.xxs),
+                                  Text("Pick the exact spot on the map".tr, style: t.bodySm),
+                                ],
+                              ),
+                            ),
+                            DsIconButton(
+                              icon: Icons.gps_fixed,
+                              semanticLabel: "Choose Location".tr,
+                              variant: DsIconButtonVariant.tonal,
+                              onPressed: () {
+                                Constant.checkPermission(
+                                  context: context,
+                                  onTap: () async {
+                                    if (Constant.selectedMapType == 'osm') {
+                                      final result = await Get.to(() => MapPickerPage());
+                                      if (result != null) {
+                                        final firstPlace = result;
+                                        final lat = firstPlace.coordinates.latitude;
+                                        final lng = firstPlace.coordinates.longitude;
+                                        final address = firstPlace.address;
+
+                                        controller.localityEditingController.value.text = address.toString();
+                                        controller.location.value = UserLocation(latitude: lat, longitude: lng);
+                                      }
+                                    } else {
+                                      Get.to(LocationPickerScreen())!.then((value) async {
+                                        if (value != null) {
+                                          SelectedLocationModel selectedLocationModel = value;
+
+                                          controller.localityEditingController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
+                                          controller.location.value = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
+                                          Get.back();
+                                        }
+                                      });
+                                    }
+                                  },
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      const DsGap(DsSpace.lg),
+
+                      DsFormSection(
+                        title: "Address details".tr,
+                        icon: Icons.home_outlined,
+                        children: [
+                          DsTextField(
+                            label: "Flat/House/Floor/Building*".tr,
+                            hint: "Enter address details".tr,
+                            controller: controller.houseBuildingTextEditingController.value,
+                          ),
+                          DsTextField(
+                            label: "Area/Sector/Locality*".tr,
+                            hint: "Enter area/locality".tr,
+                            controller: controller.localityEditingController.value,
+                          ),
+                          DsTextField(
+                            label: "Nearby Landmark".tr,
+                            hint: "Add a landmark".tr,
+                            controller: controller.landmarkEditingController.value,
+                            bottomSpacing: 0,
                           ),
                         ],
                       ),
-                    ),
+                      const DsGap(DsSpace.lg),
+
+                      DsFormSection(
+                        title: "Save Address As".tr,
+                        icon: Icons.bookmark_outline_rounded,
+                        children: [
+                          Wrap(
+                            spacing: DsSpace.sm,
+                            runSpacing: DsSpace.sm,
+                            children: saveAsList
+                                .map(
+                                  (item) => _SaveAsChip(
+                                    label: controller.getLocalizedSaveAs(item),
+                                    selected: selectedSaveAs == item,
+                                    onTap: () {
+                                      controller.selectedSaveAs.value = item;
+                                    },
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                          const DsGap(DsSpace.lg),
+                          DsListTile(
+                            title: "Set as Default Address".tr,
+                            padding: EdgeInsets.zero,
+                            trailing: Switch(
+                              value: isDefault,
+                              onChanged: (value) {
+                                controller.isDefault.value = value;
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ]),
                   ),
+                ),
+          bottomBar: isLoading
+              ? null
+              : DsStickyBar(
+                  child: DsButton.primary(
+                    label: "Save Address".tr,
+                    size: DsButtonSize.lg,
+                    expand: true,
+                    onPressed: () async {
+                      if (controller.location.value.latitude == null || controller.location.value.longitude == null) {
+                        ShowToastDialog.showToast("Please select Location".tr);
+                      } else if (controller.houseBuildingTextEditingController.value.text.isEmpty) {
+                        ShowToastDialog.showToast("Please Enter Flat / House / Floor / Building".tr);
+                      } else if (controller.localityEditingController.value.text.isEmpty) {
+                        ShowToastDialog.showToast("Please Enter Area / Sector / Locality".tr);
+                      } else {
+                        ShowToastDialog.showLoader("Please wait...".tr);
+
+                        //Common values
+                        controller.shippingModel.value.location = controller.location.value;
+                        controller.shippingModel.value.addressAs = controller.selectedSaveAs.value;
+                        controller.shippingModel.value.address = controller.houseBuildingTextEditingController.value.text;
+                        controller.shippingModel.value.locality = controller.localityEditingController.value.text;
+                        controller.shippingModel.value.landmark = controller.landmarkEditingController.value.text;
+
+                        if (controller.mode.value == "Edit") {
+                          //Edit Mode
+                          controller.shippingAddressList.value =
+                              controller.shippingAddressList.map((address) {
+                                if (address.id == controller.shippingModel.value.id) {
+                                  return controller.shippingModel.value; // replace existing one
+                                }
+                                return address;
+                              }).toList();
+                          Constant.selectedLocation = controller.shippingModel.value;
+                        } else {
+                          //Add Mode
+                          controller.shippingModel.value.id = Constant.getUuid();
+                          controller.shippingModel.value.isDefault = controller.shippingAddressList.isEmpty ? true : false;
+                          controller.shippingAddressList.add(controller.shippingModel.value);
+                        }
+
+                        //Handle default address switch
+                        if (controller.isDefault.value) {
+                          controller.shippingAddressList.value =
+                              controller.shippingAddressList.map((address) {
+                                address.isDefault = address.id == controller.shippingModel.value.id ? true : false;
+                                return address;
+                              }).toList();
+                        }
+
+                        controller.userModel.value.shippingAddress = controller.shippingAddressList;
+                        await FireStoreUtils.updateUser(controller.userModel.value);
+
+                        ShowToastDialog.closeLoader();
+                        Get.back(result: true);
+                      }
+                    },
+                  ),
+                ),
         );
       },
+    );
+  }
+}
+
+/// Selectable "Home / Work / Other" chip.
+class _SaveAsChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _SaveAsChip({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: DsRadius.brPill,
+        child: AnimatedContainer(
+          duration: DsMotion.of(context, DsMotion.fast),
+          curve: DsMotion.standard,
+          constraints: const BoxConstraints(minHeight: 44),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: DsSpace.xl, vertical: DsSpace.sm),
+          decoration: BoxDecoration(
+            color: selected ? c.brand : c.surfaceAlt,
+            borderRadius: DsRadius.brPill,
+            border: Border.all(color: selected ? c.brand : c.border),
+          ),
+          child: Text(label, textAlign: TextAlign.center, style: t.label.withColor(selected ? c.onBrand : c.textSecondary)),
+        ),
+      ),
     );
   }
 }

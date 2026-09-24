@@ -1,11 +1,13 @@
 import 'package:customer/constant/collection_name.dart';
 import 'package:customer/service/fire_store_utils.dart';
-import 'package:customer/themes/app_them_data.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:flutter_html/flutter_html.dart';
-import '../../../controllers/theme_controller.dart';
 
+/// Archetype **H — legal document**: a readable long-form page. The rich text
+/// sits on a single card capped at reading width, with a shimmer paragraph
+/// skeleton while the document loads.
 class TermsAndConditionScreen extends StatefulWidget {
   final String? type;
 
@@ -44,34 +46,96 @@ class _TermsAndConditionScreenState extends State<TermsAndConditionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return Scaffold(
-      backgroundColor: isDark ? AppThemeData.grey50 : AppThemeData.grey50,
-      appBar: AppBar(
-        backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-        centerTitle: false,
-        automaticallyImplyLeading: false,
-        titleSpacing: 0,
-        leading: InkWell(
-          onTap: () {
-            Get.back();
-          },
-          child: Icon(Icons.chevron_left_outlined, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-        ),
-        title: Text(
-          widget.type == "privacy" ? "Privacy Policy".tr : "Terms & Conditions".tr,
-          style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.bold, fontSize: 18),
-        ),
-        elevation: 0,
-        bottom: PreferredSize(preferredSize: const Size.fromHeight(4.0), child: Container(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200, height: 4.0)),
+    final c = context.dsColors;
+    final t = context.dsText;
+    final isPrivacy = widget.type == "privacy";
+    final title = isPrivacy ? "Privacy Policy".tr : "Terms & Conditions".tr;
+    return DsScaffold(
+      maxContentWidth: DsLayout.contentMax,
+      appBar: DsAppBar(
+        title: title,
+        onBack: () {
+          Get.back();
+        },
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: SingleChildScrollView(child: Html(shrinkWrap: true, data: _content)),
+      body: DsAsync(
+        isLoading: _isLoading,
+        skeleton: const _DocumentSkeleton(),
+        isEmpty: _content.trim().isEmpty,
+        empty: DsEmptyState(icon: Icons.description_outlined, title: title, message: "Nothing to show here yet.".tr),
+        builder: (_) => SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, DsSpace.xxxl),
+          child: DsFadeSlideIn(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    DsIconWell(icon: isPrivacy ? Icons.privacy_tip_outlined : Icons.gavel_rounded, tone: DsTone.brand, size: 44),
+                    const DsGap(DsSpace.md),
+                    Expanded(child: Text(title, style: t.headline)),
+                  ],
+                ),
+                const DsGap(DsSpace.lg),
+                DsCard(
+                  padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+                  child: Html(
+                    shrinkWrap: true,
+                    data: _content,
+                    style: {
+                      "body": Style(
+                        margin: Margins.zero,
+                        padding: HtmlPaddings.zero,
+                        color: c.textSecondary,
+                        fontFamily: DsTypography.family,
+                        fontSize: FontSize(15),
+                        lineHeight: LineHeight.number(1.6),
+                      ),
+                      "h1": Style(color: c.textPrimary, fontFamily: DsTypography.family, fontSize: FontSize(20), fontWeight: FontWeight.w700),
+                      "h2": Style(color: c.textPrimary, fontFamily: DsTypography.family, fontSize: FontSize(18), fontWeight: FontWeight.w700),
+                      "h3": Style(color: c.textPrimary, fontFamily: DsTypography.family, fontSize: FontSize(16), fontWeight: FontWeight.w600),
+                      "strong": Style(color: c.textPrimary),
+                      "b": Style(color: c.textPrimary),
+                      "a": Style(color: c.brandStrong),
+                      "li": Style(color: c.textSecondary),
+                    },
+                  ),
+                ),
+              ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DocumentSkeleton extends StatelessWidget {
+  const _DocumentSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(DsSpace.lg),
+      child: DsShimmer(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DsSkeleton.line(width: 180, height: 20),
+            const DsGap(DsSpace.xl),
+            for (var block = 0; block < 4; block++) ...[
+              DsSkeleton.line(width: 140, height: 14),
+              const DsGap(DsSpace.md),
+              SizedBox(width: double.infinity, child: DsSkeleton.line()),
+              const DsGap(DsSpace.sm),
+              SizedBox(width: double.infinity, child: DsSkeleton.line()),
+              const DsGap(DsSpace.sm),
+              DsSkeleton.line(width: 220),
+              const DsGap(DsSpace.xxl),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

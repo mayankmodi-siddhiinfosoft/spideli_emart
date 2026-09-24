@@ -1,147 +1,113 @@
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/cart_controller.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/round_button_fill.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../../controllers/theme_controller.dart';
 import '../wallet_screen/wallet_screen.dart';
 
+/// Archetype C — checkout step. Preferred methods (wallet / cash) in their own
+/// group, every gateway below as a selectable row with the logo in a tile and
+/// a radio on the trailing edge. The total travels in the sticky bar.
 class SelectPaymentScreen extends StatelessWidget {
   const SelectPaymentScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: CartController(),
       builder: (controller) {
-        return Scaffold(
-          backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-          appBar: AppBar(
-            backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-            centerTitle: false,
-            titleSpacing: 0,
-            title: Text("Payment Option".tr, textAlign: TextAlign.start, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
-          ),
-          body:
-              controller.isLoading.value == true
-                  ? Align(
-                    alignment: Alignment.center,
-                    child: Text(
-                      "Loading, please wait...".tr,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                    ),
-                  )
-                  : Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Preferred Payment".tr,
-                            textAlign: TextAlign.start,
-                            style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                          ),
-                          const SizedBox(height: 10),
-                          if (controller.walletSettingModel.value.isEnabled == true || controller.cashOnDeliverySettingModel.value.isEnabled == true)
-                            Container(
-                              decoration: ShapeDecoration(
-                                color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                shadows: const [BoxShadow(color: Color(0x07000000), blurRadius: 20, offset: Offset(0, 0), spreadRadius: 0)],
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(8.0),
-                                child: Column(
-                                  children: [
-                                    Visibility(
-                                      visible: controller.walletSettingModel.value.isEnabled == true,
-                                      child: cardDecoration(controller, PaymentGateway.wallet, isDark, "assets/images/ic_wallet.png"),
-                                    ),
-                                    Visibility(
-                                      visible: controller.cashOnDeliverySettingModel.value.isEnabled == true,
-                                      child: cardDecoration(controller, PaymentGateway.cod, isDark, "assets/images/ic_cash.png"),
-                                    ),
-                                  ],
-                                ),
-                              ),
+        final t = context.dsText;
+        final bool isLoading = controller.isLoading.value == true;
+        final bool hasPreferred = controller.walletSettingModel.value.isEnabled == true || controller.cashOnDeliverySettingModel.value.isEnabled == true;
+
+        return DsScaffold(
+          title: "Payment Option".tr,
+          maxContentWidth: DsLayout.contentMax,
+          body: isLoading
+              ? Align(
+                  alignment: Alignment.center,
+                  child: Text("Loading, please wait...".tr, textAlign: TextAlign.center, style: t.titleSm),
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxl),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: DsFadeSlideIn.stagger([
+                      if (hasPreferred)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            DsSectionHeader(
+                              title: "Preferred Payment".tr,
+                              icon: Icons.bolt_outlined,
+                              padding: const EdgeInsets.only(bottom: DsSpace.sm),
                             ),
-                          if (controller.walletSettingModel.value.isEnabled == true || controller.cashOnDeliverySettingModel.value.isEnabled == true)
-                            Column(
-                              children: [
-                                const SizedBox(height: 10),
-                                Text(
-                                  "Other Payment Options".tr,
-                                  textAlign: TextAlign.start,
-                                  style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                                ),
-                                const SizedBox(height: 10),
-                              ],
-                            ),
-                          Container(
-                            decoration: ShapeDecoration(
-                              color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                              shadows: const [BoxShadow(color: Color(0x07000000), blurRadius: 20, offset: Offset(0, 0), spreadRadius: 0)],
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(8.0),
+                            DsCard(
+                              padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm, vertical: DsSpace.xs),
                               child: Column(
                                 children: [
-                                  Visibility(visible: controller.stripeModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.stripe, isDark, "assets/images/stripe.png")),
-                                  Visibility(visible: controller.payPalModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.paypal, isDark, "assets/images/paypal.png")),
                                   Visibility(
-                                    visible: controller.payStackModel.value.isEnable == true,
-                                    child: cardDecoration(controller, PaymentGateway.payStack, isDark, "assets/images/paystack.png"),
+                                    visible: controller.walletSettingModel.value.isEnabled == true,
+                                    child: cardDecoration(controller, PaymentGateway.wallet, false, "assets/images/ic_wallet.png"),
                                   ),
                                   Visibility(
-                                    visible: controller.mercadoPagoModel.value.isEnabled == true,
-                                    child: cardDecoration(controller, PaymentGateway.mercadoPago, isDark, "assets/images/mercado-pago.png"),
+                                    visible: controller.cashOnDeliverySettingModel.value.isEnabled == true,
+                                    child: cardDecoration(controller, PaymentGateway.cod, false, "assets/images/ic_cash.png"),
                                   ),
-                                  Visibility(
-                                    visible: controller.flutterWaveModel.value.isEnable == true,
-                                    child: cardDecoration(controller, PaymentGateway.flutterWave, isDark, "assets/images/flutterwave_logo.png"),
-                                  ),
-                                  Visibility(visible: controller.payFastModel.value.isEnable == true, child: cardDecoration(controller, PaymentGateway.payFast, isDark, "assets/images/payfast.png")),
-                                  Visibility(
-                                    visible: controller.razorPayModel.value.isEnabled == true,
-                                    child: cardDecoration(controller, PaymentGateway.razorpay, isDark, "assets/images/razorpay.png"),
-                                  ),
-                                  Visibility(visible: controller.midTransModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.midTrans, isDark, "assets/images/midtrans.png")),
-                                  Visibility(
-                                    visible: controller.orangeMoneyModel.value.enable == true,
-                                    child: cardDecoration(controller, PaymentGateway.orangeMoney, isDark, "assets/images/orange_money.png"),
-                                  ),
-                                  Visibility(visible: controller.xenditModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.xendit, isDark, "assets/images/xendit.png")),
                                 ],
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        )
+                      else
+                        const SizedBox(),
+                      if (hasPreferred)
+                        DsSectionHeader(
+                          title: "Other Payment Options".tr,
+                          icon: Icons.credit_card_outlined,
+                          padding: const EdgeInsets.only(top: DsSpace.xl, bottom: DsSpace.sm),
+                        )
+                      else
+                        const SizedBox(),
+                      DsCard(
+                        padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm, vertical: DsSpace.xs),
+                        child: Column(
+                          children: [
+                            Visibility(visible: controller.stripeModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.stripe, false, "assets/images/stripe.png")),
+                            Visibility(visible: controller.payPalModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.paypal, false, "assets/images/paypal.png")),
+                            Visibility(visible: controller.payStackModel.value.isEnable == true, child: cardDecoration(controller, PaymentGateway.payStack, false, "assets/images/paystack.png")),
+                            Visibility(
+                              visible: controller.mercadoPagoModel.value.isEnabled == true,
+                              child: cardDecoration(controller, PaymentGateway.mercadoPago, false, "assets/images/mercado-pago.png"),
+                            ),
+                            Visibility(
+                              visible: controller.flutterWaveModel.value.isEnable == true,
+                              child: cardDecoration(controller, PaymentGateway.flutterWave, false, "assets/images/flutterwave_logo.png"),
+                            ),
+                            Visibility(visible: controller.payFastModel.value.isEnable == true, child: cardDecoration(controller, PaymentGateway.payFast, false, "assets/images/payfast.png")),
+                            Visibility(visible: controller.razorPayModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.razorpay, false, "assets/images/razorpay.png")),
+                            Visibility(visible: controller.midTransModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.midTrans, false, "assets/images/midtrans.png")),
+                            Visibility(
+                              visible: controller.orangeMoneyModel.value.enable == true,
+                              child: cardDecoration(controller, PaymentGateway.orangeMoney, false, "assets/images/orange_money.png"),
+                            ),
+                            Visibility(visible: controller.xenditModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.xendit, false, "assets/images/xendit.png")),
+                          ],
+                        ),
                       ),
-                    ),
+                    ]),
                   ),
-          bottomNavigationBar: Container(
-            decoration: BoxDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20))),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: RoundedButtonFill(
-                title: "${'Pay Now'.tr} | ${Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.storeCurrency)}".tr,
-                height: 5,
-                color: AppThemeData.primary300,
-                textColor: AppThemeData.grey50,
-                fontSizes: 16,
-                onPress: () async {
-                  Get.back();
-                },
-              ),
+                ),
+          bottomBar: DsStickyBar(
+            child: DsButton.primary(
+              label: "${'Pay Now'.tr} | ${Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.storeCurrency)}".tr,
+              size: DsButtonSize.lg,
+              expand: true,
+              onPressed: () async {
+                Get.back();
+              },
             ),
           ),
         );
@@ -149,63 +115,110 @@ class SelectPaymentScreen extends StatelessWidget {
     );
   }
 
+  /// One selectable gateway row. Its own [Obx] keeps the radio in sync.
   Obx cardDecoration(CartController controller, PaymentGateway value, isDark, String image) {
-    return Obx(
-      () => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Column(
-          children: [
-            InkWell(
-              onTap: () {
-                controller.selectedPaymentMethod.value = value.name;
-              },
-              child: Row(
-                children: [
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: ShapeDecoration(shape: RoundedRectangleBorder(side: const BorderSide(width: 1, color: Color(0xFFE5E7EB)), borderRadius: BorderRadius.circular(8))),
-                    child: Padding(padding: EdgeInsets.all(value.name == "payFast" ? 0 : 8.0), child: Image.asset(image)),
-                  ),
-                  const SizedBox(width: 10),
-                  value.name == "wallet"
-                      ? Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              value.name.capitalizeString(),
-                              textAlign: TextAlign.start,
-                              style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                            ),
-                            Text(
-                              Constant.amountShow(amount: controller.userModel.value.walletAmount == null ? '0.0' : controller.userModel.value.walletAmount.toString(), currency: RegionService.customerCurrency),
-                              textAlign: TextAlign.start,
-                              style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
-                            ),
-                          ],
-                        ),
-                      )
-                      : Expanded(
-                        child: Text(
-                          value.name.capitalizeString(),
-                          textAlign: TextAlign.start,
-                          style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                        ),
-                      ),
-                  const Expanded(child: SizedBox()),
-                  Radio(
-                    value: value.name,
-                    groupValue: controller.selectedPaymentMethod.value,
-                    activeColor: isDark ? AppThemeData.primary300 : AppThemeData.primary300,
-                    onChanged: (value) {
-                      controller.selectedPaymentMethod.value = value.toString();
-                    },
-                  ),
-                ],
+    return Obx(() {
+      final bool selected = controller.selectedPaymentMethod.value == value.name;
+      return _PaymentRow(
+        selected: selected,
+        image: image,
+        name: value.name,
+        walletBalance: value.name == "wallet"
+            ? Constant.amountShow(amount: controller.userModel.value.walletAmount == null ? '0.0' : controller.userModel.value.walletAmount.toString(), currency: RegionService.customerCurrency)
+            : null,
+        onTap: () {
+          controller.selectedPaymentMethod.value = value.name;
+        },
+      );
+    });
+  }
+}
+
+class _PaymentRow extends StatelessWidget {
+  final bool selected;
+  final String image;
+  final String name;
+  final String? walletBalance;
+  final VoidCallback onTap;
+  const _PaymentRow({required this.selected, required this.image, required this.name, required this.walletBalance, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: DsPressable(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: DsMotion.of(context, DsMotion.fast),
+          constraints: const BoxConstraints(minHeight: 64),
+          margin: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+          padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm, vertical: DsSpace.sm),
+          decoration: BoxDecoration(
+            color: selected ? c.brandSoft : Colors.transparent,
+            borderRadius: DsRadius.brMd,
+            border: Border.all(color: selected ? c.brand : Colors.transparent),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  borderRadius: DsRadius.brSm,
+                  border: Border.all(color: c.border),
+                ),
+                child: Padding(padding: EdgeInsets.all(name == "payFast" ? 0 : DsSpace.sm), child: Image.asset(image)),
               ),
-            ),
-          ],
+              const DsGap(DsSpace.md),
+              Expanded(
+                child: walletBalance == null
+                    ? Text(name.capitalizeString(), style: t.bodyStrong)
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name.capitalizeString(), style: t.bodyStrong),
+                          Text(walletBalance!, style: t.titleSm.tabular.withColor(c.brandStrong)),
+                        ],
+                      ),
+              ),
+              _RadioDot(selected: selected),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Selection indicator for a payment row (the whole row is the hit target).
+class _RadioDot extends StatelessWidget {
+  final bool selected;
+  const _RadioDot({required this.selected});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    return AnimatedContainer(
+      duration: DsMotion.of(context, DsMotion.fast),
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: selected ? c.brand : c.borderStrong, width: 2),
+        color: Colors.transparent,
+      ),
+      alignment: Alignment.center,
+      child: AnimatedScale(
+        duration: DsMotion.of(context, DsMotion.fast),
+        scale: selected ? 1 : 0,
+        child: Container(
+          width: 11,
+          height: 11,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: c.brand),
         ),
       ),
     );

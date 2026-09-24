@@ -1,613 +1,493 @@
 import 'package:customer/utils/order_receipt_pdf.dart';
 import 'package:customer/utils/ride_receipt_pdf.dart';
 import 'package:customer/utils/region_service.dart';
-import 'package:customer/themes/responsive.dart';
-import 'package:customer/widget/my_separator.dart';
-import 'package:dotted_border/dotted_border.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:customer/screen_ui/cab_service_screens/widget/cab_ride_options_widgets.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
+
 import '../../constant/constant.dart';
 import '../../controllers/cab_order_details_controller.dart';
-import '../../controllers/theme_controller.dart';
 import '../../models/user_model.dart';
 import '../../service/fire_store_utils.dart';
-import '../../themes/app_them_data.dart';
+
 import 'package:flutter_map/flutter_map.dart' as fm;
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmap;
 import 'package:latlong2/latlong.dart' as osm;
-import '../../themes/round_button_border.dart';
-import '../../themes/round_button_fill.dart';
+
 import '../../themes/show_toast_dialog.dart';
-import '../../utils/network_image_widget.dart';
 import '../multi_vendor_service/chat_screens/chat_screen.dart';
 import 'cab_review_screen.dart';
 import 'complain_screen.dart';
 
+/// Ride detail (archetype F — detail): a status hero tinted by the ride
+/// status, the A → B route, a route map, the ride extras, the driver card
+/// with contact actions, trip metrics and the bill; review and complaint sit
+/// in a sticky bar once the ride is complete.
 class CabOrderDetails extends StatelessWidget {
   const CabOrderDetails({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: CabOrderDetailsController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            automaticallyImplyLeading: false,
-            backgroundColor: AppThemeData.primary300,
-            title: Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => Get.back(),
-                    child: Container(
-                      height: 42,
-                      width: 42,
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: AppThemeData.grey50),
-                      child: Center(child: Padding(padding: const EdgeInsets.only(left: 5), child: Icon(Icons.arrow_back_ios, color: AppThemeData.grey900, size: 20))),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text("Ride Details".tr, style: AppThemeData.boldTextStyle(fontSize: 18, color: AppThemeData.grey900))),
-                  // PDF receipt: download / share (spec 7.6).
-                  if (!controller.isLoading.value)
-                    IconButton(
-                      tooltip: "Receipt".tr,
-                      onPressed: () => OrderReceiptPdf.showOptions(context, () => RideReceiptPdf.fromCabOrder(controller)),
-                      icon: Icon(Icons.receipt_long_outlined, color: AppThemeData.grey900),
-                    ),
-                ],
+        final l = context.dsLayout;
+        final loading = controller.isLoading.value;
+        final order = controller.cabOrder.value;
+        final isCompleted = order.status == Constant.orderCompleted;
+        return DsScaffold(
+          title: "Ride Details".tr,
+          onBack: () => Get.back(),
+          actions: [
+            // PDF receipt: download / share (spec 7.6).
+            if (!loading)
+              DsIconButton(
+                icon: Icons.receipt_long_outlined,
+                semanticLabel: "Receipt".tr,
+                variant: DsIconButtonVariant.tonal,
+                onPressed: () => OrderReceiptPdf.showOptions(context, () => RideReceiptPdf.fromCabOrder(controller)),
               ),
-            ),
-          ),
-          body:
-              controller.isLoading.value
-                  ? Constant.loader()
-                  : SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(15),
-                            color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                            border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                          ),
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            "${'Order Id:'.tr} ${Constant.orderId(orderId: controller.cabOrder.value.id.toString())}".tr,
-                            textAlign: TextAlign.start,
-                            style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                            borderRadius: BorderRadius.circular(15),
-                            border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "${'Booking Date:'.tr} ${controller.formatDate(controller.cabOrder.value.scheduleDateTime!)}".tr,
-                                textAlign: TextAlign.start,
-                                style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                              ),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Column(
-                                    children: [
-                                      Icon(Icons.stop_circle_outlined, color: Colors.green),
-                                      DottedBorder(
-                                        options: CustomPathDottedBorderOptions(
-                                          color: Colors.grey.shade400,
-                                          strokeWidth: 2,
-                                          dashPattern: [4, 4],
-                                          customPath:
-                                              (size) =>
-                                                  Path()
-                                                    ..moveTo(size.width / 2, 0)
-                                                    ..lineTo(size.width / 2, size.height),
-                                        ),
-                                        child: const SizedBox(width: 20, height: 55),
-                                      ),
-                                      Icon(Icons.radio_button_checked, color: Colors.red),
-                                    ],
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            // Source Location Name
-                                            Expanded(
-                                              child: Text(
-                                                controller.cabOrder.value.sourceLocationName.toString(),
-                                                style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Container(
-                                              decoration: BoxDecoration(
-                                                borderRadius: BorderRadius.circular(10),
-                                                border: Border.all(color: AppThemeData.warning300, width: 1),
-                                                color: AppThemeData.warning50,
-                                              ),
-                                              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                                              child: Text(
-                                                controller.cabOrder.value.status.toString(),
-                                                style: AppThemeData.boldTextStyle(fontSize: 14, color: AppThemeData.warning500),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        SizedBox(height: 15),
-                                        DottedBorder(
-                                          options: CustomPathDottedBorderOptions(
-                                            color: Colors.grey.shade400,
-                                            strokeWidth: 2,
-                                            dashPattern: [4, 4],
-                                            customPath:
-                                                (size) =>
-                                                    Path()
-                                                      ..moveTo(0, size.height / 2) // start from left center
-                                                      ..lineTo(size.width, size.height / 2), // draw to right center
-                                          ),
-                                          child: const SizedBox(width: 295, height: 3),
-                                        ),
-                                        SizedBox(height: 15),
-                                        Text(
-                                          controller.cabOrder.value.destinationLocationName.toString(),
-                                          style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        // map view show
-                        Container(
-                          height: 180,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(15),
-                            color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                            border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(15),
-                            child:
-                                Constant.selectedMapType == "osm"
-                                    ? fm.FlutterMap(
-                                      options: fm.MapOptions(
-                                        initialCenter: osm.LatLng(controller.cabOrder.value.sourceLocation!.latitude!, controller.cabOrder.value.sourceLocation!.longitude!),
-                                        initialZoom: 13,
-                                      ),
-                                      children: [
-                                        fm.TileLayer(urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", userAgentPackageName: 'com.spideli.customer'),
-
-                                        // Only show polyline if points exist
-                                        if (controller.osmPolyline.isNotEmpty) fm.PolylineLayer(polylines: [fm.Polyline(points: controller.osmPolyline.toList(), color: Colors.blue, strokeWidth: 4)]),
-
-                                        fm.MarkerLayer(
-                                          markers: [
-                                            fm.Marker(
-                                              point: osm.LatLng(controller.cabOrder.value.sourceLocation!.latitude!, controller.cabOrder.value.sourceLocation!.longitude!),
-                                              width: 20,
-                                              height: 20,
-                                              child: Image.asset('assets/icons/ic_cab_pickup.png', width: 10, height: 10),
-                                            ),
-                                            fm.Marker(
-                                              point: osm.LatLng(controller.cabOrder.value.destinationLocation!.latitude!, controller.cabOrder.value.destinationLocation!.longitude!),
-                                              width: 20,
-                                              height: 20,
-                                              child: Image.asset('assets/icons/ic_cab_destination.png', width: 10, height: 10),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    )
-                                    : gmap.GoogleMap(
-                                      initialCameraPosition: gmap.CameraPosition(
-                                        target: gmap.LatLng(controller.cabOrder.value.sourceLocation!.latitude!, controller.cabOrder.value.sourceLocation!.longitude!),
-                                        zoom: 13,
-                                      ),
-                                      polylines: controller.googlePolylines.toSet(),
-                                      markers: controller.googleMarkers.toSet(),
-                                    ),
-                          ),
-                        ),
-                        // Stops, passengers, instructions, rider, cancellation reason (spec 4.8).
-                        CabRideExtrasView(order: controller.cabOrder.value, isDark: isDark, showCancellation: true),
-                        controller.cabOrder.value.driver != null
-                            ? Column(
-                              children: [
-                                const SizedBox(height: 16),
-                                Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(15),
-                                    color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                                    border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                                  ),
-                                  padding: const EdgeInsets.all(16),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text("Ride & Fare Summary".tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500)),
-                                      const SizedBox(height: 8),
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              SizedBox(
-                                                width: 52,
-                                                height: 52,
-                                                child: ClipRRect(
-                                                  borderRadius: BorderRadiusGeometry.circular(10),
-                                                  child: NetworkImageWidget(imageUrl: controller.cabOrder.value.driver?.profilePictureURL ?? '', height: 70, width: 70, borderRadius: 35),
-                                                ),
-                                              ),
-                                              SizedBox(width: 20),
-                                              Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    controller.cabOrder.value.driver?.fullName() ?? '',
-                                                    style: AppThemeData.boldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 18),
-                                                  ),
-                                                  Builder(builder: (_) {
-                                                    final sid = controller.cabOrder.value.sectionId ?? '';
-                                                    final vehicle = controller.cabOrder.value.driver?.vehicleDetails?[sid];
-                                                    if (vehicle == null) return const SizedBox.shrink();
-                                                    final vType = vehicle['vehicleType']?.toString() ?? '';
-                                                    final brand = vehicle['carBrand']?.toString() ?? '';
-                                                    final carModel = vehicle['carModel']?.toString() ?? '';
-                                                    final plate = vehicle['carPlateNumber']?.toString() ?? '';
-                                                    return Column(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      children: [
-                                                        if (vType.isNotEmpty)
-                                                          Text(
-                                                            vType,
-                                                            style: TextStyle(fontFamily: AppThemeData.medium, color: isDark ? AppThemeData.greyDark700 : AppThemeData.grey700, fontSize: 14),
-                                                          ),
-                                                        if (brand.isNotEmpty || carModel.isNotEmpty)
-                                                          Text(
-                                                            "$brand $carModel".trim(),
-                                                            style: TextStyle(fontFamily: AppThemeData.medium, color: isDark ? AppThemeData.greyDark700 : AppThemeData.grey700, fontSize: 14),
-                                                          ),
-                                                        if (plate.isNotEmpty)
-                                                          Text(
-                                                            plate.toUpperCase(),
-                                                            style: AppThemeData.boldTextStyle(color: isDark ? AppThemeData.greyDark700 : AppThemeData.grey700, fontSize: 16),
-                                                          ),
-                                                      ],
-                                                    );
-                                                  }),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                          RoundedButtonBorder(
-                                            title: controller.driverUser.value.averageRating.toStringAsFixed(1),
-                                            width: 20,
-                                            height: 3.5,
-                                            radius: 10,
-                                            isRight: false,
-                                            isCenter: true,
-                                            textColor: AppThemeData.warning400,
-                                            borderColor: AppThemeData.warning400,
-                                            color: AppThemeData.warning50,
-                                            icon: SvgPicture.asset("assets/icons/ic_start.svg"),
-                                            onPress: () {},
-                                          ),
-                                        ],
-                                      ),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Visibility(
-                                              visible: controller.cabOrder.value.status == Constant.orderCompleted ? true : false,
-                                              child: Padding(
-                                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                                child: RoundedButtonFill(
-                                                  title: controller.ratingModel.value.id != null && controller.ratingModel.value.id!.isNotEmpty ? 'Update Review'.tr : 'Add Review'.tr,
-                                                  onPress: () async {
-                                                    final result = await Get.to(() => CabReviewScreen(), arguments: {'order': controller.cabOrder.value});
-
-                                                    // If review was submitted successfully
-                                                    if (result == true) {
-                                                      await controller.fetchDriverDetails();
-                                                    }
-                                                  },
-                                                  height: 5,
-                                                  borderRadius: 15,
-                                                  color: Colors.orange,
-                                                  textColor: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          SizedBox(width: 5),
-                                          Expanded(
-                                            child: Visibility(
-                                              visible: controller.cabOrder.value.status == Constant.orderCompleted ? true : false,
-                                              child: Padding(
-                                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                                child: RoundedButtonFill(
-                                                  title: 'Complain'.tr,
-                                                  onPress: () async {
-                                                    Get.to(() => ComplainScreen(), arguments: {'order': controller.cabOrder.value});
-                                                  },
-                                                  height: 5,
-                                                  borderRadius: 15,
-                                                  color: Colors.orange,
-                                                  textColor: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      if (controller.cabOrder.value.status != Constant.orderCompleted)
-                                        Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            InkWell(
-                                              onTap: () {
-                                                Constant.makePhoneCall(controller.cabOrder.value.driver!.phoneNumber.toString());
-                                              },
-                                              child: Container(
-                                                width: 150,
-                                                height: 42,
-                                                decoration: ShapeDecoration(
-                                                  shape: RoundedRectangleBorder(
-                                                    side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                    borderRadius: BorderRadius.circular(120),
-                                                  ),
-                                                ),
-                                                child: Padding(padding: const EdgeInsets.all(8.0), child: SvgPicture.asset("assets/icons/ic_phone_call.svg")),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 10),
-                                            InkWell(
-                                              onTap: () async {
-                                                ShowToastDialog.showLoader("Please wait...".tr);
-
-                                                UserModel? customer = await FireStoreUtils.getUserProfile(controller.cabOrder.value.authorID ?? '');
-                                                UserModel? driverUser = await FireStoreUtils.getUserProfile(controller.cabOrder.value.driverId ?? '');
-
-                                                ShowToastDialog.closeLoader();
-
-                                                Get.to(
-                                                  const ChatScreen(),
-                                                  arguments: {
-                                                    "senderName": customer?.fullName(),
-                                                    "receivedName": driverUser?.fullName(),
-                                                    "orderId": controller.cabOrder.value.id,
-                                                    "senderId": driverUser?.id,
-                                                    "customerId": customer?.id,
-                                                    "senderProfileUrl": customer?.profilePictureURL,
-                                                    "receivedProfileUrl": driverUser?.profilePictureURL,
-                                                    "token": driverUser?.fcmToken,
-                                                    "chatType": Constant.userRoleDriver,
-                                                  },
-                                                );
-                                              },
-                                              child: Container(
-                                                width: 150,
-                                                height: 42,
-                                                decoration: ShapeDecoration(
-                                                  shape: RoundedRectangleBorder(
-                                                    side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                    borderRadius: BorderRadius.circular(120),
-                                                  ),
-                                                ),
-                                                child: Padding(padding: const EdgeInsets.all(8.0), child: SvgPicture.asset("assets/icons/ic_wechat.svg")),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            )
-                            : SizedBox(),
-                        const SizedBox(height: 16),
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(15),
-                            color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                            border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                          ),
-                          padding: EdgeInsets.all(16),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: [
-                              _iconTile("${double.parse(controller.cabOrder.value.distance.toString()).toStringAsFixed(2)} ${'KM'.tr}", "Distance".tr, "assets/icons/ic_distance_parcel.svg", isDark),
-                              _iconTile(controller.cabOrder.value.duration ?? '--', "Duration".tr, "assets/icons/ic_duration.svg", isDark),
-                              _iconTile(Constant.amountShow(amount: controller.cabOrder.value.subTotal, currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)), "${controller.cabOrder.value.paymentMethod}".tr, "assets/icons/ic_rate_parcel.svg", isDark),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(15),
-                            color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                            border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                          ),
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text("Order Summary".tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: AppThemeData.grey500)),
-                              const SizedBox(height: 8),
-
-                              // Subtotal
-                              _summaryTile("Subtotal", Constant.amountShow(amount: controller.subTotal.value.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)), isDark),
-
-                              // Discount
-                              _summaryTile("Discount", Constant.amountShow(amount: controller.discount.value.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)), isDark),
-
-                              // Tax List
-                              if (Constant.platformFeeModel?.enable == true)
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 4),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text("Platform fee".tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-                                      Text(
-                                        Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)),
-                                        style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-
-                              InkWell(
-                                onTap: () {
-                                  showBillBifurcationDialog(context, isDark, controller);
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 4),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        "Tax amount".tr,
-                                        style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, decoration: TextDecoration.underline),
-                                      ),
-                                      Text(
-                                        Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)),
-                                        style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-
-                              const Divider(),
-
-                              // Total
-                              _summaryTile("Order Total", Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)), isDark),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                      ],
-                    ),
+          ],
+          maxContentWidth: DsLayout.contentMax,
+          body: loading
+              ? const DsSkeletonDetail(mediaHeight: 180)
+              : SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.xxxl),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: DsFadeSlideIn.stagger([
+                      _RideHero(controller: controller),
+                      const DsGap(DsSpace.lg),
+                      _RouteMap(controller: controller),
+                      // Stops, passengers, instructions, rider, cancellation reason (spec 4.8).
+                      CabRideExtrasView(order: order, showCancellation: true),
+                      if (order.driver != null) ...[const DsGap(DsSpace.lg), _DriverCard(controller: controller)],
+                      const DsGap(DsSpace.lg),
+                      _TripMetrics(controller: controller),
+                      const DsGap(DsSpace.lg),
+                      _BillCard(controller: controller, onTaxTap: () => showBillBifurcationDialog(context, controller)),
+                    ]),
                   ),
+                ),
+          bottomBar: loading || !isCompleted || order.driver == null
+              ? null
+              : DsStickyBar(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: DsButton.primary(
+                          label: controller.ratingModel.value.id != null && controller.ratingModel.value.id!.isNotEmpty ? 'Update Review'.tr : 'Add Review'.tr,
+                          icon: Icons.star_rounded,
+                          onPressed: () async {
+                            final result = await Get.to(() => CabReviewScreen(), arguments: {'order': controller.cabOrder.value});
+
+                            // If review was submitted successfully
+                            if (result == true) {
+                              await controller.fetchDriverDetails();
+                            }
+                          },
+                        ),
+                      ),
+                      const DsGap(DsSpace.md),
+                      Expanded(
+                        child: DsButton.secondary(
+                          label: 'Complain'.tr,
+                          icon: Icons.report_gmailerrorred_rounded,
+                          onPressed: () async {
+                            Get.to(() => ComplainScreen(), arguments: {'order': controller.cabOrder.value});
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
         );
       },
     );
   }
 
-  Widget _iconTile(String value, title, icon, bool isDark) {
-    return Column(
-      children: [
-        // Icon(icon, color: AppThemeData.primary300),
-        SvgPicture.asset(icon, height: 28, width: 28, color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800),
-        const SizedBox(height: 6),
-        Text(value, style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800)),
-        const SizedBox(height: 6),
-        Text(title, style: AppThemeData.semiBoldTextStyle(fontSize: 12, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-      ],
-    );
-  }
-
-  void showBillBifurcationDialog(BuildContext context, bool isDark, CabOrderDetailsController controller) {
+  void showBillBifurcationDialog(BuildContext context, CabOrderDetailsController controller) {
     showDialog(
       context: context,
       builder: (context) {
-        return Dialog(
-          backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 10), // 🔥 KEY FIX
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: SizedBox(
-            width: Responsive.width(100, context), // ✅ 90% width
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+        final currency = RegionService.currencyForRecord(controller.cabOrder.value.regionId);
+        return DsDialog(
+          title: "Tax Details".tr,
+          icon: Icons.receipt_long_rounded,
+          tone: DsTone.info,
+          content: Column(
+            children: [
+              CabBillRow(
+                label: "Tax on Order Total".tr,
+                value: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: currency),
+              ),
+              const DsDivider(spacing: DsSpace.xl),
+              CabBillRow(
+                label: "Tax on Platform Fee".tr,
+                value: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: currency),
+              ),
+              const DsDivider(spacing: DsSpace.xl),
+              CabBillRow(
+                label: "Total Tax Amount".tr,
+                value: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: currency),
+                valueColor: context.dsColors.brandStrong,
+                emphasize: true,
+              ),
+            ],
+          ),
+          primaryLabel: "Close".tr,
+          onPrimary: () => Navigator.pop(context),
+        );
+      },
+    );
+  }
+}
+
+/// Status, ride id, booking date and the A → B route.
+class _RideHero extends StatelessWidget {
+  final CabOrderDetailsController controller;
+
+  const _RideHero({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsObserve(
+      builder: (_) {
+        final order = controller.cabOrder.value;
+        final status = order.status.toString();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DsCard.tinted(
+              tone: DsTone.fromStatus(order.status),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(height: 10),
-                  Text("Tax Details".tr, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
-                  const SizedBox(height: 5),
-                  sectionDivider(isDark),
-                  const SizedBox(height: 5),
-                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)), isDark: isDark),
-                  sectionDivider(isDark),
-                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)), isDark: isDark),
-                  sectionDivider(isDark),
-                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: RegionService.currencyForRecord(controller.cabOrder.value.regionId)), amountColor: AppThemeData.primary300, isDark: isDark),
-                  const SizedBox(height: 10),
-                  Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: Text("Close".tr))),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DsStatusChip(label: status, status: order.status, pulse: order.status == Constant.orderInTransit),
+                      ),
+                    ],
+                  ),
+                  const DsGap(DsSpace.md),
+                  Text("${'Order Id:'.tr} ${Constant.orderId(orderId: order.id.toString())}".tr, style: t.titleSm.tabular),
+                  const DsGap(DsSpace.xxs),
+                  Text("${'Booking Date:'.tr} ${controller.formatDate(order.scheduleDateTime!)}".tr, style: t.bodySm.withColor(c.textSecondary)),
                 ],
               ),
             ),
+            const DsGap(DsSpace.lg),
+            DsCard.outlined(
+              child: CabRouteRail(source: order.sourceLocationName.toString(), destination: order.destinationLocationName.toString()),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The ride's route on the map. Map, marker and polyline wiring is unchanged.
+class _RouteMap extends StatelessWidget {
+  final CabOrderDetailsController controller;
+
+  const _RouteMap({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    return DsObserve(
+      builder: (_) => Container(
+        height: context.dsLayout.value(phone: 180.0, tablet: 260.0),
+        decoration: BoxDecoration(
+          borderRadius: DsRadius.brLg,
+          color: c.surfaceAlt,
+          border: Border.all(color: c.border),
+        ),
+        child: ClipRRect(
+          borderRadius: DsRadius.brLg,
+          child: Constant.selectedMapType == "osm"
+              ? fm.FlutterMap(
+                  options: fm.MapOptions(initialCenter: osm.LatLng(controller.cabOrder.value.sourceLocation!.latitude!, controller.cabOrder.value.sourceLocation!.longitude!), initialZoom: 13),
+                  children: [
+                    fm.TileLayer(urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", userAgentPackageName: 'com.spideli.customer'),
+
+                    // Only show polyline if points exist
+                    if (controller.osmPolyline.isNotEmpty)
+                      fm.PolylineLayer(
+                        polylines: [fm.Polyline(points: controller.osmPolyline.toList(), color: Colors.blue, strokeWidth: 4)],
+                      ),
+
+                    fm.MarkerLayer(
+                      markers: [
+                        fm.Marker(
+                          point: osm.LatLng(controller.cabOrder.value.sourceLocation!.latitude!, controller.cabOrder.value.sourceLocation!.longitude!),
+                          width: 20,
+                          height: 20,
+                          child: Image.asset('assets/icons/ic_cab_pickup.png', width: 10, height: 10),
+                        ),
+                        fm.Marker(
+                          point: osm.LatLng(controller.cabOrder.value.destinationLocation!.latitude!, controller.cabOrder.value.destinationLocation!.longitude!),
+                          width: 20,
+                          height: 20,
+                          child: Image.asset('assets/icons/ic_cab_destination.png', width: 10, height: 10),
+                        ),
+                      ],
+                    ),
+                  ],
+                )
+              : gmap.GoogleMap(
+                  initialCameraPosition: gmap.CameraPosition(target: gmap.LatLng(controller.cabOrder.value.sourceLocation!.latitude!, controller.cabOrder.value.sourceLocation!.longitude!), zoom: 13),
+                  polylines: controller.googlePolylines.toSet(),
+                  markers: controller.googleMarkers.toSet(),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Driver, vehicle, rating and the call / chat actions while the ride runs.
+class _DriverCard extends StatelessWidget {
+  final CabOrderDetailsController controller;
+
+  const _DriverCard({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.dsText;
+    return DsObserve(
+      builder: (_) {
+        final order = controller.cabOrder.value;
+        final sid = order.sectionId ?? '';
+        final vehicle = order.driver?.vehicleDetails?[sid];
+        final vType = vehicle?['vehicleType']?.toString() ?? '';
+        final brand = vehicle?['carBrand']?.toString() ?? '';
+        final carModel = vehicle?['carModel']?.toString() ?? '';
+        final plate = vehicle?['carPlateNumber']?.toString() ?? '';
+        final car = "$brand $carModel".trim();
+        return DsCard.outlined(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("Ride & Fare Summary".tr, style: t.overline),
+              const DsGap(DsSpace.md),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DsAvatar(imageUrl: order.driver?.profilePictureURL ?? '', name: order.driver?.fullName(), size: 56, ring: true),
+                  const DsGap(DsSpace.lg),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(order.driver?.fullName() ?? '', style: t.titleSm),
+                        if (vehicle != null) ...[
+                          if (vType.isNotEmpty || car.isNotEmpty) ...[
+                            const DsGap(DsSpace.xxs),
+                            Text([if (vType.isNotEmpty) vType, if (car.isNotEmpty) car].join(' · '), style: t.bodySm),
+                          ],
+                          if (plate.isNotEmpty) ...[const DsGap(DsSpace.sm), DsBadge(label: plate.toUpperCase(), style: DsBadgeStyle.outline, tone: DsTone.neutral)],
+                        ],
+                      ],
+                    ),
+                  ),
+                  const DsGap(DsSpace.sm),
+                  DsBadge(label: controller.driverUser.value.averageRating.toStringAsFixed(1), tone: DsTone.warning, icon: Icons.star_rounded),
+                ],
+              ),
+              if (order.status != Constant.orderCompleted) ...[
+                const DsGap(DsSpace.lg),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DsButton.tonal(
+                        label: "Call".tr,
+                        icon: Icons.call_rounded,
+                        expand: true,
+                        onPressed: () {
+                          Constant.makePhoneCall(controller.cabOrder.value.driver!.phoneNumber.toString());
+                        },
+                      ),
+                    ),
+                    const DsGap(DsSpace.md),
+                    Expanded(
+                      child: DsButton.tonal(
+                        label: "Chat".tr,
+                        icon: Icons.chat_bubble_outline_rounded,
+                        expand: true,
+                        onPressed: () async {
+                          ShowToastDialog.showLoader("Please wait...".tr);
+
+                          UserModel? customer = await FireStoreUtils.getUserProfile(controller.cabOrder.value.authorID ?? '');
+                          UserModel? driverUser = await FireStoreUtils.getUserProfile(controller.cabOrder.value.driverId ?? '');
+
+                          ShowToastDialog.closeLoader();
+
+                          Get.to(
+                            const ChatScreen(),
+                            arguments: {
+                              "senderName": customer?.fullName(),
+                              "receivedName": driverUser?.fullName(),
+                              "orderId": controller.cabOrder.value.id,
+                              "senderId": driverUser?.id,
+                              "customerId": customer?.id,
+                              "senderProfileUrl": customer?.profilePictureURL,
+                              "receivedProfileUrl": driverUser?.profilePictureURL,
+                              "token": driverUser?.fcmToken,
+                              "chatType": Constant.userRoleDriver,
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
           ),
         );
       },
     );
   }
+}
 
-  Widget amountRow({required String title, required String amount, required bool isDark, Color? textColour, Color? amountColor, bool? underline, Widget? trailing}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Text(
-            title.tr,
-            style: TextStyle(
-              fontFamily: AppThemeData.regular,
-              color: textColour ?? (isDark ? AppThemeData.grey300 : AppThemeData.grey600),
-              fontSize: 16,
-              decoration: underline == true ? TextDecoration.underline : TextDecoration.none,
-            ),
+/// Distance / duration / fare strip.
+class _TripMetrics extends StatelessWidget {
+  final CabOrderDetailsController controller;
+
+  const _TripMetrics({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return DsObserve(
+      builder: (_) {
+        final order = controller.cabOrder.value;
+        return DsCard.outlined(
+          padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.lg),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _Metric(value: "${double.parse(order.distance.toString()).toStringAsFixed(2)} ${'KM'.tr}", title: "Distance".tr, icon: "assets/icons/ic_distance_parcel.svg", tone: DsTone.info),
+              ),
+              Expanded(
+                child: _Metric(value: order.duration ?? '--', title: "Duration".tr, icon: "assets/icons/ic_duration.svg", tone: DsTone.warning),
+              ),
+              Expanded(
+                child: _Metric(
+                  value: Constant.amountShow(amount: order.subTotal, currency: RegionService.currencyForRecord(order.regionId)),
+                  title: "${order.paymentMethod}".tr,
+                  icon: "assets/icons/ic_rate_parcel.svg",
+                  tone: DsTone.success,
+                ),
+              ),
+            ],
           ),
+        );
+      },
+    );
+  }
+}
+
+class _Metric extends StatelessWidget {
+  final String value;
+  final String title;
+  final String icon;
+  final DsTone tone;
+
+  const _Metric({required this.value, required this.title, required this.icon, required this.tone});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final accent = c.tone(tone);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        DsIconWell(
+          tone: tone,
+          size: 40,
+          circle: true,
+          child: SvgPicture.asset(icon, height: 20, width: 20, colorFilter: ColorFilter.mode(accent.strong, BlendMode.srcIn)),
         ),
-        trailing ?? Text(amount, style: TextStyle(fontFamily: AppThemeData.regular, color: amountColor ?? (isDark ? AppThemeData.grey50 : AppThemeData.grey900), fontSize: 16)),
+        const DsGap(DsSpace.sm),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(value, maxLines: 1, style: t.titleSm.tabular),
+        ),
+        const DsGap(DsSpace.xxs),
+        Text(title, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.caption),
       ],
     );
   }
+}
 
-  Widget sectionDivider(bool isDark) {
-    return Column(children: [const SizedBox(height: 10), MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200), const SizedBox(height: 10)]);
-  }
+/// Bill summary: subtotal, discount, platform fee, tax (tap for the split)
+/// and the total.
+class _BillCard extends StatelessWidget {
+  final CabOrderDetailsController controller;
+  final VoidCallback onTaxTap;
 
-  Widget _summaryTile(String title, String value, bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(title.tr, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800)),
-          Text(value, style: AppThemeData.semiBoldTextStyle(fontSize: title == "Order Total" ? 18 : 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-        ],
-      ),
+  const _BillCard({required this.controller, required this.onTaxTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.dsText;
+    return DsObserve(
+      builder: (_) {
+        final currency = RegionService.currencyForRecord(controller.cabOrder.value.regionId);
+        return DsCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("Order Summary".tr, style: t.overline),
+              const DsGap(DsSpace.md),
+
+              // Subtotal
+              CabBillRow(
+                label: "Subtotal".tr,
+                value: Constant.amountShow(amount: controller.subTotal.value.toString(), currency: currency),
+              ),
+
+              // Discount
+              CabBillRow(
+                label: "Discount".tr,
+                value: Constant.amountShow(amount: controller.discount.value.toString(), currency: currency),
+              ),
+
+              // Tax List
+              if (Constant.platformFeeModel?.enable == true)
+                CabBillRow(
+                  label: "Platform fee".tr,
+                  value: Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: currency),
+                ),
+
+              CabBillRow(
+                label: "Tax amount".tr,
+                value: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: currency),
+                onTap: onTaxTap,
+              ),
+
+              const DsDivider(spacing: DsSpace.lg),
+
+              // Total
+              CabBillRow(
+                label: "Order Total".tr,
+                value: Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: currency),
+                emphasize: true,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

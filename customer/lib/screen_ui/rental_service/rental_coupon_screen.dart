@@ -1,139 +1,119 @@
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/rental_coupon_controller.dart';
-import 'package:customer/controllers/theme_controller.dart';
 import 'package:customer/models/coupon_model.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/responsive.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/widget/my_separator.dart';
-import 'package:dotted_border/dotted_border.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
+/// Rental coupons (archetype B — catalogue): each offer leads with a round
+/// discount medallion, then the code chip and the terms under a dashed rule.
 class RentalCouponScreen extends StatelessWidget {
   const RentalCouponScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
+    final l = context.dsLayout;
     return GetX(
       init: RentalCouponController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            automaticallyImplyLeading: false,
-            backgroundColor: AppThemeData.primary300,
-            title: Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => Get.back(),
-                    child: Container(
-                      height: 42,
-                      width: 42,
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: AppThemeData.grey50),
-                      child: Center(child: Padding(padding: const EdgeInsets.only(left: 5), child: Icon(Icons.arrow_back_ios, color: AppThemeData.grey900, size: 20))),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text("Coupon".tr, style: AppThemeData.boldTextStyle(fontSize: 18, color: AppThemeData.grey900)),
-                ],
-              ),
+        final bool loading = controller.isLoading.value;
+        final List<CouponModel> coupons = controller.cabCouponList.toList();
+        return DsScaffold(
+          title: "Coupon".tr,
+          onBack: () => Get.back(),
+          maxContentWidth: DsLayout.contentMax,
+          body: DsAsync(
+            isLoading: loading,
+            skeleton: const DsSkeletonList(itemCount: 4),
+            isEmpty: coupons.isEmpty,
+            empty: DsEmptyState(icon: Icons.local_activity_outlined, title: "Coupon not found".tr),
+            builder: (context) => ListView.builder(
+              shrinkWrap: true,
+              padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.xxxl),
+              itemCount: coupons.length,
+              itemBuilder: (context, index) {
+                return DsFadeSlideIn(index: index, child: _RentalCouponCard(coupon: coupons[index]));
+              },
             ),
           ),
-          body:
-              controller.isLoading.value
-                  ? Constant.loader()
-                  : controller.cabCouponList.isEmpty
-                  ? Constant.showEmptyView(message: "Coupon not found".tr)
-                  : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: controller.cabCouponList.length,
-                    itemBuilder: (context, index) {
-                      CouponModel couponModel = controller.cabCouponList[index];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        child: Container(
-                          height: Responsive.height(16, context),
-                          decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                          child: Row(
-                            children: [
-                              ClipRRect(
-                                borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), bottomLeft: Radius.circular(10)),
-                                child: Stack(
-                                  children: [
-                                    Image.asset("assets/images/ic_coupon_image.png", height: Responsive.height(16, context), fit: BoxFit.fill),
-                                    Padding(
-                                      padding: const EdgeInsets.only(left: 10),
-                                      child: Align(
-                                        alignment: Alignment.center,
-                                        child: RotatedBox(
-                                          quarterTurns: -1,
-                                          child: Text(
-                                            "${couponModel.discountType == "Fix Price" ? Constant.amountShow(amount: couponModel.discount, currency: RegionService.customerCurrency) : "${couponModel.discount}%"} ${'Off'.tr}",
-                                            textAlign: TextAlign.start,
-                                            style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          DottedBorder(
-                                            options: RoundedRectDottedBorderOptions(strokeWidth: 1, radius: const Radius.circular(6), color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
-                                            child: Padding(
-                                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                                              child: Text(
-                                                "${couponModel.code}",
-                                                textAlign: TextAlign.start,
-                                                style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
-                                              ),
-                                            ),
-                                          ),
-                                          const Expanded(child: SizedBox(height: 10)),
-                                          InkWell(
-                                            onTap: () {
-                                              Get.back(result: couponModel);
-                                            },
-                                            child: Text(
-                                              "Tap To Apply".tr,
-                                              textAlign: TextAlign.start,
-                                              style: TextStyle(fontFamily: AppThemeData.medium, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 20),
-                                      MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                      const SizedBox(height: 20),
-                                      Text(
-                                        "${couponModel.description}",
-                                        textAlign: TextAlign.start,
-                                        style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
         );
       },
+    );
+  }
+}
+
+class _RentalCouponCard extends StatelessWidget {
+  final CouponModel coupon;
+
+  const _RentalCouponCard({required this.coupon});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final String discount =
+        "${coupon.discountType == "Fix Price" ? Constant.amountShow(amount: coupon.discount, currency: RegionService.customerCurrency) : "${coupon.discount}%"} ${'Off'.tr}";
+    return DsCard.outlined(
+      margin: const EdgeInsets.only(bottom: DsSpace.md),
+      padding: const EdgeInsets.all(DsSpace.lg),
+      semanticLabel: discount,
+      onTap: () {
+        Get.back(result: coupon);
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.all(DsSpace.xs),
+                decoration: BoxDecoration(shape: BoxShape.circle, gradient: DsGradients.brand(context)),
+                child: Text(
+                  discount,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.labelSm.withColor(Colors.white),
+                ),
+              ),
+              const DsGap(DsSpace.lg),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
+                      decoration: BoxDecoration(
+                        color: c.surfaceAlt,
+                        borderRadius: DsRadius.brSm,
+                        border: Border.all(color: c.borderStrong),
+                      ),
+                      child: Text("${coupon.code}", maxLines: 1, overflow: TextOverflow.ellipsis, style: t.label.tabular),
+                    ),
+                    const DsGap(DsSpace.sm),
+                    Row(
+                      children: [
+                        Text("Tap To Apply".tr, style: t.link),
+                        const DsGap(DsSpace.xs),
+                        Icon(Icons.arrow_forward_rounded, size: 14, color: c.brandStrong),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const DsGap(DsSpace.lg),
+          MySeparator(color: c.divider),
+          const DsGap(DsSpace.lg),
+          Text("${coupon.description}", style: t.bodySecondary),
+        ],
+      ),
     );
   }
 }

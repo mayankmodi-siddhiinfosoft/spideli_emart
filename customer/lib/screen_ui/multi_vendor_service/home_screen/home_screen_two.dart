@@ -15,9 +15,7 @@ import 'package:customer/screen_ui/multi_vendor_service/home_screen/restaurant_l
 import 'package:customer/screen_ui/multi_vendor_service/home_screen/story_view.dart';
 import 'package:customer/screen_ui/multi_vendor_service/home_screen/view_all_category_screen.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/responsive.dart';
-import 'package:customer/themes/round_button_fill.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/network_image_widget.dart';
 import 'package:customer/widget/osm_map/map_picker_page.dart';
 import 'package:customer/widget/place_picker/location_picker_screen.dart';
@@ -28,7 +26,6 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../../controllers/theme_controller.dart';
 import '../../../models/banner_model.dart';
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
@@ -42,377 +39,160 @@ import '../scan_qrcode_screen/scan_qr_code_screen.dart';
 import '../search_screen/search_screen.dart';
 import 'category_restaurant_screen.dart';
 import 'discount_restaurant_list_screen.dart';
-import 'package:shimmer/shimmer.dart';
 import 'home_screen.dart';
+import 'widgets/store_widgets.dart';
 
+/// Archetype A — food storefront (variant two, `SectionModel.theme ==
+/// "theme_2"`). Same archetype as [HomeScreen] but a different hero rhythm:
+/// banners lead, and each block is a distinct rounded "panel" with a
+/// gradient headline instead of a plain section header.
 class HomeScreenTwo extends StatelessWidget {
   const HomeScreenTwo({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: FoodHomeController(),
       builder: (controller) {
+        final c = context.dsColors;
+        final l = context.dsLayout;
+        final gutter = EdgeInsets.symmetric(horizontal: l.gutter);
+        // Read every observable unconditionally: a `||` short-circuit
+        // would hide one of them from this GetX observer.
+        final isLoading = controller.isLoading.value;
+        final hasNoStores = controller.allNearestRestaurant.isEmpty;
+        final hasStores = !(Constant.isZoneAvailable == false || hasNoStores);
+
         return Scaffold(
-          backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-          body:
-              controller.isLoading.value
-                  ? _buildHomeScreenTwoShimmer(isDark)
-                  : Constant.isZoneAvailable == false || controller.allNearestRestaurant.isEmpty
-                  ? Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Image.asset("assets/images/location.gif", height: 120),
-                        const SizedBox(height: 12),
-                        Text("No Store Found in Your Area".tr, style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold)),
-                        const SizedBox(height: 5),
-                        Text(
-                          "Currently, there are no available store in your zone. Try changing your location to find nearby options.".tr,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                        ),
-                        const SizedBox(height: 20),
-                        RoundedButtonFill(
-                          title: "Change Zone".tr,
-                          width: 55,
-                          height: 5.5,
-                          color: AppThemeData.primary300,
-                          textColor: AppThemeData.grey50,
-                          onPress: () async {
-                            Get.offAll(const LocationPermissionScreen());
-                          },
-                        ),
-                      ],
-                    ),
-                  )
-                  : Padding(
-                    padding: EdgeInsets.only(top: MediaQuery.of(context).viewPadding.top),
-                    child:
-                        controller.isListView.value == false
-                            ? const MapView()
-                            : Column(
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+          backgroundColor: c.background,
+          body: isLoading
+              ? const FoodHomeSkeleton(bannerFirst: true)
+              : !hasStores
+              ? NoStoreInZoneView(
+                  onChangeZone: () async {
+                    Get.offAll(const LocationPermissionScreen());
+                  },
+                )
+              : Padding(
+                  padding: EdgeInsets.only(top: MediaQuery.of(context).viewPadding.top),
+                  child: controller.isListView.value == false
+                      ? const MapView()
+                      : Column(
+                          children: [
+                            DsResponsive(
+                              maxWidth: DsLayout.wideMax,
+                              child: Padding(
+                                padding: gutter,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _HomeTwoHeaderBar(controller: controller),
+                                    const DsGap(DsSpace.md),
+                                    // Delivery / TakeAway toggles at the top; the search bar is at the bottom (spec 7.3).
+                                    OrderTypeToggle(value: controller.selectedOrderTypeValue.value, isDark: c.isDark, onChanged: (value) => controller.changeOrderType(context, value)),
+                                    const DsGap(DsSpace.xs),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                physics: const BouncingScrollPhysics(),
+                                child: DsResponsive(
+                                  maxWidth: DsLayout.wideMax,
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Row(
-                                        children: [
-                                          InkWell(
-                                            onTap: () {
-                                              Get.offAll(const ServiceListScreen());
-                                            },
-                                            child: Icon(Icons.arrow_back, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, size: 20),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: Column(
-                                              mainAxisAlignment: MainAxisAlignment.start,
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Constant.userModel == null
-                                                    ? InkWell(
-                                                      onTap: () {
-                                                        Get.offAll(const LoginScreen());
-                                                      },
-                                                      child: Text(
-                                                        "Login".tr,
-                                                        textAlign: TextAlign.center,
-                                                        style: TextStyle(fontFamily: AppThemeData.medium, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 12),
-                                                      ),
-                                                    )
-                                                    : Text(
-                                                      Constant.userModel!.fullName(),
-                                                      textAlign: TextAlign.center,
-                                                      style: TextStyle(fontFamily: AppThemeData.medium, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 12),
-                                                    ),
-                                                InkWell(
-                                                  onTap: () async {
-                                                    if (Constant.userModel != null) {
-                                                      Get.to(AddressListScreen())!.then((value) {
-                                                        if (value != null) {
-                                                          ShippingAddress shippingAddress = value;
-                                                          Constant.selectedLocation = shippingAddress;
-                                                          controller.getData();
-                                                        }
-                                                      });
-                                                    } else {
-                                                      Constant.checkPermission(
-                                                        onTap: () async {
-                                                          ShowToastDialog.showLoader("Please wait...".tr);
-
-                                                          // ✅ declare once for whole method
-                                                          ShippingAddress shippingAddress = ShippingAddress();
-
-                                                          try {
-                                                            await Geolocator.requestPermission();
-                                                            await Geolocator.getCurrentPosition();
-                                                            ShowToastDialog.closeLoader();
-
-                                                            if (Constant.selectedMapType == 'osm') {
-                                                              final result = await Get.to(() => MapPickerPage());
-                                                              if (result != null) {
-                                                                final firstPlace = result;
-                                                                final lat = firstPlace.coordinates.latitude;
-                                                                final lng = firstPlace.coordinates.longitude;
-                                                                final address = firstPlace.address;
-
-                                                                shippingAddress.addressAs = "Home";
-                                                                shippingAddress.locality = address.toString();
-                                                                shippingAddress.location = UserLocation(latitude: lat, longitude: lng);
-                                                                Constant.selectedLocation = shippingAddress;
-                                                                controller.getData();
-                                                                Get.back();
-                                                              }
-                                                            } else {
-                                                              Get.to(LocationPickerScreen())!.then((value) async {
-                                                                if (value != null) {
-                                                                  SelectedLocationModel selectedLocationModel = value;
-
-                                                                  shippingAddress.addressAs = "Home";
-                                                                  shippingAddress.location = UserLocation(
-                                                                    latitude: selectedLocationModel.latLng!.latitude,
-                                                                    longitude: selectedLocationModel.latLng!.longitude,
-                                                                  );
-                                                                  shippingAddress.locality = "Picked from Map"; // You can reverse-geocode
-
-                                                                  Constant.selectedLocation = shippingAddress;
-                                                                  controller.getData();
-                                                                }
-                                                              });
-                                                            }
-                                                          } catch (e) {
-                                                            await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
-                                                              Placemark placeMark = valuePlaceMaker[0];
-                                                              shippingAddress.addressAs = "Home";
-                                                              shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
-                                                              String currentLocation =
-                                                                  "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
-                                                              shippingAddress.locality = currentLocation;
-                                                            });
-
-                                                            Constant.selectedLocation = shippingAddress;
-                                                            ShowToastDialog.closeLoader();
-                                                            controller.getData();
-                                                          }
-                                                        },
-                                                        context: context,
-                                                      );
-                                                    }
-                                                  },
-                                                  child: Text.rich(
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    TextSpan(
+                                      controller.bannerModel.isEmpty ? const SizedBox() : Padding(padding: gutter, child: BannerView(controller: controller)),
+                                      const DsGap(DsSpace.xl),
+                                      Padding(padding: gutter, child: CategoryView(controller: controller)),
+                                      controller.couponRestaurantList.isEmpty
+                                          ? const SizedBox()
+                                          : Padding(padding: gutter, child: Column(children: [const DsGap(DsSpace.xl), OfferView(controller: controller)])),
+                                      controller.storyList.isEmpty || Constant.storyEnable == false
+                                          ? const SizedBox()
+                                          : Padding(padding: gutter, child: Column(children: [const DsGap(DsSpace.xl), StoryView(controller: controller)])),
+                                      Visibility(
+                                        visible: Constant.isEnableAdsFeature == true,
+                                        child: controller.advertisementList.isEmpty
+                                            ? const SizedBox()
+                                            : Column(
+                                                children: [
+                                                  const DsGap(DsSpace.xl),
+                                                  Container(
+                                                    margin: gutter,
+                                                    padding: const EdgeInsets.all(DsSpace.lg),
+                                                    decoration: BoxDecoration(borderRadius: DsRadius.brXl, color: c.brandSoft, border: Border.all(color: c.border)),
+                                                    child: Column(
+                                                      mainAxisAlignment: MainAxisAlignment.start,
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
                                                       children: [
-                                                        TextSpan(
-                                                          text: Constant.selectedLocation.getFullAddress(),
-                                                          style: TextStyle(
-                                                            fontFamily: AppThemeData.medium,
-                                                            overflow: TextOverflow.ellipsis,
-                                                            color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                            fontSize: 14,
+                                                        DsSectionHeader(
+                                                          title: "Highlights for you".tr,
+                                                          padding: EdgeInsets.zero,
+                                                          trailing: NextArrowButton(
+                                                            onTap: () {
+                                                              Get.to(AllAdvertisementScreen())?.then((value) {
+                                                                controller.getFavouriteRestaurant();
+                                                              });
+                                                            },
                                                           ),
                                                         ),
-                                                        WidgetSpan(child: SvgPicture.asset("assets/icons/ic_down.svg")),
+                                                        const DsGap(DsSpace.lg),
+                                                        SizedBox(
+                                                          height: 240,
+                                                          child: ListView.builder(
+                                                            physics: const BouncingScrollPhysics(),
+                                                            scrollDirection: Axis.horizontal,
+                                                            itemCount: controller.advertisementList.length >= 10 ? 10 : controller.advertisementList.length,
+                                                            padding: EdgeInsets.zero,
+                                                            itemBuilder: (BuildContext context, int index) {
+                                                              return DsFadeSlideIn(
+                                                                index: index,
+                                                                offset: const Offset(20, 0),
+                                                                child: AdvertisementHomeCard(controller: controller, model: controller.advertisementList[index]),
+                                                              );
+                                                            },
+                                                          ),
+                                                        ),
                                                       ],
                                                     ),
                                                   ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          const SizedBox(width: 5),
-                                          InkWell(
-                                            onTap: () async {
-                                              (await Get.to(const CartScreen()));
-                                              controller.getCartData();
-                                            },
-                                            child: ClipOval(
-                                              child: Container(
-                                                padding: const EdgeInsets.all(8.0),
-                                                color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                                child: SvgPicture.asset(
-                                                  "assets/icons/ic_shoping_cart.svg",
-                                                  colorFilter: ColorFilter.mode(isDark ? AppThemeData.grey50 : AppThemeData.grey900, BlendMode.srcIn),
-                                                ),
+                                                ],
                                               ),
-                                            ),
-                                          ),
-                                        ],
                                       ),
-                                      const SizedBox(height: 10),
-                                      // Delivery / TakeAway toggles at the top; the search bar is at the bottom (spec 7.3).
-                                      OrderTypeToggle(value: controller.selectedOrderTypeValue.value, isDark: isDark, onChanged: (value) => controller.changeOrderType(context, value)),
-                                      const SizedBox(height: 5),
+                                      controller.allNearestRestaurant.isEmpty ? const SizedBox() : Column(children: [const DsGap(DsSpace.xl), RestaurantView(controller: controller)]),
                                     ],
                                   ),
                                 ),
-                                Expanded(
-                                  child: SingleChildScrollView(
-                                    child: Column(
-                                      children: [
-                                        controller.bannerModel.isEmpty ? const SizedBox() : Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: BannerView(controller: controller)),
-                                        const SizedBox(height: 20),
-                                        Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: CategoryView(controller: controller)),
-                                        controller.couponRestaurantList.isEmpty
-                                            ? const SizedBox()
-                                            : Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Column(children: [const SizedBox(height: 20), OfferView(controller: controller)])),
-                                        controller.storyList.isEmpty || Constant.storyEnable == false
-                                            ? const SizedBox()
-                                            : Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Column(children: [const SizedBox(height: 20), StoryView(controller: controller)])),
-                                        Visibility(
-                                          visible: Constant.isEnableAdsFeature == true,
-                                          child:
-                                              controller.advertisementList.isEmpty
-                                                  ? const SizedBox()
-                                                  : Column(
-                                                    children: [
-                                                      const SizedBox(height: 20),
-                                                      Container(
-                                                        margin: const EdgeInsets.symmetric(horizontal: 16),
-                                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                                                        decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), color: AppThemeData.primary300.withAlpha(40)),
-                                                        child: Column(
-                                                          mainAxisAlignment: MainAxisAlignment.start,
-                                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                                          children: [
-                                                            Row(
-                                                              children: [
-                                                                Expanded(
-                                                                  child: Text(
-                                                                    "Highlights for you".tr,
-                                                                    textAlign: TextAlign.start,
-                                                                    style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                                                                  ),
-                                                                ),
-                                                                NextArrowButton(
-                                                                  onTap: () {
-                                                                    Get.to(AllAdvertisementScreen())?.then((value) {
-                                                                      controller.getFavouriteRestaurant();
-                                                                    });
-                                                                  },
-                                                                ),
-                                                              ],
-                                                            ),
-                                                            const SizedBox(height: 16),
-                                                            SizedBox(
-                                                              height: 220,
-                                                              child: ListView.builder(
-                                                                physics: const BouncingScrollPhysics(),
-                                                                scrollDirection: Axis.horizontal,
-                                                                itemCount: controller.advertisementList.length >= 10 ? 10 : controller.advertisementList.length,
-                                                                padding: EdgeInsets.all(0),
-                                                                itemBuilder: (BuildContext context, int index) {
-                                                                  return AdvertisementHomeCard(controller: controller, model: controller.advertisementList[index]);
-                                                                },
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                        ),
-                                        controller.allNearestRestaurant.isEmpty ? const SizedBox() : Column(children: [const SizedBox(height: 20), RestaurantView(controller: controller)]),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                  ),
-          // Search bar at the bottom of the section home (spec 7.3).
-          bottomNavigationBar:
-              controller.isLoading.value || Constant.isZoneAvailable == false || controller.allNearestRestaurant.isEmpty
-                  ? null
-                  : BottomSearchBar(
-                    isDark: isDark,
-                    hint:
-                        Constant.sectionConstantModel?.name?.toLowerCase().contains('restaurants') == true
-                            ? 'Search the dish, food and more...'.tr
-                            : 'Search the store, item and more...'.tr,
-                    onTap: () {
-                      Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
-                    },
-                  ),
-          floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-          floatingActionButton: Container(
-            decoration: BoxDecoration(color: isDark ? AppThemeData.grey800 : AppThemeData.grey100, borderRadius: const BorderRadius.all(Radius.circular(30))),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    decoration: BoxDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, borderRadius: const BorderRadius.all(Radius.circular(30))),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      child: Row(
-                        children: [
-                          InkWell(
-                            onTap: () {
-                              controller.isListView.value = true;
-                            },
-                            child: ClipOval(
-                              child: Container(
-                                decoration: BoxDecoration(color: controller.isListView.value ? AppThemeData.primary300 : null),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: SvgPicture.asset(
-                                    "assets/icons/ic_view_grid_list.svg",
-                                    colorFilter: ColorFilter.mode(controller.isListView.value ? AppThemeData.grey50 : AppThemeData.grey500, BlendMode.srcIn),
-                                  ),
-                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          InkWell(
-                            onTap: () {
-                              controller.isListView.value = false;
-                            },
-                            child: ClipOval(
-                              child: Container(
-                                decoration: BoxDecoration(color: controller.isListView.value == false ? AppThemeData.primary300 : null),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: SvgPicture.asset(
-                                    "assets/icons/ic_map_draw.svg",
-                                    colorFilter: ColorFilter.mode(controller.isListView.value == false ? AppThemeData.grey50 : AppThemeData.grey500, BlendMode.srcIn),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  InkWell(
-                    onTap: () {
-                      Get.to(const ScanQrCodeScreen());
-                    },
-                    child: ClipOval(
-                      child: Container(
-                        decoration: BoxDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50),
-                        child: Padding(
-                          padding: const EdgeInsets.all(10),
-                          child: SvgPicture.asset("assets/icons/ic_scan_code.svg", colorFilter: ColorFilter.mode(isDark ? AppThemeData.grey400 : AppThemeData.grey500, BlendMode.srcIn)),
+                          ],
                         ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                ),
+          // Search bar at the bottom of the section home (spec 7.3).
+          bottomNavigationBar: isLoading || !hasStores
+              ? null
+              : BottomSearchBar(
+                  isDark: c.isDark,
+                  hint: Constant.sectionConstantModel?.name?.toLowerCase().contains('restaurants') == true
+                      ? 'Search the dish, food and more...'.tr
+                      : 'Search the store, item and more...'.tr,
+                  onTap: () {
+                    Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
+                  },
+                ),
+          floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+          floatingActionButton: HomeToolFab(
+            isListView: controller.isListView.value,
+            onList: () {
+              controller.isListView.value = true;
+            },
+            onMap: () {
+              controller.isListView.value = false;
+            },
+            onScan: () {
+              Get.to(const ScanQrCodeScreen());
+            },
           ),
         );
       },
@@ -420,6 +200,198 @@ class HomeScreenTwo extends StatelessWidget {
   }
 }
 
+/// Back / account / delivery-address / cart row for variant two.
+class _HomeTwoHeaderBar extends StatelessWidget {
+  final FoodHomeController controller;
+  const _HomeTwoHeaderBar({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Row(
+      children: [
+        DsIconButton(
+          icon: Icons.arrow_back,
+          semanticLabel: "Back".tr,
+          onPressed: () {
+            Get.offAll(const ServiceListScreen());
+          },
+        ),
+        const DsGap(DsSpace.sm),
+        Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Constant.userModel == null
+                  ? InkWell(
+                      onTap: () {
+                        Get.offAll(const LoginScreen());
+                      },
+                      child: Text("Login".tr, textAlign: TextAlign.center, style: t.caption.withColor(c.brandStrong).w600),
+                    )
+                  : Text(Constant.userModel!.fullName(), textAlign: TextAlign.center, style: t.caption.withColor(c.textSecondary)),
+              InkWell(
+                onTap: () async {
+                  if (Constant.userModel != null) {
+                    Get.to(AddressListScreen())!.then((value) {
+                      if (value != null) {
+                        ShippingAddress shippingAddress = value;
+                        Constant.selectedLocation = shippingAddress;
+                        controller.getData();
+                      }
+                    });
+                  } else {
+                    Constant.checkPermission(
+                      onTap: () async {
+                        ShowToastDialog.showLoader("Please wait...".tr);
+
+                        // ✅ declare once for whole method
+                        ShippingAddress shippingAddress = ShippingAddress();
+
+                        try {
+                          await Geolocator.requestPermission();
+                          await Geolocator.getCurrentPosition();
+                          ShowToastDialog.closeLoader();
+
+                          if (Constant.selectedMapType == 'osm') {
+                            final result = await Get.to(() => MapPickerPage());
+                            if (result != null) {
+                              final firstPlace = result;
+                              final lat = firstPlace.coordinates.latitude;
+                              final lng = firstPlace.coordinates.longitude;
+                              final address = firstPlace.address;
+
+                              shippingAddress.addressAs = "Home";
+                              shippingAddress.locality = address.toString();
+                              shippingAddress.location = UserLocation(latitude: lat, longitude: lng);
+                              Constant.selectedLocation = shippingAddress;
+                              controller.getData();
+                              Get.back();
+                            }
+                          } else {
+                            Get.to(LocationPickerScreen())!.then((value) async {
+                              if (value != null) {
+                                SelectedLocationModel selectedLocationModel = value;
+
+                                shippingAddress.addressAs = "Home";
+                                shippingAddress.location = UserLocation(
+                                  latitude: selectedLocationModel.latLng!.latitude,
+                                  longitude: selectedLocationModel.latLng!.longitude,
+                                );
+                                shippingAddress.locality = "Picked from Map"; // You can reverse-geocode
+
+                                Constant.selectedLocation = shippingAddress;
+                                controller.getData();
+                              }
+                            });
+                          }
+                        } catch (e) {
+                          await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
+                            Placemark placeMark = valuePlaceMaker[0];
+                            shippingAddress.addressAs = "Home";
+                            shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
+                            String currentLocation =
+                                "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
+                            shippingAddress.locality = currentLocation;
+                          });
+
+                          Constant.selectedLocation = shippingAddress;
+                          ShowToastDialog.closeLoader();
+                          controller.getData();
+                        }
+                      },
+                      context: context,
+                    );
+                  }
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: DsSpace.xxs),
+                  child: Row(
+                    children: [
+                      Icon(Icons.location_on_rounded, size: 16, color: c.brandStrong),
+                      const DsGap(DsSpace.xxs),
+                      Flexible(
+                        child: Text(Constant.selectedLocation.getFullAddress(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodyStrong),
+                      ),
+                      SvgPicture.asset("assets/icons/ic_down.svg", width: 16, height: 16, colorFilter: ColorFilter.mode(c.textSecondary, BlendMode.srcIn)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const DsGap(DsSpace.xs),
+        DsIconButton(
+          semanticLabel: "Cart".tr,
+          variant: DsIconButtonVariant.tonal,
+          size: 42,
+          child: SvgPicture.asset("assets/icons/ic_shoping_cart.svg", width: 20, height: 20),
+          onPressed: () async {
+            (await Get.to(const CartScreen()));
+            controller.getCartData();
+          },
+        ),
+      ],
+    );
+  }
+}
+
+/// Panel wrapper that gives variant two its "block" rhythm: a rounded
+/// surface, a plain title with the forward arrow and a gradient strapline.
+class _HomePanel extends StatelessWidget {
+  final String title;
+  final String strapline;
+  final Gradient straplineGradient;
+  final VoidCallback? onAction;
+  final Widget child;
+  final DecorationImage? backgroundImage;
+  final Color? titleColor;
+
+  const _HomePanel({
+    required this.title,
+    required this.strapline,
+    required this.straplineGradient,
+    required this.child,
+    this.onAction,
+    this.backgroundImage,
+    this.titleColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Container(
+      decoration: BoxDecoration(
+        color: backgroundImage == null ? c.surface : null,
+        image: backgroundImage,
+        borderRadius: DsRadius.brXxl,
+        border: backgroundImage == null ? Border.all(color: c.border) : null,
+        boxShadow: backgroundImage == null ? DsShadows.xs(context) : null,
+      ),
+      padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, DsSpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text(title, style: t.titleSm.withColor(titleColor ?? c.textPrimary).w600)),
+              if (onAction != null) NextArrowButton(color: titleColor, onTap: onAction!),
+            ],
+          ),
+          GradientText(strapline, style: const TextStyle(fontSize: 24, fontFamily: 'Inter Tight', fontWeight: FontWeight.w800), gradient: straplineGradient),
+          const DsGap(DsSpace.lg),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// Category grid panel (up to 8 tiles).
 class CategoryView extends StatelessWidget {
   final FoodHomeController controller;
 
@@ -427,72 +399,59 @@ class CategoryView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return Container(
-      decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(child: Text("Our Categories".tr, style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 18))),
-                      NextArrowButton(
-                        onTap: () {
-                          Get.to(const ViewAllCategoryScreen());
-                        },
-                      ),
-                    ],
-                  ),
-                  GradientText(
-                    'Best Servings Items'.tr,
-                    style: TextStyle(fontSize: 24, fontFamily: 'Inter Tight', fontWeight: FontWeight.w800),
-                    gradient: LinearGradient(colors: [Color(0xFF3961F1), Color(0xFF11D0EA)]),
-                  ),
-                ],
+    final c = context.dsColors;
+    final t = context.dsText;
+    return _HomePanel(
+      title: "Our Categories".tr,
+      strapline: 'Best Servings Items'.tr,
+      straplineGradient: const LinearGradient(colors: [Color(0xFF3961F1), Color(0xFF11D0EA)]),
+      onAction: () {
+        Get.to(const ViewAllCategoryScreen());
+      },
+      child: GridView.builder(
+        padding: EdgeInsets.zero,
+        gridDelegate: DsLayout.gridDelegate(maxItemWidth: 110, spacing: DsSpace.sm, mainAxisExtent: 116),
+        itemCount: controller.vendorCategoryModel.length >= 8 ? 8 : controller.vendorCategoryModel.length,
+        physics: const NeverScrollableScrollPhysics(),
+        shrinkWrap: true,
+        itemBuilder: (context, index) {
+          VendorCategoryModel vendorCategoryModel = controller.vendorCategoryModel[index];
+          return DsFadeSlideIn(
+            index: index,
+            child: Semantics(
+              button: true,
+              label: '${vendorCategoryModel.title}',
+              child: InkWell(
+                onTap: () {
+                  Get.to(const CategoryRestaurantScreen(), arguments: {"vendorCategoryModel": vendorCategoryModel, "dineIn": false});
+                },
+                borderRadius: DsRadius.brMd,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 68,
+                      height: 68,
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: c.brandSoft, border: Border.all(color: c.border)),
+                      child: ClipOval(child: NetworkImageWidget(imageUrl: vendorCategoryModel.photo.toString(), fit: BoxFit.cover)),
+                    ),
+                    const DsGap(DsSpace.sm),
+                    Flexible(
+                      child: Text("${vendorCategoryModel.title}", textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.labelSm.withColor(c.textPrimary)),
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 10),
-            GridView.builder(
-              padding: EdgeInsets.zero,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, childAspectRatio: 5 / 6),
-              itemCount: controller.vendorCategoryModel.length >= 8 ? 8 : controller.vendorCategoryModel.length,
-              physics: const NeverScrollableScrollPhysics(),
-              shrinkWrap: true,
-              itemBuilder: (context, index) {
-                VendorCategoryModel vendorCategoryModel = controller.vendorCategoryModel[index];
-                return InkWell(
-                  onTap: () {
-                    Get.to(const CategoryRestaurantScreen(), arguments: {"vendorCategoryModel": vendorCategoryModel, "dineIn": false});
-                  },
-                  child: Column(
-                    children: [
-                      ClipOval(child: SizedBox(width: 60, height: 60, child: NetworkImageWidget(imageUrl: vendorCategoryModel.photo.toString(), fit: BoxFit.cover))),
-                      Text(
-                        "${vendorCategoryModel.title}",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontFamily: AppThemeData.medium, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 }
 
+/// Discount panel: square photo tiles with a coloured discount pill.
 class OfferView extends StatelessWidget {
   final FoodHomeController controller;
 
@@ -500,108 +459,75 @@ class OfferView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return Container(
-      decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(child: Text("Large Discounts".tr, style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 18))),
-                      NextArrowButton(
-                        onTap: () {
-                          Get.to(const DiscountRestaurantListScreen(), arguments: {"vendorList": controller.couponRestaurantList, "couponList": controller.couponList, "title": "Discounts Stores"});
-                        },
-                      ),
-                    ],
-                  ),
-                  GradientText(
-                    'Save Upto 50% Off'.tr,
-                    style: TextStyle(fontSize: 24, fontFamily: 'Inter Tight', fontWeight: FontWeight.w800),
-                    gradient: LinearGradient(colors: [Color(0xFF39F1C5), Color(0xFF97EA11)]),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: MediaQuery.of(context).size.width,
-              height: MediaQuery.of(context).size.width * 0.32,
-              child: ListView.builder(
-                shrinkWrap: true,
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                itemCount: controller.couponRestaurantList.length >= 15 ? 15 : controller.couponRestaurantList.length,
-                itemBuilder: (context, index) {
-                  VendorModel vendorModel = controller.couponRestaurantList[index];
-                  CouponModel offerModel = controller.couponList[index];
-                  return InkWell(
+    final t = context.dsText;
+    return _HomePanel(
+      title: "Large Discounts".tr,
+      strapline: 'Save Upto 50% Off'.tr,
+      straplineGradient: const LinearGradient(colors: [Color(0xFF39F1C5), Color(0xFF97EA11)]),
+      onAction: () {
+        Get.to(const DiscountRestaurantListScreen(), arguments: {"vendorList": controller.couponRestaurantList, "couponList": controller.couponList, "title": "Discounts Stores"});
+      },
+      child: SizedBox(
+        height: 150,
+        child: ListView.builder(
+          shrinkWrap: true,
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.zero,
+          physics: const BouncingScrollPhysics(),
+          itemCount: controller.couponRestaurantList.length >= 15 ? 15 : controller.couponRestaurantList.length,
+          itemBuilder: (context, index) {
+            VendorModel vendorModel = controller.couponRestaurantList[index];
+            CouponModel offerModel = controller.couponList[index];
+            final Color pill = Colors.primaries[Random().nextInt(Colors.primaries.length)];
+            return DsFadeSlideIn(
+              index: index,
+              offset: const Offset(20, 0),
+              child: Padding(
+                padding: const EdgeInsets.only(right: DsSpace.md),
+                child: SizedBox(
+                  width: 140,
+                  child: DsPressable(
                     onTap: () {
                       Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
                     },
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: SizedBox(
-                        width: Responsive.width(34, context),
-                        child: ClipRRect(
-                          borderRadius: const BorderRadius.all(Radius.circular(10)),
-                          child: Stack(
-                            children: [
-                              NetworkImageWidget(imageUrl: vendorModel.photo.toString(), fit: BoxFit.cover, height: Responsive.height(100, context), width: Responsive.width(100, context)),
-                              Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(begin: const Alignment(-0.00, -1.00), end: const Alignment(0, 1), colors: [Colors.black.withOpacity(0), AppThemeData.grey900]),
-                                ),
-                              ),
-                              Align(
-                                alignment: Alignment.bottomCenter,
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        vendorModel.title.toString(),
-                                        textAlign: TextAlign.start,
-                                        maxLines: 1,
-                                        style: TextStyle(fontSize: 18, overflow: TextOverflow.ellipsis, fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50),
-                                      ),
-                                      const SizedBox(height: 5),
-                                      RoundedButtonFill(
-                                        title:
-                                            "${offerModel.discountType == "Fix Price" ? (RegionService.currencyForVendorId(offerModel.vendorID) ?? Constant.currencyModel!).symbol : ""}${offerModel.discount}${offerModel.discountType == "Percentage" ? "% off".tr : "off".tr}",
-                                        color: Colors.primaries[Random().nextInt(Colors.primaries.length)],
-                                        textColor: AppThemeData.grey50,
-                                        width: 20,
-                                        height: 3.5,
-                                        onPress: () async {},
-                                      ),
-                                    ],
+                    child: ClipRRect(
+                      borderRadius: DsRadius.brLg,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          NetworkImageWidget(imageUrl: vendorModel.photo.toString(), fit: BoxFit.cover),
+                          const StoreMediaScrim(height: double.infinity),
+                          Positioned(
+                            left: DsSpace.sm,
+                            right: DsSpace.sm,
+                            bottom: DsSpace.md,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Text(vendorModel.title.toString(), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodyStrong.withColor(Colors.white)),
+                                const DsGap(DsSpace.xs),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: 5),
+                                  decoration: BoxDecoration(color: pill, borderRadius: DsRadius.brPill),
+                                  child: Text(
+                                    "${offerModel.discountType == "Fix Price" ? (RegionService.currencyForVendorId(offerModel.vendorID) ?? Constant.currencyModel!).symbol : ""}${offerModel.discount}${offerModel.discountType == "Percentage" ? "% off".tr : "off".tr}",
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: t.labelSm.withColor(DsColors.onColor(pill)).tabular,
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
-                  );
-                },
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-          ],
+            );
+          },
         ),
       ),
     );
@@ -616,7 +542,7 @@ class BannerView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 150,
+      height: 160,
       child: PageView.builder(
         physics: const BouncingScrollPhysics(),
         controller: controller.pageController.value,
@@ -629,41 +555,44 @@ class BannerView extends StatelessWidget {
         },
         itemBuilder: (BuildContext context, int index) {
           BannerModel bannerModel = controller.bannerModel[index];
-          return InkWell(
-            onTap: () async {
-              if (bannerModel.redirect_type == "store") {
-                ShowToastDialog.showLoader("Please wait...".tr);
-                VendorModel? vendorModel = await FireStoreUtils.getVendorById(bannerModel.redirect_id.toString());
-                if (vendorModel!.zoneId == Constant.selectedZone!.id) {
-                  ShowToastDialog.closeLoader();
-                  Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
-                } else {
-                  ShowToastDialog.closeLoader();
-                  ShowToastDialog.showToast("The store is not available in your area. Change other location first.".tr);
+          return Padding(
+            padding: const EdgeInsets.only(right: DsSpace.lg),
+            child: DsPressable(
+              onTap: () async {
+                if (bannerModel.redirect_type == "store") {
+                  ShowToastDialog.showLoader("Please wait...".tr);
+                  VendorModel? vendorModel = await FireStoreUtils.getVendorById(bannerModel.redirect_id.toString());
+                  if (vendorModel!.zoneId == Constant.selectedZone!.id) {
+                    ShowToastDialog.closeLoader();
+                    Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
+                  } else {
+                    ShowToastDialog.closeLoader();
+                    ShowToastDialog.showToast("The store is not available in your area. Change other location first.".tr);
+                  }
+                } else if (bannerModel.redirect_type == "product") {
+                  ShowToastDialog.showLoader("Please wait...".tr);
+                  ProductModel? productModel = await FireStoreUtils.getProductById(bannerModel.redirect_id.toString());
+                  VendorModel? vendorModel = await FireStoreUtils.getVendorById(productModel!.vendorID.toString());
+                  if (vendorModel!.zoneId == Constant.selectedZone!.id) {
+                    ShowToastDialog.closeLoader();
+                    Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
+                  } else {
+                    ShowToastDialog.closeLoader();
+                    ShowToastDialog.showToast("The store is not available in your area. Change other location first.".tr);
+                  }
+                } else if (bannerModel.redirect_type == "external_link") {
+                  final uri = Uri.parse(bannerModel.redirect_id.toString());
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri);
+                  } else {
+                    ShowToastDialog.showToast("Could not launch".tr);
+                  }
                 }
-              } else if (bannerModel.redirect_type == "product") {
-                ShowToastDialog.showLoader("Please wait...".tr);
-                ProductModel? productModel = await FireStoreUtils.getProductById(bannerModel.redirect_id.toString());
-                VendorModel? vendorModel = await FireStoreUtils.getVendorById(productModel!.vendorID.toString());
-                if (vendorModel!.zoneId == Constant.selectedZone!.id) {
-                  ShowToastDialog.closeLoader();
-                  Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
-                } else {
-                  ShowToastDialog.closeLoader();
-                  ShowToastDialog.showToast("The store is not available in your area. Change other location first.".tr);
-                }
-              } else if (bannerModel.redirect_type == "external_link") {
-                final uri = Uri.parse(bannerModel.redirect_id.toString());
-                if (await canLaunchUrl(uri)) {
-                  await launchUrl(uri);
-                } else {
-                  ShowToastDialog.showToast("Could not launch".tr);
-                }
-              }
-            },
-            child: Padding(
-              padding: const EdgeInsets.only(right: 14),
-              child: ClipRRect(borderRadius: const BorderRadius.all(Radius.circular(12)), child: NetworkImageWidget(imageUrl: bannerModel.photo.toString(), fit: BoxFit.cover)),
+              },
+              child: DecoratedBox(
+                decoration: BoxDecoration(borderRadius: DsRadius.brLg, boxShadow: DsShadows.sm(context)),
+                child: ClipRRect(borderRadius: DsRadius.brLg, child: NetworkImageWidget(imageUrl: bannerModel.photo.toString(), fit: BoxFit.cover)),
+              ),
             ),
           );
         },
@@ -672,6 +601,7 @@ class BannerView extends StatelessWidget {
   }
 }
 
+/// Story panel on the illustrated background.
 class StoryView extends StatelessWidget {
   final FoodHomeController controller;
 
@@ -679,121 +609,123 @@ class StoryView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return Container(
-      height: Responsive.height(32, context),
-      decoration: const BoxDecoration(borderRadius: BorderRadius.all(Radius.circular(20)), image: DecorationImage(image: AssetImage("assets/images/story_bg.png"), fit: BoxFit.cover)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [Expanded(child: Text("Stories".tr, style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50, fontSize: 18)))]),
-                GradientText(
-                  'Best Items Stories Ever'.tr,
-                  style: TextStyle(fontSize: 24, fontFamily: 'Inter Tight', fontWeight: FontWeight.w800),
-                  gradient: LinearGradient(colors: [Color(0xFFF1C839), Color(0xFFEA1111)]),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: controller.storyList.length,
-                scrollDirection: Axis.horizontal,
-                itemBuilder: (context, index) {
-                  StoryModel storyModel = controller.storyList[index];
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 10),
-                    child: InkWell(
-                      onTap: () {
-                        Navigator.of(context).push(MaterialPageRoute(builder: (context) => MoreStories(storyList: controller.storyList, index: index)));
-                      },
-                      child: SizedBox(
-                        width: 134,
-                        child: ClipRRect(
-                          borderRadius: const BorderRadius.all(Radius.circular(10)),
-                          child: Stack(
-                            children: [
-                              NetworkImageWidget(imageUrl: storyModel.videoThumbnail.toString(), fit: BoxFit.cover, height: Responsive.height(100, context), width: Responsive.width(100, context)),
-                              Container(color: Colors.black.withOpacity(0.30)),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 8),
-                                child: FutureBuilder(
-                                  future: FireStoreUtils.getVendorById(storyModel.vendorID.toString()),
-                                  builder: (context, snapshot) {
-                                    if (snapshot.connectionState == ConnectionState.waiting) {
-                                      return Constant.loader();
-                                    } else {
-                                      if (snapshot.hasError) {
-                                        return Center(child: Text('${"Error".tr}: ${snapshot.error}'));
-                                      } else if (snapshot.data == null) {
-                                        return const SizedBox();
-                                      } else {
-                                        VendorModel vendorModel = snapshot.data!;
-                                        return Row(
-                                          mainAxisAlignment: MainAxisAlignment.start,
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            ClipOval(child: NetworkImageWidget(imageUrl: vendorModel.photo.toString(), width: 30, height: 30, fit: BoxFit.cover)),
-                                            const SizedBox(width: 4),
-                                            Expanded(
-                                              child: Column(
-                                                mainAxisAlignment: MainAxisAlignment.start,
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    vendorModel.title.toString(),
-                                                    textAlign: TextAlign.center,
-                                                    maxLines: 1,
-                                                    style: const TextStyle(color: Colors.white, fontSize: 12, overflow: TextOverflow.ellipsis, fontWeight: FontWeight.w700),
-                                                  ),
-                                                  Row(
-                                                    children: [
-                                                      SvgPicture.asset("assets/icons/ic_star.svg"),
-                                                      const SizedBox(width: 5),
-                                                      Text(
-                                                        "${Constant.calculateReview(reviewCount: vendorModel.reviewsCount.toString(), reviewSum: vendorModel.reviewsSum!.toStringAsFixed(0))} ${'reviews'.tr}",
-                                                        textAlign: TextAlign.center,
-                                                        maxLines: 1,
-                                                        style: const TextStyle(color: AppThemeData.warning300, fontSize: 10, overflow: TextOverflow.ellipsis, fontWeight: FontWeight.w700),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        );
-                                      }
-                                    }
-                                  },
-                                ),
-                              ),
-                            ],
+    return _HomePanel(
+      title: "Stories".tr,
+      strapline: 'Best Items Stories Ever'.tr,
+      straplineGradient: const LinearGradient(colors: [Color(0xFFF1C839), Color(0xFFEA1111)]),
+      titleColor: Colors.white,
+      backgroundImage: const DecorationImage(image: AssetImage("assets/images/story_bg.png"), fit: BoxFit.cover),
+      child: SizedBox(
+        height: 160,
+        child: ListView.builder(
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
+          physics: const BouncingScrollPhysics(),
+          itemCount: controller.storyList.length,
+          scrollDirection: Axis.horizontal,
+          itemBuilder: (context, index) {
+            StoryModel storyModel = controller.storyList[index];
+            return DsFadeSlideIn(
+              index: index,
+              offset: const Offset(16, 0),
+              child: Padding(
+                padding: const EdgeInsets.only(right: DsSpace.md),
+                child: DsPressable(
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (context) => MoreStories(storyList: controller.storyList, index: index)));
+                  },
+                  child: SizedBox(
+                    width: 134,
+                    child: ClipRRect(
+                      borderRadius: DsRadius.brLg,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          NetworkImageWidget(imageUrl: storyModel.videoThumbnail.toString(), fit: BoxFit.cover),
+                          IgnorePointer(child: Container(color: Colors.black.withValues(alpha: 0.30))),
+                          Positioned(
+                            left: DsSpace.sm,
+                            right: DsSpace.sm,
+                            top: DsSpace.sm,
+                            child: _StoryTag(vendorId: storyModel.vendorID.toString()),
                           ),
-                        ),
+                        ],
                       ),
                     ),
-                  );
-                },
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 10),
-        ],
+            );
+          },
+        ),
       ),
     );
   }
 }
 
+class _StoryTag extends StatelessWidget {
+  final String vendorId;
+  const _StoryTag({required this.vendorId});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return FutureBuilder(
+      future: FireStoreUtils.getVendorById(vendorId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return DsShimmer(
+            child: Row(children: [DsSkeleton.circle(size: 28), const DsGap(DsSpace.xs), Expanded(child: DsSkeleton.line(height: 10))]),
+          );
+        } else {
+          if (snapshot.hasError) {
+            return Center(child: Text('${"Error".tr}: ${snapshot.error}', style: t.caption.withColor(Colors.white)));
+          } else if (snapshot.data == null) {
+            return const SizedBox();
+          } else {
+            VendorModel vendorModel = snapshot.data!;
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                ClipOval(child: NetworkImageWidget(imageUrl: vendorModel.photo.toString(), width: 28, height: 28, fit: BoxFit.cover)),
+                const DsGap(DsSpace.xs),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(vendorModel.title.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.labelSm.withColor(Colors.white).w700),
+                      Row(
+                        children: [
+                          SvgPicture.asset("assets/icons/ic_star.svg", width: 11, height: 11),
+                          const DsGap(DsSpace.xxs),
+                          Flexible(
+                            child: Text(
+                              "${Constant.calculateReview(reviewCount: vendorModel.reviewsCount.toString(), reviewSum: vendorModel.reviewsSum!.toStringAsFixed(0))} ${'reviews'.tr}",
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: t.overline.withColor(c.warning).tabular,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
+        }
+      },
+    );
+  }
+}
+
+/// "Best Stores" — compact rows with a square photo and the best discount
+/// stamped on it.
 class RestaurantView extends StatelessWidget {
   final FoodHomeController controller;
 
@@ -801,304 +733,124 @@ class RestaurantView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return Container(
-      color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              child: Row(
-                children: [
-                  Expanded(child: Text("Best Stores".tr, style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 18))),
-                  NextArrowButton(
-                    onTap: () {
-                      Get.to(const RestaurantListScreen(), arguments: {"vendorList": controller.allNearestRestaurant, "title": "Best Stores"});
-                    },
-                  ),
-                ],
-              ),
+    final l = context.dsLayout;
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: l.gutter),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DsSectionHeader(
+            title: "Best Stores".tr,
+            padding: const EdgeInsets.only(bottom: DsSpace.md),
+            trailing: NextArrowButton(
+              onTap: () {
+                Get.to(const RestaurantListScreen(), arguments: {"vendorList": controller.allNearestRestaurant, "title": "Best Stores"});
+              },
             ),
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: ListView.builder(
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                physics: const NeverScrollableScrollPhysics(),
-                scrollDirection: Axis.vertical,
-                itemCount: controller.allNearestRestaurant.length,
-                itemBuilder: (BuildContext context, int index) {
-                  VendorModel vendorModel = controller.allNearestRestaurant[index];
-                  List<CouponModel> tempList = [];
-                  List<double> discountAmountTempList = [];
-                  for (var element in controller.couponList) {
-                    if (vendorModel.id == element.vendorID && element.expiresAt!.toDate().isAfter(DateTime.now())) {
-                      tempList.add(element);
-                      discountAmountTempList.add(double.parse(element.discount.toString()));
-                    }
-                  }
-                  return InkWell(
-                    onTap: () {
-                      Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 20),
-                      child: Container(
-                        decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            ClipRRect(
-                              borderRadius: const BorderRadius.all(Radius.circular(16)),
-                              child: Stack(
-                                children: [
-                                  NetworkImageWidget(height: Responsive.height(14, context), width: Responsive.width(30, context), imageUrl: vendorModel.photo.toString(), fit: BoxFit.cover),
-                                  Container(
-                                    height: Responsive.height(14, context),
-                                    width: Responsive.width(30, context),
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(begin: const Alignment(-0.00, -1.00), end: const Alignment(0, 1), colors: [Colors.black.withOpacity(0), const Color(0xFF111827)]),
-                                    ),
-                                  ),
-                                  discountAmountTempList.isEmpty
-                                      ? const SizedBox()
-                                      : Positioned(
-                                        bottom: 0,
-                                        left: 0,
-                                        right: 0,
-                                        child: Padding(
-                                          padding: const EdgeInsets.only(bottom: 10),
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            crossAxisAlignment: CrossAxisAlignment.center,
-                                            children: [
-                                              Text(
-                                                "Upto".tr,
-                                                textAlign: TextAlign.center,
-                                                maxLines: 1,
-                                                style: TextStyle(
-                                                  overflow: TextOverflow.ellipsis,
-                                                  fontFamily: AppThemeData.regular,
-                                                  fontWeight: FontWeight.w900,
-                                                  color: isDark ? AppThemeData.grey50 : AppThemeData.grey50,
-                                                ),
-                                              ),
-                                              Text(
-                                                discountAmountTempList.reduce(min).toString() + "% OFF".tr,
-                                                textAlign: TextAlign.center,
-                                                maxLines: 1,
-                                                style: TextStyle(
-                                                  fontSize: 18,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  fontFamily: AppThemeData.semiBold,
-                                                  color: isDark ? AppThemeData.grey50 : AppThemeData.grey50,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 15),
-                            Expanded(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    vendorModel.title.toString(),
-                                    textAlign: TextAlign.start,
-                                    maxLines: 1,
-                                    style: TextStyle(fontSize: 18, overflow: TextOverflow.ellipsis, fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                                  ),
-                                  Text(
-                                    vendorModel.location.toString(),
-                                    textAlign: TextAlign.start,
-                                    maxLines: 2,
-                                    style: TextStyle(
-                                      overflow: TextOverflow.ellipsis,
-                                      fontFamily: AppThemeData.medium,
-                                      fontWeight: FontWeight.w500,
-                                      color: isDark ? AppThemeData.grey400 : AppThemeData.grey400,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 5),
-                                  SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: Row(
-                                      children: [
-                                        Visibility(
-                                          visible: (vendorModel.isSelfDelivery == true && Constant.isSelfDeliveryFeature == true),
-                                          child: Row(
-                                            children: [
-                                              SvgPicture.asset("assets/icons/ic_free_delivery.svg", width: 18),
-                                              const SizedBox(width: 5),
-                                              Text(
-                                                "Free Delivery".tr,
-                                                style: TextStyle(
-                                                  overflow: TextOverflow.ellipsis,
-                                                  fontFamily: AppThemeData.medium,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: isDark ? AppThemeData.grey400 : AppThemeData.grey400,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 10),
-                                            ],
-                                          ),
-                                        ),
-                                        Row(
-                                          children: [
-                                            Padding(
-                                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                                              child: SvgPicture.asset("assets/icons/ic_star.svg", width: 18, colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn)),
-                                            ),
-                                            Text(
-                                              "${Constant.calculateReview(reviewCount: vendorModel.reviewsCount.toString(), reviewSum: vendorModel.reviewsSum.toString())} (${vendorModel.reviewsCount!.toStringAsFixed(0)})",
-                                              textAlign: TextAlign.start,
-                                              maxLines: 1,
-                                              style: TextStyle(
-                                                overflow: TextOverflow.ellipsis,
-                                                fontFamily: AppThemeData.medium,
-                                                fontWeight: FontWeight.w500,
-                                                color: isDark ? AppThemeData.grey400 : AppThemeData.grey400,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        Row(
-                                          children: [
-                                            Padding(
-                                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                                              child: Icon(Icons.circle, size: 5, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
-                                            ),
-                                            Text(
-                                              "${Constant.getDistance(lat1: vendorModel.latitude.toString(), lng1: vendorModel.longitude.toString(), lat2: Constant.selectedLocation.location!.latitude.toString(), lng2: Constant.selectedLocation.location!.longitude.toString())} ${Constant.distanceType}",
-                                              textAlign: TextAlign.start,
-                                              maxLines: 1,
-                                              style: TextStyle(
-                                                overflow: TextOverflow.ellipsis,
-                                                fontFamily: AppThemeData.medium,
-                                                fontWeight: FontWeight.w500,
-                                                color: isDark ? AppThemeData.grey400 : AppThemeData.grey400,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+          ),
+          ListView.builder(
+            shrinkWrap: true,
+            padding: EdgeInsets.zero,
+            physics: const NeverScrollableScrollPhysics(),
+            scrollDirection: Axis.vertical,
+            itemCount: controller.allNearestRestaurant.length,
+            itemBuilder: (BuildContext context, int index) {
+              VendorModel vendorModel = controller.allNearestRestaurant[index];
+              List<CouponModel> tempList = [];
+              List<double> discountAmountTempList = [];
+              for (var element in controller.couponList) {
+                if (vendorModel.id == element.vendorID && element.expiresAt!.toDate().isAfter(DateTime.now())) {
+                  tempList.add(element);
+                  discountAmountTempList.add(double.parse(element.discount.toString()));
+                }
+              }
+              return DsFadeSlideIn(
+                index: index,
+                child: _BestStoreRow(vendorModel: vendorModel, discountAmountTempList: discountAmountTempList),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
 }
 
-Widget _buildHomeScreenTwoShimmer(bool isDark) {
-  final baseColor = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0);
-  final highlightColor = isDark ? const Color(0xFF3A3A3A) : const Color(0xFFF5F5F5);
+class _BestStoreRow extends StatelessWidget {
+  final VendorModel vendorModel;
+  final List<double> discountAmountTempList;
+  const _BestStoreRow({required this.vendorModel, required this.discountAmountTempList});
 
-  Widget box({double w = double.infinity, double h = 14, double radius = 8}) =>
-      Container(width: w, height: h, decoration: BoxDecoration(color: baseColor, borderRadius: BorderRadius.circular(radius)));
-
-  return Shimmer.fromColors(
-    baseColor: baseColor,
-    highlightColor: highlightColor,
-    child: SingleChildScrollView(
-      physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
+  @override
+  Widget build(BuildContext context) {
+    final t = context.dsText;
+    return DsCard.outlined(
+      padding: const EdgeInsets.all(DsSpace.sm),
+      margin: const EdgeInsets.only(bottom: DsSpace.md),
+      semanticLabel: vendorModel.title.toString(),
+      onTap: () {
+        Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
+      },
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 10),
-          // Header row: back icon + location block + cart icon
-          Row(
-            children: [
-              box(w: 24, h: 24, radius: 4),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [box(w: 100, h: 12), const SizedBox(height: 6), box(w: 180, h: 14)])),
-              box(w: 42, h: 42, radius: 21),
-            ],
-          ),
-          const SizedBox(height: 14),
-          // Search bar
-          box(h: 48, radius: 12),
-          const SizedBox(height: 20),
-          // Banner (comes before categories in HomeScreenTwo)
-          box(h: 160, radius: 16),
-          const SizedBox(height: 20),
-          // Category row title
-          box(w: 140, h: 16),
-          const SizedBox(height: 12),
-          // Category row
-          SizedBox(
-            height: 80,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: 5,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemBuilder: (_, __) => Column(children: [box(w: 56, h: 56, radius: 28), const SizedBox(height: 6), box(w: 44, h: 10)]),
-            ),
-          ),
-          const SizedBox(height: 20),
-          // Coupon/offer row title
-          box(w: 120, h: 16),
-          const SizedBox(height: 12),
-          // Coupon/offer cards row
-          SizedBox(
-            height: 160,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: 3,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemBuilder: (_, __) => box(w: 140, h: 160, radius: 12),
-            ),
-          ),
-          const SizedBox(height: 20),
-          // Restaurant cards title
-          box(w: 120, h: 16),
-          const SizedBox(height: 12),
-          // Restaurant cards
-          ...List.generate(
-            4,
-            (_) => Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Row(
+          ClipRRect(
+            borderRadius: DsRadius.brMd,
+            child: SizedBox(
+              width: 108,
+              height: 108,
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  box(w: 80, h: 80, radius: 12),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [box(h: 14), const SizedBox(height: 8), box(w: 120, h: 12), const SizedBox(height: 8), box(w: 80, h: 10)]),
+                  NetworkImageWidget(imageUrl: vendorModel.photo.toString(), fit: BoxFit.cover),
+                  if (discountAmountTempList.isNotEmpty) ...[
+                    const StoreMediaScrim(height: double.infinity),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: DsSpace.sm,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Text("Upto".tr, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.overline.withColor(Colors.white70)),
+                          Text(
+                            "${discountAmountTempList.reduce(min)}${"% OFF".tr}",
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: t.titleSm.withColor(Colors.white).w700.tabular,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const DsGap(DsSpace.md),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  StoreTitleBlock(vendorModel: vendorModel, compact: true),
+                  const DsGap(DsSpace.md),
+                  StoreMetaChips(
+                    vendorModel: vendorModel,
+                    showFreeDelivery: vendorModel.isSelfDelivery == true && Constant.isSelfDeliveryFeature == true,
+                    small: true,
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 20),
         ],
       ),
-    ),
-  );
+    );
+  }
 }

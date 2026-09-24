@@ -1,12 +1,9 @@
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/cab_home_controller.dart';
-import 'package:customer/controllers/theme_controller.dart';
 import 'package:customer/models/banner_model.dart';
 import 'package:customer/screen_ui/auth_screens/login_screen.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/responsive.dart';
-import 'package:customer/utils/network_image_widget.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
@@ -14,167 +11,256 @@ import 'package:get/get.dart';
 import 'intercity_home_screen.dart';
 import 'cab_booking_screen.dart';
 
+/// Cab home (archetype A — service home): a brand-gradient hero with the
+/// greeting and pickup address, an overlapping "Where are you going?" card
+/// holding the Ride / Intercity choices, then the banner rail and the
+/// driver-verification block.
 class CabHomeScreen extends StatelessWidget {
   const CabHomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: CabHomeController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            automaticallyImplyLeading: false,
-            backgroundColor: AppThemeData.primary300,
-            title: Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () {
-                      Get.offAll(const ServiceListScreen());
-                    },
-                    child: Container(
-                      height: 42,
-                      width: 42,
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: AppThemeData.grey50),
-                      child: Center(child: Padding(padding: const EdgeInsets.only(left: 5), child: Icon(Icons.arrow_back_ios, color: AppThemeData.grey900, size: 20))),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Constant.userModel == null
-                            ? InkWell(
-                              onTap: () {
-                                Get.offAll(const LoginScreen());
-                              },
-                              child: Text("Login".tr, textAlign: TextAlign.center, style: AppThemeData.boldTextStyle(color: AppThemeData.grey900, fontSize: 12)),
-                            )
-                            : Text(Constant.userModel!.fullName(), textAlign: TextAlign.center, style: AppThemeData.boldTextStyle(color: AppThemeData.grey900, fontSize: 12)),
-                        Text(Constant.selectedLocation.getFullAddress(), maxLines: 1, overflow: TextOverflow.ellipsis, style: AppThemeData.boldTextStyle(fontSize: 18, color: AppThemeData.grey900)),
-                      ],
-                    ),
-                  ),
-                ],
+        final loading = controller.isLoading.value;
+        return DsScaffold.hero(
+          onBack: () {
+            Get.offAll(const ServiceListScreen());
+          },
+          hero: const _HomeHero(),
+          heroOverlap: const _RideModePicker(),
+          slivers: [
+            if (loading)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.only(top: DsSpace.xxl),
+                  child: DsSkeletonDashboard(tiles: 2),
+                ),
+              )
+            else
+              DsSliverResponsive(
+                maxWidth: DsLayout.wideMax,
+                top: DsSpace.xl,
+                bottom: DsSpace.xxl,
+                sliver: SliverList.list(children: DsFadeSlideIn.stagger([BannerView(bannerList: controller.bannerTopHome), const _SafetyBlock()])),
               ),
-            ),
-          ),
-          body:
-              controller.isLoading.value
-                  ? Constant.loader()
-                  : Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 15),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        BannerView(bannerList: controller.bannerTopHome),
-
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            SizedBox(height: 20),
-                            Text("Where are you going for?".tr, style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 18)),
-                            SizedBox(height: 20),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Constant.sectionConstantModel!.rideType == "both" || Constant.sectionConstantModel!.rideType == "ride"
-                                    ? GestureDetector(
-                                      onTap: () {
-                                        Get.to(() => CabBookingScreen());
-                                      },
-                                      child: Container(
-                                        width: Responsive.width(40, context),
-                                        decoration: BoxDecoration(color: AppThemeData.warning50, borderRadius: BorderRadius.circular(15), border: Border.all(color: AppThemeData.warning200)),
-                                        padding: EdgeInsets.all(16),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            SvgPicture.asset("assets/icons/ic_ride.svg", height: 38, width: 38),
-                                            SizedBox(height: 20),
-                                            Text("Ride".tr, style: AppThemeData.semiBoldTextStyle(color: AppThemeData.taxiBooking500, fontSize: 16)),
-                                            Text("City rides, 24x7 availability".tr, style: AppThemeData.mediumTextStyle(color: AppThemeData.taxiBooking600, fontSize: 14)),
-                                          ],
-                                        ),
-                                      ),
-                                    )
-                                    : SizedBox(),
-                                SizedBox(width: 20),
-                                Constant.sectionConstantModel!.rideType == "both" || Constant.sectionConstantModel!.rideType == "intercity"
-                                    ? GestureDetector(
-                                      onTap: () {
-                                        Get.to(() => IntercityHomeScreen());
-                                      },
-                                      child: Container(
-                                        width: Responsive.width(44, context),
-                                        decoration: BoxDecoration(color: AppThemeData.carRent50, borderRadius: BorderRadius.circular(15), border: Border.all(color: AppThemeData.carRent200)),
-                                        padding: EdgeInsets.all(15),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            SvgPicture.asset("assets/icons/ic_intercity.svg", height: 38, width: 38),
-                                            SizedBox(height: 20),
-                                            Text("Intercity/Outstation".tr, style: AppThemeData.semiBoldTextStyle(color: AppThemeData.carRent500, fontSize: 16)),
-                                            Text("Long trips, prepaid options".tr, style: AppThemeData.mediumTextStyle(color: AppThemeData.parcelService600, fontSize: 14)),
-                                          ],
-                                        ),
-                                      ),
-                                    )
-                                    : SizedBox(),
-                              ],
-                            ),
-                            SizedBox(height: 30),
-                            Row(
-                              children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text("Every Ride. Every Driver. Verified.".tr, style: AppThemeData.boldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 22)),
-                                      Text(
-                                        "All drivers go through ID checks and background verification for your safety.".tr,
-                                        style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark700 : AppThemeData.grey700, fontSize: 14),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Expanded(child: Image.asset("assets/images/img_ride_driver.png", height: 118, width: 68)),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+          ],
         );
       },
     );
   }
 }
 
-class BannerView extends StatelessWidget {
+/// Greeting (or "Login") plus the current pickup address, on the gradient.
+class _HomeHero extends StatelessWidget {
+  const _HomeHero();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.dsText;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Constant.userModel == null
+            ? InkWell(
+                onTap: () {
+                  Get.offAll(const LoginScreen());
+                },
+                borderRadius: DsRadius.brXs,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text("Login".tr, style: t.labelSm.withColor(Colors.white)),
+                      const DsGap(DsSpace.xs),
+                      const Icon(Icons.arrow_forward_rounded, size: 14, color: Colors.white),
+                    ],
+                  ),
+                ),
+              )
+            : Text(Constant.userModel!.fullName(), style: t.labelSm.withColor(Colors.white.withValues(alpha: 0.88))),
+        const DsGap(DsSpace.xs),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(top: 3),
+              child: Icon(Icons.location_on_rounded, size: 18, color: Colors.white),
+            ),
+            const DsGap(DsSpace.sm),
+            Expanded(
+              child: Text(Constant.selectedLocation.getFullAddress(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.headline.withColor(Colors.white)),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// The overlapping card with the two ride modes the section allows.
+class _RideModePicker extends StatelessWidget {
+  const _RideModePicker();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.dsText;
+    final showRide = Constant.sectionConstantModel!.rideType == "both" || Constant.sectionConstantModel!.rideType == "ride";
+    final showIntercity = Constant.sectionConstantModel!.rideType == "both" || Constant.sectionConstantModel!.rideType == "intercity";
+    return DsCard(
+      padding: const EdgeInsets.all(DsSpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Where are you going for?".tr, style: t.titleSm),
+          const DsGap(DsSpace.md),
+          DsAdaptiveGrid(
+            minItemWidth: 150,
+            maxColumns: 2,
+            children: [
+              if (showRide)
+                _RideModeTile(
+                  asset: "assets/icons/ic_ride.svg",
+                  title: "Ride".tr,
+                  subtitle: "City rides, 24x7 availability".tr,
+                  tone: DsTone.brand,
+                  onTap: () {
+                    Get.to(() => CabBookingScreen());
+                  },
+                ),
+              if (showIntercity)
+                _RideModeTile(
+                  asset: "assets/icons/ic_intercity.svg",
+                  title: "Intercity/Outstation".tr,
+                  subtitle: "Long trips, prepaid options".tr,
+                  tone: DsTone.info,
+                  onTap: () {
+                    Get.to(() => IntercityHomeScreen());
+                  },
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RideModeTile extends StatelessWidget {
+  final String asset;
+  final String title;
+  final String subtitle;
+  final DsTone tone;
+  final VoidCallback onTap;
+
+  const _RideModeTile({required this.asset, required this.title, required this.subtitle, required this.tone, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final accent = c.tone(tone);
+    return DsCard.outlined(
+      onTap: onTap,
+      semanticLabel: title,
+      color: accent.soft,
+      borderColor: accent.main.withValues(alpha: 0.35),
+      padding: const EdgeInsets.all(DsSpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SvgPicture.asset(asset, height: 38, width: 38),
+          const DsGap(DsSpace.lg),
+          Text(title, style: t.titleSm.withColor(accent.strong)),
+          const DsGap(DsSpace.xxs),
+          Text(subtitle, style: t.bodySm.withColor(c.textSecondary)),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Every Ride. Every Driver. Verified." trust block.
+class _SafetyBlock extends StatelessWidget {
+  const _SafetyBlock();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.dsText;
+    return Padding(
+      padding: const EdgeInsets.only(top: DsSpace.xl),
+      child: DsCard.tinted(
+        tone: DsTone.success,
+        padding: const EdgeInsets.fromLTRB(DsSpace.xl, DsSpace.xl, DsSpace.sm, DsSpace.xl),
+        child: Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.verified_user_rounded, size: 18, color: context.dsColors.successStrong),
+                      const DsGap(DsSpace.sm),
+                      Text("Verified".tr.toUpperCase(), style: t.overline.withColor(context.dsColors.successStrong)),
+                    ],
+                  ),
+                  const DsGap(DsSpace.sm),
+                  Text("Every Ride. Every Driver. Verified.".tr, style: t.headline),
+                  const DsGap(DsSpace.xs),
+                  Text("All drivers go through ID checks and background verification for your safety.".tr, style: t.bodySecondary),
+                ],
+              ),
+            ),
+            const DsGap(DsSpace.sm),
+            Expanded(child: Image.asset("assets/images/img_ride_driver.png", height: 118, fit: BoxFit.contain)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Promotional banner rail with a progress-style page indicator.
+class BannerView extends StatefulWidget {
   final List<BannerModel> bannerList;
+
+  const BannerView({super.key, required this.bannerList});
+
+  @override
+  State<BannerView> createState() => _BannerViewState();
+}
+
+class _BannerViewState extends State<BannerView> {
   final RxInt currentPage = 0.obs;
   final ScrollController scrollController = ScrollController();
 
-  BannerView({super.key, required this.bannerList});
+  @override
+  void initState() {
+    super.initState();
+    scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    scrollController.removeListener(_onScroll);
+    scrollController.dispose();
+    super.dispose();
+  }
 
   /// Computes the visible item index from scroll offset
-  void onScroll(BuildContext context) {
-    if (scrollController.hasClients && bannerList.isNotEmpty) {
+  void _onScroll() {
+    if (scrollController.hasClients && widget.bannerList.isNotEmpty) {
       final screenWidth = MediaQuery.of(context).size.width;
       final itemWidth = screenWidth * 0.8 + 10; // banner width + spacing
       final offset = scrollController.offset;
       final index = (offset / itemWidth).round();
 
-      if (index != currentPage.value && index < bannerList.length) {
+      if (index != currentPage.value && index < widget.bannerList.length) {
         currentPage.value = index;
       }
     }
@@ -182,41 +268,51 @@ class BannerView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    scrollController.addListener(() {
-      onScroll(context);
-    });
-
-    return bannerList.isEmpty
-        ? SizedBox()
-        : Column(
-          children: [
-            SizedBox(height: 20),
-            SizedBox(
-              height: 150,
-              child: ListView.separated(
-                controller: scrollController,
-                scrollDirection: Axis.horizontal,
-                itemCount: bannerList.length,
-                separatorBuilder: (context, index) => const SizedBox(width: 15),
-                itemBuilder: (context, index) {
-                  final banner = bannerList[index];
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(15),
-                    child: SizedBox(width: MediaQuery.of(context).size.width * 0.8, child: NetworkImageWidget(imageUrl: banner.photo ?? '', fit: BoxFit.cover)),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 8),
-            Obx(() {
-              return Row(
-                children: List.generate(bannerList.length, (index) {
-                  bool isSelected = currentPage.value == index;
-                  return Expanded(child: Container(height: 4, decoration: BoxDecoration(color: isSelected ? AppThemeData.grey300 : AppThemeData.grey100, borderRadius: BorderRadius.circular(5))));
-                }),
+    final c = context.dsColors;
+    final l = context.dsLayout;
+    if (widget.bannerList.isEmpty) return const SizedBox();
+    final bannerWidth = (MediaQuery.sizeOf(context).width * 0.8).clamp(240.0, 520.0);
+    return Column(
+      children: [
+        SizedBox(
+          height: l.value(phone: 150.0, tablet: 200.0),
+          child: ListView.separated(
+            controller: scrollController,
+            scrollDirection: Axis.horizontal,
+            itemCount: widget.bannerList.length,
+            separatorBuilder: (context, index) => const DsGap(DsSpace.lg),
+            itemBuilder: (context, index) {
+              final banner = widget.bannerList[index];
+              return DsFadeSlideIn(
+                index: index,
+                child: SizedBox(
+                  width: bannerWidth,
+                  child: DsImage(url: banner.photo ?? '', radius: DsRadius.lg, fit: BoxFit.cover),
+                ),
+              );
+            },
+          ),
+        ),
+        const DsGap(DsSpace.md),
+        Obx(() {
+          return Row(
+            children: List.generate(widget.bannerList.length, (index) {
+              final bool isSelected = currentPage.value == index;
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: AnimatedContainer(
+                    duration: DsMotion.of(context, DsMotion.base),
+                    curve: DsMotion.standard,
+                    height: 4,
+                    decoration: BoxDecoration(color: isSelected ? c.brand : c.surfaceAlt, borderRadius: DsRadius.brPill),
+                  ),
+                ),
               );
             }),
-          ],
-        );
+          );
+        }),
+      ],
+    );
   }
 }

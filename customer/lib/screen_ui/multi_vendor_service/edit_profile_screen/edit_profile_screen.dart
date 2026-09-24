@@ -1,108 +1,142 @@
 import 'dart:io';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/edit_profile_controller.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/responsive.dart';
-import 'package:customer/themes/round_button_fill.dart';
-import 'package:customer/themes/text_field_widget.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/network_image_widget.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../../controllers/theme_controller.dart';
 
+/// Archetype **H — profile form**: an avatar hero with an edit affordance,
+/// grouped form sections and the save action in a sticky bar.
 class EditProfileScreen extends StatelessWidget {
   const EditProfileScreen({super.key});
 
+  static const double _avatarSize = 108;
+
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: EditProfileController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(centerTitle: false, titleSpacing: 0, backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface),
+        final c = context.dsColors;
+        final t = context.dsText;
+        final l = context.dsLayout;
+        final imagePath = controller.profileImage.value;
+        final hasImage = controller.profileImage.isNotEmpty;
+        final isRemote = Constant().hasValidUrl(imagePath) == true;
+
+        final nameFields = [
+          DsTextField(label: 'First Name'.tr, controller: controller.firstNameController.value, hint: 'First Name'.tr, textCapitalization: TextCapitalization.words),
+          DsTextField(label: 'Last Name'.tr, controller: controller.lastNameController.value, hint: 'Last Name'.tr, textCapitalization: TextCapitalization.words),
+        ];
+
+        return DsScaffold(
+          title: "Profile Information".tr,
+          maxContentWidth: DsLayout.contentMax,
+          bottomBar: DsStickyBar(
+            child: DsButton.primary(
+              label: "Save Details".tr,
+              size: DsButtonSize.lg,
+              expand: true,
+              icon: Icons.check_rounded,
+              onPressed: () async {
+                controller.saveData();
+              },
+            ),
+          ),
           body: SingleChildScrollView(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.sm, l.gutter, DsSpace.xxxl),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Profile Information".tr,
-                    style: TextStyle(fontSize: 24, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w500),
-                  ),
-                  Text(
-                    "View and update your personal details, contact information, and preferences.".tr,
-                    style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
-                  ),
-                  const SizedBox(height: 20),
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: DsFadeSlideIn.stagger([
+                  Text("View and update your personal details, contact information, and preferences.".tr, style: t.bodySecondary),
+                  const DsGap(DsSpace.xxl),
                   Center(
                     child: Stack(
+                      clipBehavior: Clip.none,
                       children: [
-                        controller.profileImage.isEmpty
-                            ? ClipRRect(
-                              borderRadius: BorderRadius.circular(60),
-                              child: Image.asset(Constant.userPlaceHolder, height: Responsive.width(24, context), width: Responsive.width(24, context), fit: BoxFit.cover),
-                            )
-                            : Constant().hasValidUrl(controller.profileImage.value) == false
-                            ? ClipRRect(
-                              borderRadius: BorderRadius.circular(60),
-                              child: Image.file(File(controller.profileImage.value), height: Responsive.width(24, context), width: Responsive.width(24, context), fit: BoxFit.cover),
-                            )
-                            : ClipRRect(
-                              borderRadius: BorderRadius.circular(60),
-                              child: NetworkImageWidget(
-                                fit: BoxFit.cover,
-                                imageUrl: controller.profileImage.value,
-                                height: Responsive.width(24, context),
-                                width: Responsive.width(24, context),
-                                errorWidget: Image.asset(Constant.userPlaceHolder, fit: BoxFit.cover, height: Responsive.width(24, context), width: Responsive.width(24, context)),
-                              ),
+                        Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(shape: BoxShape.circle, gradient: DsGradients.brand(context), boxShadow: DsShadows.glow(context)),
+                          child: ClipOval(
+                            child: SizedBox.square(
+                              dimension: _avatarSize,
+                              child: !hasImage
+                                  ? Image.asset(Constant.userPlaceHolder, fit: BoxFit.cover)
+                                  : !isRemote
+                                  ? Image.file(File(imagePath), fit: BoxFit.cover)
+                                  : NetworkImageWidget(
+                                      fit: BoxFit.cover,
+                                      imageUrl: imagePath,
+                                      height: _avatarSize,
+                                      width: _avatarSize,
+                                      errorWidget: Image.asset(Constant.userPlaceHolder, fit: BoxFit.cover, height: _avatarSize, width: _avatarSize),
+                                    ),
                             ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: InkWell(
-                            onTap: () {
-                              buildBottomSheet(context, controller);
-                            },
-                            child: SvgPicture.asset("assets/icons/ic_edit.svg"),
+                          ),
+                        ),
+                        PositionedDirectional(
+                          bottom: -4,
+                          end: -4,
+                          child: Material(
+                            color: c.surface,
+                            shape: const CircleBorder(),
+                            child: DsIconButton(
+                              icon: Icons.photo_camera_outlined,
+                              semanticLabel: "please select".tr,
+                              variant: DsIconButtonVariant.filled,
+                              size: 40,
+                              onPressed: () {
+                                buildBottomSheet(context, controller);
+                              },
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  Row(
+                  const DsGap(DsSpace.xxl),
+                  DsFormSection(
+                    title: 'Profile Information'.tr,
+                    icon: Icons.person_outline_rounded,
                     children: [
-                      Expanded(child: TextFieldWidget(title: 'First Name'.tr, controller: controller.firstNameController.value, hintText: 'First Name'.tr)),
-                      const SizedBox(width: 10),
-                      Expanded(child: TextFieldWidget(title: 'Last Name'.tr, controller: controller.lastNameController.value, hintText: 'Last Name'.tr)),
+                      if (l.isTablet || l.isDesktop) DsAdaptiveGrid(minItemWidth: 200, equalHeight: false, children: nameFields) else ...nameFields,
                     ],
                   ),
-                  TextFieldWidget(title: 'Email'.tr, textInputType: TextInputType.emailAddress, controller: controller.emailController.value, hintText: 'Email'.tr, enable: false),
-                  TextFieldWidget(title: 'Phone Number'.tr, textInputType: TextInputType.emailAddress, controller: controller.phoneNumberController.value, hintText: 'Phone Number'.tr, enable: false),
-                ],
-              ),
-            ),
-          ),
-          bottomNavigationBar: Container(
-            color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: RoundedButtonFill(
-                title: "Save Details".tr,
-                height: 5.5,
-                color: AppThemeData.primary300,
-                textColor: AppThemeData.grey50,
-                fontSizes: 16,
-                onPress: () async {
-                  controller.saveData();
-                },
+                  DsFormSection(
+                    title: 'Contact'.tr,
+                    icon: Icons.contact_mail_outlined,
+                    children: [
+                      DsTextField(
+                        label: 'Email'.tr,
+                        keyboardType: TextInputType.emailAddress,
+                        controller: controller.emailController.value,
+                        hint: 'Email'.tr,
+                        enabled: false,
+                        prefixIcon: Icons.mail_outline_rounded,
+                      ),
+                      DsTextField(
+                        label: 'Phone Number'.tr,
+                        keyboardType: TextInputType.emailAddress,
+                        controller: controller.phoneNumberController.value,
+                        hint: 'Phone Number'.tr,
+                        enabled: false,
+                        prefixIcon: Icons.smartphone_rounded,
+                        bottomSpacing: 0,
+                      ),
+                    ],
+                  ),
+                  const DsGap(DsSpace.md),
+                  Row(
+                    children: [
+                      Icon(Icons.lock_outline_rounded, size: 16, color: c.textMuted),
+                      const DsGap(DsSpace.sm),
+                      Expanded(child: Text("Email and phone number are verified and cannot be edited here.".tr, style: t.caption)),
+                    ],
+                  ),
+                ]),
               ),
             ),
           ),
@@ -114,41 +148,28 @@ class EditProfileScreen extends StatelessWidget {
   Future buildBottomSheet(BuildContext context, EditProfileController controller) {
     return showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.transparent,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setState) {
-            return SizedBox(
-              height: Responsive.height(22, context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
+            return DsSheet(
+              title: "please select".tr,
+              child: Row(
                 children: [
-                  Padding(padding: const EdgeInsets.only(top: 15), child: Text("please select".tr, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(18.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            IconButton(onPressed: () => controller.pickFile(source: ImageSource.camera), icon: const Icon(Icons.camera_alt, size: 32)),
-                            Padding(padding: const EdgeInsets.only(top: 3), child: Text("camera".tr, style: const TextStyle())),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(18.0),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            IconButton(onPressed: () => controller.pickFile(source: ImageSource.gallery), icon: const Icon(Icons.photo_library_sharp, size: 32)),
-                            Padding(padding: const EdgeInsets.only(top: 3), child: Text("gallery".tr, style: const TextStyle())),
-                          ],
-                        ),
-                      ),
-                    ],
+                  Expanded(
+                    child: _PickerTile(
+                      icon: Icons.photo_camera_outlined,
+                      label: "camera".tr,
+                      onTap: () => controller.pickFile(source: ImageSource.camera),
+                    ),
+                  ),
+                  const DsGap(DsSpace.md),
+                  Expanded(
+                    child: _PickerTile(
+                      icon: Icons.photo_library_outlined,
+                      label: "gallery".tr,
+                      onTap: () => controller.pickFile(source: ImageSource.gallery),
+                    ),
                   ),
                 ],
               ),
@@ -156,6 +177,32 @@ class EditProfileScreen extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+/// One source choice in the "please select" sheet.
+class _PickerTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _PickerTile({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.dsText;
+    return DsCard.outlined(
+      padding: const EdgeInsets.symmetric(vertical: DsSpace.xl, horizontal: DsSpace.md),
+      onTap: onTap,
+      semanticLabel: label,
+      child: Column(
+        children: [
+          DsIconWell(icon: icon, tone: DsTone.brand, size: 52, circle: true),
+          const DsGap(DsSpace.md),
+          Text(label, textAlign: TextAlign.center, style: t.label),
+        ],
+      ),
     );
   }
 }

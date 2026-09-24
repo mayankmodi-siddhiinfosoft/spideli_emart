@@ -3,57 +3,50 @@ import 'package:customer/controllers/advertisement_list_controller.dart';
 import 'package:customer/models/advertisement_model.dart';
 import 'package:customer/models/favourite_model.dart';
 import 'package:customer/models/vendor_model.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/responsive.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/network_image_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
 
-import '../../../controllers/theme_controller.dart';
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
 import '../../../widget/video_widget.dart';
 import '../restaurant_details_screen/restaurant_details_screen.dart';
 
+/// Archetype B — a promoted-media feed. Every entry is a wide media card
+/// (photo or video) with the store identity on a floating footer.
 class AllAdvertisementScreen extends StatelessWidget {
   const AllAdvertisementScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-
     return GetX(
       init: AdvertisementListController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-            centerTitle: false,
-            titleSpacing: 0,
-            title: Text(
-              "Highlights for you".tr,
-              textAlign: TextAlign.start,
-              style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-            ),
-          ),
-          body:
-              controller.isLoading.value
-                  ? Constant.loader()
-                  : controller.advertisementList.isEmpty
-                  ? Constant.showEmptyView(message: "Highlights for you not found.".tr)
-                  : Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: ListView.builder(
-                      physics: const BouncingScrollPhysics(),
-                      itemCount: controller.advertisementList.length,
-                      padding: EdgeInsets.all(0),
-                      itemBuilder: (BuildContext context, int index) {
-                        return AdvertisementCard(controller: controller, model: controller.advertisementList[index]);
-                      },
-                    ),
-                  ),
+        final isLoading = controller.isLoading.value;
+        final ads = controller.advertisementList;
+        return DsScaffold.collapsing(
+          title: "Highlights for you".tr,
+          subtitle: isLoading || ads.isEmpty ? null : '${ads.length} ${"Promotions".tr}',
+          slivers: [
+            if (isLoading)
+              const SliverToBoxAdapter(child: DsSkeletonList(itemCount: 3, leading: false, trailing: false))
+            else if (ads.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: DsEmptyState(icon: Icons.campaign_outlined, title: "Highlights for you not found.".tr, message: "Featured stores and clips will show up here.".tr),
+              )
+            else
+              DsSliverResponsive(
+                sliver: SliverList.builder(
+                  itemCount: ads.length,
+                  itemBuilder: (BuildContext context, int index) {
+                    return DsFadeSlideIn(index: index, child: AdvertisementCard(controller: controller, model: ads[index]));
+                  },
+                ),
+              ),
+          ],
         );
       },
     );
@@ -68,106 +61,95 @@ class AdvertisementCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return InkWell(
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard(
+      padding: EdgeInsets.zero,
+      margin: const EdgeInsets.only(bottom: DsSpace.lg),
+      clipBehavior: Clip.antiAlias,
+      semanticLabel: model.title ?? '',
       onTap: () async {
         ShowToastDialog.showLoader("Please wait...".tr);
         VendorModel? vendorModel = await FireStoreUtils.getVendorById(model.vendorId!);
         ShowToastDialog.closeLoader();
         Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
       },
-      child: Container(
-        margin: EdgeInsets.only(bottom: 16),
-        width: Responsive.width(80, context),
-        decoration: BoxDecoration(
-          color: isDark ? AppThemeData.info600 : AppThemeData.surface,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: isDark ? 6 : 2, spreadRadius: 0, offset: Offset(0, isDark ? 3 : 1))],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Stack(
-              children: [
-                model.type == 'restaurant_promotion'
-                    ? ClipRRect(
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                      child: NetworkImageWidget(imageUrl: model.coverImage ?? '', height: 150, width: double.infinity, fit: BoxFit.cover),
-                    )
-                    : VideoAdvWidget(url: model.video ?? '', height: 150, width: double.infinity),
-                if (model.type != 'video_promotion' && model.vendorId != null && (model.showRating == true || model.showReview == true))
-                  Positioned(
-                    bottom: 8,
-                    right: 8,
-                    child: FutureBuilder(
-                      future: FireStoreUtils.getVendorById(model.vendorId!),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Stack(
+            children: [
+              model.type == 'restaurant_promotion'
+                  ? NetworkImageWidget(imageUrl: model.coverImage ?? '', height: 190, width: double.infinity, fit: BoxFit.cover)
+                  : VideoAdvWidget(url: model.video ?? '', height: 190, width: double.infinity),
+              if (model.type != 'video_promotion' && model.vendorId != null && (model.showRating == true || model.showReview == true))
+                Positioned(
+                  bottom: 8,
+                  right: 8,
+                  child: FutureBuilder(
+                    future: FireStoreUtils.getVendorById(model.vendorId!),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const SizedBox();
+                      } else {
+                        if (snapshot.hasError) {
+                          return const SizedBox();
+                        } else if (snapshot.data == null) {
                           return const SizedBox();
                         } else {
-                          if (snapshot.hasError) {
-                            return const SizedBox();
-                          } else if (snapshot.data == null) {
-                            return const SizedBox();
-                          } else {
-                            VendorModel vendorModel = snapshot.data!;
-                            return Container(
-                              decoration: ShapeDecoration(color: isDark ? AppThemeData.primary600 : AppThemeData.primary50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120))),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                child: Row(
-                                  children: [
-                                    if (model.showRating == true) SvgPicture.asset("assets/icons/ic_star.svg", colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn)),
-                                    if (model.showRating == true) const SizedBox(width: 5),
-                                    Text(
-                                      "${model.showRating == true ? Constant.calculateReview(reviewCount: vendorModel.reviewsCount!.toStringAsFixed(0), reviewSum: vendorModel.reviewsSum.toString()) : ''}${model.showRating == true && model.showReview == true ? ' ' : ''}${model.showReview == true ? '(${vendorModel.reviewsCount!.toStringAsFixed(0)})' : ''}",
-                                      style: TextStyle(color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                    ),
-                                  ],
+                          VendorModel vendorModel = snapshot.data!;
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+                            decoration: BoxDecoration(color: c.brandSoft, borderRadius: DsRadius.brPill),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (model.showRating == true) SvgPicture.asset("assets/icons/ic_star.svg", width: 14, height: 14, colorFilter: ColorFilter.mode(c.brandStrong, BlendMode.srcIn)),
+                                if (model.showRating == true) const DsGap(DsSpace.xs),
+                                Text(
+                                  "${model.showRating == true ? Constant.calculateReview(reviewCount: vendorModel.reviewsCount!.toStringAsFixed(0), reviewSum: vendorModel.reviewsSum.toString()) : ''}${model.showRating == true && model.showReview == true ? ' ' : ''}${model.showReview == true ? '(${vendorModel.reviewsCount!.toStringAsFixed(0)})' : ''}",
+                                  style: t.label.withColor(c.brandStrong).tabular,
                                 ),
-                              ),
-                            );
-                          }
+                              ],
+                            ),
+                          );
                         }
-                      },
-                    ),
+                      }
+                    },
                   ),
-              ],
-            ),
-            Padding(
-              padding: EdgeInsets.all(12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (model.type == 'restaurant_promotion')
-                    ClipRRect(borderRadius: BorderRadius.circular(30), child: NetworkImageWidget(imageUrl: model.profileImage ?? '', height: 50, width: 50, fit: BoxFit.cover)),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          model.title ?? '',
-                          style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16, fontWeight: FontWeight.bold),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          model.description ?? '',
-                          style: TextStyle(fontSize: 14, fontFamily: AppThemeData.medium, color: isDark ? AppThemeData.grey400 : AppThemeData.grey600),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
-                        ),
-                      ],
-                    ),
+                ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.all(DsSpace.md),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (model.type == 'restaurant_promotion') ...[
+                  ClipOval(child: NetworkImageWidget(imageUrl: model.profileImage ?? '', height: 48, width: 48, fit: BoxFit.cover)),
+                  const DsGap(DsSpace.md),
+                ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(model.title ?? '', style: t.titleSm.w600, overflow: TextOverflow.ellipsis, maxLines: 1),
+                      const DsGap(DsSpace.xxs),
+                      Text(model.description ?? '', style: t.bodySm, overflow: TextOverflow.ellipsis, maxLines: 2),
+                    ],
                   ),
-                  model.type == 'restaurant_promotion'
-                      ? Obx(
-                        () => IconButton(
-                          icon:
-                              controller.favouriteList.where((p0) => p0.restaurantId == model.vendorId).isNotEmpty
-                                  ? SvgPicture.asset("assets/icons/ic_like_fill.svg")
-                                  : SvgPicture.asset("assets/icons/ic_like.svg", colorFilter: ColorFilter.mode(isDark ? AppThemeData.grey400 : AppThemeData.grey600, BlendMode.srcIn)),
+                ),
+                const DsGap(DsSpace.sm),
+                model.type == 'restaurant_promotion'
+                    // Favourite state is observable: read it inside its own
+                    // observer so only the heart rebuilds.
+                    ? Obx(
+                        () => DsIconButton(
+                          semanticLabel: controller.favouriteList.where((p0) => p0.restaurantId == model.vendorId).isNotEmpty ? "Remove from favourites".tr : "Add to favourites".tr,
+                          child: controller.favouriteList.where((p0) => p0.restaurantId == model.vendorId).isNotEmpty
+                              ? SvgPicture.asset("assets/icons/ic_like_fill.svg", width: 20, height: 20)
+                              : SvgPicture.asset("assets/icons/ic_like.svg", width: 20, height: 20, colorFilter: ColorFilter.mode(c.iconDefault, BlendMode.srcIn)),
                           onPressed: () async {
                             if (controller.favouriteList.where((p0) => p0.restaurantId == model.vendorId).isNotEmpty) {
                               FavouriteModel favouriteModel = FavouriteModel(restaurantId: model.vendorId, userId: FireStoreUtils.getCurrentUid());
@@ -181,15 +163,11 @@ class AdvertisementCard extends StatelessWidget {
                           },
                         ),
                       )
-                      : Container(
-                        decoration: ShapeDecoration(color: isDark ? AppThemeData.primary600 : AppThemeData.primary50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5))),
-                        child: Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), child: Icon(Icons.arrow_forward, size: 20, color: AppThemeData.primary300)),
-                      ),
-                ],
-              ),
+                    : DsIconWell(icon: Icons.arrow_forward_rounded, size: 40),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -6,18 +6,23 @@ import 'package:customer/models/section_model.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/screen_ui/location_enable_screens/address_list_screen.dart';
 import 'package:customer/screen_ui/service_home_screen/more_services_sheet.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/home_services.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../controllers/service_list_controller.dart';
 import '../../controllers/theme_controller.dart';
-import '../../themes/app_them_data.dart';
 import '../../utils/network_image_widget.dart';
 
 /// Customer home (spec 7.1, client mock-up): header with the Spideli logo and
 /// the delivery location, top banner carousel, the 8 favourite services on a
 /// circle around a round "More" button, then the lower banners (one full
 /// width, the rest in a grid). "More" opens the full services panel (7.2).
+///
+/// Archetype A — service launcher. The chrome is deliberately neutral: this
+/// screen is also shown *after* leaving a service, when `c.brand` still holds
+/// that service's colour, so every tile is coloured from its own
+/// `SectionModel.color` via [DsAccentScope].
 class ServiceListScreen extends StatelessWidget {
   const ServiceListScreen({super.key});
 
@@ -28,42 +33,84 @@ class ServiceListScreen extends StatelessWidget {
       init: ServiceListController(),
       builder: (controller) {
         final bool isDark = themeController.isDark.value;
+        final c = context.dsColors;
         return Scaffold(
-          backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-          body: SafeArea(
-            child:
-                controller.isLoading.value
-                    ? const Center(child: CircularProgressIndicator())
-                    : RefreshIndicator(
-                      onRefresh: controller.loadData,
-                      child: ListView(
-                        padding: const EdgeInsets.only(bottom: 24),
-                        children: [
-                          _HomeHeader(controller: controller, isDark: isDark),
-                          if (controller.topBanners.isNotEmpty) ...[
-                            const SizedBox(height: 12),
-                            _TopBannerCarousel(banners: controller.topBanners.toList(), onTap: (b) => controller.onBannerTap(context, b), isDark: isDark),
-                          ],
-                          const SizedBox(height: 20),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: ServiceCircle(
-                              services: controller.favouriteList.toList(),
-                              isDark: isDark,
-                              onServiceTap: (section) => controller.onServiceTap(context, section),
-                              onMoreTap: () => MoreServicesSheet.show(context, controller: controller, isDark: isDark),
-                            ),
+          backgroundColor: c.background,
+          body: controller.isLoading.value
+              ? const _HomeSkeleton()
+              : RefreshIndicator(
+                  onRefresh: controller.loadData,
+                  color: c.brand,
+                  backgroundColor: c.surface,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                    padding: const EdgeInsets.only(bottom: DsSpace.xxxl),
+                    children: [
+                      _HomeHeader(controller: controller, isDark: isDark),
+                      if (controller.topBanners.isNotEmpty) ...[
+                        const DsGap(DsSpace.lg),
+                        _TopBannerCarousel(banners: controller.topBanners.toList(), onTap: (b) => controller.onBannerTap(context, b), isDark: isDark),
+                      ],
+                      const DsGap(DsSpace.xl),
+                      DsResponsive(
+                        maxWidth: DsLayout.contentMax,
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: context.dsLayout.gutter),
+                          child: ServiceCircle(
+                            services: controller.favouriteList.toList(),
+                            isDark: isDark,
+                            onServiceTap: (section) => controller.onServiceTap(context, section),
+                            onMoreTap: () => MoreServicesSheet.show(context, controller: controller, isDark: isDark),
                           ),
-                          if (controller.lowerBanners.isNotEmpty) ...[
-                            const SizedBox(height: 20),
-                            _LowerBanners(banners: controller.lowerBanners.toList(), onTap: (b) => controller.onBannerTap(context, b)),
-                          ],
-                        ],
+                        ),
                       ),
-                    ),
-          ),
+                      if (controller.lowerBanners.isNotEmpty) ...[
+                        const DsGap(DsSpace.xl),
+                        _LowerBanners(banners: controller.lowerBanners.toList(), onTap: (b) => controller.onBannerTap(context, b)),
+                      ],
+                    ],
+                  ),
+                ),
         );
       },
+    );
+  }
+}
+
+/// Brand-neutral loading state for the launcher: logo bar, banner, ring.
+class _HomeSkeleton extends StatelessWidget {
+  const _HomeSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.dsLayout;
+    return SafeArea(
+      child: DsShimmer(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: l.gutter, vertical: DsSpace.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  DsSkeleton.box(width: 44, height: 44, radius: DsRadius.md),
+                  const DsGap(DsSpace.md),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [DsSkeleton.line(width: 110), const DsGap(DsSpace.sm), DsSkeleton.line(width: 170, height: 10)],
+                  ),
+                ],
+              ),
+              const DsGap(DsSpace.xxl),
+              DsSkeleton.box(height: 160, radius: DsRadius.lg),
+              const DsGap(DsSpace.xxxl),
+              Center(child: DsSkeleton.circle(size: 300)),
+              const DsGap(DsSpace.xxxl),
+              DsSkeleton.box(height: 150, radius: DsRadius.lg),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -76,41 +123,60 @@ class _HomeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.dsText;
+    final l = context.dsLayout;
     final String address = Constant.selectedLocation.getFullAddress().trim();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Row(
-        children: [
-          ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.asset('assets/images/ic_logo.png', height: 40, width: 40, fit: BoxFit.contain)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+    return Container(
+      decoration: BoxDecoration(gradient: DsGradients.brand(context)),
+      child: SafeArea(
+        bottom: false,
+        child: DsResponsive(
+          maxWidth: DsLayout.contentMax,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.md, l.gutter, DsSpace.xl),
+            child: Row(
               children: [
-                Text("spideli".tr, style: AppThemeData.boldTextStyle(fontSize: 20, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
-                InkWell(
-                  onTap: Constant.userModel == null ? null : () => _changeAddress(),
-                  child: Row(
+                Container(
+                  padding: const EdgeInsets.all(DsSpace.xs),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: DsRadius.brMd),
+                  child: ClipRRect(borderRadius: DsRadius.brSm, child: Image.asset('assets/images/ic_logo.png', height: 36, width: 36, fit: BoxFit.contain)),
+                ),
+                const DsGap(DsSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.location_on_outlined, size: 16, color: AppThemeData.primary300),
-                      const SizedBox(width: 2),
-                      Flexible(
-                        child: Text(
-                          address.isEmpty ? "Delivery location".tr : address,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppThemeData.mediumTextStyle(fontSize: 13, color: isDark ? AppThemeData.grey300 : AppThemeData.grey700),
+                      Text("spideli".tr, style: t.title.withColor(Colors.white).w700),
+                      const DsGap(DsSpace.xxs),
+                      DsPressable(
+                        onTap: Constant.userModel == null ? null : () => _changeAddress(),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: DsSpace.xxs),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.location_on_outlined, size: 16, color: Colors.white),
+                              const DsGap(DsSpace.xxs),
+                              Flexible(
+                                child: Text(
+                                  address.isEmpty ? "Delivery location".tr : address,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: t.bodySm.withColor(Colors.white.withValues(alpha: 0.92)),
+                                ),
+                              ),
+                              if (Constant.userModel != null) const Icon(Icons.keyboard_arrow_down, size: 18, color: Colors.white),
+                            ],
+                          ),
                         ),
                       ),
-                      if (Constant.userModel != null) Icon(Icons.keyboard_arrow_down, size: 18, color: isDark ? AppThemeData.grey300 : AppThemeData.grey700),
                     ],
                   ),
                 ),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -142,6 +208,8 @@ class ServiceCircle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
     return LayoutBuilder(
       builder: (context, constraints) {
         final double size = math.min(constraints.maxWidth, 380);
@@ -161,7 +229,8 @@ class ServiceCircle extends StatelessWidget {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                // Decorative ring behind the services.
+                // Decorative ring behind the services. Neutral, because the
+                // services around it each carry their own colour.
                 Positioned(
                   left: 0,
                   top: 0,
@@ -172,8 +241,8 @@ class ServiceCircle extends StatelessWidget {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(color: (isDark ? AppThemeData.greyDark200 : AppThemeData.grey200), width: 1.5),
-                        color: AppThemeData.primary300.withValues(alpha: isDark ? 0.06 : 0.04),
+                        border: Border.all(color: c.border, width: 1.5),
+                        gradient: RadialGradient(colors: [c.surface, c.surfaceAlt.withValues(alpha: 0.7)]),
                       ),
                     ),
                   ),
@@ -187,7 +256,11 @@ class ServiceCircle extends StatelessWidget {
                       top: p.dy - iconSize / 2 - 4,
                       width: itemWidth,
                       height: itemHeight,
-                      child: ServiceBubble(section: services[i], iconSize: iconSize, isDark: isDark, onTap: () => onServiceTap(services[i])),
+                      child: DsFadeSlideIn(
+                        index: i,
+                        offset: const Offset(0, 10),
+                        child: ServiceBubble(section: services[i], iconSize: iconSize, isDark: isDark, onTap: () => onServiceTap(services[i])),
+                      ),
                     );
                   }(),
                 Positioned(
@@ -195,19 +268,29 @@ class ServiceCircle extends StatelessWidget {
                   top: center.dy - moreSize / 2,
                   width: moreSize,
                   height: moreSize,
-                  child: Material(
-                    color: AppThemeData.primary300,
-                    shape: const CircleBorder(),
-                    elevation: 4,
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: onMoreTap,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.apps_rounded, color: AppThemeData.surface, size: moreSize * 0.32),
-                          Text("More".tr, style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: AppThemeData.surface)),
-                        ],
+                  child: Semantics(
+                    button: true,
+                    label: "More".tr,
+                    child: Container(
+                      decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: DsShadows.md(context)),
+                      child: Material(
+                        color: Colors.transparent,
+                        shape: const CircleBorder(),
+                        child: Ink(
+                          decoration: BoxDecoration(shape: BoxShape.circle, gradient: DsGradients.brand(context)),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: onMoreTap,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.apps_rounded, color: Colors.white, size: moreSize * 0.30),
+                                const DsGap(DsSpace.xxs),
+                                Text("More".tr, style: t.labelSm.withColor(Colors.white)),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -221,7 +304,8 @@ class ServiceCircle extends StatelessWidget {
   }
 }
 
-/// A round service icon with its name underneath.
+/// A round service icon with its name underneath, tinted with that service's
+/// own colour (never the last-opened service's brand).
 class ServiceBubble extends StatelessWidget {
   final SectionModel section;
   final double iconSize;
@@ -232,34 +316,54 @@ class ServiceBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color tint = Color(int.tryParse(section.color?.replaceFirst("#", "0xff") ?? '') ?? AppThemeData.primary300.toARGB32());
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: iconSize,
-            height: iconSize,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isDark ? AppThemeData.greyDark50 : AppThemeData.surface,
-              border: Border.all(color: tint.withValues(alpha: 0.5), width: 1.5),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08), blurRadius: 6, offset: const Offset(0, 2))],
-            ),
-            padding: EdgeInsets.all(iconSize * 0.18),
-            child: ClipOval(child: NetworkImageWidget(imageUrl: section.sectionImage ?? '', fit: BoxFit.contain, showShimmer: false)),
+    final c = context.dsColors;
+    final t = context.dsText;
+    final Color tint = DsColors.fromHex(section.color) ?? c.brand;
+    final accent = c.accentFrom(tint);
+    return DsAccentScope(
+      color: tint,
+      retheme: false,
+      child: Semantics(
+        button: true,
+        label: (section.name ?? '').tr,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: DsRadius.brMd,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: iconSize,
+                height: iconSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: accent.soft,
+                  border: Border.all(color: tint.withValues(alpha: 0.55), width: 1.5),
+                  boxShadow: DsShadows.sm(context),
+                ),
+                padding: EdgeInsets.all(iconSize * 0.18),
+                child: ClipOval(
+                  child: NetworkImageWidget(
+                    imageUrl: section.sectionImage ?? '',
+                    fit: BoxFit.contain,
+                    showShimmer: false,
+                    errorWidget: Icon(DsSection.fromServiceFlag(section.serviceTypeFlag).icon, color: accent.strong, size: iconSize * 0.4),
+                  ),
+                ),
+              ),
+              const DsGap(DsSpace.xs),
+              Flexible(
+                child: Text(
+                  (section.name ?? '').tr,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.caption.withColor(c.textPrimary).copyWith(fontSize: 11),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            (section.name ?? '').tr,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: AppThemeData.mediumTextStyle(fontSize: 11, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -306,44 +410,51 @@ class _TopBannerCarouselState extends State<_TopBannerCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        SizedBox(
-          height: 160,
-          child: PageView.builder(
-            controller: _pageController,
-            itemCount: widget.banners.length,
-            onPageChanged: (i) => setState(() => _page = i),
-            itemBuilder:
-                (context, index) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: GestureDetector(
-                    onTap: () => widget.onTap(widget.banners[index]),
-                    child: ClipRRect(borderRadius: BorderRadius.circular(14), child: NetworkImageWidget(imageUrl: widget.banners[index].imageUrl, fit: BoxFit.cover, width: double.infinity, height: 160)),
+    final c = context.dsColors;
+    return DsResponsive(
+      maxWidth: DsLayout.contentMax,
+      child: Column(
+        children: [
+          SizedBox(
+            height: 160,
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: widget.banners.length,
+              onPageChanged: (i) => setState(() => _page = i),
+              itemBuilder: (context, index) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: DsSpace.xs),
+                child: DsPressable(
+                  onTap: () => widget.onTap(widget.banners[index]),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(borderRadius: DsRadius.brLg, boxShadow: DsShadows.sm(context)),
+                    child: ClipRRect(
+                      borderRadius: DsRadius.brLg,
+                      child: NetworkImageWidget(imageUrl: widget.banners[index].imageUrl, fit: BoxFit.cover, width: double.infinity, height: 160),
+                    ),
                   ),
-                ),
-          ),
-        ),
-        if (widget.banners.length > 1) ...[
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(
-              widget.banners.length,
-              (i) => AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                height: 6,
-                width: i == _page ? 18 : 6,
-                decoration: BoxDecoration(
-                  color: i == _page ? AppThemeData.primary300 : (widget.isDark ? AppThemeData.greyDark300 : AppThemeData.grey300),
-                  borderRadius: BorderRadius.circular(3),
                 ),
               ),
             ),
           ),
+          if (widget.banners.length > 1) ...[
+            const DsGap(DsSpace.sm),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                widget.banners.length,
+                (i) => AnimatedContainer(
+                  duration: DsMotion.of(context, DsMotion.fast),
+                  curve: DsMotion.emphasized,
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  height: 6,
+                  width: i == _page ? 20 : 6,
+                  decoration: BoxDecoration(color: i == _page ? c.brand : c.borderStrong, borderRadius: DsRadius.brPill),
+                ),
+              ),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -357,26 +468,38 @@ class _LowerBanners extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget tile(HomeBanner b, double height) =>
-        GestureDetector(onTap: () => onTap(b), child: ClipRRect(borderRadius: BorderRadius.circular(12), child: NetworkImageWidget(imageUrl: b.imageUrl, fit: BoxFit.cover, width: double.infinity, height: height)));
+    final l = context.dsLayout;
+    Widget tile(HomeBanner b, double height) => DsPressable(
+      onTap: () => onTap(b),
+      child: DecoratedBox(
+        decoration: BoxDecoration(borderRadius: DsRadius.brLg, boxShadow: DsShadows.xs(context)),
+        child: ClipRRect(
+          borderRadius: DsRadius.brLg,
+          child: NetworkImageWidget(imageUrl: b.imageUrl, fit: BoxFit.cover, width: double.infinity, height: height),
+        ),
+      ),
+    );
     final List<HomeBanner> rest = banners.skip(1).toList();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          tile(banners.first, 150),
-          if (rest.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            GridView.builder(
-              itemCount: rest.length,
-              shrinkWrap: true,
-              padding: EdgeInsets.zero,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1.4),
-              itemBuilder: (context, index) => tile(rest[index], double.infinity),
-            ),
+    return DsResponsive(
+      maxWidth: DsLayout.contentMax,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: l.gutter),
+        child: Column(
+          children: [
+            tile(banners.first, 150),
+            if (rest.isNotEmpty) ...[
+              const DsGap(DsSpace.md),
+              GridView.builder(
+                itemCount: rest.length,
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: DsLayout.gridDelegate(maxItemWidth: 260, spacing: DsSpace.md, childAspectRatio: 1.4),
+                itemBuilder: (context, index) => DsFadeSlideIn(index: index, child: tile(rest[index], double.infinity)),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

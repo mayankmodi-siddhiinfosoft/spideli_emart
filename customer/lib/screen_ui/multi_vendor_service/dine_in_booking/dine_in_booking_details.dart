@@ -1,272 +1,156 @@
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/dine_in_booking_details_controller.dart';
-import 'package:customer/themes/app_them_data.dart';
+import 'package:customer/models/dine_in_booking_model.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../controllers/theme_controller.dart';
-
+/// Archetype F (detail) — reservation ticket: status hero, the restaurant with
+/// map / call actions, then the booking facts.
 class DineInBookingDetails extends StatelessWidget {
   const DineInBookingDetails({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: DineInBookingDetailsController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            centerTitle: false,
-            titleSpacing: 0,
-            backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-            title: Text(
-              "Dine in Bookings".tr,
-              style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
-            ),
-          ),
-          body:
-              controller.isLoading.value
-                  ? Constant.loader()
-                  : Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+        final t = context.dsText;
+        final bool isLoading = controller.isLoading.value;
+        final DineInBookingModel booking = controller.bookingModel.value;
+        final String status = "${booking.status}";
+
+        return DsScaffold(
+          maxContentWidth: DsLayout.contentMax,
+          appBar: DsAppBar(title: "Dine in Bookings".tr),
+          body: isLoading
+              ? const SingleChildScrollView(child: DsSkeletonDetail(mediaHeight: 110))
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: DsFadeSlideIn.stagger([
+                      // ---------- status hero ----------
+                      DsCard.tinted(
+                        tone: DsTone.fromStatus(booking.status),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    "${'Order'.tr} ${Constant.orderId(orderId: controller.bookingModel.value.id.toString())}",
-                                    style: TextStyle(fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                  ),
-                                  Text(
-                                    "${controller.bookingModel.value.totalGuest} ${'Peoples'.tr}",
-                                    style: TextStyle(fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
-                                  ),
+                                  Text("${'Order'.tr} ${Constant.orderId(orderId: booking.id.toString())}", style: t.title.tabular),
+                                  const DsGap(DsSpace.xs),
+                                  Text("${booking.totalGuest} ${'Peoples'.tr}", style: t.bodySecondary),
                                 ],
                               ),
                             ),
-                            Container(
-                              decoration: ShapeDecoration(
-                                color: Constant.statusColor(status: controller.bookingModel.value.status),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                                child: Text(
-                                  "${controller.bookingModel.value.status}",
-                                  style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey50, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
+                            const DsGap(DsSpace.md),
+                            DsStatusChip(label: status, status: booking.status),
+                          ],
+                        ),
+                      ),
+
+                      // ---------- venue ----------
+                      const DsGap(DsSpace.lg),
+                      DsCard(
+                        child: Column(
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SvgPicture.asset("assets/icons/ic_building.svg", width: 22, height: 22),
+                                const DsGap(DsSpace.md),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(booking.vendor!.title.toString(), style: t.title),
+                                      const DsGap(DsSpace.xxs),
+                                      Text(booking.vendor!.location.toString(), style: t.bodySecondary),
+                                    ],
+                                  ),
                                 ),
-                              ),
+                              ],
+                            ),
+                            const DsDivider(spacing: DsSpace.lg),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: DsButton.tonal(
+                                    label: "View in Map".tr,
+                                    icon: Icons.map_outlined,
+                                    expand: true,
+                                    onPressed: () {
+                                      launchUrl(
+                                        Constant.createCoordinatesUrl(
+                                          booking.vendor!.latitude ?? 0.0,
+                                          booking.vendor!.longitude ?? 0.0,
+                                          booking.vendor!.title,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const DsGap(DsSpace.md),
+                                Expanded(
+                                  child: DsButton.tonal(
+                                    label: "Call Now".tr,
+                                    icon: Icons.call_outlined,
+                                    expand: true,
+                                    onPressed: () {
+                                      if (booking.vendor!.phonenumber!.isNotEmpty) {
+                                        final Uri launchUri = Uri(scheme: 'tel', path: booking.vendor!.phonenumber);
+                                        launchUrl(launchUri);
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                        const SizedBox(height: 20),
-                        Container(
-                          decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Column(
-                              children: [
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    SvgPicture.asset("assets/icons/ic_building.svg"),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            controller.bookingModel.value.vendor!.title.toString(),
-                                            style: TextStyle(fontSize: 18, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
-                                          ),
-                                          Text(
-                                            controller.bookingModel.value.vendor!.location.toString(),
-                                            style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 20),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    InkWell(
-                                      onTap: () {
-                                        launchUrl(
-                                          Constant.createCoordinatesUrl(
-                                            controller.bookingModel.value.vendor!.latitude ?? 0.0,
-                                            controller.bookingModel.value.vendor!.longitude ?? 0.0,
-                                            controller.bookingModel.value.vendor!.title,
-                                          ),
-                                        );
-                                      },
-                                      child: Text(
-                                        "View in Map".tr,
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          color: isDark ? AppThemeData.primary300 : AppThemeData.primary300,
-                                          fontFamily: AppThemeData.medium,
-                                          fontWeight: FontWeight.w500,
-                                          decoration: TextDecoration.underline,
-                                          decorationColor: AppThemeData.primary300,
-                                        ),
-                                      ),
-                                    ),
-                                    const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: SizedBox(height: 16, child: VerticalDivider(width: 1))),
-                                    InkWell(
-                                      onTap: () {
-                                        if (controller.bookingModel.value.vendor!.phonenumber!.isNotEmpty) {
-                                          final Uri launchUri = Uri(scheme: 'tel', path: controller.bookingModel.value.vendor!.phonenumber);
-                                          launchUrl(launchUri);
-                                        }
-                                      },
-                                      child: Text(
-                                        "Call Now".tr,
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          color: isDark ? AppThemeData.primary300 : AppThemeData.primary300,
-                                          fontFamily: AppThemeData.medium,
-                                          fontWeight: FontWeight.w500,
-                                          decoration: TextDecoration.underline,
-                                          decorationColor: AppThemeData.primary300,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                              ],
-                            ),
-                          ),
+                      ),
+
+                      // ---------- booking facts ----------
+                      const DsGap(DsSpace.lg),
+                      DsSectionHeader(title: "Booking Details".tr, icon: Icons.event_note_outlined, padding: EdgeInsets.zero),
+                      const DsGap(DsSpace.sm),
+                      DsCard(
+                        child: Column(
+                          children: [
+                            _factRow(context, "Name".tr, "${booking.guestFirstName} ${booking.guestLastName}"),
+                            const DsGap(DsSpace.md),
+                            _factRow(context, "Phone number".tr, "${booking.guestPhone}", tabular: true),
+                            const DsGap(DsSpace.md),
+                            _factRow(context, "Date and Time".tr, Constant.timestampToDateTime(booking.date!), tabular: true),
+                            const DsGap(DsSpace.md),
+                            _factRow(context, "Guest".tr, "${booking.totalGuest}", tabular: true),
+                            const DsGap(DsSpace.md),
+                            _factRow(context, "Discount".tr, "${booking.discount} %", tabular: true),
+                          ],
                         ),
-                        const SizedBox(height: 20),
-                        Text(
-                          "Booking Details".tr,
-                          textAlign: TextAlign.start,
-                          style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16),
-                        ),
-                        const SizedBox(height: 5),
-                        Container(
-                          decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Column(
-                              children: [
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        "Name".tr,
-                                        style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Text(
-                                        "${controller.bookingModel.value.guestFirstName} ${controller.bookingModel.value.guestLastName}",
-                                        textAlign: TextAlign.end,
-                                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        "Phone number".tr,
-                                        style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Text(
-                                        "${controller.bookingModel.value.guestPhone}",
-                                        textAlign: TextAlign.end,
-                                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        "Date and Time".tr,
-                                        style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Text(
-                                        Constant.timestampToDateTime(controller.bookingModel.value.date!),
-                                        textAlign: TextAlign.end,
-                                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        "Guest".tr,
-                                        style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Text(
-                                        "${controller.bookingModel.value.totalGuest}",
-                                        textAlign: TextAlign.end,
-                                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        "Discount".tr,
-                                        style: TextStyle(color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Text(
-                                        "${controller.bookingModel.value.discount} %",
-                                        textAlign: TextAlign.end,
-                                        style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ]),
                   ),
+                ),
         );
       },
+    );
+  }
+
+  Widget _factRow(BuildContext context, String label, String value, {bool tabular = false}) {
+    final t = context.dsText;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: Text(label, style: t.bodySecondary)),
+        const DsGap(DsSpace.md),
+        Expanded(child: Text(value, textAlign: TextAlign.end, style: tabular ? t.bodyStrong.tabular : t.bodyStrong)),
+      ],
     );
   }
 }

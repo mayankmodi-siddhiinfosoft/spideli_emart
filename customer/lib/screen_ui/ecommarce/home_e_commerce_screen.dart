@@ -1,8 +1,5 @@
-import 'package:customer/utils/region_service.dart';
-import 'package:badges/badges.dart' as badges;
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/home_e_commerce_controller.dart';
-import 'package:customer/controllers/theme_controller.dart';
 import 'package:customer/models/advertisement_model.dart';
 import 'package:customer/models/banner_model.dart';
 import 'package:customer/models/brands_model.dart';
@@ -14,6 +11,7 @@ import 'package:customer/models/vendor_model.dart';
 import 'package:customer/screen_ui/auth_screens/login_screen.dart';
 import 'package:customer/screen_ui/ecommarce/all_brand_product_screen.dart';
 import 'package:customer/screen_ui/ecommarce/all_category_product_screen.dart';
+import 'package:customer/screen_ui/ecommarce/widgets/product_card.dart';
 import 'package:customer/screen_ui/location_enable_screens/address_list_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/advertisement_screens/all_advertisement_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/cart_screen/cart_screen.dart';
@@ -24,11 +22,8 @@ import 'package:customer/screen_ui/multi_vendor_service/restaurant_details_scree
 import 'package:customer/screen_ui/multi_vendor_service/search_screen/search_screen.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
 import 'package:customer/service/fire_store_utils.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/responsive.dart';
-import 'package:customer/themes/round_button_border.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
-import 'package:customer/utils/network_image_widget.dart';
 import 'package:customer/widget/osm_map/map_picker_page.dart';
 import 'package:customer/widget/place_picker/location_picker_screen.dart';
 import 'package:customer/widget/place_picker/selected_location_model.dart';
@@ -36,785 +31,532 @@ import 'package:customer/widget/shop_widgets.dart';
 import 'package:customer/widget/video_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:shimmer/shimmer.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+/// Archetype A – e-commerce storefront. Gradient hero (account + address +
+/// cart) with the Delivery/TakeAway toggle in the overlap card, then category
+/// rail, banners, highlights, new arrivals, brands, category shelves and
+/// stores. The search bar stays docked at the bottom.
 class HomeECommerceScreen extends StatelessWidget {
   const HomeECommerceScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: HomeECommerceController(),
       builder: (controller) {
-        return Scaffold(
-          backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-          appBar: AppBar(
-            backgroundColor: isDark ? AppThemeData.ecommerce300 : AppThemeData.ecommerce300,
-            titleSpacing: 0,
-            leading: InkWell(
-              onTap: () {
-                Get.offAll(const ServiceListScreen());
-              },
-              child: Icon(Icons.arrow_back, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50, size: 20),
+        final c = context.dsColors;
+        final t = context.dsText;
+        final bool isLoading = controller.isLoading.value;
+
+        final List<VendorCategoryModel> categories = controller.vendorCategoryModel.toList();
+        final List<BrandsModel> brands = controller.brandList.toList();
+        final List<VendorModel> newArrivals = controller.newArrivalRestaurantList.toList();
+        final List<VendorModel> stores = controller.allNearestRestaurant.toList();
+        final List<VendorCategoryModel> shelves = controller.categoryWiseProductList.toList();
+        final bool hasAds = controller.advertisementList.isNotEmpty;
+        final bool hasBanner = controller.bannerModel.isNotEmpty;
+        final bool hasBottomBanner = controller.bannerBottomModel.isNotEmpty;
+
+        return DsScaffold.hero(
+          onBack: () {
+            Get.offAll(const ServiceListScreen());
+          },
+          onRefresh: controller.getData,
+          actions: [
+            Obx(
+              () => DsIconButton(
+                semanticLabel: 'Cart'.tr,
+                badgeCount: cartItem.length,
+                color: Colors.white,
+                onPressed: () async {
+                  (await Get.to(const CartScreen()));
+                  controller.getCartData();
+                },
+                child: SvgPicture.asset("assets/icons/ic_shoping_cart.svg", height: 20, width: 20, colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
+              ),
             ),
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Constant.userModel == null
-                    ? InkWell(
-                      onTap: () {
-                        Get.offAll(const LoginScreen());
-                      },
-                      child: Text("Login".tr, textAlign: TextAlign.center, style: AppThemeData.semiBoldTextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey50, fontSize: 12)),
-                    )
-                    : Text(Constant.userModel!.fullName(), textAlign: TextAlign.center, style: AppThemeData.semiBoldTextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey50, fontSize: 12)),
-                InkWell(
-                  onTap: () async {
-                    if (Constant.userModel != null) {
-                      Get.to(AddressListScreen())!.then((value) {
-                        if (value != null) {
-                          ShippingAddress shippingAddress = value;
-                          Constant.selectedLocation = shippingAddress;
-                          controller.getData();
-                        }
-                      });
-                    } else {
-                      Constant.checkPermission(
-                        onTap: () async {
-                          ShowToastDialog.showLoader("Please wait...".tr);
-
-                          // ✅ declare it once here!
-                          ShippingAddress shippingAddress = ShippingAddress();
-
-                          try {
-                            await Geolocator.requestPermission();
-                            await Geolocator.getCurrentPosition();
-                            ShowToastDialog.closeLoader();
-
-                            if (Constant.selectedMapType == 'osm') {
-                              final result = await Get.to(() => MapPickerPage());
-                              if (result != null) {
-                                final firstPlace = result;
-                                final lat = firstPlace.coordinates.latitude;
-                                final lng = firstPlace.coordinates.longitude;
-                                final address = firstPlace.address;
-
-                                shippingAddress.addressAs = "Home";
-                                shippingAddress.locality = address.toString();
-                                shippingAddress.location = UserLocation(latitude: lat, longitude: lng);
-                                Constant.selectedLocation = shippingAddress;
-                                controller.getData();
-                                Get.back();
-                              }
-                            } else {
-                              Get.to(LocationPickerScreen())!.then((value) async {
-                                if (value != null) {
-                                  SelectedLocationModel selectedLocationModel = value;
-
-                                  shippingAddress.addressAs = "Home";
-                                  shippingAddress.location = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
-                                  shippingAddress.locality = "Picked from Map"; // You can reverse-geocode
-
-                                  Constant.selectedLocation = shippingAddress;
-                                  controller.getData();
-                                }
-                              });
-                            }
-                          } catch (e) {
-                            await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
-                              Placemark placeMark = valuePlaceMaker[0];
-                              shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
-                              String currentLocation =
-                                  "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
-                              shippingAddress.locality = currentLocation;
-                            });
-
-                            Constant.selectedLocation = shippingAddress;
-                            ShowToastDialog.closeLoader();
-                            controller.getData();
-                          }
-                        },
-                        context: context,
-                      );
-                    }
-                  },
-                  child: Text.rich(
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    TextSpan(
-                      children: [
-                        TextSpan(text: Constant.selectedLocation.getFullAddress(), style: AppThemeData.boldTextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey50, fontSize: 14)),
-                        WidgetSpan(child: SvgPicture.asset("assets/icons/ic_down.svg", colorFilter: ColorFilter.mode(AppThemeData.grey50, BlendMode.srcIn))),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              Obx(
-                () => Padding(
-                  padding: const EdgeInsets.only(right: 15.0, left: 10),
-                  child: badges.Badge(
-                    showBadge: true,
-                    badgeContent: Text(
-                      "${cartItem.length}",
-                      style: TextStyle(
-                        fontSize: 14,
+          ],
+          hero: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Constant.userModel == null
+                  ? InkWell(
+                    onTap: () {
+                      Get.offAll(const LoginScreen());
+                    },
+                    child: Text("Login".tr, style: DsTypography.title.copyWith(color: Colors.white)),
+                  )
+                  : Text(Constant.userModel!.fullName(), maxLines: 1, overflow: TextOverflow.ellipsis, style: DsTypography.title.copyWith(color: Colors.white)),
+              const DsGap(DsSpace.md),
+              DsCard.glass(
+                padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+                onTap: () => _pickAddress(context, controller),
+                semanticLabel: "Address".tr,
+                child: Row(
+                  children: [
+                    const Icon(Icons.location_on_outlined, color: Colors.white, size: 20),
+                    const DsGap(DsSpace.sm),
+                    Expanded(
+                      child: Text.rich(
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        fontFamily: AppThemeData.semiBold,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey50,
-                      ),
-                    ),
-                    badgeStyle: badges.BadgeStyle(shape: badges.BadgeShape.circle, badgeColor: AppThemeData.info300),
-                    child: InkWell(
-                      onTap: () async {
-                        (await Get.to(const CartScreen()));
-                        controller.getCartData();
-                      },
-                      child: ClipOval(
-                        child: Container(
-                          width: 30,
-                          height: 30,
-                          decoration: ShapeDecoration(
-                            shape: RoundedRectangleBorder(side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200), borderRadius: BorderRadius.circular(120)),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: SvgPicture.asset("assets/icons/ic_shoping_cart.svg", colorFilter: ColorFilter.mode(isDark ? AppThemeData.grey50 : AppThemeData.grey50, BlendMode.srcIn)),
-                          ),
+                        TextSpan(
+                          children: [
+                            TextSpan(text: Constant.selectedLocation.getFullAddress(), style: DsTypography.bodyStrong.copyWith(color: Colors.white)),
+                            WidgetSpan(child: SvgPicture.asset("assets/icons/ic_down.svg", colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn))),
+                          ],
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ],
-            // Delivery / TakeAway toggles at the top; the search bar is at the bottom (spec 7.3).
-            bottom: PreferredSize(
-              preferredSize: Size.fromHeight(56.0), // height of the bottom widget
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                child: Obx(
-                  () => OrderTypeToggle(value: controller.selectedOrderTypeValue.value, isDark: isDark, onChanged: (value) => controller.changeOrderType(context, value)),
-                ),
-              ),
+          ),
+          // Delivery / TakeAway toggles at the top; the search bar is at the bottom (spec 7.3).
+          heroOverlap: DsCard(
+            padding: const EdgeInsets.all(DsSpace.sm),
+            child: Obx(
+              () => OrderTypeToggle(value: controller.selectedOrderTypeValue.value, isDark: context.dsIsDark, onChanged: (value) => controller.changeOrderType(context, value)),
             ),
           ),
-          bottomNavigationBar:
-              controller.isLoading.value
+          bottomBar:
+              isLoading
                   ? null
                   : BottomSearchBar(
-                    isDark: isDark,
+                    isDark: context.dsIsDark,
                     hint: 'Search the store, item and more...'.tr,
                     onTap: () {
                       Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
                     },
                   ),
-          body:
-              controller.isLoading.value
-                  ? _buildHomeECommerceShimmer(isDark)
-                  : SingleChildScrollView(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    "Category".tr,
-                                    textAlign: TextAlign.start,
-                                    style: AppThemeData.semiBoldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 16),
-                                  ),
-                                ),
-                                NextArrowButton(
-                                  onTap: () {
-                                    Get.to(const ViewAllCategoryScreen());
-                                  },
-                                ),
-                              ],
-                            ),
+          slivers:
+              isLoading
+                  ? const [DsSliverResponsive(top: DsSpace.xl, sliver: SliverToBoxAdapter(child: _HomeSkeleton()))]
+                  : [
+                    // Categories
+                    DsSliverResponsive(
+                      top: DsSpace.sm,
+                      sliver: SliverToBoxAdapter(
+                        child: DsSectionHeader(
+                          title: "Category".tr,
+                          trailing: NextArrowButton(
+                            onTap: () {
+                              Get.to(const ViewAllCategoryScreen());
+                            },
                           ),
-                          SizedBox(height: 10),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: SizedBox(
-                              height: 100,
-                              child: ListView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                itemCount: controller.vendorCategoryModel.length,
-                                scrollDirection: Axis.horizontal,
-                                itemBuilder: (context, index) {
-                                  VendorCategoryModel vendorCategoryModel = controller.vendorCategoryModel[index];
-                                  return InkWell(
-                                    onTap: () {
-                                      Get.to(const CategoryRestaurantScreen(), arguments: {"vendorCategoryModel": vendorCategoryModel, "dineIn": false, "ecommerce": true});
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(right: 18),
-                                      child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.start,
-                                        crossAxisAlignment: CrossAxisAlignment.center,
-                                        children: [
-                                          NetworkImageWidget(imageUrl: vendorCategoryModel.photo.toString(), height: 60, width: 60, fit: BoxFit.cover),
-                                          const SizedBox(height: 5),
-                                          Text(
-                                            vendorCategoryModel.title.toString(),
-                                            textAlign: TextAlign.center,
-                                            style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800, fontSize: 14),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: 10),
-                          Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: controller.bannerModel.isEmpty ? const SizedBox() : BannerView(controller: controller)),
-                          Visibility(visible: (Constant.isEnableAdsFeature == true && controller.advertisementList.isNotEmpty), child: const SizedBox(height: 20)),
-                          Visibility(
-                            visible: Constant.isEnableAdsFeature == true,
-                            child:
-                                controller.advertisementList.isEmpty
-                                    ? const SizedBox()
-                                    : Container(
-                                      color: AppThemeData.primary300.withAlpha(40),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                                        child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.start,
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    "Highlights for you".tr,
-                                                    textAlign: TextAlign.start,
-                                                    style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                                                  ),
-                                                ),
-                                                NextArrowButton(
-                                                  onTap: () {
-                                                    Get.to(AllAdvertisementScreen())?.then((value) {
-                                                      controller.getFavouriteRestaurant();
-                                                    });
-                                                  },
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 16),
-                                            SizedBox(
-                                              height: 220,
-                                              child: ListView.builder(
-                                                physics: const BouncingScrollPhysics(),
-                                                scrollDirection: Axis.horizontal,
-                                                itemCount: controller.advertisementList.length >= 10 ? 10 : controller.advertisementList.length,
-                                                padding: EdgeInsets.all(0),
-                                                itemBuilder: (BuildContext context, int index) {
-                                                  return AdvertisementHomeCard(controller: controller, model: controller.advertisementList[index]);
-                                                },
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                          ),
-                          const SizedBox(height: 20),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Text(
-                              "New Arrivals".tr,
-                              textAlign: TextAlign.start,
-                              style: AppThemeData.semiBoldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 16),
-                            ),
-                          ),
-                          SizedBox(height: 20),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: SizedBox(
-                              height: 380,
-                              child: GridView.count(
-                                crossAxisCount: 2,
-                                // 2 columns
-                                mainAxisSpacing: 0,
-                                crossAxisSpacing: 20,
-                                childAspectRatio: 1 / 1.1,
-                                padding: EdgeInsets.zero,
-                                physics: NeverScrollableScrollPhysics(),
-                                children: controller.newArrivalRestaurantList.take(4).map((item) => NewArrivalCard(item: item)).toList(),
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: 5),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: RoundedButtonBorder(
-                              radius: 10,
-                              color: isDark ? AppThemeData.greyDark100 : AppThemeData.grey100,
-                              borderColor: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200,
-                              title: 'View All Arrivals'.tr,
-                              onPress: () {
-                                Get.to(RestaurantListScreen(), arguments: {"vendorList": controller.newArrivalRestaurantList, "title": "New Arrivals".tr});
-                              },
-                            ),
-                          ),
-                          SizedBox(height: 20),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text("Top Brands".tr, textAlign: TextAlign.start, style: AppThemeData.semiBoldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 16)),
-                                SizedBox(height: 10),
-                                GridView.builder(
-                                  padding: EdgeInsets.zero,
-                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, childAspectRatio: 4.5 / 6, crossAxisSpacing: 2),
-                                  itemCount: controller.brandList.length,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  shrinkWrap: true,
-                                  itemBuilder: (context, index) {
-                                    BrandsModel brandModel = controller.brandList[index];
-                                    return InkWell(
-                                      onTap: () {
-                                        Get.to(AllBrandProductScreen(), arguments: {"brandModel": brandModel});
-                                      },
-                                      child: Column(
-                                        children: [
-                                          Container(
-                                            width: 80,
-                                            height: 80,
-                                            decoration: ShapeDecoration(
-                                              color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                              shape: RoundedRectangleBorder(
-                                                side: BorderSide(width: 1, strokeAlign: BorderSide.strokeAlignOutside, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100),
-                                                borderRadius: BorderRadius.circular(10),
-                                              ),
-                                            ),
-                                            child: Padding(padding: const EdgeInsets.all(10), child: ClipOval(child: NetworkImageWidget(imageUrl: brandModel.photo.toString(), fit: BoxFit.cover))),
-                                          ),
-                                          SizedBox(height: 5),
-                                          Text(
-                                            '${brandModel.title}',
-                                            textAlign: TextAlign.center,
-                                            maxLines: 2,
-                                            style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                          SizedBox(height: 10),
-                          ListView.builder(
+                        ),
+                      ),
+                    ),
+                    DsSliverResponsive(
+                      maxWidth: DsLayout.wideMax,
+                      sliver: SliverToBoxAdapter(
+                        child: SizedBox(
+                          height: 104,
+                          child: ListView.builder(
                             shrinkWrap: true,
-                            physics: const BouncingScrollPhysics(),
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: categories.length,
+                            scrollDirection: Axis.horizontal,
                             padding: EdgeInsets.zero,
-                            itemCount: controller.categoryWiseProductList.length,
                             itemBuilder: (context, index) {
-                              VendorCategoryModel item = controller.categoryWiseProductList[index];
-                              String imagePath = ["assets/images/ic_product_bg_1.png", "assets/images/ic_product_bg_2.png", "assets/images/ic_product_bg_3.png"][index % ["", "", ""].length];
-                              return Container(
-                                width: Responsive.width(100, context),
-                                decoration: BoxDecoration(image: DecorationImage(image: AssetImage(imagePath), fit: BoxFit.fill)),
-                                child: Padding(
-                                  padding: const EdgeInsets.only(left: 16, right: 16, top: 10, bottom: 20),
-                                  child: FutureBuilder<List<ProductModel>>(
-                                    future: FireStoreUtils.getProductListByCategoryId(item.id.toString()),
-                                    builder: (context, snapshot) {
-                                      if (snapshot.connectionState == ConnectionState.waiting) {
-                                        return Center(child: CircularProgressIndicator.adaptive(valueColor: AlwaysStoppedAnimation(AppThemeData.primary300)));
-                                      } else if ((snapshot.hasData || (snapshot.data?.isNotEmpty ?? false))) {
-                                        List<ProductModel> productList = snapshot.data!;
-                                        return snapshot.data!.isEmpty
-                                            ? Container()
-                                            : Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              mainAxisAlignment: MainAxisAlignment.start,
-                                              children: [
-                                                Text(item.title.toString(), textAlign: TextAlign.start, style: AppThemeData.boldTextStyle(color: AppThemeData.grey900, fontSize: 18)),
-                                                Text(
-                                                  "Style up with the latest fits, now at unbeatable prices.".tr,
-                                                  textAlign: TextAlign.start,
-                                                  style: AppThemeData.regularTextStyle(color: AppThemeData.grey900, fontSize: 12),
-                                                ),
-                                                SizedBox(height: 20),
-                                                GridView.builder(
-                                                  shrinkWrap: true,
-                                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 3.5 / 6, crossAxisSpacing: 10),
-                                                  padding: EdgeInsets.zero,
-                                                  physics: NeverScrollableScrollPhysics(),
-                                                  itemCount: productList.length > 6 ? 6 : productList.length,
-                                                  itemBuilder: (context, index) {
-                                                    ProductModel productModel = productList[index];
-                                                    return FutureBuilder(
-                                                      future: FireStoreUtils.getVendorById(productModel.vendorID.toString()),
-                                                      builder: (context, vendorSnapshot) {
-                                                        if (!vendorSnapshot.hasData || vendorSnapshot.connectionState == ConnectionState.waiting) {
-                                                          return const SizedBox(); // Show placeholder or loader
-                                                        }
-                                                        VendorModel? vendorModel = vendorSnapshot.data;
-                                                        String price = "0.0";
-                                                        String disPrice = "0.0";
-                                                        List<String> selectedVariants = [];
-                                                        List<String> selectedIndexVariants = [];
-                                                        List<String> selectedIndexArray = [];
-                                                        if (productModel.itemAttribute != null) {
-                                                          if (productModel.itemAttribute!.attributes!.isNotEmpty) {
-                                                            for (var element in productModel.itemAttribute!.attributes!) {
-                                                              if (element.attributeOptions!.isNotEmpty) {
-                                                                selectedVariants.add(
-                                                                  productModel.itemAttribute!.attributes![productModel.itemAttribute!.attributes!.indexOf(element)].attributeOptions![0].toString(),
-                                                                );
-                                                                selectedIndexVariants.add(
-                                                                  '${productModel.itemAttribute!.attributes!.indexOf(element)} _${productModel.itemAttribute!.attributes![0].attributeOptions![0].toString()}',
-                                                                );
-                                                                selectedIndexArray.add('${productModel.itemAttribute!.attributes!.indexOf(element)}_0');
-                                                              }
-                                                            }
-                                                          }
-
-                                                          if (productModel.itemAttribute!.variants!.where((element) => element.variantSku == selectedVariants.join('-')).isNotEmpty) {
-                                                            price = Constant.productCommissionPrice(
-                                                              vendorModel!,
-                                                              productModel.itemAttribute!.variants!.where((element) => element.variantSku == selectedVariants.join('-')).first.variantPrice ?? '0',
-                                                            );
-                                                            disPrice = "0";
-                                                          }
-                                                        } else {
-                                                          price = Constant.productCommissionPrice(vendorModel!, productModel.price.toString());
-                                                          disPrice =
-                                                              double.parse(productModel.disPrice.toString()) <= 0
-                                                                  ? "0"
-                                                                  : Constant.productCommissionPrice(vendorModel, productModel.disPrice.toString());
-                                                        }
-                                                        return GestureDetector(
-                                                          onTap: () async {
-                                                            Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
-                                                          },
-                                                          child: Column(
-                                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                                            children: [
-                                                              ClipRRect(
-                                                                borderRadius: BorderRadius.circular(10),
-                                                                child: SizedBox(
-                                                                  height: 90,
-                                                                  width: Responsive.width(100, context),
-                                                                  child: NetworkImageWidget(imageUrl: productModel.photo.toString(), fit: BoxFit.cover),
-                                                                ),
-                                                              ),
-                                                              Column(
-                                                                mainAxisAlignment: MainAxisAlignment.start,
-                                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                                children: [
-                                                                  Text(
-                                                                    productModel.name!.capitalizeString(),
-                                                                    textAlign: TextAlign.start,
-                                                                    maxLines: 1,
-                                                                    style: AppThemeData.semiBoldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark600 : AppThemeData.grey600),
-                                                                  ),
-                                                                  disPrice == "" || disPrice == "0"
-                                                                      ? Text(Constant.amountShow(amount: price, currency: RegionService.currencyForVendorId(productModel.vendorID)), style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: AppThemeData.primary300))
-                                                                      : Column(
-                                                                        children: [
-                                                                          Text(
-                                                                            Constant.amountShow(amount: price, currency: RegionService.currencyForVendorId(productModel.vendorID)),
-                                                                            style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: Colors.grey, decoration: TextDecoration.lineThrough),
-                                                                          ),
-                                                                          const SizedBox(width: 5),
-                                                                          Text(
-                                                                            Constant.amountShow(amount: disPrice, currency: RegionService.currencyForVendorId(productModel.vendorID)),
-                                                                            style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                                                          ),
-                                                                        ],
-                                                                      ),
-                                                                  Container(
-                                                                    decoration: BoxDecoration(color: isDark ? AppThemeData.warning50 : AppThemeData.warning50, borderRadius: BorderRadius.circular(30)),
-                                                                    child: Padding(
-                                                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                                                      child: Row(
-                                                                        mainAxisAlignment: MainAxisAlignment.center,
-                                                                        crossAxisAlignment: CrossAxisAlignment.center,
-                                                                        mainAxisSize: MainAxisSize.min,
-                                                                        children: [
-                                                                          Icon(Icons.star, size: 18, color: AppThemeData.warning400),
-                                                                          Text(
-                                                                            "${Constant.calculateReview(reviewCount: productModel.reviewsCount.toString(), reviewSum: productModel.reviewsSum.toString())} (${productModel.reviewsSum})",
-                                                                            style: AppThemeData.semiBoldTextStyle(fontSize: 12, color: AppThemeData.warning400),
-                                                                          ),
-                                                                        ],
-                                                                      ),
-                                                                    ),
-                                                                  ),
-                                                                ],
-                                                              ),
-                                                            ],
-                                                          ),
-                                                        );
-                                                      },
-                                                    );
-                                                  },
-                                                ),
-                                                RoundedButtonBorder(
-                                                  radius: 10,
-                                                  color: isDark ? AppThemeData.greyDark100 : AppThemeData.grey100,
-                                                  borderColor: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200,
-                                                  title: 'View All Products'.tr,
-                                                  onPress: () {
-                                                    Get.to(AllCategoryProductScreen(), arguments: {"categoryModel": item});
-                                                  },
-                                                ),
-                                              ],
-                                            );
-                                      } else {
-                                        return SizedBox();
-                                      }
-                                    },
+                              VendorCategoryModel vendorCategoryModel = categories[index];
+                              return DsFadeSlideIn(
+                                index: index,
+                                child: InkWell(
+                                  borderRadius: DsRadius.brMd,
+                                  onTap: () {
+                                    Get.to(const CategoryRestaurantScreen(), arguments: {"vendorCategoryModel": vendorCategoryModel, "dineIn": false, "ecommerce": true});
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsetsDirectional.only(end: DsSpace.lg),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.start,
+                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                      children: [
+                                        Container(
+                                          height: 64,
+                                          width: 64,
+                                          padding: const EdgeInsets.all(DsSpace.sm),
+                                          decoration: BoxDecoration(color: c.brandSoft, shape: BoxShape.circle),
+                                          child: ClipOval(child: DsImage(url: vendorCategoryModel.photo.toString(), radius: 0, fit: BoxFit.cover)),
+                                        ),
+                                        const DsGap(DsSpace.xs),
+                                        SizedBox(
+                                          width: 76,
+                                          child: Text(vendorCategoryModel.title.toString(), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.labelSm.withColor(c.textPrimary)),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               );
                             },
                           ),
-                          SizedBox(height: 10),
-                          Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: controller.bannerModel.isEmpty ? const SizedBox() : BannerBottomView(controller: controller)),
-                          // Visibility(
-                          //   visible: (Constant.isEnableAdsFeature == true && controller.advertisementList.isNotEmpty),
-                          //   child: const SizedBox(height: 20),
-                          // ),
-                          // Visibility(
-                          //   visible: Constant.isEnableAdsFeature == true,
-                          //   child:
-                          //   controller.advertisementList.isEmpty
-                          //       ? const SizedBox()
-                          //       : Container(
-                          //     color: AppThemeData.primary300.withAlpha(40),
-                          //     child: Padding(
-                          //       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                          //       child: Column(
-                          //         mainAxisAlignment: MainAxisAlignment.start,
-                          //         crossAxisAlignment: CrossAxisAlignment.start,
-                          //         children: [
-                          //           Row(
-                          //             children: [
-                          //               Expanded(
-                          //                 child: Text(
-                          //                   "Highlights for you".tr,
-                          //                   textAlign: TextAlign.start,
-                          //                   style: TextStyle(
-                          //                     fontFamily: AppThemeData.semiBold,
-                          //                     fontSize: 16,
-                          //                     color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                          //                   ),
-                          //                 ),
-                          //               ),
-                          //               InkWell(
-                          //                 onTap: () {
-                          //                   Get.to(AllAdvertisementScreen())?.then((value) {
-                          //                     controller.getFavouriteRestaurant();
-                          //                   });
-                          //                 },
-                          //                 child: Text(
-                          //                   "View all".tr,
-                          //                   textAlign: TextAlign.center,
-                          //                   style: TextStyle(
-                          //                     fontFamily: AppThemeData.regular,
-                          //                     color: isDark ? AppThemeData.primary300 : AppThemeData.primary300,
-                          //                   ),
-                          //                 ),
-                          //               ),
-                          //             ],
-                          //           ),
-                          //           const SizedBox(height: 16),
-                          //           SizedBox(
-                          //             height: 220,
-                          //             child: ListView.builder(
-                          //               physics: const BouncingScrollPhysics(),
-                          //               scrollDirection: Axis.horizontal,
-                          //               itemCount:
-                          //               controller.advertisementList.length >= 10
-                          //                   ? 10
-                          //                   : controller.advertisementList.length,
-                          //               padding: EdgeInsets.all(0),
-                          //               itemBuilder: (BuildContext context, int index) {
-                          //                 return AdvertisementHomeCard(
-                          //                   controller: controller,
-                          //                   model: controller.advertisementList[index],
-                          //                 );
-                          //               },
-                          //             ),
-                          //           ),
-                          //         ],
-                          //       ),
-                          //     ),
-                          //   ),
-                          // ),
-                          const SizedBox(height: 20),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                        ),
+                      ),
+                    ),
+
+                    // Top banners
+                    if (hasBanner)
+                      DsSliverResponsive(
+                        maxWidth: DsLayout.wideMax,
+                        top: DsSpace.lg,
+                        sliver: SliverToBoxAdapter(child: BannerView(controller: controller)),
+                      ),
+
+                    // Highlights (ads)
+                    if (Constant.isEnableAdsFeature == true && hasAds)
+                      SliverToBoxAdapter(
+                        child: Container(
+                          margin: const EdgeInsets.only(top: DsSpace.lg),
+                          color: c.brandSoft,
+                          padding: const EdgeInsets.only(bottom: DsSpace.lg),
+                          child: DsResponsive(
+                            maxWidth: DsLayout.wideMax,
+                            padded: true,
                             child: Column(
+                              mainAxisAlignment: MainAxisAlignment.start,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text("All Store".tr, textAlign: TextAlign.start, style: AppThemeData.semiBoldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 16)),
-                                SizedBox(height: 10),
-                                ListView.builder(
-                                  padding: EdgeInsets.zero,
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  itemCount: controller.allNearestRestaurant.length > 8 ? 8 : controller.allNearestRestaurant.length,
-                                  itemBuilder: (context, index) {
-                                    VendorModel item = controller.allNearestRestaurant[index];
-                                    return InkWell(
-                                      onTap: () {
-                                        Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": item});
-                                      },
-                                      child: Padding(
-                                        padding: const EdgeInsets.only(bottom: 20),
-                                        child: Row(
-                                          children: [
-                                            ClipRRect(borderRadius: BorderRadius.circular(10), child: NetworkImageWidget(imageUrl: item.photo.toString(), height: 80, width: 130, fit: BoxFit.cover)),
-                                            SizedBox(width: 10),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(item.title.toString(), style: AppThemeData.semiBoldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 16)),
-                                                  Row(
-                                                    children: [
-                                                      Icon(Icons.location_on, size: 14, color: Colors.grey),
-                                                      SizedBox(width: 4),
-                                                      Expanded(
-                                                        child: Text(
-                                                          item.location.toString(),
-                                                          style: AppThemeData.semiBoldTextStyle(fontSize: 12, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500),
-                                                          overflow: TextOverflow.ellipsis,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  Container(
-                                                    decoration: BoxDecoration(color: isDark ? AppThemeData.warning50 : AppThemeData.warning50, borderRadius: BorderRadius.circular(30)),
-                                                    child: Padding(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                                      child: Row(
-                                                        mainAxisAlignment: MainAxisAlignment.center,
-                                                        crossAxisAlignment: CrossAxisAlignment.center,
-                                                        mainAxisSize: MainAxisSize.min,
-                                                        children: [
-                                                          Icon(Icons.star, size: 18, color: AppThemeData.warning400),
-                                                          Text(
-                                                            "${Constant.calculateReview(reviewCount: item.reviewsCount.toString(), reviewSum: item.reviewsSum.toString())} (${item.reviewsSum})",
-                                                            style: AppThemeData.semiBoldTextStyle(fontSize: 12, color: AppThemeData.warning400),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  },
+                                DsSectionHeader(
+                                  title: "Highlights for you".tr,
+                                  trailing: NextArrowButton(
+                                    onTap: () {
+                                      Get.to(AllAdvertisementScreen())?.then((value) {
+                                        controller.getFavouriteRestaurant();
+                                      });
+                                    },
+                                  ),
                                 ),
-                                RoundedButtonBorder(
-                                  radius: 10,
-                                  color: isDark ? AppThemeData.greyDark100 : AppThemeData.grey100,
-                                  borderColor: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200,
-                                  title: 'View All Stores'.tr,
-                                  onPress: () {
-                                    Get.to(const RestaurantListScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
-                                  },
+                                SizedBox(
+                                  height: 250,
+                                  child: ListView.builder(
+                                    physics: const BouncingScrollPhysics(),
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: controller.advertisementList.length >= 10 ? 10 : controller.advertisementList.length,
+                                    padding: EdgeInsets.all(0),
+                                    itemBuilder: (BuildContext context, int index) {
+                                      return DsFadeSlideIn(index: index, child: AdvertisementHomeCard(controller: controller, model: controller.advertisementList[index]));
+                                    },
+                                  ),
                                 ),
                               ],
                             ),
                           ),
-                        ],
+                        ),
+                      ),
+
+                    // New arrivals
+                    DsSliverResponsive(
+                      top: DsSpace.sm,
+                      sliver: SliverToBoxAdapter(child: DsSectionHeader(title: "New Arrivals".tr, subtitle: "Fresh in your area".tr)),
+                    ),
+                    DsSliverResponsive(
+                      maxWidth: DsLayout.wideMax,
+                      sliver: SliverToBoxAdapter(
+                        child: Column(
+                          children: [
+                            GridView.count(
+                              crossAxisCount: context.dsLayout.value(phone: 2, tablet: 3, desktop: 4),
+                              mainAxisSpacing: DsSpace.lg,
+                              crossAxisSpacing: DsSpace.lg,
+                              childAspectRatio: 1 / 1.35,
+                              padding: EdgeInsets.zero,
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              children: newArrivals.take(4).map((item) => NewArrivalCard(item: item)).toList(),
+                            ),
+                            const DsGap(DsSpace.lg),
+                            DsButton.secondary(
+                              label: 'View All Arrivals'.tr,
+                              trailingIcon: Icons.arrow_forward_rounded,
+                              expand: true,
+                              onPressed: () {
+                                Get.to(RestaurantListScreen(), arguments: {"vendorList": controller.newArrivalRestaurantList, "title": "New Arrivals".tr});
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
+
+                    // Brands
+                    DsSliverResponsive(
+                      top: DsSpace.sm,
+                      sliver: SliverToBoxAdapter(child: DsSectionHeader(title: "Top Brands".tr)),
+                    ),
+                    DsSliverResponsive(
+                      maxWidth: DsLayout.wideMax,
+                      sliver: SliverToBoxAdapter(
+                        child: GridView.builder(
+                          padding: EdgeInsets.zero,
+                          gridDelegate: DsLayout.gridDelegate(maxItemWidth: 110, mainAxisExtent: 76 + MediaQuery.textScalerOf(context).scale(32)),
+                          itemCount: brands.length,
+                          physics: const NeverScrollableScrollPhysics(),
+                          shrinkWrap: true,
+                          itemBuilder: (context, index) {
+                            BrandsModel brandModel = brands[index];
+                            return DsFadeSlideIn(
+                              index: index,
+                              child: InkWell(
+                                borderRadius: DsRadius.brMd,
+                                onTap: () {
+                                  Get.to(AllBrandProductScreen(), arguments: {"brandModel": brandModel});
+                                },
+                                child: Column(
+                                  children: [
+                                    Container(
+                                      width: 72,
+                                      height: 72,
+                                      decoration: BoxDecoration(color: c.surface, borderRadius: DsRadius.brLg, border: Border.all(color: c.border)),
+                                      child: Padding(padding: const EdgeInsets.all(DsSpace.sm), child: ClipOval(child: DsImage(url: brandModel.photo.toString(), radius: 0, fit: BoxFit.cover))),
+                                    ),
+                                    const DsGap(DsSpace.xs),
+                                    Text('${brandModel.title}', textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.labelSm.withColor(c.textPrimary)),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+
+                    // Category shelves
+                    SliverList.builder(
+                      itemCount: shelves.length,
+                      itemBuilder: (context, index) {
+                        VendorCategoryModel item = shelves[index];
+                        String imagePath = ["assets/images/ic_product_bg_1.png", "assets/images/ic_product_bg_2.png", "assets/images/ic_product_bg_3.png"][index % ["", "", ""].length];
+                        return Container(
+                          margin: const EdgeInsets.only(top: DsSpace.lg),
+                          decoration: BoxDecoration(image: DecorationImage(image: AssetImage(imagePath), fit: BoxFit.fill)),
+                          child: DsResponsive(
+                            maxWidth: DsLayout.wideMax,
+                            padded: true,
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: DsSpace.lg, bottom: DsSpace.xl),
+                              child: FutureBuilder<List<ProductModel>>(
+                                future: FireStoreUtils.getProductListByCategoryId(item.id.toString()),
+                                builder: (context, snapshot) {
+                                  if (snapshot.connectionState == ConnectionState.waiting) {
+                                    return const DsSkeletonGrid(itemCount: 3, minItemWidth: 150, padding: EdgeInsets.zero);
+                                  } else if ((snapshot.hasData || (snapshot.data?.isNotEmpty ?? false))) {
+                                    List<ProductModel> productList = snapshot.data!;
+                                    return snapshot.data!.isEmpty
+                                        ? Container()
+                                        : Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisAlignment: MainAxisAlignment.start,
+                                          children: [
+                                            Text(item.title.toString(), textAlign: TextAlign.start, style: DsTypography.title.copyWith(color: DsColors.light.textPrimary)),
+                                            const DsGap(DsSpace.xxs),
+                                            Text(
+                                              "Style up with the latest fits, now at unbeatable prices.".tr,
+                                              textAlign: TextAlign.start,
+                                              style: DsTypography.bodySm.copyWith(color: DsColors.light.textSecondary),
+                                            ),
+                                            const DsGap(DsSpace.lg),
+                                            GridView.builder(
+                                              shrinkWrap: true,
+                                              gridDelegate: DsLayout.gridDelegate(maxItemWidth: 200, mainAxisExtent: EcommerceProductCard.gridExtent(context)),
+                                              padding: EdgeInsets.zero,
+                                              physics: const NeverScrollableScrollPhysics(),
+                                              itemCount: productList.length > 6 ? 6 : productList.length,
+                                              itemBuilder: (context, index) {
+                                                ProductModel productModel = productList[index];
+                                                return EcommerceProductCard(productModel: productModel);
+                                              },
+                                            ),
+                                            const DsGap(DsSpace.lg),
+                                            DsButton.secondary(
+                                              label: 'View All Products'.tr,
+                                              trailingIcon: Icons.arrow_forward_rounded,
+                                              expand: true,
+                                              onPressed: () {
+                                                Get.to(AllCategoryProductScreen(), arguments: {"categoryModel": item});
+                                              },
+                                            ),
+                                          ],
+                                        );
+                                  } else {
+                                    return SizedBox();
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+
+                    // Bottom banners
+                    if (hasBottomBanner)
+                      DsSliverResponsive(
+                        maxWidth: DsLayout.wideMax,
+                        top: DsSpace.lg,
+                        sliver: SliverToBoxAdapter(child: BannerBottomView(controller: controller)),
+                      ),
+
+                    // All stores
+                    DsSliverResponsive(
+                      top: DsSpace.sm,
+                      sliver: SliverToBoxAdapter(child: DsSectionHeader(title: "All Store".tr, subtitle: "${stores.length} ${'nearby'.tr}")),
+                    ),
+                    DsSliverResponsive(
+                      maxWidth: DsLayout.wideMax,
+                      bottom: DsSpace.xl,
+                      sliver: SliverToBoxAdapter(
+                        child: Column(
+                          children: [
+                            ListView.builder(
+                              padding: EdgeInsets.zero,
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: stores.length > 8 ? 8 : stores.length,
+                              itemBuilder: (context, index) {
+                                VendorModel item = stores[index];
+                                return DsFadeSlideIn(index: index, child: _StoreRow(item: item));
+                              },
+                            ),
+                            const DsGap(DsSpace.sm),
+                            DsButton.secondary(
+                              label: 'View All Stores'.tr,
+                              trailingIcon: Icons.arrow_forward_rounded,
+                              expand: true,
+                              onPressed: () {
+                                Get.to(const RestaurantListScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
         );
       },
     );
   }
+
+  /// Address picker – behaviour moved verbatim from the old app-bar row.
+  Future<void> _pickAddress(BuildContext context, HomeECommerceController controller) async {
+    if (Constant.userModel != null) {
+      Get.to(AddressListScreen())!.then((value) {
+        if (value != null) {
+          ShippingAddress shippingAddress = value;
+          Constant.selectedLocation = shippingAddress;
+          controller.getData();
+        }
+      });
+    } else {
+      Constant.checkPermission(
+        onTap: () async {
+          ShowToastDialog.showLoader("Please wait...".tr);
+
+          // ✅ declare it once here!
+          ShippingAddress shippingAddress = ShippingAddress();
+
+          try {
+            await Geolocator.requestPermission();
+            await Geolocator.getCurrentPosition();
+            ShowToastDialog.closeLoader();
+
+            if (Constant.selectedMapType == 'osm') {
+              final result = await Get.to(() => MapPickerPage());
+              if (result != null) {
+                final firstPlace = result;
+                final lat = firstPlace.coordinates.latitude;
+                final lng = firstPlace.coordinates.longitude;
+                final address = firstPlace.address;
+
+                shippingAddress.addressAs = "Home";
+                shippingAddress.locality = address.toString();
+                shippingAddress.location = UserLocation(latitude: lat, longitude: lng);
+                Constant.selectedLocation = shippingAddress;
+                controller.getData();
+                Get.back();
+              }
+            } else {
+              Get.to(LocationPickerScreen())!.then((value) async {
+                if (value != null) {
+                  SelectedLocationModel selectedLocationModel = value;
+
+                  shippingAddress.addressAs = "Home";
+                  shippingAddress.location = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
+                  shippingAddress.locality = "Picked from Map"; // You can reverse-geocode
+
+                  Constant.selectedLocation = shippingAddress;
+                  controller.getData();
+                }
+              });
+            }
+          } catch (e) {
+            await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
+              Placemark placeMark = valuePlaceMaker[0];
+              shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
+              String currentLocation =
+                  "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
+              shippingAddress.locality = currentLocation;
+            });
+
+            Constant.selectedLocation = shippingAddress;
+            ShowToastDialog.closeLoader();
+            controller.getData();
+          }
+        },
+        context: context,
+      );
+    }
+  }
 }
 
-class NewArrivalCard extends StatelessWidget {
+/// Store row of the "All Store" list.
+class _StoreRow extends StatelessWidget {
   final VendorModel item;
 
-  const NewArrivalCard({super.key, required this.item});
+  const _StoreRow({required this.item});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return InkWell(
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard.outlined(
+      margin: const EdgeInsets.only(bottom: DsSpace.md),
+      padding: const EdgeInsets.all(DsSpace.sm),
+      semanticLabel: item.title.toString(),
       onTap: () {
         Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": item});
       },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: NetworkImageWidget(
-              height: 100,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              imageUrl: item.photo != null && item.photo!.isNotEmpty ? item.photo.toString() : Constant.placeHolderImage.toString(),
-            ),
-          ),
-          SizedBox(height: 5),
-          Text(item.title.toString(), style: AppThemeData.semiBoldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 14)),
-          Row(
-            children: [
-              Icon(Icons.location_on, size: 14, color: Colors.grey),
-              SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  item.location.toString(),
-                  style: AppThemeData.semiBoldTextStyle(fontSize: 12, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500),
-                  overflow: TextOverflow.ellipsis,
+          DsImage(url: item.photo.toString(), height: 84, width: 120, radius: DsRadius.md),
+          const DsGap(DsSpace.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.title.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                const DsGap(DsSpace.xs),
+                Row(
+                  children: [
+                    Icon(Icons.location_on_outlined, size: 14, color: c.textMuted),
+                    const DsGap(DsSpace.xs),
+                    Expanded(child: Text(item.location.toString(), maxLines: 1, style: t.bodySm, overflow: TextOverflow.ellipsis)),
+                  ],
                 ),
-              ),
-            ],
-          ),
-          Container(
-            decoration: BoxDecoration(color: isDark ? AppThemeData.warning50 : AppThemeData.warning50, borderRadius: BorderRadius.circular(30)),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.star, size: 18, color: AppThemeData.warning400),
-                  Text(
-                    "${Constant.calculateReview(reviewCount: item.reviewsCount.toString(), reviewSum: item.reviewsSum.toString())} (${item.reviewsSum})",
-                    style: AppThemeData.semiBoldTextStyle(fontSize: 12, color: AppThemeData.warning400),
-                  ),
-                ],
-              ),
+                const DsGap(DsSpace.sm),
+                DsBadge(
+                  label: "${Constant.calculateReview(reviewCount: item.reviewsCount.toString(), reviewSum: item.reviewsSum.toString())} (${item.reviewsSum})",
+                  tone: DsTone.warning,
+                  icon: Icons.star_rounded,
+                  small: true,
+                ),
+              ],
             ),
           ),
         ],
@@ -823,6 +565,64 @@ class NewArrivalCard extends StatelessWidget {
   }
 }
 
+/// New-arrival store tile.
+class NewArrivalCard extends StatelessWidget {
+  final VendorModel item;
+
+  const NewArrivalCard({super.key, required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard.outlined(
+      padding: EdgeInsets.zero,
+      semanticLabel: item.title.toString(),
+      onTap: () {
+        Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": item});
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AspectRatio(
+            aspectRatio: 1.5,
+            child: DsImage(
+              radius: 0,
+              fit: BoxFit.cover,
+              url: item.photo != null && item.photo!.isNotEmpty ? item.photo.toString() : Constant.placeHolderImage.toString(),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(DsSpace.sm),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.title.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodyStrong),
+                const DsGap(DsSpace.xxs),
+                Row(
+                  children: [
+                    Icon(Icons.location_on_outlined, size: 13, color: c.textMuted),
+                    const DsGap(DsSpace.xxs),
+                    Expanded(child: Text(item.location.toString(), maxLines: 1, style: t.caption, overflow: TextOverflow.ellipsis)),
+                  ],
+                ),
+                const DsGap(DsSpace.xs),
+                DsBadge(
+                  label: "${Constant.calculateReview(reviewCount: item.reviewsCount.toString(), reviewSum: item.reviewsSum.toString())} (${item.reviewsSum})",
+                  tone: DsTone.warning,
+                  icon: Icons.star_rounded,
+                  small: true,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Top banner carousel.
 class BannerView extends StatelessWidget {
   final HomeECommerceController controller;
 
@@ -833,7 +633,7 @@ class BannerView extends StatelessWidget {
     return Column(
       children: [
         SizedBox(
-          height: 160,
+          height: 170,
           child: PageView.builder(
             physics: const BouncingScrollPhysics(),
             controller: controller.pageController.value,
@@ -847,69 +647,24 @@ class BannerView extends StatelessWidget {
             },
             itemBuilder: (BuildContext context, int index) {
               BannerModel bannerModel = controller.bannerModel[index];
-              return InkWell(
-                onTap: () async {
-                  if (bannerModel.redirect_type == "store") {
-                    ShowToastDialog.showLoader("Please wait...".tr);
-                    VendorModel? vendorModel = await FireStoreUtils.getVendorById(bannerModel.redirect_id.toString());
-                    if (vendorModel!.zoneId == Constant.selectedZone!.id) {
-                      ShowToastDialog.closeLoader();
-                      Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
-                    } else {
-                      ShowToastDialog.closeLoader();
-                      ShowToastDialog.showToast("The store is not available in your area. Change other location first.".tr);
-                    }
-                  } else if (bannerModel.redirect_type == "product") {
-                    ShowToastDialog.showLoader("Please wait...".tr);
-                    ProductModel? productModel = await FireStoreUtils.getProductById(bannerModel.redirect_id.toString());
-                    VendorModel? vendorModel = await FireStoreUtils.getVendorById(productModel!.vendorID.toString());
-                    if (vendorModel!.zoneId == Constant.selectedZone!.id) {
-                      ShowToastDialog.closeLoader();
-                      Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
-                    } else {
-                      ShowToastDialog.closeLoader();
-                      ShowToastDialog.showToast("The store is not available in your area. Change other location first.".tr);
-                    }
-                  } else if (bannerModel.redirect_type == "external_link") {
-                    final uri = Uri.parse(bannerModel.redirect_id.toString());
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(uri);
-                    } else {
-                      ShowToastDialog.showToast("Could not launch".tr);
-                    }
-                  }
-                },
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 14),
-                  child: ClipRRect(borderRadius: const BorderRadius.all(Radius.circular(12)), child: NetworkImageWidget(imageUrl: bannerModel.photo.toString(), fit: BoxFit.cover)),
+              return Padding(
+                padding: const EdgeInsetsDirectional.only(end: DsSpace.md),
+                child: DsPressable(
+                  onTap: () => openBanner(bannerModel),
+                  child: DsImage(url: bannerModel.photo.toString(), radius: DsRadius.lg, fit: BoxFit.cover),
                 ),
               );
             },
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: List.generate(controller.bannerModel.length, (index) {
-              return Obx(
-                () => Container(
-                  margin: const EdgeInsets.only(right: 5),
-                  alignment: Alignment.centerLeft,
-                  height: 9,
-                  width: 9,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: controller.currentPage.value == index ? AppThemeData.primary300 : Colors.black12),
-                ),
-              );
-            }),
-          ),
-        ),
+        const DsGap(DsSpace.md),
+        _Dots(count: controller.bannerModel.length, current: () => controller.currentPage.value),
       ],
     );
   }
 }
 
+/// Bottom banner carousel.
 class BannerBottomView extends StatelessWidget {
   final HomeECommerceController controller;
 
@@ -920,7 +675,7 @@ class BannerBottomView extends StatelessWidget {
     return Column(
       children: [
         SizedBox(
-          height: 150,
+          height: 160,
           child: PageView.builder(
             physics: const BouncingScrollPhysics(),
             controller: controller.pageBottomController.value,
@@ -934,69 +689,86 @@ class BannerBottomView extends StatelessWidget {
             },
             itemBuilder: (BuildContext context, int index) {
               BannerModel bannerModel = controller.bannerBottomModel[index];
-              return InkWell(
-                onTap: () async {
-                  if (bannerModel.redirect_type == "store") {
-                    ShowToastDialog.showLoader("Please wait...".tr);
-                    VendorModel? vendorModel = await FireStoreUtils.getVendorById(bannerModel.redirect_id.toString());
-                    if (vendorModel!.zoneId == Constant.selectedZone!.id) {
-                      ShowToastDialog.closeLoader();
-                      Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
-                    } else {
-                      ShowToastDialog.closeLoader();
-                      ShowToastDialog.showToast("The store is not available in your area. Change other location first.".tr);
-                    }
-                  } else if (bannerModel.redirect_type == "product") {
-                    ShowToastDialog.showLoader("Please wait...".tr);
-                    ProductModel? productModel = await FireStoreUtils.getProductById(bannerModel.redirect_id.toString());
-                    VendorModel? vendorModel = await FireStoreUtils.getVendorById(productModel!.vendorID.toString());
-                    if (vendorModel!.zoneId == Constant.selectedZone!.id) {
-                      ShowToastDialog.closeLoader();
-                      Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
-                    } else {
-                      ShowToastDialog.closeLoader();
-                      ShowToastDialog.showToast("The store is not available in your area. Change other location first.".tr);
-                    }
-                  } else if (bannerModel.redirect_type == "external_link") {
-                    final uri = Uri.parse(bannerModel.redirect_id.toString());
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(uri);
-                    } else {
-                      ShowToastDialog.showToast("Could not launch".tr);
-                    }
-                  }
-                },
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 14),
-                  child: ClipRRect(borderRadius: const BorderRadius.all(Radius.circular(12)), child: NetworkImageWidget(imageUrl: bannerModel.photo.toString(), fit: BoxFit.cover)),
+              return Padding(
+                padding: const EdgeInsetsDirectional.only(end: DsSpace.md),
+                child: DsPressable(
+                  onTap: () => openBanner(bannerModel),
+                  child: DsImage(url: bannerModel.photo.toString(), radius: DsRadius.lg, fit: BoxFit.cover),
                 ),
               );
             },
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: List.generate(controller.bannerBottomModel.length, (index) {
-              return Obx(
-                () => Container(
-                  margin: const EdgeInsets.only(right: 5),
-                  alignment: Alignment.centerLeft,
-                  height: 9,
-                  width: 9,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: controller.currentBottomPage.value == index ? AppThemeData.primary300 : Colors.black12),
-                ),
-              );
-            }),
-          ),
-        ),
+        const DsGap(DsSpace.md),
+        _Dots(count: controller.bannerBottomModel.length, current: () => controller.currentBottomPage.value),
       ],
     );
   }
 }
 
+/// Banner redirection – unchanged behaviour, shared by both carousels.
+Future<void> openBanner(BannerModel bannerModel) async {
+  if (bannerModel.redirect_type == "store") {
+    ShowToastDialog.showLoader("Please wait...".tr);
+    VendorModel? vendorModel = await FireStoreUtils.getVendorById(bannerModel.redirect_id.toString());
+    if (vendorModel!.zoneId == Constant.selectedZone!.id) {
+      ShowToastDialog.closeLoader();
+      Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
+    } else {
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("The store is not available in your area. Change other location first.".tr);
+    }
+  } else if (bannerModel.redirect_type == "product") {
+    ShowToastDialog.showLoader("Please wait...".tr);
+    ProductModel? productModel = await FireStoreUtils.getProductById(bannerModel.redirect_id.toString());
+    VendorModel? vendorModel = await FireStoreUtils.getVendorById(productModel!.vendorID.toString());
+    if (vendorModel!.zoneId == Constant.selectedZone!.id) {
+      ShowToastDialog.closeLoader();
+      Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
+    } else {
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("The store is not available in your area. Change other location first.".tr);
+    }
+  } else if (bannerModel.redirect_type == "external_link") {
+    final uri = Uri.parse(bannerModel.redirect_id.toString());
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      ShowToastDialog.showToast("Could not launch".tr);
+    }
+  }
+}
+
+/// Animated page indicator for the banner carousels.
+class _Dots extends StatelessWidget {
+  final int count;
+  final int Function() current;
+
+  const _Dots({required this.count, required this.current});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: List.generate(count, (index) {
+        return Obx(() {
+          final bool active = current() == index;
+          return AnimatedContainer(
+            duration: DsMotion.of(context, DsMotion.fast),
+            margin: const EdgeInsetsDirectional.only(end: DsSpace.xs),
+            height: 6,
+            width: active ? 20 : 6,
+            decoration: BoxDecoration(color: active ? c.brand : c.border, borderRadius: DsRadius.brPill),
+          );
+        });
+      }),
+    );
+  }
+}
+
+/// Promoted store / video advertisement card.
 class AdvertisementHomeCard extends StatelessWidget {
   final AdvertisementModel model;
   final HomeECommerceController controller;
@@ -1005,33 +777,28 @@ class AdvertisementHomeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return InkWell(
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard(
+      margin: const EdgeInsetsDirectional.only(end: DsSpace.lg),
+      padding: EdgeInsets.zero,
+      radius: DsRadius.lg,
+      semanticLabel: model.title ?? '',
       onTap: () async {
         ShowToastDialog.showLoader("Please wait...".tr);
         VendorModel? vendorModel = await FireStoreUtils.getVendorById(model.vendorId!);
         ShowToastDialog.closeLoader();
         Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
       },
-      child: Container(
-        margin: EdgeInsets.only(right: 16),
-        width: Responsive.width(70, context),
-        decoration: BoxDecoration(
-          color: isDark ? AppThemeData.info600 : AppThemeData.surface,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: isDark ? 6 : 2, spreadRadius: 0, offset: Offset(0, isDark ? 3 : 1))],
-        ),
+      child: SizedBox(
+        width: 280,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Stack(
               children: [
                 model.type == 'restaurant_promotion'
-                    ? ClipRRect(
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                      child: NetworkImageWidget(imageUrl: model.coverImage ?? '', height: 135, width: double.infinity, fit: BoxFit.cover),
-                    )
+                    ? DsImage(url: model.coverImage ?? '', height: 135, width: double.infinity, radius: 0, fit: BoxFit.cover)
                     : VideoAdvWidget(url: model.video ?? '', height: 135, width: double.infinity),
                 if (model.type != 'video_promotion' && model.vendorId != null && (model.showRating == true || model.showReview == true))
                   Positioned(
@@ -1049,21 +816,13 @@ class AdvertisementHomeCard extends StatelessWidget {
                             return const SizedBox();
                           } else {
                             VendorModel vendorModel = snapshot.data!;
-                            return Container(
-                              decoration: ShapeDecoration(color: isDark ? AppThemeData.primary600 : AppThemeData.primary50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120))),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                child: Row(
-                                  children: [
-                                    if (model.showRating == true) SvgPicture.asset("assets/icons/ic_star.svg", colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn)),
-                                    if (model.showRating == true) const SizedBox(width: 5),
-                                    Text(
-                                      "${model.showRating == true ? Constant.calculateReview(reviewCount: vendorModel.reviewsCount!.toStringAsFixed(0), reviewSum: vendorModel.reviewsSum.toString()) : ''} ${model.showReview == true ? '(${vendorModel.reviewsCount!.toStringAsFixed(0)})' : ''}",
-                                      style: TextStyle(fontSize: 14, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                            return DsBadge(
+                              label:
+                                  "${model.showRating == true ? Constant.calculateReview(reviewCount: vendorModel.reviewsCount!.toStringAsFixed(0), reviewSum: vendorModel.reviewsSum.toString()) : ''} ${model.showReview == true ? '(${vendorModel.reviewsCount!.toStringAsFixed(0)})' : ''}",
+                              tone: DsTone.warning,
+                              style: DsBadgeStyle.solid,
+                              icon: model.showRating == true ? Icons.star_rounded : null,
+                              small: true,
                             );
                           }
                         }
@@ -1072,58 +831,53 @@ class AdvertisementHomeCard extends StatelessWidget {
                   ),
               ],
             ),
-            Padding(
-              padding: EdgeInsets.all(12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (model.type == 'restaurant_promotion')
-                    ClipRRect(borderRadius: BorderRadius.circular(30), child: NetworkImageWidget(imageUrl: model.profileImage ?? '', height: 50, width: 50, fit: BoxFit.cover)),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          model.title ?? '',
-                          style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 14, fontWeight: FontWeight.bold),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          model.description ?? '',
-                          style: TextStyle(fontSize: 12, fontFamily: AppThemeData.medium, color: isDark ? AppThemeData.grey400 : AppThemeData.grey600),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
-                        ),
-                      ],
-                    ),
-                  ),
-                  model.type == 'restaurant_promotion'
-                      ? IconButton(
-                        icon: Obx(
-                          () =>
-                              controller.favouriteList.where((p0) => p0.restaurantId == model.vendorId).isNotEmpty
-                                  ? SvgPicture.asset("assets/icons/ic_like_fill.svg")
-                                  : SvgPicture.asset("assets/icons/ic_like.svg", colorFilter: ColorFilter.mode(isDark ? AppThemeData.grey400 : AppThemeData.grey600, BlendMode.srcIn)),
-                        ),
-                        onPressed: () async {
-                          if (controller.favouriteList.where((p0) => p0.restaurantId == model.vendorId).isNotEmpty) {
-                            FavouriteModel favouriteModel = FavouriteModel(restaurantId: model.vendorId, userId: FireStoreUtils.getCurrentUid());
-                            controller.favouriteList.removeWhere((item) => item.restaurantId == model.vendorId);
-                            await FireStoreUtils.removeFavouriteRestaurant(favouriteModel);
-                          } else {
-                            FavouriteModel favouriteModel = FavouriteModel(restaurantId: model.vendorId, userId: FireStoreUtils.getCurrentUid());
-                            controller.favouriteList.add(favouriteModel);
-                            await FireStoreUtils.setFavouriteRestaurant(favouriteModel);
-                          }
-                          controller.update();
-                        },
-                      )
-                      : Container(
-                        decoration: ShapeDecoration(color: isDark ? AppThemeData.primary600 : AppThemeData.primary50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5))),
-                        child: Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), child: Icon(Icons.arrow_forward, size: 20, color: AppThemeData.primary300)),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(DsSpace.md),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (model.type == 'restaurant_promotion') DsAvatar(imageUrl: model.profileImage ?? '', name: model.title, size: 44),
+                    if (model.type == 'restaurant_promotion') const DsGap(DsSpace.sm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(model.title ?? '', style: t.bodyStrong, overflow: TextOverflow.ellipsis),
+                          const DsGap(DsSpace.xxs),
+                          Text(model.description ?? '', style: t.bodySm, overflow: TextOverflow.ellipsis, maxLines: 2),
+                        ],
                       ),
-                ],
+                    ),
+                    model.type == 'restaurant_promotion'
+                        ? Obx(
+                          () => DsIconButton(
+                            semanticLabel: 'Favourites'.tr,
+                            size: 36,
+                            onPressed: () async {
+                              if (controller.favouriteList.where((p0) => p0.restaurantId == model.vendorId).isNotEmpty) {
+                                FavouriteModel favouriteModel = FavouriteModel(restaurantId: model.vendorId, userId: FireStoreUtils.getCurrentUid());
+                                controller.favouriteList.removeWhere((item) => item.restaurantId == model.vendorId);
+                                await FireStoreUtils.removeFavouriteRestaurant(favouriteModel);
+                              } else {
+                                FavouriteModel favouriteModel = FavouriteModel(restaurantId: model.vendorId, userId: FireStoreUtils.getCurrentUid());
+                                controller.favouriteList.add(favouriteModel);
+                                await FireStoreUtils.setFavouriteRestaurant(favouriteModel);
+                              }
+                              controller.update();
+                            },
+                            child:
+                                controller.favouriteList.where((p0) => p0.restaurantId == model.vendorId).isNotEmpty
+                                    ? SvgPicture.asset("assets/icons/ic_like_fill.svg")
+                                    : SvgPicture.asset("assets/icons/ic_like.svg", colorFilter: ColorFilter.mode(c.textMuted, BlendMode.srcIn)),
+                          ),
+                        )
+                        : Container(
+                          decoration: BoxDecoration(color: c.brandSoft, borderRadius: DsRadius.brSm),
+                          child: Padding(padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm, vertical: DsSpace.xs), child: Icon(Icons.arrow_forward, size: 20, color: c.brandStrong)),
+                        ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -1133,133 +887,58 @@ class AdvertisementHomeCard extends StatelessWidget {
   }
 }
 
-Widget _buildHomeECommerceShimmer(bool isDark) {
-  final baseColor = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0);
-  final highlightColor = isDark ? const Color(0xFF3A3A3A) : const Color(0xFFF5F5F5);
+/// Storefront loading state (categories, banner, highlights, grids).
+class _HomeSkeleton extends StatelessWidget {
+  const _HomeSkeleton();
 
-  Widget box({double w = double.infinity, double h = 14, double radius = 8}) =>
-      Container(width: w, height: h, decoration: BoxDecoration(color: baseColor, borderRadius: BorderRadius.circular(radius)));
-
-  return Shimmer.fromColors(
-    baseColor: baseColor,
-    highlightColor: highlightColor,
-    child: SingleChildScrollView(
-      physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.symmetric(vertical: 10),
+  @override
+  Widget build(BuildContext context) {
+    return DsShimmer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Category title row
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(children: [Expanded(child: box(w: 100, h: 16)), box(w: 50, h: 12)])),
-          const SizedBox(height: 10),
-          // Category horizontal list
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SizedBox(
-              height: 100,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: 6,
-                separatorBuilder: (_, __) => const SizedBox(width: 18),
-                itemBuilder: (_, __) => Column(mainAxisAlignment: MainAxisAlignment.start, children: [box(w: 60, h: 60, radius: 30), const SizedBox(height: 5), box(w: 50, h: 12)]),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          // Banner
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: box(h: 160, radius: 16)),
-          const SizedBox(height: 20),
-          // Highlights section
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [Expanded(child: box(w: 140, h: 16)), box(w: 50, h: 12)]),
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 220,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: 4,
-                    separatorBuilder: (_, __) => const SizedBox(width: 12),
-                    itemBuilder: (_, __) => box(w: 160, h: 220, radius: 12),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          // New Arrivals title
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: box(w: 120, h: 16)),
-          const SizedBox(height: 20),
-          // New Arrivals 2-column grid (4 items)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: GridView.count(
-              crossAxisCount: 2,
-              crossAxisSpacing: 20,
-              mainAxisSpacing: 16,
-              childAspectRatio: 1 / 1.1,
-              shrinkWrap: true,
+          Row(children: [Expanded(child: DsSkeleton.line(width: 110, height: 16)), DsSkeleton.line(width: 40, height: 12)]),
+          const DsGap(DsSpace.lg),
+          SizedBox(
+            height: 92,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
               physics: const NeverScrollableScrollPhysics(),
-              padding: EdgeInsets.zero,
-              children: List.generate(4, (_) => box(radius: 12)),
+              itemCount: 6,
+              separatorBuilder: (_, _) => const DsGap(DsSpace.lg),
+              itemBuilder: (_, _) => Column(children: [DsSkeleton.circle(size: 64), const DsGap(DsSpace.sm), DsSkeleton.line(width: 52, height: 10)]),
             ),
           ),
-          const SizedBox(height: 10),
-          // View All Arrivals button placeholder
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: box(h: 44, radius: 10)),
-          const SizedBox(height: 20),
-          // Top Brands title
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: box(w: 100, h: 16)),
-          const SizedBox(height: 10),
-          // Brands 4-column grid (8 items)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: GridView.count(
-              crossAxisCount: 4,
-              crossAxisSpacing: 2,
-              childAspectRatio: 4.5 / 6,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: EdgeInsets.zero,
-              children: List.generate(8, (_) => Column(children: [box(w: 80, h: 80, radius: 10), const SizedBox(height: 5), box(w: 50, h: 10)])),
-            ),
+          const DsGap(DsSpace.lg),
+          DsSkeleton.box(height: 170, radius: DsRadius.lg),
+          const DsGap(DsSpace.xl),
+          DsSkeleton.line(width: 130, height: 16),
+          const DsGap(DsSpace.lg),
+          GridView.count(
+            crossAxisCount: 2,
+            crossAxisSpacing: DsSpace.lg,
+            mainAxisSpacing: DsSpace.lg,
+            childAspectRatio: 1 / 1.35,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            children: List.generate(4, (_) => DsSkeleton.box(radius: DsRadius.lg)),
           ),
-          const SizedBox(height: 10),
-          // Category-wise product sections (2 sections)
-          ...List.generate(
-            2,
-            (_) => Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [box(w: 140, h: 18), const SizedBox(height: 6), box(w: 220, h: 12), const SizedBox(height: 12)]),
-                  ),
-                  SizedBox(
-                    height: 200,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      physics: const NeverScrollableScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: 3,
-                      separatorBuilder: (_, __) => const SizedBox(width: 12),
-                      itemBuilder: (_, __) => box(w: 150, h: 200, radius: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          const DsGap(DsSpace.xl),
+          DsSkeleton.line(width: 100, height: 16),
+          const DsGap(DsSpace.lg),
+          GridView.count(
+            crossAxisCount: 4,
+            crossAxisSpacing: DsSpace.md,
+            mainAxisSpacing: DsSpace.md,
+            childAspectRatio: 0.85,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            children: List.generate(8, (_) => Column(children: [DsSkeleton.box(width: 64, height: 64, radius: DsRadius.lg), const DsGap(DsSpace.xs), DsSkeleton.line(width: 40, height: 10)])),
           ),
-          const SizedBox(height: 20),
         ],
       ),
-    ),
-  );
+    );
+  }
 }

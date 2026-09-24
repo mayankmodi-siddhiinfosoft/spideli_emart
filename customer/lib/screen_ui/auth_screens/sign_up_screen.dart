@@ -1,16 +1,13 @@
 import 'package:country_code_picker/country_code_picker.dart';
+import 'package:customer/screen_ui/auth_screens/widgets/auth_shell.dart';
 import 'package:customer/screen_ui/location_enable_screens/location_permission_screen.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/svg.dart';
 import '../../constant/constant.dart';
 import '../../controllers/sign_up_controller.dart';
-import '../../controllers/theme_controller.dart';
-import '../../themes/app_them_data.dart';
-import '../../themes/round_button_fill.dart';
-import '../../themes/text_field_widget.dart';
 import 'package:get/get.dart';
 import 'login_screen.dart';
 import 'mobile_login_screen.dart';
@@ -23,244 +20,209 @@ class SignUpScreen extends StatelessWidget {
     return GetX<SignUpController>(
       init: SignUpController(),
       builder: (controller) {
-        final themeController = Get.find<ThemeController>();
-        final isDark = themeController.isDark.value;
-        return Scaffold(
-          appBar: AppBar(
-            automaticallyImplyLeading: false,
-            elevation: 0,
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Get.to(() => LocationPermissionScreen());
-                },
-                style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12), minimumSize: const Size(0, 40), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text("Skip".tr, style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500)),
-                    Padding(padding: const EdgeInsets.only(top: 2), child: Icon(Icons.arrow_forward_ios, size: 16, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500)),
-                  ],
-                ),
-              ),
-            ],
+        final c = context.dsColors;
+        final t = context.dsText;
+        final l = context.dsLayout;
+        final type = controller.type.value;
+        final isSocial = type == "google" || type == "apple";
+        final isMobile = type == "mobileNumber";
+        final hidePasswords = isSocial || isMobile;
+        final passwordHidden = controller.passwordVisible.value;
+        final confirmHidden = controller.conformPasswordVisible.value;
+        final isoCode = controller.countryISOCodeEditingController.value.text;
+
+        final nameFields = [
+          DsTextField(
+            label: "First Name*".tr,
+            hint: "Jerome".tr,
+            controller: controller.firstNameEditingController.value,
+            prefixIcon: Icons.person_outline_rounded,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.next,
           ),
-          body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.only(left: 15, right: 15, top: 10),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.only(bottom: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Sign up to explore all our services and start shopping, riding, and more.".tr,
-                      style: AppThemeData.boldTextStyle(fontSize: 24, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                    ),
-                    const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(child: TextFieldWidget(title: "First Name*".tr, hintText: "Jerome".tr, controller: controller.firstNameEditingController.value)),
-                        const SizedBox(width: 10),
-                        Expanded(child: TextFieldWidget(title: "Last Name*".tr, hintText: "Bell".tr, controller: controller.lastNameEditingController.value)),
-                      ],
-                    ),
-                    const SizedBox(height: 15),
-                    TextFieldWidget(
-                      title: "Email Address*".tr,
-                      hintText: "jerome014@gmail.com",
-                      enable: controller.type.value == "google" || controller.type.value == "apple" ? false : true,
-                      controller: controller.emailEditingController.value,
-                      focusNode: controller.emailFocusNode,
-                    ),
-                    const SizedBox(height: 15),
-                    TextFieldWidget(
-                      title: "Mobile Number*".tr,
-                      hintText: "Enter Mobile number".tr,
-                      enable: controller.type.value == "mobileNumber" ? false : true,
-                      controller: controller.phoneNUmberEditingController.value,
-                      textInputType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                      textInputAction: TextInputAction.done,
-                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]')), LengthLimitingTextInputFormatter(10)],
-                      prefix: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CountryCodePicker(
-                            onInit: (value) {
-                              controller.countryCodeEditingController.value.text = value?.dialCode ?? Constant.defaultCountryCode;
-                              controller.countryISOCodeEditingController.value.text = value?.code ?? Constant.defaultCountryCode;
-                            },
-                            onChanged: (value) {
-                              controller.countryCodeEditingController.value.text = value.dialCode ?? Constant.defaultCountryCode;
-                              controller.countryISOCodeEditingController.value.text = value.code ?? Constant.defaultCountryCode;
-                            },
-                            initialSelection: controller.countryISOCodeEditingController.value.text.isNotEmpty ? controller.countryISOCodeEditingController.value.text : Constant.defaultCountryCode,
-                            showCountryOnly: false,
-                            showOnlyCountryWhenClosed: false,
-                            alignLeft: false,
-                            enabled: controller.type.value != "mobileNumber",
-                            textStyle: TextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : Colors.black),
-                            dialogTextStyle: TextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                            searchStyle: TextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                            dialogBackgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-                            padding: EdgeInsets.zero,
-                          ),
-                          // const Icon(Icons.keyboard_arrow_down_rounded, size: 24, color: AppThemeData.grey400),
-                          Container(height: 24, width: 1, color: AppThemeData.grey400),
-                          const SizedBox(width: 4),
-                        ],
-                      ),
-                    ),
-                    controller.type.value == "google" || controller.type.value == "apple" || controller.type.value == "mobileNumber"
-                        ? SizedBox()
-                        : Column(
-                          children: [
-                            const SizedBox(height: 15),
-                            TextFieldWidget(
-                              title: "Password*".tr,
-                              hintText: "Enter password".tr,
-                              controller: controller.passwordEditingController.value,
-                              obscureText: controller.passwordVisible.value,
-                              focusNode: controller.passwordFocusNode,
-                              suffix: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: InkWell(
-                                  onTap: () {
-                                    controller.passwordVisible.value = !controller.passwordVisible.value;
-                                  },
-                                  child:
-                                      controller.passwordVisible.value
-                                          ? SvgPicture.asset("assets/icons/ic_password_show.svg", colorFilter: ColorFilter.mode(isDark ? AppThemeData.grey300 : AppThemeData.grey600, BlendMode.srcIn))
-                                          : SvgPicture.asset(
-                                            "assets/icons/ic_password_close.svg",
-                                            colorFilter: ColorFilter.mode(isDark ? AppThemeData.grey300 : AppThemeData.grey600, BlendMode.srcIn),
-                                          ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 15),
-                            TextFieldWidget(
-                              title: "Confirm Password*".tr,
-                              hintText: "Enter confirm password".tr,
-                              controller: controller.conformPasswordEditingController.value,
-                              obscureText: controller.conformPasswordVisible.value,
-                              suffix: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: InkWell(
-                                  onTap: () {
-                                    controller.conformPasswordVisible.value = !controller.conformPasswordVisible.value;
-                                  },
-                                  child:
-                                      controller.conformPasswordVisible.value
-                                          ? SvgPicture.asset("assets/icons/ic_password_show.svg", colorFilter: ColorFilter.mode(isDark ? AppThemeData.grey300 : AppThemeData.grey600, BlendMode.srcIn))
-                                          : SvgPicture.asset(
-                                            "assets/icons/ic_password_close.svg",
-                                            colorFilter: ColorFilter.mode(isDark ? AppThemeData.grey300 : AppThemeData.grey600, BlendMode.srcIn),
-                                          ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                    const SizedBox(height: 15),
-                    TextFieldWidget(title: "Referral Code".tr, hintText: "Enter referral code".tr, controller: controller.referralCodeEditingController.value),
-                    const SizedBox(height: 40),
-                    RoundedButtonFill(
-                      title: "Sign up".tr,
-                      onPress: () {
-                        if (controller.type.value == "google" || controller.type.value == "apple" || controller.type.value == "mobileNumber") {
-                          if (controller.firstNameEditingController.value.text.trim().isEmpty) {
-                            ShowToastDialog.showToast("Please enter first name".tr);
-                          } else if (controller.lastNameEditingController.value.text.trim().isEmpty) {
-                            ShowToastDialog.showToast("Please enter last name".tr);
-                          } else if (controller.emailEditingController.value.text.trim().isEmpty) {
-                            ShowToastDialog.showToast("Please enter valid email".tr);
-                          } else if (controller.phoneNUmberEditingController.value.text.trim().isEmpty) {
-                            ShowToastDialog.showToast("Please enter Phone number".tr);
-                          } else {
-                            controller.signUpWithEmailAndPassword();
-                          }
-                        } else {
-                          if (controller.firstNameEditingController.value.text.trim().isEmpty) {
-                            ShowToastDialog.showToast("Please enter first name".tr);
-                          } else if (controller.lastNameEditingController.value.text.trim().isEmpty) {
-                            ShowToastDialog.showToast("Please enter last name".tr);
-                          } else if (controller.emailEditingController.value.text.trim().isEmpty) {
-                            ShowToastDialog.showToast("Please enter valid email".tr);
-                          } else if (controller.phoneNUmberEditingController.value.text.trim().isEmpty) {
-                            ShowToastDialog.showToast("Please enter Phone number".tr);
-                          } else if (controller.passwordEditingController.value.text.trim().length < 6) {
-                            ShowToastDialog.showToast("Please enter minimum 6 characters password".tr);
-                          } else if (controller.passwordEditingController.value.text.trim().isEmpty) {
-                            ShowToastDialog.showToast("Please enter password".tr);
-                          } else if (controller.conformPasswordEditingController.value.text.trim().isEmpty) {
-                            ShowToastDialog.showToast("Please enter Confirm password".tr);
-                          } else if (controller.passwordEditingController.value.text.trim() != controller.conformPasswordEditingController.value.text.trim()) {
-                            ShowToastDialog.showToast("Password and Confirm password doesn't match".tr);
-                          } else {
-                            controller.signUpWithEmailAndPassword();
-                          }
-                        }
-                      },
-                      color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                      textColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-                    ),
-                    const SizedBox(height: 25),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(width: 52, height: 1, color: isDark ? AppThemeData.greyDark400 : AppThemeData.grey300),
-                        const SizedBox(width: 15),
-                        Text("or continue with".tr, style: AppThemeData.regularTextStyle(color: isDark ? AppThemeData.greyDark400 : AppThemeData.grey400)),
-                        const SizedBox(width: 15),
-                        Container(width: 52, height: 1, color: isDark ? AppThemeData.greyDark400 : AppThemeData.grey300),
-                      ],
-                    ),
-                    const SizedBox(height: 25),
-                    RoundedButtonFill(
-                      title: "Mobile number".tr,
-                      onPress: () => Get.to(() => const MobileLoginScreen()),
-                      isRight: false,
-                      isCenter: true,
-                      icon: Icon(Icons.mobile_friendly_outlined, size: 20, color: isDark ? AppThemeData.greyDark900 : null),
-                      //Image.asset(AppAssets.icMessage, width: 20, height: 18, color: isDark ? AppThemeData.greyDark900 : null),
-                      color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200,
-                      textColor: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                    ),
-                    const SizedBox(height: 25),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Center(
-                        child: Text.rich(
-                          TextSpan(
-                            text: "Already have an account?".tr,
-                            style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800),
-                            children: [
-                              TextSpan(
-                                text: "Log in".tr,
-                                style: AppThemeData.mediumTextStyle(
-                                  color: AppThemeData.ecommerce300,
-                                  decoration: TextDecoration.underline,
-                                  decorationColor: AppThemeData.ecommerce300,
-                                  decorationStyle: TextDecorationStyle.solid,
-                                ),
-                                recognizer:
-                                    TapGestureRecognizer()
-                                      ..onTap = () {
-                                        Get.offAll(() => const LoginScreen());
-                                      },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+          DsTextField(
+            label: "Last Name*".tr,
+            hint: "Bell".tr,
+            controller: controller.lastNameEditingController.value,
+            prefixIcon: Icons.badge_outlined,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.next,
+          ),
+        ];
+
+        return AuthScaffold(
+          eyebrow: "Create account",
+          title: "Sign up to explore all our services and start shopping, riding, and more.".tr,
+          icon: Icons.person_add_alt_1_rounded,
+          actions: [AuthSkipButton(onPressed: () => Get.to(() => LocationPermissionScreen()))],
+          footer: AuthFooterLink(
+            text: "Already have an account?".tr,
+            linkText: "Log in".tr,
+            recognizer: TapGestureRecognizer()
+              ..onTap = () {
+                Get.offAll(() => const LoginScreen());
+              },
+          ),
+          children: [
+            if (isSocial || isMobile)
+              Padding(
+                padding: const EdgeInsets.only(bottom: DsSpace.lg),
+                child: DsInlineAlert(
+                  tone: DsTone.info,
+                  icon: isMobile ? Icons.smartphone_rounded : Icons.verified_user_outlined,
+                  message: isMobile ? "Your mobile number is already verified.".tr : "Your account is verified, just complete your profile.".tr,
                 ),
               ),
+            DsFormSection(
+              title: "Personal details".tr,
+              icon: Icons.person_outline_rounded,
+              children: [
+                if (l.isTablet || l.isDesktop)
+                  DsAdaptiveGrid(minItemWidth: 200, equalHeight: false, children: nameFields)
+                else
+                  ...nameFields,
+                DsTextField(
+                  label: "Email Address*".tr,
+                  hint: "jerome014@gmail.com",
+                  enabled: !isSocial,
+                  controller: controller.emailEditingController.value,
+                  focusNode: controller.emailFocusNode,
+                  prefixIcon: Icons.mail_outline_rounded,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                ),
+                DsTextField(
+                  label: "Mobile Number*".tr,
+                  hint: "Enter Mobile number".tr,
+                  enabled: !isMobile,
+                  controller: controller.phoneNUmberEditingController.value,
+                  keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                  textInputAction: TextInputAction.done,
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]')), LengthLimitingTextInputFormatter(10)],
+                  bottomSpacing: 0,
+                  prefix: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CountryCodePicker(
+                        onInit: (value) {
+                          controller.countryCodeEditingController.value.text = value?.dialCode ?? Constant.defaultCountryCode;
+                          controller.countryISOCodeEditingController.value.text = value?.code ?? Constant.defaultCountryCode;
+                        },
+                        onChanged: (value) {
+                          controller.countryCodeEditingController.value.text = value.dialCode ?? Constant.defaultCountryCode;
+                          controller.countryISOCodeEditingController.value.text = value.code ?? Constant.defaultCountryCode;
+                        },
+                        initialSelection: isoCode.isNotEmpty ? isoCode : Constant.defaultCountryCode,
+                        showCountryOnly: false,
+                        showOnlyCountryWhenClosed: false,
+                        alignLeft: false,
+                        enabled: !isMobile,
+                        textStyle: DsTypography.bodyStrong.copyWith(color: c.textPrimary, fontSize: 15),
+                        dialogTextStyle: DsTypography.body.copyWith(color: c.textPrimary, fontSize: 16),
+                        searchStyle: DsTypography.body.copyWith(color: c.textPrimary, fontSize: 16),
+                        dialogBackgroundColor: c.surfaceRaised,
+                        padding: EdgeInsets.zero,
+                      ),
+                      Container(height: 24, width: 1, color: c.border),
+                      const SizedBox(width: 4),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ),
+            hidePasswords
+                ? const SizedBox()
+                : DsFormSection(
+                  title: "Security".tr,
+                  icon: Icons.lock_outline_rounded,
+                  children: [
+                    AuthPasswordField(
+                      label: "Password*".tr,
+                      hint: "Enter password".tr,
+                      controller: controller.passwordEditingController.value,
+                      focusNode: controller.passwordFocusNode,
+                      obscured: passwordHidden,
+                      onToggle: () {
+                        controller.passwordVisible.value = !controller.passwordVisible.value;
+                      },
+                    ),
+                    AuthPasswordField(
+                      label: "Confirm Password*".tr,
+                      hint: "Enter confirm password".tr,
+                      controller: controller.conformPasswordEditingController.value,
+                      obscured: confirmHidden,
+                      onToggle: () {
+                        controller.conformPasswordVisible.value = !controller.conformPasswordVisible.value;
+                      },
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: DsSpace.xs),
+                      child: Text("Use at least 6 characters.".tr, style: t.caption),
+                    ),
+                  ],
+                ),
+            DsFormSection(
+              title: "Referral".tr,
+              icon: Icons.card_giftcard_rounded,
+              children: [
+                DsTextField(
+                  label: "Referral Code".tr,
+                  hint: "Enter referral code".tr,
+                  controller: controller.referralCodeEditingController.value,
+                  prefixIcon: Icons.confirmation_number_outlined,
+                  textCapitalization: TextCapitalization.characters,
+                  bottomSpacing: 0,
+                ),
+              ],
+            ),
+            const DsGap(DsSpace.xl),
+            DsButton.primary(
+              label: "Sign up".tr,
+              size: DsButtonSize.lg,
+              expand: true,
+              onPressed: () {
+                if (controller.type.value == "google" || controller.type.value == "apple" || controller.type.value == "mobileNumber") {
+                  if (controller.firstNameEditingController.value.text.trim().isEmpty) {
+                    ShowToastDialog.showToast("Please enter first name".tr);
+                  } else if (controller.lastNameEditingController.value.text.trim().isEmpty) {
+                    ShowToastDialog.showToast("Please enter last name".tr);
+                  } else if (controller.emailEditingController.value.text.trim().isEmpty) {
+                    ShowToastDialog.showToast("Please enter valid email".tr);
+                  } else if (controller.phoneNUmberEditingController.value.text.trim().isEmpty) {
+                    ShowToastDialog.showToast("Please enter Phone number".tr);
+                  } else {
+                    controller.signUpWithEmailAndPassword();
+                  }
+                } else {
+                  if (controller.firstNameEditingController.value.text.trim().isEmpty) {
+                    ShowToastDialog.showToast("Please enter first name".tr);
+                  } else if (controller.lastNameEditingController.value.text.trim().isEmpty) {
+                    ShowToastDialog.showToast("Please enter last name".tr);
+                  } else if (controller.emailEditingController.value.text.trim().isEmpty) {
+                    ShowToastDialog.showToast("Please enter valid email".tr);
+                  } else if (controller.phoneNUmberEditingController.value.text.trim().isEmpty) {
+                    ShowToastDialog.showToast("Please enter Phone number".tr);
+                  } else if (controller.passwordEditingController.value.text.trim().length < 6) {
+                    ShowToastDialog.showToast("Please enter minimum 6 characters password".tr);
+                  } else if (controller.passwordEditingController.value.text.trim().isEmpty) {
+                    ShowToastDialog.showToast("Please enter password".tr);
+                  } else if (controller.conformPasswordEditingController.value.text.trim().isEmpty) {
+                    ShowToastDialog.showToast("Please enter Confirm password".tr);
+                  } else if (controller.passwordEditingController.value.text.trim() != controller.conformPasswordEditingController.value.text.trim()) {
+                    ShowToastDialog.showToast("Password and Confirm password doesn't match".tr);
+                  } else {
+                    controller.signUpWithEmailAndPassword();
+                  }
+                }
+              },
+            ),
+            DsDivider(label: "or continue with".tr, spacing: DsSpace.xl),
+            AuthAltButton(
+              label: "Mobile number".tr,
+              icon: Icon(Icons.smartphone_rounded, size: 20, color: c.textPrimary),
+              onPressed: () => Get.to(() => const MobileLoginScreen()),
+            ),
+          ],
         );
       },
     );

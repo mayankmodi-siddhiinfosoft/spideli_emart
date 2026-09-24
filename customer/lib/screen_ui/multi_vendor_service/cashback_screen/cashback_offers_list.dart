@@ -1,79 +1,104 @@
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/cashback_controller.dart';
-import 'package:customer/themes/app_them_data.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../../controllers/theme_controller.dart';
-
+/// Archetype **G — offers ledger**: each cashback deal is a coupon-style card
+/// with the reward as the headline metric and the conditions underneath.
 class CashbackOffersListScreen extends StatelessWidget {
   const CashbackOffersListScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: CashbackController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            centerTitle: false,
-            titleSpacing: 0,
-            title: Text("Cashback Offers".tr, textAlign: TextAlign.start, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
-            backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-          ),
-          body:
-              controller.isLoading.value
-                  ? Constant.loader()
-                  : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: controller.cashbackList.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      return Container(
-                        padding: const EdgeInsets.all(16),
-                        margin: const EdgeInsets.symmetric(vertical: 6),
-                        decoration: BoxDecoration(
-                          color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 6, offset: const Offset(0, 3))],
-                        ),
-                        child: Column(
+        final c = context.dsColors;
+        final t = context.dsText;
+        final loading = controller.isLoading.value;
+        final offers = controller.cashbackList.toList();
+        return DsScaffold(
+          title: "Cashback Offers".tr,
+          maxContentWidth: DsLayout.contentMax,
+          body: DsAsync(
+            isLoading: loading,
+            skeleton: const DsSkeletonList(itemCount: 4, leading: false, trailing: false),
+            isEmpty: offers.isEmpty,
+            empty: DsEmptyState(icon: Icons.savings_outlined, title: "Cashback Offers".tr, message: "New cashback deals will appear here.".tr),
+            builder: (_) => ListView.builder(
+              padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+              itemCount: offers.length,
+              itemBuilder: (BuildContext context, int index) {
+                final offer = offers[index];
+                final reward = offer.cashbackType == 'Percent'
+                    ? "${offer.cashbackAmount}%"
+                    : Constant.amountShow(amount: "${offer.cashbackAmount}", currency: RegionService.customerCurrency);
+                return DsFadeSlideIn(
+                  index: index,
+                  child: DsCard(
+                    margin: const EdgeInsets.only(bottom: DsSpace.md),
+                    padding: const EdgeInsets.all(DsSpace.lg),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    controller.cashbackList[index].title ?? '',
-                                    style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                                  ),
-                                ),
-                                Text(
-                                  controller.cashbackList[index].cashbackType == 'Percent'
-                                      ? "${controller.cashbackList[index].cashbackAmount}%"
-                                      : Constant.amountShow(amount: "${controller.cashbackList[index].cashbackAmount}", currency: RegionService.customerCurrency),
-                                  style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              "${"Min spent".tr} ${Constant.amountShow(amount: "${controller.cashbackList[index].minimumPurchaseAmount ?? 0.0}", currency: RegionService.customerCurrency)} | ${"Valid till".tr} ${Constant.timestampToDateTime2(controller.cashbackList[index].endDate!)}",
-                              style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular, fontSize: 14),
-                            ),
-                            Text(
-                              "${"Maximum cashback up to".tr} ${Constant.amountShow(amount: "${controller.cashbackList[index].maximumDiscount ?? 0.0}", currency: RegionService.customerCurrency)}",
-                              style: TextStyle(color: isDark ? AppThemeData.primary200 : AppThemeData.primary300, fontFamily: AppThemeData.regular, fontSize: 14),
-                            ),
+                            DsIconWell(icon: Icons.savings_outlined, tone: DsTone.success, size: 44),
+                            const DsGap(DsSpace.md),
+                            Expanded(child: Text(offer.title ?? '', style: t.titleSm)),
+                            const DsGap(DsSpace.sm),
+                            DsBadge(label: reward, tone: DsTone.success, style: DsBadgeStyle.solid),
                           ],
                         ),
-                      );
-                    },
+                        const DsGap(DsSpace.md),
+                        DsDivider(spacing: DsSpace.xs),
+                        const DsGap(DsSpace.md),
+                        _InfoLine(
+                          icon: Icons.shopping_bag_outlined,
+                          text:
+                              "${"Min spent".tr} ${Constant.amountShow(amount: "${offer.minimumPurchaseAmount ?? 0.0}", currency: RegionService.customerCurrency)} | ${"Valid till".tr} ${Constant.timestampToDateTime2(offer.endDate!)}",
+                        ),
+                        const DsGap(DsSpace.sm),
+                        _InfoLine(
+                          icon: Icons.trending_up_rounded,
+                          color: c.brandStrong,
+                          text: "${"Maximum cashback up to".tr} ${Constant.amountShow(amount: "${offer.maximumDiscount ?? 0.0}", currency: RegionService.customerCurrency)}",
+                        ),
+                      ],
+                    ),
                   ),
+                );
+              },
+            ),
+          ),
         );
       },
+    );
+  }
+}
+
+/// Icon + text condition line inside an offer card.
+class _InfoLine extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color? color;
+
+  const _InfoLine({required this.icon, required this.text, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: color ?? c.textMuted),
+        const DsGap(DsSpace.sm),
+        Expanded(child: Text(text, style: color == null ? t.bodySm : t.bodySm.withColor(color!))),
+      ],
     );
   }
 }

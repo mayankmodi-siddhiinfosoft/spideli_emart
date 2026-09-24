@@ -3,319 +3,167 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/discount_restaurant_list_controller.dart';
 import 'package:customer/models/coupon_model.dart';
 import 'package:customer/models/vendor_model.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/responsive.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/network_image_widget.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
-import '../../../controllers/theme_controller.dart';
 import '../restaurant_details_screen/restaurant_details_screen.dart';
 
+/// Archetype B — catalogue list, "voucher" variant. Each row is a coupon: a
+/// photo stub with the discount flag, the store beside it and a torn-edge
+/// code strip along the bottom.
 class DiscountRestaurantListScreen extends StatelessWidget {
   const DiscountRestaurantListScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: DiscountRestaurantListController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-            centerTitle: false,
-            titleSpacing: 0,
-            title: Text(
-              controller.title.value,
-              textAlign: TextAlign.start,
-              style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-            ),
-          ),
-          body:
-              controller.isLoading.value
-                  ? Constant.loader()
-                  : Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: controller.vendorList.length,
-                      itemBuilder: (context, index) {
-                        VendorModel vendorModel = controller.vendorList[index];
-                        CouponModel offerModel = controller.couponList[index];
-                        return InkWell(
-                          onTap: () {
-                            Get.to(RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 20),
-                            child: Container(
-                              decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                              child: Row(
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), bottomLeft: Radius.circular(16)),
-                                    child: Stack(
-                                      children: [
-                                        NetworkImageWidget(imageUrl: vendorModel.photo.toString(), fit: BoxFit.cover, height: Responsive.height(16, context), width: Responsive.width(28, context)),
-                                        Container(
-                                          height: Responsive.height(16, context),
-                                          width: Responsive.width(28, context),
-                                          decoration: BoxDecoration(
-                                            gradient: LinearGradient(begin: const Alignment(-0.00, -1.00), end: const Alignment(0, 1), colors: [Colors.black.withOpacity(0), const Color(0xFF111827)]),
-                                          ),
-                                        ),
-                                        Positioned(
-                                          top: 10,
-                                          left: 10,
-                                          child: Container(
-                                            decoration: ShapeDecoration(
-                                              color: isDark ? AppThemeData.ecommerce300 : AppThemeData.ecommerce300,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
-                                            ),
-                                            child: Padding(
-                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                              child: Text(
-                                                "${offerModel.discountType == "Fix Price" ? (RegionService.currencyForVendorId(offerModel.vendorID) ?? Constant.currencyModel!).symbol : ""}${offerModel.discount}${offerModel.discountType == "Percentage" ? "% off".toUpperCase().tr : " off".toUpperCase().tr}",
-                                                textAlign: TextAlign.start,
-                                                maxLines: 1,
-                                                style: TextStyle(overflow: TextOverflow.ellipsis, fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  vendorModel.title.toString(),
-                                                  textAlign: TextAlign.start,
-                                                  maxLines: 1,
-                                                  style: TextStyle(
-                                                    fontSize: 18,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    fontFamily: AppThemeData.semiBold,
-                                                    color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                  ),
-                                                ),
-                                              ),
-                                              Row(
-                                                children: [
-                                                  SvgPicture.asset("assets/icons/ic_star.svg", colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn)),
-                                                  const SizedBox(width: 5),
-                                                  Text(
-                                                    "${Constant.calculateReview(reviewCount: vendorModel.reviewsCount!.toStringAsFixed(0), reviewSum: vendorModel.reviewsSum.toString())} (${vendorModel.reviewsCount!.toStringAsFixed(0)})",
-                                                    style: TextStyle(color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 5),
-                                          Row(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Icon(Icons.location_on, size: 18, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600),
-                                              const SizedBox(width: 5),
-                                              Expanded(
-                                                child: Text(
-                                                  vendorModel.location.toString(),
-                                                  style: TextStyle(
-                                                    fontFamily: AppThemeData.medium,
-                                                    fontWeight: FontWeight.w500,
-                                                    fontSize: 12,
-                                                    color: isDark ? AppThemeData.grey400 : AppThemeData.grey400,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 5),
-                                          Container(
-                                            color: isDark ? AppThemeData.primary600 : AppThemeData.primary50,
-                                            child: DottedBorder(
-                                              options: RoundedRectDottedBorderOptions(
-                                                radius: const Radius.circular(6),
-                                                color: isDark ? AppThemeData.primary300 : AppThemeData.primary300,
-                                                strokeWidth: 1,
-                                              ),
-                                              child: Padding(
-                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                                                child: Text(
-                                                  "${offerModel.code}",
-                                                  textAlign: TextAlign.start,
-                                                  style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+        final isLoading = controller.isLoading.value;
+        final stores = controller.vendorList;
+        return DsScaffold.collapsing(
+          title: controller.title.value,
+          subtitle: isLoading || stores.isEmpty ? null : '${stores.length} ${"Offers".tr}',
+          slivers: [
+            if (isLoading)
+              const SliverToBoxAdapter(child: DsSkeletonList(itemCount: 4, trailing: false))
+            else if (stores.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: DsEmptyState(icon: Icons.local_offer_outlined, title: "No offers right now".tr, message: "New deals appear here as soon as stores publish them.".tr),
+              )
+            else
+              DsSliverResponsive(
+                sliver: SliverList.builder(
+                  itemCount: stores.length,
+                  itemBuilder: (context, index) {
+                    final VendorModel vendorModel = stores[index];
+                    final CouponModel offerModel = controller.couponList[index];
+                    return DsFadeSlideIn(
+                      index: index,
+                      child: _OfferVoucherCard(vendorModel: vendorModel, offerModel: offerModel),
+                    );
+                  },
+                ),
+              ),
+          ],
         );
       },
     );
   }
+}
 
-  // vhhv(){
-  //   return Column(
-  //     crossAxisAlignment: CrossAxisAlignment.start,
-  //     children: [
-  //       Stack(
-  //         children: [
-  //           ClipRRect(
-  //             borderRadius: const BorderRadius.only(topLeft: Radius.circular(16),topRight:  Radius.circular(16)),
-  //             child: Stack(
-  //               children: [
-  //                 RestaurantImageView(
-  //                   vendorModel: vendorModel,
-  //                 ),
-  //                 Container(
-  //                   height: Responsive.height(20, context),
-  //                   width: Responsive.width(100, context),
-  //                   decoration: BoxDecoration(
-  //                     gradient: LinearGradient(
-  //                       begin: const Alignment(-0.00, -1.00),
-  //                       end: const Alignment(0, 1),
-  //                       colors: [Colors.black.withOpacity(0), const Color(0xFF111827)],
-  //                     ),
-  //                   ),
-  //                 ),
-  //               ],
-  //             ),
-  //           ),
-  //           Transform.translate(
-  //             offset: Offset(Responsive.width(-3, context), Responsive.height(17.5, context)),
-  //             child: Row(
-  //               mainAxisAlignment: MainAxisAlignment.end,
-  //               crossAxisAlignment: CrossAxisAlignment.end,
-  //               children: [
-  //                 Container(
-  //                   decoration: ShapeDecoration(
-  //                     color: isDark ? AppThemeData.primary600 : AppThemeData.primary50,
-  //                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
-  //                   ),
-  //                   child: Padding(
-  //                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-  //                     child: Row(
-  //                       children: [
-  //                         SvgPicture.asset(
-  //                           "assets/icons/ic_star.svg",
-  //                           colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn),
-  //                         ),
-  //                         const SizedBox(
-  //                           width: 5,
-  //                         ),
-  //                         Text(
-  //                           "${Constant.calculateReview(reviewCount: vendorModel.reviewsCount!.toStringAsFixed(0), reviewSum: vendorModel.reviewsSum.toString())} (${vendorModel.reviewsCount!.toStringAsFixed(0)})",
-  //                           style: TextStyle(
-  //                             color: isDark ? AppThemeData.primary300 : AppThemeData.primary300,
-  //                             fontFamily: AppThemeData.semiBold,
-  //                             fontWeight: FontWeight.w600,
-  //                           ),
-  //                         ),
-  //                       ],
-  //                     ),
-  //                   ),
-  //                 ),
-  //                 const SizedBox(
-  //                   width: 10,
-  //                 ),
-  //                 Container(
-  //                   decoration: ShapeDecoration(
-  //                     color: isDark ? AppThemeData.ecommerce600 : AppThemeData.ecommerce50,
-  //                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
-  //                   ),
-  //                   child: Padding(
-  //                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-  //                     child: Row(
-  //                       children: [
-  //                         SvgPicture.asset(
-  //                           "assets/icons/ic_map_distance.svg",
-  //                           colorFilter: const ColorFilter.mode(AppThemeData.ecommerce300, BlendMode.srcIn),
-  //                         ),
-  //                         const SizedBox(
-  //                           width: 5,
-  //                         ),
-  //                         Text(
-  //                           "${Constant.getDistance(
-  //                             lat1: vendorModel.latitude.toString(),
-  //                             lng1: vendorModel.longitude.toString(),
-  //                             lat2: Constant.selectedLocation.location!.latitude.toString(),
-  //                             lng2: Constant.selectedLocation.location!.longitude.toString(),
-  //                           )} ${Constant.distanceType}",
-  //                           style: TextStyle(
-  //                             color: isDark ? AppThemeData.ecommerce300 : AppThemeData.ecommerce300,
-  //                             fontFamily: AppThemeData.semiBold,
-  //                             fontWeight: FontWeight.w600,
-  //                           ),
-  //                         ),
-  //                       ],
-  //                     ),
-  //                   ),
-  //                 ),
-  //               ],
-  //             ),
-  //           )
-  //         ],
-  //       ),
-  //       const SizedBox(
-  //         height: 15,
-  //       ),
-  //       Padding(
-  //         padding: const EdgeInsets.symmetric(horizontal: 16),
-  //         child: Column(
-  //           crossAxisAlignment: CrossAxisAlignment.start,
-  //           children: [
-  //             Text(
-  //               vendorModel.title.toString(),
-  //               textAlign: TextAlign.start,
-  //               maxLines: 1,
-  //               style: TextStyle(
-  //                 fontSize: 18,
-  //                 overflow: TextOverflow.ellipsis,
-  //                 fontFamily: AppThemeData.semiBold,
-  //                 color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-  //               ),
-  //             ),
-  //             Text(
-  //               vendorModel.location.toString(),
-  //               textAlign: TextAlign.start,
-  //               maxLines: 1,
-  //               style: TextStyle(
-  //                 overflow: TextOverflow.ellipsis,
-  //                 fontFamily: AppThemeData.medium,
-  //                 fontWeight: FontWeight.w500,
-  //                 color: isDark ? AppThemeData.grey400 : AppThemeData.grey400,
-  //               ),
-  //             )
-  //           ],
-  //         ),
-  //       ),
-  //       const SizedBox(
-  //         height: 10,
-  //       ),
-  //     ],
-  //   );
-  // }
+class _OfferVoucherCard extends StatelessWidget {
+  final VendorModel vendorModel;
+  final CouponModel offerModel;
+  const _OfferVoucherCard({required this.vendorModel, required this.offerModel});
+
+  String get _discountLabel =>
+      "${offerModel.discountType == "Fix Price" ? (RegionService.currencyForVendorId(offerModel.vendorID) ?? Constant.currencyModel!).symbol : ""}${offerModel.discount}${offerModel.discountType == "Percentage" ? "% off".toUpperCase().tr : " off".toUpperCase().tr}";
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard(
+      padding: EdgeInsets.zero,
+      margin: const EdgeInsets.only(bottom: DsSpace.lg),
+      clipBehavior: Clip.antiAlias,
+      semanticLabel: vendorModel.title.toString(),
+      onTap: () {
+        Get.to(RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(DsSpace.md),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: DsRadius.brMd,
+                      child: NetworkImageWidget(imageUrl: vendorModel.photo.toString(), fit: BoxFit.cover, height: 104, width: 104),
+                    ),
+                    Positioned(
+                      top: DsSpace.xs,
+                      left: DsSpace.xs,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm, vertical: 3),
+                        decoration: BoxDecoration(color: c.brand, borderRadius: DsRadius.brPill),
+                        child: Text(_discountLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.labelSm.withColor(c.onBrand)),
+                      ),
+                    ),
+                  ],
+                ),
+                const DsGap(DsSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(vendorModel.title.toString(), textAlign: TextAlign.start, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.titleSm.w600),
+                      const DsGap(DsSpace.xs),
+                      Row(
+                        children: [
+                          SvgPicture.asset("assets/icons/ic_star.svg", width: 14, height: 14, colorFilter: ColorFilter.mode(c.brandStrong, BlendMode.srcIn)),
+                          const DsGap(DsSpace.xs),
+                          Flexible(
+                            child: Text(
+                              "${Constant.calculateReview(reviewCount: vendorModel.reviewsCount!.toStringAsFixed(0), reviewSum: vendorModel.reviewsSum.toString())} (${vendorModel.reviewsCount!.toStringAsFixed(0)})",
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: t.labelSm.withColor(c.brandStrong).tabular,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const DsGap(DsSpace.xs),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.location_on_outlined, size: 15, color: c.textMuted),
+                          const DsGap(DsSpace.xs),
+                          Expanded(
+                            child: Text(vendorModel.location.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySm),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Torn-edge coupon strip.
+          Container(
+            width: double.infinity,
+            color: c.brandSoft,
+            padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.md),
+            child: Row(
+              children: [
+                Icon(Icons.confirmation_number_outlined, size: 18, color: c.brandStrong),
+                const DsGap(DsSpace.sm),
+                Expanded(
+                  child: Text("Use code".tr, style: t.bodySm.withColor(c.brandStrong)),
+                ),
+                DottedBorder(
+                  options: RoundedRectDottedBorderOptions(radius: const Radius.circular(DsRadius.xs), color: c.brandStrong, strokeWidth: 1),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
+                    child: Text("${offerModel.code}", textAlign: TextAlign.start, style: t.label.withColor(c.brandStrong).tabular),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

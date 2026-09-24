@@ -1,10 +1,13 @@
 import 'dart:io';
 
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
 import 'package:video_player/video_player.dart';
 
+/// Archetype **K — full-bleed media**: black canvas, floating play control.
 class FullScreenVideoViewer extends StatefulWidget {
   final String videoUrl;
   final String heroTag;
@@ -13,7 +16,7 @@ class FullScreenVideoViewer extends StatefulWidget {
   const FullScreenVideoViewer({super.key, required this.videoUrl, required this.heroTag, this.videoFile});
 
   @override
-  _FullScreenVideoViewerState createState() => _FullScreenVideoViewerState();
+  State<FullScreenVideoViewer> createState() => _FullScreenVideoViewerState();
 }
 
 class _FullScreenVideoViewerState extends State<FullScreenVideoViewer> {
@@ -32,36 +35,41 @@ class _FullScreenVideoViewerState extends State<FullScreenVideoViewer> {
 
   @override
   Widget build(BuildContext context) {
+    final playing = _controller.value.isPlaying;
     return Scaffold(
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         elevation: 0.0,
-        backgroundColor: Colors.black,
+        backgroundColor: Colors.transparent,
         iconTheme: const IconThemeData(color: Colors.white),
         systemOverlayStyle: SystemUiOverlayStyle.light,
+        automaticallyImplyLeading: false,
+        leading: const Padding(
+          padding: EdgeInsets.only(left: DsSpace.sm),
+          child: DsBackButton(color: Colors.white),
+        ),
       ),
       body: Container(
-          color: Colors.black,
-          child: Hero(
-            tag: widget.videoUrl,
-            child: Center(
-              child: _controller.value.isInitialized
-                  ? AspectRatio(
-                      aspectRatio: _controller.value.aspectRatio,
-                      child: VideoPlayer(_controller),
-                    )
-                  : Container(),
-            ),
-          )),
+        color: Colors.black,
+        child: Hero(
+          tag: widget.videoUrl,
+          child: Center(
+            child: _controller.value.isInitialized
+                ? AspectRatio(aspectRatio: _controller.value.aspectRatio, child: VideoPlayer(_controller))
+                : const DsBrandLoader(color: Colors.white),
+          ),
+        ),
+      ),
       floatingActionButton: FloatingActionButton(
         heroTag: widget.heroTag,
+        tooltip: playing ? 'Pause'.tr : 'Play'.tr,
         onPressed: () {
           setState(() {
             _controller.value.isPlaying ? _controller.pause() : _controller.play();
           });
         },
-        child: Icon(
-          _controller.value.isPlaying ? CupertinoIcons.pause : CupertinoIcons.play_arrow_solid,
-        ),
+        child: Icon(playing ? CupertinoIcons.pause : CupertinoIcons.play_arrow_solid, semanticLabel: playing ? 'Pause'.tr : 'Play'.tr),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );

@@ -1,58 +1,47 @@
-import 'package:customer/themes/app_them_data.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 
-/// Small shared building blocks for the subscription / account screens.
+/// Small shared building blocks for the subscription / account screens,
+/// built on the design system. They carry no state and read no observable.
 class SubUi {
   SubUi._();
 
-  static Color text(bool isDark) => isDark ? AppThemeData.grey50 : AppThemeData.grey900;
+  /// Section card. Pass [tone] for a tinted status surface.
+  static Widget card(BuildContext context, Widget child, {EdgeInsets margin = const EdgeInsets.only(bottom: DsSpace.md), DsTone? tone, Color? borderColor}) {
+    if (tone != null) {
+      return DsCard.tinted(tone: tone, margin: margin, padding: const EdgeInsets.all(DsSpace.lg), child: child);
+    }
+    return DsCard(margin: margin, padding: const EdgeInsets.all(DsSpace.lg), borderColor: borderColor, child: child);
+  }
 
-  static Color muted(bool isDark) => isDark ? AppThemeData.grey300 : AppThemeData.grey600;
+  static Widget heading(BuildContext context, String value, {IconData? icon, String? actionLabel, VoidCallback? onAction}) =>
+      DsSectionHeader(title: value, icon: icon, actionLabel: actionLabel, onAction: onAction, padding: const EdgeInsets.only(top: DsSpace.lg, bottom: DsSpace.md));
 
-  static Color surface(bool isDark) => isDark ? AppThemeData.surfaceDark : AppThemeData.surface;
+  static Widget title(BuildContext context, String value) => Text(value, style: DsTypography.titleSm.copyWith(color: DsColors.of(context).textPrimary));
 
-  static AppBar appBar(String title, bool isDark, {List<Widget>? actions, PreferredSizeWidget? bottom}) => AppBar(
-    backgroundColor: surface(isDark),
-    centerTitle: false,
-    titleSpacing: 0,
-    title: Text(title, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 16, color: text(isDark))),
-    actions: actions,
-    bottom: bottom,
-  );
+  static Widget body(BuildContext context, String value) => Text(value, style: DsTypography.body.copyWith(color: DsColors.of(context).textSecondary));
 
-  static Widget card(bool isDark, Widget child, {EdgeInsets margin = const EdgeInsets.only(bottom: 12)}) => Container(
-    width: double.infinity,
-    margin: margin,
-    padding: const EdgeInsets.all(14),
-    decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-    child: child,
-  );
+  /// Label / value line used inside the detail cards.
+  static Widget row(BuildContext context, String label, String value) {
+    final c = DsColors.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 128, child: Text(label, style: DsTypography.bodySm.copyWith(color: c.textMuted))),
+          const DsGap(DsSpace.sm),
+          Expanded(child: Text(value, style: DsTypography.bodySm.copyWith(color: c.textPrimary, fontWeight: FontWeight.w500))),
+        ],
+      ),
+    );
+  }
 
-  static Widget heading(String value, bool isDark) => Padding(
-    padding: const EdgeInsets.only(top: 8, bottom: 8),
-    child: Text(value, style: TextStyle(fontSize: 16, fontFamily: AppThemeData.semiBold, color: text(isDark))),
-  );
+  static Widget chip(String label, DsTone tone) => DsBadge(label: label, tone: tone, style: DsBadgeStyle.soft);
 
-  static Widget title(String value, bool isDark) => Text(value, style: TextStyle(fontSize: 16, fontFamily: AppThemeData.semiBold, color: text(isDark)));
+  static Widget empty(BuildContext context, String value, {IconData icon = Icons.inbox_outlined, String? title}) =>
+      DsEmptyState(icon: icon, title: title ?? value, message: title == null ? null : value, compact: true);
 
-  static Widget body(String value, bool isDark) => Text(value, style: TextStyle(fontSize: 14, fontFamily: AppThemeData.regular, color: muted(isDark)));
-
-  static Widget row(String label, String value, bool isDark) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 2),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(width: 120, child: Text(label, style: TextStyle(fontSize: 13, fontFamily: AppThemeData.regular, color: muted(isDark)))),
-        Expanded(child: Text(value, style: TextStyle(fontSize: 13, fontFamily: AppThemeData.medium, color: text(isDark)))),
-      ],
-    ),
-  );
-
-  static Widget chip(String label, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-    decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
-    child: Text(label, style: TextStyle(color: color, fontSize: 12, fontFamily: AppThemeData.semiBold)),
-  );
-
-  static Widget empty(String value, bool isDark) => Padding(padding: const EdgeInsets.symmetric(vertical: 24), child: Center(child: body(value, isDark)));
+  /// Price line ("12 000 XOF / month").
+  static Widget price(BuildContext context, String value) => Text(value, style: DsTypography.titleSm.copyWith(color: DsColors.of(context).brandStrong).tabular);
 }

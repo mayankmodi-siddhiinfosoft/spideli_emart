@@ -1,7 +1,5 @@
 import 'package:customer/utils/region_service.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:customer/constant/constant.dart';
-import 'package:customer/controllers/theme_controller.dart';
 import 'package:customer/models/banner_model.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/screen_ui/auth_screens/login_screen.dart';
@@ -10,10 +8,8 @@ import 'package:customer/screen_ui/location_enable_screens/location_permission_s
 import 'package:customer/screen_ui/on_demand_service/view_all_popular_service_screen.dart';
 import 'package:customer/screen_ui/on_demand_service/view_category_service_screen.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/round_button_fill.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
-import 'package:customer/utils/network_image_widget.dart';
 import 'package:customer/widget/osm_map/map_picker_page.dart';
 import 'package:customer/widget/place_picker/location_picker_screen.dart';
 import 'package:customer/widget/place_picker/selected_location_model.dart';
@@ -28,274 +24,284 @@ import '../../models/provider_serivce_model.dart';
 import 'on_demand_category_screen.dart';
 import 'on_demand_details_screen.dart';
 
+/// Archetype A – service home. Gradient hero (greeting + delivery address),
+/// an overlapping category rail card, a banner carousel and the popular
+/// services rail.
 class OnDemandHomeScreen extends StatelessWidget {
   const OnDemandHomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-
     return GetX<OnDemandHomeController>(
       init: OnDemandHomeController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            automaticallyImplyLeading: false,
-            backgroundColor: AppThemeData.primary300,
-            title: Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => Get.offAll(const ServiceListScreen()),
-                    child: Container(
-                      height: 42,
-                      width: 42,
-                      decoration: const BoxDecoration(shape: BoxShape.circle, color: AppThemeData.grey50),
-                      child: const Center(child: Padding(padding: EdgeInsets.only(left: 5), child: Icon(Icons.arrow_back_ios, color: AppThemeData.grey900, size: 20))),
+        final c = context.dsColors;
+        final t = context.dsText;
+        final l = context.dsLayout;
+
+        final bool isLoading = controller.isLoading.value;
+        final bool noZone = Constant.isZoneAvailable == false || controller.providerList.isEmpty;
+        final List<CategoryModel> categories = controller.categories.toList();
+        final List<BannerModel> banners = controller.bannerTopHome.toList();
+        final List<ProviderServiceModel> providers = controller.providerList.toList();
+
+        final List<Widget> slivers;
+        if (isLoading) {
+          slivers = const [
+            DsSliverResponsive(sliver: SliverToBoxAdapter(child: Padding(padding: EdgeInsets.only(top: DsSpace.xl), child: DsSkeletonDashboard(tiles: 2))), top: DsSpace.lg),
+          ];
+        } else if (noZone) {
+          slivers = [
+            DsSliverResponsive(
+              top: DsSpace.xxxl,
+              sliver: SliverToBoxAdapter(
+                child: DsEmptyState(
+                  illustration: Image.asset("assets/images/location.gif", height: 120),
+                  title: "No Store Found in Your Area".tr,
+                  message: "Currently, there are no available store in your zone. Try changing your location to find nearby options.".tr,
+                  actionLabel: "Change Zone".tr,
+                  actionIcon: Icons.my_location_rounded,
+                  onAction: () async {
+                    Get.offAll(const LocationPermissionScreen());
+                  },
+                ),
+              ),
+            ),
+          ];
+        } else {
+          slivers = [
+            DsSliverResponsive(
+              maxWidth: DsLayout.wideMax,
+              top: DsSpace.xl,
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: DsFadeSlideIn.stagger([
+                    if (banners.isNotEmpty) BannerView(bannerList: banners),
+                    DsSectionHeader(
+                      title: "Most Popular services".tr,
+                      subtitle: "${providers.length} ${'services near you'.tr}",
+                      actionLabel: "View all".tr,
+                      onAction: () {
+                        Get.to(() => ViewAllPopularServiceScreen());
+                      },
                     ),
-                  ),
-                  const SizedBox(width: 10),
+                  ]),
+                ),
+              ),
+            ),
+            if (providers.isEmpty)
+              DsSliverResponsive(
+                sliver: SliverToBoxAdapter(child: DsEmptyState(compact: true, icon: Icons.handyman_outlined, title: "No Services Found".tr)),
+              )
+            else
+              DsSliverResponsive(
+                maxWidth: DsLayout.wideMax,
+                bottom: DsSpace.xl,
+                sliver: SliverList.builder(
+                  itemCount: providers.length >= 6 ? 6 : providers.length,
+                  itemBuilder: (_, index) {
+                    return DsFadeSlideIn(index: index, child: ServiceView(provider: providers[index], controller: controller));
+                  },
+                ),
+              ),
+          ];
+        }
+
+        return DsScaffold.hero(
+          onBack: () => Get.offAll(const ServiceListScreen()),
+          onRefresh: controller.getData,
+          hero: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Text("Hello".tr, style: DsTypography.caption.copyWith(color: Colors.white70)),
+                        const DsGap(DsSpace.xxs),
                         Constant.userModel == null
-                            ? InkWell(onTap: () => Get.offAll(const LoginScreen()), child: Text("Login".tr, style: AppThemeData.boldTextStyle(color: AppThemeData.grey900, fontSize: 12)))
-                            : Text(Constant.userModel!.fullName(), style: AppThemeData.boldTextStyle(color: AppThemeData.grey900, fontSize: 12)),
-                        InkWell(
-                          onTap: () async {
-                            if (Constant.userModel != null) {
-                              Get.to(AddressListScreen())!.then((value) {
-                                if (value != null) {
-                                  ShippingAddress shippingAddress = value;
-                                  Constant.selectedLocation = shippingAddress;
-                                  controller.getData();
-                                }
-                              });
-                            } else {
-                              Constant.checkPermission(
-                                onTap: () async {
-                                  ShowToastDialog.showLoader("Please wait...".tr);
-
-                                  // ✅ declare it once here!
-                                  ShippingAddress shippingAddress = ShippingAddress();
-
-                                  try {
-                                    await Geolocator.requestPermission();
-                                    await Geolocator.getCurrentPosition();
-                                    ShowToastDialog.closeLoader();
-
-                                    if (Constant.selectedMapType == 'osm') {
-                                      final result = await Get.to(() => MapPickerPage());
-                                      if (result != null) {
-                                        final firstPlace = result;
-                                        final lat = firstPlace.coordinates.latitude;
-                                        final lng = firstPlace.coordinates.longitude;
-                                        final address = firstPlace.address;
-
-                                        shippingAddress.addressAs = "Home";
-                                        shippingAddress.locality = address.toString();
-                                        shippingAddress.location = UserLocation(latitude: lat, longitude: lng);
-                                        Constant.selectedLocation = shippingAddress;
-                                        controller.getData();
-                                        Get.back();
-                                      }
-                                    } else {
-                                      Get.to(LocationPickerScreen())!.then((value) async {
-                                        if (value != null) {
-                                          SelectedLocationModel selectedLocationModel = value;
-
-                                          shippingAddress.addressAs = "Home";
-                                          shippingAddress.location = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
-                                          shippingAddress.locality = "Picked from Map"; // You can reverse-geocode
-
-                                          Constant.selectedLocation = shippingAddress;
-                                          controller.getData();
-                                        }
-                                      });
-                                    }
-                                  } catch (e) {
-                                    await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
-                                      Placemark placeMark = valuePlaceMaker[0];
-                                      shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
-                                      String currentLocation =
-                                          "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
-                                      shippingAddress.locality = currentLocation;
-                                    });
-
-                                    Constant.selectedLocation = shippingAddress;
-                                    ShowToastDialog.closeLoader();
-                                    controller.getData();
-                                  }
-                                },
-                                context: context,
-                              );
-                            }
-                          },
-                          child: Text.rich(
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            TextSpan(
-                              children: [
-                                TextSpan(
-                                  text: Constant.selectedLocation.getFullAddress(),
-                                  style: TextStyle(fontFamily: AppThemeData.medium, overflow: TextOverflow.ellipsis, color: AppThemeData.grey900, fontSize: 14),
-                                ),
-                                WidgetSpan(child: SvgPicture.asset("assets/icons/ic_down.svg")),
-                              ],
-                            ),
-                          ),
-                        ),
+                            ? InkWell(
+                              onTap: () => Get.offAll(const LoginScreen()),
+                              child: Text("Login".tr, style: DsTypography.title.copyWith(color: Colors.white)),
+                            )
+                            : Text(Constant.userModel!.fullName(), maxLines: 1, overflow: TextOverflow.ellipsis, style: DsTypography.title.copyWith(color: Colors.white)),
                       ],
                     ),
                   ),
+                  DsIconWell(icon: DsSection.onDemand.icon, size: 44, circle: true, onBrand: true),
                 ],
               ),
-            ),
-          ),
-          body:
-              controller.isLoading.value
-                  ? Constant.loader()
-                  : Constant.isZoneAvailable == false || controller.providerList.isEmpty
-                  ? Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Image.asset("assets/images/location.gif", height: 120),
-                        const SizedBox(height: 12),
-                        Text("No Store Found in Your Area".tr, style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold)),
-                        const SizedBox(height: 5),
-                        Text(
-                          "Currently, there are no available store in your zone. Try changing your location to find nearby options.".tr,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
+              const DsGap(DsSpace.lg),
+              DsCard.glass(
+                padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+                onTap: () => _pickAddress(context, controller),
+                semanticLabel: "Address".tr,
+                child: Row(
+                  children: [
+                    const Icon(Icons.location_on_outlined, color: Colors.white, size: 20),
+                    const DsGap(DsSpace.sm),
+                    Expanded(
+                      child: Text.rich(
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        TextSpan(
+                          children: [
+                            TextSpan(text: Constant.selectedLocation.getFullAddress(), style: DsTypography.bodyStrong.copyWith(color: Colors.white)),
+                            WidgetSpan(child: SvgPicture.asset("assets/icons/ic_down.svg", colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn))),
+                          ],
                         ),
-                        const SizedBox(height: 20),
-                        RoundedButtonFill(
-                          title: "Change Zone".tr,
-                          width: 55,
-                          height: 5.5,
-                          color: AppThemeData.primary300,
-                          textColor: AppThemeData.grey50,
-                          onPress: () async {
-                            Get.offAll(const LocationPermissionScreen());
-                          },
-                        ),
-                      ],
-                    ),
-                  )
-                  : Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 15),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          BannerView(bannerList: controller.bannerTopHome),
-                          const SizedBox(height: 20),
-                          Container(
-                            height: MediaQuery.of(context).size.height * 0.12,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: isDark ? AppThemeData.greyDark600 : AppThemeData.greyDark600, width: 1),
-                              color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                            ),
-                            child:
-                                controller.categories.isEmpty
-                                    ? Constant.showEmptyView(message: "No Categories".tr)
-                                    : Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 10),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: ListView.builder(
-                                              itemCount: controller.categories.length > 3 ? 3 : controller.categories.length,
-                                              scrollDirection: Axis.horizontal,
-                                              itemBuilder: (context, index) {
-                                                final category = controller.categories[index];
-                                                return InkWell(
-                                                  onTap: () {
-                                                    Get.to(() => ViewCategoryServiceListScreen(), arguments: {'categoryId': category.id, 'categoryTitle': category.title});
-                                                  },
-                                                  child: CategoryView(category: category, index: index, isDark: isDark),
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                          if (controller.categories.length > 3)
-                                            Padding(
-                                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                                              child: Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  InkWell(
-                                                    onTap: () {
-                                                      Get.to(() => const OnDemandCategoryScreen());
-                                                    },
-                                                    child: ClipOval(child: Container(width: 50, height: 50, color: AppThemeData.grey200, child: const Center(child: Icon(Icons.chevron_right)))),
-                                                  ),
-                                                  const SizedBox(height: 5),
-                                                  SizedBox(
-                                                    width: 70,
-                                                    child: Center(
-                                                      child: Text(
-                                                        "View All".tr,
-                                                        textAlign: TextAlign.center,
-                                                        maxLines: 1,
-                                                        style: AppThemeData.semiBoldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 20, bottom: 10),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    "Most Popular services".tr,
-                                    style: TextStyle(color: isDark ? Colors.white : Colors.black, fontSize: 18, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w600),
-                                  ),
-                                ),
-                                InkWell(
-                                  onTap: () {
-                                    Get.to(() => ViewAllPopularServiceScreen());
-                                  },
-                                  child: Text("View all".tr, style: TextStyle(color: AppThemeData.primary300, fontSize: 14, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w600)),
-                                ),
-                              ],
-                            ),
-                          ),
-                          controller.providerList.isEmpty
-                              ? Center(child: Text("No Services Found".tr))
-                              : ListView.builder(
-                                shrinkWrap: true,
-                                padding: EdgeInsets.zero,
-                                physics: const NeverScrollableScrollPhysics(),
-                                itemCount: controller.providerList.length >= 6 ? 6 : controller.providerList.length,
-                                itemBuilder: (_, index) {
-                                  return ServiceView(provider: controller.providerList[index], controller: controller, isDark: isDark);
-                                },
-                              ),
-                        ],
                       ),
                     ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          heroOverlap:
+              isLoading || noZone
+                  ? null
+                  : DsCard(
+                    padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
+                    child:
+                        categories.isEmpty
+                            ? Padding(padding: const EdgeInsets.all(DsSpace.sm), child: Constant.showEmptyView(message: "No Categories".tr))
+                            : Row(
+                              children: [
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 96,
+                                    child: ListView.builder(
+                                      itemCount: categories.length > 3 ? 3 : categories.length,
+                                      scrollDirection: Axis.horizontal,
+                                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.xs),
+                                      itemBuilder: (context, index) {
+                                        final category = categories[index];
+                                        return InkWell(
+                                          borderRadius: DsRadius.brMd,
+                                          onTap: () {
+                                            Get.to(() => ViewCategoryServiceListScreen(), arguments: {'categoryId': category.id, 'categoryTitle': category.title});
+                                          },
+                                          child: CategoryView(category: category, index: index),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                if (categories.length > 3)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm),
+                                    child: InkWell(
+                                      borderRadius: DsRadius.brMd,
+                                      onTap: () {
+                                        Get.to(() => const OnDemandCategoryScreen());
+                                      },
+                                      child: Semantics(
+                                        button: true,
+                                        label: "View All".tr,
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              width: 52,
+                                              height: 52,
+                                              decoration: BoxDecoration(shape: BoxShape.circle, color: c.brandSoft),
+                                              child: Icon(Icons.chevron_right_rounded, color: c.brandStrong),
+                                            ),
+                                            const DsGap(DsSpace.xs),
+                                            SizedBox(width: 64, child: Text("View All".tr, textAlign: TextAlign.center, maxLines: 1, style: t.labelSm.withColor(c.textPrimary))),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
                   ),
+          slivers: [
+            if (!isLoading && !noZone && l.isWide) DsGap.sliver(DsSpace.sm),
+            ...slivers,
+          ],
         );
       },
     );
   }
+
+  /// Address picker – behaviour moved verbatim from the old header row.
+  Future<void> _pickAddress(BuildContext context, OnDemandHomeController controller) async {
+    if (Constant.userModel != null) {
+      Get.to(AddressListScreen())!.then((value) {
+        if (value != null) {
+          ShippingAddress shippingAddress = value;
+          Constant.selectedLocation = shippingAddress;
+          controller.getData();
+        }
+      });
+    } else {
+      Constant.checkPermission(
+        onTap: () async {
+          ShowToastDialog.showLoader("Please wait...".tr);
+
+          // ✅ declare it once here!
+          ShippingAddress shippingAddress = ShippingAddress();
+
+          try {
+            await Geolocator.requestPermission();
+            await Geolocator.getCurrentPosition();
+            ShowToastDialog.closeLoader();
+
+            if (Constant.selectedMapType == 'osm') {
+              final result = await Get.to(() => MapPickerPage());
+              if (result != null) {
+                final firstPlace = result;
+                final lat = firstPlace.coordinates.latitude;
+                final lng = firstPlace.coordinates.longitude;
+                final address = firstPlace.address;
+
+                shippingAddress.addressAs = "Home";
+                shippingAddress.locality = address.toString();
+                shippingAddress.location = UserLocation(latitude: lat, longitude: lng);
+                Constant.selectedLocation = shippingAddress;
+                controller.getData();
+                Get.back();
+              }
+            } else {
+              Get.to(LocationPickerScreen())!.then((value) async {
+                if (value != null) {
+                  SelectedLocationModel selectedLocationModel = value;
+
+                  shippingAddress.addressAs = "Home";
+                  shippingAddress.location = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
+                  shippingAddress.locality = "Picked from Map"; // You can reverse-geocode
+
+                  Constant.selectedLocation = shippingAddress;
+                  controller.getData();
+                }
+              });
+            }
+          } catch (e) {
+            await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
+              Placemark placeMark = valuePlaceMaker[0];
+              shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
+              String currentLocation =
+                  "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
+              shippingAddress.locality = currentLocation;
+            });
+
+            Constant.selectedLocation = shippingAddress;
+            ShowToastDialog.closeLoader();
+            controller.getData();
+          }
+        },
+        context: context,
+      );
+    }
+  }
 }
 
+/// Swipeable banner rail with a progress-bar style indicator.
 class BannerView extends StatelessWidget {
   final List<BannerModel> bannerList;
   final RxInt currentPage = 0.obs;
@@ -318,6 +324,7 @@ class BannerView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.dsColors;
     scrollController.addListener(() {
       onScroll(context);
     });
@@ -325,7 +332,7 @@ class BannerView extends StatelessWidget {
     return Column(
       children: [
         SizedBox(
-          height: 150,
+          height: 160,
           child: ListView.separated(
             controller: scrollController,
             scrollDirection: Axis.horizontal,
@@ -333,19 +340,26 @@ class BannerView extends StatelessWidget {
             separatorBuilder: (context, index) => const SizedBox(width: 15),
             itemBuilder: (context, index) {
               final banner = bannerList[index];
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(15),
-                child: SizedBox(width: MediaQuery.of(context).size.width * 0.8, child: NetworkImageWidget(imageUrl: banner.photo ?? '', fit: BoxFit.cover)),
+              return SizedBox(
+                width: MediaQuery.of(context).size.width * 0.8,
+                child: DsImage(url: banner.photo ?? '', radius: DsRadius.lg, fit: BoxFit.cover),
               );
             },
           ),
         ),
-        const SizedBox(height: 8),
+        const DsGap(DsSpace.md),
         Obx(() {
           return Row(
             children: List.generate(bannerList.length, (index) {
               bool isSelected = currentPage.value == index;
-              return Expanded(child: Container(height: 4, decoration: BoxDecoration(color: isSelected ? AppThemeData.grey300 : AppThemeData.grey100, borderRadius: BorderRadius.circular(5))));
+              return Expanded(
+                child: AnimatedContainer(
+                  duration: DsMotion.of(context, DsMotion.fast),
+                  margin: const EdgeInsets.symmetric(horizontal: DsSpace.xxs),
+                  height: 4,
+                  decoration: BoxDecoration(color: isSelected ? c.brand : c.border, borderRadius: DsRadius.brPill),
+                ),
+              );
             }),
           );
         }),
@@ -354,37 +368,36 @@ class BannerView extends StatelessWidget {
   }
 }
 
+/// Circular category tile used by the home category rail.
 class CategoryView extends StatelessWidget {
   final CategoryModel category;
   final int index;
-  final bool isDark;
 
-  const CategoryView({super.key, required this.category, required this.index, required this.isDark});
+  const CategoryView({super.key, required this.category, required this.index});
+
+  static const List<DsTone> _tones = [DsTone.brand, DsTone.info, DsTone.success, DsTone.warning];
 
   @override
   Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final tone = c.tone(_tones[index % _tones.length]);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            height: 55,
-            width: 55,
-            decoration: BoxDecoration(color: Constant.colorList[index % Constant.colorList.length], borderRadius: BorderRadius.circular(50)),
-            child: ClipOval(
-              child: Padding(
-                padding: const EdgeInsets.all(14.0),
-                child: CachedNetworkImage(imageUrl: category.image.toString(), errorWidget: (_, __, ___) => Image.network(Constant.placeHolderImage, fit: BoxFit.cover)),
-              ),
-            ),
+            height: 52,
+            width: 52,
+            padding: const EdgeInsets.all(DsSpace.md),
+            decoration: BoxDecoration(color: tone.soft, shape: BoxShape.circle),
+            child: DsImage(url: category.image.toString(), radius: 0, fit: BoxFit.contain, errorIcon: Icons.category_outlined),
           ),
-          const SizedBox(height: 5),
+          const DsGap(DsSpace.xs),
           SizedBox(
-            width: 70,
-            child: Center(
-              child: Text(category.title ?? "", textAlign: TextAlign.center, maxLines: 1, style: AppThemeData.semiBoldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-            ),
+            width: 64,
+            child: Text(category.title ?? "", textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.labelSm.withColor(c.textPrimary)),
           ),
         ],
       ),
@@ -392,75 +405,70 @@ class CategoryView extends StatelessWidget {
   }
 }
 
+/// Service row shared by the home, category, popular and provider screens.
 class ServiceView extends StatelessWidget {
   final ProviderServiceModel provider;
-  final bool isDark;
   final OnDemandHomeController? controller;
 
-  const ServiceView({super.key, required this.provider, this.isDark = false, this.controller});
+  const ServiceView({super.key, required this.provider, this.controller});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final c = context.dsColors;
+    final t = context.dsText;
+    double rating = 0;
+    if (provider.reviewsCount != null && provider.reviewsCount != 0) {
+      rating = (provider.reviewsSum ?? 0) / (provider.reviewsCount ?? 1);
+    }
+
+    return DsCard.outlined(
+      margin: const EdgeInsets.only(bottom: DsSpace.md),
+      padding: EdgeInsets.zero,
+      semanticLabel: provider.title ?? "",
       onTap: () {
         Get.to(() => OnDemandDetailsScreen(), arguments: {'providerModel': provider});
       },
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 5),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: isDark ? AppThemeData.grey500 : Colors.grey.shade200),
-          color: isDark ? AppThemeData.grey900 : Colors.white,
-        ),
+      child: IntrinsicHeight(
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // --- Left Image ---
-            ClipRRect(
-              borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), bottomLeft: Radius.circular(10)),
-              child: CachedNetworkImage(
-                imageUrl: provider.photos.isNotEmpty ? provider.photos[0] : Constant.placeHolderImage,
-                width: 110,
-                height: MediaQuery.of(context).size.height * 0.16,
+            SizedBox(
+              width: 118,
+              child: DsImage(
+                url: provider.photos.isNotEmpty ? provider.photos[0] : Constant.placeHolderImage,
+                radius: 0,
                 fit: BoxFit.cover,
-                placeholder: (context, url) => Center(child: CircularProgressIndicator.adaptive(valueColor: AlwaysStoppedAnimation(AppThemeData.primary300))),
-                errorWidget: (context, url, error) => Image.network(Constant.placeHolderImage, fit: BoxFit.cover),
+                heroTag: 'service_${provider.id}',
               ),
             ),
 
             // --- Right Content ---
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.fromLTRB(DsSpace.md, DsSpace.md, DsSpace.sm, DsSpace.md),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // Title + Favourite icon
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            provider.title ?? "",
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black),
-                          ),
-                        ),
+                        Expanded(child: Text(provider.title ?? "", maxLines: 2, overflow: TextOverflow.ellipsis, style: t.titleSm)),
                         if (controller != null)
-                          Obx(
-                            () => GestureDetector(
-                              onTap: () => controller!.toggleFavourite(provider),
-                              child: Icon(
-                                controller!.lstFav.where((element) => element.service_id == provider.id).isNotEmpty ? Icons.favorite : Icons.favorite_border,
-                                size: 24,
-                                color: controller!.lstFav.where((element) => element.service_id == provider.id).isNotEmpty ? AppThemeData.primary300 : (isDark ? Colors.white38 : Colors.black38),
-                              ),
-                            ),
-                          ),
+                          Obx(() {
+                            final bool fav = controller!.lstFav.where((element) => element.service_id == provider.id).isNotEmpty;
+                            return DsIconButton(
+                              icon: fav ? Icons.favorite : Icons.favorite_border,
+                              semanticLabel: 'Favourites'.tr,
+                              size: 36,
+                              color: fav ? c.brandStrong : c.textMuted,
+                              onPressed: () => controller!.toggleFavourite(provider),
+                            );
+                          }),
                       ],
                     ),
-
-                    const SizedBox(height: 4),
 
                     // Category
                     if (controller != null)
@@ -468,19 +476,21 @@ class ServiceView extends StatelessWidget {
                         future: controller!.getCategory(provider.categoryId ?? ""),
                         builder: (ctx, snap) {
                           if (!snap.hasData) return const SizedBox.shrink();
-                          return Text(snap.data?.title ?? "", style: TextStyle(fontSize: 13, color: isDark ? Colors.white70 : Colors.black54));
+                          return Padding(
+                            padding: const EdgeInsets.only(top: DsSpace.xxs),
+                            child: Text(snap.data?.title ?? "", maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySm),
+                          );
                         },
                       ),
 
-                    const SizedBox(height: 4),
+                    const DsGap(DsSpace.sm),
 
-                    // Price
-                    _buildPrice(),
-
-                    const SizedBox(height: 6),
-
-                    // Rating
-                    _buildRating(),
+                    Row(
+                      children: [
+                        Expanded(child: _buildPrice(context)),
+                        DsBadge(label: rating.toStringAsFixed(1), tone: DsTone.warning, icon: Icons.star_rounded, small: true),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -491,44 +501,37 @@ class ServiceView extends StatelessWidget {
     );
   }
 
-  Widget _buildPrice() {
+  Widget _buildPrice(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
     if (provider.disPrice == "" || provider.disPrice == "0") {
       return Text(
         provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.price, currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.price ?? "0", currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
-        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppThemeData.primary300),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: t.titleSm.withColor(c.brandStrong).tabular,
       );
     } else {
       return Row(
         children: [
-          Text(
-            provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.disPrice ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.disPrice, currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppThemeData.primary300),
+          Flexible(
+            child: Text(
+              provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.disPrice ?? '0', currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.disPrice, currency: RegionService.currencyForService(regionId: provider.regionId))}/${'hr'.tr}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: t.titleSm.withColor(c.brandStrong).tabular,
+            ),
           ),
-          const SizedBox(width: 6),
+          const DsGap(DsSpace.xs),
           Flexible(
             child: Text(
               provider.priceUnit == 'Fixed' ? Constant.amountShow(amount: provider.price, currency: RegionService.currencyForService(regionId: provider.regionId)) : '${Constant.amountShow(amount: provider.price ?? "0", currency: RegionService.currencyForService(regionId: provider.regionId))}/hr',
-              style: const TextStyle(fontSize: 12, color: Colors.grey, decoration: TextDecoration.lineThrough),
+              style: t.bodySm.strike.tabular,
               overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
       );
     }
-  }
-
-  Widget _buildRating() {
-    double rating = 0;
-    if (provider.reviewsCount != null && provider.reviewsCount != 0) {
-      rating = (provider.reviewsSum ?? 0) / (provider.reviewsCount ?? 1);
-    }
-    return Container(
-      decoration: BoxDecoration(color: AppThemeData.warning400, borderRadius: BorderRadius.circular(12)),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [const Icon(Icons.star, size: 14, color: Colors.white), const SizedBox(width: 3), Text(rating.toStringAsFixed(1), style: const TextStyle(fontSize: 12, color: Colors.white))],
-      ),
-    );
   }
 }

@@ -1,21 +1,13 @@
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/screen_ui/parcel_service/parcel_review_screen.dart';
-import 'package:customer/themes/responsive.dart';
-import 'package:customer/widget/my_separator.dart';
-import 'package:dotted_border/dotted_border.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
 import '../../constant/constant.dart';
 import '../../controllers/parcel_order_details_controller.dart';
-import '../../controllers/theme_controller.dart';
 import '../../models/user_model.dart';
 import '../../service/fire_store_utils.dart';
-import '../../themes/app_them_data.dart';
-import '../../themes/round_button_border.dart';
-import '../../themes/round_button_fill.dart';
 import '../../themes/show_toast_dialog.dart';
-import '../../utils/network_image_widget.dart';
 import '../multi_vendor_service/chat_screens/chat_screen.dart';
 import '../../models/parcel_order_model.dart';
 import '../../utils/parcel_receipt_pdf.dart';
@@ -23,539 +15,428 @@ import 'parcel_order_confirmation.dart';
 import 'parcel_shipping_widgets.dart';
 import 'parcel_tracking_screen.dart';
 
+/// Parcel order details (archetype F — order detail): a tinted status hero with
+/// the track shortcut, the scannable codes, the shipment and price cards, the
+/// route, the driver block and the bill; the single stateful action (pay the
+/// quote / cancel) sits in a sticky bar.
 class ParcelOrderDetails extends StatelessWidget {
   const ParcelOrderDetails({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
+    final c = context.dsColors;
+    final t = context.dsText;
+    final l = context.dsLayout;
     return GetX(
       init: ParcelOrderDetailsController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            automaticallyImplyLeading: false,
-            backgroundColor: AppThemeData.primary300,
-            title: Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  InkWell(
-                    borderRadius: BorderRadius.circular(50),
-                    onTap: () => Get.back(),
-                    child: Container(
-                      height: 42,
-                      width: 42,
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: AppThemeData.grey50),
-                      child: Center(child: Padding(padding: const EdgeInsets.only(left: 5), child: Icon(Icons.arrow_back_ios, color: AppThemeData.grey900, size: 20))),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text("Order Details".tr, style: AppThemeData.boldTextStyle(fontSize: 18, color: AppThemeData.grey900)),
-                        Text(
-                          "Your parcel is on the way. Track it in real time below.".tr,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppThemeData.mediumTextStyle(fontSize: 14, color: AppThemeData.grey900),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+        final String statusLabel = controller.parcelOrder.value.awaitingQuote
+            ? "Waiting for a quote".tr
+            : controller.parcelOrder.value.quoteReadyToPay
+            ? "Quote ready - pay to confirm".tr
+            : (controller.parcelOrder.value.parcelStatus ?? controller.parcelOrder.value.status ?? '').tr;
+        return DsScaffold(
+          appBar: DsAppBar(
+            title: "Order Details".tr,
+            subtitle: "Your parcel is on the way. Track it in real time below.".tr,
+            onBack: () => Get.back(),
           ),
-          body:
-              controller.isLoading.value
-                  ? Constant.loader()
-                  : SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Shipping: status, QR / barcode / pickup code, route, price breakdown, receipt, tracking.
-                        if (controller.parcelOrder.value.isTrackable) ...[
-                          ParcelCard(
-                            isDark: isDark,
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text("Tracking status".tr, style: AppThemeData.mediumTextStyle(fontSize: 13, color: AppThemeData.grey500)),
-                                      Text(
-                                        controller.parcelOrder.value.awaitingQuote
-                                            ? "Waiting for a quote".tr
-                                            : controller.parcelOrder.value.quoteReadyToPay
-                                            ? "Quote ready - pay to confirm".tr
-                                            : (controller.parcelOrder.value.parcelStatus ?? controller.parcelOrder.value.status ?? '').tr,
-                                        style: AppThemeData.boldTextStyle(fontSize: 16, color: AppThemeData.primary300),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                TextButton.icon(
-                                  onPressed: () => Get.to(() => ParcelTrackingScreen(order: controller.parcelOrder.value)),
-                                  icon: const Icon(Icons.timeline),
-                                  label: Text("Track".tr),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          ParcelCodesCard(order: controller.parcelOrder.value, isDark: isDark),
-                          const SizedBox(height: 12),
-                          ParcelShippingSummaryCard(order: controller.parcelOrder.value, isDark: isDark),
-                          if (controller.parcelOrder.value.priceBreakdown != null) ...[
-                            const SizedBox(height: 12),
-                            ParcelBreakdownCard(
-                              isDark: isDark,
-                              currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId),
-                              breakdown: controller.parcelOrder.value.priceBreakdown!,
-                            ),
-                          ],
-                          const SizedBox(height: 12),
-                          OutlinedButton.icon(
-                            onPressed: () => ParcelReceiptPdf.showOptions(context, controller.parcelOrder.value),
-                            icon: const Icon(Icons.receipt_long_outlined),
-                            label: Text("Download / share receipt (PDF)".tr),
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(15),
-                            color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                            border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                          ),
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            "${'Order Id:'.tr} ${Constant.orderId(orderId: controller.parcelOrder.value.id.toString())}".tr,
-                            textAlign: TextAlign.start,
-                            style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(15),
-                            color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                            border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                          ),
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
+          maxContentWidth: DsLayout.contentMax,
+          body: controller.isLoading.value
+              ? const DsSkeletonDetail(mediaHeight: 140)
+              : ListView(
+                  padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.xxl),
+                  children: DsFadeSlideIn.stagger([
+                    // Shipping: status, QR / barcode / pickup code, route, price breakdown, receipt, tracking.
+                    if (controller.parcelOrder.value.isTrackable) ...[
+                      DsCard.tinted(
+                        tone: DsTone.fromStatus(controller.parcelOrder.value.parcelStatus ?? controller.parcelOrder.value.status ?? ''),
+                        padding: const EdgeInsets.all(DsSpace.lg),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // Timeline with icons and line
-                                  Column(
-                                    children: [
-                                      Image.asset("assets/images/image_parcel.png", height: 32, width: 32),
-                                      DottedBorder(
-                                        options: CustomPathDottedBorderOptions(
-                                          color: Colors.grey.shade400,
-                                          strokeWidth: 2,
-                                          dashPattern: [4, 4],
-                                          customPath:
-                                              (size) =>
-                                                  Path()
-                                                    ..moveTo(size.width / 2, 0)
-                                                    ..lineTo(size.width / 2, size.height),
-                                        ),
-                                        child: const SizedBox(width: 20, height: 95),
-                                      ),
-                                      Image.asset("assets/images/image_parcel.png", height: 32, width: 32),
-                                    ],
-                                  ),
-                                  const SizedBox(width: 12),
-                                  // Address Details
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        _infoSection(
-                                          "Pickup Address (Sender):".tr,
-                                          controller.parcelOrder.value.sender?.name ?? '',
-                                          controller.parcelOrder.value.sender?.address ?? '',
-                                          controller.parcelOrder.value.sender?.phone ?? '',
-                                          // controller.parcelOrder.value.senderPickupDateTime != null
-                                          //     ? "Pickup Time: ${controller.formatDate(controller.parcelOrder.value.senderPickupDateTime!)}"
-                                          //     : '',
-                                          isDark,
-                                        ),
-                                        const SizedBox(height: 16),
-                                        _infoSection(
-                                          "Delivery Address (Receiver):".tr,
-                                          controller.parcelOrder.value.receiver?.name ?? '',
-                                          controller.parcelOrder.value.receiver?.address ?? '',
-                                          controller.parcelOrder.value.receiver?.phone ?? '',
-                                          // controller.parcelOrder.value.receiverPickupDateTime != null
-                                          //     ? "Delivery Time: ${controller.formatDate(controller.parcelOrder.value.receiverPickupDateTime!)}"
-                                          //     : '',
-                                          isDark,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                                  Text("Tracking status".tr, style: t.overline),
+                                  const DsGap(DsSpace.xs),
+                                  Text(statusLabel, style: t.title),
                                 ],
                               ),
+                            ),
+                            const DsGap(DsSpace.md),
+                            DsButton.tonal(
+                              label: "Track".tr,
+                              icon: Icons.timeline_rounded,
+                              size: DsButtonSize.sm,
+                              onPressed: () => Get.to(() => ParcelTrackingScreen(order: controller.parcelOrder.value)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const DsGap(DsSpace.lg),
+                      ParcelCodesCard(order: controller.parcelOrder.value),
+                      const DsGap(DsSpace.lg),
+                      ParcelShippingSummaryCard(order: controller.parcelOrder.value),
+                      if (controller.parcelOrder.value.priceBreakdown != null) ...[
+                        const DsGap(DsSpace.lg),
+                        ParcelBreakdownCard(
+                          currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId),
+                          breakdown: controller.parcelOrder.value.priceBreakdown!,
+                        ),
+                      ],
+                      const DsGap(DsSpace.lg),
+                      DsButton.secondary(
+                        label: "Download / share receipt (PDF)".tr,
+                        icon: Icons.receipt_long_outlined,
+                        expand: true,
+                        onPressed: () => ParcelReceiptPdf.showOptions(context, controller.parcelOrder.value),
+                      ),
+                      const DsGap(DsSpace.lg),
+                    ],
+                    ParcelCard(
+                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+                      child: Row(
+                        children: [
+                          Icon(Icons.tag_rounded, size: 18, color: c.brandStrong),
+                          const DsGap(DsSpace.sm),
+                          Expanded(
+                            child: Text(
+                              "${'Order Id:'.tr} ${Constant.orderId(orderId: controller.parcelOrder.value.id.toString())}".tr,
+                              textAlign: TextAlign.start,
+                              style: t.titleSm.tabular,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const DsGap(DsSpace.lg),
+                    ParcelCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ParcelRouteBlock(
+                            senderName: controller.parcelOrder.value.sender?.name ?? '',
+                            senderAddress: controller.parcelOrder.value.sender?.address ?? '',
+                            senderPhone: controller.parcelOrder.value.sender?.phone ?? '',
+                            receiverName: controller.parcelOrder.value.receiver?.name ?? '',
+                            receiverAddress: controller.parcelOrder.value.receiver?.address ?? '',
+                            receiverPhone: controller.parcelOrder.value.receiver?.phone ?? '',
+                          ),
 
-                              const Divider(),
+                          const DsDivider(spacing: DsSpace.xl),
 
-                              if (controller.parcelOrder.value.isSchedule == true)
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 8.0),
-                                  child: Text(
-                                    "${'Schedule Pickup time:'.tr} ${controller.formatDate(controller.parcelOrder.value.senderPickupDateTime!)}",
-                                    style: AppThemeData.mediumTextStyle(fontSize: 14, color: AppThemeData.info400),
-                                  ),
-                                ),
+                          if (controller.parcelOrder.value.isSchedule == true)
+                            _DateLine(
+                              icon: Icons.event_available_outlined,
+                              label: "${'Schedule Pickup time:'.tr} ${controller.formatDate(controller.parcelOrder.value.senderPickupDateTime!)}",
+                            ),
 
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 8.0),
-                                child: Text(
-                                  "${'Order Date:'.tr}${controller.parcelOrder.value.isSchedule == true ? controller.formatDate(controller.parcelOrder.value.createdAt!) : controller.formatDate(controller.parcelOrder.value.senderPickupDateTime!)}",
-                                  style: AppThemeData.mediumTextStyle(fontSize: 14, color: AppThemeData.info400),
-                                ),
-                              ),
+                          _DateLine(
+                            icon: Icons.event_outlined,
+                            label:
+                                "${'Order Date:'.tr}${controller.parcelOrder.value.isSchedule == true ? controller.formatDate(controller.parcelOrder.value.createdAt!) : controller.formatDate(controller.parcelOrder.value.senderPickupDateTime!)}",
+                          ),
 
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text("Parcel Type:".tr, style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800)),
-                                  Row(
-                                    children: [
-                                      Text(
-                                        controller.parcelOrder.value.parcelType ?? '',
-                                        style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      if (controller.getSelectedCategory()?.image != null && controller.getSelectedCategory()!.image!.isNotEmpty)
-                                        NetworkImageWidget(imageUrl: controller.getSelectedCategory()?.image ?? '', height: 20, width: 20),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              controller.parcelOrder.value.parcelImages!.isEmpty
-                                  ? SizedBox()
-                                  : SizedBox(
-                                    height: 120,
-                                    child: ListView.builder(
+                          const DsGap(DsSpace.md),
+                          Row(
+                            children: [
+                              Expanded(child: Text("Parcel Type:".tr, style: t.bodyStrong)),
+                              const DsGap(DsSpace.sm),
+                              if (controller.getSelectedCategory()?.image != null && controller.getSelectedCategory()!.image!.isNotEmpty) ...[
+                                DsImage(url: controller.getSelectedCategory()?.image ?? '', height: 20, width: 20, radius: DsRadius.xs),
+                                const DsGap(DsSpace.sm),
+                              ],
+                              DsBadge(label: controller.parcelOrder.value.parcelType ?? '', tone: DsTone.brand),
+                            ],
+                          ),
+                          controller.parcelOrder.value.parcelImages!.isEmpty
+                              ? const SizedBox()
+                              : Padding(
+                                  padding: const EdgeInsets.only(top: DsSpace.md),
+                                  child: SizedBox(
+                                    height: 104,
+                                    child: ListView.separated(
                                       itemCount: controller.parcelOrder.value.parcelImages!.length,
                                       shrinkWrap: true,
                                       scrollDirection: Axis.horizontal,
+                                      separatorBuilder: (context, index) => const DsGap(DsSpace.md),
                                       itemBuilder: (context, index) {
-                                        return Padding(
-                                          padding: const EdgeInsets.all(8.0),
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadius.circular(10),
-                                            child: NetworkImageWidget(imageUrl: controller.parcelOrder.value.parcelImages![index], width: 100, fit: BoxFit.cover, borderRadius: 10),
-                                          ),
-                                        );
+                                        return DsImage(url: controller.parcelOrder.value.parcelImages![index], width: 100, height: 104, fit: BoxFit.cover, radius: DsRadius.md);
                                       },
                                     ),
                                   ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        // Distance, Weight, Rate
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(15),
-                            color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                            border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                          ),
-                          padding: EdgeInsets.all(16),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: [
-                              _iconTile("${controller.parcelOrder.value.distance ?? '--'} ${Constant.distanceType}", "Distance".tr, "assets/icons/ic_distance_parcel.svg", isDark),
-                              _iconTile(controller.parcelOrder.value.parcelWeight ?? '--', "Weight".tr, "assets/icons/ic_weight_parcel.svg", isDark),
-                              _iconTile(Constant.amountShow(amount: controller.parcelOrder.value.subTotal, currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), "Rate".tr, "assets/icons/ic_rate_parcel.svg", isDark),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        if (controller.parcelOrder.value.driver != null)
-                          Column(
-                            children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(15),
-                                  color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                                  border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
                                 ),
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text("About Driver".tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500)),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            SizedBox(
-                                              width: 52,
-                                              height: 52,
-                                              child: ClipRRect(
-                                                borderRadius: BorderRadiusGeometry.circular(10),
-                                                child: NetworkImageWidget(imageUrl: controller.driverUser.value?.profilePictureURL ?? '', height: 70, width: 70, borderRadius: 35),
-                                              ),
-                                            ),
-                                            SizedBox(width: 20),
-                                            Text(
-                                              controller.parcelOrder.value.driver?.fullName() ?? '',
-                                              style: AppThemeData.boldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 18),
-                                            ),
-                                          ],
-                                        ),
-                                        RoundedButtonBorder(
-                                          title: controller.driverUser.value!.averageRating.toStringAsFixed(1),
-                                          width: 20,
-                                          height: 3.5,
-                                          radius: 10,
-                                          isRight: false,
-                                          isCenter: true,
-                                          textColor: AppThemeData.warning400,
-                                          borderColor: AppThemeData.warning400,
-                                          color: AppThemeData.warning50,
-                                          icon: SvgPicture.asset("assets/icons/ic_start.svg"),
-                                          onPress: () {},
-                                        ),
-                                      ],
-                                    ),
-                                    Visibility(
-                                      visible: controller.parcelOrder.value.status == Constant.orderCompleted ? true : false,
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 10),
-                                        child: RoundedButtonFill(
-                                          title: controller.ratingModel.value.id != null && controller.ratingModel.value.id!.isNotEmpty ? 'Update Review'.tr : 'Add Review'.tr,
-                                          onPress: () async {
-                                            final result = await Get.to(() => ParcelReviewScreen(), arguments: {'order': controller.parcelOrder.value});
-
-                                            // If review was submitted successfully
-                                            if (result == true) {
-                                              await controller.fetchDriverDetails();
-                                            }
-                                          },
-                                          height: 5,
-                                          borderRadius: 15,
-                                          color: Colors.orange,
-                                          textColor: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                                        ),
-                                      ),
-                                    ),
-                                    if (controller.parcelOrder.value.status != Constant.orderCompleted)
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          InkWell(
-                                            onTap: () {
-                                              Constant.makePhoneCall(controller.parcelOrder.value.driver!.phoneNumber.toString());
-                                            },
-                                            child: Container(
-                                              width: 150,
-                                              height: 42,
-                                              decoration: ShapeDecoration(
-                                                shape: RoundedRectangleBorder(
-                                                  side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                  borderRadius: BorderRadius.circular(120),
-                                                ),
-                                              ),
-                                              child: Padding(padding: const EdgeInsets.all(8.0), child: SvgPicture.asset("assets/icons/ic_phone_call.svg")),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          InkWell(
-                                            onTap: () async {
-                                              ShowToastDialog.showLoader("Please wait...".tr);
-
-                                              UserModel? customer = await FireStoreUtils.getUserProfile(controller.parcelOrder.value.authorID ?? '');
-                                              UserModel? driverUser = await FireStoreUtils.getUserProfile(controller.parcelOrder.value.driverId ?? '');
-
-                                              ShowToastDialog.closeLoader();
-
-                                              Get.to(
-                                                const ChatScreen(),
-                                                arguments: {
-                                                  "senderName": customer?.fullName(),
-                                                  "receivedName": driverUser?.fullName(),
-                                                  "orderId": controller.parcelOrder.value.id,
-                                                  "receivedId": driverUser?.id,
-                                                  "senderId": customer?.id,
-                                                  "senderProfileUrl": customer?.profilePictureURL,
-                                                  "receivedProfileUrl": driverUser?.profilePictureURL,
-                                                  "token": driverUser?.fcmToken,
-                                                  "chatType": Constant.userRoleDriver,
-                                                },
-                                              );
-                                            },
-                                            child: Container(
-                                              width: 150,
-                                              height: 42,
-                                              decoration: ShapeDecoration(
-                                                shape: RoundedRectangleBorder(
-                                                  side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                  borderRadius: BorderRadius.circular(120),
-                                                ),
-                                              ),
-                                              child: Padding(padding: const EdgeInsets.all(8.0), child: SvgPicture.asset("assets/icons/ic_wechat.svg")),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 15),
-                            ],
+                        ],
+                      ),
+                    ),
+                    const DsGap(DsSpace.lg),
+                    // Distance, Weight, Rate
+                    DsAdaptiveGrid(
+                      minItemWidth: 110,
+                      children: [
+                        ParcelMetricTile(
+                          value: "${controller.parcelOrder.value.distance ?? '--'} ${Constant.distanceType}",
+                          label: "Distance".tr,
+                          asset: "assets/icons/ic_distance_parcel.svg",
+                        ),
+                        ParcelMetricTile(value: controller.parcelOrder.value.parcelWeight ?? '--', label: "Weight".tr, asset: "assets/icons/ic_weight_parcel.svg"),
+                        ParcelMetricTile(
+                          value: Constant.amountShow(
+                            amount: controller.parcelOrder.value.subTotal,
+                            currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
                           ),
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(15),
-                            color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                            border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                          ),
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text("Order Summary".tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: AppThemeData.grey500)),
-                              const SizedBox(height: 8),
-
-                              // Subtotal
-                              _summaryTile("Subtotal".tr, Constant.amountShow(amount: controller.subTotal.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark),
-
-                              // Discount
-                              _summaryTile("Discount".tr, "-${(Constant.amountShow(amount: controller.discount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))))}", isDark),
-
-                              // Fixed intercity / intercountry tax (outside VAT and coupons).
-                              if (controller.parcelOrder.value.scopeTaxAmount > 0)
-                                _summaryTile("Fixed tax".tr, Constant.amountShow(amount: controller.parcelOrder.value.scopeTaxAmount.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark),
-
-                              // Tax List
-                              if (double.parse(controller.parcelOrder.value.platformFee ?? '0.0') > 0.0)
-                                _summaryTile("Platform fee".tr, Constant.amountShow(amount: controller.parcelOrder.value.platformFee ?? '0.0', currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark),
-                              InkWell(
-                                onTap: () {
-                                  showBillBifurcationDialog(context, isDark, controller);
-                                },
-                                child: _summaryTile("Tax amount".tr, Constant.amountShow(amount: (controller.taxAmount.value).toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark, underline: true),
-                              ),
-                              const Divider(),
-
-                              // Total
-                              _summaryTile("Order Total".tr, Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark),
-                            ],
-                          ),
+                          label: "Rate".tr,
+                          asset: "assets/icons/ic_rate_parcel.svg",
                         ),
                       ],
                     ),
+                    const DsGap(DsSpace.lg),
+                    if (controller.parcelOrder.value.driver != null) ...[
+                      ParcelCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ParcelCardTitle("About Driver".tr, icon: Icons.badge_outlined),
+                            Row(
+                              children: [
+                                DsAvatar(
+                                  imageUrl: controller.driverUser.value?.profilePictureURL ?? '',
+                                  name: controller.parcelOrder.value.driver?.fullName() ?? '',
+                                  size: 52,
+                                  ring: true,
+                                ),
+                                const DsGap(DsSpace.lg),
+                                Expanded(
+                                  child: Text(controller.parcelOrder.value.driver?.fullName() ?? '', style: t.title),
+                                ),
+                                const DsGap(DsSpace.sm),
+                                DsBadge(
+                                  label: controller.driverUser.value!.averageRating.toStringAsFixed(1),
+                                  tone: DsTone.warning,
+                                  icon: Icons.star_rounded,
+                                ),
+                              ],
+                            ),
+                            Visibility(
+                              visible: controller.parcelOrder.value.status == Constant.orderCompleted ? true : false,
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: DsSpace.lg),
+                                child: DsButton.tonal(
+                                  label: controller.ratingModel.value.id != null && controller.ratingModel.value.id!.isNotEmpty ? 'Update Review'.tr : 'Add Review'.tr,
+                                  icon: Icons.rate_review_outlined,
+                                  expand: true,
+                                  onPressed: () async {
+                                    final result = await Get.to(() => ParcelReviewScreen(), arguments: {'order': controller.parcelOrder.value});
+
+                                    // If review was submitted successfully
+                                    if (result == true) {
+                                      await controller.fetchDriverDetails();
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                            if (controller.parcelOrder.value.status != Constant.orderCompleted)
+                              Padding(
+                                padding: const EdgeInsets.only(top: DsSpace.lg),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: DsButton.secondary(
+                                        label: "Call".tr,
+                                        icon: Icons.call_outlined,
+                                        expand: true,
+                                        onPressed: () {
+                                          Constant.makePhoneCall(controller.parcelOrder.value.driver!.phoneNumber.toString());
+                                        },
+                                      ),
+                                    ),
+                                    const DsGap(DsSpace.md),
+                                    Expanded(
+                                      child: DsButton.secondary(
+                                        label: "Chat".tr,
+                                        icon: Icons.chat_bubble_outline_rounded,
+                                        expand: true,
+                                        onPressed: () async {
+                                          ShowToastDialog.showLoader("Please wait...".tr);
+
+                                          UserModel? customer = await FireStoreUtils.getUserProfile(controller.parcelOrder.value.authorID ?? '');
+                                          UserModel? driverUser = await FireStoreUtils.getUserProfile(controller.parcelOrder.value.driverId ?? '');
+
+                                          ShowToastDialog.closeLoader();
+
+                                          Get.to(
+                                            const ChatScreen(),
+                                            arguments: {
+                                              "senderName": customer?.fullName(),
+                                              "receivedName": driverUser?.fullName(),
+                                              "orderId": controller.parcelOrder.value.id,
+                                              "receivedId": driverUser?.id,
+                                              "senderId": customer?.id,
+                                              "senderProfileUrl": customer?.profilePictureURL,
+                                              "receivedProfileUrl": driverUser?.profilePictureURL,
+                                              "token": driverUser?.fcmToken,
+                                              "chatType": Constant.userRoleDriver,
+                                            },
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const DsGap(DsSpace.lg),
+                    ],
+                    ParcelCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ParcelCardTitle("Order Summary".tr, icon: Icons.receipt_long_rounded),
+
+                          // Subtotal
+                          ParcelSummaryRow(
+                            label: "Subtotal".tr,
+                            value: Constant.amountShow(
+                              amount: controller.subTotal.value.toString(),
+                              currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
+                            ),
+                          ),
+
+                          // Discount
+                          ParcelSummaryRow(
+                            label: "Discount".tr,
+                            value: "-${Constant.amountShow(amount: controller.discount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)))}",
+                            tone: DsTone.danger,
+                          ),
+
+                          // Fixed intercity / intercountry tax (outside VAT and coupons).
+                          if (controller.parcelOrder.value.scopeTaxAmount > 0)
+                            ParcelSummaryRow(
+                              label: "Fixed tax".tr,
+                              value: Constant.amountShow(
+                                amount: controller.parcelOrder.value.scopeTaxAmount.toString(),
+                                currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
+                              ),
+                            ),
+
+                          // Tax List
+                          if (double.parse(controller.parcelOrder.value.platformFee ?? '0.0') > 0.0)
+                            ParcelSummaryRow(
+                              label: "Platform fee".tr,
+                              value: Constant.amountShow(
+                                amount: controller.parcelOrder.value.platformFee ?? '0.0',
+                                currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
+                              ),
+                            ),
+                          ParcelSummaryRow(
+                            label: "Tax amount".tr,
+                            value: Constant.amountShow(
+                              amount: (controller.taxAmount.value).toString(),
+                              currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
+                            ),
+                            underline: true,
+                            onTap: () {
+                              showBillBifurcationDialog(context, controller);
+                            },
+                          ),
+                          const DsDivider(spacing: DsSpace.md),
+
+                          // Total
+                          ParcelSummaryRow(
+                            label: "Order Total".tr,
+                            value: Constant.amountShow(
+                              amount: controller.totalAmount.value.toString(),
+                              currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
+                            ),
+                            emphasis: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ]),
+                ),
+          bottomBar: controller.parcelOrder.value.quoteReadyToPay
+              ? DsStickyBar(
+                  child: DsButton.primary(
+                    label: "Pay the quote".tr,
+                    icon: Icons.payments_outlined,
+                    size: DsButtonSize.lg,
+                    expand: true,
+                    onPressed: () => Get.to(
+                      () => const ParcelOrderConfirmationScreen(),
+                      arguments: {'parcelOrder': ParcelOrderModel.fromJson(controller.parcelOrder.value.toJson()..addAll(controller.readOnlyJson())), 'images': []},
+                    ),
                   ),
-          bottomNavigationBar:
-              controller.parcelOrder.value.quoteReadyToPay
-                  ? Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: RoundedButtonFill(
-                      title: "Pay the quote".tr,
-                      onPress: () => Get.to(() => const ParcelOrderConfirmationScreen(), arguments: {'parcelOrder': ParcelOrderModel.fromJson(controller.parcelOrder.value.toJson()..addAll(controller.readOnlyJson())), 'images': []}),
-                      height: 5,
-                      borderRadius: 15,
-                      color: AppThemeData.primary300,
-                      textColor: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                    ),
-                  )
-                  : ParcelOrderDetailsController.canCancel(controller.parcelOrder.value)
-                  ? Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: RoundedButtonFill(
-                      title: "Cancel Parcel".tr,
-                      onPress: () {
-                        controller.cancelParcelOrder();
-                      },
-                      height: 5,
-                      borderRadius: 15,
-                      color: AppThemeData.primary300,
-                      textColor: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                    ),
-                  )
-                  : SizedBox(),
+                )
+              : ParcelOrderDetailsController.canCancel(controller.parcelOrder.value)
+              ? DsStickyBar(
+                  child: DsButton.dangerTonal(
+                    label: "Cancel Parcel".tr,
+                    icon: Icons.cancel_outlined,
+                    size: DsButtonSize.lg,
+                    expand: true,
+                    onPressed: () {
+                      controller.cancelParcelOrder();
+                    },
+                  ),
+                )
+              : null,
         );
       },
     );
   }
 
-  Widget statusBottomSheet(BuildContext context, ParcelOrderDetailsController controller, bool isDark) {
+  Widget statusBottomSheet(BuildContext context, ParcelOrderDetailsController controller) {
     return DraggableScrollableSheet(
       initialChildSize: 0.30,
       minChildSize: 0.20,
       maxChildSize: 0.6,
       expand: false,
       builder: (context, scrollController) {
+        final c = context.dsColors;
+        final t = context.dsText;
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-          decoration: BoxDecoration(color: isDark ? AppThemeData.grey500 : Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xl),
+          decoration: BoxDecoration(color: c.surfaceRaised, borderRadius: DsRadius.sheetTop),
           child: SingleChildScrollView(
             controller: scrollController,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Parcel Status Timeline".tr, style: AppThemeData.semiBoldTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 18)),
-                const SizedBox(height: 8),
+                Center(
+                  child: Container(width: 40, height: 4, decoration: BoxDecoration(color: c.borderStrong, borderRadius: DsRadius.brPill)),
+                ),
+                const DsGap(DsSpace.lg),
+                Text("Parcel Status Timeline".tr, style: t.title),
+                const DsGap(DsSpace.lg),
 
                 // Dynamic List
-                Obx(() {
-                  final history = controller.parcelOrder.value.statusHistory ?? [];
+                DsObserve(
+                  builder: (context) {
+                    final history = controller.parcelOrder.value.statusHistory ?? [];
 
-                  if (history.isEmpty) {
-                    return SizedBox(
-                      height: 80,
-                      child: Center(child: Text("No status updates yet".tr, style: AppThemeData.mediumTextStyle(color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900))),
-                    );
-                  }
+                    if (history.isEmpty) {
+                      return SizedBox(
+                        height: 80,
+                        child: Center(child: Text("No status updates yet".tr, style: t.bodySecondary)),
+                      );
+                    }
 
-                  return SizedBox(
-                    height: history.length * 70.0,
-                    child: ListView.builder(
-                      physics: const BouncingScrollPhysics(),
-                      itemCount: history.length,
-                      itemBuilder: (context, index) {
-                        final statusUpdate = history[index];
-                        final isCompleted = index < history.length;
-
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Image.asset(isCompleted ? "assets/images/image_status_timeline.png" : "assets/images/image_timeline.png", height: 48, width: 48),
-                              const SizedBox(width: 20),
-                              Expanded(
-                                child: Text(
-                                  statusUpdate.status ?? '',
-                                  style: AppThemeData.semiBoldTextStyle(color: isCompleted ? (isDark ? AppThemeData.greyDark900 : AppThemeData.grey900) : AppThemeData.grey500, fontSize: 18),
-                                ),
-                              ),
-                            ],
+                    return DsTimeline(
+                      steps: [
+                        for (int index = 0; index < history.length; index++)
+                          DsTimelineStep(
+                            title: history[index].status ?? '',
+                            state: index == history.length - 1 ? DsStepState.current : DsStepState.done,
                           ),
-                        );
-                      },
-                    ),
-                  );
-                }),
+                      ],
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -564,109 +445,71 @@ class ParcelOrderDetails extends StatelessWidget {
     );
   }
 
-  Widget _infoSection(String title, String name, String address, String phone, bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: AppThemeData.semiBoldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-        Text(name, style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-        Text(address, style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-        Text(phone, style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-        // Text(time, style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-      ],
-    );
-  }
-
-  Widget _iconTile(String value, title, icon, bool isDark) {
-    return Column(
-      children: [
-        // Icon(icon, color: AppThemeData.primary300),
-        SvgPicture.asset(icon, height: 28, width: 28, color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800),
-        const SizedBox(height: 6),
-        Text(value, style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800)),
-        const SizedBox(height: 6),
-        Text(title, style: AppThemeData.semiBoldTextStyle(fontSize: 12, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-      ],
-    );
-  }
-
-  Widget _summaryTile(String title, String value, bool isDark, {bool? underline}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            title,
-            style: AppThemeData.mediumTextStyle(
-              fontSize: 16,
-              color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800,
-              decoration: underline == true ? TextDecoration.underline : TextDecoration.none,
-            ),
-          ),
-          Text(value, style: AppThemeData.semiBoldTextStyle(fontSize: title == "Order Total".tr ? 18 : 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-        ],
-      ),
-    );
-  }
-
-  void showBillBifurcationDialog(BuildContext context, bool isDark, ParcelOrderDetailsController controller) {
+  void showBillBifurcationDialog(BuildContext context, ParcelOrderDetailsController controller) {
     showDialog(
       context: context,
       builder: (context) {
-        return Dialog(
-          backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 10), // 🔥 KEY FIX
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: SizedBox(
-            width: Responsive.width(100, context), // ✅ 90% width
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(height: 10),
-                  Text("Tax Details".tr, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
-                  const SizedBox(height: 5),
-                  sectionDivider(isDark),
-                  const SizedBox(height: 5),
-                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark: isDark),
-                  sectionDivider(isDark),
-                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), isDark: isDark),
-                  sectionDivider(isDark),
-                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId))), amountColor: AppThemeData.primary300, isDark: isDark),
-                  const SizedBox(height: 20),
-                  Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: Text("Close".tr))),
-                ],
+        return DsDialog(
+          title: "Tax Details".tr,
+          icon: Icons.percent_rounded,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ParcelSummaryRow(
+                label: "Tax on Order Total".tr,
+                value: Constant.amountShow(
+                  amount: controller.orderTaxAmount.value.toString(),
+                  currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
+                ),
               ),
-            ),
+              const DsDivider(spacing: DsSpace.md),
+              ParcelSummaryRow(
+                label: "Tax on Platform Fee".tr,
+                value: Constant.amountShow(
+                  amount: controller.platformTaxAmount.value.toString(),
+                  currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
+                ),
+              ),
+              const DsDivider(spacing: DsSpace.md),
+              ParcelSummaryRow(
+                label: "Total Tax Amount".tr,
+                value: Constant.amountShow(
+                  amount: controller.taxAmount.value.toString(),
+                  currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
+                ),
+                emphasis: true,
+              ),
+            ],
           ),
+          primaryLabel: "Close".tr,
+          onPrimary: () => Navigator.pop(context),
         );
       },
     );
   }
+}
 
-  Widget amountRow({required String title, required String amount, required bool isDark, Color? textColour, Color? amountColor, bool? underline, Widget? trailing}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Text(
-            title.tr,
-            style: TextStyle(
-              fontFamily: AppThemeData.regular,
-              color: textColour ?? (isDark ? AppThemeData.grey300 : AppThemeData.grey600),
-              fontSize: 16,
-              decoration: underline == true ? TextDecoration.underline : TextDecoration.none,
-            ),
-          ),
-        ),
-        trailing ?? Text(amount, style: TextStyle(fontFamily: AppThemeData.regular, color: amountColor ?? (isDark ? AppThemeData.grey50 : AppThemeData.grey900), fontSize: 16)),
-      ],
+/// Small icon + info line for the schedule / order dates.
+class _DateLine extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _DateLine({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpace.sm),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 14, color: c.infoStrong),
+          const DsGap(DsSpace.sm),
+          Expanded(child: Text(label, style: t.bodySm.withColor(c.infoStrong))),
+        ],
+      ),
     );
-  }
-
-  Widget sectionDivider(bool isDark) {
-    return Column(children: [const SizedBox(height: 10), MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200), const SizedBox(height: 10)]);
   }
 }

@@ -4,6 +4,7 @@ import 'package:customer/models/parcel_order_model.dart';
 import 'package:customer/models/parcel_shipping_models.dart';
 import 'package:customer/service/parcel_shipping_service.dart';
 import 'package:customer/themes/app_them_data.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/order_receipt_pdf.dart' show Code128;
 import 'package:customer/utils/parcel_pricing.dart';
@@ -60,60 +61,82 @@ class ParcelLabels {
   ];
 }
 
-class ParcelCard extends StatelessWidget {
-  final bool isDark;
-  final Widget child;
-  final EdgeInsets padding;
+/// Section header used inside the parcel cards ("Shipment", "Shipping price").
+class ParcelCardTitle extends StatelessWidget {
+  final String label;
+  final IconData? icon;
+  final Widget? trailing;
 
-  const ParcelCard({super.key, required this.isDark, required this.child, this.padding = const EdgeInsets.all(14)});
+  const ParcelCardTitle(this.label, {super.key, this.icon, this.trailing});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: padding,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(15),
-        color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-        border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpace.md),
+      child: Row(
+        children: [
+          if (icon != null) ...[Icon(icon, size: 16, color: c.brandStrong), const DsGap(DsSpace.sm)],
+          Expanded(child: Text(label.toUpperCase(), style: t.overline)),
+          ?trailing,
+        ],
       ),
-      child: child,
     );
+  }
+}
+
+/// Neutral surface used by every parcel shipping block.
+class ParcelCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final EdgeInsetsGeometry? margin;
+  final Color? borderColor;
+  final VoidCallback? onTap;
+  final String? semanticLabel;
+
+  const ParcelCard({super.key, required this.child, this.padding = const EdgeInsets.all(DsSpace.lg), this.margin, this.borderColor, this.onTap, this.semanticLabel});
+
+  @override
+  Widget build(BuildContext context) {
+    return DsCard.outlined(padding: padding, margin: margin, borderColor: borderColor, onTap: onTap, semanticLabel: semanticLabel, child: child);
   }
 }
 
 /// Price breakdown shown before payment (spec 7.4) and on the order details.
 class ParcelBreakdownCard extends StatelessWidget {
-  final bool isDark;
   final CurrencyModel? currency;
   final Map<String, dynamic> breakdown;
   final String? title;
 
-  const ParcelBreakdownCard({super.key, required this.isDark, required this.currency, required this.breakdown, this.title});
+  const ParcelBreakdownCard({super.key, required this.currency, required this.breakdown, this.title});
 
   @override
   Widget build(BuildContext context) {
-    final Color text = isDark ? AppThemeData.greyDark900 : AppThemeData.grey900;
+    final c = context.dsColors;
+    final t = context.dsText;
     Widget row(String l, double v, {bool bold = false}) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
       child: Row(
         children: [
-          Expanded(child: Text(l, style: bold ? AppThemeData.boldTextStyle(fontSize: 16, color: text) : AppThemeData.mediumTextStyle(fontSize: 15, color: text))),
-          Text(Constant.amountShow(amount: v.toString(), currency: currency), style: bold ? AppThemeData.boldTextStyle(fontSize: 16, color: text) : AppThemeData.semiBoldTextStyle(fontSize: 15, color: text)),
+          Expanded(child: Text(l, style: bold ? t.titleSm : t.body)),
+          const DsGap(DsSpace.md),
+          Text(
+            Constant.amountShow(amount: v.toString(), currency: currency),
+            style: bold ? t.titleSm.tabular.withColor(c.brandStrong) : t.bodyStrong.tabular,
+          ),
         ],
       ),
     );
     final lines = ParcelLabels.breakdownLines(breakdown);
     final double subtotal = lines.fold(0.0, (a, e) => a + e.value);
     return ParcelCard(
-      isDark: isDark,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title ?? "Shipping price".tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: AppThemeData.grey500)),
-          const SizedBox(height: 6),
+          ParcelCardTitle(title ?? "Shipping price".tr, icon: Icons.receipt_long_rounded),
           for (final l in lines) row(l.key, l.value),
-          const Divider(),
+          const DsDivider(spacing: DsSpace.md),
           row("Shipping total".tr, subtotal, bold: true),
         ],
       ),
@@ -161,61 +184,96 @@ class _BarcodePainter extends CustomPainter {
 }
 
 /// QR (qrValue) + Code 128 barcode (trackingNumber) + pickup code for the sender to share.
+///
+/// Laid out as a "boarding pass": the scannable block sits on a white plate so
+/// the codes stay readable in dark mode, the tracking number is tabular and
+/// copyable, and the receiver code is a tinted callout.
 class ParcelCodesCard extends StatelessWidget {
   final ParcelOrderModel order;
-  final bool isDark;
 
-  const ParcelCodesCard({super.key, required this.order, required this.isDark});
+  const ParcelCodesCard({super.key, required this.order});
 
   @override
   Widget build(BuildContext context) {
-    final Color text = isDark ? AppThemeData.greyDark900 : AppThemeData.grey900;
-    final Color muted = isDark ? AppThemeData.greyDark500 : AppThemeData.grey500;
+    final c = context.dsColors;
+    final t = context.dsText;
+    final bool hasQr = (order.qrValue ?? '').isNotEmpty;
+    final bool hasTracking = (order.trackingNumber ?? '').isNotEmpty;
     return ParcelCard(
-      isDark: isDark,
+      padding: const EdgeInsets.all(DsSpace.lg),
       child: Column(
         children: [
-          if ((order.qrValue ?? '').isNotEmpty)
-            Container(color: Colors.white, padding: const EdgeInsets.all(8), child: QrImageView(data: order.qrValue!, size: 170, backgroundColor: Colors.white)),
-          const SizedBox(height: 10),
-          if ((order.trackingNumber ?? '').isNotEmpty) ...[
-            Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Code128BarcodeWidget(value: order.trackingNumber!)),
-            const SizedBox(height: 6),
-            InkWell(
-              onTap: () => _copy(order.trackingNumber!),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+          if (hasQr || hasTracking)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.lg),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: DsRadius.brMd, border: Border.all(color: c.border)),
+              child: Column(
                 children: [
-                  Text(order.trackingNumber!, style: AppThemeData.boldTextStyle(fontSize: 18, color: text)),
-                  const SizedBox(width: 6),
-                  Icon(Icons.copy, size: 16, color: muted),
+                  if (hasQr) QrImageView(data: order.qrValue!, size: 170, backgroundColor: Colors.white),
+                  if (hasQr && hasTracking) const DsGap(DsSpace.lg),
+                  if (hasTracking) Code128BarcodeWidget(value: order.trackingNumber!),
                 ],
               ),
             ),
-            Text("Tracking number".tr, style: AppThemeData.mediumTextStyle(fontSize: 12, color: muted)),
-          ],
-          if ((order.pickupCode ?? '').isNotEmpty) ...[
-            const Divider(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          if (hasTracking) ...[
+            const DsGap(DsSpace.md),
+            Semantics(
+              button: true,
+              label: "Tracking number".tr,
+              child: InkWell(
+                borderRadius: DsRadius.brSm,
+                onTap: () => _copy(order.trackingNumber!),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm, vertical: DsSpace.xs),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text("Receiver code (give to the driver or at the pickup point)".tr, style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: text)),
-                      Text(
-                        "Share it with the receiver: it is asked at delivery or to collect the parcel at the pickup point.".tr,
-                        style: AppThemeData.mediumTextStyle(fontSize: 12, color: muted),
-                      ),
+                      Flexible(child: Text(order.trackingNumber!, style: t.title.tabular, textAlign: TextAlign.center)),
+                      const DsGap(DsSpace.sm),
+                      Icon(Icons.copy_rounded, size: 16, color: c.brandStrong),
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                InkWell(
-                  onTap: () => _copy(order.pickupCode!),
-                  child: Text(order.pickupCode!, style: AppThemeData.boldTextStyle(fontSize: 22, color: AppThemeData.primary300)),
-                ),
-              ],
+              ),
+            ),
+            Text("Tracking number".tr, style: t.caption),
+          ],
+          if ((order.pickupCode ?? '').isNotEmpty) ...[
+            const DsGap(DsSpace.lg),
+            DsCard.tinted(
+              padding: const EdgeInsets.all(DsSpace.md),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("Receiver code (give to the driver or at the pickup point)".tr, style: t.label),
+                        const DsGap(DsSpace.xxs),
+                        Text(
+                          "Share it with the receiver: it is asked at delivery or to collect the parcel at the pickup point.".tr,
+                          style: t.bodySm,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const DsGap(DsSpace.md),
+                  Semantics(
+                    button: true,
+                    label: "Receiver code (give to the driver or at the pickup point)".tr,
+                    child: InkWell(
+                      borderRadius: DsRadius.brSm,
+                      onTap: () => _copy(order.pickupCode!),
+                      child: Padding(
+                        padding: const EdgeInsets.all(DsSpace.sm),
+                        child: Text(order.pickupCode!, style: t.headline.tabular.withColor(c.brandStrong)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ],
@@ -232,21 +290,21 @@ class ParcelCodesCard extends StatelessWidget {
 /// Type, scope, route, methods (with pickup point names), carrier and parcel details.
 class ParcelShippingSummaryCard extends StatelessWidget {
   final ParcelOrderModel order;
-  final bool isDark;
 
-  const ParcelShippingSummaryCard({super.key, required this.order, required this.isDark});
+  const ParcelShippingSummaryCard({super.key, required this.order});
 
   @override
   Widget build(BuildContext context) {
-    final Color text = isDark ? AppThemeData.greyDark900 : AppThemeData.grey900;
-    final Color muted = isDark ? AppThemeData.greyDark500 : AppThemeData.grey500;
+    final c = context.dsColors;
+    final t = context.dsText;
     Widget pair(String label, String value) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 120, child: Text(label, style: AppThemeData.mediumTextStyle(fontSize: 13, color: muted))),
-          Expanded(child: Text(value, style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: text))),
+          SizedBox(width: 118, child: Text(label, style: t.bodySm.withColor(c.textMuted))),
+          const DsGap(DsSpace.sm),
+          Expanded(child: Text(value, style: t.bodyStrong)),
         ],
       ),
     );
@@ -257,12 +315,10 @@ class ParcelShippingSummaryCard extends StatelessWidget {
         final PickupPointModel? from = snap.data?[0];
         final PickupPointModel? to = snap.data?[1];
         return ParcelCard(
-          isDark: isDark,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("Shipment".tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: AppThemeData.grey500)),
-              const SizedBox(height: 6),
+              ParcelCardTitle("Shipment".tr, icon: Icons.inventory_2_outlined),
               pair("Type".tr, "${ParcelLabels.shipmentType(order.shipmentType)} - ${ParcelLabels.scope(order.scope)}"),
               if ((order.origin?.label ?? '').isNotEmpty || (order.destination?.label ?? '').isNotEmpty) pair("Route".tr, "${order.origin?.label ?? ''}  >  ${order.destination?.label ?? ''}"),
               pair("Pickup".tr, from != null ? "${ParcelLabels.pickupMethod(order.pickupMethod)}: ${from.name}" : ParcelLabels.pickupMethod(order.pickupMethod)),
@@ -306,7 +362,7 @@ class ParcelPointsMap extends StatelessWidget {
     final double lng = points.map((p) => p.lng).reduce((a, b) => a + b) / points.length;
     final double zoom = _zoomFor(points);
     return ClipRRect(
-      borderRadius: BorderRadius.circular(15),
+      borderRadius: DsRadius.brLg,
       child: SizedBox(
         height: height,
         child:
@@ -376,52 +432,32 @@ class ParcelPointsMap extends StatelessWidget {
 class ParcelTimeline extends StatelessWidget {
   final List<ParcelTrackingEvent> events;
   final Map<String, PickupPointModel> pickupPoints;
-  final bool isDark;
 
-  const ParcelTimeline({super.key, required this.events, required this.pickupPoints, required this.isDark});
+  const ParcelTimeline({super.key, required this.events, required this.pickupPoints});
 
   @override
   Widget build(BuildContext context) {
-    final Color text = isDark ? AppThemeData.greyDark900 : AppThemeData.grey900;
-    final Color muted = isDark ? AppThemeData.greyDark500 : AppThemeData.grey500;
+    final t = context.dsText;
     final List<ParcelTrackingEvent> list = events.reversed.toList();
-    if (list.isEmpty) return Text("No tracking events yet".tr, style: AppThemeData.mediumTextStyle(fontSize: 14, color: muted));
-    return Column(
-      children: [
+    if (list.isEmpty) return Text("No tracking events yet".tr, style: t.bodySecondary);
+    return DsTimeline(
+      steps: [
         for (int i = 0; i < list.length; i++)
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  width: 24,
-                  child: Column(
-                    children: [
-                      Icon(i == 0 ? Icons.radio_button_checked : Icons.circle, size: i == 0 ? 20 : 12, color: i == 0 ? AppThemeData.primary300 : muted),
-                      if (i < list.length - 1) Expanded(child: Container(width: 2, color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200)),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(list[i].status.tr, style: AppThemeData.semiBoldTextStyle(fontSize: 15, color: text)),
-                        if (list[i].at != null) Text(DateFormat('dd MMM yyyy, hh:mm a').format(list[i].at!.toDate()), style: AppThemeData.mediumTextStyle(fontSize: 12, color: muted)),
-                        if (list[i].pickupPointId != null && pickupPoints[list[i].pickupPointId] != null)
-                          Text(pickupPoints[list[i].pickupPointId]!.name, style: AppThemeData.mediumTextStyle(fontSize: 12, color: muted)),
-                        if (list[i].note != null) Text(list[i].note!, style: AppThemeData.mediumTextStyle(fontSize: 12, color: muted)),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          DsTimelineStep(
+            title: list[i].status.tr,
+            state: i == 0 ? DsStepState.current : DsStepState.done,
+            subtitle: _subtitle(list[i]),
           ),
       ],
     );
+  }
+
+  String? _subtitle(ParcelTrackingEvent event) {
+    final parts = <String>[
+      if (event.at != null) DateFormat('dd MMM yyyy, hh:mm a').format(event.at!.toDate()),
+      if (event.pickupPointId != null && pickupPoints[event.pickupPointId] != null) pickupPoints[event.pickupPointId]!.name,
+      if (event.note != null) event.note!,
+    ];
+    return parts.isEmpty ? null : parts.join('\n');
   }
 }

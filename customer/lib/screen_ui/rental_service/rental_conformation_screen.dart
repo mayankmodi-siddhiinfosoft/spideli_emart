@@ -2,407 +2,297 @@ import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/coupon_model.dart';
 import 'package:customer/screen_ui/rental_service/rental_coupon_screen.dart';
+import 'package:customer/screen_ui/rental_service/widget/rental_common_widgets.dart';
 import 'package:customer/screen_ui/rental_service/widget/rental_proposal_widgets.dart';
-import 'package:customer/themes/responsive.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
-import 'package:customer/utils/network_image_widget.dart';
-import 'package:customer/widget/my_separator.dart';
-import 'package:dotted_border/dotted_border.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
 import '../../controllers/rental_conformation_controller.dart';
-import '../../controllers/theme_controller.dart';
-import '../../themes/app_them_data.dart';
-import '../../themes/round_button_fill.dart';
 
+/// Rental checkout (archetype C — cart / checkout): trip recap, the chosen
+/// package and vehicle, the coupon block and the bill; "Book now" and the
+/// "Propose my price" negotiation live together in the sticky bar.
 class RentalConformationScreen extends StatelessWidget {
   const RentalConformationScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
+    final c = context.dsColors;
+    final t = context.dsText;
+    final l = context.dsLayout;
     return GetX(
       init: RentalConformationController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            automaticallyImplyLeading: false,
-            backgroundColor: AppThemeData.primary300,
-            title: Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () {
-                      Get.back();
-                    },
-                    child: Container(
-                      height: 42,
-                      width: 42,
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: AppThemeData.grey50),
-                      child: Center(child: Padding(padding: const EdgeInsets.only(left: 5), child: Icon(Icons.arrow_back_ios, color: AppThemeData.grey900, size: 20))),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text("Confirm Rent a Car".tr, style: AppThemeData.boldTextStyle(fontSize: 18, color: AppThemeData.grey900)),
-                ],
-              ),
-            ),
-          ),
-          body:
-              controller.isLoading.value
-                  ? Center(child: Constant.loader())
-                  : SingleChildScrollView(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
+        final currency = RegionService.currencyForRecord(
+          RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId),
+        );
+        return DsScaffold(
+          title: "Confirm Rent a Car".tr,
+          onBack: () {
+            Get.back();
+          },
+          maxContentWidth: DsLayout.contentMax,
+          body: controller.isLoading.value
+              ? const DsSkeletonDetail(mediaHeight: 120)
+              : ListView(
+                  padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.xl, l.gutter, DsSpace.xxl),
+                  children: DsFadeSlideIn.stagger([
+                    RentalInfoCard(
+                      child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          SizedBox(height: 20),
-                          Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(15),
-                              color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                              border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                            ),
-                            padding: const EdgeInsets.all(16),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Image.asset("assets/icons/pickup.png", height: 15, width: 15),
-                                SizedBox(width: 15),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        "${controller.rentalOrderModel.value.sourceLocationName}",
-                                        style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                      ),
-                                      Text(
-                                        Constant.timestampToDate(controller.rentalOrderModel.value.bookingDateTime!),
-                                        style: AppThemeData.semiBoldTextStyle(fontSize: 12, color: isDark ? AppThemeData.greyDark600 : AppThemeData.grey600),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          SizedBox(height: 20),
-                          Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(15),
-                              color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                              border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                            ),
-                            padding: const EdgeInsets.all(16),
+                          const DsIconWell(icon: Icons.trip_origin_rounded, size: 40),
+                          const DsGap(DsSpace.md),
+                          Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text("Your Preference".tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500)),
-                                SizedBox(height: 10),
+                                Text("${controller.rentalOrderModel.value.sourceLocationName}", style: t.titleSm),
+                                const DsGap(DsSpace.xxs),
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
+                                    Icon(Icons.event_rounded, size: 13, color: c.textMuted),
+                                    const DsGap(DsSpace.xs),
                                     Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            controller.rentalOrderModel.value.rentalPackageModel!.name.toString(),
-                                            style: AppThemeData.semiBoldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            controller.rentalOrderModel.value.rentalPackageModel!.description.toString(),
-                                            style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark600 : AppThemeData.grey600),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    SizedBox(width: 10),
-                                    Text(
-                                      Constant.amountShow(amount: controller.rentalOrderModel.value.rentalPackageModel!.baseFare.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))),
-                                      style: AppThemeData.boldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
+                                      child: Text(Constant.timestampToDate(controller.rentalOrderModel.value.bookingDateTime!), style: t.caption),
                                     ),
                                   ],
                                 ),
                               ],
                             ),
                           ),
-                          SizedBox(height: 20),
-                          Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(15),
-                              color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                              border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                            ),
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text("Vehicle Type".tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500)),
-                                SizedBox(height: 10),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius: BorderRadiusGeometry.circular(10),
-                                      child: NetworkImageWidget(imageUrl: controller.rentalOrderModel.value.rentalVehicleType!.rentalVehicleIcon.toString(), height: 50, width: 50, borderRadius: 10),
-                                    ),
-                                    SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            "${controller.rentalOrderModel.value.rentalVehicleType!.name}",
-                                            style: AppThemeData.semiBoldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                          ),
-                                          Text(
-                                            "${controller.rentalOrderModel.value.rentalVehicleType!.shortDescription}",
-                                            style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark600 : AppThemeData.grey600),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          SizedBox(height: 10),
-
-                          Row(
-                            children: [
-                              Expanded(child: Text("Coupons".tr, style: AppThemeData.boldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900))),
-                              InkWell(
-                                onTap: () {
-                                  Get.to(RentalCouponScreen())!.then((value) {
-                                    if (value != null) {
-                                      double couponAmount = Constant.calculateDiscount(amount: controller.subTotal.value.toString(), offerModel: value);
-                                      if (couponAmount < controller.subTotal.value) {
-                                        controller.selectedCouponModel.value = value;
-                                        controller.calculateAmount();
-                                      } else {
-                                        ShowToastDialog.showToast("This offer not eligible for this booking".tr);
-                                      }
-                                    }
-                                  });
-                                },
-                                child: Text(
-                                  "View All".tr,
-                                  style: AppThemeData.boldTextStyle(decoration: TextDecoration.underline, fontSize: 14, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 5),
-
-                          // Coupon input
-                          DottedBorder(
-                            options: RoundedRectDottedBorderOptions(strokeWidth: 1, radius: const Radius.circular(10), color: isDark ? AppThemeData.parcelServiceDark300 : AppThemeData.primary300),
-                            child: Container(
-                              decoration: BoxDecoration(color: AppThemeData.parcelService50, borderRadius: BorderRadius.circular(10)),
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              child: Row(
-                                children: [
-                                  SvgPicture.asset("assets/icons/ic_coupon_parcel.svg", height: 28, width: 28),
-                                  SizedBox(width: 15),
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: controller.couponController.value,
-                                      style: AppThemeData.semiBoldTextStyle(color: AppThemeData.grey900),
-                                      decoration: InputDecoration(
-                                        hintText: "Write coupon code".tr,
-                                        hintStyle: AppThemeData.mediumTextStyle(fontSize: 16, color: AppThemeData.parcelService500),
-                                        border: InputBorder.none,
-                                      ),
-                                    ),
-                                  ),
-                                  RoundedButtonFill(
-                                    title: "Redeem now".tr,
-                                    onPress: () {
-                                      if (controller.couponList.where((element) => element.code!.toLowerCase() == controller.couponController.value.text.toLowerCase()).isNotEmpty) {
-                                        CouponModel couponModel = controller.couponList.firstWhere((p0) => p0.code!.toLowerCase() == controller.couponController.value.text.toLowerCase());
-                                        if (couponModel.expiresAt!.toDate().isAfter(DateTime.now())) {
-                                          double couponAmount = Constant.calculateDiscount(amount: controller.subTotal.value.toString(), offerModel: couponModel);
-                                          if (couponAmount < controller.subTotal.value) {
-                                            controller.selectedCouponModel.value = couponModel;
-                                            controller.calculateAmount();
-                                            controller.update();
-                                          } else {
-                                            ShowToastDialog.showToast("This offer not eligible for this booking".tr);
-                                          }
-                                        } else {
-                                          ShowToastDialog.showToast("This coupon code has been expired".tr);
-                                        }
-                                      } else {
-                                        ShowToastDialog.showToast("Invalid coupon code".tr);
-                                      }
-                                    },
-                                    borderRadius: 10,
-                                    height: 4,
-                                    width: 28,
-                                    fontSizes: 14,
-                                    color: AppThemeData.primary300,
-                                    textColor: AppThemeData.grey900,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(15),
-                              color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                              border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                            ),
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text("Order Summary".tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: AppThemeData.grey500)),
-                                const SizedBox(height: 8),
-
-                                // Subtotal
-                                _summaryTile("Subtotal".tr, Constant.amountShow(amount: controller.subTotal.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), isDark, null),
-
-                                // Discount
-                                _summaryTile("Discount".tr, Constant.amountShow(amount: controller.discount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), isDark, AppThemeData.dangerDark300),
-                                if (Constant.platformFeeModel?.enable == true) _summaryTile("Platform fee".tr, Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), isDark, null),
-                                InkWell(
-                                  onTap: () {
-                                    showBillBifurcationDialog(context, isDark, controller);
-                                  },
-                                  child: _summaryTile("Tax amount".tr, Constant.amountShow(amount: (controller.taxAmount.value).toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), isDark, null, underline: true),
-                                ),
-
-                                const Divider(),
-
-                                // Total
-                                _summaryTile("Order Total".tr, Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), isDark, null),
-                              ],
-                            ),
-                          ),
-                          SizedBox(height: 20),
-                          RoundedButtonFill(
-                            title: "Book now".tr,
-                            onPress: () {
-                              controller.placeOrder();
-                            },
-                            color: AppThemeData.primary300,
-                            textColor: AppThemeData.grey900,
-                          ),
-                          SizedBox(height: 10),
-                          // Spec 4.9: book at the listed price above, or propose a price.
-                          RoundedButtonFill(
-                            title: "Propose my price".tr,
-                            onPress: () async {
-                              final input = await showProposePriceSheet(
-                                listedPrice: Constant.amountShow(
-                                  amount: controller.subTotal.value.toString(),
-                                  currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId)),
-                                ),
-                              );
-                              if (input == null) return;
-                              await controller.proposePrice(amount: input.amount, message: input.message);
-                            },
-                            color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200,
-                            textColor: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                          ),
-                          SizedBox(height: 20),
                         ],
                       ),
                     ),
+                    const DsGap(DsSpace.xl),
+                    RentalInfoCard(
+                      title: "Your Preference".tr,
+                      icon: Icons.tune_rounded,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(controller.rentalOrderModel.value.rentalPackageModel!.name.toString(), style: t.title),
+                                const DsGap(DsSpace.xs),
+                                Text(controller.rentalOrderModel.value.rentalPackageModel!.description.toString(), style: t.bodySecondary),
+                              ],
+                            ),
+                          ),
+                          const DsGap(DsSpace.md),
+                          Text(
+                            Constant.amountShow(amount: controller.rentalOrderModel.value.rentalPackageModel!.baseFare.toString(), currency: currency),
+                            style: t.title.tabular,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const DsGap(DsSpace.xl),
+                    RentalInfoCard(
+                      title: "Vehicle Type".tr,
+                      icon: Icons.directions_car_filled_outlined,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          DsImage(
+                            url: controller.rentalOrderModel.value.rentalVehicleType!.rentalVehicleIcon.toString(),
+                            height: 50,
+                            width: 50,
+                            radius: DsRadius.sm,
+                            errorIcon: Icons.directions_car_outlined,
+                          ),
+                          const DsGap(DsSpace.md),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text("${controller.rentalOrderModel.value.rentalVehicleType!.name}", style: t.title),
+                                const DsGap(DsSpace.xxs),
+                                Text("${controller.rentalOrderModel.value.rentalVehicleType!.shortDescription}", style: t.bodySecondary),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const DsGap(DsSpace.xl),
+                    DsSectionHeader(
+                      title: "Coupons".tr,
+                      icon: Icons.local_activity_outlined,
+                      padding: const EdgeInsets.only(bottom: DsSpace.md),
+                      actionLabel: "View All".tr,
+                      onAction: () {
+                        Get.to(RentalCouponScreen())!.then((value) {
+                          if (value != null) {
+                            double couponAmount = Constant.calculateDiscount(amount: controller.subTotal.value.toString(), offerModel: value);
+                            if (couponAmount < controller.subTotal.value) {
+                              controller.selectedCouponModel.value = value;
+                              controller.calculateAmount();
+                            } else {
+                              ShowToastDialog.showToast("This offer not eligible for this booking".tr);
+                            }
+                          }
+                        });
+                      },
+                    ),
+
+                    // Coupon input
+                    DsCard.tinted(
+                      padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.md, DsSpace.md),
+                      child: Row(
+                        children: [
+                          SvgPicture.asset("assets/icons/ic_coupon_parcel.svg", height: 28, width: 28),
+                          const DsGap(DsSpace.md),
+                          Expanded(
+                            child: TextFormField(
+                              controller: controller.couponController.value,
+                              style: t.bodyStrong,
+                              textCapitalization: TextCapitalization.characters,
+                              decoration: InputDecoration(
+                                hintText: "Write coupon code".tr,
+                                hintStyle: t.bodySecondary,
+                                border: InputBorder.none,
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          const DsGap(DsSpace.sm),
+                          DsButton.primary(
+                            label: "Redeem now".tr,
+                            size: DsButtonSize.sm,
+                            onPressed: () {
+                              if (controller.couponList.where((element) => element.code!.toLowerCase() == controller.couponController.value.text.toLowerCase()).isNotEmpty) {
+                                CouponModel couponModel = controller.couponList.firstWhere((p0) => p0.code!.toLowerCase() == controller.couponController.value.text.toLowerCase());
+                                if (couponModel.expiresAt!.toDate().isAfter(DateTime.now())) {
+                                  double couponAmount = Constant.calculateDiscount(amount: controller.subTotal.value.toString(), offerModel: couponModel);
+                                  if (couponAmount < controller.subTotal.value) {
+                                    controller.selectedCouponModel.value = couponModel;
+                                    controller.calculateAmount();
+                                    controller.update();
+                                  } else {
+                                    ShowToastDialog.showToast("This offer not eligible for this booking".tr);
+                                  }
+                                } else {
+                                  ShowToastDialog.showToast("This coupon code has been expired".tr);
+                                }
+                              } else {
+                                ShowToastDialog.showToast("Invalid coupon code".tr);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const DsGap(DsSpace.lg),
+                    RentalInfoCard(
+                      title: "Order Summary".tr,
+                      icon: Icons.receipt_long_rounded,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Subtotal
+                          RentalSummaryRow(label: "Subtotal".tr, value: Constant.amountShow(amount: controller.subTotal.value.toString(), currency: currency)),
+
+                          // Discount
+                          RentalSummaryRow(
+                            label: "Discount".tr,
+                            value: Constant.amountShow(amount: controller.discount.value.toString(), currency: currency),
+                            tone: DsTone.danger,
+                          ),
+                          if (Constant.platformFeeModel?.enable == true)
+                            RentalSummaryRow(label: "Platform fee".tr, value: Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: currency)),
+                          RentalSummaryRow(
+                            label: "Tax amount".tr,
+                            value: Constant.amountShow(amount: (controller.taxAmount.value).toString(), currency: currency),
+                            underline: true,
+                            onTap: () {
+                              showBillBifurcationDialog(context, controller);
+                            },
+                          ),
+
+                          const DsDivider(spacing: DsSpace.md),
+
+                          // Total
+                          RentalSummaryRow(label: "Order Total".tr, value: Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: currency), emphasis: true),
+                        ],
+                      ),
+                    ),
+                  ]),
+                ),
+          bottomBar: controller.isLoading.value
+              ? null
+              : DsStickyBar(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(child: Text("Order Total".tr, style: t.bodySecondary)),
+                          const DsGap(DsSpace.md),
+                          Text(Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: currency), style: t.title.tabular),
+                        ],
+                      ),
+                      const DsGap(DsSpace.md),
+                      DsButton.primary(
+                        label: "Book now".tr,
+                        icon: Icons.check_circle_outline_rounded,
+                        size: DsButtonSize.lg,
+                        expand: true,
+                        onPressed: () {
+                          controller.placeOrder();
+                        },
+                      ),
+                      const DsGap(DsSpace.sm),
+                      // Spec 4.9: book at the listed price above, or propose a price.
+                      DsButton.secondary(
+                        label: "Propose my price".tr,
+                        icon: Icons.local_offer_outlined,
+                        expand: true,
+                        onPressed: () async {
+                          final input = await showProposePriceSheet(
+                            listedPrice: Constant.amountShow(amount: controller.subTotal.value.toString(), currency: currency),
+                          );
+                          if (input == null) return;
+                          await controller.proposePrice(amount: input.amount, message: input.message);
+                        },
+                      ),
+                    ],
                   ),
+                ),
         );
       },
     );
   }
 
-  Widget _summaryTile(String title, String value, bool isDark, Color? colors, {bool? underline}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            title,
-            style: AppThemeData.mediumTextStyle(
-              fontSize: 16,
-              color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800,
-              decoration: underline == true ? TextDecoration.underline : TextDecoration.none,
-            ),
-          ),
-          Text(value, style: AppThemeData.semiBoldTextStyle(fontSize: title == "Order Total" ? 18 : 16, color: colors ?? (isDark ? AppThemeData.greyDark900 : AppThemeData.grey900))),
-        ],
-      ),
+  void showBillBifurcationDialog(BuildContext context, RentalConformationController controller) {
+    final currency = RegionService.currencyForRecord(
+      RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId),
     );
-  }
-
-  void showBillBifurcationDialog(BuildContext context, bool isDark, RentalConformationController controller) {
     showDialog(
       context: context,
       builder: (context) {
-        return Dialog(
-          backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 10), // 🔥 KEY FIX
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: SizedBox(
-            width: Responsive.width(100, context), // ✅ 90% width
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(height: 10),
-                  Text("Tax Details".tr, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
-                  const SizedBox(height: 5),
-                  sectionDivider(isDark),
-                  const SizedBox(height: 5),
-                  amountRow(title: "Tax on Order Total".tr, amount: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), isDark: isDark),
-                  sectionDivider(isDark),
-                  amountRow(title: "Tax on Platform Fee".tr, amount: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), isDark: isDark),
-                  sectionDivider(isDark),
-                  amountRow(title: "Total Tax Amount".tr, amount: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.rentalOrderModel.value.regionId, zoneId: controller.rentalOrderModel.value.zoneId))), amountColor: AppThemeData.primary300, isDark: isDark),
-                  const SizedBox(height: 20),
-                  Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: Text("Close".tr))),
-                ],
-              ),
-            ),
+        return DsDialog(
+          title: "Tax Details".tr,
+          icon: Icons.percent_rounded,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RentalSummaryRow(label: "Tax on Order Total".tr, value: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: currency)),
+              const DsDivider(spacing: DsSpace.md),
+              RentalSummaryRow(label: "Tax on Platform Fee".tr, value: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: currency)),
+              const DsDivider(spacing: DsSpace.md),
+              RentalSummaryRow(label: "Total Tax Amount".tr, value: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: currency), emphasis: true),
+            ],
           ),
+          primaryLabel: "Close".tr,
+          onPrimary: () => Navigator.pop(context),
         );
       },
     );
-  }
-
-  Widget amountRow({required String title, required String amount, required bool isDark, Color? textColour, Color? amountColor, bool? underline, Widget? trailing}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Text(
-            title.tr,
-            style: TextStyle(
-              fontFamily: AppThemeData.regular,
-              color: textColour ?? (isDark ? AppThemeData.grey300 : AppThemeData.grey600),
-              fontSize: 16,
-              decoration: underline == true ? TextDecoration.underline : TextDecoration.none,
-            ),
-          ),
-        ),
-        trailing ?? Text(amount, style: TextStyle(fontFamily: AppThemeData.regular, color: amountColor ?? (isDark ? AppThemeData.grey50 : AppThemeData.grey900), fontSize: 16)),
-      ],
-    );
-  }
-
-  Widget sectionDivider(bool isDark) {
-    return Column(children: [const SizedBox(height: 10), MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200), const SizedBox(height: 10)]);
   }
 }

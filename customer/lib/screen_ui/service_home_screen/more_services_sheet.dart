@@ -1,7 +1,7 @@
 import 'package:customer/controllers/service_list_controller.dart';
 import 'package:customer/models/section_model.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
-import 'package:customer/themes/app_them_data.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/home_services.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -11,6 +11,9 @@ import 'package:get/get.dart';
 /// every region-available service under its `service_groups` heading, with
 /// ungrouped services under "Others". Empty groups (also after a search) are
 /// hidden. The data is prepared by [ServiceListController] / [HomeServices].
+///
+/// Like the home circle, every tile is coloured from its own service colour,
+/// so the panel never inherits the last-opened service's brand.
 class MoreServicesSheet extends StatefulWidget {
   final ServiceListController controller;
   final bool isDark;
@@ -22,8 +25,8 @@ class MoreServicesSheet extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      backgroundColor: DsColors.of(context).surfaceRaised,
+      shape: const RoundedRectangleBorder(borderRadius: DsRadius.sheetTop),
       builder: (_) => FractionallySizedBox(heightFactor: 1, child: MoreServicesSheet(controller: controller, isDark: isDark)),
     );
   }
@@ -49,7 +52,9 @@ class _MoreServicesSheetState extends State<MoreServicesSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isDark = widget.isDark;
+    final c = context.dsColors;
+    final t = context.dsText;
+    final l = context.dsLayout;
     final List<ServiceGroupView> groups = [
       ServiceGroupView(id: '_favourites', title: 'Favourites'.tr, services: widget.controller.favouriteList.toList()),
       ...widget.controller.groupList,
@@ -61,75 +66,61 @@ class _MoreServicesSheetState extends State<MoreServicesSheet> {
 
     return Column(
       children: [
-        const SizedBox(height: 8),
-        Container(width: 40, height: 4, decoration: BoxDecoration(color: isDark ? AppThemeData.greyDark300 : AppThemeData.grey300, borderRadius: BorderRadius.circular(2))),
+        const DsGap(DsSpace.sm),
+        Container(width: 40, height: 4, decoration: BoxDecoration(color: c.borderStrong, borderRadius: DsRadius.brPill)),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+          padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.sm, DsSpace.sm, 0),
           child: Row(
             children: [
-              Expanded(child: Text("All services".tr, style: AppThemeData.boldTextStyle(fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900))),
-              IconButton(onPressed: () => Navigator.of(context).pop(), icon: Icon(Icons.close, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
+              Expanded(child: Text("All services".tr, style: t.headline.w700)),
+              DsIconButton(icon: Icons.close_rounded, semanticLabel: "Close".tr, onPressed: () => Navigator.of(context).pop()),
             ],
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: TextField(
+          padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.sm, l.gutter, 0),
+          child: DsSearchBar(
             controller: _search,
+            hint: "Search services".tr,
             onChanged: (v) => setState(() => _query = v),
-            textInputAction: TextInputAction.search,
-            style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-            decoration: InputDecoration(
-              hintText: "Search services".tr,
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon:
-                  _query.isEmpty
-                      ? null
-                      : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _search.clear();
-                          setState(() => _query = '');
-                        },
-                      ),
-              filled: true,
-              fillColor: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-              contentPadding: const EdgeInsets.symmetric(vertical: 10),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200)),
-            ),
+            onClear: () {
+              _search.clear();
+              setState(() => _query = '');
+            },
           ),
         ),
-        const SizedBox(height: 8),
+        const DsGap(DsSpace.sm),
         Expanded(
-          child:
-              visible.isEmpty
-                  ? Center(child: Text("No services found".tr, style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.grey300 : AppThemeData.grey700)))
-                  : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                    itemCount: visible.length,
-                    itemBuilder: (context, index) {
-                      final ServiceGroupView group = visible[index];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
+          child: visible.isEmpty
+              ? DsEmptyState(icon: Icons.search_off_rounded, title: "No services found".tr, message: "Try another name.".tr, compact: true)
+              : ListView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                  padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.sm, l.gutter, DsSpace.xxl),
+                  itemCount: visible.length,
+                  itemBuilder: (context, index) {
+                    final ServiceGroupView group = visible[index];
+                    return DsFadeSlideIn(
+                      index: index,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: DsSpace.xl),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(group.title, style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
-                            const SizedBox(height: 10),
+                            DsSectionHeader(title: group.title, padding: const EdgeInsets.only(bottom: DsSpace.md)),
                             GridView.builder(
                               itemCount: group.services.length,
                               shrinkWrap: true,
                               padding: EdgeInsets.zero,
                               physics: const NeverScrollableScrollPhysics(),
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, mainAxisSpacing: 8, crossAxisSpacing: 8, mainAxisExtent: 100),
-                              itemBuilder: (context, i) => ServiceBubble(section: group.services[i], iconSize: 56, isDark: isDark, onTap: () => _open(group.services[i])),
+                              gridDelegate: DsLayout.gridDelegate(maxItemWidth: 110, spacing: DsSpace.sm, mainAxisExtent: 108),
+                              itemBuilder: (context, i) => ServiceBubble(section: group.services[i], iconSize: 56, isDark: widget.isDark, onTap: () => _open(group.services[i])),
                             ),
                           ],
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
+                ),
         ),
       ],
     );

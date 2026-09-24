@@ -1,105 +1,72 @@
-import 'package:customer/constant/constant.dart';
 import 'package:customer/screen_ui/on_demand_service/on_demand_home_screen.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import '../../controllers/provider_controller.dart';
-import '../../controllers/theme_controller.dart';
 import '../../models/provider_serivce_model.dart';
-import '../../themes/app_them_data.dart';
 
+/// Archetype B – provider profile: gradient identity hero over the list of
+/// services that provider offers.
 class ProviderScreen extends StatelessWidget {
   const ProviderScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-
     return GetX<ProviderController>(
       init: ProviderController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(automaticallyImplyLeading: true),
-          body:
-              controller.isLoading.value
-                  ? Center(child: Constant.loader())
-                  : Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 50),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Center(
-                          child:
-                              (controller.userModel.value?.profilePictureURL ?? "").isNotEmpty
-                                  ? CircleAvatar(backgroundImage: NetworkImage(controller.userModel.value?.profilePictureURL ?? ''), radius: 50.0)
-                                  : CircleAvatar(backgroundImage: NetworkImage(Constant.placeHolderImage), radius: 50.0),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          controller.userModel.value?.fullName() ?? '',
-                          style: TextStyle(color: isDark ? Colors.white : Colors.black, fontFamily: AppThemeData.regular, fontSize: 20, fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 5),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            SvgPicture.asset("assets/icons/ic_mail.svg", color: isDark ? Colors.white : Colors.black),
-                            const SizedBox(width: 6),
-                            Text(
-                              controller.userModel.value?.email ?? '',
-                              style: TextStyle(color: isDark ? Colors.white : Colors.black, fontFamily: AppThemeData.regular, fontSize: 14, fontWeight: FontWeight.w500),
-                            ),
-                          ],
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            SvgPicture.asset("assets/icons/ic_mobile.svg", color: isDark ? Colors.white : Colors.black),
-                            const SizedBox(width: 6),
-                            Text(
-                              controller.userModel.value?.phoneNumber ?? '',
-                              style: TextStyle(color: isDark ? Colors.white : Colors.black, fontFamily: AppThemeData.regular, fontSize: 14, fontWeight: FontWeight.w500),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Container(
-                          decoration: const BoxDecoration(color: AppThemeData.warning400, borderRadius: BorderRadius.all(Radius.circular(16))),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.star, size: 16, color: Colors.white),
-                                const SizedBox(width: 3),
-                                Text(
-                                  _getRating(controller),
-                                  style: const TextStyle(letterSpacing: 0.5, fontSize: 12, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w500, color: Colors.white),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        const Divider(),
-                        const SizedBox(height: 10),
-                        controller.providerList.isEmpty
-                            ? Center(child: Text("No Services Found".tr))
-                            : Expanded(
-                              child: ListView.builder(
-                                itemCount: controller.providerList.length,
-                                padding: EdgeInsets.zero,
-                                itemBuilder: (context, index) {
-                                  ProviderServiceModel data = controller.providerList[index];
-                                  return ServiceView(provider: data, isDark: isDark, controller: controller.onDemandHomeController.value);
-                                },
-                              ),
-                            ),
-                      ],
-                    ),
+        final bool isLoading = controller.isLoading.value;
+        final user = controller.userModel.value;
+        final List<ProviderServiceModel> providers = controller.providerList.toList();
+
+        return DsScaffold.hero(
+          hero: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              DsAvatar(imageUrl: user?.profilePictureURL ?? '', name: user?.fullName(), size: 96, ring: true),
+              const DsGap(DsSpace.md),
+              Text(user?.fullName() ?? '', textAlign: TextAlign.center, style: DsTypography.headline.copyWith(color: Colors.white)),
+              const DsGap(DsSpace.sm),
+              _ContactLine(asset: "assets/icons/ic_mail.svg", value: user?.email ?? ''),
+              _ContactLine(asset: "assets/icons/ic_mobile.svg", value: user?.phoneNumber ?? ''),
+            ],
+          ),
+          heroOverlap: DsCard(
+            padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _MetaBlock(value: _getRating(controller), label: "Rating".tr, icon: Icons.star_rounded, tone: DsTone.warning),
+                Container(width: 1, height: 36, color: context.dsColors.divider),
+                _MetaBlock(value: '${providers.length}', label: "Services".tr, icon: Icons.home_repair_service_outlined, tone: DsTone.brand),
+              ],
+            ),
+          ),
+          slivers: [
+            if (isLoading)
+              const DsSliverResponsive(top: DsSpace.xl, sliver: SliverToBoxAdapter(child: DsSkeletonList(itemCount: 4)))
+            else ...[
+              DsSliverResponsive(
+                top: DsSpace.sm,
+                sliver: SliverToBoxAdapter(child: DsSectionHeader(title: "Services".tr, icon: Icons.home_repair_service_outlined)),
+              ),
+              if (providers.isEmpty)
+                DsSliverResponsive(sliver: SliverToBoxAdapter(child: DsEmptyState(compact: true, icon: Icons.handyman_outlined, title: "No Services Found".tr)))
+              else
+                DsSliverResponsive(
+                  maxWidth: DsLayout.wideMax,
+                  bottom: DsSpace.xl,
+                  sliver: SliverList.builder(
+                    itemCount: providers.length,
+                    itemBuilder: (context, index) {
+                      ProviderServiceModel data = providers[index];
+                      return DsFadeSlideIn(index: index, child: ServiceView(provider: data, controller: controller.onDemandHomeController.value));
+                    },
                   ),
+                ),
+            ],
+          ],
         );
       },
     );
@@ -112,5 +79,62 @@ class ProviderScreen extends StatelessWidget {
     if (reviewsCount == 0) return "0";
     final avg = reviewsSum / reviewsCount;
     return avg.toStringAsFixed(1);
+  }
+}
+
+/// White-on-gradient contact row (email / phone) for the provider hero.
+class _ContactLine extends StatelessWidget {
+  final String asset;
+  final String value;
+
+  const _ContactLine({required this.asset, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    if (value.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: DsSpace.xs),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SvgPicture.asset(asset, height: 16, width: 16, colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
+          const DsGap(DsSpace.sm),
+          Flexible(child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: DsTypography.bodyStrong.copyWith(color: Colors.white))),
+        ],
+      ),
+    );
+  }
+}
+
+/// Small metric block used in the provider overlap card.
+class _MetaBlock extends StatelessWidget {
+  final String value;
+  final String label;
+  final IconData icon;
+  final DsTone tone;
+
+  const _MetaBlock({required this.value, required this.label, required this.icon, required this.tone});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final toneColors = c.tone(tone);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: toneColors.strong),
+            const DsGap(DsSpace.xs),
+            Text(value, style: t.titleSm.tabular),
+          ],
+        ),
+        const DsGap(DsSpace.xxs),
+        Text(label, style: t.caption),
+      ],
+    );
   }
 }

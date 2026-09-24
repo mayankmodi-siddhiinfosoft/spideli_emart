@@ -1,5 +1,4 @@
 import 'package:customer/utils/region_service.dart';
-import 'package:badges/badges.dart' as badges;
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/restaurant_details_controller.dart';
 import 'package:customer/models/cart_product_model.dart';
@@ -9,17 +8,12 @@ import 'package:customer/models/favourite_model.dart';
 import 'package:customer/models/product_model.dart';
 import 'package:customer/models/vendor_category_model.dart';
 import 'package:customer/models/vendor_model.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/responsive.dart';
-import 'package:customer/themes/round_button_fill.dart';
-import 'package:customer/themes/text_field_widget.dart';
-import 'package:customer/utils/network_image_widget.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 
-import '../../../controllers/theme_controller.dart';
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
 import '../../../utils/wholesale_pricing.dart';
@@ -29,80 +23,102 @@ import '../cart_screen/cart_screen.dart';
 import '../dine_in_screeen/dine_in_details_screen.dart';
 import '../review_list_screen/review_list_screen.dart';
 
+/// Archetype B — store detail. Full-bleed photo hero with floating controls,
+/// an overlapping identity card (name, rating, open/closed, timings), then the
+/// Delivery/TakeAway switch, offers, plans and the menu with category
+/// accordions. A sticky "View cart" bar appears as soon as the cart has items.
 class RestaurantDetailsScreen extends StatelessWidget {
   const RestaurantDetailsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: RestaurantDetailsController(),
       autoRemove: false,
       builder: (controller) {
-        return Scaffold(
-          bottomNavigationBar:
-              cartItem.isEmpty
-                  ? null
-                  : InkWell(
+        final c = context.dsColors;
+        final t = context.dsText;
+        final isDark = context.dsIsDark;
+
+        // Every observable this screen reacts to is read here, inside the
+        // tracked builder (child widgets/builders get plain values).
+        final bool isLoading = controller.isLoading.value;
+        final VendorModel vendor = controller.vendorModel.value;
+        final bool isOpen = controller.isOpen.value;
+        final bool isVeg = controller.isVag.value;
+        final bool isNonVeg = controller.isNonVag.value;
+        final int cartCount = cartItem.length;
+        final List<CouponModel> coupons = controller.couponList.toList();
+        final List<dynamic>? photos = vendor.photos;
+        final double heroHeight = (MediaQuery.sizeOf(context).height * 0.32).clamp(220.0, 360.0);
+
+        return DsScaffold(
+          maxContentWidth: null,
+          bottomBar: cartCount == 0
+              ? null
+              : DsStickyBar(
+                  child: DsPressable(
                     onTap: () {
                       Get.to(const CartScreen());
                     },
                     child: Container(
-                      height: 60,
-                      decoration: BoxDecoration(color: AppThemeData.primary300),
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.xl, vertical: DsSpace.lg),
+                      decoration: BoxDecoration(
+                        gradient: DsGradients.brand(context),
+                        borderRadius: DsRadius.brLg,
+                        boxShadow: DsShadows.glow(context, color: c.brand),
+                      ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('${cartItem.length} ${"items".tr}', style: TextStyle(fontFamily: AppThemeData.medium, color: AppThemeData.grey50, fontSize: 16)),
-                          Text('View Cart'.tr, style: TextStyle(fontFamily: AppThemeData.semiBold, color: AppThemeData.grey50, fontSize: 16, fontWeight: FontWeight.bold)),
+                          Text('$cartCount ${"items".tr}', style: t.bodyStrong.withColor(c.onBrand)),
+                          Row(
+                            children: [
+                              Text('View Cart'.tr, style: t.label.withColor(c.onBrand)),
+                              const DsGap(DsSpace.xs),
+                              Icon(Icons.arrow_forward_rounded, size: 18, color: c.onBrand),
+                            ],
+                          ),
                         ],
                       ),
                     ),
                   ),
-          body: NestedScrollView(
-            headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
-              return <Widget>[
-                SliverAppBar(
-                  expandedHeight: Responsive.height(30, context),
-                  floating: true,
-                  pinned: true,
-                  automaticallyImplyLeading: false,
-                  backgroundColor: AppThemeData.primary300,
-                  title: Row(
-                    children: [
-                      InkWell(
-                        onTap: () {
-                          Get.back();
-                        },
-                        child: Icon(Icons.arrow_back, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50),
-                      ),
-                      const Expanded(child: SizedBox()),
-                      Visibility(
-                        visible: (controller.vendorModel.value.isSelfDelivery == true && Constant.isSelfDeliveryFeature == true),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                              decoration: BoxDecoration(
-                                color: AppThemeData.primary300,
-                                borderRadius: BorderRadius.circular(120), // Optional
-                              ),
-                              child: Row(
-                                children: [
-                                  SvgPicture.asset("assets/icons/ic_free_delivery.svg"),
-                                  const SizedBox(width: 5),
-                                  Text("Free Delivery".tr, style: TextStyle(fontSize: 14, color: AppThemeData.carRent600, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600)),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                          ],
-                        ),
-                      ),
-                      InkWell(
-                        onTap: () async {
+                ),
+          body: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+            slivers: [
+              SliverAppBar(
+                expandedHeight: heroHeight,
+                floating: true,
+                pinned: true,
+                automaticallyImplyLeading: false,
+                backgroundColor: c.brand,
+                foregroundColor: Colors.white,
+                surfaceTintColor: Colors.transparent,
+                title: Row(
+                  children: [
+                    DsIconButton(
+                      icon: Icons.arrow_back_rounded,
+                      semanticLabel: 'Back'.tr,
+                      variant: DsIconButtonVariant.plain,
+                      color: Colors.white,
+                      onPressed: () {
+                        Get.back();
+                      },
+                    ),
+                    const Expanded(child: SizedBox()),
+                    if (vendor.isSelfDelivery == true && Constant.isSelfDeliveryFeature == true) ...[
+                      DsBadge(label: "Free Delivery".tr, tone: DsTone.success, style: DsBadgeStyle.solid, icon: Icons.delivery_dining_outlined, small: true),
+                      const DsGap(DsSpace.sm),
+                    ],
+                    // Favourite state is observable: its own observer keeps the
+                    // heart in sync without rebuilding the bar.
+                    Obx(() {
+                      final bool favourite = controller.favouriteList.where((p0) => p0.restaurantId == controller.vendorModel.value.id).isNotEmpty;
+                      return DsIconButton(
+                        semanticLabel: "Favourite Store".tr,
+                        variant: DsIconButtonVariant.plain,
+                        onPressed: () async {
                           if (controller.favouriteList.where((p0) => p0.restaurantId == controller.vendorModel.value.id).isNotEmpty) {
                             FavouriteModel favouriteModel = FavouriteModel(restaurantId: controller.vendorModel.value.id, userId: FireStoreUtils.getCurrentUid());
                             controller.favouriteList.removeWhere((item) => item.restaurantId == controller.vendorModel.value.id);
@@ -113,526 +129,124 @@ class RestaurantDetailsScreen extends StatelessWidget {
                             await FireStoreUtils.setFavouriteRestaurant(favouriteModel);
                           }
                         },
-                        child: Obx(
-                          () =>
-                              controller.favouriteList.where((p0) => p0.restaurantId == controller.vendorModel.value.id).isNotEmpty
-                                  ? SvgPicture.asset("assets/icons/ic_like_fill.svg", colorFilter: const ColorFilter.mode(AppThemeData.grey50, BlendMode.srcIn))
-                                  : SvgPicture.asset("assets/icons/ic_like.svg"),
-                        ),
+                        child: favourite
+                            ? SvgPicture.asset("assets/icons/ic_like_fill.svg", colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn))
+                            : SvgPicture.asset("assets/icons/ic_like.svg"),
+                      );
+                    }),
+                    Obx(
+                      () => DsIconButton(
+                        semanticLabel: 'View Cart'.tr,
+                        variant: DsIconButtonVariant.plain,
+                        badgeCount: cartItem.length,
+                        onPressed: () {
+                          Get.to(const CartScreen());
+                        },
+                        child: SvgPicture.asset("assets/icons/ic_shoping_cart.svg", width: 24, height: 24, colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
                       ),
-                      const SizedBox(width: 10),
-                      Obx(
-                        () => badges.Badge(
-                          showBadge: cartItem.isEmpty ? false : true,
-                          badgeContent: Text(
-                            "${cartItem.length}",
-                            style: TextStyle(
-                              fontSize: 14,
-                              overflow: TextOverflow.ellipsis,
-                              fontFamily: AppThemeData.semiBold,
-                              fontWeight: FontWeight.w600,
-                              color: isDark ? AppThemeData.grey50 : AppThemeData.grey50,
-                            ),
-                          ),
-                          badgeStyle: badges.BadgeStyle(shape: badges.BadgeShape.circle, badgeColor: AppThemeData.ecommerce300),
-                          child: InkWell(
+                    ),
+                  ],
+                ),
+                flexibleSpace: FlexibleSpaceBar(
+                  background: _StoreHeroMedia(controller: controller, vendor: vendor, photos: photos, height: heroHeight),
+                ),
+              ),
+              if (isLoading)
+                const SliverToBoxAdapter(child: DsSkeletonDetail(mediaHeight: 0))
+              else ...[
+                DsSliverResponsive(
+                  top: DsSpace.lg,
+                  sliver: SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: DsFadeSlideIn.stagger([
+                        _StoreIdentityCard(vendor: vendor, isOpen: isOpen, controller: controller),
+                        Padding(
+                          padding: const EdgeInsets.only(top: DsSpace.lg),
+                          // The toggle owns its own observer so the selection
+                          // animates without rebuilding the page.
+                          child: Obx(() => OrderTypeToggle(value: controller.orderType.value, isDark: isDark, onChanged: controller.setOrderType)),
+                        ),
+                        if (vendor.dineInActive == true || (vendor.openDineTime != null && vendor.openDineTime!.isNotEmpty))
+                          _TableBookingCard(
                             onTap: () {
-                              Get.to(const CartScreen());
+                              Get.to(const DineInDetailsScreen(), arguments: {"vendorModel": controller.vendorModel.value});
                             },
-                            child: ClipOval(
-                              child: SvgPicture.asset("assets/icons/ic_shoping_cart.svg", width: 24, height: 24, colorFilter: const ColorFilter.mode(AppThemeData.grey50, BlendMode.srcIn)),
-                            ),
-                          ),
+                          )
+                        else
+                          const SizedBox(),
+                        if (coupons.isNotEmpty)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              DsSectionHeader(
+                                title: "Additional Offers".tr,
+                                icon: Icons.local_offer_outlined,
+                                padding: const EdgeInsets.only(top: DsSpace.xl, bottom: DsSpace.sm),
+                              ),
+                              CouponListView(controller: controller),
+                            ],
+                          )
+                        else
+                          const SizedBox(),
+                        StorePlansSection(vendor: vendor),
+                        DsSectionHeader(title: "Menu".tr, icon: Icons.menu_book_outlined),
+                        DsSearchBar(
+                          controller: controller.searchEditingController.value,
+                          hint: 'Search the item and more...'.tr,
+                          onChanged: (value) {
+                            controller.searchProduct(value);
+                          },
                         ),
-                      ),
-                    ],
-                  ),
-                  flexibleSpace: FlexibleSpaceBar(
-                    background: Stack(
-                      children: [
-                        controller.vendorModel.value.photos == null || controller.vendorModel.value.photos!.isEmpty
-                            ? Stack(
+                        if (Constant.sectionConstantModel!.isProductDetails == false)
+                          const SizedBox()
+                        else
+                          Padding(
+                            padding: const EdgeInsets.only(top: DsSpace.md),
+                            child: Row(
                               children: [
-                                NetworkImageWidget(
-                                  imageUrl: controller.vendorModel.value.photo.toString(),
-                                  fit: BoxFit.cover,
-                                  width: Responsive.width(100, context),
-                                  height: Responsive.height(40, context),
+                                _DietChip(
+                                  asset: "assets/icons/ic_veg.svg",
+                                  label: 'Veg'.tr,
+                                  selected: isVeg,
+                                  onTap: () {
+                                    if (controller.isVag.value == true) {
+                                      controller.isVag.value = false;
+                                    } else {
+                                      controller.isVag.value = true;
+                                    }
+                                    controller.filterRecord();
+                                  },
                                 ),
-                                Container(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(begin: const Alignment(0.00, -1.00), end: const Alignment(0, 1), colors: [Colors.black.withOpacity(0), Colors.black]),
-                                  ),
+                                const DsGap(DsSpace.sm),
+                                _DietChip(
+                                  asset: "assets/icons/ic_nonveg.svg",
+                                  label: 'Non Veg'.tr,
+                                  selected: isNonVeg,
+                                  onTap: () {
+                                    if (controller.isNonVag.value == true) {
+                                      controller.isNonVag.value = false;
+                                    } else {
+                                      controller.isNonVag.value = true;
+                                    }
+                                    controller.filterRecord();
+                                  },
                                 ),
                               ],
-                            )
-                            : PageView.builder(
-                              physics: const BouncingScrollPhysics(),
-                              controller: controller.pageController.value,
-                              scrollDirection: Axis.horizontal,
-                              itemCount: controller.vendorModel.value.photos!.length,
-                              padEnds: false,
-                              pageSnapping: true,
-                              allowImplicitScrolling: true,
-                              itemBuilder: (BuildContext context, int index) {
-                                String image = controller.vendorModel.value.photos![index];
-                                return Stack(
-                                  children: [
-                                    NetworkImageWidget(imageUrl: image.toString(), fit: BoxFit.cover, width: Responsive.width(100, context), height: Responsive.height(40, context)),
-                                    Container(
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(begin: const Alignment(0.00, -1.00), end: const Alignment(0, 1), colors: [Colors.black.withOpacity(0), Colors.black]),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
                             ),
-                        Positioned(
-                          bottom: 10,
-                          right: 0,
-                          left: 0,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: List.generate(controller.vendorModel.value.photos!.length, (index) {
-                              return Obx(
-                                () => Container(
-                                  margin: const EdgeInsets.only(right: 5),
-                                  alignment: Alignment.centerLeft,
-                                  height: 9,
-                                  width: 9,
-                                  decoration: BoxDecoration(shape: BoxShape.circle, color: controller.currentPage.value == index ? AppThemeData.primary300 : AppThemeData.grey300),
-                                ),
-                              );
-                            }),
                           ),
-                        ),
-                      ],
+                      ]),
                     ),
                   ),
                 ),
-              ];
-            },
-            body:
-                controller.isLoading.value
-                    ? Constant.loader()
-                    : Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      child: SingleChildScrollView(
-                        physics: const NeverScrollableScrollPhysics(),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.start,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.start,
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              controller.vendorModel.value.title.toString(),
-                                              textAlign: TextAlign.start,
-                                              maxLines: 1,
-                                              style: TextStyle(
-                                                fontSize: 22,
-                                                overflow: TextOverflow.ellipsis,
-                                                fontFamily: AppThemeData.semiBold,
-                                                fontWeight: FontWeight.w600,
-                                                color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                              ),
-                                            ),
-                                            SizedBox(
-                                              width: Responsive.width(78, context),
-                                              child: Text(
-                                                controller.vendorModel.value.location.toString(),
-                                                textAlign: TextAlign.start,
-                                                style: TextStyle(fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, color: isDark ? AppThemeData.grey400 : AppThemeData.grey400),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Column(
-                                        children: [
-                                          Container(
-                                            decoration: ShapeDecoration(
-                                              color: isDark ? AppThemeData.primary600 : AppThemeData.primary50,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
-                                            ),
-                                            child: Padding(
-                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                              child: Row(
-                                                children: [
-                                                  SvgPicture.asset("assets/icons/ic_star.svg", colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn)),
-                                                  const SizedBox(width: 5),
-                                                  Text(
-                                                    Constant.calculateReview(
-                                                      reviewCount: controller.vendorModel.value.reviewsCount.toString(),
-                                                      reviewSum: controller.vendorModel.value.reviewsSum.toString(),
-                                                    ),
-                                                    style: TextStyle(color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                          InkWell(
-                                            onTap: () {
-                                              Get.to(const ReviewListScreen(), arguments: {"vendorModel": controller.vendorModel.value});
-                                            },
-                                            child: Text(
-                                              "${controller.vendorModel.value.reviewsCount} ${'Ratings'.tr}",
-                                              style: TextStyle(decoration: TextDecoration.underline, color: isDark ? AppThemeData.grey200 : AppThemeData.grey700, fontFamily: AppThemeData.regular),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                  Constant.sectionConstantModel!.serviceTypeFlag == "ecommerce-service"
-                                      ? SizedBox()
-                                      : Row(
-                                        children: [
-                                          Text(
-                                            controller.isOpen.value ? "Open".tr : "Close".tr,
-                                            textAlign: TextAlign.start,
-                                            maxLines: 1,
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              overflow: TextOverflow.ellipsis,
-                                              fontFamily: AppThemeData.semiBold,
-                                              fontWeight: FontWeight.w600,
-                                              color: controller.isOpen.value ? AppThemeData.success400 : AppThemeData.danger300,
-                                            ),
-                                          ),
-                                          Padding(padding: const EdgeInsets.symmetric(horizontal: 10), child: Icon(Icons.circle, size: 5, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500)),
-                                          InkWell(
-                                            onTap: () {
-                                              if (controller.vendorModel.value.workingHours!.isEmpty) {
-                                                ShowToastDialog.showToast("Timing is not added by store".tr);
-                                              } else {
-                                                timeShowBottomSheet(context, controller);
-                                              }
-                                            },
-                                            child: Text(
-                                              "View Timings".tr,
-                                              textAlign: TextAlign.start,
-                                              maxLines: 1,
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                decoration: TextDecoration.underline,
-                                                decorationColor: AppThemeData.ecommerce300,
-                                                overflow: TextOverflow.ellipsis,
-                                                fontFamily: AppThemeData.semiBold,
-                                                fontWeight: FontWeight.w600,
-                                                color: isDark ? AppThemeData.ecommerce300 : AppThemeData.ecommerce300,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                  // Delivery / TakeAway filter under the store header (spec 7.3).
-                                  const SizedBox(height: 12),
-                                  Obx(() => OrderTypeToggle(value: controller.orderType.value, isDark: isDark, onChanged: controller.setOrderType)),
-                                  controller.vendorModel.value.dineInActive == true || (controller.vendorModel.value.openDineTime != null && controller.vendorModel.value.openDineTime!.isNotEmpty)
-                                      ? Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const SizedBox(height: 20),
-                                          Text(
-                                            "Also applicable on table booking".tr,
-                                            textAlign: TextAlign.start,
-                                            maxLines: 1,
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              overflow: TextOverflow.ellipsis,
-                                              fontFamily: AppThemeData.semiBold,
-                                              fontWeight: FontWeight.w600,
-                                              color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 10),
-                                          InkWell(
-                                            onTap: () {
-                                              Get.to(const DineInDetailsScreen(), arguments: {"vendorModel": controller.vendorModel.value});
-                                            },
-                                            child: Container(
-                                              height: 80,
-                                              clipBehavior: Clip.antiAlias,
-                                              decoration: ShapeDecoration(
-                                                color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                                shape: RoundedRectangleBorder(
-                                                  side: BorderSide(width: 1, color: isDark ? AppThemeData.grey900 : AppThemeData.grey50),
-                                                  borderRadius: BorderRadius.circular(16),
-                                                ),
-                                              ),
-                                              child: Padding(
-                                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                                child: Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                                  children: [
-                                                    Image.asset("assets/images/ic_table.gif"),
-                                                    const SizedBox(width: 10),
-                                                    Expanded(
-                                                      child: Column(
-                                                        mainAxisAlignment: MainAxisAlignment.center,
-                                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                                        children: [
-                                                          Text(
-                                                            "Table Booking".tr,
-                                                            style: TextStyle(
-                                                              fontSize: 16,
-                                                              color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                              fontFamily: AppThemeData.semiBold,
-                                                              fontWeight: FontWeight.w600,
-                                                            ),
-                                                          ),
-                                                          Text(
-                                                            "Quick Confirmations".tr,
-                                                            style: TextStyle(
-                                                              fontSize: 12,
-                                                              color: isDark ? AppThemeData.grey400 : AppThemeData.grey500,
-                                                              fontFamily: AppThemeData.medium,
-                                                              fontWeight: FontWeight.w500,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      )
-                                      : const SizedBox(),
-                                  controller.couponList.isEmpty
-                                      ? const SizedBox()
-                                      : Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const SizedBox(height: 20),
-                                          Text(
-                                            "Additional Offers".tr,
-                                            textAlign: TextAlign.start,
-                                            maxLines: 1,
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              overflow: TextOverflow.ellipsis,
-                                              fontFamily: AppThemeData.semiBold,
-                                              fontWeight: FontWeight.w600,
-                                              color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 10),
-                                          CouponListView(controller: controller),
-                                        ],
-                                      ),
-                                  StorePlansSection(vendor: controller.vendorModel.value),
-                                  const SizedBox(height: 20),
-                                  Text(
-                                    "Menu".tr,
-                                    textAlign: TextAlign.start,
-                                    maxLines: 1,
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      overflow: TextOverflow.ellipsis,
-                                      fontFamily: AppThemeData.semiBold,
-                                      fontWeight: FontWeight.w600,
-                                      color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  TextFieldWidget(
-                                    controller: controller.searchEditingController.value,
-                                    hintText: 'Search the item and more...'.tr,
-                                    onchange: (value) {
-                                      controller.searchProduct(value);
-                                    },
-                                    prefix: Padding(padding: const EdgeInsets.all(12), child: SvgPicture.asset("assets/icons/ic_search.svg")),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Constant.sectionConstantModel!.isProductDetails == false
-                                      ? SizedBox()
-                                      : Row(
-                                        children: [
-                                          InkWell(
-                                            onTap: () {
-                                              if (controller.isVag.value == true) {
-                                                controller.isVag.value = false;
-                                              } else {
-                                                controller.isVag.value = true;
-                                              }
-                                              controller.filterRecord();
-                                            },
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                              decoration:
-                                                  controller.isVag.value
-                                                      ? ShapeDecoration(
-                                                        color: isDark ? AppThemeData.primary600 : AppThemeData.primary50,
-                                                        shape: RoundedRectangleBorder(side: BorderSide(width: 1, color: AppThemeData.primary300), borderRadius: BorderRadius.circular(120)),
-                                                      )
-                                                      : ShapeDecoration(
-                                                        color: isDark ? AppThemeData.grey800 : AppThemeData.grey100,
-                                                        shape: RoundedRectangleBorder(
-                                                          side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                          borderRadius: BorderRadius.circular(120),
-                                                        ),
-                                                      ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                mainAxisAlignment: MainAxisAlignment.start,
-                                                crossAxisAlignment: CrossAxisAlignment.center,
-                                                children: [
-                                                  SvgPicture.asset("assets/icons/ic_veg.svg", height: 20, width: 20),
-                                                  const SizedBox(width: 8),
-                                                  Text(
-                                                    'Veg'.tr,
-                                                    style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          InkWell(
-                                            onTap: () {
-                                              if (controller.isNonVag.value == true) {
-                                                controller.isNonVag.value = false;
-                                              } else {
-                                                controller.isNonVag.value = true;
-                                              }
-                                              controller.filterRecord();
-                                            },
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                              decoration:
-                                                  controller.isNonVag.value
-                                                      ? ShapeDecoration(
-                                                        color: isDark ? AppThemeData.primary600 : AppThemeData.primary50,
-                                                        shape: RoundedRectangleBorder(side: BorderSide(width: 1, color: AppThemeData.primary300), borderRadius: BorderRadius.circular(120)),
-                                                      )
-                                                      : ShapeDecoration(
-                                                        color: isDark ? AppThemeData.grey800 : AppThemeData.grey100,
-                                                        shape: RoundedRectangleBorder(
-                                                          side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                          borderRadius: BorderRadius.circular(120),
-                                                        ),
-                                                      ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                mainAxisAlignment: MainAxisAlignment.start,
-                                                crossAxisAlignment: CrossAxisAlignment.center,
-                                                children: [
-                                                  SvgPicture.asset("assets/icons/ic_nonveg.svg", height: 20, width: 20),
-                                                  const SizedBox(width: 8),
-                                                  Text(
-                                                    'Non Veg'.tr,
-                                                    style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            ProductListView(controller: controller),
-                          ],
-                        ),
-                      ),
-                    ),
+                DsSliverResponsive(
+                  top: DsSpace.lg,
+                  bottom: DsSpace.xxl,
+                  sliver: SliverToBoxAdapter(child: ProductListView(controller: controller)),
+                ),
+              ],
+            ],
           ),
-          // floatingActionButton: PopupMenuButton(
-          //   offset: const Offset(0, -260),
-          //   onOpened: () {
-          //     controller.isMenuOpen.value = true;
-          //   },
-          //   onCanceled: () {
-          //     controller.isMenuOpen.value = false;
-          //   },
-          //   onSelected: (value) {
-          //     controller.isMenuOpen.value = false;
-          //   },
-          //   color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-          //   shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(16.0))),
-          //   itemBuilder: (context) {
-          //     return List.generate(controller.vendorCategoryList.length, (index) {
-          //       VendorCategoryModel vendorCategoryModel = controller.vendorCategoryList[index];
-          //       return PopupMenuItem(
-          //         value: index,
-          //         onTap: () {},
-          //         child: SizedBox(
-          //           width: 230,
-          //           child: Text(
-          //             vendorCategoryModel.title.toString(),
-          //             textAlign: TextAlign.start,
-          //             maxLines: 1,
-          //             style: TextStyle(
-          //               fontSize: 14,
-          //               overflow: TextOverflow.ellipsis,
-          //               fontFamily: AppThemeData.semiBold,
-          //               fontWeight: FontWeight.w600,
-          //               color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-          //             ),
-          //           ),
-          //         ),
-          //       );
-          //     });
-          //   },
-          //   child: Container(
-          //     width: 60,
-          //     height: 60,
-          //     padding: const EdgeInsets.all(10),
-          //     decoration: ShapeDecoration(
-          //       color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-          //       shape: RoundedRectangleBorder(
-          //         borderRadius: BorderRadius.circular(120),
-          //       ),
-          //     ),
-          //     child: controller.isMenuOpen.value
-          //         ? Icon(
-          //             Icons.close,
-          //             color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-          //           )
-          //         : Column(
-          //             mainAxisSize: MainAxisSize.min,
-          //             mainAxisAlignment: MainAxisAlignment.center,
-          //             crossAxisAlignment: CrossAxisAlignment.center,
-          //             children: [
-          //               SvgPicture.asset("assets/icons/ic_book.svg"),
-          //               Text(
-          //                 "Menu",
-          //                 textAlign: TextAlign.start,
-          //                 maxLines: 1,
-          //                 style: TextStyle(
-          //                   fontSize: 12,
-          //                   overflow: TextOverflow.ellipsis,
-          //                   fontFamily: AppThemeData.medium,
-          //                   fontWeight: FontWeight.w500,
-          //                   color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-          //                 ),
-          //               ),
-          //             ],
-          //           ),
-          //   ),
-          // ),
         );
       },
     );
@@ -643,119 +257,323 @@ class RestaurantDetailsScreen extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       isDismissible: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
+      backgroundColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(borderRadius: DsRadius.sheetTop),
       clipBehavior: Clip.antiAliasWithSaveLayer,
-      builder:
-          (context) => FractionallySizedBox(
-            heightFactor: 0.70,
-            child: StatefulBuilder(
-              builder: (context1, setState) {
-                final themeController = Get.find<ThemeController>();
-                final isDark = themeController.isDark.value;
-                return Scaffold(
-                  backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-                  body: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          child: Center(
-                            child: Container(
-                              width: 134,
-                              height: 5,
-                              margin: const EdgeInsets.only(bottom: 6),
-                              decoration: ShapeDecoration(color: isDark ? AppThemeData.grey50 : AppThemeData.grey800, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(3))),
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: ListView.builder(
-                            shrinkWrap: true,
-                            physics: const BouncingScrollPhysics(),
-                            itemCount: productModel.vendorModel.value.workingHours!.length,
-                            itemBuilder: (context, dayIndex) {
-                              WorkingHours workingHours = productModel.vendorModel.value.workingHours![dayIndex];
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      "${workingHours.day}",
-                                      textAlign: TextAlign.start,
-                                      maxLines: 1,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        overflow: TextOverflow.ellipsis,
-                                        fontFamily: AppThemeData.semiBold,
-                                        fontWeight: FontWeight.w600,
-                                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
+      builder: (context) => StatefulBuilder(
+        builder: (context1, setState) {
+          final c = DsColors.of(context1);
+          final t = DsTextTheme(c);
+          return DsSheet(
+            title: "View Timings".tr,
+            padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.sm, DsSpace.lg, DsSpace.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  itemCount: productModel.vendorModel.value.workingHours!.length,
+                  itemBuilder: (context, dayIndex) {
+                    WorkingHours workingHours = productModel.vendorModel.value.workingHours![dayIndex];
+                    return DsCard.outlined(
+                      margin: const EdgeInsets.only(bottom: DsSpace.md),
+                      padding: const EdgeInsets.all(DsSpace.md),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("${workingHours.day}", maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                          const DsGap(DsSpace.sm),
+                          workingHours.timeslot == null || workingHours.timeslot!.isEmpty
+                              ? const SizedBox()
+                              : ListView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  padding: EdgeInsets.zero,
+                                  itemCount: workingHours.timeslot!.length,
+                                  itemBuilder: (context, timeIndex) {
+                                    Timeslot timeSlotModel = workingHours.timeslot![timeIndex];
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: DsSpace.sm),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(child: _SlotBox(label: timeSlotModel.from.toString())),
+                                          const DsGap(DsSpace.sm),
+                                          Icon(Icons.arrow_forward_rounded, size: 16, color: c.textMuted),
+                                          const DsGap(DsSpace.sm),
+                                          Expanded(child: _SlotBox(label: timeSlotModel.to.toString())),
+                                        ],
                                       ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    workingHours.timeslot == null || workingHours.timeslot!.isEmpty
-                                        ? const SizedBox()
-                                        : ListView.builder(
-                                          shrinkWrap: true,
-                                          physics: const NeverScrollableScrollPhysics(),
-                                          itemCount: workingHours.timeslot!.length,
-                                          itemBuilder: (context, timeIndex) {
-                                            Timeslot timeSlotModel = workingHours.timeslot![timeIndex];
-                                            return Padding(
-                                              padding: const EdgeInsets.all(8.0),
-                                              child: Row(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Expanded(
-                                                    child: Container(
-                                                      padding: const EdgeInsets.symmetric(vertical: 10),
-                                                      decoration: BoxDecoration(
-                                                        borderRadius: const BorderRadius.all(Radius.circular(12)),
-                                                        border: Border.all(color: isDark ? AppThemeData.grey400 : AppThemeData.grey200),
-                                                      ),
-                                                      child: Center(
-                                                        child: Text(
-                                                          timeSlotModel.from.toString(),
-                                                          style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 10),
-                                                  Expanded(
-                                                    child: Container(
-                                                      padding: const EdgeInsets.symmetric(vertical: 10),
-                                                      decoration: BoxDecoration(
-                                                        borderRadius: const BorderRadius.all(Radius.circular(12)),
-                                                        border: Border.all(color: isDark ? AppThemeData.grey400 : AppThemeData.grey200),
-                                                      ),
-                                                      child: Center(
-                                                        child: Text(
-                                                          timeSlotModel.to.toString(),
-                                                          style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                  ],
+                                    );
+                                  },
                                 ),
-                              );
-                            },
-                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SlotBox extends StatelessWidget {
+  final String label;
+  const _SlotBox({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: DsSpace.md, horizontal: DsSpace.sm),
+      decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brMd),
+      child: Center(child: Text(label, style: t.bodySm.tabular)),
+    );
+  }
+}
+
+/// Hero media: the store photo carousel (or a single photo) under a scrim,
+/// with page dots.
+class _StoreHeroMedia extends StatelessWidget {
+  final RestaurantDetailsController controller;
+  final VendorModel vendor;
+  final List<dynamic>? photos;
+  final double height;
+  const _StoreHeroMedia({required this.controller, required this.vendor, required this.photos, required this.height});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    // Child build: observe so `pageController` / `currentPage` reads here stay
+    // reactive (the parent observer has already returned).
+    return DsObserve(
+      builder: (context) => Stack(
+        fit: StackFit.expand,
+        children: [
+          photos == null || photos!.isEmpty
+              ? DsImage(url: vendor.photo.toString(), fit: BoxFit.cover, radius: 0, errorIcon: Icons.storefront_outlined)
+              : PageView.builder(
+                  physics: const BouncingScrollPhysics(),
+                  controller: controller.pageController.value,
+                  scrollDirection: Axis.horizontal,
+                  itemCount: photos!.length,
+                  padEnds: false,
+                  pageSnapping: true,
+                  allowImplicitScrolling: true,
+                  itemBuilder: (BuildContext context, int index) {
+                    String image = photos![index];
+                    return DsImage(url: image.toString(), fit: BoxFit.cover, radius: 0, errorIcon: Icons.storefront_outlined);
+                  },
+                ),
+          const DecoratedBox(decoration: BoxDecoration(gradient: DsGradients.imageScrim)),
+          if (photos != null && photos!.isNotEmpty)
+            Positioned(
+              bottom: DsSpace.md,
+              right: 0,
+              left: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: List.generate(photos!.length, (index) {
+                  // Own observer per dot: `currentPage` changes as the hero pages.
+                  return Obx(
+                    () => AnimatedContainer(
+                      duration: DsMotion.of(context, DsMotion.fast),
+                      margin: const EdgeInsets.only(right: DsSpace.xs),
+                      height: 8,
+                      width: controller.currentPage.value == index ? 20 : 8,
+                      decoration: BoxDecoration(borderRadius: DsRadius.brPill, color: controller.currentPage.value == index ? c.brand : Colors.white70),
+                    ),
+                  );
+                }),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Name, address, rating and open/closed state — the card that overlaps the
+/// hero and anchors the page.
+class _StoreIdentityCard extends StatelessWidget {
+  final VendorModel vendor;
+  final bool isOpen;
+  final RestaurantDetailsController controller;
+  const _StoreIdentityCard({required this.vendor, required this.isOpen, required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard(
+      padding: const EdgeInsets.all(DsSpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(vendor.title.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.headline),
+                    const DsGap(DsSpace.xxs),
+                    Text(vendor.location.toString(), style: t.bodySm),
+                  ],
+                ),
+              ),
+              const DsGap(DsSpace.md),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
+                    decoration: BoxDecoration(color: c.warningSoft, borderRadius: DsRadius.brPill),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.star_rounded, size: 16, color: c.warningStrong),
+                        const DsGap(DsSpace.xxs),
+                        Text(
+                          Constant.calculateReview(reviewCount: vendor.reviewsCount.toString(), reviewSum: vendor.reviewsSum.toString()),
+                          style: t.labelSm.tabular.withColor(c.warningStrong),
                         ),
                       ],
                     ),
                   ),
-                );
-              },
-            ),
+                  const DsGap(DsSpace.xxs),
+                  DsButton.ghost(
+                    label: "${vendor.reviewsCount} ${'Ratings'.tr}",
+                    size: DsButtonSize.sm,
+                    trailingIcon: Icons.chevron_right_rounded,
+                    onPressed: () {
+                      Get.to(const ReviewListScreen(), arguments: {"vendorModel": controller.vendorModel.value});
+                    },
+                  ),
+                ],
+              ),
+            ],
           ),
+          if (Constant.sectionConstantModel!.serviceTypeFlag == "ecommerce-service")
+            const SizedBox()
+          else ...[
+            const DsGap(DsSpace.md),
+            Row(
+              children: [
+                DsStatusChip(label: isOpen ? "Open".tr : "Close".tr, tone: isOpen ? DsTone.success : DsTone.danger, pulse: isOpen),
+                const DsGap(DsSpace.md),
+                DsButton.ghost(
+                  label: "View Timings".tr,
+                  size: DsButtonSize.sm,
+                  icon: Icons.schedule_rounded,
+                  onPressed: () {
+                    if (controller.vendorModel.value.workingHours!.isEmpty) {
+                      ShowToastDialog.showToast("Timing is not added by store".tr);
+                    } else {
+                      const RestaurantDetailsScreen().timeShowBottomSheet(context, controller);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _TableBookingCard extends StatelessWidget {
+  final VoidCallback onTap;
+  const _TableBookingCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DsSectionHeader(
+          title: "Also applicable on table booking".tr,
+          icon: Icons.table_restaurant_outlined,
+          padding: const EdgeInsets.only(top: DsSpace.xl, bottom: DsSpace.sm),
+        ),
+        DsCard.tinted(
+          onTap: onTap,
+          semanticLabel: "Table Booking".tr,
+          padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Image.asset("assets/images/ic_table.gif", height: 52),
+              const DsGap(DsSpace.md),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("Table Booking".tr, style: t.titleSm),
+                    Text("Quick Confirmations".tr, style: t.caption),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: c.brandStrong),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DietChip extends StatelessWidget {
+  final String asset;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _DietChip({required this.asset, required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: DsPressable(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: DsMotion.of(context, DsMotion.fast),
+          constraints: const BoxConstraints(minHeight: 44),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+          decoration: BoxDecoration(
+            color: selected ? c.brandSoft : c.surfaceAlt,
+            borderRadius: DsRadius.brPill,
+            border: Border.all(color: selected ? c.brand : c.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SvgPicture.asset(asset, height: 20, width: 20),
+              const DsGap(DsSpace.sm),
+              Text(label, style: t.label.withColor(selected ? c.brandStrong : c.textPrimary)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -767,76 +585,74 @@ class CouponListView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
+    final c = context.dsColors;
+    final t = context.dsText;
     return SizedBox(
-      height: Responsive.height(9, context),
+      height: 96,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.zero,
         itemCount: controller.couponList.length,
         itemBuilder: (BuildContext context, int index) {
           CouponModel offerModel = controller.couponList[index];
           return Padding(
-            padding: const EdgeInsets.only(right: 10),
-            child: Container(
-              clipBehavior: Clip.antiAlias,
-              decoration: ShapeDecoration(
-                color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                shape: RoundedRectangleBorder(side: BorderSide(width: 1, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100), borderRadius: BorderRadius.circular(16)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                child: SizedBox(
-                  width: Responsive.width(80, context),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 60,
-                        decoration: const BoxDecoration(image: DecorationImage(image: AssetImage("assets/images/offer_gif.gif"), fit: BoxFit.fill)),
-                        child: Center(
-                          child: Text(
-                            offerModel.discountType == "Fix Price" ? Constant.amountShow(amount: offerModel.discount, currency: RegionService.currencyForVendor(controller.vendorModel.value)) : "${offerModel.discount}%",
-                            style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey50, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, fontSize: 12),
-                          ),
+            padding: const EdgeInsets.only(right: DsSpace.md),
+            child: DsCard.outlined(
+              padding: EdgeInsets.zero,
+              child: SizedBox(
+                width: 280,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      width: 68,
+                      decoration: const BoxDecoration(
+                        image: DecorationImage(image: AssetImage("assets/images/offer_gif.gif"), fit: BoxFit.fill),
+                      ),
+                      child: Center(
+                        child: Text(
+                          offerModel.discountType == "Fix Price"
+                              ? Constant.amountShow(amount: offerModel.discount, currency: RegionService.currencyForVendor(controller.vendorModel.value))
+                              : "${offerModel.discount}%",
+                          textAlign: TextAlign.center,
+                          style: t.labelSm.withColor(Colors.white),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            offerModel.description.toString(),
-                            style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                          ),
-                          InkWell(
-                            onTap: () {
-                              Clipboard.setData(ClipboardData(text: offerModel.code.toString())).then((value) {
-                                ShowToastDialog.showToast("Copied".tr);
-                              });
-                            },
-                            child: Row(
-                              children: [
-                                Text(
-                                  offerModel.code.toString(),
-                                  style: TextStyle(fontSize: 12, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                ),
-                                const SizedBox(width: 5),
-                                SvgPicture.asset("assets/icons/ic_copy.svg"),
-                                const SizedBox(height: 10, child: VerticalDivider()),
-                                const SizedBox(width: 5),
-                                Text(
-                                  Constant.timestampToDateTime(offerModel.expiresAt!),
-                                  style: TextStyle(fontSize: 12, color: isDark ? AppThemeData.grey400 : AppThemeData.grey500, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                ),
-                              ],
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(offerModel.description.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodyStrong),
+                            const DsGap(DsSpace.xs),
+                            DsPressable(
+                              onTap: () {
+                                Clipboard.setData(ClipboardData(text: offerModel.code.toString())).then((value) {
+                                  ShowToastDialog.showToast("Copied".tr);
+                                });
+                              },
+                              child: Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(offerModel.code.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.labelSm.withColor(c.brandStrong)),
+                                  ),
+                                  const DsGap(DsSpace.xs),
+                                  SvgPicture.asset("assets/icons/ic_copy.svg"),
+                                  const SizedBox(height: 12, child: VerticalDivider()),
+                                  Flexible(
+                                    child: Text(Constant.timestampToDateTime(offerModel.expiresAt!), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -854,12 +670,12 @@ class ProductListView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return Container(
-      color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: ListView.builder(
+    final c = context.dsColors;
+    final t = context.dsText;
+    final isDark = context.dsIsDark;
+    // Child build: observe so the category list read below stays reactive.
+    return DsObserve(
+      builder: (context) => ListView.builder(
         shrinkWrap: true,
         padding: EdgeInsets.zero,
         itemCount: controller.vendorCategoryList.length,
@@ -871,24 +687,32 @@ class ProductListView extends StatelessWidget {
             // Categories are loaded for the whole catalogue; hide the ones the
             // Delivery / TakeAway filter (or the search) leaves empty.
             if (categoryProducts.isEmpty) return const SizedBox.shrink();
-            return ExpansionTile(
-              childrenPadding: EdgeInsets.zero,
-              tilePadding: EdgeInsets.zero,
-              shape: const Border(),
-              initiallyExpanded: true,
-              title: Text(
-                "${vendorCategoryModel.title.toString()} (${categoryProducts.length})",
-                style: TextStyle(fontSize: 18, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-              ),
-              children: [
-                ListView.builder(
-                  itemCount: categoryProducts.length,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: EdgeInsets.zero,
-                  itemBuilder: (context, index) => _productItem(context, isDark, categoryProducts[index]),
+            return Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                childrenPadding: EdgeInsets.zero,
+                tilePadding: EdgeInsets.zero,
+                shape: const Border(),
+                collapsedShape: const Border(),
+                iconColor: c.brandStrong,
+                collapsedIconColor: c.textSecondary,
+                initiallyExpanded: true,
+                title: Row(
+                  children: [
+                    Expanded(child: Text(vendorCategoryModel.title.toString(), style: t.title)),
+                    DsBadge(label: "${categoryProducts.length}", small: true),
+                  ],
                 ),
-              ],
+                children: [
+                  ListView.builder(
+                    itemCount: categoryProducts.length,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    padding: EdgeInsets.zero,
+                    itemBuilder: (context, index) => _productItem(context, isDark, categoryProducts[index]),
+                  ),
+                ],
+              ),
             );
           });
         },
@@ -897,6 +721,8 @@ class ProductListView extends StatelessWidget {
   }
 
   Widget _productItem(BuildContext context, bool isDark, ProductModel productModel) {
+    final c = DsColors.of(context);
+    final t = DsTextTheme(c);
     String price = "0.0";
     String disPrice = "0.0";
     String? defaultVariantId;
@@ -991,8 +817,9 @@ class ProductListView extends StatelessWidget {
 
     void addToCartFromInfo() => hasOptions ? openOptions() : addSimple();
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
+    return DsCard.outlined(
+      margin: const EdgeInsets.only(bottom: DsSpace.md),
+      padding: const EdgeInsets.all(DsSpace.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1006,170 +833,156 @@ class ProductListView extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Constant.sectionConstantModel!.isProductDetails == false
-                        ? SizedBox()
+                        ? const SizedBox()
                         : Row(
-                          children: [
-                            productModel.nonveg == true ? SvgPicture.asset("assets/icons/ic_nonveg.svg") : SvgPicture.asset("assets/icons/ic_veg.svg"),
-                            const SizedBox(width: 5),
-                            Text(
-                              productModel.nonveg == true ? "Non Veg.".tr : "Pure veg.".tr,
-                              style: TextStyle(color: productModel.nonveg == true ? AppThemeData.danger300 : AppThemeData.success400, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                            ),
-                          ],
-                        ),
-                    const SizedBox(height: 5),
-                    Text(productModel.name.toString(), style: TextStyle(fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600)),
+                            children: [
+                              productModel.nonveg == true ? SvgPicture.asset("assets/icons/ic_nonveg.svg") : SvgPicture.asset("assets/icons/ic_veg.svg"),
+                              const DsGap(DsSpace.xs),
+                              Text(productModel.nonveg == true ? "Non Veg.".tr : "Pure veg.".tr, style: t.labelSm.withColor(productModel.nonveg == true ? c.dangerStrong : c.successStrong)),
+                            ],
+                          ),
+                    const DsGap(DsSpace.xs),
+                    Text(productModel.name.toString(), style: t.titleSm),
+                    const DsGap(DsSpace.xxs),
                     // Wholesale-only products hide the retail price.
                     if (!productModel.isWholesaleOnly)
                       double.parse(disPrice) <= 0
                           ? Text(
-                            Constant.amountShow(amount: price, currency: currency),
-                            style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                          )
+                              Constant.amountShow(amount: price, currency: currency),
+                              style: t.titleSm.tabular.withColor(c.brandStrong),
+                            )
                           : Row(
-                            children: [
-                              Text(
-                                Constant.amountShow(amount: disPrice, currency: currency),
-                                style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(width: 5),
-                              Text(
-                                Constant.amountShow(amount: price, currency: currency),
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  decoration: TextDecoration.lineThrough,
-                                  decorationColor: isDark ? AppThemeData.grey500 : AppThemeData.grey400,
-                                  color: isDark ? AppThemeData.grey500 : AppThemeData.grey400,
-                                  fontFamily: AppThemeData.semiBold,
-                                  fontWeight: FontWeight.w600,
+                              children: [
+                                Text(
+                                  Constant.amountShow(amount: disPrice, currency: currency),
+                                  style: t.titleSm.tabular.withColor(c.brandStrong),
                                 ),
-                              ),
-                            ],
-                          ),
+                                const DsGap(DsSpace.xs),
+                                Text(
+                                  Constant.amountShow(amount: price, currency: currency),
+                                  style: t.bodySm.tabular.strike,
+                                ),
+                              ],
+                            ),
                     if (productModel.isWholesaleOnly || bands.length > 1)
-                      Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: PriceTiersView(bands: bands, currency: currency, isDark: isDark, compact: true)),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+                        child: PriceTiersView(bands: bands, currency: currency, isDark: isDark, compact: true),
+                      ),
                     if (businessOnly)
-                      _note("Business customers only".tr, AppThemeData.danger300)
+                      _note(context, "Business customers only".tr, c.dangerStrong)
                     else if (productModel.isWholesaleOnly)
-                      _note("${'Wholesale only'.tr} · ${'Minimum order'.tr}: $minQty ${'pcs'.tr}", AppThemeData.primary300)
+                      _note(context, "${'Wholesale only'.tr} · ${'Minimum order'.tr}: $minQty ${'pcs'.tr}", c.brandStrong)
                     else if (productModel.hasWholesaleTier && productModel.wholesaleBlockedForCustomer)
-                      _note("Wholesale prices for Business customers only".tr, isDark ? AppThemeData.grey400 : AppThemeData.grey500),
+                      _note(context, "Wholesale prices for Business customers only".tr, c.textMuted),
                     Row(
                       children: [
-                        SvgPicture.asset("assets/icons/ic_star.svg", colorFilter: const ColorFilter.mode(AppThemeData.warning300, BlendMode.srcIn)),
-                        const SizedBox(width: 5),
+                        Icon(Icons.star_rounded, size: 15, color: c.warning),
+                        const DsGap(DsSpace.xs),
                         Text(
                           "${Constant.calculateReview(reviewCount: productModel.reviewsCount!.toStringAsFixed(0), reviewSum: productModel.reviewsSum.toString())} (${productModel.reviewsCount!.toStringAsFixed(0)})",
-                          style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w500),
+                          style: t.bodySm.tabular,
                         ),
                       ],
                     ),
-                    Text(
-                      "${productModel.description}",
-                      maxLines: 2,
-                      style: TextStyle(overflow: TextOverflow.ellipsis, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400),
-                    ),
-                    const SizedBox(height: 5),
+                    const DsGap(DsSpace.xxs),
+                    Text("${productModel.description}", maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySm),
+                    const DsGap(DsSpace.xs),
                     // "Info" opens the details dropdown on the card (spec 7.3).
-                    InkWell(
+                    DsPressable(
                       onTap: () {
                         controller.expandedProductId.value = controller.expandedProductId.value == productModel.id ? '' : (productModel.id ?? '');
                       },
-                      child: Row(
-                        children: [
-                          Icon(Icons.info, color: AppThemeData.primary300, size: 18),
-                          const SizedBox(width: 8),
-                          Text("Info".tr, maxLines: 2, style: TextStyle(overflow: TextOverflow.ellipsis, fontSize: 16, color: AppThemeData.primary300, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400)),
-                          Obx(() => Icon(controller.expandedProductId.value == productModel.id ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppThemeData.primary300, size: 20)),
-                        ],
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.info_outline_rounded, color: c.brandStrong, size: 18),
+                            const DsGap(DsSpace.sm),
+                            Text("Info".tr, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.label.withColor(c.brandStrong)),
+                            Obx(
+                              () => AnimatedRotation(
+                                duration: DsMotion.of(context, DsMotion.fast),
+                                turns: controller.expandedProductId.value == productModel.id ? 0.5 : 0,
+                                child: Icon(Icons.keyboard_arrow_down_rounded, color: c.brandStrong, size: 20),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-              ClipRRect(
-                borderRadius: const BorderRadius.all(Radius.circular(16)),
+              const DsGap(DsSpace.md),
+              SizedBox(
+                width: 140,
                 child: Stack(
                   children: [
-                    NetworkImageWidget(imageUrl: productModel.photo.toString(), fit: BoxFit.cover, height: Responsive.height(16, context), width: Responsive.width(34, context)),
-                    Container(
-                      height: Responsive.height(16, context),
-                      width: Responsive.width(34, context),
-                      decoration: BoxDecoration(gradient: LinearGradient(begin: const Alignment(-0.00, -1.00), end: const Alignment(0, 1), colors: [Colors.black.withOpacity(0), const Color(0xFF111827)])),
+                    ClipRRect(
+                      borderRadius: DsRadius.brMd,
+                      child: Stack(
+                        children: [
+                          DsImage(url: productModel.photo.toString(), fit: BoxFit.cover, height: 140, width: 140, radius: 0, errorIcon: Icons.fastfood_outlined),
+                          const Positioned.fill(
+                            child: DecoratedBox(decoration: BoxDecoration(gradient: DsGradients.imageScrim)),
+                          ),
+                        ],
+                      ),
                     ),
                     Positioned(
-                      right: 10,
-                      top: 10,
-                      child: InkWell(
-                        onTap: () async {
-                          if (controller.favouriteItemList.where((p0) => p0.productId == productModel.id).isNotEmpty) {
-                            FavouriteItemModel favouriteModel = FavouriteItemModel(productId: productModel.id, storeId: controller.vendorModel.value.id, userId: FireStoreUtils.getCurrentUid());
-                            controller.favouriteItemList.removeWhere((item) => item.productId == productModel.id);
-                            await FireStoreUtils.removeFavouriteItem(favouriteModel);
-                          } else {
-                            FavouriteItemModel favouriteModel = FavouriteItemModel(productId: productModel.id, storeId: controller.vendorModel.value.id, userId: FireStoreUtils.getCurrentUid());
-                            controller.favouriteItemList.add(favouriteModel);
-                            await FireStoreUtils.setFavouriteItem(favouriteModel);
-                          }
-                        },
-                        child: Obx(
-                          () =>
-                              controller.favouriteItemList.where((p0) => p0.productId == productModel.id).isNotEmpty
-                                  ? SvgPicture.asset("assets/icons/ic_like_fill.svg")
-                                  : SvgPicture.asset("assets/icons/ic_like.svg"),
-                        ),
-                      ),
+                      right: 0,
+                      top: 0,
+                      child: Obx(() {
+                        final bool favourite = controller.favouriteItemList.where((p0) => p0.productId == productModel.id).isNotEmpty;
+                        return DsIconButton(
+                          semanticLabel: "Favourite Item".tr,
+                          variant: DsIconButtonVariant.plain,
+                          size: 32,
+                          onPressed: () async {
+                            if (controller.favouriteItemList.where((p0) => p0.productId == productModel.id).isNotEmpty) {
+                              FavouriteItemModel favouriteModel = FavouriteItemModel(productId: productModel.id, storeId: controller.vendorModel.value.id, userId: FireStoreUtils.getCurrentUid());
+                              controller.favouriteItemList.removeWhere((item) => item.productId == productModel.id);
+                              await FireStoreUtils.removeFavouriteItem(favouriteModel);
+                            } else {
+                              FavouriteItemModel favouriteModel = FavouriteItemModel(productId: productModel.id, storeId: controller.vendorModel.value.id, userId: FireStoreUtils.getCurrentUid());
+                              controller.favouriteItemList.add(favouriteModel);
+                              await FireStoreUtils.setFavouriteItem(favouriteModel);
+                            }
+                          },
+                          child: favourite ? SvgPicture.asset("assets/icons/ic_like_fill.svg") : SvgPicture.asset("assets/icons/ic_like.svg"),
+                        );
+                      }),
                     ),
                     canBuy == false
                         ? const SizedBox()
                         : Positioned(
-                          bottom: 10,
-                          left: 12,
-                          right: 12,
-                          child:
-                              hasOptions
-                                  ? Align(alignment: Alignment.centerRight, child: PlusButton(isDark: isDark, onTap: openOptions))
-                                  : Obx(
-                                    () =>
-                                        cartItem.where((p0) => p0.id == productModel.id).isNotEmpty
-                                            ? Container(
-                                              width: Responsive.width(100, context),
-                                              height: Responsive.height(4, context),
-                                              decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(200))),
-                                              child: Row(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                crossAxisAlignment: CrossAxisAlignment.center,
-                                                children: [
-                                                  InkWell(
-                                                    onTap: () {
-                                                      final int next = cartItem.where((p0) => p0.id == productModel.id).first.quantity! - 1;
-                                                      // Below the minimum quantity the line is removed.
-                                                      controller.addToCart(productModel: productModel, price: price, discountPrice: disPrice, isIncrement: false, quantity: next < minQty ? 0 : next);
-                                                    },
-                                                    child: Icon(Icons.remove, color: isDark ? AppThemeData.grey50 : AppThemeData.greyDark50),
-                                                  ),
-                                                  Padding(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                                                    child: Text(
-                                                      cartItem.where((p0) => p0.id == productModel.id).first.quantity.toString(),
-                                                      textAlign: TextAlign.start,
-                                                      maxLines: 1,
-                                                      style: TextStyle(
-                                                        fontSize: 16,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        fontFamily: AppThemeData.medium,
-                                                        fontWeight: FontWeight.w500,
-                                                        color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  InkWell(onTap: addSimple, child: Icon(Icons.add, color: isDark ? AppThemeData.grey50 : AppThemeData.greyDark50)),
-                                                ],
-                                              ),
-                                            )
-                                            : Align(alignment: Alignment.centerRight, child: PlusButton(isDark: isDark, onTap: addSimple)),
+                            bottom: DsSpace.xs,
+                            left: 0,
+                            right: 0,
+                            child: hasOptions
+                                ? Align(
+                                    alignment: Alignment.centerRight,
+                                    child: PlusButton(isDark: isDark, onTap: openOptions),
+                                  )
+                                : Obx(
+                                    () => cartItem.where((p0) => p0.id == productModel.id).isNotEmpty
+                                        ? _QuantityStepper(
+                                            quantity: cartItem.where((p0) => p0.id == productModel.id).first.quantity.toString(),
+                                            onRemove: () {
+                                              final int next = cartItem.where((p0) => p0.id == productModel.id).first.quantity! - 1;
+                                              // Below the minimum quantity the line is removed.
+                                              controller.addToCart(productModel: productModel, price: price, discountPrice: disPrice, isIncrement: false, quantity: next < minQty ? 0 : next);
+                                            },
+                                            onAdd: addSimple,
+                                          )
+                                        : Align(
+                                            alignment: Alignment.centerRight,
+                                            child: PlusButton(isDark: isDark, onTap: addSimple),
+                                          ),
                                   ),
-                        ),
+                          ),
                   ],
                 ),
               ),
@@ -1177,12 +990,12 @@ class ProductListView extends StatelessWidget {
           ),
           Obx(
             () => AnimatedSize(
-              duration: const Duration(milliseconds: 200),
+              duration: DsMotion.of(context, DsMotion.base),
+              curve: DsMotion.standard,
               alignment: Alignment.topCenter,
-              child:
-                  controller.expandedProductId.value == productModel.id && productModel.id != null
-                      ? _infoPanel(context, isDark, productModel, bands, canBuy, addToCartFromInfo)
-                      : const SizedBox(width: double.infinity),
+              child: controller.expandedProductId.value == productModel.id && productModel.id != null
+                  ? _infoPanel(context, isDark, productModel, bands, canBuy, addToCartFromInfo)
+                  : const SizedBox(width: double.infinity),
             ),
           ),
         ],
@@ -1190,8 +1003,11 @@ class ProductListView extends StatelessWidget {
     );
   }
 
-  Widget _note(String text, Color color) {
-    return Padding(padding: const EdgeInsets.only(bottom: 2), child: Text(text, style: TextStyle(fontSize: 12, color: color, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600)));
+  Widget _note(BuildContext context, String text, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpace.xxs),
+      child: Text(text, style: DsTypography.labelSm.copyWith(color: color)),
+    );
   }
 
   Future productDetailsBottomSheet(BuildContext context, ProductModel productModel) {
@@ -1199,17 +1015,17 @@ class ProductListView extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       isDismissible: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
+      backgroundColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(borderRadius: DsRadius.sheetTop),
       clipBehavior: Clip.antiAliasWithSaveLayer,
-      builder:
-          (context) => FractionallySizedBox(
-            heightFactor: 0.85,
-            child: StatefulBuilder(
-              builder: (context1, setState) {
-                return ProductDetailsView(productModel: productModel);
-              },
-            ),
-          ),
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.85,
+        child: StatefulBuilder(
+          builder: (context1, setState) {
+            return ProductDetailsView(productModel: productModel);
+          },
+        ),
+      ),
     );
   }
 
@@ -1218,33 +1034,44 @@ class ProductListView extends StatelessWidget {
   /// rating, store name and address, description, additional details and an
   /// Add to cart button.
   Widget _infoPanel(BuildContext context, bool isDark, ProductModel productModel, List<PriceBand> bands, bool canBuy, VoidCallback onAdd) {
+    final c = DsColors.of(context);
+    final t = DsTextTheme(c);
     final currency = RegionService.currencyForVendor(controller.vendorModel.value);
     final List<String> images = <String>[
       if ((productModel.photo ?? '').isNotEmpty) productModel.photo!,
       ...?productModel.photos?.map((e) => e.toString()).where((e) => e.isNotEmpty && e != productModel.photo),
     ];
-    final TextStyle labelStyle = TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey300 : AppThemeData.grey600, fontSize: 14);
-    final TextStyle valueStyle = TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 14);
+    final TextStyle labelStyle = t.bodySm;
+    final TextStyle valueStyle = t.bodyStrong;
     final bool showDetails = Constant.sectionConstantModel?.isProductDetails != false;
 
     Widget detailRow(String label, String value) {
-      return Padding(padding: const EdgeInsets.only(bottom: 6), child: Row(children: [Expanded(child: Text(label, style: labelStyle)), Text(value, style: valueStyle)]));
+      return Padding(
+        padding: const EdgeInsets.only(bottom: DsSpace.xs),
+        child: Row(
+          children: [
+            Expanded(child: Text(label, style: labelStyle)),
+            Text(value, style: valueStyle.tabular),
+          ],
+        ),
+      );
     }
 
     Widget heading(String text) {
       return Padding(
-        padding: const EdgeInsets.only(top: 12, bottom: 6),
-        child: Text(text, style: TextStyle(fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w700, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 15)),
+        padding: const EdgeInsets.only(top: DsSpace.md, bottom: DsSpace.xs),
+        child: Text(text, style: t.label),
       );
     }
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: ShapeDecoration(
-        color: isDark ? AppThemeData.grey800 : AppThemeData.grey100,
-        shape: RoundedRectangleBorder(side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200), borderRadius: BorderRadius.circular(16)),
+      margin: const EdgeInsets.only(top: DsSpace.md),
+      padding: const EdgeInsets.all(DsSpace.md),
+      decoration: BoxDecoration(
+        color: c.surfaceAlt,
+        borderRadius: DsRadius.brLg,
+        border: Border.all(color: c.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1255,23 +1082,27 @@ class ProductListView extends StatelessWidget {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: images.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (context, i) => ClipRRect(borderRadius: BorderRadius.circular(12), child: NetworkImageWidget(imageUrl: images[i], height: 110, width: 110, fit: BoxFit.cover)),
+                separatorBuilder: (_, _) => const DsGap(DsSpace.sm),
+                itemBuilder: (context, i) => DsImage(url: images[i], height: 110, width: 110, fit: BoxFit.cover, radius: DsRadius.md, errorIcon: Icons.fastfood_outlined),
               ),
             ),
-          const SizedBox(height: 10),
-          Text(productModel.name ?? '', style: TextStyle(fontSize: 17, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
-          const SizedBox(height: 6),
+          const DsGap(DsSpace.md),
+          Text(productModel.name ?? '', style: t.titleSm),
+          const DsGap(DsSpace.xs),
           if (bands.isNotEmpty) PriceTiersView(bands: bands, currency: currency, isDark: isDark),
-          if (productModel.isBusinessOnlyProduct) Padding(padding: const EdgeInsets.only(top: 4), child: _note("Business customers only".tr, AppThemeData.danger300)),
-          const SizedBox(height: 8),
+          if (productModel.isBusinessOnlyProduct)
+            Padding(
+              padding: const EdgeInsets.only(top: DsSpace.xs),
+              child: _note(context, "Business customers only".tr, c.dangerStrong),
+            ),
+          const DsGap(DsSpace.sm),
           Row(
             children: [
-              SvgPicture.asset("assets/icons/ic_star.svg", colorFilter: const ColorFilter.mode(AppThemeData.warning300, BlendMode.srcIn)),
-              const SizedBox(width: 5),
+              Icon(Icons.star_rounded, size: 16, color: c.warning),
+              const DsGap(DsSpace.xs),
               Text(
                 "${Constant.calculateReview(reviewCount: (productModel.reviewsCount ?? 0).toStringAsFixed(0), reviewSum: productModel.reviewsSum.toString())} (${(productModel.reviewsCount ?? 0).toStringAsFixed(0)} ${'Ratings'.tr})",
-                style: valueStyle,
+                style: valueStyle.tabular,
               ),
             ],
           ),
@@ -1294,16 +1125,41 @@ class ProductListView extends StatelessWidget {
             heading("Brand".tr),
             Text(controller.getBrandName(productModel.brandId!), style: valueStyle),
           ],
-          if (canBuy) ...[
-            const SizedBox(height: 14),
-            RoundedButtonFill(title: "Add to cart".tr, height: 5, color: AppThemeData.primary300, textColor: AppThemeData.grey50, onPress: onAdd),
-          ],
+          if (canBuy) ...[const DsGap(DsSpace.md), DsButton.primary(label: "Add to cart".tr, icon: Icons.add_shopping_cart_rounded, expand: true, onPressed: onAdd)],
         ],
       ),
     );
   }
 }
 
+/// Inline +/- stepper drawn over the product photo.
+class _QuantityStepper extends StatelessWidget {
+  final String quantity;
+  final VoidCallback onRemove;
+  final VoidCallback onAdd;
+  const _QuantityStepper({required this.quantity, required this.onRemove, required this.onAdd});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Container(
+      constraints: const BoxConstraints(minHeight: 36),
+      decoration: BoxDecoration(color: c.surface, borderRadius: DsRadius.brPill, boxShadow: DsShadows.sm(context)),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          DsIconButton(icon: Icons.remove_rounded, semanticLabel: 'Remove'.tr, size: 30, onPressed: onRemove),
+          Text(quantity, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.label.tabular),
+          DsIconButton(icon: Icons.add_rounded, semanticLabel: 'Add item'.tr, size: 30, onPressed: onAdd),
+        ],
+      ),
+    );
+  }
+}
+
+/// Variant / add-on picker sheet with a quantity stepper and the live total.
 class ProductDetailsView extends StatelessWidget {
   final ProductModel productModel;
 
@@ -1311,62 +1167,41 @@ class ProductDetailsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: RestaurantDetailsController(),
       builder: (controller) {
-        return Scaffold(
-          backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
+        final c = context.dsColors;
+        final t = context.dsText;
+        return DsScaffold(
+          backgroundColor: c.surfaceRaised,
+          maxContentWidth: DsLayout.contentMax,
           body: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    child: Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: const BorderRadius.all(Radius.circular(16)),
-                          child: Stack(
-                            children: [
-                              NetworkImageWidget(imageUrl: productModel.photo.toString(), height: Responsive.height(11, context), width: Responsive.width(22, context), fit: BoxFit.cover),
-                              Container(
-                                height: Responsive.height(11, context),
-                                width: Responsive.width(22, context),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(begin: const Alignment(-0.00, -1.00), end: const Alignment(0, 1), colors: [Colors.black.withOpacity(0), const Color(0xFF111827)]),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.md),
+                  child: Row(
+                    children: [
+                      DsImage(url: productModel.photo.toString(), height: 72, width: 72, fit: BoxFit.cover, radius: DsRadius.md, errorIcon: Icons.fastfood_outlined),
+                      const DsGap(DsSpace.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(productModel.name.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      productModel.name.toString(),
-                                      textAlign: TextAlign.start,
-                                      maxLines: 1,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        overflow: TextOverflow.ellipsis,
-                                        fontFamily: AppThemeData.semiBold,
-                                        fontWeight: FontWeight.w600,
-                                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                      ),
-                                    ),
-                                  ),
-                                  InkWell(
-                                    onTap: () async {
+                                Obx(() {
+                                  final bool favourite = controller.favouriteItemList.where((p0) => p0.productId == productModel.id).isNotEmpty;
+                                  return DsIconButton(
+                                    semanticLabel: "Favourite Item".tr,
+                                    variant: DsIconButtonVariant.plain,
+                                    size: 32,
+                                    onPressed: () async {
                                       if (controller.favouriteItemList.where((p0) => p0.productId == productModel.id).isNotEmpty) {
                                         FavouriteItemModel favouriteModel = FavouriteItemModel(
                                           productId: productModel.id,
@@ -1386,195 +1221,117 @@ class ProductDetailsView extends StatelessWidget {
                                         await FireStoreUtils.setFavouriteItem(favouriteModel);
                                       }
                                     },
-                                    child: Obx(
-                                      () =>
-                                          controller.favouriteItemList.where((p0) => p0.productId == productModel.id).isNotEmpty
-                                              ? SvgPicture.asset("assets/icons/ic_like_fill.svg")
-                                              : SvgPicture.asset("assets/icons/ic_like.svg", colorFilter: const ColorFilter.mode(AppThemeData.grey500, BlendMode.srcIn)),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Text(
-                                productModel.description.toString(),
-                                textAlign: TextAlign.start,
-                                style: TextStyle(fontSize: 12, fontFamily: AppThemeData.regular, fontWeight: FontWeight.w400, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                              ),
-                            ],
-                          ),
+                                    child: favourite
+                                        ? SvgPicture.asset("assets/icons/ic_like_fill.svg")
+                                        : SvgPicture.asset("assets/icons/ic_like.svg", colorFilter: ColorFilter.mode(c.textMuted, BlendMode.srcIn)),
+                                  );
+                                }),
+                              ],
+                            ),
+                            Text(productModel.description.toString(), style: t.bodySm),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 10),
+                const DsDivider(spacing: 0),
+                const DsGap(DsSpace.md),
                 productModel.itemAttribute == null || productModel.itemAttribute!.attributes!.isEmpty
                     ? const SizedBox()
                     : ListView.builder(
-                      itemCount: productModel.itemAttribute!.attributes!.length,
-                      shrinkWrap: true,
-                      padding: EdgeInsets.zero,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemBuilder: (context, index) {
-                        String title = "";
-                        for (var element in controller.attributesList) {
-                          if (productModel.itemAttribute!.attributes![index].attributeId == element.id) {
-                            title = element.title.toString();
+                        itemCount: productModel.itemAttribute!.attributes!.length,
+                        shrinkWrap: true,
+                        padding: EdgeInsets.zero,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemBuilder: (context, index) {
+                          String title = "";
+                          for (var element in controller.attributesList) {
+                            if (productModel.itemAttribute!.attributes![index].attributeId == element.id) {
+                              title = element.title.toString();
+                            }
                           }
-                        }
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-                          child: Container(
-                            decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 10),
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(DsSpace.lg, 0, DsSpace.lg, DsSpace.md),
+                            child: DsCard.outlined(
+                              padding: const EdgeInsets.all(DsSpace.md),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisAlignment: MainAxisAlignment.start,
                                 children: [
                                   productModel.itemAttribute!.attributes![index].attributeOptions!.isNotEmpty
                                       ? Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                                            child: Text(
-                                              title,
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                overflow: TextOverflow.ellipsis,
-                                                fontFamily: AppThemeData.semiBold,
-                                                fontWeight: FontWeight.w600,
-                                                color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                                              ),
-                                            ),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                                            child: Text(
-                                              "Required • Select any 1 option".tr,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                overflow: TextOverflow.ellipsis,
-                                                fontFamily: AppThemeData.medium,
-                                                fontWeight: FontWeight.w500,
-                                                color: isDark ? AppThemeData.grey400 : AppThemeData.grey500,
-                                              ),
-                                            ),
-                                          ),
-                                          const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Divider()),
-                                        ],
-                                      )
-                                      : Offstage(),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                                    child: Wrap(
-                                      spacing: 6.0,
-                                      runSpacing: 6.0,
-                                      children:
-                                          List.generate(productModel.itemAttribute!.attributes![index].attributeOptions!.length, (i) {
-                                            return InkWell(
-                                              onTap: () async {
-                                                if (controller.selectedIndexVariants.where((element) => element.contains('$index _')).isEmpty) {
-                                                  controller.selectedVariants.insert(index, productModel.itemAttribute!.attributes![index].attributeOptions![i].toString());
-                                                  controller.selectedIndexVariants.add('$index _${productModel.itemAttribute!.attributes![index].attributeOptions![i].toString()}');
-                                                  controller.selectedIndexArray.add('${index}_$i');
-                                                } else {
-                                                  controller.selectedIndexArray.remove(
-                                                    '${index}_${productModel.itemAttribute!.attributes![index].attributeOptions?.indexOf(controller.selectedIndexVariants.where((element) => element.contains('$index _')).first.replaceAll('$index _', ''))}',
-                                                  );
-                                                  controller.selectedVariants.removeAt(index);
-                                                  controller.selectedIndexVariants.remove(controller.selectedIndexVariants.where((element) => element.contains('$index _')).first);
-                                                  controller.selectedVariants.insert(index, productModel.itemAttribute!.attributes![index].attributeOptions![i].toString());
-                                                  controller.selectedIndexVariants.add('$index _${productModel.itemAttribute!.attributes![index].attributeOptions![i].toString()}');
-                                                  controller.selectedIndexArray.add('${index}_$i');
-                                                }
-
-                                                final bool productIsInList = cartItem.any(
-                                                  (product) =>
-                                                      product.id ==
-                                                      "${productModel.id}~${productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).isNotEmpty ? productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).first.variantId.toString() : ""}",
-                                                );
-                                                if (productIsInList) {
-                                                  CartProductModel element = cartItem.firstWhere(
-                                                    (product) =>
-                                                        product.id ==
-                                                        "${productModel.id}~${productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).isNotEmpty ? productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).first.variantId.toString() : ""}",
-                                                  );
-                                                  controller.quantity.value = element.quantity!;
-                                                } else {
-                                                  controller.quantity.value = 1;
-                                                }
-
-                                                controller.update();
-                                                controller.calculatePrice(productModel);
-                                              },
-                                              child: Chip(
-                                                shape: const RoundedRectangleBorder(side: BorderSide(color: Colors.transparent), borderRadius: BorderRadius.all(Radius.circular(20))),
-                                                label: Row(
-                                                  mainAxisSize: MainAxisSize.min,
-                                                  children: [
-                                                    Text(
-                                                      productModel.itemAttribute!.attributes![index].attributeOptions![i].toString(),
-                                                      style: TextStyle(
-                                                        overflow: TextOverflow.ellipsis,
-                                                        fontFamily: AppThemeData.medium,
-                                                        fontWeight: FontWeight.w500,
-                                                        color:
-                                                            controller.selectedVariants.contains(productModel.itemAttribute!.attributes![index].attributeOptions![i].toString())
-                                                                ? Colors.white
-                                                                : isDark
-                                                                ? AppThemeData.greyDark800
-                                                                : AppThemeData.grey800,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                backgroundColor:
-                                                    controller.selectedVariants.contains(productModel.itemAttribute!.attributes![index].attributeOptions![i].toString())
-                                                        ? AppThemeData.primary300
-                                                        : isDark
-                                                        ? AppThemeData.grey800
-                                                        : AppThemeData.grey100,
-                                                elevation: 6.0,
-                                                padding: const EdgeInsets.all(8.0),
-                                              ),
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(title, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                                            Text("Required • Select any 1 option".tr, overflow: TextOverflow.ellipsis, style: t.caption),
+                                            const DsDivider(spacing: DsSpace.md),
+                                          ],
+                                        )
+                                      : const Offstage(),
+                                  Wrap(
+                                    spacing: DsSpace.sm,
+                                    runSpacing: DsSpace.sm,
+                                    children: List.generate(productModel.itemAttribute!.attributes![index].attributeOptions!.length, (i) {
+                                      final bool selected = controller.selectedVariants.contains(productModel.itemAttribute!.attributes![index].attributeOptions![i].toString());
+                                      return _OptionChip(
+                                        label: productModel.itemAttribute!.attributes![index].attributeOptions![i].toString(),
+                                        selected: selected,
+                                        onTap: () async {
+                                          if (controller.selectedIndexVariants.where((element) => element.contains('$index _')).isEmpty) {
+                                            controller.selectedVariants.insert(index, productModel.itemAttribute!.attributes![index].attributeOptions![i].toString());
+                                            controller.selectedIndexVariants.add('$index _${productModel.itemAttribute!.attributes![index].attributeOptions![i].toString()}');
+                                            controller.selectedIndexArray.add('${index}_$i');
+                                          } else {
+                                            controller.selectedIndexArray.remove(
+                                              '${index}_${productModel.itemAttribute!.attributes![index].attributeOptions?.indexOf(controller.selectedIndexVariants.where((element) => element.contains('$index _')).first.replaceAll('$index _', ''))}',
                                             );
-                                          }).toList(),
-                                    ),
+                                            controller.selectedVariants.removeAt(index);
+                                            controller.selectedIndexVariants.remove(controller.selectedIndexVariants.where((element) => element.contains('$index _')).first);
+                                            controller.selectedVariants.insert(index, productModel.itemAttribute!.attributes![index].attributeOptions![i].toString());
+                                            controller.selectedIndexVariants.add('$index _${productModel.itemAttribute!.attributes![index].attributeOptions![i].toString()}');
+                                            controller.selectedIndexArray.add('${index}_$i');
+                                          }
+
+                                          final bool productIsInList = cartItem.any(
+                                            (product) =>
+                                                product.id ==
+                                                "${productModel.id}~${productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).isNotEmpty ? productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).first.variantId.toString() : ""}",
+                                          );
+                                          if (productIsInList) {
+                                            CartProductModel element = cartItem.firstWhere(
+                                              (product) =>
+                                                  product.id ==
+                                                  "${productModel.id}~${productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).isNotEmpty ? productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).first.variantId.toString() : ""}",
+                                            );
+                                            controller.quantity.value = element.quantity!;
+                                          } else {
+                                            controller.quantity.value = 1;
+                                          }
+
+                                          controller.update();
+                                          controller.calculatePrice(productModel);
+                                        },
+                                      );
+                                    }).toList(),
                                   ),
                                 ],
                               ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
+                          );
+                        },
+                      ),
                 productModel.addOnsTitle == null || productModel.addOnsTitle!.isEmpty
                     ? const SizedBox()
                     : Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-                      child: Container(
-                        decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        padding: const EdgeInsets.fromLTRB(DsSpace.lg, 0, DsSpace.lg, DsSpace.md),
+                        child: DsCard.outlined(
+                          padding: const EdgeInsets.all(DsSpace.md),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12),
-                                child: Text(
-                                  "Addons".tr,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    overflow: TextOverflow.ellipsis,
-                                    fontFamily: AppThemeData.semiBold,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                                  ),
-                                ),
-                              ),
-                              const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Divider()),
+                              Text("Addons".tr, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                              const DsDivider(spacing: DsSpace.md),
                               ListView.builder(
                                 itemCount: productModel.addOnsTitle!.length,
                                 physics: const NeverScrollableScrollPhysics(),
@@ -1584,43 +1341,30 @@ class ProductDetailsView extends StatelessWidget {
                                   String title = productModel.addOnsTitle![index];
                                   String price = productModel.addOnsPrice![index];
                                   return Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
                                     child: Row(
                                       children: [
                                         Expanded(
-                                          child: Text(
-                                            title,
-                                            textAlign: TextAlign.start,
-                                            maxLines: 1,
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              overflow: TextOverflow.ellipsis,
-                                              fontFamily: AppThemeData.medium,
-                                              fontWeight: FontWeight.w500,
-                                              color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                                            ),
-                                          ),
+                                          child: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.body),
                                         ),
+                                        const DsGap(DsSpace.sm),
                                         Text(
-                                          Constant.amountShow(amount: Constant.productCommissionPrice(controller.vendorModel.value, price), currency: RegionService.currencyForVendor(controller.vendorModel.value)),
-                                          textAlign: TextAlign.start,
-                                          maxLines: 1,
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            overflow: TextOverflow.ellipsis,
-                                            fontFamily: AppThemeData.medium,
-                                            fontWeight: FontWeight.w500,
-                                            color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
+                                          Constant.amountShow(
+                                            amount: Constant.productCommissionPrice(controller.vendorModel.value, price),
+                                            currency: RegionService.currencyForVendor(controller.vendorModel.value),
                                           ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: t.bodyStrong.tabular,
                                         ),
-                                        const SizedBox(width: 10),
+                                        const DsGap(DsSpace.sm),
                                         Obx(
                                           () => SizedBox(
                                             height: 24.0,
                                             width: 24.0,
                                             child: Checkbox(
                                               value: controller.selectedAddOns.contains(title),
-                                              activeColor: AppThemeData.primary300,
+                                              activeColor: c.brand,
                                               onChanged: (value) {
                                                 if (value != null) {
                                                   if (value == true) {
@@ -1643,143 +1387,156 @@ class ProductDetailsView extends StatelessWidget {
                           ),
                         ),
                       ),
-                    ),
               ],
             ),
           ),
-          bottomNavigationBar: Container(
-            color: isDark ? AppThemeData.grey800 : AppThemeData.grey100,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      width: Responsive.width(100, context),
-                      height: Responsive.height(5.5, context),
-                      decoration: ShapeDecoration(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(200))),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          InkWell(
-                            onTap: () {
-                              // Wholesale-only products can't go below their minimum quantity.
-                              if (controller.quantity.value > productModel.minOrderQuantity) {
-                                controller.quantity.value -= 1;
+          bottomBar: DsStickyBar(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 48),
+                    decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brPill),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        DsIconButton(
+                          icon: Icons.remove_rounded,
+                          semanticLabel: 'Remove'.tr,
+                          size: 36,
+                          onPressed: () {
+                            // Wholesale-only products can't go below their minimum quantity.
+                            if (controller.quantity.value > productModel.minOrderQuantity) {
+                              controller.quantity.value -= 1;
+                              controller.update();
+                            }
+                          },
+                        ),
+                        Text(controller.quantity.value.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.label.tabular),
+                        DsIconButton(
+                          icon: Icons.add_rounded,
+                          semanticLabel: 'Add item'.tr,
+                          size: 36,
+                          onPressed: () {
+                            if (productModel.itemAttribute == null) {
+                              if (controller.quantity.value < (productModel.quantity ?? 0) || (productModel.quantity ?? 0) == -1) {
+                                controller.quantity.value += 1;
                                 controller.update();
-                              }
-                            },
-                            child: Icon(Icons.remove, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Text(
-                              controller.quantity.value.toString(),
-                              textAlign: TextAlign.start,
-                              maxLines: 1,
-                              style: TextStyle(
-                                fontSize: 16,
-                                overflow: TextOverflow.ellipsis,
-                                fontFamily: AppThemeData.medium,
-                                fontWeight: FontWeight.w500,
-                                color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                              ),
-                            ),
-                          ),
-                          InkWell(
-                            onTap: () {
-                              if (productModel.itemAttribute == null) {
-                                if (controller.quantity.value < (productModel.quantity ?? 0) || (productModel.quantity ?? 0) == -1) {
-                                  controller.quantity.value += 1;
-                                  controller.update();
-                                } else {
-                                  ShowToastDialog.showToast("Out of stock".tr);
-                                }
                               } else {
-                                int totalQuantity = int.parse(
-                                  productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).first.variantQuantity.toString(),
-                                );
-                                if (controller.quantity.value < totalQuantity || totalQuantity == -1) {
-                                  controller.quantity.value += 1;
-                                  controller.update();
-                                } else {
-                                  ShowToastDialog.showToast("Out of stock".tr);
-                                }
+                                ShowToastDialog.showToast("Out of stock".tr);
                               }
-                            },
-                            child: Icon(Icons.add, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800),
-                          ),
-                        ],
-                      ),
+                            } else {
+                              int totalQuantity = int.parse(
+                                productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).first.variantQuantity.toString(),
+                              );
+                              if (controller.quantity.value < totalQuantity || totalQuantity == -1) {
+                                controller.quantity.value += 1;
+                                controller.update();
+                              } else {
+                                ShowToastDialog.showToast("Out of stock".tr);
+                              }
+                            }
+                          },
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    flex: 2,
-                    child: RoundedButtonFill(
-                      title: "${'Add item'.tr} ${Constant.amountShow(amount: controller.calculatePrice(productModel), currency: RegionService.currencyForVendor(controller.vendorModel.value))}".tr,
-                      height: 5.5,
-                      color: AppThemeData.primary300,
-                      textColor: AppThemeData.grey50,
-                      fontSizes: 16,
-                      onPress: () async {
-                        if (productModel.itemAttribute == null) {
-                          await controller.addToCart(
-                            productModel: productModel,
-                            price: Constant.productCommissionPrice(controller.vendorModel.value, productModel.price.toString()),
-                            discountPrice: double.parse(productModel.disPrice.toString()) <= 0 ? "0" : Constant.productCommissionPrice(controller.vendorModel.value, productModel.disPrice.toString()),
-                            isIncrement: true,
-                            quantity: controller.quantity.value,
-                          );
-                        } else {
-                          String variantPrice = "0";
-                          if (productModel.itemAttribute!.variants!.any((e) => e.variantSku == controller.selectedVariants.join('-'))) {
-                            variantPrice = Constant.productCommissionPrice(
-                              controller.vendorModel.value,
-                              productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantPrice ?? '0',
-                            );
-                          }
-
-                          Map<String, String> mapData = {};
-                          for (var element in productModel.itemAttribute!.attributes!) {
-                            mapData.addEntries([
-                              MapEntry(
-                                controller.attributesList.firstWhere((e) => e.id == element.attributeId).title.toString(),
-                                controller.selectedVariants[productModel.itemAttribute!.attributes!.indexOf(element)],
-                              ),
-                            ]);
-                          }
-
-                          VariantInfo variantInfo = VariantInfo(
-                            variantPrice: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantPrice ?? '0',
-                            variantSku: controller.selectedVariants.join('-'),
-                            variantOptions: mapData,
-                            variantImage: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantImage ?? '',
-                            variantId: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantId ?? '0',
-                          );
-
-                          await controller.addToCart(
-                            productModel: productModel,
-                            price: variantPrice,
-                            discountPrice: "0",
-                            isIncrement: true,
-                            variantInfo: variantInfo,
-                            quantity: controller.quantity.value,
+                ),
+                const DsGap(DsSpace.md),
+                Expanded(
+                  flex: 2,
+                  child: DsButton.primary(
+                    label: "${'Add item'.tr} ${Constant.amountShow(amount: controller.calculatePrice(productModel), currency: RegionService.currencyForVendor(controller.vendorModel.value))}".tr,
+                    size: DsButtonSize.lg,
+                    expand: true,
+                    onPressed: () async {
+                      if (productModel.itemAttribute == null) {
+                        await controller.addToCart(
+                          productModel: productModel,
+                          price: Constant.productCommissionPrice(controller.vendorModel.value, productModel.price.toString()),
+                          discountPrice: double.parse(productModel.disPrice.toString()) <= 0 ? "0" : Constant.productCommissionPrice(controller.vendorModel.value, productModel.disPrice.toString()),
+                          isIncrement: true,
+                          quantity: controller.quantity.value,
+                        );
+                      } else {
+                        String variantPrice = "0";
+                        if (productModel.itemAttribute!.variants!.any((e) => e.variantSku == controller.selectedVariants.join('-'))) {
+                          variantPrice = Constant.productCommissionPrice(
+                            controller.vendorModel.value,
+                            productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantPrice ?? '0',
                           );
                         }
-                        controller.update();
-                        Get.back();
-                      },
-                    ),
+
+                        Map<String, String> mapData = {};
+                        for (var element in productModel.itemAttribute!.attributes!) {
+                          mapData.addEntries([
+                            MapEntry(
+                              controller.attributesList.firstWhere((e) => e.id == element.attributeId).title.toString(),
+                              controller.selectedVariants[productModel.itemAttribute!.attributes!.indexOf(element)],
+                            ),
+                          ]);
+                        }
+
+                        VariantInfo variantInfo = VariantInfo(
+                          variantPrice: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantPrice ?? '0',
+                          variantSku: controller.selectedVariants.join('-'),
+                          variantOptions: mapData,
+                          variantImage: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantImage ?? '',
+                          variantId: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantId ?? '0',
+                        );
+
+                        await controller.addToCart(
+                          productModel: productModel,
+                          price: variantPrice,
+                          discountPrice: "0",
+                          isIncrement: true,
+                          variantInfo: variantInfo,
+                          quantity: controller.quantity.value,
+                        );
+                      }
+                      controller.update();
+                      Get.back();
+                    },
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         );
       },
+    );
+  }
+}
+
+class _OptionChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _OptionChip({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: DsPressable(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: DsMotion.of(context, DsMotion.fast),
+          constraints: const BoxConstraints(minHeight: 40),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.sm),
+          decoration: BoxDecoration(
+            color: selected ? c.brand : c.surfaceAlt,
+            borderRadius: DsRadius.brPill,
+            border: Border.all(color: selected ? c.brand : c.border),
+          ),
+          child: Text(label, overflow: TextOverflow.ellipsis, style: t.bodyStrong.withColor(selected ? c.onBrand : c.textPrimary)),
+        ),
+      ),
     );
   }
 }

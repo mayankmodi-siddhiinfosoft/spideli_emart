@@ -1,5 +1,4 @@
 import 'package:customer/constant/constant.dart';
-import 'package:customer/controllers/theme_controller.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/models/vendor_model.dart';
 import 'package:customer/models/vendor_subscription_model.dart';
@@ -7,8 +6,7 @@ import 'package:customer/screen_ui/location_enable_screens/address_list_screen.d
 import 'package:customer/screen_ui/subscriptions/gateway_checkout_screen.dart';
 import 'package:customer/screen_ui/subscriptions/my_store_subscriptions_screen.dart';
 import 'package:customer/screen_ui/subscriptions/subscription_ui.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/round_button_fill.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/network_image_widget.dart';
 import 'package:customer/utils/region_service.dart';
@@ -35,6 +33,8 @@ String storePlanItemsText(VendorSubscriptionPlanModel plan) => plan.items.map((i
 
 /// Store page section (spec 4.7 / 7.9): the store's enabled subscription
 /// plans. Renders nothing when the store sells none.
+///
+/// Archetype **A — rail**: a horizontal card rail under a DS section header.
 class StorePlansSection extends StatefulWidget {
   final VendorModel vendor;
 
@@ -63,43 +63,67 @@ class _StorePlansSectionState extends State<StorePlansSection> {
   @override
   Widget build(BuildContext context) {
     if (_plans.isEmpty) return const SizedBox();
-    final isDark = Get.find<ThemeController>().isDark.value;
+    final c = context.dsColors;
+    final t = context.dsText;
     final currency = RegionService.currencyForVendor(widget.vendor);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 20),
-        Text("Subscriptions".tr, style: TextStyle(fontSize: 16, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, color: SubUi.text(isDark))),
-        const SizedBox(height: 10),
+        DsSectionHeader(title: "Subscriptions".tr, icon: Icons.event_repeat_rounded, subtitle: "Get it delivered again and again.".tr),
         SizedBox(
-          height: 170,
+          height: 186,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(bottom: DsSpace.xs),
             itemCount: _plans.length,
-            separatorBuilder: (context, index) => const SizedBox(width: 10),
+            separatorBuilder: (context, index) => const DsGap(DsSpace.md),
             itemBuilder: (context, index) {
               final plan = _plans[index];
-              return InkWell(
-                onTap: () => Get.to(() => StoreSubscribeScreen(plan: plan, vendor: widget.vendor)),
-                child: Container(
-                  width: 250,
-                  padding: const EdgeInsets.all(12),
-                  decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(plan.title ?? '-', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontFamily: AppThemeData.semiBold, color: SubUi.text(isDark))),
-                      const SizedBox(height: 4),
-                      Text(
-                        "${Constant.amountShow(amount: plan.price, currency: currency)} / ${StoreSubscriptionService.periodLabel(plan.expiryDay).tr}",
-                        style: TextStyle(fontSize: 14, fontFamily: AppThemeData.semiBold, color: AppThemeData.primary300),
-                      ),
-                      const SizedBox(height: 6),
-                      if (plan.items.isNotEmpty) Text(storePlanItemsText(plan), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: SubUi.muted(isDark))),
-                      if (plan.hasSchedule) Text(storePlanScheduleText(plan), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: SubUi.muted(isDark))),
-                      const Spacer(),
-                      Text("Subscribe".tr, style: TextStyle(fontSize: 14, fontFamily: AppThemeData.semiBold, color: AppThemeData.primary300)),
-                    ],
+              return DsFadeSlideIn(
+                index: index,
+                offset: const Offset(16, 0),
+                child: SizedBox(
+                  width: 254,
+                  child: DsCard.outlined(
+                    padding: const EdgeInsets.all(DsSpace.md),
+                    onTap: () => Get.to(() => StoreSubscribeScreen(plan: plan, vendor: widget.vendor)),
+                    semanticLabel: plan.title ?? '-',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            DsIconWell(icon: Icons.event_repeat_rounded, tone: DsTone.brand, size: 36),
+                            const DsGap(DsSpace.sm),
+                            Expanded(child: Text(plan.title ?? '-', maxLines: 2, overflow: TextOverflow.ellipsis, style: t.titleSm)),
+                          ],
+                        ),
+                        const DsGap(DsSpace.sm),
+                        SubUi.price(context, "${Constant.amountShow(amount: plan.price, currency: currency)} / ${StoreSubscriptionService.periodLabel(plan.expiryDay).tr}"),
+                        const DsGap(DsSpace.xs),
+                        if (plan.items.isNotEmpty) Text(storePlanItemsText(plan), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySm),
+                        if (plan.hasSchedule)
+                          Padding(
+                            padding: const EdgeInsets.only(top: DsSpace.xxs),
+                            child: Row(
+                              children: [
+                                Icon(Icons.schedule_rounded, size: 14, color: c.textMuted),
+                                const DsGap(DsSpace.xs),
+                                Expanded(child: Text(storePlanScheduleText(plan), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption)),
+                              ],
+                            ),
+                          ),
+                        const Spacer(),
+                        Row(
+                          children: [
+                            Text("Subscribe".tr, style: t.label.withColor(c.brandStrong)),
+                            const DsGap(DsSpace.xs),
+                            Icon(Icons.arrow_forward_rounded, size: 16, color: c.brandStrong),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -112,6 +136,10 @@ class _StorePlansSectionState extends State<StorePlansSection> {
 }
 
 /// Plan details, delivery address and start date, then payment.
+///
+/// Archetype **E — booking wizard**: plan summary, then the two choices the
+/// customer makes (address, start date) as picker rows, with Continue in a
+/// sticky bar.
 class StoreSubscribeScreen extends StatefulWidget {
   final VendorSubscriptionPlanModel plan;
   final VendorModel vendor;
@@ -219,88 +247,119 @@ class _StoreSubscribeScreenState extends State<StoreSubscribeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Get.find<ThemeController>().isDark.value;
+    final c = context.dsColors;
+    final t = context.dsText;
     final plan = widget.plan;
     final currency = RegionService.currencyForVendor(widget.vendor);
     final DateTime? end = plan.expiryDays > 0 ? _start.add(Duration(days: plan.expiryDays)) : null;
-    return Scaffold(
-      backgroundColor: SubUi.surface(isDark),
-      appBar: SubUi.appBar("Subscribe".tr, isDark),
+    return DsScaffold(
+      title: "Subscribe".tr,
+      maxContentWidth: DsLayout.contentMax,
+      bottomBar: DsStickyBar(
+        child: DsButton.primary(
+          label: "Continue to payment".tr,
+          size: DsButtonSize.lg,
+          expand: true,
+          icon: Icons.arrow_forward_rounded,
+          onPressed: _loadingCurrent ? null : _pay,
+        ),
+      ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+        padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+        children: DsFadeSlideIn.stagger([
           if ((plan.photo ?? '').isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: ClipRRect(borderRadius: BorderRadius.circular(12), child: NetworkImageWidget(imageUrl: plan.photo!, height: 160, width: double.infinity, fit: BoxFit.cover)),
+              padding: const EdgeInsets.only(bottom: DsSpace.md),
+              child: ClipRRect(borderRadius: DsRadius.brLg, child: NetworkImageWidget(imageUrl: plan.photo!, height: 170, width: double.infinity, fit: BoxFit.cover)),
             ),
           SubUi.card(
-            isDark,
+            context,
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SubUi.title(plan.title ?? '-', isDark),
-                const SizedBox(height: 4),
-                Text(
-                  "${Constant.amountShow(amount: plan.price, currency: currency)} / ${StoreSubscriptionService.periodLabel(plan.expiryDay).tr}",
-                  style: TextStyle(fontSize: 16, fontFamily: AppThemeData.semiBold, color: AppThemeData.primary300),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: SubUi.title(context, plan.title ?? '-')),
+                    const DsGap(DsSpace.sm),
+                    SubUi.price(context, "${Constant.amountShow(amount: plan.price, currency: currency)} / ${StoreSubscriptionService.periodLabel(plan.expiryDay).tr}"),
+                  ],
                 ),
-                if ((plan.description ?? '').isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: SubUi.body(plan.description!, isDark)),
-                const SizedBox(height: 8),
-                SubUi.row("Store".tr, widget.vendor.title ?? '-', isDark),
-                if (plan.items.isNotEmpty) SubUi.row("Each delivery".tr, storePlanItemsText(plan), isDark),
-                if (plan.frequency != null) SubUi.row("Frequency".tr, plan.frequency == VendorSubscriptionPlanModel.frequencyDaily ? "Daily".tr : "Weekly".tr, isDark),
-                if (plan.effectiveDeliveryDays.isNotEmpty) SubUi.row("Delivery days".tr, plan.effectiveDeliveryDays.map((d) => d.tr).join(', '), isDark),
-                if (plan.timeSlot?.isSet == true) SubUi.row("Time slot".tr, plan.timeSlot!.label, isDark),
+                if ((plan.description ?? '').isNotEmpty) Padding(padding: const EdgeInsets.only(top: DsSpace.xs), child: SubUi.body(context, plan.description!)),
+                const DsGap(DsSpace.md),
+                SubUi.row(context, "Store".tr, widget.vendor.title ?? '-'),
+                if (plan.items.isNotEmpty) SubUi.row(context, "Each delivery".tr, storePlanItemsText(plan)),
+                if (plan.frequency != null) SubUi.row(context, "Frequency".tr, plan.frequency == VendorSubscriptionPlanModel.frequencyDaily ? "Daily".tr : "Weekly".tr),
+                if (plan.effectiveDeliveryDays.isNotEmpty) SubUi.row(context, "Delivery days".tr, plan.effectiveDeliveryDays.map((d) => d.tr).join(', ')),
+                if (plan.timeSlot?.isSet == true) SubUi.row(context, "Time slot".tr, plan.timeSlot!.label),
               ],
             ),
           ),
           if (_current != null)
-            SubUi.card(isDark, SubUi.body("${"You already have this plan until".tr} ${_current!.expiryDate == null ? '-' : Constant.timestampToDate(_current!.expiryDate!)}. ${"This purchase renews it from that date.".tr}", isDark)),
-          SubUi.heading("Delivery address".tr, isDark),
-          SubUi.card(
-            isDark,
-            InkWell(
-              onTap: _pickAddress,
-              child: Row(
-                children: [
-                  Icon(Icons.location_on_outlined, color: AppThemeData.primary300),
-                  const SizedBox(width: 8),
-                  Expanded(child: SubUi.body(_address == null ? "Select a delivery address".tr : _address!.getFullAddress(), isDark)),
-                  Icon(Icons.keyboard_arrow_right, color: SubUi.muted(isDark)),
-                ],
-              ),
+            DsInlineAlert(
+              tone: DsTone.info,
+              icon: Icons.event_available_outlined,
+              message: "${"You already have this plan until".tr} ${_current!.expiryDate == null ? '-' : Constant.timestampToDate(_current!.expiryDate!)}. ${"This purchase renews it from that date.".tr}",
             ),
+          SubUi.heading(context, "Delivery address".tr, icon: Icons.location_on_outlined),
+          _PickerRow(
+            icon: Icons.location_on_outlined,
+            text: _address == null ? "Select a delivery address".tr : _address!.getFullAddress(),
+            placeholder: _address == null,
+            onTap: _pickAddress,
           ),
-          SubUi.heading("Start date".tr, isDark),
-          SubUi.card(
-            isDark,
-            InkWell(
-              onTap: _pickDate,
-              child: Row(
-                children: [
-                  Icon(Icons.calendar_month_outlined, color: AppThemeData.primary300),
-                  const SizedBox(width: 8),
-                  Expanded(child: SubUi.body("${VendorSubscriptionModel.dayFormat.format(_start)}${end == null ? '' : "  →  ${VendorSubscriptionModel.dayFormat.format(end)}"}", isDark)),
-                  Icon(Icons.keyboard_arrow_right, color: SubUi.muted(isDark)),
-                ],
+          SubUi.heading(context, "Start date".tr, icon: Icons.calendar_month_outlined),
+          _PickerRow(
+            icon: Icons.calendar_month_outlined,
+            text: "${VendorSubscriptionModel.dayFormat.format(_start)}${end == null ? '' : "  →  ${VendorSubscriptionModel.dayFormat.format(end)}"}",
+            onTap: _pickDate,
+          ),
+          const DsGap(DsSpace.md),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.info_outline_rounded, size: 16, color: c.textMuted),
+              const DsGap(DsSpace.sm),
+              Expanded(
+                child: Text(
+                  "Payment is for one period. Renewal is manual: buy again before it ends. You can pause, skip a day or cancel from Profile > My subscriptions.".tr,
+                  style: t.caption,
+                ),
               ),
-            ),
+            ],
           ),
-          SubUi.body("Payment is for one period. Renewal is manual: buy again before it ends. You can pause, skip a day or cancel from Profile > My subscriptions.".tr, isDark),
-        ],
+        ]),
       ),
-      bottomNavigationBar: Container(
-        color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 36),
-        child: RoundedButtonFill(
-          title: "Continue to payment".tr,
-          height: 5.5,
-          color: _loadingCurrent ? AppThemeData.grey400 : AppThemeData.primary300,
-          textColor: AppThemeData.grey50,
-          fontSizes: 16,
-          onPress: _loadingCurrent ? null : _pay,
-        ),
+    );
+  }
+}
+
+/// Tappable address / date row.
+class _PickerRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final bool placeholder;
+  final VoidCallback onTap;
+
+  const _PickerRow({required this.icon, required this.text, required this.onTap, this.placeholder = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard.outlined(
+      margin: const EdgeInsets.only(bottom: DsSpace.md),
+      padding: const EdgeInsets.all(DsSpace.md),
+      onTap: onTap,
+      semanticLabel: text,
+      child: Row(
+        children: [
+          DsIconWell(icon: icon, tone: DsTone.brand, size: 40),
+          const DsGap(DsSpace.md),
+          Expanded(child: Text(text, style: placeholder ? t.bodySecondary : t.bodyStrong)),
+          const DsGap(DsSpace.sm),
+          Icon(Icons.keyboard_arrow_right_rounded, color: c.textMuted),
+        ],
       ),
     );
   }

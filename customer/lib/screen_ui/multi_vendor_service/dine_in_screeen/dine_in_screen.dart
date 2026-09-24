@@ -6,73 +6,80 @@ import 'package:customer/models/vendor_category_model.dart';
 import 'package:customer/models/vendor_model.dart';
 import 'package:customer/screen_ui/location_enable_screens/location_permission_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/dine_in_screeen/view_all_category_dine_in_screen.dart';
-import 'package:customer/themes/app_them_data.dart';
-import 'package:customer/themes/responsive.dart';
-import 'package:customer/themes/round_button_fill.dart';
-import 'package:customer/utils/network_image_widget.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../../controllers/theme_controller.dart';
 import '../../../models/banner_model.dart';
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
-import '../../../widget/restaurant_image_view.dart';
 import '../home_screen/category_restaurant_screen.dart';
 import '../restaurant_details_screen/restaurant_details_screen.dart';
 import 'dine_in_details_screen.dart';
 import 'dine_in_restaurant_list_screen.dart';
+import 'widgets/dine_in_widgets.dart';
 
+/// Archetype A — dine-in storefront. Editorial hero over the reservation
+/// artwork, a circular cuisine rail, a "New Arrivals" band, banners and a
+/// Popular / All switch over full-bleed showcase cards.
 class DineInScreen extends StatelessWidget {
   const DineInScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: DineInController(),
       builder: (controller) {
+        final c = context.dsColors;
+        final t = context.dsText;
+        final l = context.dsLayout;
+        final bool isLoading = controller.isLoading.value;
+        final bool isPopular = controller.isPopular.value;
+        final bool noStores = Constant.isZoneAvailable == false || controller.allNearestRestaurant.isEmpty;
+        final bool hasNewArrivals = controller.newArrivalRestaurantList.isNotEmpty;
+        final bool hasBanners = controller.bannerBottomModel.isNotEmpty;
+
         return Scaffold(
+          backgroundColor: c.background,
           body: NestedScrollView(
             headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
               return <Widget>[
                 SliverAppBar(
-                  expandedHeight: Responsive.height(38, context),
+                  expandedHeight: 260,
                   floating: true,
                   pinned: true,
                   automaticallyImplyLeading: false,
-                  backgroundColor: AppThemeData.primary300,
+                  backgroundColor: c.brand,
                   title: Row(
                     children: [
-                      InkWell(
-                        onTap: () {
+                      DineInGlassIconButton(
+                        icon: Icons.arrow_back,
+                        semanticLabel: 'Back'.tr,
+                        onPressed: () {
                           Get.back();
                         },
-                        child: Icon(Icons.arrow_back, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50),
                       ),
                     ],
                   ),
                   flexibleSpace: FlexibleSpaceBar(
                     background: Stack(
+                      fit: StackFit.expand,
                       children: [
-                        Image.asset("assets/images/dine_in_bg.png", fit: BoxFit.fill, width: Responsive.width(100, context)),
-                        Center(
+                        Image.asset("assets/images/dine_in_bg.png", fit: BoxFit.cover),
+                        const DecoratedBox(decoration: BoxDecoration(gradient: DsGradients.imageScrim)),
+                        Align(
+                          alignment: Alignment.bottomLeft,
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            padding: const EdgeInsets.fromLTRB(DsSpace.lg, 0, DsSpace.lg, DsSpace.xxl),
                             child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  "Dine-In Reservations".tr,
-                                  style: TextStyle(fontSize: 24, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600, color: isDark ? AppThemeData.grey900 : AppThemeData.grey900),
-                                ),
+                                Text("Dine-In Reservations".tr, style: t.display.withColor(Colors.white)),
+                                const DsGap(DsSpace.xs),
                                 Text(
                                   "Book a table at your favorite restaurant and enjoy a delightful dining experience.".tr,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(fontSize: 14, fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.grey900 : AppThemeData.grey900),
+                                  style: t.body.withColor(Colors.white.withValues(alpha: 0.9)),
                                 ),
                               ],
                             ),
@@ -84,334 +91,272 @@ class DineInScreen extends StatelessWidget {
                 ),
               ];
             },
-            body:
-                controller.isLoading.value
-                    ? Constant.loader()
-                    : Constant.isZoneAvailable == false || controller.allNearestRestaurant.isEmpty
-                    ? Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Image.asset("assets/images/location.gif", height: 120),
-                          const SizedBox(height: 12),
-                          Text(
-                            "No Dine-In Reservations Found in Your Area".tr,
-                            style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            "Currently, there are no available Dine-In Reservations in your zone. Try changing your location to find nearby options.".tr,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                          ),
-                          const SizedBox(height: 20),
-                          RoundedButtonFill(
-                            title: "Change Zone".tr,
-                            width: 55,
-                            height: 5.5,
-                            color: AppThemeData.primary300,
-                            textColor: AppThemeData.grey50,
-                            onPress: () async {
-                              Get.offAll(const LocationPermissionScreen());
+            body: isLoading
+                ? const SingleChildScrollView(child: DsSkeletonDashboard())
+                : noStores
+                ? const _NoDineInZone()
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.only(bottom: DsSpace.xxxl),
+                    child: Column(
+                      children: DsFadeSlideIn.stagger([
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, 0),
+                          child: DsSectionHeader(
+                            title: "Explore the Categories".tr,
+                            actionLabel: "View all".tr,
+                            padding: EdgeInsets.zero,
+                            onAction: () {
+                              Get.to(const ViewAllCategoryDineInScreen());
                             },
                           ),
-                        ],
-                      ),
-                    )
-                    : SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: 10),
-                                titleView(isDark, "Explore the Categories".tr, () {
-                                  Get.to(const ViewAllCategoryDineInScreen());
-                                }),
-                                const SizedBox(height: 10),
-                                CategoryView(controller: controller),
-                                const SizedBox(height: 28),
-                              ],
+                        ),
+                        const DsGap(DsSpace.md),
+                        _CategoryRail(controller: controller),
+                        const DsGap(DsSpace.xxl),
+                        if (hasNewArrivals)
+                          Container(
+                            decoration: const BoxDecoration(image: DecorationImage(image: AssetImage("assets/images/ic_new_arrival_dinein.png"), fit: BoxFit.cover)),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.lg),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(child: Text("New Arrivals".tr, style: t.title.withColor(Colors.white))),
+                                      DsPressable(
+                                        semanticLabel: "View all".tr,
+                                        onTap: () {
+                                          Get.to(const DineInRestaurantListScreen(), arguments: {"vendorList": controller.newArrivalRestaurantList, "title": "New Arrival"});
+                                        },
+                                        child: Container(
+                                          constraints: const BoxConstraints(minHeight: 48),
+                                          alignment: Alignment.center,
+                                          padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text("View all".tr, style: t.label.withColor(Colors.white)),
+                                              const Icon(Icons.chevron_right_rounded, size: 18, color: Colors.white),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const DsGap(DsSpace.lg),
+                                  _NewArrivalRail(controller: controller),
+                                ],
+                              ),
                             ),
                           ),
-                          controller.newArrivalRestaurantList.isEmpty
-                              ? const SizedBox()
-                              : Container(
-                                decoration: const BoxDecoration(image: DecorationImage(image: AssetImage("assets/images/ic_new_arrival_dinein.png"), fit: BoxFit.cover)),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.start,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              "New Arrivals".tr,
-                                              textAlign: TextAlign.start,
-                                              style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50),
-                                            ),
-                                          ),
-                                          InkWell(
-                                            onTap: () {
-                                              Get.to(const DineInRestaurantListScreen(), arguments: {"vendorList": controller.newArrivalRestaurantList, "title": "New Arrival"});
-                                            },
-                                            child: Text(
-                                              "View all".tr,
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 16),
-                                      NewArrival(controller: controller),
-                                    ],
+                        if (hasBanners) Padding(padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.xl), child: _BannerRail(controller: controller)),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: l.gutter),
+                          child: DsSegmentedTabs(
+                            segments: [DsSegment("Popular Stores".tr), DsSegment("All Stores".tr)],
+                            index: isPopular ? 0 : 1,
+                            onChanged: (i) {
+                              controller.isPopular.value = i == 0;
+                            },
+                          ),
+                        ),
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.xl, l.gutter, 0),
+                          child: isPopular ? _StoreList(controller: controller, popular: true) : _StoreList(controller: controller, popular: false),
+                        ),
+                      ]),
+                    ),
+                  ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// No zone / no restaurants nearby.
+class _NoDineInZone extends StatelessWidget {
+  const _NoDineInZone();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.dsText;
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.xxl),
+        child: DsResponsive(
+          maxWidth: 440,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: DsFadeSlideIn.stagger([
+              Image.asset("assets/images/location.gif", height: 120),
+              const DsGap(DsSpace.md),
+              Text("No Dine-In Reservations Found in Your Area".tr, textAlign: TextAlign.center, style: t.headline),
+              const DsGap(DsSpace.sm),
+              Text(
+                "Currently, there are no available Dine-In Reservations in your zone. Try changing your location to find nearby options.".tr,
+                textAlign: TextAlign.center,
+                style: t.bodySecondary,
+              ),
+              const DsGap(DsSpace.xl),
+              DsButton.primary(
+                label: "Change Zone".tr,
+                icon: Icons.my_location_rounded,
+                size: DsButtonSize.lg,
+                expand: true,
+                onPressed: () async {
+                  Get.offAll(const LocationPermissionScreen());
+                },
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Popular / all store list. Reads the controller's lists in its own build,
+/// so the body is wrapped in a [DsObserve].
+class _StoreList extends StatelessWidget {
+  final DineInController controller;
+  final bool popular;
+
+  const _StoreList({required this.controller, required this.popular});
+
+  @override
+  Widget build(BuildContext context) {
+    return DsObserve(
+      builder: (context) {
+        final List<VendorModel> stores = popular ? controller.popularRestaurantList.toList() : controller.allNearestRestaurant.toList();
+        return ListView.builder(
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
+          physics: const NeverScrollableScrollPhysics(),
+          scrollDirection: Axis.vertical,
+          itemCount: stores.length,
+          itemBuilder: (BuildContext context, int index) {
+            VendorModel vendorModel = stores[index];
+            return DsFadeSlideIn(
+              index: index,
+              child: DineInStoreCard(
+                vendorModel: vendorModel,
+                onTap: () {
+                  Get.to(const DineInDetailsScreen(), arguments: {"vendorModel": vendorModel});
+                },
+                favourite: Obx(
+                  () => DineInFavouriteButton(
+                    isFavourite: controller.favouriteList.where((p0) => p0.restaurantId == vendorModel.id).isNotEmpty,
+                    onTap: () async {
+                      if (controller.favouriteList.where((p0) => p0.restaurantId == vendorModel.id).isNotEmpty) {
+                        FavouriteModel favouriteModel = FavouriteModel(restaurantId: vendorModel.id, userId: FireStoreUtils.getCurrentUid());
+                        controller.favouriteList.removeWhere((item) => item.restaurantId == vendorModel.id);
+                        await FireStoreUtils.removeFavouriteRestaurant(favouriteModel);
+                      } else {
+                        FavouriteModel favouriteModel = FavouriteModel(restaurantId: vendorModel.id, userId: FireStoreUtils.getCurrentUid());
+                        controller.favouriteList.add(favouriteModel);
+                        await FireStoreUtils.setFavouriteRestaurant(favouriteModel);
+                      }
+                    },
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+/// Horizontal "New Arrivals" rail over the artwork band.
+class _NewArrivalRail extends StatelessWidget {
+  final DineInController controller;
+
+  const _NewArrivalRail({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.dsText;
+    return DsObserve(
+      builder: (context) {
+        final List<VendorModel> stores = controller.newArrivalRestaurantList.toList();
+        return SizedBox(
+          height: 218,
+          child: ListView.builder(
+            physics: const BouncingScrollPhysics(),
+            scrollDirection: Axis.horizontal,
+            padding: EdgeInsets.zero,
+            itemCount: stores.length >= 10 ? 10 : stores.length,
+            itemBuilder: (BuildContext context, int index) {
+              VendorModel vendorModel = stores[index];
+              return DsPressable(
+                onTap: () {
+                  Get.to(const DineInDetailsScreen(), arguments: {"vendorModel": vendorModel});
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(right: DsSpace.md),
+                  child: SizedBox(
+                    width: 230,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              Positioned.fill(child: DsImage(url: vendorModel.photo.toString(), radius: DsRadius.md, errorIcon: Icons.storefront_outlined)),
+                              Positioned.fill(
+                                child: ClipRRect(
+                                  borderRadius: DsRadius.brMd,
+                                  child: const DecoratedBox(decoration: BoxDecoration(gradient: DsGradients.imageScrim)),
+                                ),
+                              ),
+                              Positioned(
+                                right: DsSpace.xs,
+                                top: DsSpace.xs,
+                                child: Obx(
+                                  () => DineInFavouriteButton(
+                                    isFavourite: controller.favouriteList.where((p0) => p0.restaurantId == vendorModel.id).isNotEmpty,
+                                    onTap: () async {
+                                      if (controller.favouriteList.where((p0) => p0.restaurantId == vendorModel.id).isNotEmpty) {
+                                        FavouriteModel favouriteModel = FavouriteModel(restaurantId: vendorModel.id, userId: FireStoreUtils.getCurrentUid());
+                                        controller.favouriteList.removeWhere((item) => item.restaurantId == vendorModel.id);
+                                        await FireStoreUtils.removeFavouriteRestaurant(favouriteModel);
+                                      } else {
+                                        FavouriteModel favouriteModel = FavouriteModel(restaurantId: vendorModel.id, userId: FireStoreUtils.getCurrentUid());
+                                        controller.favouriteList.add(favouriteModel);
+                                        await FireStoreUtils.setFavouriteRestaurant(favouriteModel);
+                                      }
+                                    },
                                   ),
                                 ),
                               ),
-                          controller.bannerBottomModel.isEmpty
-                              ? const SizedBox()
-                              : Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20), child: BannerBottomView(controller: controller)),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Container(
-                              decoration: ShapeDecoration(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120))),
-                              child: Padding(
-                                padding: const EdgeInsets.all(8.0),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: InkWell(
-                                        onTap: () {
-                                          controller.isPopular.value = true;
-                                        },
-                                        child: Container(
-                                          decoration:
-                                              controller.isPopular.value == false
-                                                  ? null
-                                                  : ShapeDecoration(color: AppThemeData.grey900, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120))),
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                            child: Text(
-                                              "Popular Stores".tr,
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: InkWell(
-                                        onTap: () {
-                                          controller.isPopular.value = false;
-                                        },
-                                        child: Container(
-                                          decoration:
-                                              controller.isPopular.value == true
-                                                  ? null
-                                                  : ShapeDecoration(color: AppThemeData.grey900, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120))),
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                            child: Text(
-                                              "All Stores".tr,
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(
-                                                fontFamily: AppThemeData.semiBold,
-                                                color:
-                                                    controller.isPopular.value == true
-                                                        ? isDark
-                                                            ? AppThemeData.grey400
-                                                            : AppThemeData.grey500
-                                                        : isDark
-                                                        ? AppThemeData.primary300
-                                                        : AppThemeData.primary300,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                            ],
                           ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                            child: controller.isPopular.value ? PopularRestaurant(controller: controller) : AllRestaurant(controller: controller),
-                          ),
-                        ],
-                      ),
-                    ),
-          ),
-        );
-      },
-    );
-  }
-
-  Row titleView(isDark, String name, Function()? onPress) {
-    return Row(
-      children: [
-        Expanded(child: Text(name, textAlign: TextAlign.start, style: TextStyle(fontFamily: AppThemeData.bold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900))),
-        InkWell(
-          onTap: () {
-            onPress!();
-          },
-          child: Text("View all".tr, textAlign: TextAlign.center, style: TextStyle(fontFamily: AppThemeData.regular, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300)),
-        ),
-      ],
-    );
-  }
-}
-
-class PopularRestaurant extends StatelessWidget {
-  final DineInController controller;
-
-  const PopularRestaurant({super.key, required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return ListView.builder(
-      shrinkWrap: true,
-      padding: EdgeInsets.zero,
-      physics: const NeverScrollableScrollPhysics(),
-      scrollDirection: Axis.vertical,
-      itemCount: controller.popularRestaurantList.length,
-      itemBuilder: (BuildContext context, int index) {
-        VendorModel vendorModel = controller.popularRestaurantList[index];
-        return InkWell(
-          onTap: () {
-            Get.to(const DineInDetailsScreen(), arguments: {"vendorModel": vendorModel});
-          },
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 20),
-            child: Container(
-              decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), topRight: Radius.circular(16)),
-                        child: Stack(
-                          children: [
-                            RestaurantImageView(vendorModel: vendorModel),
-                            Container(
-                              height: Responsive.height(20, context),
-                              width: Responsive.width(100, context),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(begin: const Alignment(-0.00, -1.00), end: const Alignment(0, 1), colors: [Colors.black.withOpacity(0), const Color(0xFF111827)]),
-                              ),
-                            ),
-                            Positioned(
-                              right: 10,
-                              top: 10,
-                              child: InkWell(
-                                onTap: () async {
-                                  if (controller.favouriteList.where((p0) => p0.restaurantId == vendorModel.id).isNotEmpty) {
-                                    FavouriteModel favouriteModel = FavouriteModel(restaurantId: vendorModel.id, userId: FireStoreUtils.getCurrentUid());
-                                    controller.favouriteList.removeWhere((item) => item.restaurantId == vendorModel.id);
-                                    await FireStoreUtils.removeFavouriteRestaurant(favouriteModel);
-                                  } else {
-                                    FavouriteModel favouriteModel = FavouriteModel(restaurantId: vendorModel.id, userId: FireStoreUtils.getCurrentUid());
-                                    controller.favouriteList.add(favouriteModel);
-                                    await FireStoreUtils.setFavouriteRestaurant(favouriteModel);
-                                  }
-                                },
-                                child: Obx(
-                                  () =>
-                                      controller.favouriteList.where((p0) => p0.restaurantId == vendorModel.id).isNotEmpty
-                                          ? SvgPicture.asset("assets/icons/ic_like_fill.svg")
-                                          : SvgPicture.asset("assets/icons/ic_like.svg"),
-                                ),
-                              ),
-                            ),
-                          ],
                         ),
-                      ),
-                      Transform.translate(
-                        offset: Offset(Responsive.width(-3, context), Responsive.height(17.5, context)),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Container(
-                              decoration: ShapeDecoration(color: isDark ? AppThemeData.primary600 : AppThemeData.primary50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120))),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                child: Row(
-                                  children: [
-                                    SvgPicture.asset("assets/icons/ic_star.svg", colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn)),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      "${Constant.calculateReview(reviewCount: vendorModel.reviewsCount!.toStringAsFixed(0), reviewSum: vendorModel.reviewsSum.toString())} (${vendorModel.reviewsCount!.toStringAsFixed(0)})",
-                                      style: TextStyle(color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Container(
-                              decoration: ShapeDecoration(
-                                color: isDark ? AppThemeData.ecommerce600 : AppThemeData.ecommerce50,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                child: Row(
-                                  children: [
-                                    SvgPicture.asset("assets/icons/ic_map_distance.svg", colorFilter: ColorFilter.mode(AppThemeData.ecommerce300, BlendMode.srcIn)),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      "${Constant.getDistance(lat1: vendorModel.latitude.toString(), lng1: vendorModel.longitude.toString(), lat2: Constant.selectedLocation.location!.latitude.toString(), lng2: Constant.selectedLocation.location!.longitude.toString())} ${Constant.distanceType}",
-                                      style: TextStyle(color: isDark ? AppThemeData.ecommerce300 : AppThemeData.ecommerce300, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
+                        const DsGap(DsSpace.sm),
+                        Text(vendorModel.title.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm.withColor(Colors.white)),
+                        const DsGap(DsSpace.xs),
+                        Wrap(
+                          spacing: DsSpace.sm,
+                          children: [DineInRatingChip(vendorModel: vendorModel), DineInDistanceChip(vendorModel: vendorModel)],
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 15),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          vendorModel.title.toString(),
-                          textAlign: TextAlign.start,
-                          maxLines: 1,
-                          style: TextStyle(fontSize: 18, overflow: TextOverflow.ellipsis, fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                        ),
+                        const DsGap(DsSpace.xs),
                         Text(
                           vendorModel.location.toString(),
-                          textAlign: TextAlign.start,
                           maxLines: 1,
-                          style: TextStyle(overflow: TextOverflow.ellipsis, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, color: isDark ? AppThemeData.grey400 : AppThemeData.grey400),
+                          overflow: TextOverflow.ellipsis,
+                          style: t.bodySm.withColor(Colors.white.withValues(alpha: 0.85)),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 10),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
         );
       },
@@ -419,423 +364,138 @@ class PopularRestaurant extends StatelessWidget {
   }
 }
 
-class AllRestaurant extends StatelessWidget {
+/// Cuisine rail.
+class _CategoryRail extends StatelessWidget {
   final DineInController controller;
 
-  const AllRestaurant({super.key, required this.controller});
+  const _CategoryRail({required this.controller});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return ListView.builder(
-      shrinkWrap: true,
-      padding: EdgeInsets.zero,
-      physics: const NeverScrollableScrollPhysics(),
-      scrollDirection: Axis.vertical,
-      itemCount: controller.allNearestRestaurant.length,
-      itemBuilder: (BuildContext context, int index) {
-        VendorModel vendorModel = controller.allNearestRestaurant[index];
-        return InkWell(
-          onTap: () {
-            Get.to(const DineInDetailsScreen(), arguments: {"vendorModel": vendorModel});
-          },
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 20),
-            child: Container(
-              decoration: ShapeDecoration(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), topRight: Radius.circular(16)),
-                        child: Stack(
-                          children: [
-                            RestaurantImageView(vendorModel: vendorModel),
-                            Container(
-                              height: Responsive.height(20, context),
-                              width: Responsive.width(100, context),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(begin: const Alignment(-0.00, -1.00), end: const Alignment(0, 1), colors: [Colors.black.withOpacity(0), const Color(0xFF111827)]),
-                              ),
-                            ),
-                            Positioned(
-                              right: 10,
-                              top: 10,
-                              child: InkWell(
-                                onTap: () async {
-                                  if (controller.favouriteList.where((p0) => p0.restaurantId == vendorModel.id).isNotEmpty) {
-                                    FavouriteModel favouriteModel = FavouriteModel(restaurantId: vendorModel.id, userId: FireStoreUtils.getCurrentUid());
-                                    controller.favouriteList.removeWhere((item) => item.restaurantId == vendorModel.id);
-                                    await FireStoreUtils.removeFavouriteRestaurant(favouriteModel);
-                                  } else {
-                                    FavouriteModel favouriteModel = FavouriteModel(restaurantId: vendorModel.id, userId: FireStoreUtils.getCurrentUid());
-                                    controller.favouriteList.add(favouriteModel);
-                                    await FireStoreUtils.setFavouriteRestaurant(favouriteModel);
-                                  }
-                                },
-                                child: Obx(
-                                  () =>
-                                      controller.favouriteList.where((p0) => p0.restaurantId == vendorModel.id).isNotEmpty
-                                          ? SvgPicture.asset("assets/icons/ic_like_fill.svg")
-                                          : SvgPicture.asset("assets/icons/ic_like.svg"),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Transform.translate(
-                        offset: Offset(Responsive.width(-3, context), Responsive.height(17.5, context)),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Container(
-                              decoration: ShapeDecoration(color: isDark ? AppThemeData.primary600 : AppThemeData.primary50, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120))),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                child: Row(
-                                  children: [
-                                    SvgPicture.asset("assets/icons/ic_star.svg", colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn)),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      "${Constant.calculateReview(reviewCount: vendorModel.reviewsCount.toString(), reviewSum: vendorModel.reviewsSum.toString())} (${vendorModel.reviewsCount!.toStringAsFixed(0)})",
-                                      style: TextStyle(color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Container(
-                              decoration: ShapeDecoration(
-                                color: isDark ? AppThemeData.ecommerce600 : AppThemeData.ecommerce50,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(120)),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                child: Row(
-                                  children: [
-                                    SvgPicture.asset("assets/icons/ic_map_distance.svg", colorFilter: ColorFilter.mode(AppThemeData.ecommerce300, BlendMode.srcIn)),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      "${Constant.getDistance(lat1: vendorModel.latitude.toString(), lng1: vendorModel.longitude.toString(), lat2: Constant.selectedLocation.location!.latitude.toString(), lng2: Constant.selectedLocation.location!.longitude.toString())} ${Constant.distanceType}",
-                                      style: TextStyle(color: isDark ? AppThemeData.ecommerce300 : AppThemeData.ecommerce300, fontFamily: AppThemeData.semiBold, fontWeight: FontWeight.w600),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 15),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          vendorModel.title.toString(),
-                          textAlign: TextAlign.start,
-                          maxLines: 1,
-                          style: TextStyle(fontSize: 18, overflow: TextOverflow.ellipsis, fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900),
-                        ),
-                        Text(
-                          vendorModel.location.toString(),
-                          textAlign: TextAlign.start,
-                          maxLines: 1,
-                          style: TextStyle(overflow: TextOverflow.ellipsis, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, color: isDark ? AppThemeData.grey400 : AppThemeData.grey400),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class NewArrival extends StatelessWidget {
-  final DineInController controller;
-
-  const NewArrival({super.key, required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return SizedBox(
-      height: Responsive.height(24, context),
-      child: ListView.builder(
-        physics: const BouncingScrollPhysics(),
-        scrollDirection: Axis.horizontal,
-        itemCount: controller.newArrivalRestaurantList.length >= 10 ? 10 : controller.newArrivalRestaurantList.length,
-        itemBuilder: (BuildContext context, int index) {
-          VendorModel vendorModel = controller.newArrivalRestaurantList[index];
-          return InkWell(
-            onTap: () {
-              Get.to(const DineInDetailsScreen(), arguments: {"vendorModel": vendorModel});
-            },
-            child: Padding(
-              padding: const EdgeInsets.only(right: 10),
-              child: SizedBox(
-                width: Responsive.width(55, context),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: const BorderRadius.all(Radius.circular(10)),
-                        child: Stack(
-                          children: [
-                            NetworkImageWidget(imageUrl: vendorModel.photo.toString(), fit: BoxFit.cover, height: Responsive.height(100, context), width: Responsive.width(100, context)),
-                            Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(begin: const Alignment(0.00, 1.00), end: const Alignment(0, -1), colors: [Colors.black.withOpacity(0), AppThemeData.grey900]),
-                              ),
-                            ),
-                            Positioned(
-                              right: 10,
-                              top: 10,
-                              child: InkWell(
-                                onTap: () async {
-                                  if (controller.favouriteList.where((p0) => p0.restaurantId == vendorModel.id).isNotEmpty) {
-                                    FavouriteModel favouriteModel = FavouriteModel(restaurantId: vendorModel.id, userId: FireStoreUtils.getCurrentUid());
-                                    controller.favouriteList.removeWhere((item) => item.restaurantId == vendorModel.id);
-                                    await FireStoreUtils.removeFavouriteRestaurant(favouriteModel);
-                                  } else {
-                                    FavouriteModel favouriteModel = FavouriteModel(restaurantId: vendorModel.id, userId: FireStoreUtils.getCurrentUid());
-                                    controller.favouriteList.add(favouriteModel);
-                                    await FireStoreUtils.setFavouriteRestaurant(favouriteModel);
-                                  }
-                                },
-                                child: Obx(
-                                  () =>
-                                      controller.favouriteList.where((p0) => p0.restaurantId == vendorModel.id).isNotEmpty
-                                          ? SvgPicture.asset("assets/icons/ic_like_fill.svg")
-                                          : SvgPicture.asset("assets/icons/ic_like.svg"),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      vendorModel.title.toString(),
-                      textAlign: TextAlign.start,
-                      maxLines: 1,
-                      style: TextStyle(fontSize: 16, overflow: TextOverflow.ellipsis, fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey50),
-                    ),
-                    Row(
-                      children: [
-                        Row(
-                          children: [
-                            SvgPicture.asset("assets/icons/ic_star.svg", colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn)),
-                            const SizedBox(width: 10),
-                            Text(
-                              "${Constant.calculateReview(reviewCount: vendorModel.reviewsCount.toString(), reviewSum: vendorModel.reviewsSum.toString())} (${vendorModel.reviewsCount!.toStringAsFixed(0)})",
-                              textAlign: TextAlign.start,
-                              maxLines: 1,
-                              style: TextStyle(
-                                overflow: TextOverflow.ellipsis,
-                                fontFamily: AppThemeData.medium,
-                                fontWeight: FontWeight.w500,
-                                color: isDark ? AppThemeData.grey400 : AppThemeData.grey400,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(width: 20),
-                        Row(
-                          children: [
-                            SvgPicture.asset("assets/icons/ic_map_distance.svg"),
-                            const SizedBox(width: 10),
-                            Text(
-                              "${Constant.getDistance(lat1: vendorModel.latitude.toString(), lng1: vendorModel.longitude.toString(), lat2: Constant.selectedLocation.location!.latitude.toString(), lng2: Constant.selectedLocation.location!.longitude.toString())} ${Constant.distanceType}",
-                              textAlign: TextAlign.start,
-                              maxLines: 1,
-                              style: TextStyle(
-                                overflow: TextOverflow.ellipsis,
-                                fontFamily: AppThemeData.medium,
-                                fontWeight: FontWeight.w500,
-                                color: isDark ? AppThemeData.grey400 : AppThemeData.grey400,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    Text(
-                      vendorModel.location.toString(),
-                      textAlign: TextAlign.start,
-                      maxLines: 1,
-                      style: TextStyle(overflow: TextOverflow.ellipsis, fontFamily: AppThemeData.medium, fontWeight: FontWeight.w500, color: isDark ? AppThemeData.grey400 : AppThemeData.grey400),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class CategoryView extends StatelessWidget {
-  final DineInController controller;
-
-  const CategoryView({super.key, required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-    return SizedBox(
-      height: 124,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.zero,
-        itemCount: controller.vendorCategoryModel.length,
-        itemBuilder: (context, index) {
-          VendorCategoryModel vendorCategoryModel = controller.vendorCategoryModel[index];
-          return InkWell(
-            onTap: () {
-              Get.to(const CategoryRestaurantScreen(), arguments: {"vendorCategoryModel": vendorCategoryModel, "dineIn": true});
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: SizedBox(
-                width: 78,
-                child: Container(
-                  decoration: ShapeDecoration(
-                    color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                    shape: RoundedRectangleBorder(
-                      side: BorderSide(width: 1, strokeAlign: BorderSide.strokeAlignOutside, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100),
-                      borderRadius: BorderRadius.circular(100),
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      SizedBox(width: 60, height: 60, child: ClipOval(child: NetworkImageWidget(imageUrl: vendorCategoryModel.photo.toString(), fit: BoxFit.cover))),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                        child: Text(
-                          '${vendorCategoryModel.title}',
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.medium),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class BannerBottomView extends StatelessWidget {
-  final DineInController controller;
-
-  const BannerBottomView({super.key, required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        SizedBox(
-          height: 150,
-          child: PageView.builder(
-            physics: const BouncingScrollPhysics(),
-            controller: controller.pageBottomController.value,
+    return DsObserve(
+      builder: (context) {
+        final List<VendorCategoryModel> categories = controller.vendorCategoryModel.toList();
+        return SizedBox(
+          height: 118,
+          child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            itemCount: controller.bannerBottomModel.length,
-            padEnds: false,
-            pageSnapping: true,
-            onPageChanged: (value) {
-              controller.currentBottomPage.value = value;
+            padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
+            itemCount: categories.length,
+            itemBuilder: (context, index) {
+              VendorCategoryModel vendorCategoryModel = categories[index];
+              return Padding(
+                padding: const EdgeInsets.only(right: DsSpace.md),
+                child: SizedBox(
+                  width: 80,
+                  child: DineInCategoryTile(
+                    photo: vendorCategoryModel.photo.toString(),
+                    title: '${vendorCategoryModel.title}',
+                    onTap: () {
+                      Get.to(const CategoryRestaurantScreen(), arguments: {"vendorCategoryModel": vendorCategoryModel, "dineIn": true});
+                    },
+                  ),
+                ),
+              );
             },
-            itemBuilder: (BuildContext context, int index) {
-              BannerModel bannerModel = controller.bannerBottomModel[index];
-              return InkWell(
-                onTap: () async {
-                  if (bannerModel.redirect_type == "store") {
-                    ShowToastDialog.showLoader("Please wait...".tr);
-                    VendorModel? vendorModel = await FireStoreUtils.getVendorById(bannerModel.redirect_id.toString());
-                    if (vendorModel!.zoneId == Constant.selectedZone!.id) {
-                      ShowToastDialog.closeLoader();
-                      Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
-                    } else {
-                      ShowToastDialog.closeLoader();
-                      ShowToastDialog.showToast("The store is not available in your area. Change other location first.".tr);
-                    }
-                  } else if (bannerModel.redirect_type == "product") {
-                    ShowToastDialog.showLoader("Please wait...".tr);
-                    ProductModel? productModel = await FireStoreUtils.getProductById(bannerModel.redirect_id.toString());
-                    VendorModel? vendorModel = await FireStoreUtils.getVendorById(productModel!.vendorID.toString());
-                    if (vendorModel!.zoneId == Constant.selectedZone!.id) {
-                      ShowToastDialog.closeLoader();
-                      Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
-                    } else {
-                      ShowToastDialog.closeLoader();
-                      ShowToastDialog.showToast("The store is not available in your area. Change other location first.".tr);
-                    }
-                  } else if (bannerModel.redirect_type == "external_link") {
-                    final uri = Uri.parse(bannerModel.redirect_id.toString());
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(uri);
-                    } else {
-                      ShowToastDialog.showToast("Could not launch".tr);
-                    }
-                  }
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Bottom banner carousel with animated dots.
+class _BannerRail extends StatelessWidget {
+  final DineInController controller;
+
+  const _BannerRail({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    return DsObserve(
+      builder: (context) {
+        final List<BannerModel> banners = controller.bannerBottomModel.toList();
+        return Column(
+          children: [
+            SizedBox(
+              height: 160,
+              child: PageView.builder(
+                physics: const BouncingScrollPhysics(),
+                controller: controller.pageBottomController.value,
+                scrollDirection: Axis.horizontal,
+                itemCount: banners.length,
+                padEnds: false,
+                pageSnapping: true,
+                onPageChanged: (value) {
+                  controller.currentBottomPage.value = value;
                 },
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 14),
-                  child: ClipRRect(borderRadius: const BorderRadius.all(Radius.circular(12)), child: NetworkImageWidget(imageUrl: bannerModel.photo.toString(), fit: BoxFit.cover)),
-                ),
-              );
-            },
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: List.generate(controller.bannerBottomModel.length, (index) {
-              return Obx(
-                () => Container(
-                  margin: const EdgeInsets.only(right: 5),
-                  alignment: Alignment.centerLeft,
-                  height: 9,
-                  width: 9,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: controller.currentBottomPage.value == index ? AppThemeData.primary300 : Colors.black12),
-                ),
-              );
-            }),
-          ),
-        ),
-      ],
+                itemBuilder: (BuildContext context, int index) {
+                  BannerModel bannerModel = banners[index];
+                  return DsPressable(
+                    onTap: () async {
+                      if (bannerModel.redirect_type == "store") {
+                        ShowToastDialog.showLoader("Please wait...".tr);
+                        VendorModel? vendorModel = await FireStoreUtils.getVendorById(bannerModel.redirect_id.toString());
+                        if (vendorModel!.zoneId == Constant.selectedZone!.id) {
+                          ShowToastDialog.closeLoader();
+                          Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
+                        } else {
+                          ShowToastDialog.closeLoader();
+                          ShowToastDialog.showToast("The store is not available in your area. Change other location first.".tr);
+                        }
+                      } else if (bannerModel.redirect_type == "product") {
+                        ShowToastDialog.showLoader("Please wait...".tr);
+                        ProductModel? productModel = await FireStoreUtils.getProductById(bannerModel.redirect_id.toString());
+                        VendorModel? vendorModel = await FireStoreUtils.getVendorById(productModel!.vendorID.toString());
+                        if (vendorModel!.zoneId == Constant.selectedZone!.id) {
+                          ShowToastDialog.closeLoader();
+                          Get.to(const RestaurantDetailsScreen(), arguments: {"vendorModel": vendorModel});
+                        } else {
+                          ShowToastDialog.closeLoader();
+                          ShowToastDialog.showToast("The store is not available in your area. Change other location first.".tr);
+                        }
+                      } else if (bannerModel.redirect_type == "external_link") {
+                        final uri = Uri.parse(bannerModel.redirect_id.toString());
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri);
+                        } else {
+                          ShowToastDialog.showToast("Could not launch".tr);
+                        }
+                      }
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: DsSpace.md),
+                      child: DsImage(url: bannerModel.photo.toString(), radius: DsRadius.lg, errorIcon: Icons.image_outlined),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: List.generate(banners.length, (index) {
+                  return Obx(
+                    () => AnimatedContainer(
+                      duration: DsMotion.of(context, DsMotion.fast),
+                      margin: const EdgeInsets.only(right: DsSpace.xs),
+                      height: 7,
+                      width: controller.currentBottomPage.value == index ? 20 : 7,
+                      decoration: BoxDecoration(
+                        borderRadius: DsRadius.brPill,
+                        color: controller.currentBottomPage.value == index ? c.brand : c.borderStrong,
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
