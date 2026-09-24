@@ -5,9 +5,8 @@ import 'package:spideliprovider/controller/assign_worker_controller.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/services/send_notification.dart';
-import 'package:spideliprovider/themes/app_colors.dart';
+import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
-import 'package:spideliprovider/widgets/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
@@ -17,111 +16,89 @@ class AssignWorkerList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+    // Keeps this widget subscribed to dark-mode changes; colors come from the DS.
+    Provider.of<DarkThemeProvider>(context);
     return GetBuilder<AssignWorkerController>(
         init: AssignWorkerController(),
         builder: (controller) {
-          return Scaffold(
-            backgroundColor: themeChange.getTheme() ? AppColors.colorDark : AppColors.colorWhite,
-            appBar: CommonUI.customAppBar(context,
-                title: Text(
-                  "Worker List".tr,
-                  style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 18, fontFamily: AppColors.semiBold),
-                ),
-                isBack: true),
+          final c = context.dsColors;
+          final t = context.dsText;
+          final l = context.dsLayout;
+
+          return DsScaffold(
+            title: "Worker List".tr,
+            subtitle: controller.user.isEmpty ? null : '${controller.user.length} ${'online'.tr}',
+            maxContentWidth: DsLayout.contentMax,
             body: controller.user.isEmpty
-                ? emptyView(text: "No online worker available", themeChange: themeChange)
+                ? DsEmptyState(
+                    icon: Icons.groups_outlined,
+                    title: "No online worker available".tr,
+                    message: 'Workers appear here as soon as they come online.'.tr,
+                  )
                 : ListView.builder(
                     itemCount: controller.user.length,
-                    padding: const EdgeInsets.all(12),
+                    padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.xxxl),
                     itemBuilder: (context, index) {
                       User worker = controller.user[index];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 3.0, horizontal: 0),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.grey.shade300, width: 1),
-                            color: themeChange.getTheme() ? AppColors.darkContainerBorderColor : AppColors.colorLightGrey,
-                          ),
-                          child: RadioListTile(
-                            selectedTileColor: AppColors.colorPrimary,
-                            activeColor: AppColors.colorPrimary,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8), side: BorderSide(color: controller.selectedWorkerRadioTile.value == worker.id ? AppColors.colorPrimary : Colors.transparent)),
-                            controlAffinity: ListTileControlAffinity.trailing,
-                            value: worker.id,
-                            groupValue: controller.selectedWorkerRadioTile.value,
-                            onChanged: (value) {
-                              controller.selectedWorkerRadioTile.value = value.toString();
-                              controller.fcmToken.value = worker.fcmToken.toString();
-                              controller.update();
-                            },
+                      final bool selected = controller.selectedWorkerRadioTile.value == worker.id;
 
-                            selected: controller.selectedWorkerRadioTile.value == worker.id ? true : false,
-
-                            title: Row(
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 4.0),
-                                  child: SizedBox(
-                                    width: 60,
-                                    height: 60,
-                                    child: worker.profilePictureURL != ""
-                                        ? CircleAvatar(backgroundImage: NetworkImage(worker.profilePictureURL.toString()), radius: 30.0)
-                                        : CircleAvatar(backgroundImage: NetworkImage(placeholderImage), radius: 30.0),
-                                  ),
-                                ),
-                                const SizedBox(
-                                  width: 20,
-                                ),
-                                Column(
+                      return DsFadeSlideIn(
+                        index: index,
+                        child: Semantics(
+                          inMutuallyExclusiveGroup: true,
+                          selected: selected,
+                          child: DsCard.outlined(
+                          margin: const EdgeInsets.only(bottom: DsSpace.md),
+                          padding: const EdgeInsets.all(DsSpace.md),
+                          borderColor: selected ? c.brand : null,
+                          color: selected ? c.brandSoft : null,
+                          semanticLabel: worker.fullName().toString(),
+                          onTap: () {
+                            controller.selectedWorkerRadioTile.value = worker.id;
+                            controller.fcmToken.value = worker.fcmToken.toString();
+                            controller.update();
+                          },
+                          child: Row(
+                            children: [
+                              DsAvatar(
+                                imageUrl: worker.profilePictureURL != "" ? worker.profilePictureURL.toString() : placeholderImage,
+                                name: worker.fullName().toString(),
+                                size: 52,
+                                ring: selected,
+                                statusTone: DsTone.success,
+                              ),
+                              const DsGap(DsSpace.md),
+                              Expanded(
+                                child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
                                       worker.fullName().toString(),
-                                      style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontWeight: FontWeight.bold),
+                                      style: t.titleSm,
                                     ),
-                                    SizedBox(
-                                      height: 5,
-                                    ),
-                                    Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.green,
-                                        borderRadius: BorderRadius.all(Radius.circular(20)),
-                                      ),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                                        child: Text(
-                                          "Online".tr,
-                                          style: const TextStyle(
-                                            color: AppColors.colorWhite,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
+                                    const DsGap(DsSpace.xs),
+                                    DsStatusChip(label: "Online".tr, tone: DsTone.success, pulse: true),
                                   ],
                                 ),
-                              ],
-                            ),
-                            //toggleable: true,
+                              ),
+                              const DsGap(DsSpace.sm),
+                              Icon(
+                                selected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+                                color: selected ? c.brand : c.iconDefault,
+                                size: 24,
+                              ),
+                            ],
+                          ),
                           ),
                         ),
                       );
                     }),
-            bottomNavigationBar: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.only(top: 10, bottom: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10.0),
-                      side: BorderSide(color: AppColors.colorPrimary),
-                    ),
-                    backgroundColor: AppColors.colorPrimary),
+            bottomBar: DsStickyBar(
+              child: DsButton.primary(
+                label: 'Assign'.tr,
+                icon: Icons.person_add_alt_1_rounded,
+                expand: true,
                 onPressed: () async {
                   if (controller.selectedWorkerRadioTile.value.isEmpty) {
                     ShowToastDialog.showToast('Please select worker.'.tr);
@@ -150,14 +127,6 @@ class AssignWorkerList extends StatelessWidget {
                     ShowToastDialog.closeLoader();
                   }
                 },
-                child: Text(
-                  'Assign'.tr,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: themeChange.getTheme() ? Colors.black : Colors.white,
-                  ),
-                ),
               ),
             ),
           );

@@ -6,13 +6,11 @@ import 'package:spideliprovider/model/provider_service_model.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/services/helper.dart';
-import 'package:spideliprovider/themes/app_colors.dart';
-import 'package:spideliprovider/themes/responsive.dart';
+import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:spideliprovider/utils/utils.dart';
 import 'package:spideliprovider/widgets/geoflutterfire/src/geoflutterfire.dart';
 import 'package:spideliprovider/widgets/geoflutterfire/src/models/point.dart';
-import 'package:spideliprovider/widgets/network_image_widget.dart';
 import 'package:spideliprovider/widgets/place_picker/location_picker_screen.dart';
 import 'package:spideliprovider/widgets/place_picker/selected_location_model.dart';
 import 'package:flutter/material.dart';
@@ -22,242 +20,153 @@ import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import '../../widgets/osm_map/map_picker_page.dart';
 
+/// Add / edit worker (archetype F): a profile hero with the availability
+/// toggle, then grouped form sections and a sticky Save bar. All controllers,
+/// validators, `onSaved` callbacks and the location picker are unchanged.
 class AddOrUpdateWorkerScreen extends StatelessWidget {
   const AddOrUpdateWorkerScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+    // Subscribes the page to theme changes.
+    Provider.of<DarkThemeProvider>(context);
     return GetX<AddOrUpdateWorkerController>(
         init: AddOrUpdateWorkerController(),
         builder: (controller) {
-          return Scaffold(
-            backgroundColor: themeChange.getTheme() ? AppColors.colorDark : AppColors.colorWhite,
-            appBar: AppBar(
-              backgroundColor: themeChange.getTheme() ? AppColors.colorDark : AppColors.colorWhite,
-              title: Text(
-                controller.user.value.id != "" ? 'Edit Worker'.tr : "Add Worker".tr,
-                style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 18, fontFamily: AppColors.semiBold),
-              ),
-              leading: InkWell(
-                onTap: () {
-                  Get.back();
-                },
-                child: Icon(
-                  Icons.arrow_back,
-                  color: themeChange.getTheme() ? Colors.white : AppColors.colorDark,
-                ),
-              ),
-            ),
-            body: Padding(
-              padding: const EdgeInsets.only(left: 20, right: 20),
-              child: Form(
-                key: controller.formKey.value,
-                autovalidateMode: controller.validate,
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          final c = context.dsColors;
+          final t = context.dsText;
+          final bool isEdit = controller.user.value.id != "";
+          final bool isActive = controller.isActive.value;
+          return DsScaffold(
+            title: isEdit ? 'Edit Worker'.tr : "Add Worker".tr,
+            onBack: () {
+              Get.back();
+            },
+            maxContentWidth: DsLayout.contentMax,
+            body: Form(
+              key: controller.formKey.value,
+              autovalidateMode: controller.validate,
+              child: SingleChildScrollView(
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, DsSpace.xxl),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: DsFadeSlideIn.stagger([
+                    // ── Profile + availability ───────────────────────────
+                    DsCard(
+                      padding: const EdgeInsets.all(DsSpace.lg),
+                      margin: const EdgeInsets.only(bottom: DsSpace.lg),
+                      child: Column(
                         children: [
-                          Text(
-                            'Active'.tr,
-                            style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 18),
-                          ),
-                          Switch(
-                            splashRadius: 40.0,
-                            value: controller.isActive.value,
-                            onChanged: (value) {
-                              controller.isActive.value = value;
-                            },
+                          if (isEdit) ...[
+                            DsAvatar(
+                              imageUrl: controller.user.value.profilePictureURL.toString(),
+                              name: controller.user.value.fullName(),
+                              size: 92,
+                              ring: true,
+                            ),
+                            const DsGap(DsSpace.md),
+                          ],
+                          Row(
+                            children: [
+                              DsIconWell(
+                                icon: isActive ? Icons.verified_user_outlined : Icons.pause_circle_outline_rounded,
+                                tone: isActive ? DsTone.success : DsTone.neutral,
+                                size: 40,
+                              ),
+                              const DsGap(DsSpace.md),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text('Active'.tr, style: t.titleSm),
+                                    const DsGap(DsSpace.xxs),
+                                    Text(
+                                      isActive ? 'This worker can be assigned to bookings.'.tr : 'This worker is paused.'.tr,
+                                      style: t.bodySm,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch(
+                                splashRadius: 40.0,
+                                value: controller.isActive.value,
+                                onChanged: (value) {
+                                  controller.isActive.value = value;
+                                },
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                      controller.user.value.id != ""
-                          ? Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              child: Center(
-                                child: ClipOval(
-                                  child: NetworkImageWidget(
-                                    imageUrl: controller.user.value.profilePictureURL.toString(),
-                                    height: Responsive.width(30, context),
-                                    width: Responsive.width(30, context),
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                              ),
-                            )
-                          : SizedBox(),
-                      Text(
-                        'First Name'.tr,
-                        style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark),
-                      ),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: double.infinity),
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 5.0),
-                          child: TextFormField(
-                            controller: controller.firstName.value,
-                            cursorColor: AppColors.colorPrimary,
-                            textAlignVertical: TextAlignVertical.center,
-                            validator: validateName,
-                            onSaved: (String? val) {
-                              controller.firstName.value.text = val.toString();
-                            },
-                            textInputAction: TextInputAction.next,
-                            decoration: InputDecoration(
-                              contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                              fillColor: Colors.white,
-                              hintText: 'First Name'.tr,
-                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(15.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                              errorBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                borderRadius: BorderRadius.circular(15.0),
-                              ),
-                              focusedErrorBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                borderRadius: BorderRadius.circular(15.0),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: Colors.grey.shade200),
-                                borderRadius: BorderRadius.circular(15.0),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10, bottom: 5),
-                        child: Text(
-                          'Last Name'.tr,
-                          style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark),
-                        ),
-                      ),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: double.infinity),
-                        child: TextFormField(
-                          controller: controller.lastName.value,
-                          cursorColor: AppColors.colorPrimary,
-                          textAlignVertical: TextAlignVertical.center,
+                    ),
+                    // ── Personal details ─────────────────────────────────
+                    DsFormSection(
+                      title: 'Personal details'.tr,
+                      icon: Icons.person_outline_rounded,
+                      children: [
+                        _FormField(
+                          label: 'First Name'.tr,
+                          hint: 'First Name'.tr,
+                          controller: controller.firstName.value,
                           validator: validateName,
+                          prefixIcon: Icons.badge_outlined,
+                          onSaved: (String? val) {
+                            controller.firstName.value.text = val.toString();
+                          },
+                          textInputAction: TextInputAction.next,
+                        ),
+                        _FormField(
+                          label: 'Last Name'.tr,
+                          hint: 'Last Name'.tr,
+                          controller: controller.lastName.value,
+                          validator: validateName,
+                          prefixIcon: Icons.badge_outlined,
                           onSaved: (String? val) {
                             controller.lastName.value.text = val.toString();
                           },
                           textInputAction: TextInputAction.next,
-                          decoration: InputDecoration(
-                            contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                            fillColor: Colors.white,
-                            hintText: 'Last Name'.tr,
-                            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(15.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                            errorBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                            focusedErrorBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Colors.grey.shade200),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                          ),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10, bottom: 5),
-                        child: Text(
-                          'Email Address'.tr,
-                          style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark),
-                        ),
-                      ),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: double.infinity),
-                        child: TextFormField(
+                        _FormField(
+                          label: 'Email Address'.tr,
+                          hint: 'Email Address'.tr,
                           controller: controller.email.value,
-                          cursorColor: AppColors.colorPrimary,
-                          textAlignVertical: TextAlignVertical.center,
                           validator: validateEmail,
+                          prefixIcon: Icons.mail_outline_rounded,
+                          // Kept exactly as before: the decoration (not the
+                          // field) is disabled when editing an existing worker.
+                          decorationEnabled: Get.arguments == null ? true : false,
                           onSaved: (String? val) {
                             controller.email.value.text = val.toString();
                           },
                           textInputAction: TextInputAction.next,
-                          decoration: InputDecoration(
-                            enabled: Get.arguments == null ? true : false,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                            fillColor: Colors.white,
-                            hintText: 'Email Address'.tr,
-                            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(15.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                            errorBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                            focusedErrorBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Colors.grey.shade200),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                            disabledBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Colors.grey.shade200),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                          ),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10, bottom: 5),
-                        child: Text(
-                          'Phone Number'.tr,
-                          style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark),
-                        ),
-                      ),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: double.infinity),
-                        child: TextFormField(
+                        _FormField(
+                          label: 'Phone Number'.tr,
+                          hint: 'Phone Number'.tr,
                           controller: controller.mobile.value,
-                          cursorColor: AppColors.colorPrimary,
-                          textAlignVertical: TextAlignVertical.center,
                           validator: validateEmptyField,
-                          textInputAction: TextInputAction.next,
+                          prefixIcon: Icons.call_outlined,
                           keyboardType: TextInputType.phone,
-                          decoration: InputDecoration(
-                            contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                            fillColor: Colors.white,
-                            hintText: 'Phone Number'.tr,
-                            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(15.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                            errorBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                            focusedErrorBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Colors.grey.shade200),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                          ),
+                          textInputAction: TextInputAction.next,
+                          bottomSpacing: DsSpace.sm,
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10, bottom: 5),
-                        child: Text(
-                          'Address'.tr,
-                          style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark),
-                        ),
-                      ),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: double.infinity),
-                        child: TextFormField(
+                      ],
+                    ),
+                    // ── Work details ─────────────────────────────────────
+                    DsFormSection(
+                      title: 'Work details'.tr,
+                      icon: Icons.work_outline_rounded,
+                      children: [
+                        _FormField(
+                          label: 'Address'.tr,
+                          hint: 'Address'.tr,
                           controller: controller.address.value,
-                          cursorColor: AppColors.colorPrimary,
-                          textAlignVertical: TextAlignVertical.center,
                           validator: validateEmptyField,
+                          prefixIcon: Icons.location_on_outlined,
+                          suffix: Icon(Icons.my_location_rounded, size: 20, color: c.brand),
+                          textInputAction: TextInputAction.next,
                           onTap: () {
                             checkPermission(() async {
                               ShowToastDialog.showLoader("Please wait");
@@ -292,150 +201,62 @@ class AddOrUpdateWorkerScreen extends StatelessWidget {
                               }
                             }, context);
                           },
-                          textInputAction: TextInputAction.next,
-                          decoration: InputDecoration(
-                            contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                            fillColor: Colors.white,
-                            hintText: 'Address'.tr,
-                            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(15.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                            errorBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                            focusedErrorBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Colors.grey.shade200),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                          ),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10, bottom: 5),
-                        child: Text(
-                          'Salary'.tr,
-                          style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark),
-                        ),
-                      ),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: double.infinity),
-                        child: TextFormField(
+                        _FormField(
+                          label: 'Salary'.tr,
+                          hint: 'Salary'.tr,
                           controller: controller.salary.value,
-                          cursorColor: AppColors.colorPrimary,
-                          textAlignVertical: TextAlignVertical.center,
                           validator: validateEmptyField,
                           keyboardType: TextInputType.number,
                           inputFormatters: [
                             FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
                           ],
+                          prefix: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
+                            child: Text(currencyData!.symbol.toString(), style: t.bodyStrong.withColor(c.textSecondary)),
+                          ),
                           onSaved: (String? val) {
                             controller.salary.value.text = val.toString();
                           },
                           textInputAction: TextInputAction.next,
-                          decoration: InputDecoration(
-                            contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                            fillColor: Colors.white,
-                            hintText: 'Salary'.tr,
-                            prefixIcon: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                              child: Text(currencyData!.symbol.toString()),
-                            ),
-                            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(15.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                            errorBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                            focusedErrorBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Colors.grey.shade200),
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
+                          bottomSpacing: DsSpace.sm,
+                        ),
+                      ],
+                    ),
+                    // ── Account (new workers only) ───────────────────────
+                    if (controller.user.value.id == "")
+                      DsFormSection(
+                        title: 'Account'.tr,
+                        icon: Icons.lock_outline_rounded,
+                        children: [
+                          _FormField(
+                            label: 'Password'.tr,
+                            hint: 'Password'.tr,
+                            controller: controller.password.value,
+                            validator: validatePassword,
+                            prefixIcon: Icons.key_outlined,
+                            obscurable: true,
+                            onSaved: (String? val) {
+                              controller.password.value.text = val.toString();
+                            },
+                            textInputAction: TextInputAction.next,
+                            bottomSpacing: DsSpace.sm,
                           ),
-                        ),
+                        ],
                       ),
-                      controller.user.value.id == ""
-                          ? Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 10, bottom: 5),
-                                  child: Text(
-                                    'Password'.tr,
-                                    style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark),
-                                  ),
-                                ),
-                                ConstrainedBox(
-                                  constraints: const BoxConstraints(minWidth: double.infinity),
-                                  child: TextFormField(
-                                    controller: controller.password.value,
-                                    cursorColor: AppColors.colorPrimary,
-                                    textAlignVertical: TextAlignVertical.center,
-                                    validator: validatePassword,
-                                    onSaved: (String? val) {
-                                      controller.password.value.text = val.toString();
-                                    },
-                                    textInputAction: TextInputAction.next,
-                                    decoration: InputDecoration(
-                                      contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                                      fillColor: Colors.white,
-                                      hintText: 'Password'.tr,
-                                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(15.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                                      errorBorder: OutlineInputBorder(
-                                        borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                        borderRadius: BorderRadius.circular(15.0),
-                                      ),
-                                      focusedErrorBorder: OutlineInputBorder(
-                                        borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                        borderRadius: BorderRadius.circular(15.0),
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderSide: BorderSide(color: Colors.grey.shade200),
-                                        borderRadius: BorderRadius.circular(15.0),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            )
-                          : SizedBox(),
-                      SizedBox(
-                        height: 14,
-                      ),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.only(top: 10, bottom: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10.0),
-                              side: BorderSide(color: AppColors.colorPrimary),
-                            ),
-                            backgroundColor: AppColors.colorPrimary),
-                        onPressed: () {
-                          _validate(controller, context);
-                        },
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Text(
-                              'Save'.tr,
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: themeChange.getTheme() ? Colors.black : Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    ],
-                  ),
+                  ]),
                 ),
+              ),
+            ),
+            bottomBar: DsStickyBar(
+              child: DsButton.primary(
+                label: 'Save'.tr,
+                icon: Icons.check_rounded,
+                size: DsButtonSize.lg,
+                expand: true,
+                onPressed: () {
+                  _validate(controller, context);
+                },
               ),
             ),
           );
@@ -472,5 +293,95 @@ class AddOrUpdateWorkerScreen extends StatelessWidget {
     } else {
       controller.validate = AutovalidateMode.onUserInteraction;
     }
+  }
+}
+
+/// Labelled DS-styled [TextFormField]. Used instead of [DsTextField] because
+/// these fields need `onSaved` (the form calls `save()`) and a decoration-only
+/// disabled state, which the DS field does not expose.
+class _FormField extends StatefulWidget {
+  final String label;
+  final String? hint;
+  final TextEditingController controller;
+  final FormFieldValidator<String>? validator;
+  final FormFieldSetter<String>? onSaved;
+  final IconData? prefixIcon;
+  final Widget? prefix;
+  final Widget? suffix;
+  final TextInputType? keyboardType;
+  final TextInputAction? textInputAction;
+  final List<TextInputFormatter>? inputFormatters;
+  final VoidCallback? onTap;
+  final bool obscurable;
+  final bool decorationEnabled;
+  final double bottomSpacing;
+
+  const _FormField({
+    required this.label,
+    this.hint,
+    required this.controller,
+    this.validator,
+    this.onSaved,
+    this.prefixIcon,
+    this.prefix,
+    this.suffix,
+    this.keyboardType,
+    this.textInputAction,
+    this.inputFormatters,
+    this.onTap,
+    this.obscurable = false,
+    this.decorationEnabled = true,
+    this.bottomSpacing = DsSpace.lg,
+  });
+
+  @override
+  State<_FormField> createState() => _FormFieldState();
+}
+
+class _FormFieldState extends State<_FormField> {
+  late bool _obscured = widget.obscurable;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget? suffix = widget.suffix;
+    if (widget.obscurable) {
+      suffix = IconButton(
+        tooltip: _obscured ? 'Show password'.tr : 'Hide password'.tr,
+        icon: Icon(_obscured ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 20),
+        onPressed: () => setState(() => _obscured = !_obscured),
+      );
+    }
+    return Padding(
+      padding: EdgeInsets.only(bottom: widget.bottomSpacing),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DsFieldLabel(widget.label),
+          TextFormField(
+            controller: widget.controller,
+            cursorColor: context.dsColors.brand,
+            textAlignVertical: TextAlignVertical.center,
+            style: DsTypography.bodyStrong.copyWith(color: context.dsColors.textPrimary),
+            validator: widget.validator,
+            onSaved: widget.onSaved,
+            onTap: widget.onTap,
+            obscureText: _obscured,
+            obscuringCharacter: '●',
+            keyboardType: widget.keyboardType,
+            textInputAction: widget.textInputAction,
+            inputFormatters: widget.inputFormatters,
+            decoration: DsInputDecoration.of(
+              context,
+              hint: widget.hint,
+              prefixIcon: widget.prefixIcon,
+              prefix: widget.prefix,
+              suffix: suffix,
+              enabled: widget.decorationEnabled,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

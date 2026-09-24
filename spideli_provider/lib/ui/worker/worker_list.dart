@@ -1,10 +1,10 @@
-import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/controller/all_workers_controller.dart';
 import 'package:spideliprovider/controller/dashboard_controller.dart';
+import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
-import 'package:spideliprovider/themes/app_colors.dart';
+import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/ui/add_worker/add_or_update_worker.dart';
 import 'package:spideliprovider/ui/dashboard/dashboard_screen.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
@@ -12,31 +12,44 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
+/// Workers directory (archetype G): avatar contact rows with an online status
+/// dot, salary badge and a destructive action, in a 1/2/3 column adaptive
+/// grid. This screen is a drawer tab of [DashBoardScreen], and it already had
+/// its own Scaffold, so it keeps exactly one (as a [DsScaffold] without a bar).
 class AllWorkersScreen extends StatelessWidget {
   const AllWorkersScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+    // Subscribes the page to theme changes.
+    Provider.of<DarkThemeProvider>(context);
     return GetX<AllWorkersController>(
         init: AllWorkersController(),
         builder: (controller) {
-          return Scaffold(
-            body: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: controller.user.isEmpty
-                  ? Center(child: emptyView(text: 'Worker not available.'.tr, themeChange: themeChange))
-                  : ListView.builder(
-                      shrinkWrap: true,
-                      padding: EdgeInsets.zero,
-                      itemCount: controller.user.length,
-                      itemBuilder: (context, index) {
-                        return buildCategoryItem(controller.user[index], context, controller, themeChange);
-                      },
-                    ),
+          final l = context.dsLayout;
+          return DsScaffold(
+            maxContentWidth: DsLayout.wideMax,
+            body: DsAsync(
+              isLoading: false,
+              isEmpty: controller.user.isEmpty,
+              empty: DsEmptyState(
+                icon: Icons.groups_outlined,
+                title: 'Worker not available.'.tr,
+                message: 'Add your team members so you can assign them to bookings.'.tr,
+              ),
+              builder: (_) => GridView.builder(
+                padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.md, l.gutter, DsSpace.huge + DsSpace.xxl),
+                gridDelegate: DsLayout.gridDelegate(maxItemWidth: 420, mainAxisExtent: 136),
+                itemCount: controller.user.length,
+                itemBuilder: (context, index) {
+                  return DsFadeSlideIn(
+                    index: index,
+                    child: buildCategoryItem(controller.user[index], context, controller),
+                  );
+                },
+              ),
             ),
-            floatingActionButton: FloatingActionButton(
-              backgroundColor: AppColors.colorPrimary,
+            floatingActionButton: FloatingActionButton.extended(
               onPressed: () {
                 Get.to(const AddOrUpdateWorkerScreen())!.then((value) {
                   if (value != null) {
@@ -44,181 +57,123 @@ class AllWorkersScreen extends StatelessWidget {
                   }
                 });
               },
-              shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(16.0))),
-              child: const Icon(
-                Icons.add,
-                color: Colors.white,
-              ),
+              icon: const Icon(Icons.person_add_alt_1_rounded),
+              label: Text('Add Worker'.tr),
             ),
           );
         });
   }
 
-  buildCategoryItem(User model, BuildContext context, controller, themeChange) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 5),
-      child: GestureDetector(
-        onTap: () async {
-          Get.to(const AddOrUpdateWorkerScreen(), arguments: {
-            "User": model,
-          })!
-              .then((value) {
-            if (value != null) {
-              controller.getData();
-            }
-          });
-        },
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.grey.shade300, width: 1),
-            color: themeChange.getTheme() ? AppColors.darkContainerBorderColor : AppColors.colorLightGrey,
+  Widget buildCategoryItem(User model, BuildContext context, controller) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final bool isOnline = model.online == true;
+    return DsCard.outlined(
+      padding: const EdgeInsets.all(DsSpace.md),
+      semanticLabel: model.fullName(),
+      onTap: () async {
+        Get.to(const AddOrUpdateWorkerScreen(), arguments: {
+          "User": model,
+        })!
+            .then((value) {
+          if (value != null) {
+            controller.getData();
+          }
+        });
+      },
+      child: Row(
+        children: [
+          DsAvatar(
+            imageUrl: model.profilePictureURL,
+            name: model.fullName(),
+            size: 54,
+            ring: isOnline,
+            statusTone: isOnline ? DsTone.success : DsTone.neutral,
           ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            child: Row(
+          const DsGap(DsSpace.md),
+          Expanded(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                ClipOval(
-                  child: Container(
-                      height: 60,
-                      width: 60,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        image: model.profilePictureURL != ''
-                            ? DecorationImage(
-                                image: NetworkImage(model.profilePictureURL.toString()),
-                                fit: BoxFit.cover,
-                              )
-                            : DecorationImage(
-                                image: NetworkImage(placeholderImage),
-                                fit: BoxFit.cover,
-                              ),
-                      )),
+                Text(
+                  model.firstName + ' ' + model.lastName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.titleSm,
                 ),
-                SizedBox(
-                  width: 10,
+                const DsGap(DsSpace.xxs),
+                Text(
+                  model.email,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.bodySm,
                 ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        model.firstName + ' ' + model.lastName,
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                    InkWell(
-                                      onTap: () {
-                                        showWorkerDeleteDialog(model, context, controller);
-                                      },
-                                      child: Container(
-                                        width: 30,
-                                        height: 30,
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(20),
-                                          color: Colors.red,
-                                        ),
-                                        child: const Icon(
-                                          Icons.delete_outline_outlined,
-                                          color: Colors.white,
-                                          size: 18,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                Text(
-                                  model.email,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                                Text(
-                                  amountShow(amount: model.salary!),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                const DsGap(DsSpace.sm),
+                Row(
+                  children: [
+                    DsStatusChip(
+                      label: model.online == false ? "Offline".tr : "Online".tr,
+                      tone: isOnline ? DsTone.success : DsTone.neutral,
+                      pulse: isOnline,
+                    ),
+                    const DsGap(DsSpace.sm),
+                    Flexible(
+                      child: Text(
+                        amountShow(amount: model.salary!),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.labelSm.withColor(c.textSecondary).tabular,
                       ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Text(
-                          model.online == false ? "Offline".tr : "Online".tr,
-                          style: TextStyle(
-                            color: model.online == false ? Colors.red : Colors.green,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      )
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-        ),
+          DsIconButton(
+            icon: Icons.delete_outline_rounded,
+            semanticLabel: 'Delete'.tr,
+            variant: DsIconButtonVariant.tonal,
+            color: c.dangerStrong,
+            size: 36,
+            onPressed: () {
+              showWorkerDeleteDialog(model, context, controller);
+            },
+          ),
+        ],
       ),
     );
   }
 
   showWorkerDeleteDialog(User User, BuildContext context, controller) {
-    Widget okButton = TextButton(
-      child: Text(
-        "Ok".tr,
-      ),
-      onPressed: () async {
-        ShowToastDialog.showLoader("Please wait".tr);
-
-        FireStoreUtils.deleteWorker(User.id).then((value) async {
-          ShowToastDialog.closeLoader();
-          controller.getData();
-          DashBoardController dashBoardController = Get.put(DashBoardController());
-          dashBoardController.onSelectItem(2);
-          await Get.to(const DashBoardScreen());
-        });
-      },
-    );
-    Widget cancel = TextButton(
-      child: Text("Cancel".tr),
-      onPressed: () {
-        Get.back();
-      },
-    );
-
-    // set up the AlertDialog
-    AlertDialog alert = AlertDialog(
-      title: Text(User.fullName()),
-      content: Text('Are you sure you want to delete this worker?'.tr),
-      actions: [
-        okButton,
-        cancel,
-      ],
-    );
-
     // show the dialog
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return alert;
+        return DsDialog(
+          title: User.fullName(),
+          message: 'Are you sure you want to delete this worker?'.tr,
+          icon: Icons.person_remove_alt_1_outlined,
+          tone: DsTone.danger,
+          destructive: true,
+          primaryLabel: "Ok".tr,
+          onPrimary: () async {
+            ShowToastDialog.showLoader("Please wait".tr);
+
+            FireStoreUtils.deleteWorker(User.id).then((value) async {
+              ShowToastDialog.closeLoader();
+              controller.getData();
+              DashBoardController dashBoardController = Get.put(DashBoardController());
+              dashBoardController.onSelectItem(2);
+              await Get.to(const DashBoardScreen());
+            });
+          },
+          secondaryLabel: "Cancel".tr,
+          onSecondary: () {
+            Get.back();
+          },
+        );
       },
     );
   }

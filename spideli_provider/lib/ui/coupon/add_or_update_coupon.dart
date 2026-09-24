@@ -11,7 +11,7 @@ import 'package:datetime_picker_formfield_new/datetime_picker_formfield.dart';
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/controller/add_or_update_coupon_controller.dart';
 import 'package:spideliprovider/services/helper.dart';
-import 'package:spideliprovider/themes/app_colors.dart';
+import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/cupertino.dart';
@@ -21,364 +21,263 @@ import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+/// Add / edit coupon (archetype F): artwork first, then the coupon details,
+/// discount type as a segmented switcher, validity and the two visibility
+/// toggles, with the submit action in a sticky bar. Values, validators and
+/// the Firestore write are untouched.
 class AddOrUpdateCouponScreen extends StatelessWidget {
   const AddOrUpdateCouponScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+    // Subscribes the page to theme changes.
+    Provider.of<DarkThemeProvider>(context);
     return GetX<AddOrUpdateCouponController>(
         init: AddOrUpdateCouponController(),
         builder: (controller) {
-          return Scaffold(
-            backgroundColor: themeChange.getTheme() ? AppColors.colorDark : AppColors.colorWhite,
-            appBar: AppBar(
-              backgroundColor: themeChange.getTheme() ? AppColors.colorDark : AppColors.colorWhite,
-              title: Text(
-                controller.serviceModel.value.id != null ? "Edit Coupon".tr : "Add Coupon".tr,
-                style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 18, fontFamily: AppColors.semiBold),
-              ),
-              leading: InkWell(
-                  onTap: () {
-                    Get.back();
-                  },
-                  child: const Icon(
-                    Icons.arrow_back,
-                  )),
-            ),
-            body: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  height: 1,
-                  width: MediaQuery.of(context).size.width,
-                  color: Colors.black12,
-                ),
-                Expanded(
-                  child: Form(
-                    key: controller.formKey.value,
-                    autovalidateMode: controller.autoValidateMode,
-                    child: Container(
-                      height: MediaQuery.of(context).size.height,
-                      margin: EdgeInsets.fromLTRB(20, 20, 20, 20),
-                      child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          children: [
-                            Container(
-                                padding: const EdgeInsets.only(top: 10, bottom: 5),
-                                child: Text(
-                                  "Select Section".tr,
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: themeChange.getTheme() ? Colors.white : AppColors.colorDark),
-                                )),
-                            DropdownButtonFormField<SectionModel>(
-                                isExpanded: true,
-                                decoration: InputDecoration(
-                                  contentPadding: const EdgeInsets.fromLTRB(10, 2, 10, 2),
-                                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(7.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                                  errorBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                    borderRadius: BorderRadius.circular(7.0),
-                                  ),
-                                  focusedErrorBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                    borderRadius: BorderRadius.circular(7.0),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: Colors.grey.shade400),
-                                    borderRadius: BorderRadius.circular(7.0),
-                                  ),
-                                ),
-                                validator: (value) => value == null ? 'field required' : null,
-                                value: controller.selectedSection.value.id == null ? null : controller.selectedSection.value,
-                                onChanged: (value) async {
-                                  controller.selectedSection.value = value!;
-                                },
-                                hint: Text("Select OnDemand section".tr),
-                                items: controller.sectionList.map((item) {
-                                  return DropdownMenuItem(
-                                    value: item,
-                                    child: Text(item.name.toString()),
-                                  );
-                                }).toList()),
-                            Container(
-                                padding: const EdgeInsets.only(top: 10, bottom: 5),
-                                child: Text(
-                                  "Coupon Code".tr,
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: themeChange.getTheme() ? Colors.white : AppColors.colorDark),
-                                )),
-                            TextFormField(
-                                controller: controller.couponCode.value,
-                                textAlignVertical: TextAlignVertical.center,
-                                textInputAction: TextInputAction.next,
-                                validator: validateEmptyField,
-                                keyboardType: TextInputType.text,
-                                cursorColor: AppColors.colorPrimary,
-                                decoration: InputDecoration(
-                                  contentPadding: const EdgeInsets.fromLTRB(10, 2, 10, 2),
-                                  hintText: "Add coupon code".tr,
-                                  hintStyle: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 17),
-                                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(7.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                                  errorBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                    borderRadius: BorderRadius.circular(7.0),
-                                  ),
-                                  focusedErrorBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                    borderRadius: BorderRadius.circular(7.0),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: Colors.grey.shade400),
-                                    borderRadius: BorderRadius.circular(7.0),
-                                  ),
-                                )),
-                            Container(
-                                padding: const EdgeInsets.only(top: 10, bottom: 5),
-                                child: Text(
-                                  "Select Coupon Type".tr,
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: themeChange.getTheme() ? Colors.white : AppColors.colorDark),
-                                )),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Theme(
-                                    data: Theme.of(context).copyWith(unselectedWidgetColor: Colors.grey, disabledColor: Colors.grey),
-                                    child: RadioListTile(
-                                        contentPadding: EdgeInsets.zero,
-                                        title: Text(
-                                          'Fix Price'.tr,
-                                          style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 14, fontFamily: AppColors.medium, fontWeight: FontWeight.bold),
-                                        ),
-                                        value: "Fix Price".tr,
-                                        groupValue: controller.couponType.value,
-                                        activeColor: AppColors.colorPrimary,
-                                        onChanged: (value) {
-                                          controller.couponType.value = value!.toString();
-                                        }),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: Theme(
-                                    data: Theme.of(context).copyWith(
-                                      unselectedWidgetColor: Colors.grey,
-                                      disabledColor: Colors.grey,
-                                    ),
-                                    child: RadioListTile(
-                                        contentPadding: EdgeInsets.zero,
-                                        title: Text(
-                                          'Percentage'.tr,
-                                          style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 14, fontFamily: AppColors.medium, fontWeight: FontWeight.bold),
-                                        ),
-                                        value: "Percentage".tr,
-                                        activeColor: AppColors.colorPrimary,
-                                        groupValue: controller.couponType.value,
-                                        onChanged: (value) {
-                                          controller.couponType.value = value!.toString();
-                                        }),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(
-                              height: 15,
-                            ),
-                            Container(
-                                padding: const EdgeInsets.only(top: 10, bottom: 5),
-                                child: Text(
-                                  controller.couponType.value == "Percentage".tr ? "Coupon Percentage" : "Coupon amount".tr,
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: themeChange.getTheme() ? Colors.white : AppColors.colorDark),
-                                )),
-                            TextFormField(
-                                controller: controller.addPrice.value,
-                                textAlignVertical: TextAlignVertical.center,
-                                textInputAction: TextInputAction.next,
-                                validator: validateEmptyField,
-                                keyboardType: TextInputType.number,
-                                cursorColor: AppColors.colorPrimary,
-                                decoration: InputDecoration(
-                                  suffixIcon: Container(
-                                    margin: EdgeInsets.only(top: 11, right: 0),
-                                    child: Text(
-                                      controller.couponType.value == "Percentage".tr ? "%" : currencyData!.symbol.toString(),
-                                      style: TextStyle(color: AppColors.colorPrimary, fontSize: 22, fontFamily: AppColors.medium, fontWeight: FontWeight.bold),
-                                    ),
-                                  ),
-                                  contentPadding: const EdgeInsets.fromLTRB(10, 2, 10, 2),
-                                  hintText: controller.couponType.value == "Percentage".tr ? "Add percentage".tr : "Add price".tr,
-                                  hintStyle: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 17),
-                                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(7.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                                  errorBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                    borderRadius: BorderRadius.circular(7.0),
-                                  ),
-                                  focusedErrorBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                    borderRadius: BorderRadius.circular(7.0),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: Colors.grey.shade400),
-                                    borderRadius: BorderRadius.circular(7.0),
-                                  ),
-                                )),
-                            Container(
-                                padding: const EdgeInsets.only(top: 10, bottom: 5),
-                                child: Text(
-                                  "Expires at".tr,
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: themeChange.getTheme() ? Colors.white : AppColors.colorDark),
-                                )),
-                            DateTimeField(
-                              format: controller.format,
-                              controller: controller.expiryDate.value,
-                              validator: (date) => (controller.expiryDate.value.text == '') ? "This field can't be empty.".tr : null,
-                              textInputAction: TextInputAction.done,
-                              style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 17, fontFamily: AppColors.medium, fontWeight: FontWeight.bold),
-                              decoration: InputDecoration(
-                                  contentPadding: EdgeInsets.fromLTRB(15, 10, 15, 10),
-                                  hintText: "Select date".tr,
-                                  hintStyle: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 17, fontFamily: AppColors.medium, fontWeight: FontWeight.bold),
-                                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(7.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                                  errorBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                    borderRadius: BorderRadius.circular(7.0),
-                                  ),
-                                  focusedErrorBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                    borderRadius: BorderRadius.circular(7.0),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: Colors.grey.shade400),
-                                    borderRadius: BorderRadius.circular(7.0),
-                                  )),
-                              onShowPicker: (context, currentValue) {
-                                return showDatePicker(
-                                    context: context,
-                                    firstDate: DateTime.now(),
-                                    initialDate: controller.serviceModel.value.id == null ? DateTime.now() : controller.serviceModel.value.expiresAt!.toDate(),
-                                    lastDate: DateTime(2100));
-                              },
-                            ),
-                            SizedBox(
-                              height: 30,
-                            ),
-                            controller.mediaFiles.isEmpty == true
-                                ? InkWell(
-                                    onTap: () {
-                                      _pickImage(controller, context);
-                                    },
-                                    child: controller.serviceModel.value.id == null
-                                        ? Image(
-                                            image: AssetImage("assets/images/add_offer_img.png"),
-                                            width: MediaQuery.of(context).size.width * 1,
-                                            height: MediaQuery.of(context).size.height * 0.12,
-                                          )
-                                        : controller.serviceModel.value.image == ""
-                                            ? Image(
-                                                image: AssetImage("assets/images/add_offer_img.png"),
-                                                width: MediaQuery.of(context).size.width * 1,
-                                                height: MediaQuery.of(context).size.height * 0.12,
-                                              )
-                                            : ClipRRect(
-                                                borderRadius: new BorderRadius.circular(15.0),
-                                                child: CachedNetworkImage(
-                                                  imageUrl: controller.downloadUrl.value,
-                                                  height: 135,
-                                                  width: 135,
-                                                )))
-                                : _imageBuilder(controller.mediaFiles.first, context),
-                            SizedBox(
-                              height: 15,
-                            ),
-                            Container(
-                              decoration: new BoxDecoration(borderRadius: new BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade400)),
-                              padding: EdgeInsets.zero,
-                              child: SwitchListTile.adaptive(
-                                  activeColor: AppColors.colorPrimary,
-                                  title: Text('Activate'.tr,
-                                      style: TextStyle(fontSize: 15, color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontWeight: FontWeight.bold, fontFamily: AppColors.medium)),
-                                  value: controller.isOfferEnable.value,
-                                  onChanged: (bool newValue) async {
-                                    controller.isOfferEnable.value = newValue;
-                                  }),
-                            ),
-                            SizedBox(
-                              height: 10,
-                            ),
-                            Container(
-                              decoration: new BoxDecoration(borderRadius: new BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade400)),
-                              padding: EdgeInsets.zero,
-                              child: SwitchListTile.adaptive(
-                                  activeColor: AppColors.colorPrimary,
-                                  title: Text('Public'.tr,
-                                      style: TextStyle(fontSize: 15, color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontWeight: FontWeight.bold, fontFamily: AppColors.medium)),
-                                  value: controller.isPublic.value,
-                                  onChanged: (bool newValue) async {
-                                    controller.isPublic.value = newValue;
-                                  }),
-                            ),
-                          ],
+          final c = context.dsColors;
+          final t = context.dsText;
+          final bool isPercent = controller.couponType.value == "Percentage".tr;
+          final bool isEdit = controller.serviceModel.value.id != null;
+          return DsScaffold(
+            title: isEdit ? "Edit Coupon".tr : "Add Coupon".tr,
+            onBack: () {
+              Get.back();
+            },
+            maxContentWidth: DsLayout.contentMax,
+            body: Form(
+              key: controller.formKey.value,
+              autovalidateMode: controller.autoValidateMode,
+              child: SingleChildScrollView(
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, DsSpace.xxl),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: DsFadeSlideIn.stagger([
+                    // ── Artwork ───────────────────────────────────────────
+                    DsFormSection(
+                      title: 'Add Picture'.tr,
+                      icon: Icons.image_outlined,
+                      children: [
+                        Center(
+                          child: controller.mediaFiles.isEmpty == true
+                              ? InkWell(
+                                  borderRadius: DsRadius.brLg,
+                                  onTap: () {
+                                    _pickImage(controller, context);
+                                  },
+                                  child: controller.serviceModel.value.id == null
+                                      ? const _CouponArtworkPlaceholder()
+                                      : controller.serviceModel.value.image == ""
+                                          ? const _CouponArtworkPlaceholder()
+                                          : ClipRRect(
+                                              borderRadius: DsRadius.brLg,
+                                              child: CachedNetworkImage(
+                                                imageUrl: controller.downloadUrl.value,
+                                                height: 135,
+                                                width: 135,
+                                                fit: BoxFit.cover,
+                                                placeholder: (context, url) => Container(width: 135, height: 135, color: c.shimmerBase),
+                                                errorWidget: (context, url, error) => const _CouponArtworkPlaceholder(),
+                                              ),
+                                            ))
+                              : _imageBuilder(controller.mediaFiles.first, context),
                         ),
-                      ),
+                        const DsGap(DsSpace.lg),
+                      ],
                     ),
-                  ),
+                    // ── Coupon details ────────────────────────────────────
+                    DsFormSection(
+                      title: "Coupon Code".tr,
+                      icon: Icons.confirmation_number_outlined,
+                      children: [
+                        DsDropdown<SectionModel>(
+                          label: "Select Section".tr,
+                          hint: "Select OnDemand section".tr,
+                          prefixIcon: Icons.dashboard_customize_outlined,
+                          validator: (value) => value == null ? 'field required' : null,
+                          value: controller.selectedSection.value.id == null ? null : controller.selectedSection.value,
+                          onChanged: (value) async {
+                            controller.selectedSection.value = value!;
+                          },
+                          items: controller.sectionList.map((item) {
+                            return DropdownMenuItem(
+                              value: item,
+                              child: Text(item.name.toString()),
+                            );
+                          }).toList(),
+                        ),
+                        DsTextField(
+                          label: "Coupon Code".tr,
+                          hint: "Add coupon code".tr,
+                          controller: controller.couponCode.value,
+                          validator: validateEmptyField,
+                          keyboardType: TextInputType.text,
+                          textInputAction: TextInputAction.next,
+                          prefixIcon: Icons.qr_code_rounded,
+                          bottomSpacing: DsSpace.sm,
+                        ),
+                      ],
+                    ),
+                    // ── Discount ──────────────────────────────────────────
+                    DsFormSection(
+                      title: "Select Coupon Type".tr,
+                      icon: Icons.discount_outlined,
+                      children: [
+                        DsSegmentedTabs(
+                          segments: [
+                            DsSegment('Fix Price'.tr, icon: Icons.payments_outlined),
+                            DsSegment('Percentage'.tr, icon: Icons.percent_rounded),
+                          ],
+                          // Exact match, like the old radios: an unknown stored
+                          // value selects neither segment.
+                          index: controller.couponType.value == "Fix Price".tr
+                              ? 0
+                              : controller.couponType.value == "Percentage".tr
+                                  ? 1
+                                  : -1,
+                          onChanged: (i) {
+                            if (i == 0) {
+                              controller.couponType.value = "Fix Price".tr;
+                            } else {
+                              controller.couponType.value = "Percentage".tr;
+                            }
+                          },
+                        ),
+                        const DsGap(DsSpace.lg),
+                        DsFieldLabel(isPercent ? "Coupon Percentage" : "Coupon amount".tr, required: true),
+                        TextFormField(
+                          controller: controller.addPrice.value,
+                          textAlignVertical: TextAlignVertical.center,
+                          textInputAction: TextInputAction.next,
+                          validator: validateEmptyField,
+                          keyboardType: TextInputType.number,
+                          cursorColor: c.brand,
+                          style: t.bodyStrong.tabular,
+                          decoration: DsInputDecoration.of(
+                            context,
+                            hint: isPercent ? "Add percentage".tr : "Add price".tr,
+                            prefixIcon: isPercent ? Icons.percent_rounded : Icons.payments_outlined,
+                            suffix: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
+                              child: Text(
+                                isPercent ? "%" : currencyData!.symbol.toString(),
+                                style: t.titleSm.withColor(c.brandStrong),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const DsGap(DsSpace.sm),
+                      ],
+                    ),
+                    // ── Validity ──────────────────────────────────────────
+                    DsFormSection(
+                      title: "Expires at".tr,
+                      icon: Icons.event_available_outlined,
+                      children: [
+                        DateTimeField(
+                          format: controller.format,
+                          controller: controller.expiryDate.value,
+                          validator: (date) => (controller.expiryDate.value.text == '') ? "This field can't be empty.".tr : null,
+                          textInputAction: TextInputAction.done,
+                          style: t.bodyStrong,
+                          decoration: DsInputDecoration.of(
+                            context,
+                            hint: "Select date".tr,
+                            prefixIcon: Icons.calendar_month_outlined,
+                            suffix: Icon(Icons.keyboard_arrow_down_rounded, color: c.textMuted),
+                          ),
+                          onShowPicker: (context, currentValue) {
+                            return showDatePicker(
+                                context: context,
+                                firstDate: DateTime.now(),
+                                initialDate: controller.serviceModel.value.id == null ? DateTime.now() : controller.serviceModel.value.expiresAt!.toDate(),
+                                lastDate: DateTime(2100));
+                          },
+                        ),
+                        const DsGap(DsSpace.sm),
+                      ],
+                    ),
+                    // ── Visibility ────────────────────────────────────────
+                    DsFormSection(
+                      title: 'Visibility'.tr,
+                      icon: Icons.toggle_on_outlined,
+                      children: [
+                        _ToggleRow(
+                          title: 'Activate'.tr,
+                          subtitle: controller.isOfferEnable.value ? 'This coupon can be redeemed.'.tr : 'This coupon is switched off.'.tr,
+                          icon: controller.isOfferEnable.value ? Icons.check_circle_outline_rounded : Icons.pause_circle_outline_rounded,
+                          tone: controller.isOfferEnable.value ? DsTone.success : DsTone.neutral,
+                          value: controller.isOfferEnable.value,
+                          onChanged: (bool newValue) async {
+                            controller.isOfferEnable.value = newValue;
+                          },
+                        ),
+                        const DsGap(DsSpace.md),
+                        _ToggleRow(
+                          title: 'Public'.tr,
+                          subtitle: controller.isPublic.value ? 'Visible to every customer.'.tr : 'Only customers with the code can use it.'.tr,
+                          icon: controller.isPublic.value ? Icons.public_rounded : Icons.lock_outline_rounded,
+                          tone: controller.isPublic.value ? DsTone.info : DsTone.neutral,
+                          value: controller.isPublic.value,
+                          onChanged: (bool newValue) async {
+                            controller.isPublic.value = newValue;
+                          },
+                        ),
+                        const DsGap(DsSpace.sm),
+                      ],
+                    ),
+                  ]),
                 ),
-                GestureDetector(
-                  onTap: () async {
-                    if (controller.formKey.value.currentState?.validate() == false) {
-                    } else {
-                      ShowToastDialog.showLoader(controller.serviceModel.value.id == null ? 'Adding Offer...'.tr : "Editing Offer...".tr);
-                      if (controller.mediaFiles.length > 0) {
-                        var uniqueID = Uuid().v4();
-                        Reference upload = FirebaseStorage.instance.ref().child(STORAGE_ROOT +
-                            'provider/couponImages/$uniqueID'
-                                '.png');
+              ),
+            ),
+            bottomBar: DsStickyBar(
+              child: DsButton.primary(
+                label: controller.serviceModel.value.id == null ? "Create Coupon".tr : "Edit Coupon".tr,
+                icon: Icons.check_rounded,
+                size: DsButtonSize.lg,
+                expand: true,
+                onPressed: () async {
+                  if (controller.formKey.value.currentState?.validate() == false) {
+                  } else {
+                    ShowToastDialog.showLoader(controller.serviceModel.value.id == null ? 'Adding Offer...'.tr : "Editing Offer...".tr);
+                    if (controller.mediaFiles.length > 0) {
+                      var uniqueID = Uuid().v4();
+                      Reference upload = FirebaseStorage.instance.ref().child(STORAGE_ROOT +
+                          'provider/couponImages/$uniqueID'
+                              '.png');
 
-                        UploadTask uploadTask = upload.putFile(controller.mediaFiles.first);
-                        // ignore: body_might_complete_normally_catch_error
-                        uploadTask.whenComplete(() {}).catchError((onError) {
-                          print((onError as PlatformException).message);
-                        });
-                        var storageRef = (await uploadTask.whenComplete(() {})).ref;
-                        controller.downloadUrl.value = await storageRef.getDownloadURL();
-                        controller.downloadUrl.value.toString();
-                      }
-
-                      Timestamp myTimeStamp = Timestamp.fromDate(DateTime.parse(controller.expiryDate.value.text.toString().trim()).toUtc());
-
-                      CouponModel? mOfferModel = controller.serviceModel.value;
-
-                      mOfferModel.code = controller.couponCode.value.text.toString().trim();
-                      mOfferModel.discount = controller.addPrice.value.text.toString().trim();
-                      mOfferModel.discountType = controller.couponType.value;
-                      mOfferModel.image = controller.downloadUrl.toString();
-                      mOfferModel.expiresAt = myTimeStamp;
-                      mOfferModel.isEnabled = controller.isOfferEnable.value;
-                      mOfferModel.isPublic = controller.isPublic.value;
-                      mOfferModel.providerId = MyAppState.currentUser!.id;
-                      mOfferModel.sectionId = controller.selectedSection.value.id;
-
-                      FireStoreUtils.firebaseAddOrUpdateCoupon(mOfferModel);
-
-                      ShowToastDialog.closeLoader();
-                      Get.back(result: true);
+                      UploadTask uploadTask = upload.putFile(controller.mediaFiles.first);
+                      // ignore: body_might_complete_normally_catch_error
+                      uploadTask.whenComplete(() {}).catchError((onError) {
+                        print((onError as PlatformException).message);
+                      });
+                      var storageRef = (await uploadTask.whenComplete(() {})).ref;
+                      controller.downloadUrl.value = await storageRef.getDownloadURL();
+                      controller.downloadUrl.value.toString();
                     }
-                  },
-                  child: Container(
-                    width: MediaQuery.of(context).size.width,
-                    margin: EdgeInsets.fromLTRB(25, 0, 25, 20),
-                    padding: EdgeInsets.fromLTRB(15, 12, 15, 12),
-                    decoration: new BoxDecoration(
-                      color: AppColors.colorPrimary,
-                      borderRadius: new BorderRadius.circular(7),
-                    ),
-                    child: Text(
-                      controller.serviceModel.value.id == null ? "Create Coupon".tr : "Edit Coupon".tr,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white, fontSize: 17, fontFamily: AppColors.medium, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                )
-              ],
+
+                    Timestamp myTimeStamp = Timestamp.fromDate(DateTime.parse(controller.expiryDate.value.text.toString().trim()).toUtc());
+
+                    CouponModel? mOfferModel = controller.serviceModel.value;
+
+                    mOfferModel.code = controller.couponCode.value.text.toString().trim();
+                    mOfferModel.discount = controller.addPrice.value.text.toString().trim();
+                    mOfferModel.discountType = controller.couponType.value;
+                    mOfferModel.image = controller.downloadUrl.toString();
+                    mOfferModel.expiresAt = myTimeStamp;
+                    mOfferModel.isEnabled = controller.isOfferEnable.value;
+                    mOfferModel.isPublic = controller.isPublic.value;
+                    mOfferModel.providerId = MyAppState.currentUser!.id;
+                    mOfferModel.sectionId = controller.selectedSection.value.id;
+
+                    FireStoreUtils.firebaseAddOrUpdateCoupon(mOfferModel);
+
+                    ShowToastDialog.closeLoader();
+                    Get.back(result: true);
+                  }
+                },
+              ),
             ),
           );
         });
@@ -425,23 +324,24 @@ class AddOrUpdateCouponScreen extends StatelessWidget {
     showCupertinoModalPopup(context: context, builder: (context) => action);
   }
 
-  _imageBuilder(dynamic image, context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+  Widget _imageBuilder(dynamic image, BuildContext context) {
+    final c = DsColors.of(context);
     // bool isLastItem = image == null;
     return GestureDetector(
       onTap: () {
         // _viewOrDeleteImage(image);
       },
-      child: Container(
-        width: 100,
-        child: Card(
-          shape: RoundedRectangleBorder(
-            side: BorderSide.none,
-            borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: 135,
+        height: 135,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: c.surfaceAlt,
+            borderRadius: DsRadius.brLg,
+            border: Border.all(color: c.border),
           ),
-          color: themeChange.getTheme() ? Colors.black : Colors.white,
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: DsRadius.brLg,
             child: image is File
                 ? Image.file(
                     image,
@@ -451,6 +351,73 @@ class AddOrUpdateCouponScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Empty artwork drop zone – keeps the app's offer illustration.
+class _CouponArtworkPlaceholder extends StatelessWidget {
+  const _CouponArtworkPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Container(
+      padding: const EdgeInsets.all(DsSpace.lg),
+      decoration: BoxDecoration(
+        color: c.surfaceAlt,
+        borderRadius: DsRadius.brLg,
+        border: Border.all(color: c.border),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image(
+            image: const AssetImage("assets/images/add_offer_img.png"),
+            width: MediaQuery.of(context).size.width * 1,
+            height: MediaQuery.of(context).size.height * 0.12,
+            fit: BoxFit.contain,
+          ),
+          const DsGap(DsSpace.sm),
+          Text('Add Picture'.tr, style: t.label.withColor(c.brandStrong)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Icon + title + description + switch row used by the visibility section.
+class _ToggleRow extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final DsTone tone;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _ToggleRow({required this.title, required this.subtitle, required this.icon, required this.tone, required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.dsText;
+    return Row(
+      children: [
+        DsIconWell(icon: icon, tone: tone, size: 40),
+        const DsGap(DsSpace.md),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(title, style: t.titleSm),
+              const DsGap(DsSpace.xxs),
+              Text(subtitle, style: t.bodySm),
+            ],
+          ),
+        ),
+        Switch.adaptive(value: value, onChanged: onChanged),
+      ],
     );
   }
 }

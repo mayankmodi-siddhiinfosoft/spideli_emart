@@ -4,16 +4,13 @@ import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/controller/profile_controller.dart';
 import 'package:spideliprovider/main.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
-import 'package:spideliprovider/themes/app_colors.dart';
-import 'package:spideliprovider/themes/responsive.dart';
+import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/ui/auth/auth_screen.dart';
 import 'package:spideliprovider/ui/language_screen/language_screen.dart';
 import 'package:spideliprovider/ui/profile/edit_profile_screen.dart';
 import 'package:spideliprovider/ui/theme_change_screen/theme_change_screen.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
-import 'package:spideliprovider/widgets/network_image_widget.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart' as auth;
@@ -23,148 +20,123 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+    // Subscribes this screen to theme changes (colors come from the DS).
+    Provider.of<DarkThemeProvider>(context);
+    final c = context.dsColors;
+    final t = context.dsText;
     return GetX<ProfileController>(
-        init: ProfileController(),
-        builder: (controller) {
-          return Scaffold(
-              body: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 40),
-                  child: Column(children: [
-                    Center(
-                      child: Stack(
-                        alignment: Alignment.bottomCenter,
-                        children: [
-                          ClipOval(
-                            child: NetworkImageWidget(
-                              imageUrl: MyAppState.currentUser!.profilePictureURL.toString(),
-                              height: Responsive.width(30, context),
-                              width: Responsive.width(30, context),
-                            ),
-                          ),
-                          Positioned(
-                            right: 5,
-                            child: InkWell(
-                              onTap: () {
-                                Get.to(EditProfileScreen());
-                              },
-                              child: Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.all(Radius.circular(30)),
-                                    color: AppColors.colorPrimary,
-                                  ),
-                                  child: const Icon(
-                                    Icons.edit,
-                                    color: AppColors.colorWhite,
-                                  )),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(
-                      height: 20,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Text(
-                        controller.user.value.firstName.toString(),
-                        style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontSize: 16),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Text(
-                        controller.user.value.email.toString(),
-                        style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontSize: 14),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    const SizedBox(height: 30),
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
-                        border: Border.all(color: themeChange.getTheme() ? AppColors.darkContainerBorderColor : Colors.grey.shade100, width: 1),
-                        color: themeChange.getTheme() ? AppColors.darkContainerBorderColor : AppColors.colorLightGrey,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          children: [
-                            const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: SizedBox()),
-                            InkWell(
-                                onTap: () {
-                                  Get.to(const ThemChangeScreen());
-                                },
-                                child: profileView(title: "App Theme", context: context, themeChange: themeChange)),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10),
-                              child: Divider(
-                                color: AppColors.assetColorGrey300,
-                              ),
-                            ),
-                            InkWell(
-                                onTap: () {
-                                  Get.to(const LanguageScreen());
-                                },
-                                child: profileView(title: "App Language", context: context, themeChange: themeChange)),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10),
-                              child: Divider(
-                                color: AppColors.assetColorGrey300,
-                              ),
-                            ),
-                            InkWell(
-                                onTap: () {
-                                  showDeleteAccountAlertDialog(context);
-                                },
-                                child: profileView(title: "Delete Account", context: context, themeChange: themeChange)),
-                            const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: SizedBox()),
-                          ],
+      init: ProfileController(),
+      builder: (controller) {
+        // Read the observables here so the GetX observer tracks them.
+        final String firstName = controller.user.value.firstName.toString();
+        final String email = controller.user.value.email.toString();
+        return Scaffold(
+          backgroundColor: c.background,
+          body: SingleChildScrollView(
+            child: DsResponsive(
+              maxWidth: DsLayout.contentMax,
+              padded: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: DsFadeSlideIn.stagger([
+                  const DsGap(DsSpace.xxl),
+                  // Identity card: avatar over a brand gradient with
+                  // the edit shortcut on the card itself.
+                  DsCard.gradient(
+                    padding: const EdgeInsets.all(DsSpace.xxl),
+                    child: Column(
+                      children: [
+                        DsAvatar(
+                          imageUrl: MyAppState.currentUser!.profilePictureURL.toString(),
+                          name: firstName,
+                          size: 104,
+                          ring: true,
+                          onTap: () {
+                            Get.to(EditProfileScreen());
+                          },
                         ),
-                      ),
+                        const DsGap(DsSpace.lg),
+                        Text(
+                          firstName,
+                          textAlign: TextAlign.center,
+                          style: DsTypography.title.copyWith(color: Colors.white),
+                        ),
+                        const DsGap(DsSpace.xxs),
+                        Text(
+                          email,
+                          textAlign: TextAlign.center,
+                          style: DsTypography.body.copyWith(color: Colors.white.withValues(alpha: 0.86)),
+                        ),
+                        const DsGap(DsSpace.xl),
+                        DsButton(
+                          label: 'Edit Profile'.tr,
+                          icon: Icons.edit_outlined,
+                          variant: DsButtonVariant.primary,
+                          color: Colors.white,
+                          onPressed: () {
+                            Get.to(EditProfileScreen());
+                          },
+                        ),
+                      ],
                     ),
-                  ])));
-        });
-  }
-
-  Widget profileView({required String title, required BuildContext context, themeChange}) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title.tr,
-                textAlign: TextAlign.start,
-                style: TextStyle(
-                  color: themeChange.getTheme() ? AppColors.assetColorGrey100 : AppColors.assetColorGrey1000,
-                  fontSize: 16,
-                  fontFamily: AppColors.semiBold,
-                ),
+                  ),
+                  const DsGap(DsSpace.xl),
+                  DsTileGroup(
+                    title: 'Preferences'.tr,
+                    children: [
+                      DsListTile(
+                        title: "App Theme".tr,
+                        leadingIcon: Icons.dark_mode_outlined,
+                        leadingTone: DsTone.info,
+                        showChevron: true,
+                        onTap: () {
+                          Get.to(const ThemChangeScreen());
+                        },
+                      ),
+                      DsListTile(
+                        title: "App Language".tr,
+                        leadingIcon: Icons.translate_rounded,
+                        leadingTone: DsTone.brand,
+                        showChevron: true,
+                        onTap: () {
+                          Get.to(const LanguageScreen());
+                        },
+                      ),
+                    ],
+                  ),
+                  const DsGap(DsSpace.lg),
+                  DsTileGroup(
+                    title: 'Account'.tr,
+                    children: [
+                      DsListTile(
+                        title: "Delete Account".tr,
+                        subtitle: 'This permanently removes your provider account.'.tr,
+                        leadingIcon: Icons.delete_outline_rounded,
+                        leadingTone: DsTone.danger,
+                        destructive: true,
+                        showChevron: true,
+                        onTap: () {
+                          showDeleteAccountAlertDialog(context);
+                        },
+                      ),
+                    ],
+                  ),
+                  const DsGap(DsSpace.xxxl),
+                  Center(child: Text('spideli Provider'.tr, style: t.caption)),
+                  const DsGap(DsSpace.xxl),
+                ]),
               ),
-            ],
+            ),
           ),
-        ),
-        SvgPicture.asset("assets/icons/ic_right.svg"),
-      ],
+        );
+      },
     );
   }
 
   Future<bool> deleteUserFromServer() async {
     var url = '${providerUrl}/api/delete-user';
     try {
-      var response = await http.post(
-        Uri.parse(url),
-        body: {
-          'uuid': auth.FirebaseAuth.instance.currentUser!.uid,
-        },
-      );
+      var response = await http.post(Uri.parse(url), body: {'uuid': auth.FirebaseAuth.instance.currentUser!.uid});
       if (response.statusCode == 200) {
         return true;
       } else {
@@ -175,11 +147,16 @@ class ProfileScreen extends StatelessWidget {
     }
   }
 
-  showDeleteAccountAlertDialog(BuildContext context) {
-    // set up the button
-    Widget okButton = TextButton(
-      child: Text("Ok".tr),
-      onPressed: () async {
+  void showDeleteAccountAlertDialog(BuildContext context) {
+    // set up the AlertDialog
+    final alert = DsDialog(
+      title: "Account delete".tr,
+      message: "Are you sure want to delete Account.".tr,
+      icon: Icons.person_remove_outlined,
+      tone: DsTone.danger,
+      destructive: true,
+      primaryLabel: "Ok".tr,
+      onPrimary: () async {
         ShowToastDialog.showLoader("Please wait".tr);
         await deleteUserFromServer();
         await FireStoreUtils.deleteUser();
@@ -195,22 +172,10 @@ class ProfileScreen extends StatelessWidget {
         //   }
         // });
       },
-    );
-    Widget cancel = TextButton(
-      child: Text("Cancel".tr),
-      onPressed: () {
+      secondaryLabel: "Cancel".tr,
+      onSecondary: () {
         Get.back();
       },
-    );
-
-    // set up the AlertDialog
-    AlertDialog alert = AlertDialog(
-      title: Text("Account delete".tr),
-      content: Text("Are you sure want to delete Account.".tr),
-      actions: [
-        okButton,
-        cancel,
-      ],
     );
 
     // show the dialog

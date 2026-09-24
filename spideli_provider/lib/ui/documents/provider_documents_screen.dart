@@ -11,23 +11,24 @@ import 'package:spideliprovider/controller/provider_documents_controller.dart';
 import 'package:spideliprovider/main.dart';
 import 'package:spideliprovider/model/document_model.dart';
 import 'package:spideliprovider/services/region_service.dart';
-import 'package:spideliprovider/themes/app_colors.dart';
-import 'package:spideliprovider/themes/app_them_data.dart';
+import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/ui/auth/auth_screen.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 
-Color documentStatusColor(DocumentStatus status) {
+/// Semantic tone of a verification status – drives every chip, alert and
+/// icon well on the documents screens.
+DsTone documentStatusTone(DocumentStatus status) {
   switch (status) {
     case DocumentStatus.approved:
-      return Colors.green;
+      return DsTone.success;
     case DocumentStatus.rejected:
-      return Colors.red;
+      return DsTone.danger;
     case DocumentStatus.expired:
-      return Colors.deepOrange;
+      return DsTone.warning;
     case DocumentStatus.pendingReview:
-      return Colors.orange;
+      return DsTone.info;
     case DocumentStatus.notSubmitted:
-      return Colors.grey;
+      return DsTone.neutral;
   }
 }
 
@@ -44,61 +45,71 @@ class ProviderDocumentsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
-    final bool dark = themeChange.getTheme();
+    // Subscribes this screen to theme changes (colors come from the DS).
+    Provider.of<DarkThemeProvider>(context);
+    final c = context.dsColors;
     return GetBuilder<ProviderDocumentsController>(
       init: ProviderDocumentsController(),
       global: false,
       builder: (controller) {
         final Widget body = controller.isLoading.value
-            ? Center(child: CircularProgressIndicator(color: AppColors.colorPrimary))
+            ? const _DocumentsSkeleton()
             : RefreshIndicator(
                 onRefresh: controller.load,
+                color: c.brand,
+                backgroundColor: c.surface,
                 child: ListView(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.fromLTRB(context.dsLayout.gutter, DsSpace.lg, context.dsLayout.gutter, DsSpace.xxxl),
                   children: [
-                    _statusHeader(controller, dark),
-                    const SizedBox(height: 16),
-                    _companyCard(context, controller, dark),
-                    const SizedBox(height: 16),
-                    Text('Documents'.tr, style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: dark ? Colors.white : AppColors.colorDark)),
-                    const SizedBox(height: 4),
-                    Text(
-                      'A service provider needs a commercial register and a unique identification number. Rejected or expired documents can be uploaded again.'.tr,
-                      style: TextStyle(fontFamily: AppThemeData.regular, fontSize: 13, color: dark ? AppThemeData.grey400 : AppThemeData.grey500),
-                    ),
-                    const SizedBox(height: 10),
-                    ...controller.types.map((type) => _documentTile(context, controller, type, dark)),
-                    if (pendingMode) ...[
-                      const SizedBox(height: 24),
-                      OutlinedButton(
-                        onPressed: () async {
-                          await auth.FirebaseAuth.instance.signOut();
-                          MyAppState.currentUser = null;
-                          RegionService.clearProvider();
-                          Get.offAll(() => AuthScreen());
-                        },
-                        child: Text('Back to login'.tr),
+                    DsResponsive(
+                      maxWidth: DsLayout.contentMax,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: DsFadeSlideIn.stagger([
+                          _statusHeader(context, controller),
+                          const DsGap(DsSpace.lg),
+                          _companyCard(context, controller),
+                          const DsGap(DsSpace.lg),
+                          DsSectionHeader(
+                            title: 'Documents'.tr,
+                            icon: Icons.folder_copy_outlined,
+                            subtitle: 'A service provider needs a commercial register and a unique identification number. Rejected or expired documents can be uploaded again.'.tr,
+                            padding: EdgeInsets.zero,
+                          ),
+                          const DsGap(DsSpace.md),
+                          ...controller.types.map((type) => _documentTile(context, controller, type)),
+                          if (pendingMode) ...[
+                            const DsGap(DsSpace.xxl),
+                            DsButton.secondary(
+                              label: 'Back to login'.tr,
+                              icon: Icons.logout_rounded,
+                              expand: true,
+                              onPressed: () async {
+                                await auth.FirebaseAuth.instance.signOut();
+                                MyAppState.currentUser = null;
+                                RegionService.clearProvider();
+                                Get.offAll(() => AuthScreen());
+                              },
+                            ),
+                          ],
+                        ]),
                       ),
-                    ],
+                    ),
                   ],
                 ),
               );
-        if (!pendingMode) return Scaffold(backgroundColor: dark ? AppColors.DARK_BG_COLOR : AppColors.colorWhite, body: body);
+        if (!pendingMode) return Scaffold(backgroundColor: c.background, body: body);
         return Scaffold(
-          backgroundColor: dark ? AppColors.DARK_BG_COLOR : AppColors.colorWhite,
-          appBar: AppBar(
-            automaticallyImplyLeading: false,
-            backgroundColor: dark ? AppColors.colorDark : AppColors.colorWhite,
-            title: Text('Verification'.tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark, fontFamily: AppColors.semiBold, fontSize: 18)),
-          ),
+          backgroundColor: c.background,
+          appBar: DsAppBar(title: 'Verification'.tr, showBack: false, backgroundColor: c.background),
           body: body,
         );
       },
     );
   }
 
-  Widget _statusHeader(ProviderDocumentsController controller, bool dark) {
+  /// Verification banner + progress: how many required documents are approved.
+  Widget _statusHeader(BuildContext context, ProviderDocumentsController controller) {
     final DocumentStatus status = controller.overallStatus;
     String message;
     switch (status) {
@@ -118,116 +129,187 @@ class ProviderDocumentsScreen extends StatelessWidget {
         message = 'Upload the required documents to get verified.'.tr;
         break;
     }
-    final Color color = documentStatusColor(status);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12), border: Border.all(color: color.withValues(alpha: 0.5))),
-      child: Row(
-        children: [
-          Icon(status == DocumentStatus.approved ? Icons.verified : Icons.info_outline, color: color),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(status.label, style: TextStyle(fontFamily: AppThemeData.semiBold, color: color, fontSize: 15)),
-                const SizedBox(height: 2),
-                Text(message, style: TextStyle(fontFamily: AppThemeData.regular, color: dark ? Colors.white : AppColors.colorDark, fontSize: 13)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _companyCard(BuildContext context, ProviderDocumentsController controller, bool dark) {
-    final region = RegionService.regionById(controller.user.value?.regionId);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: dark ? AppColors.darkContainerBorderColor : AppColors.colorLightGrey, borderRadius: BorderRadius.circular(12)),
+    final DsTone tone = documentStatusTone(status);
+    final int total = controller.types.length;
+    final int approved = controller.types.where((t) => controller.statusFor(t) == DocumentStatus.approved).length;
+    return DsCard.tinted(
+      tone: tone,
+      padding: const EdgeInsets.all(DsSpace.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Company information'.tr, style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: dark ? Colors.white : AppColors.colorDark)),
-          const SizedBox(height: 10),
-          TextField(
-            controller: controller.companyName.value,
-            decoration: InputDecoration(labelText: 'Company name'.tr, border: const OutlineInputBorder(), isDense: true),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DsIconWell(icon: status == DocumentStatus.approved ? Icons.verified : Icons.info_outline, tone: tone, size: 44, circle: true),
+              const DsGap(DsSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(status.label, style: context.dsText.titleSm.withColor(context.dsColors.tone(tone).strong)),
+                    const DsGap(DsSpace.xxs),
+                    Text(message, style: context.dsText.bodySm.withColor(context.dsColors.textSecondary)),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          if (controller.canPickRegion)
-            DropdownButtonFormField<String>(
-              initialValue: controller.selectedRegionId.value.isEmpty ? null : controller.selectedRegionId.value,
-              isExpanded: true,
-              decoration: InputDecoration(labelText: 'Management zone'.tr, border: const OutlineInputBorder(), isDense: true),
-              items: RegionService.regions.map((r) => DropdownMenuItem<String>(value: r.id, child: Text(r.displayName))).toList(),
-              onChanged: (value) => controller.selectedRegionId.value = value ?? '',
-            )
-          else if (region != null)
-            Text('${'Management zone'.tr}: ${region.displayName}', style: TextStyle(fontFamily: AppThemeData.medium, color: dark ? Colors.white : AppColors.colorDark)),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerRight,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.colorPrimary),
-              onPressed: () async {
-                ShowToastDialog.showLoader('Please wait...'.tr);
-                final ok = await controller.saveCompanyInfo();
-                ShowToastDialog.closeLoader();
-                ShowToastDialog.showToast(ok ? 'Company information saved'.tr : 'Could not save. Please try again.'.tr);
-              },
-              child: Text('Save'.tr, style: const TextStyle(color: Colors.white)),
-            ),
-          ),
+          if (total > 0) ...[const DsGap(DsSpace.lg), DsProgressBar(value: approved / total, tone: tone, label: '${'Verification'.tr} · $approved/$total', showPercent: true)],
         ],
       ),
     );
   }
 
-  Widget _documentTile(BuildContext context, ProviderDocumentsController controller, DocumentType type, bool dark) {
+  Widget _companyCard(BuildContext context, ProviderDocumentsController controller) {
+    final region = RegionService.regionById(controller.user.value?.regionId);
+    final c = context.dsColors;
+    return DsFormSection(
+      title: 'Company information'.tr,
+      icon: Icons.business_outlined,
+      margin: EdgeInsets.zero,
+      children: [
+        DsTextField(label: 'Company name'.tr, controller: controller.companyName.value, prefixIcon: Icons.storefront_outlined, bottomSpacing: DsSpace.lg),
+        if (controller.canPickRegion)
+          DsDropdown<String>(
+            label: 'Management zone'.tr,
+            value: controller.selectedRegionId.value.isEmpty ? null : controller.selectedRegionId.value,
+            items: RegionService.regions.map((r) => DropdownMenuItem<String>(value: r.id, child: Text(r.displayName))).toList(),
+            onChanged: (value) => controller.selectedRegionId.value = value ?? '',
+            prefixIcon: Icons.map_outlined,
+            bottomSpacing: DsSpace.md,
+          )
+        else if (region != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: DsSpace.md),
+            child: Row(
+              children: [
+                Icon(Icons.map_outlined, size: 18, color: c.textMuted),
+                const DsGap(DsSpace.sm),
+                Expanded(child: Text('${'Management zone'.tr}: ${region.displayName}', style: context.dsText.bodyStrong)),
+              ],
+            ),
+          ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: DsButton.tonal(
+            label: 'Save'.tr,
+            icon: Icons.check_rounded,
+            size: DsButtonSize.sm,
+            onPressed: () async {
+              ShowToastDialog.showLoader('Please wait...'.tr);
+              final ok = await controller.saveCompanyInfo();
+              ShowToastDialog.closeLoader();
+              ShowToastDialog.showToast(ok ? 'Company information saved'.tr : 'Could not save. Please try again.'.tr);
+            },
+          ),
+        ),
+        const DsGap(DsSpace.sm),
+      ],
+    );
+  }
+
+  Widget _documentTile(BuildContext context, ProviderDocumentsController controller, DocumentType type) {
     final UploadedDocument? upload = controller.uploadFor(type);
     final DocumentStatus status = controller.statusFor(type);
-    final Color color = documentStatusColor(status);
-    return Card(
-      color: dark ? AppColors.darkContainerBorderColor : AppColors.colorWhite,
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+    final DsTone tone = documentStatusTone(status);
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpace.md),
+      child: DsCard.outlined(
+        padding: const EdgeInsets.all(DsSpace.lg),
+        borderColor: status == DocumentStatus.rejected ? c.danger : null,
+        semanticLabel: '${type.title} · ${status.label}',
         onTap: () async {
           final result = await Get.to(() => DocumentUploadScreen(controller: controller, type: type));
           if (result == true) controller.update();
         },
-        child: Padding(
-          padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DsIconWell(icon: Icons.badge_outlined, tone: tone, size: 44),
+                const DsGap(DsSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(type.title, style: t.titleSm),
+                      const DsGap(DsSpace.sm),
+                      Wrap(
+                        spacing: DsSpace.sm,
+                        runSpacing: DsSpace.xs,
+                        children: [
+                          DsStatusChip(label: status.label, tone: tone, pulse: status == DocumentStatus.pendingReview),
+                          if ((upload?.number ?? '').isNotEmpty) DsBadge(label: '${'Number'.tr}: ${upload!.number}', small: true),
+                          if (upload?.expireAt != null)
+                            DsBadge(
+                              label: '${'Expires on'.tr}: ${DateFormat('dd MMM yyyy').format(upload!.expireAt!.toDate())}',
+                              icon: Icons.event_outlined,
+                              small: true,
+                              tone: status == DocumentStatus.expired ? DsTone.warning : DsTone.neutral,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const DsGap(DsSpace.sm),
+                Padding(
+                  padding: const EdgeInsets.only(top: DsSpace.md),
+                  child: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: c.textMuted),
+                ),
+              ],
+            ),
+            if (status == DocumentStatus.rejected) ...[
+              const DsGap(DsSpace.md),
+              DsCard.tinted(
+                tone: DsTone.danger,
+                padding: const EdgeInsets.all(DsSpace.md),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.report_gmailerrorred_rounded, size: 18, color: c.dangerStrong),
+                    const DsGap(DsSpace.sm),
+                    Expanded(child: Text('${'Reason'.tr}: ${upload?.rejectionReason ?? 'No reason given'.tr}', style: t.bodySm.withColor(c.dangerStrong))),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Banner + company card + three document rows, shown while the documents
+/// load so the page does not jump.
+class _DocumentsSkeleton extends StatelessWidget {
+  const _DocumentsSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return DsResponsive(
+      maxWidth: DsLayout.contentMax,
+      padded: true,
+      child: DsShimmer(
+        child: SingleChildScrollView(
+          physics: const NeverScrollableScrollPhysics(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Expanded(child: Text(type.title, style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 15, color: dark ? Colors.white : AppColors.colorDark))),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
-                    child: Text(status.label, style: TextStyle(color: color, fontFamily: AppThemeData.medium, fontSize: 12)),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(Icons.arrow_forward_ios_rounded, size: 16),
-                ],
-              ),
-              if ((upload?.number ?? '').isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text('${'Number'.tr}: ${upload!.number}', style: TextStyle(fontFamily: AppThemeData.regular, fontSize: 13, color: dark ? AppThemeData.grey300 : AppThemeData.grey600)),
-              ],
-              if (upload?.expireAt != null) ...[
-                const SizedBox(height: 4),
-                Text('${'Expires on'.tr}: ${DateFormat('dd MMM yyyy').format(upload!.expireAt!.toDate())}',
-                    style: TextStyle(fontFamily: AppThemeData.regular, fontSize: 13, color: dark ? AppThemeData.grey300 : AppThemeData.grey600)),
-              ],
-              if (status == DocumentStatus.rejected) ...[
-                const SizedBox(height: 6),
-                Text('${'Reason'.tr}: ${upload?.rejectionReason ?? 'No reason given'.tr}', style: const TextStyle(fontFamily: AppThemeData.medium, fontSize: 13, color: Colors.red)),
-              ],
+              const DsGap(DsSpace.lg),
+              DsSkeleton.box(width: double.infinity, height: 116),
+              const DsGap(DsSpace.lg),
+              DsSkeleton.box(width: double.infinity, height: 200),
+              const DsGap(DsSpace.lg),
+              DsSkeleton.line(width: 160, height: 16),
+              const DsGap(DsSpace.md),
+              for (int i = 0; i < 3; i++) ...[DsSkeleton.box(width: double.infinity, height: 92), const DsGap(DsSpace.md)],
             ],
           ),
         ),
@@ -272,11 +354,16 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
   Future<void> _pick(bool front) async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
-      builder: (context) => SafeArea(
-        child: Wrap(children: [
-          ListTile(leading: const Icon(Icons.photo_camera), title: Text('Take a photo'.tr), onTap: () => Navigator.pop(context, ImageSource.camera)),
-          ListTile(leading: const Icon(Icons.photo_library), title: Text('Choose from gallery'.tr), onTap: () => Navigator.pop(context, ImageSource.gallery)),
-        ]),
+      backgroundColor: Colors.transparent,
+      builder: (context) => DsSheet(
+        title: 'Add document'.tr,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DsListTile(title: 'Take a photo'.tr, leadingIcon: Icons.photo_camera, showChevron: true, onTap: () => Navigator.pop(context, ImageSource.camera)),
+            DsListTile(title: 'Choose from gallery'.tr, leadingIcon: Icons.photo_library, showChevron: true, onTap: () => Navigator.pop(context, ImageSource.gallery)),
+          ],
+        ),
       ),
     );
     if (source == null) return;
@@ -316,107 +403,132 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool dark = Provider.of<DarkThemeProvider>(context).getTheme();
+    // Subscribes this screen to theme changes (colors come from the DS).
+    Provider.of<DarkThemeProvider>(context);
+    final c = context.dsColors;
+    final t = context.dsText;
     final UploadedDocument? upload = widget.controller.uploadFor(widget.type);
     final DocumentStatus status = widget.controller.statusFor(widget.type);
     final bool editable = status.canUpload;
-    final Color textColor = dark ? Colors.white : AppColors.colorDark;
+    final DsTone tone = documentStatusTone(status);
 
     Widget side(String label, File? picked, String? existing, bool front) {
+      final bool hasImage = picked != null || (existing ?? '').isNotEmpty;
       return Padding(
-        padding: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.only(bottom: DsSpace.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: TextStyle(fontFamily: AppThemeData.medium, color: textColor)),
-            const SizedBox(height: 6),
-            InkWell(
+            DsFieldLabel(label),
+            DsCard.outlined(
+              padding: EdgeInsets.zero,
+              borderColor: hasImage ? c.brandMuted : null,
+              semanticLabel: label,
               onTap: editable ? () => _pick(front) : null,
-              child: Container(
+              child: SizedBox(
                 height: 170,
                 width: double.infinity,
-                decoration: BoxDecoration(border: Border.all(color: AppThemeData.grey400), borderRadius: BorderRadius.circular(12)),
-                clipBehavior: Clip.antiAlias,
                 child: picked != null
                     ? Image.file(picked, fit: BoxFit.cover)
                     : (existing ?? '').isNotEmpty
-                        ? Image.network(existing!, fit: BoxFit.cover, errorBuilder: (_, _, _) => const Center(child: Icon(Icons.broken_image)))
-                        : Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.upload_file, size: 36), Text('Tap to add'.tr)])),
+                    ? DsImage(url: existing, width: double.infinity, height: 170, radius: 0, errorIcon: Icons.broken_image)
+                    : Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            DsIconWell(icon: Icons.upload_file, tone: DsTone.brand, size: 48, circle: true),
+                            const DsGap(DsSpace.sm),
+                            Text('Tap to add'.tr, style: t.bodySm),
+                          ],
+                        ),
+                      ),
               ),
             ),
+            if (hasImage && editable) ...[
+              const DsGap(DsSpace.sm),
+              Align(
+                alignment: Alignment.centerRight,
+                child: DsButton.ghost(label: 'Upload again'.tr, icon: Icons.refresh_rounded, size: DsButtonSize.sm, onPressed: () => _pick(front)),
+              ),
+            ],
           ],
         ),
       );
     }
 
-    return Scaffold(
-      backgroundColor: dark ? AppColors.DARK_BG_COLOR : AppColors.colorWhite,
-      appBar: AppBar(
-        backgroundColor: dark ? AppColors.colorDark : AppColors.colorWhite,
-        iconTheme: IconThemeData(color: textColor),
-        title: Text(widget.type.title, style: TextStyle(color: textColor, fontFamily: AppColors.semiBold, fontSize: 18)),
-      ),
+    return DsScaffold(
+      backgroundColor: c.background,
+      appBar: DsAppBar(title: widget.type.title, backgroundColor: c.background),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(context.dsLayout.gutter, DsSpace.lg, context.dsLayout.gutter, DsSpace.xxxl),
         children: [
-          Row(children: [
-            Text('${'Status'.tr}: ', style: TextStyle(fontFamily: AppThemeData.medium, color: textColor)),
-            Text(status.label, style: TextStyle(fontFamily: AppThemeData.semiBold, color: documentStatusColor(status))),
-          ]),
-          if (status == DocumentStatus.rejected) ...[
-            const SizedBox(height: 6),
-            Text('${'Reason'.tr}: ${upload?.rejectionReason ?? 'No reason given'.tr}', style: const TextStyle(color: Colors.red, fontFamily: AppThemeData.medium)),
-          ],
-          if (!editable) ...[
-            const SizedBox(height: 6),
-            Text(
-              status == DocumentStatus.approved ? 'This document is approved.'.tr : 'This document is being reviewed. You can upload it again if it is rejected.'.tr,
-              style: TextStyle(fontFamily: AppThemeData.regular, color: dark ? AppThemeData.grey400 : AppThemeData.grey500),
+          DsResponsive(
+            maxWidth: DsLayout.contentMax,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: DsFadeSlideIn.stagger([
+                // One clear verdict block at the top: state, reason, what the
+                // provider can do next.
+                DsInlineAlert(
+                  tone: tone,
+                  title: '${'Status'.tr}: ${status.label}',
+                  message: status == DocumentStatus.rejected
+                      ? '${'Reason'.tr}: ${upload?.rejectionReason ?? 'No reason given'.tr}'
+                      : !editable
+                      ? (status == DocumentStatus.approved ? 'This document is approved.'.tr : 'This document is being reviewed. You can upload it again if it is rejected.'.tr)
+                      : 'Add a clear photo of the document and submit it for verification.'.tr,
+                  icon: status == DocumentStatus.approved ? Icons.verified_rounded : Icons.info_outline_rounded,
+                ),
+                const DsGap(DsSpace.xl),
+                if (widget.type.isBuiltIn) ...[
+                  DsTextField(
+                    label: widget.type.id == DocumentType.commercialRegisterId ? 'Commercial register number'.tr : 'Unique identification number'.tr,
+                    controller: _number,
+                    enabled: editable,
+                    prefixIcon: Icons.numbers_rounded,
+                  ),
+                ],
+                if (_needsFront) side(widget.type.backSide ? 'Front side'.tr : 'Document'.tr, _front, upload?.frontImage, true),
+                if (widget.type.backSide) side('Back side'.tr, _back, upload?.backImage, false),
+                if (widget.type.hasExpiry)
+                  DsCard.outlined(
+                    padding: EdgeInsets.zero,
+                    child: DsListTile(
+                      title: 'Expiry date'.tr,
+                      leadingIcon: Icons.event,
+                      leadingTone: DsTone.info,
+                      showChevron: editable,
+                      subtitle: _expiry != null
+                          ? DateFormat('dd MMM yyyy').format(_expiry!)
+                          : upload?.expireAt != null
+                          ? DateFormat('dd MMM yyyy').format(upload!.expireAt!.toDate())
+                          : 'Select'.tr,
+                      onTap: editable
+                          ? () async {
+                              final now = DateTime.now();
+                              final picked = await showDatePicker(context: context, initialDate: now.add(const Duration(days: 1)), firstDate: now, lastDate: DateTime(now.year + 30));
+                              if (picked != null) setState(() => _expiry = picked);
+                            }
+                          : null,
+                    ),
+                  ),
+                const DsGap(DsSpace.xl),
+              ]),
             ),
-          ],
-          const SizedBox(height: 16),
-          if (widget.type.isBuiltIn) ...[
-            TextField(
-              controller: _number,
-              enabled: editable,
-              decoration: InputDecoration(
-                labelText: widget.type.id == DocumentType.commercialRegisterId ? 'Commercial register number'.tr : 'Unique identification number'.tr,
-                border: const OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-          if (_needsFront) side(widget.type.backSide ? 'Front side'.tr : 'Document'.tr, _front, upload?.frontImage, true),
-          if (widget.type.backSide) side('Back side'.tr, _back, upload?.backImage, false),
-          if (widget.type.hasExpiry)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.event),
-              title: Text('Expiry date'.tr, style: TextStyle(color: textColor)),
-              subtitle: Text(
-                _expiry != null
-                    ? DateFormat('dd MMM yyyy').format(_expiry!)
-                    : upload?.expireAt != null
-                        ? DateFormat('dd MMM yyyy').format(upload!.expireAt!.toDate())
-                        : 'Select'.tr,
-              ),
-              onTap: editable
-                  ? () async {
-                      final now = DateTime.now();
-                      final picked = await showDatePicker(context: context, initialDate: now.add(const Duration(days: 1)), firstDate: now, lastDate: DateTime(now.year + 30));
-                      if (picked != null) setState(() => _expiry = picked);
-                    }
-                  : null,
-            ),
-          const SizedBox(height: 20),
-          if (editable)
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.colorPrimary, padding: const EdgeInsets.symmetric(vertical: 14)),
-              onPressed: _submit,
-              child: Text(status == DocumentStatus.notSubmitted ? 'Submit'.tr : 'Upload again'.tr, style: const TextStyle(color: Colors.white, fontSize: 16)),
-            ),
+          ),
         ],
       ),
+      bottomBar: editable
+          ? DsStickyBar(
+              child: DsButton.primary(
+                label: status == DocumentStatus.notSubmitted ? 'Submit'.tr : 'Upload again'.tr,
+                icon: Icons.cloud_upload_outlined,
+                expand: true,
+                size: DsButtonSize.lg,
+                onPressed: _submit,
+              ),
+            )
+          : null,
     );
   }
 }

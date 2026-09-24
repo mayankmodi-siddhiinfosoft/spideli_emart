@@ -1,6 +1,5 @@
-
 import 'package:spideliprovider/constant/show_toast_dialog.dart';
-import 'package:spideliprovider/themes/app_colors.dart';
+import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_otp_text_field/flutter_otp_text_field.dart';
 import 'package:get/get.dart';
@@ -24,62 +23,76 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        leading: InkWell(
-            onTap: () {
-              Navigator.pop(context);
-            },
-            child: Icon(Icons.arrow_back)),
-      ),
-      body: Column(
-        children: [
-          Text("Collect OTP from customer".tr, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-          SizedBox(
-            height: 20,
-          ),
-          OtpTextField(
-            numberOfFields: 6,
-            borderColor: AppColors.colorPrimary,
-            //set to true to show as box or false to show as dash
-            showFieldAsBox: false,
-            //runs when a code is typed in
-            onSubmit: (String verificationCode) {
-              setState(() {
-                otp = verificationCode;
-              });
-            }, // end onSubmit
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 40.0, left: 40.0, top: 40),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: double.infinity),
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.colorPrimary,
-                  padding: EdgeInsets.only(top: 12, bottom: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(25.0),
-                    side: BorderSide(
-                      color: AppColors.colorPrimary,
-                    ),
-                  ),
-                ),
-                child: Text(
-                  "Verify OTP".tr,
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-                onPressed: () async {
-                  if (otp == widget.otp) {
-                    Navigator.pop(context, true);
-                  } else {
-                    ShowToastDialog.showToast("OTP Invalid");
-                  }
-                },
+    final c = context.dsColors;
+    final t = context.dsText;
+    final l = context.dsLayout;
+
+    return DsScaffold(
+      title: 'Verify OTP'.tr,
+      onBack: () {
+        Navigator.pop(context);
+      },
+      maxContentWidth: DsLayout.contentMax,
+      body: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.xxxl, l.gutter, DsSpace.xxxl),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: DsFadeSlideIn.stagger([
+            Center(
+              child: DsIconWell(
+                icon: Icons.password_rounded,
+                tone: DsTone.brand,
+                size: 72,
+                circle: true,
               ),
             ),
-          ),
-        ],
+            DsGap.xxl,
+            Text(
+              "Collect OTP from customer".tr,
+              textAlign: TextAlign.center,
+              style: t.headline,
+            ),
+            DsGap.sm,
+            Text(
+              'Ask the customer for the 6-digit code to confirm this booking.'.tr,
+              textAlign: TextAlign.center,
+              style: t.bodySecondary,
+            ),
+            DsGap.xxxl,
+            OtpTextField(
+              numberOfFields: 6,
+              borderColor: c.border,
+              enabledBorderColor: c.border,
+              focusedBorderColor: c.brand,
+              cursorColor: c.brand,
+              borderWidth: 1.5,
+              fieldWidth: 44,
+              showFieldAsBox: true,
+              textStyle: DsTypography.metric.copyWith(color: c.textPrimary, fontSize: 22),
+              mainAxisAlignment: MainAxisAlignment.center,
+              //runs when a code is typed in
+              onSubmit: (String verificationCode) {
+                setState(() {
+                  otp = verificationCode;
+                });
+              }, // end onSubmit
+            ),
+          ]),
+        ),
+      ),
+      bottomBar: DsStickyBar(
+        child: DsButton.primary(
+          label: "Verify OTP".tr,
+          icon: Icons.check_rounded,
+          expand: true,
+          onPressed: () async {
+            if (otp == widget.otp) {
+              Navigator.pop(context, true);
+            } else {
+              ShowToastDialog.showToast("OTP Invalid");
+            }
+          },
+        ),
       ),
     );
   }

@@ -4,294 +4,286 @@ import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/controller/dashboard_controller.dart';
 import 'package:spideliprovider/main.dart';
 import 'package:spideliprovider/model/user.dart';
-import 'package:spideliprovider/services/helper.dart';
-import 'package:spideliprovider/themes/app_colors.dart';
-import 'package:spideliprovider/themes/app_them_data.dart';
-import 'package:spideliprovider/themes/responsive.dart';
-import 'package:spideliprovider/themes/round_button_fill.dart';
+import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
-import 'package:spideliprovider/widgets/network_image_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
+/// Dashboard shell (archetype A): the app bar + the premium drawer that owns
+/// navigation for every drawer tab. The drawer keeps exactly the same items,
+/// ids, order and `onSelectItem` behaviour – only the presentation changed:
+/// a brand-gradient profile header, a soft "pill" for the selected row and a
+/// destructive log-out row.
 class DashBoardScreen extends StatelessWidget {
   const DashBoardScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+    // Subscribes the page to theme changes.
+    Provider.of<DarkThemeProvider>(context);
     return GetX<DashBoardController>(
         init: DashBoardController(),
         builder: (controller) {
+          final c = context.dsColors;
           return Scaffold(
-            appBar: AppBar(
-              backgroundColor: themeChange.getTheme()
-                  ? AppColors.colorDark
-                  : AppColors.colorWhite,
-              title: Text(
-                controller
-                    .drawerItems[controller.selectedDrawerIndex.value].title,
-                style: TextStyle(
-                    color: themeChange.getTheme()
-                        ? Colors.white
-                        : AppColors.colorDark,
-                    fontSize: 18,
-                    fontFamily: AppColors.semiBold),
-              ),
+            backgroundColor: c.background,
+            appBar: DsAppBar(
+              title: controller.drawerItems[controller.selectedDrawerIndex.value].title,
+              showBack: false,
               leading: Builder(builder: (context) {
-                return InkWell(
-                  onTap: () {
+                return DsIconButton(
+                  icon: Icons.menu_rounded,
+                  semanticLabel: 'Menu'.tr,
+                  onPressed: () {
                     Scaffold.of(context).openDrawer();
                   },
-                  child: Padding(
-                      padding: const EdgeInsets.only(
-                          left: 10, right: 20, top: 20, bottom: 20),
-                      child: Icon(
-                        Icons.menu,
-                        color: themeChange.getTheme()
-                            ? AppColors.colorWhite
-                            : AppColors.colorDark,
-                      )),
                 );
               }),
               actions: [
-                InkWell(
-                  onTap: () {
-                    showResetPwdAlertDialog(context, themeChange, controller);
+                DsIconButton(
+                  icon: Icons.info_outline_rounded,
+                  semanticLabel: 'Status Info'.tr,
+                  variant: DsIconButtonVariant.tonal,
+                  size: 36,
+                  onPressed: () {
+                    showResetPwdAlertDialog(context);
                   },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Icon(Icons.info),
-                  ),
-                )
+                ),
               ],
             ),
-            drawer: buildAppDrawer(context, controller, themeChange),
+            drawer: buildAppDrawer(context, controller),
             body: WillPopScope(
                 onWillPop: controller.onWillPop,
-                child: controller.isLoading.value == true
-                    ? loader()
-                    : controller.getDrawerItemWidget(
-                        controller.selectedDrawerIndex.value)),
+                child: DsAsync(
+                  isLoading: controller.isLoading.value == true,
+                  skeleton: const DsSkeletonList(carded: true),
+                  builder: (_) => controller.getDrawerItemWidget(controller.selectedDrawerIndex.value),
+                )),
           );
         });
   }
 
-  buildAppDrawer(
-      BuildContext context, DashBoardController controller, themeChange) {
+  Widget buildAppDrawer(BuildContext context, DashBoardController controller) {
+    final c = context.dsColors;
+    final t = context.dsText;
     var drawerOptions = <Widget>[];
     for (var i = 0; i < controller.drawerItems.length; i++) {
       var d = controller.drawerItems[i];
-      drawerOptions.add(InkWell(
-        onTap: () {
-          controller.onSelectItem(i);
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                SvgPicture.asset(d.icon,
-                    width: 20,
-                    colorFilter: ColorFilter.mode(
-                        i == controller.selectedDrawerIndex.value
-                            ? AppColors.colorPrimary
-                            : themeChange.getTheme()
-                                ? Colors.white
-                                : Colors.grey.shade600,
-                        BlendMode.srcIn)),
-                const SizedBox(
-                  width: 20,
+      final bool selected = i == controller.selectedDrawerIndex.value;
+      final bool destructive = d.id == 'logout';
+      final Color fg = destructive
+          ? c.dangerStrong
+          : selected
+              ? c.brandStrong
+              : c.textSecondary;
+      drawerOptions.add(Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2, horizontal: DsSpace.md),
+        child: Semantics(
+          selected: selected,
+          button: true,
+          child: Material(
+            color: selected ? c.brandSoft : Colors.transparent,
+            borderRadius: DsRadius.brMd,
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () {
+                controller.onSelectItem(i);
+              },
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: DsSpace.md, horizontal: DsSpace.md),
+                  child: Row(
+                    children: [
+                      SvgPicture.asset(d.icon, width: 20, colorFilter: ColorFilter.mode(fg, BlendMode.srcIn)),
+                      const DsGap(DsSpace.lg),
+                      Expanded(
+                        child: Text(
+                          d.title,
+                          style: (selected ? t.label : t.bodyStrong).withColor(fg),
+                        ),
+                      ),
+                      if (selected)
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(color: c.brand, shape: BoxShape.circle),
+                        ),
+                    ],
+                  ),
                 ),
-                Text(d.title,
-                    style: TextStyle(
-                      color: i == controller.selectedDrawerIndex.value
-                          ? AppColors.colorPrimary
-                          : themeChange.getTheme()
-                              ? Colors.white
-                              : Colors.black,
-                      //    fontWeight: FontWeight.w500,
-                    ))
-              ],
+              ),
             ),
           ),
         ),
       ));
     }
     return Drawer(
-      backgroundColor: Theme.of(context).colorScheme.background,
+      backgroundColor: c.surface,
+      surfaceTintColor: Colors.transparent,
       child: ListView(
+        padding: EdgeInsets.zero,
         children: [
-          DrawerHeader(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                ClipOval(
-                    child: displayCircleImage(
-                        controller.user.value.profilePictureURL, 75, false)),
-                Padding(
-                  padding: const EdgeInsets.only(top: 4.0),
-                  child: Text(
-                    controller.user.value.fullName(),
-                    style: TextStyle(
-                        color: themeChange.getTheme()
-                            ? Colors.white
-                            : Colors.black,
-                        fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Padding(
-                    padding: const EdgeInsets.only(top: 2.0),
-                    child: Text(
-                      controller.user.value.email,
-                      style: TextStyle(
-                          color: themeChange.getTheme()
-                              ? Colors.white
-                              : Colors.black,
-                          fontWeight: FontWeight.normal,
-                          fontSize: 14),
-                    )),
-              ],
-            ),
-          ),
+          _DrawerHeader(user: controller.user.value),
           if ((selectedSectionModel?.adminCommision?.enable == true ||
                   isSubscriptionModelApplied == true) &&
               MyAppState.currentUser?.subscriptionPlanId != null)
-            SubscriptionPlanWidget(
-              onClick: () {
-                Get.back();
-                // By id, not position: inserting Documents shifted the indexes.
-                final int index = controller.drawerItems.indexWhere((e) => e.id == 'subscription');
-                if (index >= 0) controller.selectedDrawerIndex.value = index;
-              },
-              userModel: MyAppState.currentUser!,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(DsSpace.md, DsSpace.md, DsSpace.md, 0),
+              child: SubscriptionPlanWidget(
+                onClick: () {
+                  Get.back();
+                  // By id, not position: inserting Documents shifted the indexes.
+                  final int index = controller.drawerItems.indexWhere((e) => e.id == 'subscription');
+                  if (index >= 0) controller.selectedDrawerIndex.value = index;
+                },
+                userModel: MyAppState.currentUser!,
+              ),
             ),
+          const DsGap(DsSpace.md),
           Column(children: drawerOptions),
+          const DsGap(DsSpace.xxl),
         ],
       ),
     );
   }
 
-  void showResetPwdAlertDialog(BuildContext context, themeChange, controller) {
+  void showResetPwdAlertDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 16),
-          title: const Text('Status Info'),
-          content: SingleChildScrollView(
+        return DsDialog(
+          title: 'Status Info',
+          icon: Icons.info_outline_rounded,
+          tone: DsTone.info,
+          content: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              _StatusInfoRow(
+                tone: DsTone.brand,
+                icon: Icons.fiber_new_rounded,
+                title: "New Booking : ",
+                description: "This status indicates that a new booking request has been received from a customer.",
+              ),
+              _StatusInfoRow(
+                tone: DsTone.info,
+                icon: Icons.today_rounded,
+                title: "Today : ",
+                description: "This status refers to bookings that are scheduled for the current day.",
+              ),
+              _StatusInfoRow(
+                tone: DsTone.warning,
+                icon: Icons.event_rounded,
+                title: "Upcoming : ",
+                description: "Bookings that are scheduled for future dates but not for the current day fall under this status.",
+              ),
+              _StatusInfoRow(
+                tone: DsTone.success,
+                icon: Icons.task_alt_rounded,
+                title: "Completed : ",
+                description: "This status signifies that the service has been successfully provided to the customer, and the booking process is concluded.",
+              ),
+              _StatusInfoRow(
+                tone: DsTone.danger,
+                icon: Icons.cancel_outlined,
+                title: "Canceled",
+                description: "Bookings that have been canceled either by the customer or the service provider are categorized under this status.",
+                last: true,
+              ),
+            ],
+          ),
+          primaryLabel: 'Close',
+          onPrimary: () {
+            Navigator.pop(context); //close Dialog
+          },
+        );
+      },
+    );
+  }
+}
+
+/// Brand-gradient profile block at the top of the drawer.
+class _DrawerHeader extends StatelessWidget {
+  final User user;
+
+  const _DrawerHeader({required this.user});
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.paddingOf(context).top;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: DsGradients.brand(context),
+        borderRadius: const BorderRadius.only(bottomRight: Radius.circular(DsRadius.xxl)),
+      ),
+      padding: EdgeInsets.fromLTRB(DsSpace.xl, top + DsSpace.xl, DsSpace.xl, DsSpace.xl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DsAvatar(
+            imageUrl: user.profilePictureURL,
+            name: user.fullName(),
+            size: 68,
+            ring: true,
+          ),
+          const DsGap(DsSpace.md),
+          Text(
+            user.fullName(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: DsTypography.title.copyWith(color: Colors.white),
+          ),
+          const DsGap(DsSpace.xxs),
+          Text(
+            user.email,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: DsTypography.bodySm.copyWith(color: Colors.white.withValues(alpha: 0.85)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One tone-coded paragraph of the booking-status legend.
+class _StatusInfoRow extends StatelessWidget {
+  final DsTone tone;
+  final IconData icon;
+  final String title;
+  final String description;
+  final bool last;
+
+  const _StatusInfoRow({required this.tone, required this.icon, required this.title, required this.description, this.last = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Padding(
+      padding: EdgeInsets.only(bottom: last ? 0 : DsSpace.lg),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DsIconWell(icon: icon, tone: tone, size: 34),
+          const DsGap(DsSpace.md),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  "New Booking : ",
-                  style: TextStyle(
-                      color: AppColors.colorPrimary,
-                      fontSize: 18,
-                      fontFamily: AppColors.semiBold),
-                ),
-                Text(
-                  "This status indicates that a new booking request has been received from a customer.",
-                  style: TextStyle(
-                      color: themeChange.getTheme()
-                          ? Colors.white
-                          : AppColors.colorDark,
-                      fontSize: 18,
-                      fontFamily: AppColors.semiBold),
-                ),
-                SizedBox(
-                  height: 10,
-                ),
-                Text(
-                  "Today : ",
-                  style: TextStyle(
-                      color: AppColors.colorPrimary,
-                      fontSize: 18,
-                      fontFamily: AppColors.semiBold),
-                ),
-                Text(
-                  "This status refers to bookings that are scheduled for the current day.",
-                  style: TextStyle(
-                      color: themeChange.getTheme()
-                          ? Colors.white
-                          : AppColors.colorDark,
-                      fontSize: 18,
-                      fontFamily: AppColors.semiBold),
-                ),
-                SizedBox(
-                  height: 10,
-                ),
-                Text(
-                  "Upcoming : ",
-                  style: TextStyle(
-                      color: AppColors.colorPrimary,
-                      fontSize: 18,
-                      fontFamily: AppColors.semiBold),
-                ),
-                Text(
-                  "Bookings that are scheduled for future dates but not for the current day fall under this status.",
-                  style: TextStyle(
-                      color: themeChange.getTheme()
-                          ? Colors.white
-                          : AppColors.colorDark,
-                      fontSize: 18,
-                      fontFamily: AppColors.semiBold),
-                ),
-                SizedBox(
-                  height: 10,
-                ),
-                Text(
-                  "Completed : ",
-                  style: TextStyle(
-                      color: AppColors.colorPrimary,
-                      fontSize: 18,
-                      fontFamily: AppColors.semiBold),
-                ),
-                Text(
-                  "This status signifies that the service has been successfully provided to the customer, and the booking process is concluded.",
-                  style: TextStyle(
-                      color: themeChange.getTheme()
-                          ? Colors.white
-                          : AppColors.colorDark,
-                      fontSize: 18,
-                      fontFamily: AppColors.semiBold),
-                ),
-                SizedBox(
-                  height: 10,
-                ),
-                Text(
-                  "Canceled",
-                  style: TextStyle(
-                      color: AppColors.colorPrimary,
-                      fontSize: 18,
-                      fontFamily: AppColors.semiBold),
-                ),
-                Text(
-                  "Bookings that have been canceled either by the customer or the service provider are categorized under this status.",
-                  style: TextStyle(
-                      color: themeChange.getTheme()
-                          ? Colors.white
-                          : AppColors.colorDark,
-                      fontSize: 18,
-                      fontFamily: AppColors.semiBold),
-                ),
+                Text(title, style: t.label.withColor(c.tone(tone).strong)),
+                const DsGap(DsSpace.xxs),
+                Text(description, style: t.bodySm),
               ],
             ),
           ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context); //close Dialog
-              },
-              child: const Text('Close'),
-            )
-          ],
-        );
-      },
+        ],
+      ),
     );
   }
 }
@@ -308,149 +300,83 @@ class SubscriptionPlanWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-      decoration: BoxDecoration(
-        border: Border.all(
-            color: isDarkMode(context)
-                ? AppThemeData.grey800
-                : AppThemeData.grey200),
-        color: isDarkMode(context) ? AppThemeData.grey50 : AppThemeData.grey800,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Stack(
+    return DsCard.gradient(
+      gradient: DsGradients.deep(context),
+      padding: const EdgeInsets.all(DsSpace.lg),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Positioned(
-              bottom: 0,
-              top: 10,
-              child: Opacity(
-                  opacity: 0.8,
-                  child: Image.asset(
-                    width: Responsive.width(100, context),
-                    height: Responsive.height(100, context),
-                    "assets/images/ic_gradient.png",
-                    color: AppThemeData.secondary300,
-                    fit: BoxFit.fill,
-                  ))),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DsAvatar(
+                imageUrl: userModel.subscriptionPlan?.image ?? '',
+                name: userModel.subscriptionPlan?.name ?? '',
+                size: 40,
+                fallbackIcon: Icons.workspace_premium_outlined,
+              ),
+              const DsGap(DsSpace.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    ClipOval(
-                      child: NetworkImageWidget(
-                        imageUrl: userModel.subscriptionPlan?.image ?? '',
-                        fit: BoxFit.cover,
-                        width: 40,
-                        height: 40,
-                      ),
+                    Text(
+                      userModel.subscriptionPlan?.name ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: DsTypography.titleSm.copyWith(color: Colors.white),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  userModel.subscriptionPlan?.name ?? '',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: isDarkMode(context)
-                                        ? AppThemeData.grey900
-                                        : AppThemeData.grey50,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    fontFamily: AppThemeData.semiBold,
-                                  ),
-                                ),
-                                SizedBox(
-                                  height: 35,
-                                  child: SingleChildScrollView(
-                                    child: Text(
-                                      userModel.subscriptionPlan?.type == 'free'
-                                          ? 'free'
-                                          : amountShow(
-                                              amount: userModel
-                                                  .subscriptionPlan?.price),
-                                      style: const TextStyle(
-                                        fontFamily: AppThemeData.medium,
-                                        fontSize: 12,
-                                        color: AppThemeData.grey400,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Expiry Date'.tr,
-                                style: TextStyle(
-                                  fontFamily: AppThemeData.medium,
-                                  fontSize: 12,
-                                  color: isDarkMode(context)
-                                      ? AppThemeData.grey900
-                                      : AppThemeData.grey50,
-                                ),
-                              ),
-                              Text(
-                                userModel.subscriptionPlan?.expiryDay == "-1"
-                                    ? "LifeTime"
-                                    : timestampToDateTime(
-                                        userModel.subscriptionExpiryDate!),
-                                style: const TextStyle(
-                                  fontFamily: AppThemeData.regular,
-                                  fontSize: 12,
-                                  color: AppThemeData.grey400,
-                                ),
-                              ),
-                            ],
-                          )
-                        ],
-                      ),
+                    const DsGap(DsSpace.xxs),
+                    Text(
+                      userModel.subscriptionPlan?.type == 'free' ? 'free' : amountShow(amount: userModel.subscriptionPlan?.price),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: DsTypography.caption.copyWith(color: Colors.white.withValues(alpha: 0.78)),
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
-                RoundedButtonFill(
-                  radius: 14,
-                  textColor: AppThemeData.grey200,
-                  title: "Change Plan".tr,
-                  color: AppThemeData.secondary300,
-                  width: 80,
-                  height: 4,
-                  onPress: onClick,
-                ),
-                if (selectedSectionModel?.adminCommision?.enable == true)
-                  Visibility(
-                    visible:
-                        MyAppState.currentUser?.adminCommission?.enable == true,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Text(
-                        "${MyAppState.currentUser?.adminCommission?.type == 'percentage' ? "${MyAppState.currentUser?.adminCommission?.commission}%" : "${amountShow(amount: MyAppState.currentUser?.adminCommission?.commission.toString())} Flat"} ${"admin commission will be charged from your account after the booking is accepted.".tr}",
-                        style: const TextStyle(
-                          fontFamily: AppThemeData.medium,
-                          fontSize: 9,
-                          color: AppThemeData.grey400,
-                        ),
-                      ),
-                    ),
+              ),
+              const DsGap(DsSpace.sm),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Expiry Date'.tr,
+                    style: DsTypography.overline.copyWith(color: Colors.white.withValues(alpha: 0.78)),
                   ),
-              ],
-            ),
+                  const DsGap(DsSpace.xxs),
+                  Text(
+                    userModel.subscriptionPlan?.expiryDay == "-1" ? "LifeTime" : timestampToDateTime(userModel.subscriptionExpiryDate!),
+                    textAlign: TextAlign.end,
+                    style: DsTypography.caption.copyWith(color: Colors.white),
+                  ),
+                ],
+              ),
+            ],
           ),
+          const DsGap(DsSpace.lg),
+          DsButton.primary(
+            label: "Change Plan".tr,
+            icon: Icons.auto_awesome_rounded,
+            size: DsButtonSize.sm,
+            expand: true,
+            color: Colors.white,
+            onPressed: onClick,
+          ),
+          if (selectedSectionModel?.adminCommision?.enable == true)
+            Visibility(
+              visible: MyAppState.currentUser?.adminCommission?.enable == true,
+              child: Padding(
+                padding: const EdgeInsets.only(top: DsSpace.md),
+                child: Text(
+                  "${MyAppState.currentUser?.adminCommission?.type == 'percentage' ? "${MyAppState.currentUser?.adminCommission?.commission}%" : "${amountShow(amount: MyAppState.currentUser?.adminCommission?.commission.toString())} Flat"} ${"admin commission will be charged from your account after the booking is accepted.".tr}",
+                  style: DsTypography.caption.copyWith(color: Colors.white.withValues(alpha: 0.78), fontSize: 11),
+                ),
+              ),
+            ),
         ],
       ),
     );

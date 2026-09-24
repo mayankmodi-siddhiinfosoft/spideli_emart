@@ -2,12 +2,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/controller/on_boarding_controller.dart';
 import 'package:spideliprovider/services/preferences.dart';
-import 'package:spideliprovider/themes/app_colors.dart';
+import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/ui/auth/auth_screen.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
@@ -16,124 +14,111 @@ class OnBoardingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+    // Subscribes this screen to theme changes (colors come from the DS).
+    Provider.of<DarkThemeProvider>(context);
+    final c = context.dsColors;
+    final t = context.dsText;
     return GetX<OnBoardingController>(
       init: OnBoardingController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            backgroundColor: themeChange.getTheme() ? AppColors.assetColorGrey1000 : AppColors.assetColorLightGrey400,
-            leading: controller.selectedPageIndex.value == 0
+        final int page = controller.selectedPageIndex.value;
+        final int pages = controller.onBoardingList.length;
+        final bool loading = controller.isLoading.value;
+        return DsScaffold(
+          backgroundColor: c.background,
+          appBar: DsAppBar(
+            backgroundColor: c.background,
+            leading: page == 0
                 ? null
-                : InkWell(
-                    onTap: () {
+                : DsIconButton(
+                    icon: Icons.arrow_back,
+                    semanticLabel: 'Back'.tr,
+                    onPressed: () {
                       controller.pageController.jumpToPage(controller.selectedPageIndex.value - 1);
                     },
-                    child: Icon(Icons.arrow_back)),
+                  ),
           ),
-          body: controller.isLoading.value
-              ? Center(
-                  child: CircularProgressIndicator(),
-                )
-              : Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 50),
+          body: loading
+              ? const _OnBoardingSkeleton()
+              : DsResponsive(
+                  maxWidth: DsLayout.contentMax,
+                  padded: true,
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Expanded(
                         child: PageView.builder(
-                            controller: controller.pageController,
-                            onPageChanged: controller.selectedPageIndex.call,
-                            itemCount: controller.onBoardingList.length,
-                            itemBuilder: (context, index) {
-                              return Column(
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    child: CachedNetworkImage(
-                                      imageUrl: controller.onBoardingList[index].image.toString(),
-                                      placeholder: (context, url) => loader(),
-                                      errorWidget: (context, url, error) => const Icon(Icons.error),
-                                    ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 20),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: List.generate(
-                                        controller.onBoardingList.length,
-                                        (index) => Container(
-                                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                                            width: controller.selectedPageIndex.value == index ? 38 : 10,
-                                            height: 10,
-                                            decoration: BoxDecoration(
-                                              color: controller.selectedPageIndex.value == index
-                                                  ? themeChange.getTheme()
-                                                      ? AppColors.colorGrey
-                                                      : AppColors.colorPrimary
-                                                  : AppColors.colorGrey,
-                                              borderRadius: const BorderRadius.all(Radius.circular(20.0)),
-                                            )),
+                          controller: controller.pageController,
+                          onPageChanged: controller.selectedPageIndex.call,
+                          itemCount: controller.onBoardingList.length,
+                          itemBuilder: (context, index) {
+                            return Column(
+                              mainAxisAlignment: MainAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: Container(
+                                    width: double.infinity,
+                                    margin: const EdgeInsets.symmetric(vertical: DsSpace.xl),
+                                    decoration: BoxDecoration(gradient: DsGradients.subtle(context), borderRadius: DsRadius.brXxl),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(DsSpace.xxl),
+                                      child: CachedNetworkImage(
+                                        imageUrl: controller.onBoardingList[index].image.toString(),
+                                        placeholder: (context, url) => loader(),
+                                        errorWidget: (context, url, error) => const Icon(Icons.error),
                                       ),
                                     ),
                                   ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                                    child: Text(
-                                      controller.onBoardingList[index].title.toString().tr,
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        color: themeChange.getTheme() ? AppColors.colorWhite : AppColors.colorDark,
-                                        fontSize: 24,
-                                        fontFamily: AppColors.semiBold,
-                                        fontWeight: FontWeight.w400,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(
-                                    height: 12,
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                                    child: Text(
-                                      controller.onBoardingList[index].description.toString().tr,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: AppColors.colorGrey500,
-                                        fontSize: 14,
-                                        fontFamily: AppColors.regular,
-                                        fontWeight: FontWeight.w400,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              );
-                            }),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
+                                  child: Text(controller.onBoardingList[index].title.toString().tr, textAlign: TextAlign.center, style: t.display),
+                                ),
+                                const DsGap(DsSpace.md),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
+                                  child: Text(controller.onBoardingList[index].description.toString().tr, textAlign: TextAlign.center, style: t.bodyLg.withColor(c.textSecondary)),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
                       ),
-                      const SizedBox(
-                        height: 32,
-                      ),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.colorPrimary,
-                          padding: const EdgeInsets.symmetric(horizontal: 60),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(25.0),
-                            side: BorderSide(
-                              color: AppColors.colorPrimary,
+                      // Progress dots – read from the tracked builder so the
+                      // GetX observer rebuilds them on page change.
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: DsSpace.xl),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(
+                            pages,
+                            (index) => AnimatedContainer(
+                              duration: DsMotion.of(context, DsMotion.base),
+                              curve: DsMotion.emphasized,
+                              margin: const EdgeInsets.symmetric(horizontal: DsSpace.xs),
+                              width: page == index ? 38 : 10,
+                              height: 10,
+                              decoration: BoxDecoration(color: page == index ? c.brand : c.borderStrong, borderRadius: DsRadius.brPill),
                             ),
                           ),
                         ),
-                        child: Text(
-                          'Next'.tr,
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: themeChange.getTheme() ? Colors.black : Colors.white,
-                          ),
-                        ),
+                      ),
+                    ],
+                  ),
+                ),
+          bottomBar: loading
+              ? null
+              : DsStickyBar(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DsButton.primary(
+                        label: 'Next'.tr,
+                        expand: true,
+                        size: DsButtonSize.lg,
+                        trailingIcon: Icons.arrow_forward_rounded,
                         onPressed: () {
                           if (controller.selectedPageIndex.value == 2) {
                             Preferences.setBoolean(Preferences.isFinishOnBoardingKey, true);
@@ -143,41 +128,58 @@ class OnBoardingScreen extends StatelessWidget {
                           }
                         },
                       ),
-                      const SizedBox(
-                        height: 20,
-                      ),
-                      controller.selectedPageIndex.value == 2
-                          ? const Text(
-                              '',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: AppColors.colorGrey500,
-                                fontSize: 16,
-                                fontFamily: AppColors.medium,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            )
-                          : InkWell(
-                              onTap: () {
+                      const DsGap(DsSpace.sm),
+                      page == 2
+                          ? const SizedBox(height: 48)
+                          : DsButton.ghost(
+                              label: 'Skip'.tr,
+                              onPressed: () {
                                 Preferences.setBoolean(Preferences.isFinishOnBoardingKey, true);
                                 Get.offAll(AuthScreen());
                               },
-                              child: Text(
-                                'Skip'.tr,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: AppColors.DARK_BG_COLOR,
-                                  fontSize: 16,
-                                  fontFamily: AppColors.medium,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
                             ),
                     ],
                   ),
                 ),
         );
       },
+    );
+  }
+}
+
+/// Loading placeholder that keeps the onboarding layout (media block, title,
+/// two text lines, dots) so nothing jumps when the slides arrive.
+class _OnBoardingSkeleton extends StatelessWidget {
+  const _OnBoardingSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return DsResponsive(
+      maxWidth: DsLayout.contentMax,
+      padded: true,
+      child: DsShimmer(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const DsGap(DsSpace.xl),
+            Expanded(
+              child: DsSkeleton.box(width: double.infinity, radius: DsRadius.xxl),
+            ),
+            const DsGap(DsSpace.xl),
+            DsSkeleton.line(width: 220, height: 24),
+            const DsGap(DsSpace.md),
+            DsSkeleton.line(width: double.infinity),
+            const DsGap(DsSpace.sm),
+            DsSkeleton.line(width: 240),
+            const DsGap(DsSpace.xxl),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [DsSkeleton.line(width: 38, height: 10), const DsGap(DsSpace.sm), DsSkeleton.line(width: 10, height: 10), const DsGap(DsSpace.sm), DsSkeleton.line(width: 10, height: 10)],
+            ),
+            const DsGap(DsSpace.xxl),
+          ],
+        ),
+      ),
     );
   }
 }

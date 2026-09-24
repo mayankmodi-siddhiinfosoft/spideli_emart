@@ -6,11 +6,8 @@ import 'package:spideliprovider/controller/dashboard_controller.dart';
 import 'package:spideliprovider/controller/profile_controller.dart';
 import 'package:spideliprovider/main.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
-import 'package:spideliprovider/themes/app_colors.dart';
-import 'package:spideliprovider/themes/responsive.dart';
+import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
-import 'package:spideliprovider/widgets/common_ui.dart';
-import 'package:spideliprovider/widgets/network_image_widget.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -22,245 +19,139 @@ class EditProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+    // Subscribes this screen to theme changes (colors come from the DS).
+    Provider.of<DarkThemeProvider>(context);
+    final c = context.dsColors;
     return GetX<ProfileController>(
-        init: ProfileController(),
-        builder: (controller) {
-          return Scaffold(
-              appBar: CommonUI.customAppBar(context,
-                  title: Text(
-                    "Edit Profile",
-                    style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 18, fontFamily: AppColors.semiBold),
+      init: ProfileController(),
+      builder: (controller) {
+        final bool loading = controller.isLoading.value;
+        return DsScaffold(
+          backgroundColor: c.background,
+          appBar: const DsAppBar(title: "Edit Profile"),
+          body: loading
+              ? const DsSkeletonForm(fields: 4)
+              : Form(
+                  key: controller.key.value,
+                  autovalidateMode: controller.validate,
+                  child: SingleChildScrollView(
+                    child: DsResponsive(
+                      maxWidth: DsLayout.contentMax,
+                      padded: true,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: DsFadeSlideIn.stagger([
+                          const DsGap(DsSpace.xxl),
+                          // Avatar plate: the picture is the hero of this
+                          // form, with the camera affordance on its edge.
+                          Center(
+                            child: Stack(
+                              alignment: Alignment.bottomRight,
+                              children: [
+                                // displayCircleImage(MyAppState.currentUser!.profilePictureURL, 130, false),
+                                DsAvatar(
+                                  imageUrl: MyAppState.currentUser!.profilePictureURL.toString(),
+                                  name: controller.firstName.value.text,
+                                  size: 120,
+                                  ring: true,
+                                  onTap: () => _onCameraClick(context, controller),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 4, bottom: 4),
+                                  child: DsIconButton(
+                                    icon: Icons.camera_alt_rounded,
+                                    semanticLabel: 'Add Profile Picture'.tr,
+                                    variant: DsIconButtonVariant.brand,
+                                    size: 44,
+                                    onPressed: () => _onCameraClick(context, controller),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const DsGap(DsSpace.xxl),
+                          DsFormSection(
+                            title: 'Personal details'.tr,
+                            icon: Icons.person_outline_rounded,
+                            children: [
+                              DsTextField(
+                                label: 'First Name'.tr,
+                                hint: 'First Name'.tr,
+                                controller: controller.firstName.value,
+                                validator: validateName,
+                                textInputAction: TextInputAction.next,
+                                textCapitalization: TextCapitalization.words,
+                                prefixIcon: Icons.person_outline_rounded,
+                              ),
+                              DsTextField(
+                                label: 'Last Name'.tr,
+                                hint: 'Last Name'.tr,
+                                controller: controller.lastName.value,
+                                validator: validateName,
+                                textInputAction: TextInputAction.next,
+                                textCapitalization: TextCapitalization.words,
+                                bottomSpacing: DsSpace.none,
+                                prefixIcon: Icons.person_outline_rounded,
+                              ),
+                            ],
+                          ),
+                          DsFormSection(
+                            title: 'Contact'.tr,
+                            icon: Icons.contact_mail_outlined,
+                            subtitle: 'Managed by your account – contact support to change these.'.tr,
+                            children: [
+                              DsTextField(
+                                label: 'Phone Number'.tr,
+                                hint: 'Phone Number'.tr,
+                                controller: controller.mobile.value,
+                                keyboardType: TextInputType.emailAddress,
+                                textInputAction: TextInputAction.next,
+                                validator: validateEmail,
+                                enabled: false,
+                                prefixIcon: Icons.call_outlined,
+                              ),
+                              DsTextField(
+                                label: 'Email Address'.tr,
+                                hint: 'Email Address'.tr,
+                                controller: controller.email.value,
+                                keyboardType: TextInputType.emailAddress,
+                                textInputAction: TextInputAction.next,
+                                validator: validateEmail,
+                                enabled: false,
+                                bottomSpacing: DsSpace.none,
+                                prefixIcon: Icons.mail_outline_rounded,
+                              ),
+                            ],
+                          ),
+                          const DsGap(DsSpace.xxl),
+                        ]),
+                      ),
+                    ),
                   ),
-                  isBack: true),
-              body: controller.isLoading.value
-                  ? Center(child: CircularProgressIndicator())
-                  : Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 40),
-                      child: Form(
-                        key: controller.key.value,
-                        autovalidateMode: controller.validate,
-                        child: SingleChildScrollView(
-                          child: Column(children: [
-                            Center(
-                              child: Stack(
-                                alignment: Alignment.bottomCenter,
-                                children: [
-                                  // displayCircleImage(MyAppState.currentUser!.profilePictureURL, 130, false),
-                                  ClipOval(
-                                    child: NetworkImageWidget(
-                                      imageUrl: MyAppState.currentUser!.profilePictureURL.toString(),
-                                      height: Responsive.width(30, context),
-                                      width: Responsive.width(30, context),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    right: 5,
-                                    child: InkWell(
-                                      onTap: () => _onCameraClick(context, controller),
-                                      child: Container(
-                                          width: 40,
-                                          height: 40,
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.all(Radius.circular(30)),
-                                            color: AppColors.colorPrimary,
-                                          ),
-                                          child: const Icon(
-                                            Icons.camera_alt,
-                                            color: AppColors.colorWhite,
-                                          )),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(
-                              height: 20,
-                            ),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(minWidth: double.infinity),
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 16.0, right: 8.0, left: 8.0),
-                                child: TextFormField(
-                                  controller: controller.firstName.value,
-                                  cursorColor: AppColors.colorPrimary,
-                                  textAlignVertical: TextAlignVertical.center,
-                                  validator: validateName,
-                                  textInputAction: TextInputAction.next,
-                                  decoration: InputDecoration(
-                                    contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                                    fillColor: Colors.white,
-                                    hintText: 'First Name'.tr,
-                                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(25.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                                    errorBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                      borderRadius: BorderRadius.circular(25.0),
-                                    ),
-                                    focusedErrorBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                      borderRadius: BorderRadius.circular(25.0),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: Colors.grey.shade200),
-                                      borderRadius: BorderRadius.circular(25.0),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(minWidth: double.infinity),
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 16.0, right: 8.0, left: 8.0),
-                                child: TextFormField(
-                                  controller: controller.lastName.value,
-                                  validator: validateName,
-                                  textAlignVertical: TextAlignVertical.center,
-                                  cursorColor: AppColors.colorPrimary,
-                                  textInputAction: TextInputAction.next,
-                                  decoration: InputDecoration(
-                                    contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                                    fillColor: Colors.white,
-                                    hintText: 'Last Name'.tr,
-                                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(25.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                                    errorBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                      borderRadius: BorderRadius.circular(25.0),
-                                    ),
-                                    focusedErrorBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                      borderRadius: BorderRadius.circular(25.0),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: Colors.grey.shade200),
-                                      borderRadius: BorderRadius.circular(25.0),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(minWidth: double.infinity),
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 16.0, right: 8.0, left: 8.0),
-                                child: TextFormField(
-                                  controller: controller.mobile.value,
-                                  keyboardType: TextInputType.emailAddress,
-                                  textAlignVertical: TextAlignVertical.center,
-                                  textInputAction: TextInputAction.next,
-                                  cursorColor: AppColors.colorPrimary,
-                                  validator: validateEmail,
-                                  enabled: false,
-                                  onSaved: (String? val) {},
-                                  decoration: InputDecoration(
-                                    contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                                    fillColor: Colors.white,
-                                    hintText: 'Phone Number'.tr,
-                                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(25.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                                    errorBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                      borderRadius: BorderRadius.circular(25.0),
-                                    ),
-                                    focusedErrorBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                      borderRadius: BorderRadius.circular(25.0),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: Colors.grey.shade200),
-                                      borderRadius: BorderRadius.circular(25.0),
-                                    ),
-                                    disabledBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: Colors.grey.shade200),
-                                      borderRadius: BorderRadius.circular(25.0),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(minWidth: double.infinity),
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 16.0, right: 8.0, left: 8.0),
-                                child: TextFormField(
-                                  controller: controller.email.value,
-                                  keyboardType: TextInputType.emailAddress,
-                                  textAlignVertical: TextAlignVertical.center,
-                                  textInputAction: TextInputAction.next,
-                                  cursorColor: AppColors.colorPrimary,
-                                  validator: validateEmail,
-                                  enabled: false,
-                                  onSaved: (String? val) {},
-                                  decoration: InputDecoration(
-                                    contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                                    fillColor: Colors.white,
-                                    hintText: 'Email Address'.tr,
-                                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(25.0), borderSide: BorderSide(color: AppColors.colorPrimary, width: 2.0)),
-                                    errorBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                      borderRadius: BorderRadius.circular(25.0),
-                                    ),
-                                    focusedErrorBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-                                      borderRadius: BorderRadius.circular(25.0),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: Colors.grey.shade200),
-                                      borderRadius: BorderRadius.circular(25.0),
-                                    ),
-                                    disabledBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: Colors.grey.shade200),
-                                      borderRadius: BorderRadius.circular(25.0),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(
-                              height: 36,
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(right: 40.0, left: 40.0, top: 40.0),
-                              child: ConstrainedBox(
-                                constraints: const BoxConstraints(minWidth: double.infinity),
-                                child: ElevatedButton(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.colorPrimary,
-                                    padding: const EdgeInsets.only(top: 12, bottom: 12),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(25.0),
-                                      side: BorderSide(
-                                        color: AppColors.colorPrimary,
-                                      ),
-                                    ),
-                                  ),
-                                  onPressed: () {
-                                    _validateAndSave(controller, context);
-                                  },
-                                  child: Text(
-                                    'Save'.tr,
-                                    style: TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      color: themeChange.getTheme() ? Colors.black : Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            )
-                          ]),
-                        ),
-                      )));
-        });
+                ),
+          bottomBar: loading
+              ? null
+              : DsStickyBar(
+                  child: DsButton.primary(
+                    label: 'Save'.tr,
+                    icon: Icons.check_rounded,
+                    expand: true,
+                    size: DsButtonSize.lg,
+                    onPressed: () {
+                      _validateAndSave(controller, context);
+                    },
+                  ),
+                ),
+        );
+      },
+    );
   }
 
   final ImagePicker imagePicker = ImagePicker();
 
   _onCameraClick(context, controller) {
     final action = CupertinoActionSheet(
-      message: const Text(
-        'Add Profile Picture',
-        style: TextStyle(fontSize: 15.0),
-      ),
+      message: const Text('Add Profile Picture', style: TextStyle(fontSize: 15.0)),
       actions: <Widget>[
         CupertinoActionSheetAction(
           isDestructiveAction: true,
@@ -338,17 +229,9 @@ class EditProfileScreen extends StatelessWidget {
         MyAppState.currentUser = value;
         controller.update();
 
-        Get.showSnackbar(
-          GetSnackBar(
-            message: 'Details Saved Successfully'.tr,
-          ),
-        );
+        Get.showSnackbar(GetSnackBar(message: 'Details Saved Successfully'.tr));
       } else {
-        Get.showSnackbar(
-          GetSnackBar(
-            message: 'Could Not Save Details Please Try Again'.tr,
-          ),
-        );
+        Get.showSnackbar(GetSnackBar(message: 'Could Not Save Details Please Try Again'.tr));
       }
     });
     ShowToastDialog.closeLoader();
