@@ -52,6 +52,13 @@ class _BookingListScreenState extends State<BookingListScreen> with SingleTicker
     if (_tabController.index != _index) setState(() => _index = _tabController.index);
   }
 
+  /// Publishes a tab's job count. Guarded: the lists report after the frame,
+  /// which can land once this screen (and its notifiers) are gone.
+  void _setCount(int tab, int? value) {
+    if (!mounted) return;
+    _counts[tab].value = value;
+  }
+
   @override
   void dispose() {
     _tabController.removeListener(_onTab);
@@ -128,19 +135,19 @@ class _BookingListScreenState extends State<BookingListScreen> with SingleTicker
                       statuses: const [ORDER_STATUS_ACCEPTED, ORDER_STATUS_ASSIGNED],
                       emptyMessage: "No assigned job found",
                       activeJobs: true,
-                      count: _counts[0],
+                      onCount: (value) => _setCount(0, value),
                     ),
                     _JobList(
                       statuses: const [ORDER_STATUS_ONGOING],
                       emptyMessage: "No job in progress",
                       activeJobs: true,
-                      count: _counts[1],
+                      onCount: (value) => _setCount(1, value),
                     ),
                     _JobList(
                       statuses: const [ORDER_STATUS_COMPLETED],
                       emptyMessage: "No completed booking found",
                       activeJobs: false,
-                      count: _counts[2],
+                      onCount: (value) => _setCount(2, value),
                     ),
                   ],
                 ),
@@ -164,10 +171,10 @@ class _JobList extends StatelessWidget {
   /// jobs are history and always shown.
   final bool activeJobs;
 
-  /// Receives the number of jobs in this tab so the header can show it.
-  final ValueNotifier<int?> count;
+  /// Reports the number of jobs in this tab so the header can show it.
+  final ValueChanged<int?> onCount;
 
-  const _JobList({required this.statuses, required this.emptyMessage, required this.activeJobs, required this.count});
+  const _JobList({required this.statuses, required this.emptyMessage, required this.activeJobs, required this.onCount});
 
   @override
   Widget build(BuildContext context) {
@@ -200,11 +207,9 @@ class _JobList extends StatelessWidget {
   }
 
   /// Publishes [value] to the header after this frame (never during build).
+  /// The receiver drops it when the screen is gone.
   void _report(int? value) {
-    if (count.value == value) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      count.value = value;
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => onCount(value));
   }
 
   Widget _stream(DarkThemeProvider themeChange) {

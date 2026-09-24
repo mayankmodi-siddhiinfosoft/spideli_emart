@@ -44,7 +44,9 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   void _publish(OnProviderOrderModel? order) {
-    if (identical(_current.value, order)) return;
+    // Each snapshot rebuilds the model, so compare what the action bar uses.
+    final OnProviderOrderModel? shown = _current.value;
+    if (shown?.id == order?.id && shown?.status == order?.status) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _current.value = order;
     });
