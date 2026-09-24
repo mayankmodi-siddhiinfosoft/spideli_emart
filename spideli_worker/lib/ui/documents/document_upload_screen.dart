@@ -10,13 +10,16 @@ import 'package:spideliworker/constant/show_toast_dialog.dart';
 import 'package:spideliworker/main.dart';
 import 'package:spideliworker/model/document_model.dart';
 import 'package:spideliworker/services/document_service.dart';
-import 'package:spideliworker/themes/app_colors.dart';
+import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
-import 'package:spideliworker/widgets/common_ui.dart';
-import 'package:spideliworker/widgets/network_image_widget.dart';
 
 /// Upload (or re-upload after rejection / expiry) one worker document.
 /// [readOnly] shows what was uploaded while it is pending or approved.
+///
+/// Design: archetype N (upload half). The rejection reason is a danger
+/// [DsInlineAlert], each side is a large drop zone that previews the picked
+/// image, the expiry date is a read-only picker field, and "Submit for
+/// verification" lives in a [DsStickyBar].
 class DocumentUploadScreen extends StatefulWidget {
   final DocumentModel documentType;
   final Documents? existing;
@@ -30,6 +33,7 @@ class DocumentUploadScreen extends StatefulWidget {
 
 class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
   final ImagePicker _picker = ImagePicker();
+  final TextEditingController _expiryController = TextEditingController();
   String _front = '';
   String _back = '';
   DateTime? _expiry;
@@ -47,6 +51,17 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
     _back = widget.existing?.backImage ?? '';
     // A rejected / expired document needs a new expiry date.
     if (widget.readOnly) _expiry = widget.existing?.expiryDate?.toDate();
+    _syncExpiryText();
+  }
+
+  @override
+  void dispose() {
+    _expiryController.dispose();
+    super.dispose();
+  }
+
+  void _syncExpiryText() {
+    _expiryController.text = _expiry == null ? '' : DateFormat('dd MMM yyyy').format(_expiry!);
   }
 
   bool _isRemote(String path) => path.startsWith('http');
@@ -74,7 +89,10 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
   Future<void> _pickExpiry() async {
     final now = DateTime.now();
     final picked = await showDatePicker(context: context, initialDate: _expiry ?? now.add(const Duration(days: 1)), firstDate: now, lastDate: DateTime(now.year + 30));
-    if (picked != null) setState(() => _expiry = picked);
+    if (picked != null) {
+      setState(() => _expiry = picked);
+      _syncExpiryText();
+    }
   }
 
   Future<void> _submit() async {
@@ -113,77 +131,102 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
     }
   }
 
-  Widget _imageBox(String label, String path, bool front, bool dark) {
+  /// Large drop zone: dashed-looking empty slot, or the picked / uploaded
+  /// image with a "Change" affordance.
+  Widget _imageBox(BuildContext context, String label, String path, bool front) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final bool empty = path.isEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label.tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark, fontFamily: AppColors.semiBold)),
-        const SizedBox(height: 8),
-        InkWell(
-          onTap: widget.readOnly ? null : () => _pick(front),
-          child: Container(
-            height: 180,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: dark ? AppColors.darkContainerBorderColor : AppColors.colorWhite,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.shade400),
+        DsFieldLabel(label.tr, required: !widget.readOnly),
+        const DsGap(DsSpace.sm),
+        Semantics(
+          button: !widget.readOnly,
+          label: label.tr,
+          child: InkWell(
+            borderRadius: DsRadius.brLg,
+            onTap: widget.readOnly ? null : () => _pick(front),
+            child: Container(
+              height: 190,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: empty ? c.surfaceAlt : c.surface,
+                borderRadius: DsRadius.brLg,
+                border: Border.all(color: empty ? c.borderStrong : c.border, width: empty ? 1.4 : 1),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: empty
+                  ? Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        DsIconWell(icon: Icons.add_a_photo_outlined, size: 48, circle: true),
+                        const DsGap(DsSpace.md),
+                        Text("Add photo".tr, style: t.label.withColor(c.brandStrong)),
+                      ],
+                    )
+                  : Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        _isRemote(path)
+                            ? DsImage(url: path, fit: BoxFit.cover, radius: 0)
+                            : Image.file(File(path), fit: BoxFit.cover),
+                        if (!widget.readOnly)
+                          PositionedDirectional(
+                            end: DsSpace.sm,
+                            bottom: DsSpace.sm,
+                            child: DsBadge(label: "Re-upload".tr, icon: Icons.edit_outlined, style: DsBadgeStyle.solid, tone: DsTone.brand, small: true),
+                          ),
+                      ],
+                    ),
             ),
-            clipBehavior: Clip.antiAlias,
-            child: path.isEmpty
-                ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.add_a_photo, color: Colors.grey), const SizedBox(height: 6), Text("Add photo".tr)]))
-                : _isRemote(path)
-                    ? NetworkImageWidget(imageUrl: path, fit: BoxFit.cover)
-                    : Image.file(File(path), fit: BoxFit.cover),
           ),
         ),
-        const SizedBox(height: 16),
+        const DsGap(DsSpace.xl),
       ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool dark = Provider.of<DarkThemeProvider>(context).getTheme();
+    // Subscribes the screen to theme changes.
+    Provider.of<DarkThemeProvider>(context);
+    final l = context.dsLayout;
     final String? reason = widget.existing?.rejectionReason;
-    return Scaffold(
-      backgroundColor: dark ? AppColors.DARK_BG_COLOR : const Color(0xffF9F9F9),
-      appBar: CommonUI.customAppBar(
-        context,
-        title: Text((widget.documentType.title ?? '').tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark, fontSize: 18, fontFamily: AppColors.semiBold)),
-      ),
+    return DsScaffold(
+      title: (widget.documentType.title ?? '').tr,
+      maxContentWidth: DsLayout.contentMax,
       body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (widget.existing?.status == 'rejected' && (reason ?? '').isNotEmpty)
-            Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: AppColors.colorLightDeepOrange, borderRadius: BorderRadius.circular(10)),
-              child: Text("${"Rejected".tr}: $reason", style: const TextStyle(color: AppColors.colorDeepOrange)),
-            ),
-          if (_needsFront) _imageBox("Front side", _front, true, dark),
-          if (_needsBack) _imageBox("Back side", _back, false, dark),
+        padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.xxxl),
+        children: DsFadeSlideIn.stagger([
+          if (widget.existing?.status == 'rejected' && (reason ?? '').isNotEmpty) ...[
+            DsInlineAlert(tone: DsTone.danger, icon: Icons.gpp_bad_outlined, title: "Rejected".tr, message: reason!),
+            const DsGap(DsSpace.xl),
+          ],
+          if (_needsFront) _imageBox(context, "Front side", _front, true),
+          if (_needsBack) _imageBox(context, "Back side", _back, false),
           if (_needsExpiry)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text("Expiry date".tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark, fontFamily: AppColors.semiBold)),
-              subtitle: Text(_expiry == null ? "Select date".tr : DateFormat('dd MMM yyyy').format(_expiry!)),
-              trailing: const Icon(Icons.calendar_month),
+            DsTextField(
+              label: "Expiry date".tr,
+              hint: "Select date".tr,
+              readOnly: true,
+              enabled: !widget.readOnly,
+              controller: _expiryController,
+              suffix: const Icon(Icons.calendar_month),
               onTap: widget.readOnly ? null : _pickExpiry,
             ),
-        ],
+        ]),
       ),
-      bottomNavigationBar: widget.readOnly
+      bottomBar: widget.readOnly
           ? null
-          : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.colorPrimary, padding: const EdgeInsets.all(14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                  onPressed: _submit,
-                  child: Text("Submit for verification".tr, style: const TextStyle(color: AppColors.colorWhite, fontFamily: AppColors.semiBold)),
-                ),
+          : DsStickyBar(
+              child: DsButton.primary(
+                label: "Submit for verification".tr,
+                icon: Icons.cloud_upload_outlined,
+                size: DsButtonSize.lg,
+                expand: true,
+                onPressed: _submit,
               ),
             ),
     );

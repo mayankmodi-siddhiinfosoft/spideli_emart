@@ -1,167 +1,164 @@
 import 'package:spideliworker/controller/on_boarding_controller.dart';
 import 'package:spideliworker/services/preferences.dart';
-import 'package:spideliworker/themes/app_colors.dart';
+import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/login/login_screen.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
+/// Onboarding: a full-bleed illustration per page, an animated pill page
+/// indicator and the copy on a width-capped column, with "Next" as the
+/// primary action and "Skip" as a quiet ghost button beneath it.
 class OnBoardingScreen extends StatelessWidget {
   const OnBoardingScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+    // Subscribes the page to theme changes.
+    Provider.of<DarkThemeProvider>(context);
     return GetX<OnBoardingController>(
       init: OnBoardingController(),
       builder: (controller) {
+        // Read synchronously so this GetX tracks the page and the loader.
+        final bool isLoading = controller.isLoading.value;
+        final int selected = controller.selectedPageIndex.value;
+        final c = context.dsColors;
+        final t = context.dsText;
+        final l = context.dsLayout;
+
         return Scaffold(
-          appBar: AppBar(
-            backgroundColor: themeChange.getTheme() ? AppColors.assetColorGrey1000 : AppColors.assetColorLightGrey400,
-            leading: controller.selectedPageIndex.value == 0 ? null : const Icon(Icons.arrow_back),
-          ),
-          body: controller.isLoading.value
-              ? const Center(
-                  child: CircularProgressIndicator(),
-                )
-              : Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 50),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    crossAxisAlignment: CrossAxisAlignment.center,
+          backgroundColor: c.background,
+          body: SafeArea(
+            child: isLoading
+                ? const _OnBoardingSkeleton()
+                : Column(
                     children: [
+                      Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm, vertical: DsSpace.xs),
+                          child: selected == 2
+                              ? const SizedBox(height: 48)
+                              : DsButton.ghost(
+                                  label: 'Skip'.tr,
+                                  size: DsButtonSize.sm,
+                                  onPressed: () {
+                                    Preferences.setBoolean(Preferences.isFinishOnBoardingKey, true);
+                                    Get.offAll(const LoginScreen());
+                                  },
+                                ),
+                        ),
+                      ),
                       Expanded(
                         child: PageView.builder(
                             controller: controller.pageController,
                             onPageChanged: controller.selectedPageIndex.call,
                             itemCount: controller.onBoardingList.length,
                             itemBuilder: (context, index) {
-                              return Column(
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Expanded(child: Image.network(controller.onBoardingList[index].image.toString(),fit: BoxFit.fill,)),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 20),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: List.generate(
-                                        controller.onBoardingList.length,
-                                        (index) => Container(
-                                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                                            width: controller.selectedPageIndex.value == index ? 38 : 10,
-                                            height: 10,
-                                            decoration: BoxDecoration(
-                                              color: controller.selectedPageIndex.value == index
-                                                  ? themeChange.getTheme()
-                                                      ? AppColors.colorGrey
-                                                      : AppColors.colorPrimary
-                                                  : AppColors.colorGrey,
-                                              borderRadius: const BorderRadius.all(Radius.circular(20.0)),
-                                            )),
+                              return DsResponsive(
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: l.gutter),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      Expanded(
+                                        child: DsImage(
+                                          url: controller.onBoardingList[index].image.toString(),
+                                          fit: BoxFit.contain,
+                                          radius: DsRadius.xl,
+                                          width: double.infinity,
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                                    child: Text(
-                                      controller.onBoardingList[index].title.toString().tr,
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        color: themeChange.getTheme() ? AppColors.colorWhite : AppColors.colorDark,
-                                        fontSize: 24,
-                                        fontFamily: AppColors.semiBold,
-                                        fontWeight: FontWeight.w400,
+                                      const DsGap(DsSpace.xxl),
+                                      Text(
+                                        controller.onBoardingList[index].title.toString().tr,
+                                        textAlign: TextAlign.center,
+                                        style: t.display,
                                       ),
-                                    ),
-                                  ),
-                                  const SizedBox(
-                                    height: 12,
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                                    child: Text(
-                                      controller.onBoardingList[index].description.toString().tr,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: AppColors.colorGrey500,
-                                        fontSize: 14,
-                                        fontFamily: AppColors.regular,
-                                        fontWeight: FontWeight.w400,
+                                      const DsGap(DsSpace.md),
+                                      Text(
+                                        controller.onBoardingList[index].description.toString().tr,
+                                        textAlign: TextAlign.center,
+                                        style: t.bodySecondary,
                                       ),
-                                    ),
+                                      const DsGap(DsSpace.xl),
+                                    ],
                                   ),
-                                ],
+                                ),
                               );
                             }),
                       ),
-                      const SizedBox(
-                        height: 32,
-                      ),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.colorPrimary,
-                          padding: const EdgeInsets.symmetric(horizontal: 60),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(25.0),
-                            side: BorderSide(
-                              color: AppColors.colorPrimary,
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: DsSpace.xl),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(
+                            controller.onBoardingList.length,
+                            (index) => AnimatedContainer(
+                              duration: DsMotion.of(context, DsMotion.base),
+                              curve: DsMotion.standard,
+                              margin: const EdgeInsets.symmetric(horizontal: DsSpace.xs),
+                              width: selected == index ? 32 : 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: selected == index ? c.brand : c.borderStrong,
+                                borderRadius: DsRadius.brPill,
+                              ),
                             ),
                           ),
                         ),
-                        child: Text(
-                          'Next'.tr,
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: themeChange.getTheme() ? Colors.black : Colors.white,
-                          ),
+                      ),
+                      DsStickyBar(
+                        child: DsButton.primary(
+                          label: 'Next'.tr,
+                          trailingIcon: Icons.arrow_forward_rounded,
+                          size: DsButtonSize.lg,
+                          expand: true,
+                          onPressed: () {
+                            if (controller.selectedPageIndex.value == 2) {
+                              Preferences.setBoolean(Preferences.isFinishOnBoardingKey, true);
+                              Get.offAll(const LoginScreen());
+                            } else {
+                              controller.pageController.jumpToPage(controller.selectedPageIndex.value + 1);
+                            }
+                          },
                         ),
-                        onPressed: () {
-                          if (controller.selectedPageIndex.value == 2) {
-                            Preferences.setBoolean(Preferences.isFinishOnBoardingKey, true);
-                            Get.offAll(const LoginScreen());
-                          } else {
-                            controller.pageController.jumpToPage(controller.selectedPageIndex.value + 1);
-                          }
-                        },
                       ),
-                      const SizedBox(
-                        height: 20,
-                      ),
-                      controller.selectedPageIndex.value == 2
-                          ? const Text(
-                              '',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: AppColors.colorGrey500,
-                                fontSize: 16,
-                                fontFamily: AppColors.medium,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            )
-                          : InkWell(
-                              onTap: () {
-                                Preferences.setBoolean(Preferences.isFinishOnBoardingKey, true);
-                                Get.offAll(const LoginScreen());
-                              },
-                              child: Text(
-                                'Skip'.tr,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: AppColors.DARK_BG_COLOR,
-                                  fontSize: 16,
-                                  fontFamily: AppColors.medium,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
                     ],
                   ),
-                ),
+          ),
         );
       },
+    );
+  }
+}
+
+class _OnBoardingSkeleton extends StatelessWidget {
+  const _OnBoardingSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(DsSpace.xxl),
+      child: DsShimmer(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Spacer(),
+            Expanded(flex: 6, child: DsSkeleton.box(width: double.infinity, radius: DsRadius.xl)),
+            const DsGap(DsSpace.xxl),
+            DsSkeleton.line(width: 220, height: 22),
+            const DsGap(DsSpace.md),
+            DsSkeleton.line(width: 280),
+            const DsGap(DsSpace.sm),
+            DsSkeleton.line(width: 200),
+            const Spacer(),
+            DsSkeleton.box(width: double.infinity, height: 56, radius: DsRadius.pill),
+          ],
+        ),
+      ),
     );
   }
 }

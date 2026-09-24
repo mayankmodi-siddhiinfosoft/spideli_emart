@@ -6,8 +6,7 @@ import 'package:spideliworker/controller/profile_controller.dart';
 import 'package:spideliworker/controller/verification_controller.dart';
 import 'package:spideliworker/main.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
-import 'package:spideliworker/themes/app_colors.dart';
-import 'package:spideliworker/themes/responsive.dart';
+import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/chat_screen/inbox_screen.dart';
 import 'package:spideliworker/ui/help_support_screen/help_support_screen.dart';
 import 'package:spideliworker/ui/language_screen.dart';
@@ -16,17 +15,17 @@ import 'package:spideliworker/ui/privacyPolicy/privacy_policy.dart';
 import 'package:spideliworker/ui/termsAndCondition/terms_and_codition.dart';
 import 'package:spideliworker/ui/theme_change_screen/theme_change_screen.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
-import 'package:spideliworker/widgets/common_ui.dart';
-import 'package:spideliworker/widgets/network_image_widget.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+/// Profile (archetype E): an identity card with the avatar, name, e-mail and
+/// an availability switch, then grouped [DsTileGroup] settings rows with the
+/// destructive "Logout" row on its own. Two columns on tablets.
 class ProfileScreen extends StatelessWidget {
   ProfileScreen({super.key});
 
@@ -36,319 +35,275 @@ class ProfileScreen extends StatelessWidget {
     return GetX<ProfileController>(
         init: ProfileController(),
         builder: (controller) {
-          return Scaffold(
-              appBar: CommonUI.customAppBar(
-                context,
-                title: Text(
-                  "Profile".tr,
-                  style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 18, fontFamily: AppColors.semiBold),
-                ),
-                isBack: false,
-                actions: [
-                  InkWell(
-                    onTap: () {
-                      viewProviderInfo(controller, themeChange, context);
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 10),
-                      child: Icon(Icons.info_outline),
-                    ),
-                  )
-                ],
+          // Read synchronously so this GetX tracks the availability switch.
+          final bool online = controller.online.value;
+          final l = context.dsLayout;
+
+          final Widget account = DsTileGroup(
+            title: 'Account'.tr,
+            children: [
+              DsListTile(
+                title: "Inbox".tr,
+                leadingIcon: Icons.forum_outlined,
+                showChevron: true,
+                onTap: () {
+                  Get.to(const InboxScreen());
+                },
               ),
-              body: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 30),
-                  child: SingleChildScrollView(
-                    child: Column(children: [
-                      Center(
-                        child: Column(
-                          children: [
-                            Stack(
-                              alignment: Alignment.bottomCenter,
-                              children: [
-                                ClipOval(
-                                  child: NetworkImageWidget(
-                                    imageUrl: MyAppState.currentUser!.profilePictureURL.toString(),
-                                    height: Responsive.width(30, context),
-                                    width: Responsive.width(30, context),
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                                Positioned(
-                                  right: 5,
-                                  child: InkWell(
-                                    onTap: () => _onCameraClick(context, controller),
-                                    child: Container(
-                                        width: 40,
-                                        height: 40,
-                                        decoration: BoxDecoration(
-                                          borderRadius: const BorderRadius.all(Radius.circular(30)),
-                                          color: AppColors.colorPrimary,
-                                        ),
-                                        child: const Icon(
-                                          Icons.camera_alt,
-                                          color: AppColors.colorWhite,
-                                        )),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(top: 15),
-                              child: Text(
-                                MyAppState.currentUser!.fullName(),
-                                style: TextStyle(color: themeChange.getTheme() ? AppColors.colorWhite : AppColors.colorDark, fontSize: 16, fontFamily: AppColors.semiBold),
-                              ),
-                            ),
-                            Text(
-                              MyAppState.currentUser!.email.toString(),
-                              style: TextStyle(color: themeChange.getTheme() ? AppColors.colorWhite : AppColors.colorDark, fontSize: 14, fontFamily: AppColors.medium),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          children: [
-                            const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: SizedBox()),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Available Status'.tr,
-                                        textAlign: TextAlign.start,
-                                        style: TextStyle(
-                                          color: themeChange.getTheme() ? AppColors.assetColorGrey100 : AppColors.assetColorGrey1000,
-                                          fontSize: 16,
-                                          fontFamily: AppColors.semiBold,
-                                        ),
-                                      ),
-                                      MyAppState.currentUser?.online == true
-                                          ? Text(
-                                              'You are online'.tr,
-                                              textAlign: TextAlign.start,
-                                              style: TextStyle(
-                                                color: AppColors.colorPrimary,
-                                                fontSize: 14,
-                                              ),
-                                            )
-                                          : Text(
-                                              'You are offline'.tr,
-                                              textAlign: TextAlign.start,
-                                              style: const TextStyle(
-                                                color: AppColors.colorDeepOrange,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                    ],
-                                  ),
-                                ),
-                                Transform.scale(
-                                  scale: 0.8,
-                                  child: CupertinoSwitch(
-                                    activeTrackColor: AppColors.colorPrimary,
-                                    value: controller.online.value,
-                                    onChanged: (value) async {
-                                      // Spec 3.6: unverified workers cannot go online.
-                                      if (value && Get.isRegistered<VerificationController>() && !Get.find<VerificationController>().canReceiveJobs) {
-                                        ShowToastDialog.showToast("Your documents must be approved before you can go online.".tr);
-                                        return;
-                                      }
-                                      controller.online.value = value;
-                                      MyAppState.currentUser!.online = controller.online.value;
-                                      await FireStoreUtils.updateCurrentUser(MyAppState.currentUser!);
-                                      controller.update();
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10),
-                              child: Divider(
-                                color: AppColors.assetColorGrey300,
-                              ),
-                            ),
-                            InkWell(
-                                onTap: () {
-                                  Get.to(const InboxScreen());
-                                },
-                                child: profileView(title: "Inbox", context: context, themeChange: themeChange)),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10),
-                              child: Divider(
-                                color: AppColors.assetColorGrey300,
-                              ),
-                            ),
-                            InkWell(
-                                onTap: () {
-                                  Get.to(const ThemeChangeScreen());
-                                },
-                                child: profileView(title: "App Theme", context: context, themeChange: themeChange)),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10),
-                              child: Divider(
-                                color: AppColors.assetColorGrey300,
-                              ),
-                            ),
-                            InkWell(
-                                onTap: () {
-                                  Get.to(const LanguageScreen());
-                                },
-                                child: profileView(title: "App Language", context: context, themeChange: themeChange)),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10),
-                              child: Divider(
-                                color: AppColors.assetColorGrey300,
-                              ),
-                            ),
-                            InkWell(
-                                onTap: () {
-                                  Get.to(HelpSupportScreen(isNavigateViaNotification: false));
-                                },
-                                child: profileView(title: "Help & Support", context: context, themeChange: themeChange)),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10),
-                              child: Divider(
-                                color: AppColors.assetColorGrey300,
-                              ),
-                            ),
-                            InkWell(
-                                onTap: () {
-                                  Get.to(const TermsAndCondition());
-                                },
-                                child: profileView(title: "Terms & Condition", context: context, themeChange: themeChange)),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10),
-                              child: Divider(
-                                color: AppColors.assetColorGrey300,
-                              ),
-                            ),
-                            InkWell(
-                                onTap: () {
-                                  Get.to(const PrivacyPolicy());
-                                },
-                                child: profileView(title: "Privacy policy", context: context, themeChange: themeChange)),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10),
-                              child: Divider(
-                                color: AppColors.assetColorGrey300,
-                              ),
-                            ),
-                            InkWell(
-                                onTap: () async {
-                                  MyAppState.currentUser = null;
-                                  await FirebaseAuth.instance.signOut();
-                                  Get.offAll(const LoginScreen());
-                                },
-                                child: profileView(title: "Logout", context: context, themeChange: themeChange)),
-                          ],
-                        ),
-                      )
-                    ]),
-                  )));
+              DsListTile(
+                title: "Help & Support".tr,
+                leadingIcon: Icons.support_agent_outlined,
+                showChevron: true,
+                onTap: () {
+                  Get.to(HelpSupportScreen(isNavigateViaNotification: false));
+                },
+              ),
+            ],
+          );
+
+          final Widget preferences = DsTileGroup(
+            title: 'Preferences'.tr,
+            children: [
+              DsListTile(
+                title: "App Theme".tr,
+                leadingIcon: Icons.dark_mode_outlined,
+                showChevron: true,
+                onTap: () {
+                  Get.to(const ThemeChangeScreen());
+                },
+              ),
+              DsListTile(
+                title: "App Language".tr,
+                leadingIcon: Icons.translate_rounded,
+                showChevron: true,
+                onTap: () {
+                  Get.to(const LanguageScreen());
+                },
+              ),
+            ],
+          );
+
+          final Widget legal = DsTileGroup(
+            title: 'Legal'.tr,
+            children: [
+              DsListTile(
+                title: "Terms & Condition".tr,
+                leadingIcon: Icons.gavel_rounded,
+                showChevron: true,
+                onTap: () {
+                  Get.to(const TermsAndCondition());
+                },
+              ),
+              DsListTile(
+                title: "Privacy policy".tr,
+                leadingIcon: Icons.privacy_tip_outlined,
+                showChevron: true,
+                onTap: () {
+                  Get.to(const PrivacyPolicy());
+                },
+              ),
+            ],
+          );
+
+          final Widget session = DsTileGroup(
+            children: [
+              DsListTile(
+                title: "Logout".tr,
+                leadingIcon: Icons.logout_rounded,
+                destructive: true,
+                onTap: () async {
+                  MyAppState.currentUser = null;
+                  await FirebaseAuth.instance.signOut();
+                  Get.offAll(const LoginScreen());
+                },
+              ),
+            ],
+          );
+
+          return DsScaffold(
+            title: "Profile".tr,
+            showBack: false,
+            maxContentWidth: DsLayout.wideMax,
+            actions: [
+              DsIconButton(
+                icon: Icons.info_outline,
+                semanticLabel: 'My Provider'.tr,
+                onPressed: () {
+                  viewProviderInfo(controller, themeChange, context);
+                },
+              ),
+            ],
+            body: ListView(
+              padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.xxxl),
+              children: DsFadeSlideIn.stagger([
+                _identityCard(context, controller, online),
+                const DsGap(DsSpace.xl),
+                if (l.isWide)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: Column(children: [account, const DsGap(DsSpace.lg), preferences])),
+                      const DsGap(DsSpace.xxl),
+                      Expanded(child: Column(children: [legal, const DsGap(DsSpace.lg), session])),
+                    ],
+                  )
+                else ...[
+                  account,
+                  const DsGap(DsSpace.lg),
+                  preferences,
+                  const DsGap(DsSpace.lg),
+                  legal,
+                  const DsGap(DsSpace.lg),
+                  session,
+                ],
+              ]),
+            ),
+          );
         });
   }
 
+  /// Avatar + name + e-mail + the "Available Status" switch.
+  Widget _identityCard(BuildContext context, ProfileController controller, bool online) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard(
+      padding: const EdgeInsets.all(DsSpace.xl),
+      child: Column(
+        children: [
+          Stack(
+            alignment: AlignmentDirectional.bottomEnd,
+            children: [
+              DsAvatar(
+                imageUrl: MyAppState.currentUser!.profilePictureURL.toString(),
+                name: MyAppState.currentUser!.fullName(),
+                size: 104,
+                ring: true,
+                statusTone: online ? DsTone.success : DsTone.neutral,
+              ),
+              DsIconButton(
+                icon: Icons.camera_alt,
+                semanticLabel: 'Add Profile Picture'.tr,
+                variant: DsIconButtonVariant.brand,
+                size: 40,
+                onPressed: () => _onCameraClick(context, controller),
+              ),
+            ],
+          ),
+          const DsGap(DsSpace.lg),
+          Text(MyAppState.currentUser!.fullName(), textAlign: TextAlign.center, style: t.title),
+          const DsGap(DsSpace.xxs),
+          Text(MyAppState.currentUser!.email.toString(), textAlign: TextAlign.center, style: t.bodySecondary),
+          const DsGap(DsSpace.lg),
+          Divider(height: 1, color: c.divider),
+          const DsGap(DsSpace.md),
+          Row(
+            children: [
+              DsIconWell(
+                icon: online ? Icons.wifi_tethering_rounded : Icons.wifi_tethering_off_rounded,
+                tone: online ? DsTone.success : DsTone.neutral,
+                size: 40,
+              ),
+              const DsGap(DsSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Available Status'.tr, style: t.titleSm),
+                    MyAppState.currentUser?.online == true
+                        ? Text('You are online'.tr, style: t.bodySm.withColor(c.successStrong))
+                        : Text('You are offline'.tr, style: t.bodySm.withColor(c.dangerStrong)),
+                  ],
+                ),
+              ),
+              Semantics(
+                label: 'Available Status'.tr,
+                toggled: online,
+                child: CupertinoSwitch(
+                  activeTrackColor: c.brand,
+                  value: online,
+                  onChanged: (value) async {
+                    // Spec 3.6: unverified workers cannot go online.
+                    if (value && Get.isRegistered<VerificationController>() && !Get.find<VerificationController>().canReceiveJobs) {
+                      ShowToastDialog.showToast("Your documents must be approved before you can go online.".tr);
+                      return;
+                    }
+                    controller.online.value = value;
+                    MyAppState.currentUser!.online = controller.online.value;
+                    await FireStoreUtils.updateCurrentUser(MyAppState.currentUser!);
+                    controller.update();
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   void viewProviderInfo(ProfileController controller, themeChange, context) {
+    final BuildContext ctx = context;
+    final c = ctx.dsColors;
+    final t = ctx.dsText;
     Get.bottomSheet(
-      Container(
-        height: Responsive.height(33, context),
-        color: themeChange.getTheme() ? AppColors.colorDark : AppColors.assetColorGrey100,
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+      DsSheet(
+        title: 'My Provider'.tr,
+        showClose: true,
+        child: DsObserve(
+          builder: (_) => DsCard.outlined(
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                    padding: const EdgeInsets.only(top: 20),
-                    child: Text(
-                      'My Provider'.tr,
-                      style: TextStyle(color: themeChange.getTheme() ? AppColors.colorWhite : AppColors.colorDark, fontSize: 18, fontFamily: AppColors.semiBold),
-                    )),
-                Container(
-                  margin: const EdgeInsets.only(top: 15),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    color: themeChange.getTheme() ? Colors.black : AppColors.colorWhite,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            controller.provider.value.profilePictureURL != ""
-                                ? CircleAvatar(backgroundImage: NetworkImage(controller.provider.value.profilePictureURL.toString()), radius: 30.0)
-                                : CircleAvatar(backgroundImage: NetworkImage(placeholderImage), radius: 30.0),
-                            const SizedBox(
-                              width: 10,
-                            ),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    controller.provider.value.fullName().toString(),
-                                    style: TextStyle(color: themeChange.getTheme() ? AppColors.colorWhite : AppColors.colorDark, fontSize: 16, fontFamily: AppColors.medium),
-                                  ),
-                                  const SizedBox(
-                                    height: 5,
-                                  ),
-                                  RatingBar.builder(
-                                    initialRating: double.parse(controller.provider.value.reviewsCount != 0
-                                        ? (controller.provider.value.reviewsSum / controller.provider.value.reviewsCount).toStringAsFixed(1)
-                                        : 0.toString()),
-                                    direction: Axis.horizontal,
-                                    itemSize: 20,
-                                    ignoreGestures: true,
-                                    itemPadding: const EdgeInsets.symmetric(horizontal: 4.0),
-                                    itemBuilder: (context, _) => Icon(
-                                      Icons.star,
-                                      color: AppColors.colorPrimary,
-                                    ),
-                                    onRatingUpdate: (double rate) {},
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(
-                          height: 5,
-                        ),
-                        ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 0.0, vertical: -4.0),
-                          visualDensity: const VisualDensity(horizontal: 0, vertical: -4),
-                          leading: const Icon(Icons.email_outlined),
-                          title: Text(controller.provider.value.email.toString()),
-                        ),
-                        ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 0.0, vertical: -4.0),
-                          visualDensity: const VisualDensity(horizontal: 0, vertical: -4),
-                          leading: const Icon(Icons.phone_in_talk_outlined),
-                          title: Text(controller.provider.value.phoneNumber.toString()),
-                        ),
-                      ],
+                Row(
+                  children: [
+                    DsAvatar(
+                      imageUrl: controller.provider.value.profilePictureURL != "" ? controller.provider.value.profilePictureURL.toString() : placeholderImage,
+                      name: controller.provider.value.fullName().toString(),
+                      size: 60,
                     ),
-                  ),
+                    const DsGap(DsSpace.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(controller.provider.value.fullName().toString(), style: t.titleSm),
+                          const DsGap(DsSpace.xs),
+                          RatingBar.builder(
+                            initialRating: double.parse(controller.provider.value.reviewsCount != 0
+                                ? (controller.provider.value.reviewsSum / controller.provider.value.reviewsCount).toStringAsFixed(1)
+                                : 0.toString()),
+                            direction: Axis.horizontal,
+                            itemSize: 20,
+                            ignoreGestures: true,
+                            itemPadding: const EdgeInsets.only(right: DsSpace.xs),
+                            itemBuilder: (context, _) => Icon(
+                              Icons.star,
+                              color: c.warning,
+                            ),
+                            onRatingUpdate: (double rate) {},
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const DsGap(DsSpace.md),
+                Divider(height: 1, color: c.divider),
+                DsListTile(
+                  title: controller.provider.value.email.toString(),
+                  leadingIcon: Icons.email_outlined,
+                ),
+                DsListTile(
+                  title: controller.provider.value.phoneNumber.toString(),
+                  leadingIcon: Icons.phone_in_talk_outlined,
                 ),
               ],
             ),
           ),
         ),
       ),
-      backgroundColor: themeChange.getTheme() ? AppColors.colorDark : AppColors.colorWhite,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
     );
   }
 
@@ -363,13 +318,6 @@ class ProfileScreen extends StatelessWidget {
         ShowToastDialog.closeLoader();
         ShowToastDialog.showToast("Account delete".tr);
         Get.offAll(const LoginScreen());
-        // await FireStoreUtils.deleteUser().then((value) {
-        //   ShowToastDialog.closeLoader();
-        //   if (value == true) {
-        //     ShowToastDialog.showToast("Account delete".tr);
-        //     Get.offAll(const LoginScreen());
-        //   }
-        // });
       },
     );
     Widget cancel = TextButton(
@@ -387,34 +335,6 @@ class ProfileScreen extends StatelessWidget {
           cancel,
         ],
         radius: 10.0);
-  }
-
-  Widget profileView({required String title, required BuildContext context, themeChange}) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title.tr,
-                textAlign: TextAlign.start,
-                style: TextStyle(
-                  color: title == "Logout"
-                      ? Colors.red
-                      : themeChange.getTheme()
-                          ? AppColors.assetColorGrey100
-                          : AppColors.assetColorGrey1000,
-                  fontSize: 16,
-                  fontFamily: AppColors.semiBold,
-                ),
-              ),
-            ],
-          ),
-        ),
-        SvgPicture.asset("assets/icons/ic_right.svg"),
-      ],
-    );
   }
 
   final ImagePicker imagePicker = ImagePicker();

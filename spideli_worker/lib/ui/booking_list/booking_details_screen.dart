@@ -5,11 +5,10 @@ import 'package:spideliworker/model/onprovider_order_model.dart';
 import 'package:spideliworker/model/tax_model.dart';
 import 'package:spideliworker/model/user.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
-import 'package:spideliworker/themes/app_colors.dart';
+import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/booking_list/job_actions.dart';
 import 'package:spideliworker/ui/chat_screen/full_screen_image_viewer.dart';
 import 'package:spideliworker/utils/region_service.dart';
-import 'package:spideliworker/widgets/network_image_widget.dart';
 import 'package:spideliworker/ui/chat_screen/chat_screen.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 import 'package:spideliworker/widgets/common_ui.dart';
@@ -21,527 +20,528 @@ import 'package:intl/intl.dart';
 import 'package:map_launcher/map_launcher.dart';
 import 'package:provider/provider.dart';
 
-import '../../themes/responsive.dart';
-
-class BookingDetailsScreen extends StatelessWidget {
+/// Job detail (archetype K). The booking is read as a live document and laid
+/// out as: service summary card, customer card with call / chat / directions,
+/// a [DsTimeline] of the job lifecycle, the price breakdown, extra charges,
+/// reviews and the completion proof. The current action (Start / Stop Time /
+/// Complete / Add Extra Charges) sits in a [DsStickyBar] at thumb reach.
+class BookingDetailsScreen extends StatefulWidget {
   const BookingDetailsScreen({super.key});
 
   @override
+  State<BookingDetailsScreen> createState() => _BookingDetailsScreenState();
+}
+
+class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
+  /// The booking the body last rendered, so the sticky action bar can show
+  /// the right action without opening a second stream.
+  final ValueNotifier<OnProviderOrderModel?> _current = ValueNotifier<OnProviderOrderModel?>(null);
+
+  @override
+  void dispose() {
+    _current.dispose();
+    super.dispose();
+  }
+
+  void _publish(OnProviderOrderModel? order) {
+    if (identical(_current.value, order)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _current.value = order;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+    // Subscribes the page to theme changes.
+    Provider.of<DarkThemeProvider>(context);
     return GetBuilder<BookingDetailsController>(
         init: BookingDetailsController(),
         builder: (controller) {
+          final l = context.dsLayout;
           return Scaffold(
-              backgroundColor: themeChange.getTheme() ? AppColors.DARK_BG_COLOR : const Color(0xffF9F9F9),
-              appBar: CommonUI.customAppBar(context,
-                  title: Text(
-                    'Booking Summary'.tr,
-                    style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 18, fontFamily: AppColors.semiBold),
-                  ),
-                  isBack: true),
+              backgroundColor: context.dsColors.background,
+              appBar: DsAppBar(title: 'Booking Summary'.tr),
               body: controller.orderId.value.isNotEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: StreamBuilder(
-                          stream: FireStoreUtils.firestore.collection(PROVIDER_ORDER).doc(controller.orderId.value).snapshots(),
-                          builder: (context, snapshot) {
-                            if (snapshot.hasError) {
-                              return Center(child: Text('Something went wrong'.tr));
-                            }
+                  ? StreamBuilder(
+                      stream: FireStoreUtils.firestore.collection(PROVIDER_ORDER).doc(controller.orderId.value).snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          _publish(null);
+                          return DsErrorState(message: 'Something went wrong'.tr);
+                        }
 
-                            if (snapshot.connectionState == ConnectionState.waiting) {
-                              return loader();
-                            }
-                            OnProviderOrderModel onProviderOrder = OnProviderOrderModel.fromJson(snapshot.data!.data()!);
-                            double total = 0.0;
-                            if (onProviderOrder.provider.disPrice == "" || onProviderOrder.provider.disPrice == "0") {
-                              total += onProviderOrder.quantity * double.parse(onProviderOrder.provider.price.toString());
-                            } else {
-                              total += onProviderOrder.quantity * double.parse(onProviderOrder.provider.disPrice.toString());
-                            }
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const DsSkeletonDetail(mediaHeight: 140);
+                        }
+                        OnProviderOrderModel onProviderOrder = OnProviderOrderModel.fromJson(snapshot.data!.data()!);
+                        _publish(onProviderOrder);
+                        double total = 0.0;
+                        if (onProviderOrder.provider.disPrice == "" || onProviderOrder.provider.disPrice == "0") {
+                          total += onProviderOrder.quantity * double.parse(onProviderOrder.provider.price.toString());
+                        } else {
+                          total += onProviderOrder.quantity * double.parse(onProviderOrder.provider.disPrice.toString());
+                        }
 
-                            if (onProviderOrder.taxModel != null) {
-                              for (var element in onProviderOrder.taxModel!) {
-                                total = total + getTaxValue(amount: (total).toString(), taxModel: element);
-                              }
-                            }
-                            return SingleChildScrollView(
-                              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 15),
-                                  child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                                    Text(
-                                      'Booking ID'.tr,
-                                      style: const TextStyle(color: AppColors.colorGrey500),
-                                    ),
-                                    InkWell(
-                                      onTap: () async {
-                                        await Clipboard.setData(ClipboardData(text: onProviderOrder.id)).then((value) {
-                                          ShowToastDialog.showToast("Booking ID Copied");
-                                        });
-                                      },
-                                      child: Text(
-                                        '# ${onProviderOrder.id}',
-                                        style: TextStyle(color: AppColors.colorPrimary),
-                                      ),
-                                    ),
-                                  ]),
-                                ),
-                                const Divider(
-                                  color: AppColors.colorDivider,
-                                ),
-                                Row(children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Padding(
-                                          padding: const EdgeInsets.only(top: 6),
-                                          child: Text(
-                                            onProviderOrder.provider.title.toString(),
-                                            style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.semiBold),
-                                          ),
-                                        ),
-                                        Row(
-                                          children: [
-                                            Padding(
-                                              padding: const EdgeInsets.only(top: 6),
-                                              child: Text(
-                                                'Date: '.tr,
-                                                style: const TextStyle(fontSize: 14, color: AppColors.colorGrey500, fontFamily: AppColors.medium),
-                                              ),
-                                            ),
-                                            Padding(
-                                              padding: const EdgeInsets.only(top: 6),
-                                              child: Text(
-                                                DateFormat('dd-MMM-yyyy')
-                                                    .format(onProviderOrder.newScheduleDateTime == null ? onProviderOrder.scheduleDateTime!.toDate() : onProviderOrder.newScheduleDateTime!.toDate()),
-                                                style: TextStyle(fontSize: 14, fontFamily: AppColors.medium, color: themeChange.getTheme() ? Colors.white : Colors.black),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        Row(
-                                          children: [
-                                            Padding(
-                                              padding: const EdgeInsets.only(top: 6),
-                                              child: Text(
-                                                'Time: '.tr,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  color: AppColors.colorGrey500,
-                                                  fontFamily: AppColors.medium,
-                                                ),
-                                              ),
-                                            ),
-                                            Padding(
-                                              padding: const EdgeInsets.only(top: 6),
-                                              child: Text(
-                                                DateFormat('hh:mm a')
-                                                    .format(onProviderOrder.newScheduleDateTime == null ? onProviderOrder.scheduleDateTime!.toDate() : onProviderOrder.newScheduleDateTime!.toDate()),
-                                                style: TextStyle(
-                                                  fontSize: 14,
-                                                  color: themeChange.getTheme() ? Colors.white : Colors.black,
-                                                  fontFamily: AppColors.medium,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.all(6.0),
-                                    child: Container(
-                                        height: 80,
-                                        width: 80,
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(10),
-                                          image: onProviderOrder.provider.photos.isNotEmpty
-                                              ? DecorationImage(
-                                                  image: NetworkImage(onProviderOrder.provider.photos.first.toString()),
-                                                  fit: BoxFit.cover,
-                                                )
-                                              : DecorationImage(
-                                                  image: NetworkImage(placeholderImage),
-                                                  fit: BoxFit.cover,
-                                                ),
-                                        )),
-                                  ),
-                                ]),
-                                const Divider(
-                                  color: AppColors.colorDivider,
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 6),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        if (onProviderOrder.taxModel != null) {
+                          for (var element in onProviderOrder.taxModel!) {
+                            total = total + getTaxValue(amount: (total).toString(), taxModel: element);
+                          }
+                        }
+
+                        final Widget primaryColumn = Column(crossAxisAlignment: CrossAxisAlignment.start, children: DsFadeSlideIn.stagger([
+                          summaryCard(context, onProviderOrder, total),
+                          const DsGap(DsSpace.lg),
+                          lifecycleCard(context, onProviderOrder),
+                        ]));
+
+                        final Widget secondaryColumn = Column(crossAxisAlignment: CrossAxisAlignment.start, children: DsFadeSlideIn.stagger([
+                          customerCard(context, onProviderOrder),
+                          const DsGap(DsSpace.lg),
+                          DsSectionHeader(title: "Price Detail".tr, icon: Icons.receipt_long_outlined, padding: EdgeInsets.zero),
+                          const DsGap(DsSpace.sm),
+                          priceTotalRow(controller, onProviderOrder, context),
+                          extraChargesCard(context, onProviderOrder),
+                          cancelReasonCard(context, onProviderOrder),
+                          reviewsSection(context, controller),
+                          completionPhotosWidget(context, onProviderOrder),
+                        ]));
+
+                        return SingleChildScrollView(
+                          padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.xxxl),
+                          child: DsResponsive(
+                            maxWidth: l.isWide ? DsLayout.wideMax : DsLayout.contentMax,
+                            child: l.isWide
+                                ? Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        'About Customer'.tr,
-                                        style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontFamily: AppColors.bold),
-                                      ),
-                                      onProviderOrder.status == ORDER_STATUS_ACCEPTED
-                                          ? Row(
-                                              mainAxisAlignment: MainAxisAlignment.end,
-                                              children: [
-                                                InkWell(
-                                                  onTap: () async {
-                                                    final directions = MapLauncher.directions(
-                                                      LocationCoords(onProviderOrder.address!.location!.latitude, onProviderOrder.address!.location!.longitude,
-                                                          title: onProviderOrder.address!.locality),
-                                                      mode: TravelMode.driving,
-                                                    );
-                                                    // map_launcher 6: getSupportedMaps also returns browser-only maps, so check isInstalled to keep the old "installed" check.
-                                                    final supportedMaps = await directions.getSupportedMaps(const [GoogleMaps()]);
-                                                    bool isAvailable = supportedMaps.any((map) => map.isInstalled);
-                                                    if (isAvailable == true) {
-                                                      await directions.show(map: const GoogleMaps());
-                                                    } else {
-                                                      ShowToastDialog.showToast("Google map is not installed".tr);
-                                                    }
-                                                  },
-                                                  child: Text(
-                                                    'Get Direction'.tr,
-                                                    style: TextStyle(color: AppColors.colorPrimary, fontFamily: AppColors.bold),
-                                                  ),
-                                                ),
-                                              ],
-                                            )
-                                          : const SizedBox(),
+                                      Expanded(child: primaryColumn),
+                                      const DsGap(DsSpace.xxl),
+                                      Expanded(child: secondaryColumn),
                                     ],
+                                  )
+                                : Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [primaryColumn, const DsGap(DsSpace.lg), secondaryColumn],
                                   ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: themeChange.getTheme() ? AppColors.darkContainerBorderColor : AppColors.colorWhite,
-                                      borderRadius:
-                                          const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomLeft: Radius.circular(10), bottomRight: Radius.circular(10)),
-                                    ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: Column(
-                                        children: [
-                                          Row(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              onProviderOrder.author.profilePictureURL != ""
-                                                  ? CircleAvatar(backgroundColor: Colors.amber, backgroundImage: NetworkImage(onProviderOrder.author.profilePictureURL.toString()), radius: 30.0)
-                                                  : CircleAvatar(backgroundColor: Colors.amber, backgroundImage: NetworkImage(placeholderImage), radius: 30.0),
-                                              const SizedBox(
-                                                width: 10,
-                                              ),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      onProviderOrder.author.fullName().toString(),
-                                                      style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.semiBold, fontSize: 14),
-                                                    ),
-                                                    Padding(
-                                                      padding: const EdgeInsets.symmetric(vertical: 5),
-                                                      child: Row(
-                                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                                        children: [
-                                                          Icon(Icons.location_on_outlined, size: 15, color: themeChange.getTheme() ? Colors.white : Colors.black),
-                                                          const SizedBox(
-                                                            width: 5,
-                                                          ),
-                                                          SizedBox(
-                                                            width: Responsive.width(60, context),
-                                                            child: Text(
-                                                              onProviderOrder.address!.getFullAddress().toString(),
-                                                              maxLines: 5,
-                                                              style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.regular, fontSize: 14),
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          onProviderOrder.status == ORDER_STATUS_ACCEPTED || onProviderOrder.status == ORDER_STATUS_ONGOING || onProviderOrder.status == ORDER_STATUS_ASSIGNED
-                                              ? Padding(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                                                  child: Column(
-                                                    children: [
-                                                      Row(
-                                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                        children: [
-                                                          Expanded(
-                                                            child: ElevatedButton.icon(
-                                                              icon: const Icon(
-                                                                Icons.call,
-                                                                color: Colors.white,
-                                                              ),
-                                                              onPressed: () async {
-                                                                makePhoneCall(onProviderOrder.author.phoneNumber.toString());
-                                                              },
-                                                              label: const Text(
-                                                                "Call",
-                                                                style: TextStyle(fontSize: 16, color: Colors.white, fontFamily: AppColors.medium),
-                                                              ),
-                                                              style: ElevatedButton.styleFrom(
-                                                                backgroundColor: AppColors.colorPrimary,
-                                                                //fixedSize: const Size(208, 43),
-                                                              ),
-                                                            ),
-                                                          ),
-                                                          const SizedBox(
-                                                            width: 10,
-                                                          ),
-                                                          Expanded(
-                                                            child: ElevatedButton.icon(
-                                                              icon: Icon(Icons.chat, color: themeChange.getTheme() ? Colors.white : Colors.black),
-                                                              onPressed: () async {
-                                                                ShowToastDialog.showLoader("Please wait".tr);
-
-                                                                User? customer = await FireStoreUtils.getUser(onProviderOrder.authorID);
-                                                                User? worker = await FireStoreUtils.getWorkerCurrentUser(onProviderOrder.workerId.toString());
-                                                                ShowToastDialog.closeLoader();
-                                                                Get.to(ChatScreen(), arguments: {
-                                                                  "senderName": worker?.fullName(),
-                                                                  "senderId": worker?.id,
-                                                                  "senderProfileUrl": worker?.profilePictureURL,
-                                                                  "receivedName": customer?.fullName(),
-                                                                  "receivedId": customer?.id,
-                                                                  "receivedProfileUrl": customer?.profilePictureURL,
-                                                                  "orderId": onProviderOrder.id,
-                                                                  "token": worker?.fcmToken,
-                                                                  "chatType": userRoleWorker,
-                                                                });
-                                                              },
-                                                              label: Text(
-                                                                "Chat".tr,
-                                                                style: TextStyle(fontSize: 16, color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                      const SizedBox(
-                                                        height: 10,
-                                                      ),
-                                                    ],
-                                                  ),
-                                                )
-                                              : const SizedBox(),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
-                                  child: Text("Price Detail".tr,
-                                      style: TextStyle(
-                                          color: themeChange.getTheme()
-                                              ? Colors.white
-                                              : themeChange.getTheme()
-                                                  ? Colors.white
-                                                  : Colors.black,
-                                          fontFamily: AppColors.bold)),
-                                ),
-                                priceTotalRow(controller, onProviderOrder, context),
-                                onProviderOrder.extraCharges.toString() != ""
-                                    ? Container(
-                                        margin: const EdgeInsets.symmetric(vertical: 10),
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(10),
-                                          color: themeChange.getTheme() ? AppColors.darkContainerBorderColor : AppColors.colorWhite,
-                                          boxShadow: [
-                                            themeChange.getTheme()
-                                                ? const BoxShadow()
-                                                : BoxShadow(
-                                                    color: Colors.grey.withOpacity(0.5),
-                                                    blurRadius: 5,
-                                                  ),
-                                          ],
-                                        ),
-                                        child: Container(
-                                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-                                            child: Column(
-                                              children: [
-                                                Row(
-                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                  children: [
-                                                    Text(
-                                                      "Total Extra Charges : ",
-                                                      style: TextStyle(
-                                                        color: themeChange.getTheme() ? Colors.white : Colors.black,
-                                                        fontFamily: "Poppinsm",
-                                                        fontWeight: FontWeight.w500,
-                                                      ),
-                                                    ),
-                                                    Text(
-                                                      amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.extraCharges.toString()),
-                                                      style: TextStyle(
-                                                        color: themeChange.getTheme() ? Colors.white : Colors.black,
-                                                        fontFamily: "Poppinsm",
-                                                        fontWeight: FontWeight.w500,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(
-                                                  height: 5,
-                                                ),
-                                                Row(
-                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                  children: [
-                                                    Expanded(
-                                                      child: Text(
-                                                        "Extra charge Notes : ",
-                                                        style: TextStyle(
-                                                          color: themeChange.getTheme() ? Colors.white : Colors.black,
-                                                          fontFamily: "Poppinsm",
-                                                          fontWeight: FontWeight.w500,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    Text(
-                                                      onProviderOrder.extraChargesDescription.toString(),
-                                                      style: TextStyle(
-                                                        color: themeChange.getTheme() ? Colors.white : Colors.black,
-                                                        fontFamily: "Poppinsm",
-                                                        fontWeight: FontWeight.w500,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ],
-                                            )),
-                                      )
-                                    : const SizedBox(),
-                                const SizedBox(
-                                  height: 10,
-                                ),
-                                onProviderOrder.reason!.isEmpty || onProviderOrder.reason == null
-                                    ? const SizedBox()
-                                    : Container(
-                                        decoration: BoxDecoration(
-                                          color: themeChange.getTheme() ? AppColors.darkContainerBorderColor : AppColors.colorWhite,
-                                          borderRadius:
-                                              const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomLeft: Radius.circular(10), bottomRight: Radius.circular(10)),
-                                        ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(8.0),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      "Cancelled reason".tr,
-                                                      style: const TextStyle(fontSize: 14),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(
-                                                height: 10,
-                                              ),
-                                              Text(
-                                                onProviderOrder.reason.toString(),
-                                                style: const TextStyle(color: Colors.red),
-                                              )
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                const SizedBox(
-                                  height: 10,
-                                ),
-                                const SizedBox(
-                                  height: 10,
-                                ),
-                                controller.ratingService.isEmpty
-                                    ? const SizedBox()
-                                    : Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(vertical: 16),
-                                            child: Text("Reviews (${controller.ratingService.length})",
-                                                style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontFamily: AppColors.bold)),
-                                          ),
-                                          reviewTabViewWidget(controller),
-                                        ],
-                                      ),
-                                const SizedBox(
-                                  height: 10,
-                                ),
-                                completionPhotosWidget(onProviderOrder, themeChange.getTheme()),
-                                onProviderOrder.status == ORDER_STATUS_CANCELLED ? const SizedBox() : jobActionsWidget(context, onProviderOrder),
-                              ]),
-                            );
-                          }),
-                    )
-                  : Container());
+                          ),
+                        );
+                      })
+                  : const SizedBox.shrink(),
+              bottomNavigationBar: ValueListenableBuilder<OnProviderOrderModel?>(
+                valueListenable: _current,
+                builder: (context, onProviderOrder, _) {
+                  if (onProviderOrder == null) return const SizedBox.shrink();
+                  return onProviderOrder.status == ORDER_STATUS_CANCELLED ? const SizedBox.shrink() : jobActionsWidget(context, onProviderOrder);
+                },
+              ));
         });
   }
 
-  Widget reviewTabViewWidget(BookingDetailsController controller) {
-    return controller.ratingService.isEmpty
-        ? Center(
-            child: Text("No review Found".tr),
-          )
-        : ListView.builder(
-            itemCount: controller.ratingService.length,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemBuilder: (context, index) {
-              return Container(
-                decoration: BoxDecoration(borderRadius: BorderRadius.circular(14.0), border: Border.all(color: Colors.grey.withOpacity(0.30), width: 2.0)),
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(controller.ratingService[index].uname.toString(), style: const TextStyle(fontSize: 16, letterSpacing: 1, fontWeight: FontWeight.w600)),
-                              Text(
-                                DateFormat('dd MMM').format(controller.ratingService[index].createdAt!.toDate()),
-                                style: const TextStyle(fontSize: 14),
+  /// Service, schedule, status and the booking id (tap to copy).
+  Widget summaryCard(BuildContext context, OnProviderOrderModel onProviderOrder, double total) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final DateTime schedule = onProviderOrder.newScheduleDateTime == null ? onProviderOrder.scheduleDateTime!.toDate() : onProviderOrder.newScheduleDateTime!.toDate();
+    final String amount = amountShow(amount: total.toString(), currency: RegionService.currencyForRegion(onProviderOrder.regionId));
+    return DsCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DsImage(
+                url: onProviderOrder.provider.photos.isNotEmpty ? onProviderOrder.provider.photos.first.toString() : placeholderImage,
+                height: 84,
+                width: 84,
+                radius: DsRadius.md,
+                heroTag: 'job-${onProviderOrder.id}',
+              ),
+              const DsGap(DsSpace.lg),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: DsStatusChip(
+                        label: onProviderOrder.status.toString().tr,
+                        status: onProviderOrder.status,
+                        pulse: onProviderOrder.status == ORDER_STATUS_ONGOING,
+                      ),
+                    ),
+                    const DsGap(DsSpace.sm),
+                    Text(onProviderOrder.provider.title.toString(), style: t.titleSm),
+                    const DsGap(DsSpace.xs),
+                    Text(
+                      onProviderOrder.provider.priceUnit == 'Fixed' ? amount : "$amount/hr",
+                      style: t.metric.copyWith(fontSize: 20).withColor(c.brandStrong).tabular,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const DsGap(DsSpace.lg),
+          Divider(height: 1, color: c.divider),
+          const DsGap(DsSpace.md),
+          Wrap(
+            spacing: DsSpace.xl,
+            runSpacing: DsSpace.sm,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.event_outlined, size: 18, color: c.textMuted),
+                  const DsGap(DsSpace.sm),
+                  Text('Date: '.tr, style: t.caption),
+                  Text(DateFormat('dd-MMM-yyyy').format(schedule), style: t.bodyStrong),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.schedule_outlined, size: 18, color: c.textMuted),
+                  const DsGap(DsSpace.sm),
+                  Text('Time: '.tr, style: t.caption),
+                  Text(DateFormat('hh:mm a').format(schedule), style: t.bodyStrong),
+                ],
+              ),
+            ],
+          ),
+          const DsGap(DsSpace.md),
+          Semantics(
+            button: true,
+            label: 'Booking ID'.tr,
+            child: InkWell(
+              borderRadius: DsRadius.brSm,
+              onTap: () async {
+                await Clipboard.setData(ClipboardData(text: onProviderOrder.id)).then((value) {
+                  ShowToastDialog.showToast("Booking ID Copied");
+                });
+              },
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 40),
+                child: Row(
+                  children: [
+                    Text('Booking ID'.tr, style: t.caption),
+                    const DsGap(DsSpace.sm),
+                    Expanded(
+                      child: Text(
+                        '# ${onProviderOrder.id}',
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                        style: t.bodySm.withColor(c.brandStrong).tabular,
+                      ),
+                    ),
+                    const DsGap(DsSpace.sm),
+                    Icon(Icons.copy_rounded, size: 16, color: c.brandStrong),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Created -> assigned/accepted -> started -> stopped -> completed, built
+  /// only from fields the model already carries.
+  Widget lifecycleCard(BuildContext context, OnProviderOrderModel onProviderOrder) {
+    String? at(dynamic timestamp) => timestamp == null ? null : DateFormat('dd MMM, hh:mm a').format(timestamp.toDate());
+
+    final String status = onProviderOrder.status.toString();
+    final bool cancelled = status == ORDER_STATUS_CANCELLED || status == ORDER_STATUS_REJECTED;
+    final bool started = onProviderOrder.startTime != null || status == ORDER_STATUS_ONGOING || status == ORDER_STATUS_COMPLETED;
+    final bool stopped = onProviderOrder.endTime != null;
+    final bool completed = status == ORDER_STATUS_COMPLETED;
+    final bool hourly = onProviderOrder.provider.priceUnit == "Hourly";
+
+    DsStepState state({required bool done, required bool current}) => done
+        ? DsStepState.done
+        : current
+            ? DsStepState.current
+            : DsStepState.upcoming;
+
+    return DsCard.outlined(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DsSectionHeader(title: 'Job progress'.tr, icon: Icons.timeline_rounded, padding: EdgeInsets.zero),
+          const DsGap(DsSpace.md),
+          DsTimeline(steps: [
+            DsTimelineStep(
+              title: 'Booked'.tr,
+              meta: at(onProviderOrder.createdAt),
+              state: DsStepState.done,
+              icon: Icons.event_available_outlined,
+            ),
+            DsTimelineStep(
+              title: 'Assigned'.tr,
+              state: cancelled ? DsStepState.error : state(done: started, current: !started),
+              icon: Icons.assignment_ind_outlined,
+            ),
+            DsTimelineStep(
+              title: 'Started'.tr,
+              meta: at(onProviderOrder.startTime),
+              state: cancelled ? DsStepState.upcoming : state(done: started && (stopped || completed), current: started && !completed),
+              icon: Icons.play_arrow_rounded,
+            ),
+            if (hourly)
+              DsTimelineStep(
+                title: 'Stopped'.tr,
+                meta: at(onProviderOrder.endTime),
+                state: state(done: stopped, current: started && !stopped),
+                icon: Icons.timer_off_outlined,
+              ),
+            DsTimelineStep(
+              title: 'Completed'.tr,
+              state: completed ? DsStepState.done : DsStepState.upcoming,
+              icon: Icons.check_circle_outline_rounded,
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  /// Customer avatar, address, "Get Direction", Call and Chat.
+  Widget customerCard(BuildContext context, OnProviderOrderModel onProviderOrder) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: DsSectionHeader(title: 'About Customer'.tr, icon: Icons.person_outline, padding: EdgeInsets.zero),
+            ),
+            onProviderOrder.status == ORDER_STATUS_ACCEPTED
+                ? DsButton.ghost(
+                    label: 'Get Direction'.tr,
+                    icon: Icons.directions_outlined,
+                    size: DsButtonSize.sm,
+                    onPressed: () async {
+                      final directions = MapLauncher.directions(
+                        LocationCoords(onProviderOrder.address!.location!.latitude, onProviderOrder.address!.location!.longitude,
+                            title: onProviderOrder.address!.locality),
+                        mode: TravelMode.driving,
+                      );
+                      // map_launcher 6: getSupportedMaps also returns browser-only maps, so check isInstalled to keep the old "installed" check.
+                      final supportedMaps = await directions.getSupportedMaps(const [GoogleMaps()]);
+                      bool isAvailable = supportedMaps.any((map) => map.isInstalled);
+                      if (isAvailable == true) {
+                        await directions.show(map: const GoogleMaps());
+                      } else {
+                        ShowToastDialog.showToast("Google map is not installed".tr);
+                      }
+                    },
+                  )
+                : const SizedBox(),
+          ],
+        ),
+        const DsGap(DsSpace.sm),
+        DsCard(
+          child: Column(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DsAvatar(
+                    imageUrl: onProviderOrder.author.profilePictureURL != "" ? onProviderOrder.author.profilePictureURL.toString() : placeholderImage,
+                    name: onProviderOrder.author.fullName().toString(),
+                    size: 60,
+                    ring: true,
+                  ),
+                  const DsGap(DsSpace.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(onProviderOrder.author.fullName().toString(), style: t.titleSm),
+                        const DsGap(DsSpace.sm),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.location_on_outlined, size: 16, color: c.textMuted),
+                            const DsGap(DsSpace.xs),
+                            Expanded(
+                              child: Text(
+                                onProviderOrder.address!.getFullAddress().toString(),
+                                maxLines: 5,
+                                style: t.bodySecondary,
                               ),
-                            ],
-                          ),
-                          const SizedBox(
-                            height: 4,
-                          ),
-                          RatingBar.builder(
-                            ignoreGestures: true,
-                            initialRating: double.parse(controller.ratingService[index].rating.toString()),
-                            direction: Axis.horizontal,
-                            itemSize: 20,
-                            itemPadding: const EdgeInsets.symmetric(horizontal: 4.0),
-                            itemBuilder: (context, _) => Icon(
-                              Icons.star,
-                              color: AppColors.colorPrimary,
                             ),
-                            onRatingUpdate: (double rate) {},
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              onProviderOrder.status == ORDER_STATUS_ACCEPTED || onProviderOrder.status == ORDER_STATUS_ONGOING || onProviderOrder.status == ORDER_STATUS_ASSIGNED
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: DsSpace.lg),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: DsButton.primary(
+                              label: "Call",
+                              icon: Icons.call,
+                              onPressed: () async {
+                                makePhoneCall(onProviderOrder.author.phoneNumber.toString());
+                              },
+                            ),
+                          ),
+                          const DsGap(DsSpace.md),
+                          Expanded(
+                            child: DsButton.secondary(
+                              label: "Chat".tr,
+                              icon: Icons.chat,
+                              onPressed: () async {
+                                ShowToastDialog.showLoader("Please wait".tr);
+
+                                User? customer = await FireStoreUtils.getUser(onProviderOrder.authorID);
+                                User? worker = await FireStoreUtils.getWorkerCurrentUser(onProviderOrder.workerId.toString());
+                                ShowToastDialog.closeLoader();
+                                Get.to(ChatScreen(), arguments: {
+                                  "senderName": worker?.fullName(),
+                                  "senderId": worker?.id,
+                                  "senderProfileUrl": worker?.profilePictureURL,
+                                  "receivedName": customer?.fullName(),
+                                  "receivedId": customer?.id,
+                                  "receivedProfileUrl": customer?.profilePictureURL,
+                                  "orderId": onProviderOrder.id,
+                                  "token": worker?.fcmToken,
+                                  "chatType": userRoleWorker,
+                                });
+                              },
+                            ),
                           ),
                         ],
                       ),
-                      const Divider(),
-                      const SizedBox(
-                        height: 5,
+                    )
+                  : const SizedBox(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget extraChargesCard(BuildContext context, OnProviderOrderModel onProviderOrder) {
+    final t = context.dsText;
+    if (onProviderOrder.extraCharges.toString() == "") return const SizedBox();
+    return Padding(
+      padding: const EdgeInsets.only(top: DsSpace.md),
+      child: DsCard.tinted(
+        tone: DsTone.info,
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("Total Extra Charges : ", style: t.bodyStrong),
+                Text(
+                  amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.extraCharges.toString()),
+                  style: t.bodyStrong.tabular,
+                ),
+              ],
+            ),
+            const DsGap(DsSpace.sm),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(child: Text("Extra charge Notes : ", style: t.bodyStrong)),
+                Flexible(
+                  child: Text(
+                    onProviderOrder.extraChargesDescription.toString(),
+                    textAlign: TextAlign.end,
+                    style: t.bodyStrong,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget cancelReasonCard(BuildContext context, OnProviderOrderModel onProviderOrder) {
+    if (onProviderOrder.reason!.isEmpty || onProviderOrder.reason == null) return const SizedBox();
+    return Padding(
+      padding: const EdgeInsets.only(top: DsSpace.md),
+      child: DsInlineAlert(
+        tone: DsTone.danger,
+        icon: Icons.cancel_outlined,
+        title: "Cancelled reason".tr,
+        message: onProviderOrder.reason.toString(),
+      ),
+    );
+  }
+
+  Widget reviewsSection(BuildContext context, BookingDetailsController controller) {
+    return DsObserve(builder: (context) {
+      if (controller.ratingService.isEmpty) return const SizedBox();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const DsGap(DsSpace.lg),
+          DsSectionHeader(title: "Reviews (${controller.ratingService.length})", icon: Icons.star_outline_rounded, padding: EdgeInsets.zero),
+          const DsGap(DsSpace.sm),
+          reviewTabViewWidget(context, controller),
+        ],
+      );
+    });
+  }
+
+  Widget reviewTabViewWidget(BuildContext context, BookingDetailsController controller) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return controller.ratingService.isEmpty
+        ? DsEmptyState(icon: Icons.star_outline_rounded, title: "No review Found".tr, compact: true)
+        : ListView.separated(
+            itemCount: controller.ratingService.length,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            separatorBuilder: (_, _) => const DsGap(DsSpace.md),
+            itemBuilder: (context, index) {
+              return DsFadeSlideIn(
+                index: index,
+                child: DsCard.outlined(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(child: Text(controller.ratingService[index].uname.toString(), style: t.titleSm)),
+                          Text(
+                            DateFormat('dd MMM').format(controller.ratingService[index].createdAt!.toDate()),
+                            style: t.caption,
+                          ),
+                        ],
                       ),
-                      Text(controller.ratingService[index].comment.toString()),
+                      const DsGap(DsSpace.xs),
+                      RatingBar.builder(
+                        ignoreGestures: true,
+                        initialRating: double.parse(controller.ratingService[index].rating.toString()),
+                        direction: Axis.horizontal,
+                        itemSize: 20,
+                        itemPadding: const EdgeInsets.only(right: DsSpace.xs),
+                        itemBuilder: (context, _) => Icon(
+                          Icons.star,
+                          color: c.warning,
+                        ),
+                        onRatingUpdate: (double rate) {},
+                      ),
+                      const DsGap(DsSpace.sm),
+                      Divider(height: 1, color: c.divider),
+                      const DsGap(DsSpace.sm),
+                      Text(controller.ratingService[index].comment.toString(), style: t.body),
                     ],
                   ),
                 ),
@@ -555,38 +555,6 @@ class BookingDetailsScreen extends StatelessWidget {
     controller.discount.value = 0.0;
     controller.totalAmount.value = 0.0;
     controller.adminComm.value = 0.0;
-    // if (onProviderOrder.provider.disPrice == "" ||
-    //     onProviderOrder.provider.disPrice == "0") {
-    //   controller.price.value =
-    //       double.parse(onProviderOrder.provider.price.toString()) *
-    //           onProviderOrder.quantity;
-    // } else {
-    //   controller.price.value =
-    //       double.parse(onProviderOrder.provider.disPrice.toString()) *
-    //           onProviderOrder.quantity;
-    // }
-    //
-    // if (onProviderOrder.discountType == 'Percentage' ||
-    //     onProviderOrder.discountType == 'Percent') {
-    //   controller.discount.value = controller.price.value *
-    //       double.parse(onProviderOrder.discountLabel.toString()) /
-    //       100;
-    // } else {
-    //   controller.discount.value =
-    //       double.parse(onProviderOrder.discountLabel.toString());
-    // }
-    //
-    // controller.subTotal.value =
-    //     controller.price.value - controller.discount.value;
-    //
-    // controller.totalAmount.value = controller.subTotal.value;
-    //
-    // controller.adminComm.value =
-    //     (onProviderOrder.adminCommissionType == 'Percent')
-    //         ? (controller.totalAmount.value *
-    //                 double.parse(onProviderOrder.adminCommission!)) /
-    //             100
-    //         : double.parse(onProviderOrder.adminCommission!);
 
     double safeDouble(value, [double defaultValue = 0.0]) {
       if (value == null) return defaultValue;
@@ -618,253 +586,176 @@ class BookingDetailsScreen extends StatelessWidget {
       }
     }
 
-    final themeChange = Provider.of<DarkThemeProvider>(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 5),
-      child: Container(
-        decoration: BoxDecoration(
-          color: themeChange.getTheme() ? Colors.grey.shade900 : AppColors.colorLightGrey,
-          borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomLeft: Radius.circular(10), bottomRight: Radius.circular(10)),
-        ),
-        child: Column(
-          children: [
-            Container(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "Price".tr,
-                      style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
-                    ),
-                    Row(
-                      children: [
-                        Text(
-                          (onProviderOrder.provider.disPrice == "" || onProviderOrder.provider.disPrice == "0")
-                              ? '${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.provider.price.toString())} × ${onProviderOrder.quantity}'
-                              : '${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.provider.disPrice.toString())} × ${onProviderOrder.quantity}',
-                          style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.regular),
-                        ),
-                        const SizedBox(
-                          width: 10,
-                        ),
-                        Text(
-                          amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.price.toString()),
-                          style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
-                        ),
-                      ],
-                    ),
-                  ],
-                )),
-            controller.discount.value != 0
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 10),
-                    child: Divider(),
-                  )
-                : const SizedBox(),
-            controller.discount.value != 0
-                ? Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              "Discount".tr,
-                              style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
-                            ),
-                            // Text(
-                            //   "(${controller.onProviderOrder.value.provider.disPrice}% off)",
-                            //   style: TextStyle( color: Colors.green, fontFamily: AppColors.medium),
-                            // ),
-                          ],
-                        ),
-                        Text(
-                          '(- ${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.discount.value.toString())})',
-                          style: const TextStyle(color: Colors.green, fontFamily: AppColors.medium),
-                        ),
-                      ],
-                    ))
-                : const SizedBox(),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 10),
-              child: Divider(),
+    final BuildContext ctx = context;
+    final c = ctx.dsColors;
+    final t = ctx.dsText;
+
+    Widget line({required Widget label, required Widget value}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: DsSpace.sm, horizontal: DsSpace.lg),
+          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [label, const DsGap(DsSpace.md), Flexible(child: value)]),
+        );
+    Widget rule() => Padding(padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg), child: Divider(height: 1, color: c.divider));
+
+    return DsCard.outlined(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          line(
+            label: Text("Price".tr, style: t.bodyStrong),
+            value: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    (onProviderOrder.provider.disPrice == "" || onProviderOrder.provider.disPrice == "0")
+                        ? '${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.provider.price.toString())} × ${onProviderOrder.quantity}'
+                        : '${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.provider.disPrice.toString())} × ${onProviderOrder.quantity}',
+                    overflow: TextOverflow.ellipsis,
+                    style: t.bodySecondary.tabular,
+                  ),
+                ),
+                const DsGap(DsSpace.md),
+                Text(
+                  amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.price.toString()),
+                  style: t.bodyStrong.tabular,
+                ),
+              ],
             ),
-            Container(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "SubTotal".tr,
-                      style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
-                    ),
-                    Text(
-                      amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.subTotal.toString()),
-                      style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
-                    ),
-                  ],
-                )),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 10),
-              child: Divider(),
+          ),
+          controller.discount.value != 0 ? rule() : const SizedBox(),
+          controller.discount.value != 0
+              ? line(
+                  label: Text("Discount".tr, style: t.bodyStrong),
+                  value: Text(
+                    '(- ${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.discount.value.toString())})',
+                    textAlign: TextAlign.end,
+                    style: t.bodyStrong.withColor(c.successStrong).tabular,
+                  ),
+                )
+              : const SizedBox(),
+          rule(),
+          line(
+            label: Text("SubTotal".tr, style: t.bodyStrong),
+            value: Text(
+              amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.subTotal.toString()),
+              textAlign: TextAlign.end,
+              style: t.bodyStrong.tabular,
             ),
-            ListView.builder(
-              itemCount: onProviderOrder.taxModel!.length,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemBuilder: (context, index) {
-                TaxModel taxModel = onProviderOrder.taxModel![index];
-                return Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              "${taxModel.title.toString()} (${taxModel.type == "fix" ? amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: taxModel.tax) : "${taxModel.tax}%"})",
-                              style: TextStyle(fontFamily: AppColors.medium, color: themeChange.getTheme() ? Colors.white : Colors.black),
-                            ),
-                          ),
-                          Text(
-                            amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: getTaxValue(amount: (double.parse(controller.subTotal.toString())).toString(), taxModel: taxModel).toString()),
-                            style: TextStyle(fontFamily: AppColors.medium, color: themeChange.getTheme() ? Colors.white : Colors.black, fontSize: 14),
-                          ),
-                        ],
+          ),
+          rule(),
+          ListView.builder(
+            itemCount: onProviderOrder.taxModel!.length,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemBuilder: (context, index) {
+              TaxModel taxModel = onProviderOrder.taxModel![index];
+              return Column(
+                children: [
+                  line(
+                    label: Flexible(
+                      child: Text(
+                        "${taxModel.title.toString()} (${taxModel.type == "fix" ? amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: taxModel.tax) : "${taxModel.tax}%"})",
+                        style: t.bodySecondary,
                       ),
                     ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 10),
-                      child: Divider(),
+                    value: Text(
+                      amountShow(
+                          currency: RegionService.currencyForRegion(onProviderOrder.regionId),
+                          amount: getTaxValue(amount: (double.parse(controller.subTotal.toString())).toString(), taxModel: taxModel).toString()),
+                      textAlign: TextAlign.end,
+                      style: t.bodyStrong.tabular,
                     ),
-                  ],
-                );
-              },
+                  ),
+                  rule(),
+                ],
+              );
+            },
+          ),
+          onProviderOrder.notes.isNotEmpty
+              ? line(
+                  label: Text("Remarks".tr, style: t.bodyStrong),
+                  value: Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: DsButton.ghost(
+                      label: "View".tr,
+                      size: DsButtonSize.sm,
+                      onPressed: () {
+                        viewNotesheet(onProviderOrder.notes, ctx);
+                      },
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
+          Container(
+            decoration: BoxDecoration(color: c.brandSoft, borderRadius: const BorderRadius.vertical(bottom: Radius.circular(DsRadius.md))),
+            child: line(
+              label: Text("Total Amount".tr, style: t.label),
+              value: Text(
+                amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.totalAmount.toString()),
+                textAlign: TextAlign.end,
+                style: t.metric.copyWith(fontSize: 20).withColor(c.brandStrong).tabular,
+              ),
             ),
-            onProviderOrder.notes.isNotEmpty
-                ? Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          "Remarks".tr,
-                          style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
-                        ),
-                        InkWell(
-                          onTap: () {
-                            viewNotesheet(onProviderOrder.notes, themeChange, context);
-                          },
-                          child: Text(
-                            "View".tr,
-                            style: TextStyle(color: AppColors.colorPrimary, fontFamily: AppColors.medium),
-                          ),
-                        ),
-                      ],
-                    ))
-                : Container(),
-            Container(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "Total Amount".tr,
-                      style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
-                    ),
-                    Text(
-                      amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.totalAmount.toString()),
-                      style: TextStyle(color: themeChange.getTheme() ? Colors.white : Colors.black, fontFamily: AppColors.medium),
-                    ),
-                  ],
-                )),
-            const SizedBox(
-              height: 5,
-            )
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  void viewNotesheet(String notes, themeChange, context) {
+  void viewNotesheet(String notes, BuildContext context) {
     Get.bottomSheet(
-      SizedBox(
-        height: Responsive.height(20, context),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                  padding: const EdgeInsets.only(top: 20),
-                  child: Text(
-                    'Remark'.tr,
-                    style: TextStyle(color: themeChange.getTheme() ? Colors.white70 : Colors.black, fontSize: 16),
-                  )),
-              Container(
-                padding: const EdgeInsets.only(left: 20, right: 20, top: 20),
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.all(Radius.circular(8)),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    color: const Color(0XFFF1F4F7),
-                    alignment: Alignment.center,
-                    child: Text(
-                      notes,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: themeChange.getTheme() ? Colors.grey.shade500 : Colors.black,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+      DsSheet(
+        title: 'Remark'.tr,
+        child: Text(notes, style: context.dsText.body),
       ),
-      backgroundColor: themeChange.getTheme() ? AppColors.colorDark : AppColors.colorWhite,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
     );
   }
 
   /// Photos attached by the worker when completing the job.
-  Widget completionPhotosWidget(OnProviderOrderModel onProviderOrder, bool dark) {
+  Widget completionPhotosWidget(BuildContext context, OnProviderOrderModel onProviderOrder) {
     if (onProviderOrder.completionPhotos.isEmpty && onProviderOrder.completionSignature == null) return const SizedBox();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Text("Completion photos".tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark, fontFamily: AppColors.bold)),
-        ),
+        const DsGap(DsSpace.lg),
+        DsSectionHeader(title: "Completion photos".tr, icon: Icons.photo_library_outlined, padding: EdgeInsets.zero),
+        const DsGap(DsSpace.sm),
         SizedBox(
-          height: 90,
+          height: 96,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: onProviderOrder.completionPhotos.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (context, index) => InkWell(
-              onTap: () => Get.to(() => FullScreenImageViewer(imageUrl: onProviderOrder.completionPhotos[index])),
-              child: NetworkImageWidget(imageUrl: onProviderOrder.completionPhotos[index], height: 90, width: 90, fit: BoxFit.cover, borderRadius: 8),
+            separatorBuilder: (_, _) => const DsGap(DsSpace.sm),
+            itemBuilder: (context, index) => Semantics(
+              button: true,
+              label: "Completion photos".tr,
+              child: InkWell(
+                borderRadius: DsRadius.brMd,
+                onTap: () => Get.to(() => FullScreenImageViewer(imageUrl: onProviderOrder.completionPhotos[index])),
+                child: DsImage(url: onProviderOrder.completionPhotos[index], height: 96, width: 96, radius: DsRadius.md),
+              ),
             ),
           ),
         ),
         if (onProviderOrder.completionSignature != null) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Text("Customer signature".tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark, fontFamily: AppColors.bold)),
-          ),
-          InkWell(
-            onTap: () => Get.to(() => FullScreenImageViewer(imageUrl: onProviderOrder.completionSignature!)),
-            child: Container(
-              color: Colors.white,
-              child: NetworkImageWidget(imageUrl: onProviderOrder.completionSignature!, height: 90, width: 180, fit: BoxFit.contain, borderRadius: 8),
+          const DsGap(DsSpace.lg),
+          DsSectionHeader(title: "Customer signature".tr, icon: Icons.draw_outlined, padding: EdgeInsets.zero),
+          const DsGap(DsSpace.sm),
+          Semantics(
+            button: true,
+            label: "Customer signature".tr,
+            child: InkWell(
+              borderRadius: DsRadius.brMd,
+              onTap: () => Get.to(() => FullScreenImageViewer(imageUrl: onProviderOrder.completionSignature!)),
+              child: DsCard.outlined(
+                padding: const EdgeInsets.all(DsSpace.sm),
+                // White backdrop: the signature PNG is drawn in black ink.
+                color: Colors.white,
+                child: DsImage(url: onProviderOrder.completionSignature!, height: 96, width: 192, fit: BoxFit.contain, radius: DsRadius.sm),
+              ),
             ),
           ),
         ],
@@ -872,51 +763,66 @@ class BookingDetailsScreen extends StatelessWidget {
     );
   }
 
-  /// Start / Stop Time / Complete / Add Extra Charges (see JobActions).
+  /// Start / Stop Time / Complete / Add Extra Charges (see JobActions), at
+  /// thumb reach in a sticky bar.
   Widget jobActionsWidget(BuildContext context, OnProviderOrderModel onProviderOrder) {
-    Widget button(String label, VoidCallback onPressed) => ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            elevation: 0.0,
-            backgroundColor: AppColors.colorPrimary,
-            padding: const EdgeInsets.all(8),
-            side: BorderSide(color: AppColors.colorPrimary, width: 0.4),
-            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
-          ),
-          onPressed: onPressed,
-          child: Text(label.tr, style: const TextStyle(color: AppColors.colorWhite, fontFamily: AppColors.semiBold)),
-        );
-
+    final c = context.dsColors;
     if (onProviderOrder.status == ORDER_STATUS_ASSIGNED) {
-      return Padding(
-        padding: const EdgeInsets.all(20),
-        child: SizedBox(width: Responsive.width(70, context), child: button('Start', () => JobActions.start(onProviderOrder))),
+      return DsStickyBar(
+        child: DsButton.primary(
+          label: 'Start'.tr,
+          icon: Icons.play_arrow_rounded,
+          size: DsButtonSize.lg,
+          expand: true,
+          onPressed: () => JobActions.start(onProviderOrder),
+        ),
       );
     }
     if (onProviderOrder.status == ORDER_STATUS_ONGOING) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      final bool stopTime = onProviderOrder.provider.priceUnit.toString() == "Hourly" && onProviderOrder.endTime == null;
+      return DsStickyBar(
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Expanded(
-              child: onProviderOrder.provider.priceUnit.toString() == "Hourly" && onProviderOrder.endTime == null
-                  ? button('Stop Time', () => JobActions.stopTime(onProviderOrder))
-                  : button('Complete', () => JobActions.complete(onProviderOrder)),
+              child: stopTime
+                  ? DsButton.tonal(
+                      label: 'Stop Time'.tr,
+                      icon: Icons.timer_off_outlined,
+                      size: DsButtonSize.lg,
+                      expand: true,
+                      onPressed: () => JobActions.stopTime(onProviderOrder),
+                    )
+                  : DsButton.primary(
+                      label: 'Complete'.tr,
+                      icon: Icons.check_circle_outline_rounded,
+                      size: DsButtonSize.lg,
+                      expand: true,
+                      color: c.success,
+                      onPressed: () => JobActions.complete(onProviderOrder),
+                    ),
             ),
-            const SizedBox(width: 10),
             onProviderOrder.extraCharges!.isNotEmpty && onProviderOrder.extraCharges != null
                 ? const SizedBox()
                 : Expanded(
-                    child: button('Add Extra Charges', () {
-                      BookingDetailsController bookingDetailsController = Get.put(BookingDetailsController());
-                      CommonUI.showAddExtraChargesDialog(context, bookingDetailsController, onProviderOrder);
-                      Get.delete<BookingDetailsController>();
-                    }),
+                    child: Padding(
+                      padding: const EdgeInsetsDirectional.only(start: DsSpace.md),
+                      child: DsButton.secondary(
+                        label: 'Add Extra Charges'.tr,
+                        icon: Icons.add_rounded,
+                        size: DsButtonSize.lg,
+                        expand: true,
+                        onPressed: () {
+                          BookingDetailsController bookingDetailsController = Get.put(BookingDetailsController());
+                          CommonUI.showAddExtraChargesDialog(context, bookingDetailsController, onProviderOrder);
+                          Get.delete<BookingDetailsController>();
+                        },
+                      ),
+                    ),
                   ),
           ],
         ),
       );
     }
-    return const SizedBox();
+    return const SizedBox.shrink();
   }
 }

@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:spideliworker/constant/constants.dart';
 import 'package:spideliworker/constant/show_toast_dialog.dart';
 import 'package:spideliworker/controller/help_support_controller.dart';
@@ -7,15 +6,11 @@ import 'package:spideliworker/model/chat_video_container.dart';
 import 'package:spideliworker/model/conversation_model.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/services/preferences.dart';
-import 'package:spideliworker/themes/app_colors.dart';
-import 'package:spideliworker/themes/app_them_data.dart';
-import 'package:spideliworker/themes/responsive.dart';
+import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/chat_screen/full_screen_image_viewer.dart';
 import 'package:spideliworker/ui/chat_screen/full_screen_video_viewer.dart';
 import 'package:spideliworker/ui/dashboard/dashboard_screen.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
-import 'package:spideliworker/widgets/common_ui.dart';
-import 'package:spideliworker/widgets/network_image_widget.dart';
 import 'package:firebase_pagination/firebase_pagination.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -23,13 +18,19 @@ import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+/// Help & Support (archetype O): a direct line to the administrator. The page
+/// opens with a "Contact us" banner, then the conversation as asymmetric
+/// bubbles with delivery ticks, and the composer (attach + send) sits in a
+/// [DsStickyBar].
 class HelpSupportScreen extends StatelessWidget {
   final bool? isNavigateViaNotification;
   HelpSupportScreen({super.key, this.isNavigateViaNotification});
 
   @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+    // Subscribes the page to theme changes.
+    Provider.of<DarkThemeProvider>(context);
+    // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: () async {
         if (isNavigateViaNotification == true) {
@@ -43,106 +44,119 @@ class HelpSupportScreen extends StatelessWidget {
       child: GetX(
         init: HelpSupportController(),
         builder: (controller) {
-          return Scaffold(
-            backgroundColor: themeChange.getTheme() ? AppThemeData.grey800 : AppThemeData.grey50,
-            appBar: CommonUI.customAppBar(context,
-                title: Text(
-                  "Help & Support",
-                  style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 18, fontFamily: AppColors.semiBold),
+          final c = context.dsColors;
+          final t = context.dsText;
+          // Read synchronously so this GetX tracks the worker's avatar.
+          final String myAvatar = controller.userModel.value.profilePictureURL.toString();
+
+          return DsScaffold(
+            title: "Help & Support",
+            onBack: () {
+              Get.back();
+            },
+            maxContentWidth: DsLayout.contentMax,
+            body: Column(
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xs),
+                  child: DsFadeSlideIn(
+                    child: DsCard.tinted(
+                      tone: DsTone.info,
+                      padding: const EdgeInsets.all(DsSpace.md),
+                      child: Row(
+                        children: [
+                          DsIconWell(icon: Icons.support_agent_outlined, tone: DsTone.info, size: 40, circle: true),
+                          const DsGap(DsSpace.md),
+                          Expanded(
+                            child: Text('Start typing with admin...'.tr, style: t.bodySm),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-                isBack: true),
-            body: Padding(
-              padding: const EdgeInsets.only(left: 8.0, right: 8, bottom: 8),
-              child: Column(
-                children: <Widget>[
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        FocusScope.of(context).unfocus();
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      FocusScope.of(context).unfocus();
+                    },
+                    child: FirestorePagination(
+                      controller: controller.scrollController.value,
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+                      query: FireStoreUtils.firestore.collection('chat').doc(FireStoreUtils.getCurrentUid()).collection('thread').orderBy('createdAt', descending: true),
+                      isLive: true,
+                      shrinkWrap: true,
+                      reverse: true,
+                      onEmpty: DsEmptyState(icon: Icons.forum_outlined, title: "No conversion found".tr),
+                      viewType: ViewType.list,
+                      initialLoader: const DsSkeletonList(itemCount: 5, leading: false, trailing: false),
+                      // to fetch real-time data
+                      itemBuilder: (context, documentSnapshots, index) {
+                        ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+                        return chatItemView(isMe: inboxModel.senderId == FireStoreUtils.getCurrentUid(), data: inboxModel, context: context, myAvatar: myAvatar);
                       },
-                      child: FirestorePagination(
-                        controller: controller.scrollController.value,
-                        physics: const BouncingScrollPhysics(),
-                        query: FireStoreUtils.firestore.collection('chat').doc(FireStoreUtils.getCurrentUid()).collection('thread').orderBy('createdAt', descending: true),
-                        isLive: true,
-                        shrinkWrap: true,
-                        reverse: true,
-                        onEmpty: showEmptyView(message: "No conversion found".tr, themeChange: themeChange.getTheme()),
-                        viewType: ViewType.list,
-                        // to fetch real-time data
-                        itemBuilder: (context, documentSnapshots, index) {
-                          ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
-                          return chatItemView(isMe: inboxModel.senderId == FireStoreUtils.getCurrentUid(), data: inboxModel, context: context, controller: controller);
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            bottomBar: DsStickyBar(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  DsIconButton(
+                    icon: Icons.camera_alt,
+                    semanticLabel: 'Send Media'.tr,
+                    variant: DsIconButtonVariant.tonal,
+                    onPressed: () async {
+                      _onCameraClick(controller: controller, context: context);
+                    },
+                  ),
+                  const DsGap(DsSpace.sm),
+                  Expanded(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 120),
+                      child: TextField(
+                        style: t.body,
+                        textInputAction: TextInputAction.send,
+                        keyboardType: TextInputType.text,
+                        textCapitalization: TextCapitalization.sentences,
+                        controller: controller.messageController.value,
+                        minLines: 1,
+                        maxLines: 4,
+                        decoration: DsInputDecoration.of(
+                          context,
+                          hint: 'Start typing with admin...'.tr,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: DsSpace.xl, vertical: 12),
+                        ).copyWith(
+                          border: OutlineInputBorder(borderRadius: DsRadius.brPill, borderSide: BorderSide(color: c.surfaceAlt)),
+                          enabledBorder: OutlineInputBorder(borderRadius: DsRadius.brPill, borderSide: BorderSide(color: c.isDark ? c.border : c.surfaceAlt)),
+                          focusedBorder: OutlineInputBorder(borderRadius: DsRadius.brPill, borderSide: BorderSide(color: c.brand, width: 1.6)),
+                        ),
+                        onSubmitted: (value) async {
+                          if (controller.messageController.value.text.isNotEmpty) {
+                            controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
+                            // Timer(const Duration(milliseconds: 500), () => _controller.jumpTo(_controller.position.maxScrollExtent));
+                            controller.messageController.value.clear();
+                          }
                         },
                       ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: SizedBox(
-                      height: 50,
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 10),
-                        child: TextField(
-                          style: TextStyle(color: themeChange.getTheme() ? AppThemeData.primary50 : AppThemeData.secondary600, fontFamily: AppThemeData.medium, fontSize: 14),
-                          textInputAction: TextInputAction.send,
-                          keyboardType: TextInputType.text,
-                          textCapitalization: TextCapitalization.sentences,
-                          controller: controller.messageController.value,
-                          decoration: InputDecoration(
-                            contentPadding: const EdgeInsets.only(left: 10),
-                            filled: true,
-                            fillColor: themeChange.getTheme() ? AppThemeData.grey900 : AppThemeData.grey100,
-                            disabledBorder: OutlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: themeChange.getTheme() ? AppThemeData.grey900 : AppThemeData.grey100, width: 1),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: themeChange.getTheme() ? AppThemeData.primary300 : AppThemeData.primary300, width: 1),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: themeChange.getTheme() ? AppThemeData.grey900 : AppThemeData.grey100, width: 1),
-                            ),
-                            errorBorder: OutlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: themeChange.getTheme() ? AppThemeData.grey900 : AppThemeData.grey100, width: 1),
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: themeChange.getTheme() ? AppThemeData.grey900 : AppThemeData.grey100, width: 1),
-                            ),
-                            suffixIcon: IconButton(
-                              onPressed: () async {
-                                if (controller.messageController.value.text.isNotEmpty) {
-                                  controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
-                                  controller.messageController.value.clear();
-                                } else {
-                                  ShowToastDialog.showToast("Please enter text".tr);
-                                }
-                              },
-                              icon: Icon(Icons.send_rounded, color: themeChange.getTheme() ? AppThemeData.grey500 : AppThemeData.grey800),
-                            ),
-                            prefixIcon: IconButton(
-                              onPressed: () async {
-                                _onCameraClick(themeChange: themeChange, controller: controller, context: context);
-                              },
-                              icon: Icon(Icons.camera_alt, color: themeChange.getTheme() ? AppThemeData.grey500 : AppThemeData.grey800),
-                            ),
-                            hintText: 'Start typing with admin...'.tr,
-                            hintStyle: TextStyle(color: themeChange.getTheme() ? AppThemeData.grey50 : AppThemeData.grey700, fontFamily: AppThemeData.medium, fontSize: 14),
-                          ),
-                          onSubmitted: (value) async {
-                            if (controller.messageController.value.text.isNotEmpty) {
-                              controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
-                              // Timer(const Duration(milliseconds: 500), () => _controller.jumpTo(_controller.position.maxScrollExtent));
-                              controller.messageController.value.clear();
-                            }
-                          },
-                        ),
-                      ),
-                    ),
+                  const DsGap(DsSpace.sm),
+                  DsIconButton(
+                    icon: Icons.send_rounded,
+                    semanticLabel: 'Send'.tr,
+                    variant: DsIconButtonVariant.brand,
+                    onPressed: () async {
+                      if (controller.messageController.value.text.isNotEmpty) {
+                        controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
+                        controller.messageController.value.clear();
+                      } else {
+                        ShowToastDialog.showToast("Please enter text".tr);
+                      }
+                    },
                   ),
                 ],
               ),
@@ -153,213 +167,129 @@ class HelpSupportScreen extends StatelessWidget {
     );
   }
 
-  Widget chatItemView({required bool isMe, required ConversationModel data, required BuildContext context, required HelpSupportController controller}) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+  Widget chatItemView({required bool isMe, required ConversationModel data, required BuildContext context, required String myAvatar}) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final BorderRadius bubble = isMe
+        ? const BorderRadius.only(topLeft: Radius.circular(DsRadius.lg), topRight: Radius.circular(DsRadius.lg), bottomLeft: Radius.circular(DsRadius.lg))
+        : const BorderRadius.only(topLeft: Radius.circular(DsRadius.lg), topRight: Radius.circular(DsRadius.lg), bottomRight: Radius.circular(DsRadius.lg));
 
-    return Container(
-      padding: EdgeInsets.only(left: isMe ? 80 : 10, right: isMe ? 10 : 80, top: 10, bottom: 10),
-      child: isMe
-          ? Align(
-              alignment: Alignment.topRight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      data.messageType == "text"
-                          ? Container(
-                              constraints: BoxConstraints(
-                                maxWidth: MediaQuery.of(context).size.width * 0.75, // prevent overflow
-                              ),
-                              decoration: BoxDecoration(
-                                color: themeChange.getTheme() ? AppThemeData.primary200 : AppThemeData.primary300,
-                                borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomLeft: Radius.circular(10)),
-                              ),
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              child: Text(
-                                data.message.toString(),
-                                softWrap: true,
-                                maxLines: null,
-                                style: TextStyle(fontFamily: AppThemeData.semiBold, color: themeChange.getTheme() ? Colors.black : Colors.white),
-                              ),
-                            )
-                          : data.messageType == "image"
-                              ? ConstrainedBox(
-                                  constraints: const BoxConstraints(minWidth: 50, maxWidth: 200),
-                                  child: ClipRRect(
-                                    borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomLeft: Radius.circular(10)),
-                                    child: Stack(
-                                      alignment: Alignment.center,
-                                      children: [
-                                        GestureDetector(
-                                          onTap: () {
-                                            Get.to(FullScreenImageViewer(imageUrl: data.url!.url));
-                                          },
-                                          child: Hero(
-                                            tag: data.url!.url,
-                                            child: CachedNetworkImage(
-                                              imageUrl: data.url!.url,
-                                              placeholder: (context, url) => loader(),
-                                              errorWidget: (context, url, error) => const Icon(Icons.error),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                )
-                              : ConstrainedBox(
-                                  constraints: const BoxConstraints(minWidth: 50, maxWidth: 200),
-                                  child: InkWell(
-                                    onTap: () {
-                                      Get.to(FullScreenVideoViewer(heroTag: data.id.toString(), videoUrl: data.url!.url));
-                                    },
-                                    child: ClipRRect(
-                                      borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomLeft: Radius.circular(10)),
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        children: [
-                                          Hero(
-                                            tag: data.url!.url,
-                                            child: CachedNetworkImage(
-                                              imageUrl: data.videoThumbnail ?? '',
-                                              placeholder: (context, url) => loader(),
-                                              errorWidget: (context, url, error) => const Icon(Icons.error),
-                                            ),
-                                          ),
-                                          Icon(Icons.play_arrow, size: 50),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 5),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(60),
-                          child: NetworkImageWidget(
-                            height: Responsive.width(5, context),
-                            width: Responsive.width(5, context),
-                            imageUrl: controller.userModel.value.profilePictureURL.toString(),
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        dateAndTimeFormatTimestamp(data.createdAt),
-                        style: TextStyle(fontFamily: AppThemeData.regular, fontSize: 12, color: themeChange.getTheme() ? AppThemeData.grey100 : AppThemeData.grey800),
-                      ),
-                      data.seen == true
-                          ? Text("✓✓", style: TextStyle(fontSize: 10, color: AppThemeData.primary300))
-                          : Text("✓", style: TextStyle(fontSize: 10, color: themeChange.getTheme() ? AppThemeData.grey100 : AppThemeData.grey800)),
-                    ],
-                  ),
-                ],
+    Widget content() {
+      if (data.messageType == "text") {
+        return Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.75, // prevent overflow
+          ),
+          decoration: BoxDecoration(
+            color: isMe ? c.brand : c.surface,
+            borderRadius: bubble,
+            border: isMe ? null : Border.all(color: c.border),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+          child: Text(
+            data.message.toString(),
+            softWrap: true,
+            maxLines: null,
+            style: t.body.withColor(isMe ? c.onBrand : c.textPrimary),
+          ),
+        );
+      }
+      if (data.messageType == "image") {
+        return ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 50, maxWidth: 200),
+          child: ClipRRect(
+            borderRadius: bubble,
+            child: GestureDetector(
+              onTap: () {
+                Get.to(FullScreenImageViewer(imageUrl: data.url!.url));
+              },
+              child: Hero(
+                tag: data.url!.url,
+                child: DsImage(url: data.url!.url, radius: 0),
               ),
-            )
-          : Align(
-              alignment: Alignment.topLeft,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+          ),
+        );
+      }
+      return ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 50, maxWidth: 200),
+        child: Semantics(
+          button: true,
+          label: 'Play'.tr,
+          child: InkWell(
+            borderRadius: bubble,
+            onTap: () {
+              Get.to(FullScreenVideoViewer(heroTag: data.id.toString(), videoUrl: data.url!.url));
+            },
+            child: ClipRRect(
+              borderRadius: bubble,
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  data.messageType == "text"
-                      ? Container(
-                          constraints: BoxConstraints(
-                            maxWidth: MediaQuery.of(context).size.width * 0.75, // prevent overflow
-                          ),
-                          decoration: BoxDecoration(
-                            borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomRight: Radius.circular(10)),
-                            color: themeChange.getTheme() ? AppThemeData.grey900 : Colors.grey.shade300,
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          child: Text(
-                            data.message.toString(),
-                            softWrap: true,
-                            maxLines: null,
-                            style: TextStyle(color: themeChange.getTheme() ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.regular, fontSize: 14),
-                          ),
-                        )
-                      : data.messageType == "image"
-                          ? ConstrainedBox(
-                              constraints: const BoxConstraints(minWidth: 50, maxWidth: 200),
-                              child: ClipRRect(
-                                borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomRight: Radius.circular(10)),
-                                child: Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    GestureDetector(
-                                      onTap: () {
-                                        Get.to(FullScreenImageViewer(imageUrl: data.url!.url));
-                                      },
-                                      child: Hero(
-                                        tag: data.url!.url,
-                                        child: CachedNetworkImage(imageUrl: data.url!.url, placeholder: (context, url) => loader(), errorWidget: (context, url, error) => const Icon(Icons.error)),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            )
-                          : ConstrainedBox(
-                              constraints: const BoxConstraints(minWidth: 50, maxWidth: 200),
-                              child: InkWell(
-                                onTap: () {
-                                  Get.to(FullScreenVideoViewer(heroTag: data.id.toString(), videoUrl: data.url!.url));
-                                },
-                                child: ClipRRect(
-                                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomRight: Radius.circular(10)),
-                                  child: Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      Hero(
-                                        tag: data.url!.url,
-                                        child: CachedNetworkImage(
-                                          imageUrl: data.videoThumbnail ?? '',
-                                          placeholder: (context, url) => loader(),
-                                          errorWidget: (context, url, error) => const Icon(Icons.error),
-                                        ),
-                                      ),
-                                      Icon(Icons.play_arrow, size: 50),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                  const SizedBox(height: 2),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Admin",
-                        style: TextStyle(color: themeChange.getTheme() ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.semiBold, fontSize: 12),
-                      ),
-                      Text(
-                        dateAndTimeFormatTimestamp(data.createdAt),
-                        style: TextStyle(fontFamily: AppThemeData.regular, fontSize: 12, color: themeChange.getTheme() ? AppThemeData.grey100 : AppThemeData.grey800),
-                      ),
-                    ],
+                  Hero(
+                    tag: data.url!.url,
+                    child: DsImage(url: data.videoThumbnail ?? '', height: 140, width: 200, radius: 0),
                   ),
+                  DsIconWell(icon: Icons.play_arrow_rounded, tone: DsTone.brand, size: 48, circle: true),
                 ],
               ),
             ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: EdgeInsets.only(left: isMe ? 72 : 4, right: isMe ? 4 : 72, top: DsSpace.sm, bottom: DsSpace.sm),
+      child: Align(
+        alignment: isMe ? Alignment.topRight : Alignment.topLeft,
+        child: Column(
+          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            if (isMe)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Flexible(child: content()),
+                  const DsGap(DsSpace.sm),
+                  DsAvatar(imageUrl: myAvatar, size: 28),
+                ],
+              )
+            else
+              content(),
+            const DsGap(DsSpace.xs),
+            Column(
+              crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              children: [
+                if (!isMe) Text("Admin", style: t.labelSm),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(dateAndTimeFormatTimestamp(data.createdAt), style: t.caption),
+                    if (isMe) ...[
+                      const DsGap(DsSpace.xs),
+                      data.seen == true
+                          ? Icon(Icons.done_all_rounded, size: 14, color: c.brandStrong)
+                          : Icon(Icons.done_rounded, size: 14, color: c.textMuted),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   final ImagePicker _imagePicker = ImagePicker();
 
-  void _onCameraClick({required DarkThemeProvider themeChange, required HelpSupportController controller, required BuildContext context}) {
+  void _onCameraClick({required HelpSupportController controller, required BuildContext context}) {
     final action = CupertinoActionSheet(
       message: Text(
         'Send Media'.tr,
-        style: TextStyle(color: themeChange.getTheme() ? AppThemeData.grey800 : AppThemeData.grey100, fontFamily: AppThemeData.semiBold, fontSize: 12),
+        style: DsTypography.labelSm.copyWith(color: DsColors.of(context).textSecondary),
       ),
       actions: <Widget>[
         CupertinoActionSheetAction(

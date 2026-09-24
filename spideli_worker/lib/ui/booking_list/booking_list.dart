@@ -5,8 +5,7 @@ import 'package:spideliworker/controller/verification_controller.dart';
 import 'package:spideliworker/main.dart';
 import 'package:spideliworker/model/onprovider_order_model.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
-import 'package:spideliworker/themes/app_colors.dart';
-import 'package:spideliworker/themes/responsive.dart';
+import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/booking_list/booking_details_screen.dart';
 import 'package:spideliworker/ui/booking_list/job_actions.dart';
 import 'package:spideliworker/ui/documents/documents_screen.dart';
@@ -27,57 +26,134 @@ import 'package:provider/provider.dart';
 ///   approved (when the admin requires worker verification), and only show
 ///   jobs of the worker's region (a job without `regionId`, or a worker
 ///   without one, is shown as before).
-class BookingListScreen extends StatelessWidget {
+///
+/// Design: archetype J ("today's jobs"). A brand [DsHeroHeader] greets the
+/// worker with today's date and three live counters, a [DsSegmentedTabs] row
+/// replaces the Material `TabBar`, and each job is an image-led
+/// `DsCard.outlined` with its status chip and its Start / Stop Time /
+/// Complete action. The counters are fed by the three existing streams (no
+/// extra query).
+class BookingListScreen extends StatefulWidget {
   const BookingListScreen({super.key});
 
   @override
+  State<BookingListScreen> createState() => _BookingListScreenState();
+}
+
+class _BookingListScreenState extends State<BookingListScreen> with SingleTickerProviderStateMixin {
+  late final TabController _tabController = TabController(length: 3, vsync: this)..addListener(_onTab);
+
+  /// Job counts published by the three lists below, purely for the header.
+  final List<ValueNotifier<int?>> _counts = List.generate(3, (_) => ValueNotifier<int?>(null));
+
+  int _index = 0;
+
+  void _onTab() {
+    if (_tabController.index != _index) setState(() => _index = _tabController.index);
+  }
+
+  @override
+  void dispose() {
+    _tabController.removeListener(_onTab);
+    _tabController.dispose();
+    for (final counter in _counts) {
+      counter.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final themeChange = Provider.of<DarkThemeProvider>(context);
+    // Subscribes the tab to theme changes.
+    Provider.of<DarkThemeProvider>(context);
+    final c = context.dsColors;
+    final l = context.dsLayout;
+
     return Scaffold(
-        backgroundColor: themeChange.getTheme() ? AppColors.DARK_BG_COLOR : const Color(0xffF9F9F9),
-        appBar: CommonUI.customAppBar(
-          context,
-          title: Text(
-            "Jobs".tr,
-            style: TextStyle(color: themeChange.getTheme() ? Colors.white : AppColors.colorDark, fontSize: 18, fontFamily: AppColors.semiBold),
+      backgroundColor: c.background,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          DsHeroHeader(
+            includeTopSafeArea: true,
+            showBack: false,
+            title: "Jobs".tr,
+            subtitle: DateFormat('EEEE, dd MMM yyyy').format(DateTime.now()),
+            child: DsFadeSlideIn(
+              child: Row(
+                children: [
+                  for (int i = 0; i < 3; i++) ...[
+                    if (i > 0) const DsGap(DsSpace.sm),
+                    Expanded(
+                      child: ValueListenableBuilder<int?>(
+                        valueListenable: _counts[i],
+                        builder: (context, jobs, _) => DsStatTile(
+                          label: _tabLabels[i].tr,
+                          value: jobs == null ? '—' : null,
+                          countTo: jobs?.toDouble(),
+                          format: (v) => v.toInt().toString(),
+                          // Three tiles abreast: the icon would squeeze the
+                          // label on a phone, so it only shows on tablets.
+                          icon: l.isWide ? _tabIcons[i] : null,
+                          variant: DsStatTileVariant.onBrand,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
-          isBack: false,
-        ),
-        body: DefaultTabController(
-          length: 3,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                color: themeChange.getTheme() ? AppColors.DARK_BG_COLOR : Colors.white,
-                child: TabBar(
-                  indicatorColor: AppColors.colorPrimary,
-                  labelColor: AppColors.colorPrimary,
-                  unselectedLabelColor: Colors.grey,
-                  tabs: [
-                    Tab(child: Text("Assigned".tr, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14))),
-                    Tab(child: Text("In progress".tr, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14))),
-                    Tab(child: Text("Completed".tr, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14))),
+          Padding(
+            padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.sm),
+            child: DsResponsive(
+              child: DsSegmentedTabs(
+                segments: [for (int i = 0; i < 3; i++) DsSegment(_tabLabels[i].tr)],
+                index: _index,
+                onChanged: (i) {
+                  _tabController.animateTo(i);
+                  setState(() => _index = i);
+                },
+              ),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: l.gutter),
+              child: DsResponsive(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _JobList(
+                      statuses: const [ORDER_STATUS_ACCEPTED, ORDER_STATUS_ASSIGNED],
+                      emptyMessage: "No assigned job found",
+                      activeJobs: true,
+                      count: _counts[0],
+                    ),
+                    _JobList(
+                      statuses: const [ORDER_STATUS_ONGOING],
+                      emptyMessage: "No job in progress",
+                      activeJobs: true,
+                      count: _counts[1],
+                    ),
+                    _JobList(
+                      statuses: const [ORDER_STATUS_COMPLETED],
+                      emptyMessage: "No completed booking found",
+                      activeJobs: false,
+                      count: _counts[2],
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(height: 10),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: TabBarView(
-                    children: [
-                      _JobList(statuses: const [ORDER_STATUS_ACCEPTED, ORDER_STATUS_ASSIGNED], emptyMessage: "No assigned job found", activeJobs: true),
-                      _JobList(statuses: const [ORDER_STATUS_ONGOING], emptyMessage: "No job in progress", activeJobs: true),
-                      _JobList(statuses: const [ORDER_STATUS_COMPLETED], emptyMessage: "No completed booking found", activeJobs: false),
-                    ],
-                  ),
-                ),
-              )
-            ],
+            ),
           ),
-        ));
+        ],
+      ),
+    );
   }
+
+  static const List<String> _tabLabels = ["Assigned", "In progress", "Completed"];
+  static const List<IconData> _tabIcons = [Icons.assignment_outlined, Icons.timelapse_rounded, Icons.task_alt_rounded];
 }
 
 class _JobList extends StatelessWidget {
@@ -88,7 +164,10 @@ class _JobList extends StatelessWidget {
   /// jobs are history and always shown.
   final bool activeJobs;
 
-  const _JobList({required this.statuses, required this.emptyMessage, required this.activeJobs});
+  /// Receives the number of jobs in this tab so the header can show it.
+  final ValueNotifier<int?> count;
+
+  const _JobList({required this.statuses, required this.emptyMessage, required this.activeJobs, required this.count});
 
   @override
   Widget build(BuildContext context) {
@@ -96,25 +175,35 @@ class _JobList extends StatelessWidget {
     if (!activeJobs) return _stream(themeChange);
     return GetBuilder<VerificationController>(builder: (verification) {
       return Obx(() {
-        if (verification.isLoading.value) return loader();
+        if (verification.isLoading.value) return const DsSkeletonList(itemCount: 4, leading: true, trailing: false);
         if (!verification.canReceiveJobs) {
           return SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(vertical: 16),
+            padding: const EdgeInsets.symmetric(vertical: DsSpace.lg),
             child: Column(
-              children: [
+              children: DsFadeSlideIn.stagger([
                 VerificationSummaryCard(status: verification.overallStatus, required: true, dark: themeChange.getTheme()),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.colorPrimary),
+                const DsGap(DsSpace.lg),
+                DsButton.primary(
+                  label: "My documents".tr,
+                  icon: Icons.badge_outlined,
+                  size: DsButtonSize.lg,
+                  expand: true,
                   onPressed: () => Get.to(() => const DocumentsScreen(isBack: true)),
-                  child: Text("My documents".tr, style: const TextStyle(color: AppColors.colorWhite, fontFamily: AppColors.semiBold)),
                 ),
-              ],
+              ]),
             ),
           );
         }
         return _stream(themeChange);
       });
+    });
+  }
+
+  /// Publishes [value] to the header after this frame (never during build).
+  void _report(int? value) {
+    if (count.value == value) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      count.value = value;
     });
   }
 
@@ -125,10 +214,10 @@ class _JobList extends StatelessWidget {
       stream: query.orderBy("createdAt", descending: true).snapshots(),
       builder: (BuildContext context, AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot) {
         if (snapshot.hasError) {
-          return Center(child: Text('Something went wrong'.tr));
+          return DsErrorState(message: 'Something went wrong'.tr);
         }
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return loader();
+          return const DsSkeletonList(itemCount: 4, leading: true, trailing: false);
         }
         final List<OnProviderOrderModel> orders = snapshot.data!.docs
             .map((doc) => OnProviderOrderModel.fromJson(doc.data()))
@@ -137,12 +226,14 @@ class _JobList extends StatelessWidget {
             // nobody who can see it. Region-bound dispatch belongs where a job
             // is offered, not where it is already assigned.
             .toList();
+        _report(orders.length);
         if (orders.isEmpty) {
-          return Center(child: Text(emptyMessage.tr));
+          return DsEmptyState(icon: Icons.event_available_outlined, title: emptyMessage.tr);
         }
         return ListView.builder(
+          padding: const EdgeInsets.only(top: DsSpace.sm, bottom: DsSpace.xxxl),
           itemCount: orders.length,
-          itemBuilder: (context, index) => _JobCard(order: orders[index], dark: themeChange.getTheme()),
+          itemBuilder: (context, index) => DsFadeSlideIn(index: index, child: _JobCard(order: orders[index], dark: themeChange.getTheme())),
         );
       },
     );
@@ -172,49 +263,40 @@ class _JobCard extends StatelessWidget {
 
   Widget _badge() {
     String label;
-    Color background;
-    Color color;
     if (order.status == ORDER_STATUS_PLACED) {
       label = "Pending";
-      background = AppColors.colorLightDeepOrange;
-      color = AppColors.colorDeepOrange;
     } else if (order.status == ORDER_STATUS_ACCEPTED || order.status == ORDER_STATUS_ASSIGNED) {
       label = "Assigned";
-      background = Colors.teal.shade50;
-      color = Colors.teal;
     } else if (order.status == ORDER_STATUS_COMPLETED) {
       label = "Completed";
-      background = Colors.lightGreen.shade100;
-      color = Colors.lightGreen;
     } else {
       label = "In progress";
-      background = Colors.lightGreen.shade100;
-      color = Colors.lightGreen;
     }
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(5), color: background),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
-      child: Text(label.tr, style: TextStyle(fontWeight: FontWeight.bold, fontFamily: AppColors.medium, fontSize: 14, color: color)),
-    );
+    return DsStatusChip(label: label.tr, status: order.status, pulse: order.status == ORDER_STATUS_ONGOING);
   }
 
-  Widget _row(String label, String value, {bool divider = true}) {
+  Widget _row(BuildContext context, IconData icon, String label, String value, {bool divider = true}) {
+    final c = context.dsColors;
+    final t = context.dsText;
     return Column(
       children: [
-        if (divider) const Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: Divider(thickness: 1)),
-        Container(
-          padding: EdgeInsets.only(left: 10, right: 10, top: divider ? 0 : 10),
+        if (divider) Divider(height: 1, color: c.divider, indent: DsSpace.huge),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label.tr, style: TextStyle(fontSize: 14, color: Colors.grey.shade500, fontFamily: AppColors.medium)),
-              const SizedBox(width: 10),
-              Flexible(
+              Icon(icon, size: 16, color: c.textMuted),
+              const DsGap(DsSpace.md),
+              Text(label.tr, style: t.caption),
+              const DsGap(DsSpace.md),
+              Expanded(
                 child: Text(
                   value,
                   overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
                   textAlign: TextAlign.end,
-                  style: TextStyle(fontSize: 14, color: dark ? Colors.white : Colors.black, fontFamily: AppColors.medium),
+                  style: t.bodyStrong,
                 ),
               ),
             ],
@@ -224,129 +306,131 @@ class _JobCard extends StatelessWidget {
     );
   }
 
-  Widget _button(String label, VoidCallback onPressed) {
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        elevation: 0.0,
-        backgroundColor: AppColors.colorPrimary,
-        padding: const EdgeInsets.all(8),
-        side: BorderSide(color: AppColors.colorPrimary, width: 0.4),
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
-      ),
-      onPressed: onPressed,
-      child: Text(label.tr, style: const TextStyle(color: AppColors.colorWhite, fontFamily: AppColors.semiBold)),
-    );
-  }
-
   Widget _actions(BuildContext context) {
+    final c = context.dsColors;
     if (order.status == ORDER_STATUS_ASSIGNED) {
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        child: SizedBox(width: Responsive.width(70, context), child: _button('Start', () => JobActions.start(order))),
+        padding: const EdgeInsets.fromLTRB(DsSpace.md, DsSpace.md, DsSpace.md, DsSpace.md),
+        child: DsButton.primary(
+          label: 'Start'.tr,
+          icon: Icons.play_arrow_rounded,
+          size: DsButtonSize.lg,
+          expand: true,
+          onPressed: () => JobActions.start(order),
+        ),
       );
     }
     if (order.status == ORDER_STATUS_ONGOING) {
+      final bool stopTime = order.provider.priceUnit == "Hourly" && order.endTime == null;
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        padding: const EdgeInsets.fromLTRB(DsSpace.md, DsSpace.md, DsSpace.md, DsSpace.md),
+        child: Column(
           children: [
-            Expanded(
-              child: order.provider.priceUnit == "Hourly" && order.endTime == null ? _button('Stop Time', () => JobActions.stopTime(order)) : _button('Complete', () => JobActions.complete(order)),
-            ),
-            const SizedBox(width: 10),
+            stopTime
+                ? DsButton.tonal(
+                    label: 'Stop Time'.tr,
+                    icon: Icons.timer_off_outlined,
+                    size: DsButtonSize.lg,
+                    expand: true,
+                    onPressed: () => JobActions.stopTime(order),
+                  )
+                : DsButton.primary(
+                    label: 'Complete'.tr,
+                    icon: Icons.check_circle_outline_rounded,
+                    size: DsButtonSize.lg,
+                    expand: true,
+                    color: c.success,
+                    onPressed: () => JobActions.complete(order),
+                  ),
             order.extraCharges!.isNotEmpty && order.extraCharges != null
                 ? const SizedBox()
-                : Expanded(
-                    child: _button('Add Extra Charges', () {
-                      BookingDetailsController bookingDetailsController = Get.put(BookingDetailsController());
-                      CommonUI.showAddExtraChargesDialog(context, bookingDetailsController, order);
-                      Get.delete<BookingDetailsController>();
-                    }),
+                : Padding(
+                    padding: const EdgeInsets.only(top: DsSpace.sm),
+                    child: DsButton.ghost(
+                      label: 'Add Extra Charges'.tr,
+                      icon: Icons.add_rounded,
+                      expand: true,
+                      onPressed: () {
+                        BookingDetailsController bookingDetailsController = Get.put(BookingDetailsController());
+                        CommonUI.showAddExtraChargesDialog(context, bookingDetailsController, order);
+                        Get.delete<BookingDetailsController>();
+                      },
+                    ),
                   ),
           ],
         ),
       );
     }
-    return const SizedBox(height: 10);
+    return const SizedBox(height: DsSpace.sm);
   }
 
   @override
   Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
     final String amount = amountShow(amount: _total.toString(), currency: RegionService.currencyForRegion(order.regionId));
-    return InkWell(
+    return DsCard.outlined(
+      margin: const EdgeInsets.only(bottom: DsSpace.lg),
+      padding: const EdgeInsets.all(DsSpace.md),
+      semanticLabel: order.provider.title.toString(),
       onTap: () {
         Get.to(const BookingDetailsScreen(), arguments: {"orderId": order.id});
       },
-      child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 5),
-          margin: const EdgeInsets.only(bottom: 15),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            color: dark ? AppColors.darkContainerBorderColor : AppColors.colorWhite,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          DsImage(
+            url: order.provider.photos.isNotEmpty ? order.provider.photos.first.toString() : placeholderImage,
+            height: 84,
+            width: 84,
+            radius: DsRadius.md,
+            heroTag: 'job-${order.id}',
           ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const SizedBox(height: 10),
-            Row(children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Container(
-                    height: 80,
-                    width: 80,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      image: DecorationImage(
-                        image: NetworkImage(order.provider.photos.isNotEmpty ? order.provider.photos.first.toString() : placeholderImage),
-                        fit: BoxFit.cover,
-                      ),
-                    )),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_badge()]),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(order.provider.title.toString(), style: TextStyle(color: dark ? Colors.white : AppColors.colorDark)),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          order.provider.priceUnit == 'Fixed' ? amount : "$amount/hr",
-                          style: TextStyle(color: AppColors.colorPrimary, fontFamily: AppColors.semiBold),
-                        ),
-                      ),
-                    ],
-                  ),
+          const DsGap(DsSpace.lg),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Align(alignment: AlignmentDirectional.centerStart, child: _badge()),
+                const DsGap(DsSpace.sm),
+                Text(
+                  order.provider.title.toString(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.titleSm,
                 ),
-              )
-            ]),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 10),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: dark ? Colors.grey.shade900 : Colors.grey.shade100, width: 1),
-                color: dark ? Colors.grey.shade900 : AppColors.colorLightGrey,
-              ),
-              child: Column(
-                children: [
-                  _row("Address  ", order.address!.getFullAddress().toString(), divider: false),
-                  _row(
-                      "Date & Time",
-                      DateFormat('dd-MMM-yyyy hh:mm a')
-                          .format(order.newScheduleDateTime == null ? order.scheduleDateTime!.toDate() : order.newScheduleDateTime!.toDate())),
-                  _row("Customer", order.author.fullName().toString()),
-                  if (order.provider.priceUnit == "Hourly" && order.startTime != null) _row("Start Time", DateFormat('dd-MMM-yyyy hh:mm a').format(order.startTime!.toDate())),
-                  if (order.provider.priceUnit == "Hourly" && order.endTime != null) _row("End Time", DateFormat('dd-MMM-yyyy hh:mm a').format(order.endTime!.toDate())),
-                  if (order.payment_method.isNotEmpty && order.status != ORDER_STATUS_COMPLETED) _row("Payment Type", order.payment_method.toString()),
-                  _actions(context),
-                ],
-              ),
-            )
-          ])),
+                const DsGap(DsSpace.xs),
+                Text(
+                  order.provider.priceUnit == 'Fixed' ? amount : "$amount/hr",
+                  style: t.label.withColor(c.brandStrong).tabular,
+                ),
+              ],
+            ),
+          )
+        ]),
+        const DsGap(DsSpace.md),
+        DecoratedBox(
+          decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brMd),
+          child: Column(
+            children: [
+              _row(context, Icons.location_on_outlined, "Address  ", order.address!.getFullAddress().toString(), divider: false),
+              _row(
+                  context,
+                  Icons.event_outlined,
+                  "Date & Time",
+                  DateFormat('dd-MMM-yyyy hh:mm a')
+                      .format(order.newScheduleDateTime == null ? order.scheduleDateTime!.toDate() : order.newScheduleDateTime!.toDate())),
+              _row(context, Icons.person_outline, "Customer", order.author.fullName().toString()),
+              if (order.provider.priceUnit == "Hourly" && order.startTime != null)
+                _row(context, Icons.play_circle_outline, "Start Time", DateFormat('dd-MMM-yyyy hh:mm a').format(order.startTime!.toDate())),
+              if (order.provider.priceUnit == "Hourly" && order.endTime != null)
+                _row(context, Icons.stop_circle_outlined, "End Time", DateFormat('dd-MMM-yyyy hh:mm a').format(order.endTime!.toDate())),
+              if (order.payment_method.isNotEmpty && order.status != ORDER_STATUS_COMPLETED)
+                _row(context, Icons.payments_outlined, "Payment Type", order.payment_method.toString()),
+              _actions(context),
+            ],
+          ),
+        )
+      ]),
     );
   }
 }

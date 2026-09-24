@@ -4,22 +4,23 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:spideliworker/controller/verification_controller.dart';
 import 'package:spideliworker/model/document_model.dart';
-import 'package:spideliworker/themes/app_colors.dart';
+import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/documents/document_upload_screen.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
-import 'package:spideliworker/widgets/common_ui.dart';
 
-Color verificationStatusColor(VerificationStatus status) {
+/// Tone of a verification status, shared by the summary card, the chips and
+/// the icon wells.
+DsTone verificationStatusTone(VerificationStatus status) {
   switch (status) {
     case VerificationStatus.approved:
-      return Colors.green;
+      return DsTone.success;
     case VerificationStatus.pending:
-      return Colors.orange;
+      return DsTone.warning;
     case VerificationStatus.rejected:
     case VerificationStatus.expired:
-      return AppColors.colorDeepOrange;
+      return DsTone.danger;
     case VerificationStatus.notSubmitted:
-      return Colors.grey;
+      return DsTone.neutral;
   }
 }
 
@@ -30,17 +31,16 @@ class VerificationStatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = verificationStatusColor(status);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(5)),
-      child: Text(status.label.tr, style: TextStyle(color: color, fontFamily: AppColors.medium, fontSize: 13)),
-    );
+    return DsBadge(label: status.label.tr, tone: verificationStatusTone(status), small: true);
   }
 }
 
 /// Spec 11 "Documents": each required document with its status, the
 /// rejection reason, the expiry date, and upload / re-upload.
+///
+/// Design: archetype N. A [VerificationSummaryCard] and a progress bar head
+/// the page, then every document is a `DsCard.outlined` row with a tone icon
+/// well, its status chip and a chevron into the upload screen.
 class DocumentsScreen extends StatelessWidget {
   final bool isBack;
 
@@ -51,66 +51,119 @@ class DocumentsScreen extends StatelessWidget {
     final themeChange = Provider.of<DarkThemeProvider>(context);
     final bool dark = themeChange.getTheme();
     final VerificationController controller = Get.find<VerificationController>();
-    return Scaffold(
-      backgroundColor: dark ? AppColors.DARK_BG_COLOR : const Color(0xffF9F9F9),
-      appBar: CommonUI.customAppBar(
-        context,
-        title: Text("Documents".tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark, fontSize: 18, fontFamily: AppColors.semiBold)),
-        isBack: isBack,
-      ),
+    final l = context.dsLayout;
+    return DsScaffold(
+      title: "Documents".tr,
+      showBack: isBack,
+      maxContentWidth: DsLayout.contentMax,
       body: Obx(() {
         if (controller.isLoading.value) {
-          return Center(child: CircularProgressIndicator(color: AppColors.colorPrimary));
+          return const DsSkeletonList(itemCount: 5, leading: true, trailing: true);
         }
         final overall = controller.overallStatus;
+        final List<DocumentModel> types = controller.documentTypes;
+        final int approved = types.where((type) => controller.statusOf(type) == VerificationStatus.approved).length;
         return RefreshIndicator(
           onRefresh: controller.load,
+          color: context.dsColors.brand,
+          backgroundColor: context.dsColors.surface,
           child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
+            padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.xxxl),
+            children: DsFadeSlideIn.stagger([
               VerificationSummaryCard(status: overall, required: controller.verificationRequired.value, dark: dark),
-              const SizedBox(height: 16),
-              ...controller.documentTypes.map((type) {
+              if (types.isNotEmpty) ...[
+                const DsGap(DsSpace.lg),
+                DsProgressBar(
+                  value: approved / types.length,
+                  label: 'Verification'.tr,
+                  showPercent: true,
+                  tone: verificationStatusTone(overall),
+                ),
+              ],
+              const DsGap(DsSpace.xl),
+              ...types.map((type) {
                 final uploaded = controller.uploaded.value?.documentFor(type.id);
                 final status = controller.statusOf(type);
                 final bool canUpload = status == VerificationStatus.notSubmitted || status == VerificationStatus.rejected || status == VerificationStatus.expired;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: dark ? AppColors.darkContainerBorderColor : AppColors.colorWhite,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: ListTile(
-                    onTap: () => Get.to(() => DocumentUploadScreen(documentType: type, existing: uploaded, readOnly: !canUpload)),
-                    title: Text((type.title ?? '').tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark, fontFamily: AppColors.semiBold)),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 6),
-                        VerificationStatusChip(status: status),
-                        if (status == VerificationStatus.rejected && (uploaded?.rejectionReason ?? '').isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: Text("${"Reason".tr}: ${uploaded!.rejectionReason}", style: const TextStyle(color: AppColors.colorDeepOrange)),
-                          ),
-                        if (uploaded?.expiryDate != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: Text("${"Expires on".tr}: ${DateFormat('dd MMM yyyy').format(uploaded!.expiryDate!.toDate())}"),
-                          ),
-                      ],
-                    ),
-                    trailing: Text(
-                      canUpload ? (status == VerificationStatus.notSubmitted ? "Upload".tr : "Re-upload".tr) : "View".tr,
-                      style: TextStyle(color: AppColors.colorPrimary, fontFamily: AppColors.semiBold),
-                    ),
-                  ),
+                return _DocumentRow(
+                  type: type,
+                  status: status,
+                  uploaded: uploaded,
+                  canUpload: canUpload,
                 );
               }),
-            ],
+            ]),
           ),
         );
       }),
+    );
+  }
+}
+
+class _DocumentRow extends StatelessWidget {
+  final DocumentModel type;
+  final VerificationStatus status;
+  final Documents? uploaded;
+  final bool canUpload;
+
+  const _DocumentRow({required this.type, required this.status, required this.uploaded, required this.canUpload});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final DsTone tone = verificationStatusTone(status);
+    final String action = canUpload ? (status == VerificationStatus.notSubmitted ? "Upload".tr : "Re-upload".tr) : "View".tr;
+    return DsCard.outlined(
+      margin: const EdgeInsets.only(bottom: DsSpace.md),
+      onTap: () => Get.to(() => DocumentUploadScreen(documentType: type, existing: uploaded, readOnly: !canUpload)),
+      semanticLabel: (type.title ?? '').tr,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DsIconWell(
+                icon: status == VerificationStatus.approved
+                    ? Icons.verified_outlined
+                    : status == VerificationStatus.rejected || status == VerificationStatus.expired
+                        ? Icons.error_outline_rounded
+                        : Icons.description_outlined,
+                tone: tone,
+              ),
+              const DsGap(DsSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text((type.title ?? '').tr, style: t.titleSm),
+                    const DsGap(DsSpace.sm),
+                    Align(alignment: AlignmentDirectional.centerStart, child: VerificationStatusChip(status: status)),
+                  ],
+                ),
+              ),
+              const DsGap(DsSpace.sm),
+              Text(action, style: t.label.withColor(c.brandStrong)),
+              Icon(Icons.chevron_right_rounded, color: c.brandStrong),
+            ],
+          ),
+          if (status == VerificationStatus.rejected && (uploaded?.rejectionReason ?? '').isNotEmpty) ...[
+            const DsGap(DsSpace.md),
+            DsInlineAlert(tone: DsTone.danger, message: "${"Reason".tr}: ${uploaded!.rejectionReason}"),
+          ],
+          if (uploaded?.expiryDate != null) ...[
+            const DsGap(DsSpace.sm),
+            Row(
+              children: [
+                Icon(Icons.event_busy_outlined, size: 16, color: c.textMuted),
+                const DsGap(DsSpace.xs),
+                Text("${"Expires on".tr}: ${DateFormat('dd MMM yyyy').format(uploaded!.expiryDate!.toDate())}", style: t.caption),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -137,32 +190,53 @@ class VerificationSummaryCard extends StatelessWidget {
     }
   }
 
+  IconData get _icon {
+    switch (status) {
+      case VerificationStatus.approved:
+        return Icons.verified_user_outlined;
+      case VerificationStatus.pending:
+        return Icons.hourglass_top_rounded;
+      case VerificationStatus.rejected:
+      case VerificationStatus.expired:
+        return Icons.gpp_bad_outlined;
+      case VerificationStatus.notSubmitted:
+        return Icons.shield_outlined;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final color = verificationStatusColor(status);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(10),
-      ),
+    final c = context.dsColors;
+    final t = context.dsText;
+    final DsTone tone = verificationStatusTone(status);
+    return DsCard.tinted(
+      tone: tone,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Text("Verification status".tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark, fontFamily: AppColors.semiBold, fontSize: 16)),
-              const Spacer(),
+              DsIconWell(icon: _icon, tone: tone, size: 48, circle: true),
+              const DsGap(DsSpace.md),
+              Expanded(child: Text("Verification status".tr, style: t.titleSm)),
               VerificationStatusChip(status: status),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(_message.tr, style: TextStyle(color: dark ? Colors.white70 : Colors.black87)),
+          const DsGap(DsSpace.md),
+          Text(_message.tr, style: t.bodySecondary),
           if (required && status != VerificationStatus.approved)
             Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text("You will not receive jobs until your documents are approved.".tr, style: const TextStyle(color: AppColors.colorDeepOrange)),
+              padding: const EdgeInsets.only(top: DsSpace.sm),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline_rounded, size: 16, color: c.dangerStrong),
+                  const DsGap(DsSpace.xs),
+                  Expanded(
+                    child: Text("You will not receive jobs until your documents are approved.".tr, style: t.bodySm.withColor(c.dangerStrong)),
+                  ),
+                ],
+              ),
             ),
         ],
       ),

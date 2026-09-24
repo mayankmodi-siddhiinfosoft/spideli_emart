@@ -14,10 +14,9 @@ import 'package:spideliworker/controller/verification_controller.dart';
 import 'package:spideliworker/model/onprovider_order_model.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/services/send_notification.dart';
-import 'package:spideliworker/themes/app_colors.dart';
+import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/booking_list/verify_otp_screen.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
-import 'package:spideliworker/widgets/common_ui.dart';
 
 /// Job status flow (spec 11), shared by the job list and the job detail:
 /// Assigned ("Order Assigned" / "Order Accepted") -> Start -> In progress
@@ -138,6 +137,11 @@ class CompleteJobResult {
 /// Last step of "Complete": optional photos of the finished work and an
 /// optional customer signature. Pops with a [CompleteJobResult], or null when
 /// the worker goes back.
+///
+/// Design: archetype L ("proof of completion"). A two-step [DsStepper] heads
+/// two sections — an adaptive photo grid with a dashed "Add photo" tile and a
+/// framed signature pad (deliberately white, because the exported PNG has a
+/// white background) — and "Complete" sits in a [DsStickyBar].
 class CompleteJobScreen extends StatefulWidget {
   const CompleteJobScreen({super.key});
 
@@ -175,94 +179,122 @@ class _CompleteJobScreenState extends State<CompleteJobScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool dark = Provider.of<DarkThemeProvider>(context).getTheme();
-    return Scaffold(
-      backgroundColor: dark ? AppColors.DARK_BG_COLOR : const Color(0xffF9F9F9),
-      appBar: CommonUI.customAppBar(
-        context,
-        title: Text("Complete job".tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark, fontSize: 18, fontFamily: AppColors.semiBold)),
-      ),
+    // Subscribes the screen to theme changes.
+    Provider.of<DarkThemeProvider>(context);
+    final c = context.dsColors;
+    final t = context.dsText;
+    final l = context.dsLayout;
+    return DsScaffold(
+      title: "Complete job".tr,
+      maxContentWidth: DsLayout.contentMax,
       body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text("Add photos of the completed work (optional).".tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark)),
-          const SizedBox(height: 16),
-          GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
+        padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.xxxl),
+        children: DsFadeSlideIn.stagger([
+          DsStepper(steps: ['Photos'.tr, 'Signature'.tr], current: _photos.isEmpty ? 0 : 1),
+          const DsGap(DsSpace.xl),
+          DsFormSection(
+            title: "Completion photos".tr,
+            icon: Icons.photo_camera_outlined,
             children: [
-              ..._photos.asMap().entries.map((entry) => Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.file(entry.value, fit: BoxFit.cover)),
-                      Positioned(
-                        right: 2,
-                        top: 2,
+              Text("Add photos of the completed work (optional).".tr, style: t.bodySecondary),
+              const DsGap(DsSpace.lg),
+              GridView.count(
+                crossAxisCount: l.value(phone: 3, tablet: 4, desktop: 5),
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: DsSpace.md,
+                crossAxisSpacing: DsSpace.md,
+                children: [
+                  ..._photos.asMap().entries.map((entry) => Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ClipRRect(borderRadius: DsRadius.brMd, child: Image.file(entry.value, fit: BoxFit.cover)),
+                          PositionedDirectional(
+                            end: 0,
+                            top: 0,
+                            child: DsIconButton(
+                              icon: Icons.close_rounded,
+                              semanticLabel: "Remove".tr,
+                              size: 32,
+                              variant: DsIconButtonVariant.filled,
+                              onPressed: () => setState(() => _photos.removeAt(entry.key)),
+                            ),
+                          ),
+                        ],
+                      )),
+                  if (_photos.length < maxPhotos)
+                      Semantics(
+                        button: true,
+                        label: "Add photo".tr,
                         child: InkWell(
-                          onTap: () => setState(() => _photos.removeAt(entry.key)),
-                          child: const CircleAvatar(radius: 12, backgroundColor: Colors.black54, child: Icon(Icons.close, size: 14, color: Colors.white)),
+                          borderRadius: DsRadius.brMd,
+                          onTap: () => showModalBottomSheet(
+                            context: context,
+                            builder: (sheetContext) => SafeArea(
+                              child: Wrap(children: [
+                                ListTile(
+                                    leading: const Icon(Icons.photo_camera),
+                                    title: Text("Take a picture".tr),
+                                    onTap: () {
+                                      Navigator.pop(sheetContext);
+                                      _add(ImageSource.camera);
+                                    }),
+                                ListTile(
+                                    leading: const Icon(Icons.photo_library),
+                                    title: Text("Choose Image From Gallery".tr),
+                                    onTap: () {
+                                      Navigator.pop(sheetContext);
+                                      _add(ImageSource.gallery);
+                                    }),
+                              ]),
+                            ),
+                          ),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: c.brandSoft,
+                              borderRadius: DsRadius.brMd,
+                              border: Border.all(color: c.brandMuted),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.add_a_photo_outlined, color: c.brandStrong),
+                                const DsGap(DsSpace.xs),
+                                Text("Add photo".tr, textAlign: TextAlign.center, style: t.labelSm.withColor(c.brandStrong)),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
-                    ],
-                  )),
-              if (_photos.length < maxPhotos)
-                InkWell(
-                  onTap: () => showModalBottomSheet(
-                    context: context,
-                    builder: (sheetContext) => SafeArea(
-                      child: Wrap(children: [
-                        ListTile(
-                            leading: const Icon(Icons.photo_camera),
-                            title: Text("Take a picture".tr),
-                            onTap: () {
-                              Navigator.pop(sheetContext);
-                              _add(ImageSource.camera);
-                            }),
-                        ListTile(
-                            leading: const Icon(Icons.photo_library),
-                            title: Text("Choose Image From Gallery".tr),
-                            onTap: () {
-                              Navigator.pop(sheetContext);
-                              _add(ImageSource.gallery);
-                            }),
-                      ]),
-                    ),
-                  ),
-                  child: Container(
-                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade400)),
-                    child: const Icon(Icons.add_a_photo, color: Colors.grey),
-                  ),
-                ),
+                ],
+              ),
             ],
           ),
-          const SizedBox(height: 24),
-          Row(
+          const DsGap(DsSpace.lg),
+          DsFormSection(
+            title: "Customer signature (optional)".tr,
+            icon: Icons.draw_outlined,
+            trailing: DsButton.ghost(label: "Clear".tr, size: DsButtonSize.sm, onPressed: () => _signature.clear()),
             children: [
-              Expanded(child: Text("Customer signature (optional)".tr, style: TextStyle(color: dark ? Colors.white : AppColors.colorDark, fontFamily: AppColors.semiBold))),
-              TextButton(onPressed: () => _signature.clear(), child: Text("Clear".tr)),
+              DsCard.outlined(
+                padding: EdgeInsets.zero,
+                clipBehavior: Clip.antiAlias,
+                // The pad stays white on purpose: the exported PNG has a white
+                // background.
+                child: Signature(controller: _signature, height: 180, backgroundColor: Colors.white),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(8)),
-              child: Signature(controller: _signature, height: 180, backgroundColor: Colors.white),
-            ),
-          ),
-        ],
+        ]),
       ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.colorPrimary, padding: const EdgeInsets.all(14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-            onPressed: _finish,
-            child: Text("Complete".tr, style: const TextStyle(color: AppColors.colorWhite, fontFamily: AppColors.semiBold)),
-          ),
+      bottomBar: DsStickyBar(
+        child: DsButton.primary(
+          label: "Complete".tr,
+          icon: Icons.check_circle_outline_rounded,
+          size: DsButtonSize.lg,
+          expand: true,
+          color: c.success,
+          onPressed: _finish,
         ),
       ),
     );
