@@ -186,43 +186,41 @@ class _AddMethodSheetState extends State<_AddMethodSheet> {
       title: "Add payment method".tr,
       showClose: true,
       actions: DsButton.primary(label: "Save".tr, size: DsButtonSize.lg, expand: true, icon: Icons.check_rounded, onPressed: _save),
-      child: Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DsSegmentedTabs(
-              segments: [DsSegment("Mobile Money".tr), const DsSegment("Wave")],
-              index: _type == SavedPaymentMethod.typeMobileMoney ? 0 : 1,
-              onChanged: (i) => setState(() => _type = i == 0 ? SavedPaymentMethod.typeMobileMoney : SavedPaymentMethod.typeWave),
+      // DsSheet already lifts its child above the keyboard.
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DsSegmentedTabs(
+            segments: [DsSegment("Mobile Money".tr), const DsSegment("Wave")],
+            index: _type == SavedPaymentMethod.typeMobileMoney ? 0 : 1,
+            onChanged: (i) => setState(() => _type = i == 0 ? SavedPaymentMethod.typeMobileMoney : SavedPaymentMethod.typeWave),
+          ),
+          const DsGap(DsSpace.xl),
+          if (_type == SavedPaymentMethod.typeMobileMoney)
+            DsDropdown<String>(
+              label: "Operator".tr,
+              value: _operator,
+              items: SavedPaymentMethod.operators.map((o) => DropdownMenuItem(value: o, child: Text(o.tr, style: t.body))).toList(),
+              onChanged: (v) => setState(() => _operator = v ?? _operator),
             ),
-            const DsGap(DsSpace.xl),
-            if (_type == SavedPaymentMethod.typeMobileMoney)
-              DsDropdown<String>(
-                label: "Operator".tr,
-                value: _operator,
-                items: SavedPaymentMethod.operators.map((o) => DropdownMenuItem(value: o, child: Text(o.tr, style: t.body))).toList(),
-                onChanged: (v) => setState(() => _operator = v ?? _operator),
-              ),
-            DsTextField(
-              label: "Phone number (with country code)".tr,
-              controller: _number,
-              keyboardType: TextInputType.phone,
-              prefixIcon: Icons.smartphone_rounded,
-              requiredMark: true,
-            ),
-            DsTextField(label: "Label (optional)".tr, controller: _label, prefixIcon: Icons.label_outline_rounded),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              value: _default,
-              activeColor: c.brand,
-              controlAffinity: ListTileControlAffinity.leading,
-              onChanged: (v) => setState(() => _default = v ?? false),
-              title: Text("Use as default".tr, style: t.bodyStrong),
-            ),
-          ],
-        ),
+          DsTextField(
+            label: "Phone number (with country code)".tr,
+            controller: _number,
+            keyboardType: TextInputType.phone,
+            prefixIcon: Icons.smartphone_rounded,
+            requiredMark: true,
+          ),
+          DsTextField(label: "Label (optional)".tr, controller: _label, prefixIcon: Icons.label_outline_rounded),
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _default,
+            activeColor: c.brand,
+            controlAffinity: ListTileControlAffinity.leading,
+            onChanged: (v) => setState(() => _default = v ?? false),
+            title: Text("Use as default".tr, style: t.bodyStrong),
+          ),
+        ],
       ),
     );
   }
