@@ -2,250 +2,165 @@ import 'dart:io';
 
 import 'package:driver/app/auth_screen/phone_number_screen.dart';
 import 'package:driver/app/auth_screen/signup_screen.dart';
+import 'package:driver/app/auth_screen/widgets/auth_shell.dart';
 import 'package:driver/app/forgot_password_screen/forgot_password_screen.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/login_controller.dart';
-import 'package:driver/themes/app_them_data.dart';
-import 'package:driver/themes/responsive.dart';
-import 'package:driver/themes/round_button_fill.dart';
-import 'package:driver/themes/text_field_widget.dart';
-import 'package:driver/themes/theme_controller.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 
+/// Archetype H – auth: focused card on phones, brand panel + form on tablets.
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
         init: LoginController(),
         builder: (controller) {
-          return Scaffold(
-            appBar: AppBar(
-              backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-            ),
-            body: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Log In to Your Account".tr,
-                    style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                  ),
-                  Text(
-                    "Sign in to access your spideli account and manage your deliveries seamlessly.".tr,
-                    style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontFamily: AppThemeData.regular),
-                  ),
-                  const SizedBox(
-                    height: 10,
-                  ),
-                  Text.rich(
+          final c = context.dsColors;
+          final t = context.dsText;
+
+          // Read eagerly inside the tracked builder so the eye toggle rebuilds.
+          final bool obscurePassword = controller.passwordVisible.value;
+
+          return DsScaffold(
+            appBar: const DsAppBar(),
+            body: AuthShell(
+              icon: Icons.login_rounded,
+              title: "Log In to Your Account".tr,
+              subtitle: "Sign in to access your spideli account and manage your deliveries seamlessly.".tr,
+              highlights: [
+                "Manage your deliveries seamlessly".tr,
+                "Track your earnings in real time".tr,
+              ],
+              link: Text.rich(
+                TextSpan(
+                  children: [
                     TextSpan(
-                      children: [
-                        TextSpan(
-                            text: "Didn’t Have an account?".tr,
-                            style: TextStyle(
-                              color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                              fontFamily: AppThemeData.medium,
-                              fontWeight: FontWeight.w500,
-                            )),
-                        const WidgetSpan(
-                            child: SizedBox(
-                          width: 10,
-                        )),
-                        TextSpan(
-                            recognizer: TapGestureRecognizer()
-                              ..onTap = () {
-                                Get.to(const SignupScreen());
-                              },
-                            text: 'Sign up'.tr,
-                            style: TextStyle(
-                                color: AppThemeData.primary300,
-                                fontFamily: AppThemeData.medium,
-                                fontWeight: FontWeight.w500,
-                                decoration: TextDecoration.underline,
-                                decorationColor: AppThemeData.primary300)),
-                      ],
+                      text: "Didn’t Have an account?".tr,
+                      style: t.bodyStrong,
                     ),
-                  ),
-                  const SizedBox(
-                    height: 32,
-                  ),
-                  TextFieldWidget(
-                    title: 'Email Address'.tr,
-                    controller: controller.emailEditingController.value,
-                    hintText: 'Enter email address'.tr,
-                    prefix: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: SvgPicture.asset(
-                        "assets/icons/ic_mail.svg",
-                        colorFilter: ColorFilter.mode(
-                          isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                          BlendMode.srcIn,
-                        ),
-                      ),
+                    const WidgetSpan(child: SizedBox(width: 6)),
+                    TextSpan(
+                      recognizer: TapGestureRecognizer()
+                        ..onTap = () {
+                          Get.to(const SignupScreen());
+                        },
+                      text: 'Sign up'.tr,
+                      style: t.link,
                     ),
-                    textInputAction: TextInputAction.next,
-                  ),
-                  TextFieldWidget(
-                    title: 'Password'.tr,
-                    controller: controller.passwordEditingController.value,
-                    hintText: 'Enter password'.tr,
-                    obscureText: controller.passwordVisible.value,
-                    prefix: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: SvgPicture.asset(
-                        "assets/icons/ic_lock.svg",
-                        colorFilter: ColorFilter.mode(
-                          isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                          BlendMode.srcIn,
-                        ),
-                      ),
+                  ],
+                ),
+              ),
+              children: [
+                DsFormSection(
+                  children: [
+                    DsTextField(
+                      label: 'Email Address'.tr,
+                      controller: controller.emailEditingController.value,
+                      hint: 'Enter email address'.tr,
+                      prefixIcon: Icons.mail_outline_rounded,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
                     ),
-                    suffix: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: InkWell(
-                          onTap: () {
+                    // Visibility lives on the controller, so this field is a
+                    // raw TextFormField with the DS input decoration.
+                    DsFieldLabel('Password'.tr),
+                    TextFormField(
+                      controller: controller.passwordEditingController.value,
+                      obscureText: obscurePassword,
+                      style: t.bodyStrong,
+                      cursorColor: c.brand,
+                      textInputAction: TextInputAction.done,
+                      decoration: DsInputDecoration.of(
+                        context,
+                        hint: 'Enter password'.tr,
+                        prefixIcon: Icons.lock_outline_rounded,
+                        suffix: DsIconButton(
+                          icon: obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                          semanticLabel: 'Password'.tr,
+                          onPressed: () {
                             controller.passwordVisible.value = !controller.passwordVisible.value;
                           },
-                          child: controller.passwordVisible.value
-                              ? SvgPicture.asset(
-                                  "assets/icons/ic_password_show.svg",
-                                  colorFilter: ColorFilter.mode(
-                                    isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                    BlendMode.srcIn,
-                                  ),
-                                )
-                              : SvgPicture.asset(
-                                  "assets/icons/ic_password_close.svg",
-                                  colorFilter: ColorFilter.mode(
-                                    isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                    BlendMode.srcIn,
-                                  ),
-                                )),
-                    ),
-                    textInputAction: TextInputAction.done,
-                  ),
-                  InkWell(
-                    onTap: () {
-                      Get.to(const ForgotPasswordScreen());
-                    },
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        "Forgot Password".tr,
-                        style: TextStyle(
-                            decoration: TextDecoration.underline,
-                            decorationColor: AppThemeData.primary300,
-                            color: isDark ? AppThemeData.primary300 : AppThemeData.primary300,
-                            fontSize: 14,
-                            fontFamily: AppThemeData.medium),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(
-                    height: 30,
-                  ),
-                ],
-              ),
-            ),
-            bottomNavigationBar: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: EdgeInsets.symmetric(vertical: Platform.isAndroid ? 10 : 30, horizontal: 16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      RoundedButtonFill(
-                        title: "Continue with Mobile Number".tr,
-                        textColor: isDark ? AppThemeData.grey100 : AppThemeData.grey900,
-                        color: isDark ? AppThemeData.grey900 : AppThemeData.grey100,
-                        icon: SvgPicture.asset(
-                          "assets/icons/ic_phone.svg",
-                          colorFilter: const ColorFilter.mode(AppThemeData.grey900, BlendMode.srcIn),
-                        ),
-                        isRight: false,
-                        onPress: () async {
-                          Get.to(const PhoneNumberScreen());
+                    Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: DsButton.ghost(
+                        label: "Forgot Password".tr,
+                        size: DsButtonSize.sm,
+                        onPressed: () {
+                          Get.to(const ForgotPasswordScreen());
                         },
                       ),
-                      const SizedBox(
-                        height: 12,
-                      ),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: RoundedButtonFill(
-                              title: Platform.isIOS ? "with Google".tr : 'Continue with Google'.tr,
-                              textColor: isDark ? AppThemeData.grey100 : AppThemeData.grey900,
-                              color: isDark ? AppThemeData.grey900 : AppThemeData.grey100,
-                              icon: SvgPicture.asset("assets/icons/ic_google.svg"),
-                              isRight: false,
-                              onPress: () async {
-                                controller.loginWithGoogle();
-                              },
-                            ),
-                          ),
-                          if (Platform.isIOS)
-                            const SizedBox(
-                              width: 10,
-                            ),
-                          Platform.isIOS
-                              ? Expanded(
-                                  child: RoundedButtonFill(
-                                    title: Platform.isIOS ? "with Apple".tr : 'Continue with Apple'.tr,
-                                    textColor: isDark ? AppThemeData.grey100 : AppThemeData.grey900,
-                                    color: isDark ? AppThemeData.grey900 : AppThemeData.grey100,
-                                    icon: SvgPicture.asset("assets/icons/ic_apple.svg"),
-                                    isRight: false,
-                                    onPress: () async {
-                                      controller.loginWithApple();
-                                    },
-                                  ),
-                                )
-                              : const SizedBox(),
-                        ],
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                InkWell(
-                  onTap: () {
-                    if (controller.emailEditingController.value.text.trim().isEmpty) {
-                      ShowToastDialog.showToast("Please enter valid email".tr);
-                    } else if (controller.passwordEditingController.value.text.trim().isEmpty) {
-                      ShowToastDialog.showToast("Please enter valid password".tr);
-                    } else {
-                      controller.loginWithEmailAndPassword();
-                    }
+                const DsGap(DsSpace.xl),
+                DsDivider(label: 'OR'.tr),
+                const DsGap(DsSpace.lg),
+                DsButton.secondary(
+                  label: "Continue with Mobile Number".tr,
+                  icon: Icons.smartphone_rounded,
+                  size: DsButtonSize.lg,
+                  expand: true,
+                  onPressed: () async {
+                    Get.to(const PhoneNumberScreen());
                   },
-                  child: Container(
-                    color: AppThemeData.primary300,
-                    width: Responsive.width(100, context),
-                    height: Responsive.width(16, context),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        "Log in".tr,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: isDark ? AppThemeData.grey50 : AppThemeData.grey50,
-                          fontSize: 16,
-                          fontFamily: AppThemeData.medium,
-                          fontWeight: FontWeight.w400,
-                        ),
+                ),
+                const DsGap(DsSpace.md),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DsButton.secondary(
+                        label: Platform.isIOS ? "with Google".tr : 'Continue with Google'.tr,
+                        size: DsButtonSize.lg,
+                        expand: true,
+                        leading: SvgPicture.asset("assets/icons/ic_google.svg", height: 20, width: 20),
+                        onPressed: () async {
+                          controller.loginWithGoogle();
+                        },
                       ),
                     ),
-                  ),
+                    if (Platform.isIOS) const SizedBox(width: 10),
+                    Platform.isIOS
+                        ? Expanded(
+                            child: DsButton.secondary(
+                              label: Platform.isIOS ? "with Apple".tr : 'Continue with Apple'.tr,
+                              size: DsButtonSize.lg,
+                              expand: true,
+                              leading: SvgPicture.asset("assets/icons/ic_apple.svg", height: 20, width: 20),
+                              onPressed: () async {
+                                controller.loginWithApple();
+                              },
+                            ),
+                          )
+                        : const SizedBox(),
+                  ],
                 ),
               ],
+            ),
+            bottomBar: DsStickyBar(
+              child: DsButton.primary(
+                label: "Log in".tr,
+                icon: Icons.arrow_forward_rounded,
+                size: DsButtonSize.lg,
+                expand: true,
+                onPressed: () {
+                  if (controller.emailEditingController.value.text.trim().isEmpty) {
+                    ShowToastDialog.showToast("Please enter valid email".tr);
+                  } else if (controller.passwordEditingController.value.text.trim().isEmpty) {
+                    ShowToastDialog.showToast("Please enter valid password".tr);
+                  } else {
+                    controller.loginWithEmailAndPassword();
+                  }
+                },
+              ),
             ),
           );
         });

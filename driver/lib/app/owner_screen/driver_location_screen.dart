@@ -1,33 +1,27 @@
 import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/driver_location_controller.dart';
-import 'package:driver/themes/theme_controller.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart' as flutterMap;
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+/// Map screen (archetype A): edge-to-edge map, DS app bar only. The map,
+/// its controllers and markers are untouched.
 class DriverLocationScreen extends StatelessWidget {
   const DriverLocationScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
         init: DriverLocationController(),
         builder: (controller) {
+          final c = context.dsColors;
           return Scaffold(
-            appBar: AppBar(
-              title: Text(
-                "Driver Locations",
-                style: TextStyle(
-                  color: isDark ? Colors.white : Colors.black,
-                ),
-              ),
-              backgroundColor: isDark ? Colors.black : Colors.white,
-              iconTheme: IconThemeData(
-                color: isDark ? Colors.white : Colors.black,
-              ),
+            backgroundColor: c.background,
+            appBar: DsAppBar(
+              title: "Driver Locations",
+              subtitle: controller.driverList.isEmpty ? null : '${controller.driverList.length} ${'Drivers'.tr}',
             ),
             body: controller.isLoading.value
                 ? Constant.loader()

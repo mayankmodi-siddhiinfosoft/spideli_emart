@@ -1,16 +1,15 @@
 import 'package:driver/app/parcel_screen/parcel_tracking/parcel_shipment_info_card.dart';
 import 'package:driver/utils/region_service.dart';
-import 'package:dotted_border/dotted_border.dart';
-import 'package:driver/themes/responsive.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
 import '../../constant/constant.dart';
 import '../../controllers/parcel_order_details_controller.dart';
-import '../../themes/app_them_data.dart';
 import '../../themes/theme_controller.dart';
-import '../../utils/network_image_widget.dart';
 
+/// Parcel order details (archetype D/J detail): a gradient order header, the
+/// shipment contract, the sender → receiver rail, the numbers and the fare
+/// breakdown, each in its own surface.
 class ParcelOrderDetails extends StatelessWidget {
   const ParcelOrderDetails({super.key});
 
@@ -21,386 +20,373 @@ class ParcelOrderDetails extends StatelessWidget {
     return GetX(
       init: ParcelOrderDetailsController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(
-              "Order Details".tr,
-              style: TextStyle(
-                color: isDark ? Colors.white : Colors.black,
-              ),
-            ),
-            backgroundColor: isDark ? Colors.black : Colors.white,
-            iconTheme: IconThemeData(
-              color: isDark ? Colors.white : Colors.black,
-            ),
-          ),
+        final c = context.dsColors;
+        final t = context.dsText;
+        final order = controller.parcelOrder.value;
+        return DsScaffold(
+          backgroundColor: c.background,
+          title: "Order Details".tr,
           body: controller.isLoading.value
-              ? Constant.loader()
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(15),
-                          color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                          border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                        ),
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          "${'Order Id:'.tr} ${Constant.orderId(orderId: controller.parcelOrder.value.id.toString())}".tr,
-                          textAlign: TextAlign.start,
-                          style: TextStyle(
-                            fontFamily: AppThemeData.semiBold,
-                            fontSize: 18,
-                            color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
+              ? const DsSkeletonDetail()
+              : DsResponsive(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(DsSpace.lg),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: DsFadeSlideIn.stagger([
+                        // ---------------------------------------------- header
+                        DsCard.gradient(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.local_shipping_outlined, size: 20, color: Colors.white.withValues(alpha: 0.9)),
+                                  const DsGap(DsSpace.sm),
+                                  Expanded(
+                                    child: Text(
+                                      "Parcel".tr,
+                                      style: t.overline.withColor(Colors.white.withValues(alpha: 0.85)),
+                                    ),
+                                  ),
+                                  if ((order.status ?? '').isNotEmpty)
+                                    Flexible(
+                                      child: Text(
+                                        order.status!.tr,
+                                        textAlign: TextAlign.end,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: t.labelSm.withColor(Colors.white),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const DsGap(DsSpace.sm),
+                              Text(
+                                "${'Order Id:'.tr} ${Constant.orderId(orderId: controller.parcelOrder.value.id.toString())}".tr,
+                                textAlign: TextAlign.start,
+                                style: t.title.withColor(Colors.white).tabular,
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      ParcelShipmentInfoCard(order: controller.parcelOrder.value, isDark: isDark),
-                      Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(15),
-                          color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                          border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                        ),
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Timeline with icons and line
-                                Column(
-                                  children: [
-                                    Image.asset("assets/images/image_parcel.png", height: 32, width: 32),
-                                    DottedBorder(
-                                      options: CustomPathDottedBorderOptions(
-                                        color: Colors.grey.shade400,
-                                        strokeWidth: 2,
-                                        dashPattern: [4, 4],
-                                        customPath: (size) => Path()
-                                          ..moveTo(size.width / 2, 0)
-                                          ..lineTo(size.width / 2, size.height),
-                                      ),
-                                      child: const SizedBox(width: 20, height: 95),
-                                    ),
-                                    Image.asset("assets/images/image_parcel.png", height: 32, width: 32),
-                                  ],
-                                ),
-                                const SizedBox(width: 12),
-                                // Address Details
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      _infoSection(
-                                        "Pickup Address (Sender):".tr,
-                                        controller.parcelOrder.value.sender?.name ?? '',
-                                        controller.parcelOrder.value.sender?.address ?? '',
-                                        controller.parcelOrder.value.sender?.phone ?? '',
-                                        // controller.parcelOrder.value.senderPickupDateTime != null
-                                        //     ? "Pickup Time: ${controller.formatDate(controller.parcelOrder.value.senderPickupDateTime!)}"
-                                        //     : '',
-                                        isDark,
-                                      ),
-                                      const SizedBox(height: 16),
-                                      _infoSection(
-                                        "Delivery Address (Receiver):".tr,
-                                        controller.parcelOrder.value.receiver?.name ?? '',
-                                        controller.parcelOrder.value.receiver?.address ?? '',
-                                        controller.parcelOrder.value.receiver?.phone ?? '',
-                                        // controller.parcelOrder.value.receiverPickupDateTime != null
-                                        //     ? "Delivery Time: ${controller.formatDate(controller.parcelOrder.value.receiverPickupDateTime!)}"
-                                        //     : '',
-                                        isDark,
-                                      ),
-                                    ],
+                        const DsGap(DsSpace.lg),
+
+                        // ------------------------------------------- shipment
+                        ParcelShipmentInfoCard(order: controller.parcelOrder.value, isDark: isDark),
+
+                        // ---------------------------------------------- route
+                        DsCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _PartyBlock(
+                                kind: DsStopKind.pickup,
+                                title: "Pickup Address (Sender):".tr,
+                                name: controller.parcelOrder.value.sender?.name ?? '',
+                                address: controller.parcelOrder.value.sender?.address ?? '',
+                                phone: controller.parcelOrder.value.sender?.phone ?? '',
+                                showConnector: true,
+                              ),
+                              _PartyBlock(
+                                kind: DsStopKind.drop,
+                                title: "Delivery Address (Receiver):".tr,
+                                name: controller.parcelOrder.value.receiver?.name ?? '',
+                                address: controller.parcelOrder.value.receiver?.address ?? '',
+                                phone: controller.parcelOrder.value.receiver?.phone ?? '',
+                                showConnector: false,
+                              ),
+                              const DsDivider(spacing: DsSpace.lg),
+                              if (controller.parcelOrder.value.isSchedule == true)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: DsSpace.sm),
+                                  child: DsInlineAlert(
+                                    tone: DsTone.info,
+                                    icon: Icons.schedule_rounded,
+                                    message: "Schedule Pickup time: ${controller.formatDate(controller.parcelOrder.value.senderPickupDateTime!)}".tr,
                                   ),
                                 ),
-                              ],
-                            ),
-                            const Divider(),
-                            if (controller.parcelOrder.value.isSchedule == true)
                               Padding(
-                                padding: const EdgeInsets.only(bottom: 8.0),
-                                child: Text(
-                                  "Schedule Pickup time: ${controller.formatDate(controller.parcelOrder.value.senderPickupDateTime!)}".tr,
-                                  style: AppThemeData.mediumTextStyle(fontSize: 14, color: AppThemeData.info400),
-                                ),
-                              ),
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8.0),
-                              child: Text(
-                                "Order Date:${controller.parcelOrder.value.isSchedule == true ? controller.formatDate(controller.parcelOrder.value.createdAt!) : controller.formatDate(controller.parcelOrder.value.senderPickupDateTime!)}".tr,
-                                style: AppThemeData.mediumTextStyle(fontSize: 14, color: AppThemeData.info400),
-                              ),
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  "Parcel Type:".tr,
-                                  style: AppThemeData.semiBoldTextStyle(
-                                    fontSize: 16,
-                                    color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800,
-                                  ),
-                                ),
-                                Row(
+                                padding: const EdgeInsets.only(bottom: DsSpace.sm),
+                                child: Row(
                                   children: [
-                                    Text(
-                                      controller.parcelOrder.value.parcelType ?? '',
-                                      style: AppThemeData.semiBoldTextStyle(
-                                        fontSize: 16,
-                                        color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800,
+                                    Icon(Icons.event_outlined, size: 18, color: c.info),
+                                    const DsGap(DsSpace.sm),
+                                    Expanded(
+                                      child: Text(
+                                        "Order Date:${controller.parcelOrder.value.isSchedule == true ? controller.formatDate(controller.parcelOrder.value.createdAt!) : controller.formatDate(controller.parcelOrder.value.senderPickupDateTime!)}"
+                                            .tr,
+                                        style: t.bodySm.withColor(c.infoStrong),
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    if (controller.getSelectedCategory()?.image != null &&
-                                        controller.getSelectedCategory()!.image!.isNotEmpty)
-                                      NetworkImageWidget(imageUrl: controller.getSelectedCategory()?.image ?? '', height: 20, width: 20),
                                   ],
                                 ),
-                              ],
-                            ),
-                            controller.parcelOrder.value.parcelImages == null || controller.parcelOrder.value.parcelImages!.isEmpty
-                                ? SizedBox()
-                                : SizedBox(
-                                    height: 120,
-                                    child: ListView.builder(
-                                      itemCount: controller.parcelOrder.value.parcelImages!.length,
-                                      shrinkWrap: true,
-                                      scrollDirection: Axis.horizontal,
-                                      itemBuilder: (context, index) {
-                                        return Padding(
-                                          padding: const EdgeInsets.all(8.0),
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadius.circular(10),
-                                            child: NetworkImageWidget(
-                                              imageUrl: controller.parcelOrder.value.parcelImages![index],
-                                              width: 100,
-                                              fit: BoxFit.cover,
-                                              borderRadius: 10,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  )
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Distance, Weight, Rate
-                      Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(15),
-                          color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                          border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                        ),
-                        padding: EdgeInsets.all(16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _iconTile(
-                              "${controller.parcelOrder.value.distance ?? '--'} ${Constant.distanceType}",
-                              "Distance".tr,
-                              "assets/icons/ic_distance_parcel.svg",
-                              isDark,
-                            ),
-                            _iconTile(
-                              controller.parcelOrder.value.parcelWeight ?? '--',
-                              "Weight".tr,
-                              "assets/icons/ic_weight_parcel.svg",
-                              isDark,
-                            ),
-                            _iconTile(
-                              Constant.amountShow(currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.parcelOrder.value.subTotal),
-                              "Rate".tr,
-                              "assets/icons/ic_rate_parcel.svg",
-                              isDark,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Column(
-                        children: [
-                          Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(15),
-                              color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                              border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                            ),
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text("About Customer".tr,
-                                    style: AppThemeData.boldTextStyle(
-                                        fontSize: 14, color: isDark ? AppThemeData.greyDark500 : AppThemeData.grey500)),
-                                const SizedBox(height: 8),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Row(
+                              ),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text("Parcel Type:".tr, style: t.bodySecondary),
+                                  Flexible(
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        SizedBox(
-                                          width: 52,
-                                          height: 52,
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadiusGeometry.circular(10),
-                                            child: NetworkImageWidget(
-                                                imageUrl: controller.parcelOrder.value.author?.profilePictureURL ?? '',
-                                                height: 70,
-                                                width: 70,
-                                                borderRadius: 35),
+                                        Flexible(
+                                          child: Text(
+                                            controller.parcelOrder.value.parcelType ?? '',
+                                            textAlign: TextAlign.end,
+                                            style: t.bodyStrong,
                                           ),
                                         ),
-                                        SizedBox(width: 20),
-                                        Text(
-                                          controller.parcelOrder.value.author?.fullName() ?? '',
-                                          style: AppThemeData.boldTextStyle(
-                                              color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, fontSize: 18),
-                                        ),
+                                        if (controller.getSelectedCategory()?.image != null && controller.getSelectedCategory()!.image!.isNotEmpty) ...[
+                                          const DsGap(DsSpace.sm),
+                                          DsImage(url: controller.getSelectedCategory()?.image ?? '', height: 20, width: 20, radius: DsRadius.xs),
+                                        ],
                                       ],
                                     ),
-                                  ],
-                                ),
-                              ],
-                            ),
+                                  ),
+                                ],
+                              ),
+                              controller.parcelOrder.value.parcelImages == null || controller.parcelOrder.value.parcelImages!.isEmpty
+                                  ? const SizedBox()
+                                  : Padding(
+                                      padding: const EdgeInsets.only(top: DsSpace.md),
+                                      child: SizedBox(
+                                        height: 104,
+                                        child: ListView.separated(
+                                          itemCount: controller.parcelOrder.value.parcelImages!.length,
+                                          shrinkWrap: true,
+                                          scrollDirection: Axis.horizontal,
+                                          separatorBuilder: (_, _) => const DsGap(DsSpace.sm),
+                                          itemBuilder: (context, index) {
+                                            return DsImage(
+                                              url: controller.parcelOrder.value.parcelImages![index],
+                                              width: 100,
+                                              height: 104,
+                                              radius: DsRadius.md,
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                            ],
                           ),
-                          const SizedBox(height: 15),
-                        ],
-                      ),
-                      Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(15),
-                          color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                          border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
                         ),
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text("Order Summary".tr, style: AppThemeData.boldTextStyle(fontSize: 14, color: AppThemeData.grey500)),
-                            const SizedBox(height: 8),
+                        const DsGap(DsSpace.lg),
 
-                            // Subtotal
-                            _summaryTile("Subtotal".tr, Constant.amountShow(currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.subTotal.value.toString()), isDark, null),
+                        // -------------------------------- distance, weight, rate
+                        DsCard(
+                          padding: const EdgeInsets.all(DsSpace.md),
+                          child: DsTripMetrics(
+                            filled: false,
+                            items: [
+                              DsTripMetric(
+                                icon: Icons.route_outlined,
+                                value: "${controller.parcelOrder.value.distance ?? '--'} ${Constant.distanceType}",
+                                label: "Distance".tr,
+                              ),
+                              DsTripMetric(
+                                icon: Icons.scale_outlined,
+                                value: controller.parcelOrder.value.parcelWeight ?? '--',
+                                label: "Weight".tr,
+                              ),
+                              DsTripMetric(
+                                icon: Icons.payments_outlined,
+                                value: Constant.amountShow(
+                                    currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId),
+                                    amount: controller.parcelOrder.value.subTotal),
+                                label: "Rate".tr,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const DsGap(DsSpace.lg),
 
-                            // Discount
-                            _summaryTile("Discount".tr, Constant.amountShow(currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.discount.value.toString()), isDark, null),
+                        // ------------------------------------------- customer
+                        DsCard(
+                          padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
+                                child: Text("About Customer".tr, style: t.overline),
+                              ),
+                              DsListTile(
+                                title: controller.parcelOrder.value.author?.fullName() ?? '',
+                                leading: DsAvatar(
+                                  imageUrl: controller.parcelOrder.value.author?.profilePictureURL ?? '',
+                                  name: controller.parcelOrder.value.author?.fullName() ?? '',
+                                  size: 52,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const DsGap(DsSpace.lg),
 
-                            // Tax List
-                            ...List.generate(controller.parcelOrder.value.taxSetting!.length, (index) {
-                              return _summaryTile(
-                                  "${controller.parcelOrder.value.taxSetting![index].title} ${controller.parcelOrder.value.taxSetting![index].type == 'fix' ? '' : '(${controller.parcelOrder.value.taxSetting![index].tax}%)'}",
-                                  Constant.amountShow(currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: Constant.getTaxValue(
+                        // -------------------------------------------- summary
+                        DsCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("Order Summary".tr, style: t.overline),
+                              const DsGap(DsSpace.sm),
+
+                              // Subtotal
+                              DsInfoRow(
+                                label: "Subtotal".tr,
+                                value: Constant.amountShow(
+                                    currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.subTotal.value.toString()),
+                              ),
+
+                              // Discount
+                              DsInfoRow(
+                                label: "Discount".tr,
+                                value: Constant.amountShow(
+                                    currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.discount.value.toString()),
+                              ),
+
+                              // Tax List
+                              ...List.generate(controller.parcelOrder.value.taxSetting!.length, (index) {
+                                return DsInfoRow(
+                                  label:
+                                      "${controller.parcelOrder.value.taxSetting![index].title} ${controller.parcelOrder.value.taxSetting![index].type == 'fix' ? '' : '(${controller.parcelOrder.value.taxSetting![index].tax}%)'}",
+                                  value: Constant.amountShow(
+                                    currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId),
+                                    amount: Constant.getTaxValue(
                                       amount: ((double.tryParse(controller.parcelOrder.value.subTotal.toString()) ?? 0.0) -
                                               (double.tryParse(controller.parcelOrder.value.discount.toString()) ?? 0.0))
                                           .toString(),
                                       taxModel: controller.parcelOrder.value.taxSetting![index],
                                     ).toString(),
                                   ),
-                                  isDark,
-                                  null);
-                            }),
+                                );
+                              }),
 
-                            const Divider(),
+                              const DsDivider(spacing: DsSpace.md),
 
-                            // Total
-                            _summaryTile(
-                                "Order Total".tr, Constant.amountShow(currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.totalAmount.value.toString()), isDark, null),
-                            _summaryTile(
-                              "Admin Commission (${controller.parcelOrder.value.adminCommission}${controller.parcelOrder.value.adminCommissionType == "Percentage" || controller.parcelOrder.value.adminCommissionType == "percentage" ? "%" : Constant.currencyModel!.symbol})"
-                                  .tr,
-                              Constant.amountShow(currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.adminCommission.value.toString()),
-                              isDark,
-                              AppThemeData.danger300,
-                            ),
+                              // Total
+                              DsInfoRow(
+                                label: "Order Total".tr,
+                                value: Constant.amountShow(
+                                    currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.totalAmount.value.toString()),
+                                emphasize: true,
+                              ),
+                              DsInfoRow(
+                                label:
+                                    "Admin Commission (${controller.parcelOrder.value.adminCommission}${controller.parcelOrder.value.adminCommissionType == "Percentage" || controller.parcelOrder.value.adminCommissionType == "percentage" ? "%" : Constant.currencyModel!.symbol})"
+                                        .tr,
+                                value: Constant.amountShow(
+                                    currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.adminCommission.value.toString()),
+                                valueTone: DsTone.danger,
+                              ),
 
-                            // controller.parcelOrder.value.driver?.ownerId != null &&
-                            //             controller.parcelOrder.value.driver?.ownerId.isNotEmpty ||
-                            //         controller.parcelOrder.value.status == Constant.orderPlaced
-                            ((controller.parcelOrder.value.driver?.ownerId != null &&
-                                        (controller.parcelOrder.value.driver?.ownerId?.isNotEmpty ?? false)) ||
-                                    controller.parcelOrder.value.status == Constant.orderPlaced)
-                                ? SizedBox()
-                                : Container(
-                                    width: Responsive.width(100, context),
-                                    decoration: BoxDecoration(
-                                      border: Border.all(color: isDark ? AppThemeData.danger50 : AppThemeData.danger50),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
+                              // controller.parcelOrder.value.driver?.ownerId != null &&
+                              //             controller.parcelOrder.value.driver?.ownerId.isNotEmpty ||
+                              //         controller.parcelOrder.value.status == Constant.orderPlaced
+                              ((controller.parcelOrder.value.driver?.ownerId != null && (controller.parcelOrder.value.driver?.ownerId?.isNotEmpty ?? false)) ||
+                                      controller.parcelOrder.value.status == Constant.orderPlaced)
+                                  ? const SizedBox()
+                                  : Padding(
+                                      padding: const EdgeInsets.only(top: DsSpace.md),
+                                      child: DsInlineAlert(
+                                        tone: DsTone.danger,
+                                        icon: Icons.info_outline_rounded,
+                                        message:
                                             "Note : Admin commission will be debited from your wallet balance. \n \nAdmin commission will apply on your booking Amount minus Discount(if applicable).",
-                                            style: AppThemeData.boldTextStyle(
-                                                fontSize: 16, color: isDark ? AppThemeData.danger300 : AppThemeData.danger300),
-                                          ),
-                                        ],
                                       ),
                                     ),
-                                  ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 24),
-                    ],
+                        const DsGap(DsSpace.xxl),
+                      ]),
+                    ),
                   ),
                 ),
         );
       },
     );
   }
+}
 
-  Widget _infoSection(String title, String name, String address, String phone, bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: AppThemeData.semiBoldTextStyle(fontSize: 18, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-        Text(name, style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-        Text(address, style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-        Text(phone, style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-        //Text(time, style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-      ],
-    );
-  }
+/// One party of the shipment (sender / receiver) on a route rail.
+class _PartyBlock extends StatelessWidget {
+  final DsStopKind kind;
+  final String title;
+  final String name;
+  final String address;
+  final String phone;
+  final bool showConnector;
 
-  Widget _iconTile(String value, title, icon, bool isDark) {
-    return Column(
-      children: [
-        // Icon(icon, color: AppThemeData.primary300),
-        SvgPicture.asset(icon, height: 28, width: 28, color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800),
-        const SizedBox(height: 6),
-        Text(value, style: AppThemeData.semiBoldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800)),
-        const SizedBox(height: 6),
-        Text(title, style: AppThemeData.semiBoldTextStyle(fontSize: 12, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
-      ],
-    );
-  }
+  const _PartyBlock({
+    required this.kind,
+    required this.title,
+    required this.name,
+    required this.address,
+    required this.phone,
+    required this.showConnector,
+  });
 
-  Widget _summaryTile(String title, String value, bool isDark, Color? colors) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final bool isPickup = kind == DsStopKind.pickup;
+    return IntrinsicHeight(
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(title, style: AppThemeData.mediumTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark800 : AppThemeData.grey800)),
-          Text(
-            value,
-            style: AppThemeData.semiBoldTextStyle(
-                fontSize: title == "Order Total" ? 18 : 16, color: colors ?? (isDark ? AppThemeData.greyDark900 : AppThemeData.grey900)),
+          SizedBox(
+            width: 36,
+            child: Column(
+              children: [
+                DsIconWell(
+                  icon: isPickup ? Icons.inventory_2_outlined : Icons.flag_outlined,
+                  tone: isPickup ? DsTone.brand : DsTone.danger,
+                  size: 36,
+                  circle: true,
+                ),
+                if (showConnector)
+                  Expanded(
+                    child: Container(
+                      width: 2,
+                      margin: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+                      decoration: BoxDecoration(color: c.border, borderRadius: DsRadius.brPill),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const DsGap(DsSpace.md),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: showConnector ? DsSpace.lg : 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: t.overline),
+                  const DsGap(DsSpace.xs),
+                  if (name.isNotEmpty) Text(name, style: t.titleSm.w600),
+                  if (address.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: DsSpace.xxs),
+                      child: Text(address, style: t.bodySecondary),
+                    ),
+                  if (phone.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: DsSpace.xxs),
+                      child: Row(
+                        children: [
+                          Icon(Icons.phone_outlined, size: 14, color: c.iconDefault),
+                          const DsGap(DsSpace.xs),
+                          Flexible(child: Text(phone, style: t.bodySm.tabular)),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ],
       ),

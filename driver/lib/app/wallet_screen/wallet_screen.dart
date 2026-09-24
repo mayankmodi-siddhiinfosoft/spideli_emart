@@ -10,9 +10,7 @@ import 'package:driver/models/rental_order_model.dart';
 import 'package:driver/models/wallet_transaction_model.dart';
 import 'package:driver/models/withdrawal_model.dart';
 import 'package:driver/themes/app_them_data.dart';
-import 'package:driver/themes/responsive.dart';
-import 'package:driver/themes/round_button_fill.dart';
-import 'package:driver/themes/text_field_widget.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/widget/my_separator.dart';
@@ -27,6 +25,9 @@ import '../order_list_screen/order_details_screen.dart';
 import '../parcel_screen/parcel_order_details.dart';
 import '../rental_service/rental_order_details_screen.dart';
 
+/// Archetype E – earnings / wallet: a deep gradient hero with the animated
+/// balance, the Withdraw / Top up pair overlapping it, then the history as
+/// segmented tabs of tone-coded transaction rows.
 class WalletScreen extends StatelessWidget {
   final bool? isAppBarShow;
 
@@ -36,336 +37,207 @@ class WalletScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final themeController = Get.find<ThemeController>();
     return Obx(() {
-      final isDark = themeController.isDark.value;
+      // The theme observable read must stay inside this Obx: it is what
+      // rebuilds the wallet when the driver switches light / dark mode.
+      themeController.isDark.value;
       return GetX(
           init: WalletController(),
           builder: (controller) {
-            return Scaffold(
-              appBar: isAppBarShow == true
-                  ? AppBar(
-                      backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                      centerTitle: false,
-                      iconTheme: IconThemeData(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, size: 20),
-                      title: Text(
-                        "Wallet".tr,
-                        style: TextStyle(
-                            color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 18, fontFamily: AppThemeData.medium),
+            final c = context.dsColors;
+            final t = context.dsText;
+
+            // Read every observable here, inside the tracked builder.
+            final bool isLoading = controller.isLoading.value;
+            final num balance = controller.userModel.value.walletAmount ?? 0;
+            final int tab = controller.selectedTabIndex.value;
+            final List<WalletTransactionModel> transactions = controller.walletTopTransactionList.toList();
+            final List<WithdrawalModel> withdrawals = controller.withdrawalList.toList();
+            final bool hasBankOrMethod = (Constant.userModel!.userBankDetails != null && Constant.userModel!.userBankDetails!.accountNumber.isNotEmpty) ||
+                controller.withdrawMethodModel.value.id != null;
+
+            final Widget history;
+            if (isLoading) {
+              history = const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: DsSpace.lg),
+                  child: DsSkeletonList(itemCount: 6, trailing: true, carded: true),
+                ),
+              );
+            } else if (tab == 0) {
+              history = transactions.isEmpty
+                  ? SliverToBoxAdapter(
+                      child: DsEmptyState(
+                        icon: Icons.receipt_long_outlined,
+                        title: "Transaction history not found".tr,
                       ),
                     )
-                  : null,
-              body: controller.isLoading.value
-                  ? Constant.loader()
-                  : Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          child: Container(
-                            width: Responsive.width(100, context),
-                            decoration: const BoxDecoration(
-                              borderRadius: BorderRadius.all(Radius.circular(20)),
-                              image: DecorationImage(
-                                image: AssetImage("assets/images/wallet.png"),
-                                fit: BoxFit.fill,
-                              ),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                              child: Column(
-                                children: [
-                                  Text(
-                                    "My Wallet".tr,
-                                    maxLines: 1,
-                                    style: TextStyle(
-                                      color: isDark ? AppThemeData.grey900 : AppThemeData.grey900,
-                                      fontSize: 16,
-                                      overflow: TextOverflow.ellipsis,
-                                      fontFamily: AppThemeData.regular,
-                                    ),
-                                  ),
-                                  Text(
-                                    Constant.amountShow(amount: controller.userModel.value.walletAmount.toString()),
-                                    maxLines: 1,
-                                    style: TextStyle(
-                                      color: isDark ? AppThemeData.grey900 : AppThemeData.grey900,
-                                      fontSize: 40,
-                                      overflow: TextOverflow.ellipsis,
-                                      fontFamily: AppThemeData.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(
-                                    height: 20,
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: RoundedButtonFill(
-                                            title: "Withdraw".tr,
-                                            width: 24,
-                                            height: 5.5,
-                                            color: AppThemeData.grey50,
-                                            textColor: AppThemeData.grey900,
-                                            borderRadius: 200,
-                                            onPress: () {
-                                              if ((Constant.userModel!.userBankDetails != null &&
-                                                      Constant.userModel!.userBankDetails!.accountNumber.isNotEmpty) ||
-                                                  controller.withdrawMethodModel.value.id != null) {
-                                                withdrawalCardBottomSheet(context, controller);
-                                              } else {
-                                                ShowToastDialog.showToast("Please enter payment method".tr);
-                                              }
-                                            },
-                                          ),
-                                        ),
-                                        const SizedBox(
-                                          width: 20,
-                                        ),
-                                        Expanded(
-                                          child: RoundedButtonFill(
-                                            title: "Top up".tr,
-                                            width: 24,
-                                            height: 5.5,
-                                            borderRadius: 200,
-                                            color: AppThemeData.primary300,
-                                            textColor: AppThemeData.grey50,
-                                            onPress: () {
-                                              Get.to(const PaymentListScreen());
-                                            },
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                ],
-                              ),
-                            ),
+                  : SliverList.builder(
+                      itemCount: transactions.length,
+                      itemBuilder: (context, index) => Padding(
+                        padding: const EdgeInsets.only(bottom: DsSpace.sm),
+                        child: DsFadeSlideIn(
+                          index: index,
+                          child: _TransactionRow(
+                            title: transactions[index].note.toString(),
+                            subtitle: Constant.timestampToDateTime(transactions[index].date!),
+                            amount: transactions[index].isTopup == false
+                                ? "-${Constant.amountShow(amount: transactions[index].amount.toString())}"
+                                : Constant.amountShow(amount: transactions[index].amount.toString()),
+                            credit: transactions[index].isTopup == true,
+                            onTap: () => _openOrder(transactions[index]),
                           ),
                         ),
-                        Expanded(
-                          child: DefaultTabController(
-                            length: 3,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                TabBar(
-                                  onTap: (value) {
-                                    controller.selectedTabIndex.value = value;
-                                  },
-                                  tabAlignment: TabAlignment.start,
-                                  labelStyle: const TextStyle(fontFamily: AppThemeData.semiBold),
-                                  labelColor: isDark ? AppThemeData.primary300 : AppThemeData.primary300,
-                                  unselectedLabelStyle: const TextStyle(fontFamily: AppThemeData.medium),
-                                  unselectedLabelColor: isDark ? AppThemeData.grey400 : AppThemeData.grey500,
-                                  indicatorColor: AppThemeData.primary300,
-                                  indicatorWeight: 1,
-                                  isScrollable: true,
-                                  dividerColor: Colors.transparent,
-                                  tabs: [
-                                    Tab(
-                                      text: "Wallet History".tr,
-                                    ),
-                                    Tab(
-                                      text: "Withdrawal History".tr,
-                                    ),
-                                  ],
-                                ),
-                                Expanded(
-                                  child: TabBarView(
-                                    children: [
-                                      // Padding(
-                                      //   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                      //   child: Column(
-                                      //     crossAxisAlignment: CrossAxisAlignment.start,
-                                      //     children: [
-                                      //       SizedBox(
-                                      //         width: 130,
-                                      //         child: DropdownButtonFormField<String>(
-                                      //             borderRadius: const BorderRadius.all(Radius.circular(0)),
-                                      //             hint: Text(
-                                      //               'Select zone'.tr,
-                                      //               style: TextStyle(
-                                      //                 fontSize: 14,
-                                      //                 color: isDark ? AppThemeData.grey700 : AppThemeData.grey700,
-                                      //                 fontFamily: AppThemeData.regular,
-                                      //               ),
-                                      //             ),
-                                      //             decoration: InputDecoration(
-                                      //               errorStyle: const TextStyle(color: Colors.red),
-                                      //               isDense: true,
-                                      //               filled: true,
-                                      //               fillColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                      //               disabledBorder: UnderlineInputBorder(
-                                      //                 borderRadius: const BorderRadius.all(Radius.circular(400)),
-                                      //                 borderSide:
-                                      //                     BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
-                                      //               ),
-                                      //               focusedBorder: OutlineInputBorder(
-                                      //                 borderRadius: const BorderRadius.all(Radius.circular(400)),
-                                      //                 borderSide: BorderSide(
-                                      //                     color: isDark ? AppThemeData.secondary300 : AppThemeData.secondary300, width: 1),
-                                      //               ),
-                                      //               enabledBorder: OutlineInputBorder(
-                                      //                 borderRadius: const BorderRadius.all(Radius.circular(400)),
-                                      //                 borderSide:
-                                      //                     BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
-                                      //               ),
-                                      //               errorBorder: OutlineInputBorder(
-                                      //                 borderRadius: const BorderRadius.all(Radius.circular(400)),
-                                      //                 borderSide:
-                                      //                     BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
-                                      //               ),
-                                      //               border: OutlineInputBorder(
-                                      //                 borderRadius: const BorderRadius.all(Radius.circular(400)),
-                                      //                 borderSide:
-                                      //                     BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey50, width: 1),
-                                      //               ),
-                                      //             ),
-                                      //             initialValue: controller.selectedDropDownValue.value,
-                                      //             onChanged: (value) {
-                                      //               controller.selectedDropDownValue.value = value!;
-                                      //               controller.update();
-                                      //             },
-                                      //             style: TextStyle(
-                                      //                 fontSize: 14,
-                                      //                 color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                      //                 fontFamily: AppThemeData.medium),
-                                      //             items: controller.dropdownValue.map((item) {
-                                      //               return DropdownMenuItem<String>(
-                                      //                 value: item,
-                                      //                 child: Text(item.toString()),
-                                      //               );
-                                      //             }).toList()),
-                                      //       ),
-                                      //       const SizedBox(
-                                      //         height: 10,
-                                      //       ),
-                                      //       Expanded(
-                                      //         child: Container(
-                                      //           decoration: ShapeDecoration(
-                                      //             color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                      //             shape: RoundedRectangleBorder(
-                                      //               borderRadius: BorderRadius.circular(12),
-                                      //             ),
-                                      //           ),
-                                      //           child: Padding(
-                                      //             padding: const EdgeInsets.all(8.0),
-                                      //             child: controller.userModel.value.serviceType == "cab-service"
-                                      //                 ? cabTransactionCardForOrder(
-                                      //                     isDark,
-                                      //                     controller.selectedDropDownValue.value == "Daily"
-                                      //                         ? controller.dailyCabEarningList
-                                      //                         : controller.selectedDropDownValue.value == "Monthly"
-                                      //                             ? controller.monthlyCabEarningList
-                                      //                             : controller.yearlyCabEarningList,
-                                      //                   )
-                                      //                 : controller.userModel.value.serviceType == "parcel_delivery"
-                                      //                     ? parcelTransactionCardForOrder(
-                                      //                         isDark,
-                                      //                         controller.selectedDropDownValue.value == "Daily"
-                                      //                             ? controller.dailyParcelEarningList
-                                      //                             : controller.selectedDropDownValue.value == "Monthly"
-                                      //                                 ? controller.monthlyParcelEarningList
-                                      //                                 : controller.yearlyParcelEarningList,
-                                      //                       )
-                                      //                     : controller.userModel.value.serviceType == "rental-service"
-                                      //                         ? rentalTransactionCardForOrder(
-                                      //                             isDark,
-                                      //                             controller.selectedDropDownValue.value == "Daily"
-                                      //                                 ? controller.dailyRentalEarningList
-                                      //                                 : controller.selectedDropDownValue.value == "Monthly"
-                                      //                                     ? controller.monthlyRentalEarningList
-                                      //                                     : controller.yearlyRentalEarningList,
-                                      //                           )
-                                      //                         : transactionCardForOrder(
-                                      //                             isDark,
-                                      //                             controller.selectedDropDownValue.value == "Daily"
-                                      //                                 ? controller.dailyEarningList
-                                      //                                 : controller.selectedDropDownValue.value == "Monthly"
-                                      //                                     ? controller.monthlyEarningList
-                                      //                                     : controller.yearlyEarningList,
-                                      //                           ),
-                                      //           ),
-                                      //         ),
-                                      //       )
-                                      //     ],
-                                      //   ),
-                                      // ),
-                                      controller.walletTopTransactionList.isEmpty
-                                          ? Constant.showEmptyView(message: "Transaction history not found".tr, isDark: isDark)
-                                          : Padding(
-                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                              child: Container(
-                                                decoration: ShapeDecoration(
-                                                  color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius: BorderRadius.circular(12),
-                                                  ),
-                                                ),
-                                                child: Padding(
-                                                  padding: const EdgeInsets.all(8.0),
-                                                  child: ListView.separated(
-                                                    padding: EdgeInsets.zero,
-                                                    shrinkWrap: true,
-                                                    itemCount: controller.walletTopTransactionList.length,
-                                                    itemBuilder: (context, index) {
-                                                      WalletTransactionModel walletTractionModel =
-                                                          controller.walletTopTransactionList[index];
-                                                      return transactionCard(controller, isDark, walletTractionModel);
-                                                    },
-                                                    separatorBuilder: (BuildContext context, int index) {
-                                                      return Padding(
-                                                        padding: const EdgeInsets.symmetric(vertical: 5),
-                                                        child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                      );
-                                                    },
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                      controller.withdrawalList.isEmpty
-                                          ? Constant.showEmptyView(message: "Withdrawal history not found".tr, isDark: isDark)
-                                          : Padding(
-                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                              child: Container(
-                                                decoration: ShapeDecoration(
-                                                  color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius: BorderRadius.circular(12),
-                                                  ),
-                                                ),
-                                                child: Padding(
-                                                  padding: const EdgeInsets.all(8.0),
-                                                  child: ListView.separated(
-                                                    padding: EdgeInsets.zero,
-                                                    shrinkWrap: true,
-                                                    itemCount: controller.withdrawalList.length,
-                                                    itemBuilder: (context, index) {
-                                                      WithdrawalModel walletTractionModel = controller.withdrawalList[index];
-                                                      return transactionCardWithdrawal(controller, isDark, walletTractionModel);
-                                                    },
-                                                    separatorBuilder: (BuildContext context, int index) {
-                                                      return Padding(
-                                                        padding: const EdgeInsets.symmetric(vertical: 5),
-                                                        child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                      );
-                                                    },
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                    ],
-                                  ),
-                                )
-                              ],
+                      ),
+                    );
+            } else {
+              history = withdrawals.isEmpty
+                  ? SliverToBoxAdapter(
+                      child: DsEmptyState(
+                        icon: Icons.account_balance_outlined,
+                        title: "Withdrawal history not found".tr,
+                      ),
+                    )
+                  : SliverList.builder(
+                      itemCount: withdrawals.length,
+                      itemBuilder: (context, index) {
+                        final w = withdrawals[index];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: DsSpace.sm),
+                          child: DsFadeSlideIn(
+                            index: index,
+                            child: _TransactionRow(
+                              title: w.note.toString(),
+                              subtitle: Constant.timestampToDateTime(w.paidDate!),
+                              caption: "(${w.withdrawMethod!.capitalizeString()})",
+                              amount: "-${Constant.amountShow(amount: w.amount.toString())}",
+                              credit: false,
+                              statusLabel: w.paymentStatus.toString(),
+                              statusTone: w.paymentStatus == "Success"
+                                  ? DsTone.success
+                                  : w.paymentStatus == "Pending"
+                                      ? DsTone.brand
+                                      : DsTone.danger,
+                              onTap: () async {},
                             ),
                           ),
-                        ),
-                      ],
+                        );
+                      },
+                    );
+            }
+
+            return DsScaffold.hero(
+              title: "Wallet".tr,
+              showBack: isAppBarShow == true,
+              heroGradient: DsGradients.deep(context),
+              hero: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "My Wallet".tr,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: DsTypography.bodySm.copyWith(color: Colors.white.withValues(alpha: 0.78)),
+                  ),
+                  const DsGap(DsSpace.xs),
+                  DsAnimatedCounter(
+                    value: balance,
+                    format: (v) => Constant.amountShow(amount: v.toString()),
+                    style: DsTypography.metricLg.copyWith(color: Colors.white),
+                  ),
+                ],
+              ),
+              heroOverlap: DsCard(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: DsButton.secondary(
+                        label: "Withdraw".tr,
+                        icon: Icons.arrow_upward_rounded,
+                        expand: true,
+                        onPressed: () {
+                          if (hasBankOrMethod) {
+                            withdrawalCardBottomSheet(context, controller);
+                          } else {
+                            ShowToastDialog.showToast("Please enter payment method".tr);
+                          }
+                        },
+                      ),
                     ),
+                    const DsGap(DsSpace.md),
+                    Expanded(
+                      child: DsButton.primary(
+                        label: "Top up".tr,
+                        icon: Icons.add_rounded,
+                        expand: true,
+                        onPressed: () {
+                          Get.to(const PaymentListScreen());
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              slivers: [
+                DsSliverResponsive(
+                  top: DsSpace.xl,
+                  sliver: SliverToBoxAdapter(
+                    child: DsSegmentedTabs(
+                      segments: [
+                        DsSegment("Wallet History".tr),
+                        DsSegment("Withdrawal History".tr),
+                      ],
+                      index: tab,
+                      onChanged: (value) {
+                        controller.selectedTabIndex.value = value;
+                      },
+                    ),
+                  ),
+                ),
+                DsSliverResponsive(
+                  top: DsSpace.lg,
+                  bottom: DsSpace.xxxl,
+                  sliver: history,
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
+                    child: Text(
+                      "${'Withdraw amount must be greater or equal to'.tr} ${Constant.amountShow(amount: Constant.minimumAmountToWithdrawal)}",
+                      style: t.caption.withColor(c.textMuted),
+                    ),
+                  ),
+                ),
+              ],
             );
           });
     });
+  }
+
+  /// Opens the order behind a wallet transaction (unchanged routing).
+  Future<void> _openOrder(WalletTransactionModel transactionModel) async {
+    final orderId = transactionModel.orderId.toString();
+    final orderData = await FireStoreUtils.getOrderByIdFromAllCollections(orderId);
+
+    if (orderData != null) {
+      final collection = orderData['collection_name'];
+
+      switch (collection) {
+        case CollectionName.parcelOrders:
+          Get.to(const ParcelOrderDetails(), arguments: ParcelOrderModel.fromJson(orderData));
+          break;
+        case CollectionName.rentalOrders:
+          Get.to(() => RentalOrderDetailsScreen(), arguments: {"rentalOrder": orderId});
+          break;
+        case CollectionName.ridesBooking:
+          Get.to(const CabOrderDetails(), arguments: {"cabOrderModel": CabOrderModel.fromJson(orderData)});
+          break;
+        case CollectionName.vendorOrders:
+          Get.to(const OrderDetailsScreen(), arguments: {"orderModel": OrderModel.fromJson(orderData)});
+          break;
+        default:
+          ShowToastDialog.showToast("Order details not available");
+      }
+    }
   }
 
   Future withdrawalCardBottomSheet(BuildContext context, WalletController controller) {
@@ -373,357 +245,135 @@ class WalletScreen extends StatelessWidget {
         context: context,
         isScrollControlled: true,
         isDismissible: true,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(30),
-          ),
-        ),
+        backgroundColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(borderRadius: DsRadius.sheetTop),
         clipBehavior: Clip.antiAliasWithSaveLayer,
         builder: (context) => FractionallySizedBox(
               heightFactor: 0.8,
               child: StatefulBuilder(builder: (context1, setState) {
-                final themeController = Get.find<ThemeController>();
-                final isDark = themeController.isDark.value;
+                final c = DsColors.of(context);
+                final t = context.dsText;
+                // Reads inside this Obx keep the method selection reactive.
                 return Obx(
-                  () => Scaffold(
-                    body: SingleChildScrollView(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              child: Row(
+                  () {
+                    final int selected = controller.selectedValue.value;
+                    final bool showBank = !(Constant.userModel!.userBankDetails == null || Constant.userModel!.userBankDetails!.accountNumber.isEmpty);
+                    final bool showFlutterWave =
+                        !(controller.withdrawMethodModel.value.flutterWave == null || (controller.flutterWaveModel.value.isWithdrawEnabled == false));
+                    final bool showPaypal = !(controller.withdrawMethodModel.value.paypal == null || (controller.payPalModel.value.isWithdrawEnabled == false));
+                    final bool showRazorpay = !(controller.withdrawMethodModel.value.razorpay == null || (controller.razorPayModel.value.isWithdrawEnabled == false));
+                    final bool showStripe = !(controller.withdrawMethodModel.value.stripe == null || (controller.stripeModel.value.isWithdrawEnabled == false));
+
+                    return Scaffold(
+                      backgroundColor: c.surfaceRaised,
+                      body: SingleChildScrollView(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.lg),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Center(
+                                child: Container(
+                                  width: 40,
+                                  height: 4,
+                                  decoration: BoxDecoration(color: c.borderStrong, borderRadius: DsRadius.brPill),
+                                ),
+                              ),
+                              const DsGap(DsSpace.lg),
+                              Row(
                                 children: [
-                                  Expanded(
-                                    child: Text(
-                                      "Withdrawal".tr,
-                                      style: TextStyle(
-                                          color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                                          fontSize: 18,
-                                          fontFamily: AppThemeData.semiBold),
-                                    ),
+                                  Expanded(child: Text("Withdrawal".tr, style: t.title)),
+                                  DsIconButton(
+                                    icon: Icons.close_rounded,
+                                    semanticLabel: 'Cancel'.tr,
+                                    onPressed: () {
+                                      Get.back();
+                                    },
                                   ),
-                                  InkWell(
-                                      onTap: () {
-                                        Get.back();
-                                      },
-                                      child: const Icon(Icons.close)),
                                 ],
                               ),
-                            ),
-                            TextFieldWidget(
-                              title: 'Withdrawal amount'.tr,
-                              controller: controller.amountTextFieldController.value,
-                              hintText: 'Enter withdrawal amount'.tr,
-                              textInputType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                              textInputAction: TextInputAction.done,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(RegExp('[0-9]')),
-                              ],
-                              prefix: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                                child: Text(
-                                  "${Constant.currencyModel!.symbol}".tr,
-                                  style: TextStyle(
-                                      color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                      fontFamily: AppThemeData.semiBold,
-                                      fontSize: 18),
+                              const DsGap(DsSpace.lg),
+                              DsTextField(
+                                label: 'Withdrawal amount'.tr,
+                                controller: controller.amountTextFieldController.value,
+                                hint: 'Enter withdrawal amount'.tr,
+                                keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                                textInputAction: TextInputAction.done,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(RegExp('[0-9]')),
+                                ],
+                                prefix: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
+                                  child: Text("${Constant.currencyModel!.symbol}".tr, style: t.title.tabular),
                                 ),
                               ),
-                            ),
-                            TextFieldWidget(
-                              title: 'Notes'.tr,
-                              controller: controller.noteTextFieldController.value,
-                              hintText: 'Add Notes'.tr,
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              child: Text(
-                                "Select Withdraw Method".tr,
-                                style: TextStyle(
-                                    color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                                    fontSize: 16,
-                                    fontFamily: AppThemeData.medium),
+                              DsTextField(
+                                label: 'Notes'.tr,
+                                controller: controller.noteTextFieldController.value,
+                                hint: 'Add Notes'.tr,
+                                prefixIcon: Icons.notes_rounded,
                               ),
-                            ),
-                            Container(
-                              decoration: BoxDecoration(
-                                  borderRadius: const BorderRadius.all(Radius.circular(20)),
-                                  color: isDark ? AppThemeData.grey900 : AppThemeData.grey50),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                child: Column(
-                                  children: [
-                                    Constant.userModel!.userBankDetails == null ||
-                                            Constant.userModel!.userBankDetails!.accountNumber.isEmpty
-                                        ? const SizedBox()
-                                        : InkWell(
-                                            onTap: () {
-                                              controller.selectedValue.value = 0;
-                                            },
-                                            child: Row(
-                                              children: [
-                                                Container(
-                                                  width: 50,
-                                                  height: 50,
-                                                  decoration: ShapeDecoration(
-                                                    shape: RoundedRectangleBorder(
-                                                      side:
-                                                          BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                      borderRadius: BorderRadius.circular(8),
-                                                    ),
-                                                  ),
-                                                  child: Padding(
-                                                    padding: const EdgeInsets.all(10),
-                                                    child: SvgPicture.asset("assets/icons/ic_building_four.svg"),
-                                                  ),
-                                                ),
-                                                const SizedBox(
-                                                  width: 10,
-                                                ),
-                                                Expanded(
-                                                  child: Text(
-                                                    "Bank Transfer".tr,
-                                                    style: TextStyle(
-                                                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                        fontSize: 16,
-                                                        fontFamily: AppThemeData.medium),
-                                                  ),
-                                                ),
-                                                Radio(
-                                                  value: 0,
-                                                  groupValue: controller.selectedValue.value,
-                                                  activeColor: AppThemeData.primary300,
-                                                  onChanged: (value) {
-                                                    controller.selectedValue.value = value!;
-                                                  },
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                    const SizedBox(
-                                      height: 10,
-                                    ),
-                                    controller.withdrawMethodModel.value.flutterWave == null ||
-                                            (controller.flutterWaveModel.value.isWithdrawEnabled == false)
-                                        ? const SizedBox()
-                                        : InkWell(
-                                            onTap: () {
-                                              controller.selectedValue.value = 1;
-                                            },
-                                            child: Row(
-                                              children: [
-                                                Container(
-                                                  width: 50,
-                                                  height: 50,
-                                                  decoration: ShapeDecoration(
-                                                    shape: RoundedRectangleBorder(
-                                                      side:
-                                                          BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                      borderRadius: BorderRadius.circular(8),
-                                                    ),
-                                                  ),
-                                                  child: Padding(
-                                                    padding: const EdgeInsets.all(10),
-                                                    child: Image.asset("assets/images/flutterwave.png"),
-                                                  ),
-                                                ),
-                                                const SizedBox(
-                                                  width: 10,
-                                                ),
-                                                Expanded(
-                                                  child: Text(
-                                                    "Flutter wave".tr,
-                                                    style: TextStyle(
-                                                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                        fontSize: 16,
-                                                        fontFamily: AppThemeData.medium),
-                                                  ),
-                                                ),
-                                                Radio(
-                                                  value: 1,
-                                                  groupValue: controller.selectedValue.value,
-                                                  activeColor: AppThemeData.primary300,
-                                                  onChanged: (value) {
-                                                    controller.selectedValue.value = value!;
-                                                  },
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                    const SizedBox(
-                                      height: 10,
-                                    ),
-                                    controller.withdrawMethodModel.value.paypal == null ||
-                                            (controller.payPalModel.value.isWithdrawEnabled == false)
-                                        ? const SizedBox()
-                                        : InkWell(
-                                            onTap: () {
-                                              controller.selectedValue.value = 2;
-                                            },
-                                            child: Row(
-                                              children: [
-                                                Container(
-                                                  width: 50,
-                                                  height: 50,
-                                                  decoration: ShapeDecoration(
-                                                    shape: RoundedRectangleBorder(
-                                                      side:
-                                                          BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                      borderRadius: BorderRadius.circular(8),
-                                                    ),
-                                                  ),
-                                                  child: Padding(
-                                                    padding: const EdgeInsets.all(10),
-                                                    child: Image.asset("assets/images/paypal.png"),
-                                                  ),
-                                                ),
-                                                const SizedBox(
-                                                  width: 10,
-                                                ),
-                                                Expanded(
-                                                  child: Text(
-                                                    "PayPal".tr,
-                                                    style: TextStyle(
-                                                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                        fontSize: 16,
-                                                        fontFamily: AppThemeData.medium),
-                                                  ),
-                                                ),
-                                                Radio(
-                                                  value: 2,
-                                                  groupValue: controller.selectedValue.value,
-                                                  activeColor: AppThemeData.primary300,
-                                                  onChanged: (value) {
-                                                    controller.selectedValue.value = value!;
-                                                  },
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                    const SizedBox(
-                                      height: 10,
-                                    ),
-                                    controller.withdrawMethodModel.value.razorpay == null ||
-                                            (controller.razorPayModel.value.isWithdrawEnabled == false)
-                                        ? const SizedBox()
-                                        : InkWell(
-                                            onTap: () {
-                                              controller.selectedValue.value = 3;
-                                            },
-                                            child: Row(
-                                              children: [
-                                                Container(
-                                                  width: 50,
-                                                  height: 50,
-                                                  decoration: ShapeDecoration(
-                                                    shape: RoundedRectangleBorder(
-                                                      side:
-                                                          BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                      borderRadius: BorderRadius.circular(8),
-                                                    ),
-                                                  ),
-                                                  child: Padding(
-                                                    padding: const EdgeInsets.all(10),
-                                                    child: Image.asset("assets/images/razorpay.png"),
-                                                  ),
-                                                ),
-                                                const SizedBox(
-                                                  width: 10,
-                                                ),
-                                                Expanded(
-                                                  child: Text(
-                                                    "RazorPay".tr,
-                                                    style: TextStyle(
-                                                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                        fontSize: 16,
-                                                        fontFamily: AppThemeData.medium),
-                                                  ),
-                                                ),
-                                                Radio(
-                                                  value: 3,
-                                                  groupValue: controller.selectedValue.value,
-                                                  activeColor: AppThemeData.primary300,
-                                                  onChanged: (value) {
-                                                    controller.selectedValue.value = value!;
-                                                  },
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                    const SizedBox(
-                                      height: 10,
-                                    ),
-                                    controller.withdrawMethodModel.value.stripe == null ||
-                                            (controller.stripeModel.value.isWithdrawEnabled == false)
-                                        ? const SizedBox()
-                                        : InkWell(
-                                            onTap: () {
-                                              controller.selectedValue.value = 4;
-                                            },
-                                            child: Row(
-                                              children: [
-                                                Container(
-                                                  width: 50,
-                                                  height: 50,
-                                                  decoration: ShapeDecoration(
-                                                    shape: RoundedRectangleBorder(
-                                                      side:
-                                                          BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                      borderRadius: BorderRadius.circular(8),
-                                                    ),
-                                                  ),
-                                                  child: Padding(
-                                                    padding: const EdgeInsets.all(10),
-                                                    child: Image.asset("assets/images/stripe.png"),
-                                                  ),
-                                                ),
-                                                const SizedBox(
-                                                  width: 10,
-                                                ),
-                                                Expanded(
-                                                  child: Text(
-                                                    "Stripe".tr,
-                                                    style: TextStyle(
-                                                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                        fontSize: 16,
-                                                        fontFamily: AppThemeData.medium),
-                                                  ),
-                                                ),
-                                                Radio(
-                                                  value: 4,
-                                                  groupValue: controller.selectedValue.value,
-                                                  activeColor: AppThemeData.primary300,
-                                                  onChanged: (value) {
-                                                    controller.selectedValue.value = value!;
-                                                  },
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                  ],
+                              DsInlineAlert(
+                                tone: DsTone.info,
+                                icon: Icons.info_outline_rounded,
+                                message:
+                                    "${'Withdraw amount must be greater or equal to'.tr} ${Constant.amountShow(amount: Constant.minimumAmountToWithdrawal)}",
+                              ),
+                              const DsGap(DsSpace.xl),
+                              Text("Select Withdraw Method".tr, style: t.titleSm),
+                              const DsGap(DsSpace.md),
+                              if (showBank)
+                                _MethodOption(
+                                  label: "Bank Transfer".tr,
+                                  logo: SvgPicture.asset("assets/icons/ic_building_four.svg"),
+                                  value: 0,
+                                  groupValue: selected,
+                                  onSelected: (value) => controller.selectedValue.value = value,
                                 ),
-                              ),
-                            )
-                          ],
+                              if (showFlutterWave)
+                                _MethodOption(
+                                  label: "Flutter wave".tr,
+                                  logo: Image.asset("assets/images/flutterwave.png"),
+                                  value: 1,
+                                  groupValue: selected,
+                                  onSelected: (value) => controller.selectedValue.value = value,
+                                ),
+                              if (showPaypal)
+                                _MethodOption(
+                                  label: "PayPal".tr,
+                                  logo: Image.asset("assets/images/paypal.png"),
+                                  value: 2,
+                                  groupValue: selected,
+                                  onSelected: (value) => controller.selectedValue.value = value,
+                                ),
+                              if (showRazorpay)
+                                _MethodOption(
+                                  label: "RazorPay".tr,
+                                  logo: Image.asset("assets/images/razorpay.png"),
+                                  value: 3,
+                                  groupValue: selected,
+                                  onSelected: (value) => controller.selectedValue.value = value,
+                                ),
+                              if (showStripe)
+                                _MethodOption(
+                                  label: "Stripe".tr,
+                                  logo: Image.asset("assets/images/stripe.png"),
+                                  value: 4,
+                                  groupValue: selected,
+                                  onSelected: (value) => controller.selectedValue.value = value,
+                                ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    bottomNavigationBar: Container(
-                      color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 20),
-                        child: RoundedButtonFill(
-                          title: "Withdraw".tr,
-                          height: 5.5,
-                          color: AppThemeData.primary300,
-                          textColor: AppThemeData.grey50,
-                          fontSizes: 16,
-                          onPress: () async {
+                      bottomNavigationBar: DsStickyBar(
+                        child: DsButton.primary(
+                          label: "Withdraw".tr,
+                          icon: Icons.arrow_upward_rounded,
+                          size: DsButtonSize.lg,
+                          expand: true,
+                          onPressed: () async {
                             if (controller.amountTextFieldController.value.text.isEmpty) {
                               ShowToastDialog.showToast("Please enter amount".tr);
                             } else if (double.parse(Constant.minimumAmountToWithdrawal) >
@@ -762,120 +412,14 @@ class WalletScreen extends StatelessWidget {
                           },
                         ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 );
               }),
             ));
   }
 
-  InkWell transactionCardWithdrawal(WalletController controller, isDark, WithdrawalModel transactionModel) {
-    return InkWell(
-      onTap: () async {},
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
-          children: [
-            Container(
-              decoration: ShapeDecoration(
-                shape: RoundedRectangleBorder(
-                  side: BorderSide(width: 1, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: SvgPicture.asset(
-                  "assets/icons/ic_debit.svg",
-                  height: 16,
-                  width: 16,
-                ),
-              ),
-            ),
-            const SizedBox(
-              width: 10,
-            ),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              transactionModel.note.toString(),
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontFamily: AppThemeData.semiBold,
-                                fontWeight: FontWeight.w600,
-                                color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                              ),
-                            ),
-                            Text(
-                              "(${transactionModel.withdrawMethod!.capitalizeString()})",
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontFamily: AppThemeData.medium,
-                                fontWeight: FontWeight.w600,
-                                color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        "-${Constant.amountShow(amount: transactionModel.amount.toString())}",
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontFamily: AppThemeData.medium,
-                          color: AppThemeData.danger300,
-                        ),
-                      )
-                    ],
-                  ),
-                  const SizedBox(
-                    height: 2,
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          transactionModel.paymentStatus.toString(),
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontFamily: AppThemeData.semiBold,
-                            fontWeight: FontWeight.w600,
-                            color: transactionModel.paymentStatus == "Success"
-                                ? AppThemeData.success400
-                                : transactionModel.paymentStatus == "Pending"
-                                    ? AppThemeData.primary300
-                                    : AppThemeData.danger300,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        Constant.timestampToDateTime(transactionModel.paidDate!),
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontFamily: AppThemeData.medium,
-                            fontWeight: FontWeight.w500,
-                            color: isDark ? AppThemeData.grey200 : AppThemeData.grey700),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget transactionCardForOrder(isDark, List<OrderModel> list) {
+  Widget transactionCardForOrder(bool isDark, List<OrderModel> list) {
     return list.isEmpty
         ? Constant.showEmptyView(message: "Transaction history not found".tr, isDark: isDark)
         : ListView.separated(
@@ -894,72 +438,10 @@ class WalletScreen extends StatelessWidget {
                 amount += double.parse(walletTractionModel.tipAmount!);
               }
 
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: Row(
-                  children: [
-                    Container(
-                      decoration: ShapeDecoration(
-                        shape: RoundedRectangleBorder(
-                          side: BorderSide(width: 1, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: SvgPicture.asset(
-                          "assets/icons/ic_credit.svg",
-                          height: 16,
-                          width: 16,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(
-                      width: 10,
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  "Completed Delivery".tr,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontFamily: AppThemeData.semiBold,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                Constant.amountShow(amount: amount.toString()),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontFamily: AppThemeData.medium,
-                                  color: AppThemeData.success400,
-                                ),
-                              )
-                            ],
-                          ),
-                          const SizedBox(
-                            height: 2,
-                          ),
-                          Text(
-                            Constant.timestampToDateTime(walletTractionModel.createdAt!),
-                            style: TextStyle(
-                                fontSize: 12,
-                                fontFamily: AppThemeData.medium,
-                                fontWeight: FontWeight.w500,
-                                color: isDark ? AppThemeData.grey200 : AppThemeData.grey700),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+              return _OrderEarningRow(
+                title: "Completed Delivery".tr,
+                amount: Constant.amountShow(amount: amount.toString()),
+                date: Constant.timestampToDateTime(walletTractionModel.createdAt!),
               );
             },
             separatorBuilder: (BuildContext context, int index) {
@@ -971,7 +453,7 @@ class WalletScreen extends StatelessWidget {
           );
   }
 
-  Widget parcelTransactionCardForOrder(isDark, List<ParcelOrderModel> list) {
+  Widget parcelTransactionCardForOrder(bool isDark, List<ParcelOrderModel> list) {
     return list.isEmpty
         ? Constant.showEmptyView(message: "Transaction history not found".tr, isDark: isDark)
         : ListView.separated(
@@ -992,72 +474,10 @@ class WalletScreen extends StatelessWidget {
               }
               totalAmount = subTotal + totalTax;
 
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: Row(
-                  children: [
-                    Container(
-                      decoration: ShapeDecoration(
-                        shape: RoundedRectangleBorder(
-                          side: BorderSide(width: 1, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: SvgPicture.asset(
-                          "assets/icons/ic_credit.svg",
-                          height: 16,
-                          width: 16,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(
-                      width: 10,
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  "Parcel Amount credited".tr,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontFamily: AppThemeData.semiBold,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                Constant.amountShow(amount: totalAmount.toString()),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontFamily: AppThemeData.medium,
-                                  color: AppThemeData.success400,
-                                ),
-                              )
-                            ],
-                          ),
-                          const SizedBox(
-                            height: 2,
-                          ),
-                          Text(
-                            Constant.timestampToDateTime(orderModel.createdAt!),
-                            style: TextStyle(
-                                fontSize: 12,
-                                fontFamily: AppThemeData.medium,
-                                fontWeight: FontWeight.w500,
-                                color: isDark ? AppThemeData.grey200 : AppThemeData.grey700),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+              return _OrderEarningRow(
+                title: "Parcel Amount credited".tr,
+                amount: Constant.amountShow(amount: totalAmount.toString()),
+                date: Constant.timestampToDateTime(orderModel.createdAt!),
               );
             },
             separatorBuilder: (BuildContext context, int index) {
@@ -1069,7 +489,7 @@ class WalletScreen extends StatelessWidget {
           );
   }
 
-  Widget rentalTransactionCardForOrder(isDark, List<RentalOrderModel> list) {
+  Widget rentalTransactionCardForOrder(bool isDark, List<RentalOrderModel> list) {
     return list.isEmpty
         ? Constant.showEmptyView(message: "Transaction history not found".tr, isDark: isDark)
         : ListView.separated(
@@ -1121,72 +541,10 @@ class WalletScreen extends StatelessWidget {
 
               totalAmount.value = (subTotal.value - discount.value) + taxAmount.value;
 
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: Row(
-                  children: [
-                    Container(
-                      decoration: ShapeDecoration(
-                        shape: RoundedRectangleBorder(
-                          side: BorderSide(width: 1, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: SvgPicture.asset(
-                          "assets/icons/ic_credit.svg",
-                          height: 16,
-                          width: 16,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(
-                      width: 10,
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  "Completed Delivery".tr,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontFamily: AppThemeData.semiBold,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                Constant.amountShow(amount: totalAmount.toString()),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontFamily: AppThemeData.medium,
-                                  color: AppThemeData.success400,
-                                ),
-                              )
-                            ],
-                          ),
-                          const SizedBox(
-                            height: 2,
-                          ),
-                          Text(
-                            Constant.timestampToDateTime(orderModel.createdAt!),
-                            style: TextStyle(
-                                fontSize: 12,
-                                fontFamily: AppThemeData.medium,
-                                fontWeight: FontWeight.w500,
-                                color: isDark ? AppThemeData.grey200 : AppThemeData.grey700),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+              return _OrderEarningRow(
+                title: "Completed Delivery".tr,
+                amount: Constant.amountShow(amount: totalAmount.toString()),
+                date: Constant.timestampToDateTime(orderModel.createdAt!),
               );
             },
             separatorBuilder: (BuildContext context, int index) {
@@ -1198,7 +556,7 @@ class WalletScreen extends StatelessWidget {
           );
   }
 
-  Widget cabTransactionCardForOrder(isDark, List<CabOrderModel> list) {
+  Widget cabTransactionCardForOrder(bool isDark, List<CabOrderModel> list) {
     return list.isEmpty
         ? Constant.showEmptyView(message: "Transaction history not found".tr, isDark: isDark)
         : ListView.separated(
@@ -1219,72 +577,10 @@ class WalletScreen extends StatelessWidget {
               }
               totalAmount = subTotal + totalTax;
 
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: Row(
-                  children: [
-                    Container(
-                      decoration: ShapeDecoration(
-                        shape: RoundedRectangleBorder(
-                          side: BorderSide(width: 1, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: SvgPicture.asset(
-                          "assets/icons/ic_credit.svg",
-                          height: 16,
-                          width: 16,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(
-                      width: 10,
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  "Completed Delivery".tr,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontFamily: AppThemeData.semiBold,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                Constant.amountShow(amount: totalAmount.toString()),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontFamily: AppThemeData.medium,
-                                  color: AppThemeData.success400,
-                                ),
-                              )
-                            ],
-                          ),
-                          const SizedBox(
-                            height: 2,
-                          ),
-                          Text(
-                            Constant.timestampToDateTime(orderModel.createdAt!),
-                            style: TextStyle(
-                                fontSize: 12,
-                                fontFamily: AppThemeData.medium,
-                                fontWeight: FontWeight.w500,
-                                color: isDark ? AppThemeData.grey200 : AppThemeData.grey700),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+              return _OrderEarningRow(
+                title: "Completed Delivery".tr,
+                amount: Constant.amountShow(amount: totalAmount.toString()),
+                date: Constant.timestampToDateTime(orderModel.createdAt!),
               );
             },
             separatorBuilder: (BuildContext context, int index) {
@@ -1295,104 +591,168 @@ class WalletScreen extends StatelessWidget {
             },
           );
   }
+}
 
-  InkWell transactionCard(WalletController controller, isDark, WalletTransactionModel transactionModel) {
-    return InkWell(
-      onTap: () async {
-        final orderId = transactionModel.orderId.toString();
-        final orderData = await FireStoreUtils.getOrderByIdFromAllCollections(orderId);
+/// Wallet / withdrawal row: tone-coded icon well, note, meta and amount.
+class _TransactionRow extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String? caption;
+  final String amount;
+  final bool credit;
+  final String? statusLabel;
+  final DsTone? statusTone;
+  final VoidCallback onTap;
 
-        if (orderData != null) {
-          final collection = orderData['collection_name'];
+  const _TransactionRow({
+    required this.title,
+    required this.subtitle,
+    this.caption,
+    required this.amount,
+    required this.credit,
+    this.statusLabel,
+    this.statusTone,
+    required this.onTap,
+  });
 
-          switch (collection) {
-            case CollectionName.parcelOrders:
-              Get.to(const ParcelOrderDetails(), arguments: ParcelOrderModel.fromJson(orderData));
-              break;
-            case CollectionName.rentalOrders:
-              Get.to(() => RentalOrderDetailsScreen(), arguments: {"rentalOrder": orderId});
-              break;
-            case CollectionName.ridesBooking:
-              Get.to(const CabOrderDetails(), arguments: {"cabOrderModel": CabOrderModel.fromJson(orderData)});
-              break;
-            case CollectionName.vendorOrders:
-              Get.to(const OrderDetailsScreen(), arguments: {"orderModel": OrderModel.fromJson(orderData)});
-              break;
-            default:
-              ShowToastDialog.showToast("Order details not available");
-          }
-        }
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard.outlined(
+      onTap: onTap,
+      padding: const EdgeInsets.all(DsSpace.md),
+      semanticLabel: title,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DsIconWell(
+            icon: credit ? Icons.south_west_rounded : Icons.north_east_rounded,
+            tone: credit ? DsTone.success : DsTone.danger,
+            size: 44,
+          ),
+          const DsGap(DsSpace.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: t.bodyStrong),
+                if (caption != null) Text(caption!, style: t.caption),
+                const DsGap(DsSpace.xxs),
+                Row(
+                  children: [
+                    if (statusLabel != null) ...[
+                      DsStatusChip(label: statusLabel!, tone: statusTone),
+                      const DsGap(DsSpace.sm),
+                    ],
+                    Flexible(
+                      child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const DsGap(DsSpace.sm),
+          Text(
+            amount,
+            style: t.titleSm.tabular.withColor(credit ? c.successStrong : c.dangerStrong),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Earning row used by the per-service earning lists.
+class _OrderEarningRow extends StatelessWidget {
+  final String title;
+  final String amount;
+  final String date;
+
+  const _OrderEarningRow({required this.title, required this.amount, required this.date});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+      child: Row(
+        children: [
+          const DsIconWell(icon: Icons.south_west_rounded, tone: DsTone.success, size: 44),
+          const DsGap(DsSpace.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: t.bodyStrong),
+                Text(date, style: t.caption),
+              ],
+            ),
+          ),
+          Text(amount, style: t.titleSm.tabular.withColor(c.successStrong)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Withdraw method choice inside the withdrawal sheet.
+class _MethodOption extends StatelessWidget {
+  final String label;
+  final Widget logo;
+  final int value;
+  final int groupValue;
+  final ValueChanged<int> onSelected;
+
+  const _MethodOption({
+    required this.label,
+    required this.logo,
+    required this.value,
+    required this.groupValue,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final selected = value == groupValue;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpace.sm),
+      child: DsCard.outlined(
+        onTap: () => onSelected(value),
+        borderColor: selected ? c.brand : null,
+        color: selected ? c.brandSoft : null,
+        padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+        semanticLabel: label,
         child: Row(
           children: [
             Container(
-              decoration: ShapeDecoration(
-                shape: RoundedRectangleBorder(
-                  side: BorderSide(width: 1, color: isDark ? AppThemeData.grey800 : AppThemeData.grey100),
-                  borderRadius: BorderRadius.circular(8),
-                ),
+              width: 48,
+              height: 48,
+              padding: const EdgeInsets.all(DsSpace.sm),
+              decoration: BoxDecoration(
+                color: c.surface,
+                borderRadius: DsRadius.brSm,
+                border: Border.all(color: c.border),
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: transactionModel.isTopup == false
-                    ? SvgPicture.asset(
-                        "assets/icons/ic_debit.svg",
-                        height: 16,
-                        width: 16,
-                      )
-                    : SvgPicture.asset(
-                        "assets/icons/ic_credit.svg",
-                        height: 16,
-                        width: 16,
-                      ),
-              ),
+              child: logo,
             ),
-            const SizedBox(
-              width: 10,
-            ),
+            const DsGap(DsSpace.md),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          transactionModel.note.toString(),
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontFamily: AppThemeData.semiBold,
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        transactionModel.isTopup == false
-                            ? "-${Constant.amountShow(amount: transactionModel.amount.toString())}"
-                            : Constant.amountShow(amount: transactionModel.amount.toString()),
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontFamily: AppThemeData.medium,
-                          color: transactionModel.isTopup == true ? AppThemeData.success400 : AppThemeData.danger300,
-                        ),
-                      )
-                    ],
-                  ),
-                  const SizedBox(
-                    height: 2,
-                  ),
-                  Text(
-                    Constant.timestampToDateTime(transactionModel.date!),
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontFamily: AppThemeData.medium,
-                        fontWeight: FontWeight.w500,
-                        color: isDark ? AppThemeData.grey200 : AppThemeData.grey700),
-                  ),
-                ],
+              child: Text(label, style: selected ? t.bodyStrong.withColor(c.brandStrong) : t.bodyStrong),
+            ),
+            Semantics(
+              selected: selected,
+              child: IconButton(
+                icon: Icon(
+                  selected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+                  color: selected ? c.brand : c.textMuted,
+                ),
+                tooltip: label,
+                onPressed: () => onSelected(value),
               ),
             ),
           ],

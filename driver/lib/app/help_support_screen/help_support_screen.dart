@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:driver/app/chat_screens/chat_video_container.dart';
 import 'package:driver/app/chat_screens/full_screen_image_viewer.dart';
 import 'package:driver/app/chat_screens/full_screen_video_viewer.dart';
@@ -8,11 +7,8 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/help_support_controller.dart';
 import 'package:driver/models/conversation_model.dart';
-import 'package:driver/themes/app_them_data.dart';
-import 'package:driver/themes/responsive.dart';
-import 'package:driver/themes/theme_controller.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/utils/fire_store_utils.dart';
-import 'package:driver/utils/network_image_widget.dart';
 import 'package:driver/widget/firebase_pagination/src/firestore_pagination.dart';
 import 'package:driver/widget/firebase_pagination/src/models/view_type.dart';
 import 'package:flutter/cupertino.dart';
@@ -20,6 +16,9 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 
+/// Help & support chat with the admin (archetype I): admin bubbles on the left
+/// with their author label, the driver's own on the right with delivery ticks,
+/// and a sticky composer.
 class HelpSupportScreen extends StatelessWidget {
   HelpSupportScreen({
     super.key,
@@ -27,13 +26,13 @@ class HelpSupportScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
         init: HelpSupportController(),
         builder: (controller) {
-          return Scaffold(
-            backgroundColor: isDark ? AppThemeData.grey800 : AppThemeData.grey50,
+          final c = context.dsColors;
+          final t = context.dsText;
+          return DsScaffold(
+            backgroundColor: c.background,
             // appBar: AppBar(
             //   backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
             //   centerTitle: false,
@@ -66,98 +65,77 @@ class HelpSupportScreen extends StatelessWidget {
             //     ),
             //   ),
             // ),
-            body: Padding(
-              padding: const EdgeInsets.only(left: 8.0, right: 8, bottom: 8),
-              child: Column(
-                children: <Widget>[
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        FocusScope.of(context).unfocus();
+            body: GestureDetector(
+              onTap: () {
+                FocusScope.of(context).unfocus();
+              },
+              child: FirestorePagination(
+                controller: controller.scrollController.value,
+                physics: const BouncingScrollPhysics(),
+                query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(FireStoreUtils.getCurrentUid()).collection('thread').orderBy('createdAt', descending: true),
+                isLive: true,
+                shrinkWrap: true,
+                reverse: true,
+                onEmpty: DsEmptyState(
+                  icon: Icons.support_agent_rounded,
+                  compact: true,
+                  title: "No conversion found".tr,
+                ),
+                viewType: ViewType.list,
+                // to fetch real-time data
+                itemBuilder: (context, documentSnapshots, index) {
+                  ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+                  return chatItemView(isMe: inboxModel.senderId == FireStoreUtils.getCurrentUid(), data: inboxModel, context: context, controller: controller);
+                },
+              ),
+            ),
+            bottomBar: DsStickyBar(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  DsIconButton(
+                    icon: Icons.camera_alt_outlined,
+                    semanticLabel: 'Send Media'.tr,
+                    variant: DsIconButtonVariant.tonal,
+                    onPressed: () async {
+                      _onCameraClick(controller: controller, context: context);
+                    },
+                  ),
+                  const DsGap(DsSpace.sm),
+                  Flexible(
+                    child: TextField(
+                      style: t.body,
+                      cursorColor: c.brand,
+                      textInputAction: TextInputAction.send,
+                      keyboardType: TextInputType.text,
+                      textCapitalization: TextCapitalization.sentences,
+                      controller: controller.messageController.value,
+                      minLines: 1,
+                      maxLines: 4,
+                      decoration: DsInputDecoration.of(context, hint: 'Start typing with admin...'.tr),
+                      onSubmitted: (value) async {
+                        if (controller.messageController.value.text.isNotEmpty) {
+                          controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
+                          // Timer(const Duration(milliseconds: 500), () => _controller.jumpTo(_controller.position.maxScrollExtent));
+                          controller.messageController.value.clear();
+                        }
                       },
-                      child: FirestorePagination(
-                        controller: controller.scrollController.value,
-                        physics: const BouncingScrollPhysics(),
-                        query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(FireStoreUtils.getCurrentUid()).collection('thread').orderBy('createdAt', descending: true),
-                        isLive: true,
-                        shrinkWrap: true,
-                        reverse: true,
-                        onEmpty: Constant.showEmptyView(message: "No conversion found".tr, isDark: isDark),
-                        viewType: ViewType.list,
-                        // to fetch real-time data
-                        itemBuilder: (context, documentSnapshots, index) {
-                          ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
-                          return chatItemView(isMe: inboxModel.senderId == FireStoreUtils.getCurrentUid(), data: inboxModel, context: context, controller: controller);
-                        },
-                      ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: SizedBox(
-                      height: 50,
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 10),
-                        child: TextField(
-                          style: TextStyle(color: isDark ? AppThemeData.primary50 : AppThemeData.secondary600, fontFamily: AppThemeData.medium, fontSize: 14),
-                          textInputAction: TextInputAction.send,
-                          keyboardType: TextInputType.text,
-                          textCapitalization: TextCapitalization.sentences,
-                          controller: controller.messageController.value,
-                          decoration: InputDecoration(
-                            contentPadding: const EdgeInsets.only(left: 10),
-                            filled: true,
-                            fillColor: isDark ? AppThemeData.grey900 : AppThemeData.grey100,
-                            disabledBorder: OutlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey100, width: 1),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: isDark ? AppThemeData.secondary300 : AppThemeData.secondary300, width: 1),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey100, width: 1),
-                            ),
-                            errorBorder: OutlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey100, width: 1),
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                              borderSide: BorderSide(color: isDark ? AppThemeData.grey900 : AppThemeData.grey100, width: 1),
-                            ),
-                            suffixIcon: IconButton(
-                              onPressed: () async {
-                                if (controller.messageController.value.text.isNotEmpty) {
-                                  controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
-                                  controller.messageController.value.clear();
-                                } else {
-                                  ShowToastDialog.showToast("Please enter text".tr);
-                                }
-                              },
-                              icon: Icon(Icons.send_rounded, color: isDark ? AppThemeData.grey500 : AppThemeData.grey800),
-                            ),
-                            prefixIcon: IconButton(
-                              onPressed: () async {
-                                _onCameraClick(isDark: isDark, controller: controller, context: context);
-                              },
-                              icon: Icon(Icons.camera_alt, color: isDark ? AppThemeData.grey500 : AppThemeData.grey800),
-                            ),
-                            hintText: 'Start typing with admin...'.tr,
-                            hintStyle: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey700, fontFamily: AppThemeData.medium, fontSize: 14),
-                          ),
-                          onSubmitted: (value) async {
-                            if (controller.messageController.value.text.isNotEmpty) {
-                              controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
-                              // Timer(const Duration(milliseconds: 500), () => _controller.jumpTo(_controller.position.maxScrollExtent));
-                              controller.messageController.value.clear();
-                            }
-                          },
-                        ),
-                      ),
-                    ),
+                  const DsGap(DsSpace.sm),
+                  DsIconButton(
+                    icon: Icons.send_rounded,
+                    semanticLabel: 'Send'.tr,
+                    variant: DsIconButtonVariant.filled,
+                    size: 52,
+                    onPressed: () async {
+                      if (controller.messageController.value.text.isNotEmpty) {
+                        controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
+                        controller.messageController.value.clear();
+                      } else {
+                        ShowToastDialog.showToast("Please enter text".tr);
+                      }
+                    },
                   ),
                 ],
               ),
@@ -167,228 +145,142 @@ class HelpSupportScreen extends StatelessWidget {
   }
 
   Widget chatItemView({required bool isMe, required ConversationModel data, required BuildContext context, required HelpSupportController controller}) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
+    final c = context.dsColors;
+    final t = context.dsText;
+    final BorderRadius radius = isMe
+        ? const BorderRadius.only(
+            topLeft: Radius.circular(DsRadius.lg),
+            topRight: Radius.circular(DsRadius.lg),
+            bottomLeft: Radius.circular(DsRadius.lg),
+            bottomRight: Radius.circular(DsRadius.xs),
+          )
+        : const BorderRadius.only(
+            topLeft: Radius.circular(DsRadius.lg),
+            topRight: Radius.circular(DsRadius.lg),
+            bottomRight: Radius.circular(DsRadius.lg),
+            bottomLeft: Radius.circular(DsRadius.xs),
+          );
 
-    return Container(
-      padding: EdgeInsets.only(left: isMe ? 80 : 10, right: isMe ? 10 : 80, top: 10, bottom: 10),
-      child: isMe
-          ? Align(
-              alignment: Alignment.topRight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      data.messageType == "text"
-                          ? Container(
-                              constraints: BoxConstraints(
-                                maxWidth: MediaQuery.of(context).size.width * 0.75, // prevent overflow
-                              ),
-                              decoration: BoxDecoration(
-                                color: isDark ? AppThemeData.primary200 : AppThemeData.secondary300,
-                                borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomLeft: Radius.circular(10)),
-                              ),
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              child: Text(
-                                data.message.toString(),
-                                softWrap: true,
-                                maxLines: null,
-                                style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? Colors.black : Colors.white),
-                              ),
-                            )
-                          : data.messageType == "image"
-                              ? ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    minWidth: 50,
-                                    maxWidth: 200,
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomLeft: Radius.circular(10)),
-                                    child: Stack(alignment: Alignment.center, children: [
-                                      GestureDetector(
-                                        onTap: () {
-                                          Get.to(FullScreenImageViewer(
-                                            imageUrl: data.url!.url,
-                                          ));
-                                        },
-                                        child: Hero(
-                                          tag: data.url!.url,
-                                          child: CachedNetworkImage(
-                                            imageUrl: data.url!.url,
-                                            placeholder: (context, url) => Constant.loader(),
-                                            errorWidget: (context, url, error) => const Icon(Icons.error),
-                                          ),
-                                        ),
-                                      ),
-                                    ]),
-                                  ))
-                              : ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    minWidth: 50,
-                                    maxWidth: 200,
-                                  ),
-                                  child: InkWell(
-                                    onTap: () {
-                                      Get.to(FullScreenVideoViewer(
-                                        heroTag: data.id.toString(),
-                                        videoUrl: data.url!.url,
-                                      ));
-                                    },
-                                    child: ClipRRect(
-                                      borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomLeft: Radius.circular(10)),
-                                      child: Stack(alignment: Alignment.center, children: [
-                                        Hero(
-                                          tag: data.url!.url,
-                                          child: CachedNetworkImage(
-                                            imageUrl: data.videoThumbnail ?? '',
-                                            placeholder: (context, url) => Constant.loader(),
-                                            errorWidget: (context, url, error) => const Icon(Icons.error),
-                                          ),
-                                        ),
-                                        Icon(Icons.play_arrow, size: 50)
-                                      ]),
-                                    ),
-                                  )),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 5),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(60),
-                          child: NetworkImageWidget(
-                            height: Responsive.width(5, context),
-                            width: Responsive.width(5, context),
-                            imageUrl: controller.userModel.value.profilePictureURL.toString(),
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(
-                    height: 4,
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(Constant.dateAndTimeFormatTimestamp(data.createdAt),
-                          style: TextStyle(fontFamily: AppThemeData.regular, fontSize: 12, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800)),
-                      data.seen == true
-                          ? Text("✓✓", style: TextStyle(fontSize: 10, color: AppThemeData.secondary300))
-                          : Text("✓", style: TextStyle(fontSize: 10, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800))
-                    ],
-                  ),
-                ],
-              ),
-            )
-          : Align(
-              alignment: Alignment.topLeft,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  data.messageType == "text"
-                      ? Container(
-                          constraints: BoxConstraints(
-                            maxWidth: MediaQuery.of(context).size.width * 0.75, // prevent overflow
-                          ),
-                          decoration: BoxDecoration(
-                            borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomRight: Radius.circular(10)),
-                            color: isDark ? AppThemeData.grey900 : Colors.grey.shade300,
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          child: Text(
-                            data.message.toString(),
-                            softWrap: true,
-                            maxLines: null,
-                            style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.regular, fontSize: 14),
-                          ),
-                        )
-                      : data.messageType == "image"
-                          ? ConstrainedBox(
-                              constraints: const BoxConstraints(
-                                minWidth: 50,
-                                maxWidth: 200,
-                              ),
-                              child: ClipRRect(
-                                borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomRight: Radius.circular(10)),
-                                child: Stack(alignment: Alignment.center, children: [
-                                  GestureDetector(
-                                    onTap: () {
-                                      Get.to(FullScreenImageViewer(
-                                        imageUrl: data.url!.url,
-                                      ));
-                                    },
-                                    child: Hero(
-                                      tag: data.url!.url,
-                                      child: CachedNetworkImage(
-                                        imageUrl: data.url!.url,
-                                        placeholder: (context, url) => Constant.loader(),
-                                        errorWidget: (context, url, error) => const Icon(Icons.error),
-                                      ),
-                                    ),
-                                  ),
-                                ]),
-                              ))
-                          : ConstrainedBox(
-                              constraints: const BoxConstraints(
-                                minWidth: 50,
-                                maxWidth: 200,
-                              ),
-                              child: InkWell(
-                                onTap: () {
-                                  Get.to(FullScreenVideoViewer(
-                                    heroTag: data.id.toString(),
-                                    videoUrl: data.url!.url,
-                                  ));
-                                },
-                                child: ClipRRect(
-                                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomRight: Radius.circular(10)),
-                                  child: Stack(alignment: Alignment.center, children: [
-                                    Hero(
-                                      tag: data.url!.url,
-                                      child: CachedNetworkImage(
-                                        imageUrl: data.videoThumbnail ?? '',
-                                        placeholder: (context, url) => Constant.loader(),
-                                        errorWidget: (context, url, error) => const Icon(Icons.error),
-                                      ),
-                                    ),
-                                    Icon(Icons.play_arrow, size: 50)
-                                  ]),
-                                ),
-                              )),
-                  const SizedBox(
-                    height: 2,
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("Admin",
-                          style: TextStyle(
-                            color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                            fontFamily: AppThemeData.semiBold,
-                            fontSize: 12,
-                          )),
-                      Text(Constant.dateAndTimeFormatTimestamp(data.createdAt),
-                          style: TextStyle(fontFamily: AppThemeData.regular, fontSize: 12, color: isDark ? AppThemeData.grey100 : AppThemeData.grey800)),
-                    ],
-                  ),
-                ],
+    Widget media() {
+      if (data.messageType == "image") {
+        return ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 50, maxWidth: 200),
+          child: ClipRRect(
+            borderRadius: radius,
+            child: GestureDetector(
+              onTap: () {
+                Get.to(FullScreenImageViewer(
+                  imageUrl: data.url!.url,
+                ));
+              },
+              child: Hero(
+                tag: data.url!.url,
+                child: DsImage(url: data.url!.url, width: 180, height: 180, radius: 0),
               ),
             ),
+          ),
+        );
+      }
+      return ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 50, maxWidth: 200),
+        child: DsPressable(
+          onTap: () {
+            Get.to(FullScreenVideoViewer(
+              heroTag: data.id.toString(),
+              videoUrl: data.url!.url,
+            ));
+          },
+          child: ClipRRect(
+            borderRadius: radius,
+            child: Stack(alignment: Alignment.center, children: [
+              Hero(
+                tag: data.url!.url,
+                child: DsImage(url: data.videoThumbnail ?? '', width: 180, height: 180, radius: 0),
+              ),
+              DsIconWell(icon: Icons.play_arrow_rounded, tone: DsTone.brand, size: 48, circle: true),
+            ]),
+          ),
+        ),
+      );
+    }
+
+    Widget bubble() {
+      if (data.messageType == "text") {
+        return Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.75, // prevent overflow
+          ),
+          decoration: BoxDecoration(
+            color: isMe ? c.brand : c.surface,
+            borderRadius: radius,
+            border: isMe ? null : Border.all(color: c.border),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+          child: Text(
+            data.message.toString(),
+            softWrap: true,
+            maxLines: null,
+            style: t.body.withColor(isMe ? c.onBrand : c.textPrimary),
+          ),
+        );
+      }
+      return media();
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(left: isMe ? 80 : DsSpace.md, right: isMe ? DsSpace.md : 80, top: DsSpace.sm, bottom: DsSpace.sm),
+      child: Align(
+        alignment: isMe ? Alignment.topRight : Alignment.topLeft,
+        child: Column(
+          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            if (isMe)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Flexible(child: bubble()),
+                  const DsGap(DsSpace.xs),
+                  DsAvatar(
+                    imageUrl: controller.userModel.value.profilePictureURL.toString(),
+                    name: controller.userModel.value.fullName(),
+                    size: 28,
+                  ),
+                ],
+              )
+            else
+              bubble(),
+            const DsGap(DsSpace.xs),
+            if (isMe)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(Constant.dateAndTimeFormatTimestamp(data.createdAt), style: t.caption),
+                  const DsGap(DsSpace.xs),
+                  data.seen == true
+                      ? Icon(Icons.done_all_rounded, size: 14, color: c.brandStrong)
+                      : Icon(Icons.done_rounded, size: 14, color: c.textMuted),
+                ],
+              )
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Admin", style: t.labelSm.withColor(c.textPrimary)),
+                  Text(Constant.dateAndTimeFormatTimestamp(data.createdAt), style: t.caption),
+                ],
+              ),
+          ],
+        ),
+      ),
     );
   }
 
   final ImagePicker _imagePicker = ImagePicker();
 
-  void _onCameraClick({required bool isDark, required HelpSupportController controller, required BuildContext context}) {
+  void _onCameraClick({required HelpSupportController controller, required BuildContext context}) {
     final action = CupertinoActionSheet(
-      message: Text('Send Media'.tr,
-          style: TextStyle(
-            color: isDark ? AppThemeData.grey800 : AppThemeData.grey100,
-            fontFamily: AppThemeData.semiBold,
-            fontSize: 12,
-          )),
+      message: Text('Send Media'.tr, style: context.dsText.labelSm),
       actions: <Widget>[
         CupertinoActionSheetAction(
           isDefaultAction: false,

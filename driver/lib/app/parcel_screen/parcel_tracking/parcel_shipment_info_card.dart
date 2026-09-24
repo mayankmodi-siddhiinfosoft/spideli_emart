@@ -1,12 +1,15 @@
 import 'package:driver/constant/constant.dart';
 import 'package:driver/models/parcel_order_model.dart';
 import 'package:driver/services/parcel_tracking_service.dart';
-import 'package:driver/themes/app_them_data.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 /// Shipment details of the parcel/mail contract: type, scope, route, methods, pickup points,
 /// tracking number and the tracking timeline. Renders nothing for parcels created before the contract.
+///
+/// Archetype D: a summary card whose facts read as `DsInfoRow`s and whose scan
+/// history reads as a `DsTimeline` (newest step current, older ones done).
 class ParcelShipmentInfoCard extends StatelessWidget {
   final ParcelOrderModel order;
   final bool isDark;
@@ -42,23 +45,15 @@ class ParcelShipmentInfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!order.hasTrackingContract && order.trackingEvents.isEmpty) return const SizedBox.shrink();
-    final textColor = isDark ? AppThemeData.grey50 : AppThemeData.grey900;
-    final subColor = isDark ? AppThemeData.grey300 : AppThemeData.grey600;
+    final c = context.dsColors;
+    final t = context.dsText;
     final origin = _place(order.origin);
     final destination = _place(order.destination);
+    final String trackingStatus = (ParcelTrackingService.currentStatus(order) ?? '').tr;
 
     Widget row(String title, String? value) {
       if (value == null || value.isEmpty) return const SizedBox.shrink();
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(width: 140, child: Text(title, style: TextStyle(color: subColor, fontSize: 13))),
-            Expanded(child: Text(value, style: TextStyle(color: textColor, fontSize: 14, fontFamily: AppThemeData.semiBold))),
-          ],
-        ),
-      );
+      return DsInfoRow(label: title, value: value);
     }
 
     Widget pointRow(String title, String? id) {
@@ -69,22 +64,49 @@ class ParcelShipmentInfoCard extends StatelessWidget {
       );
     }
 
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(15),
-        color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-        border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-      ),
+    final events = order.trackingEvents.reversed.toList();
+
+    return DsCard(
+      margin: const EdgeInsets.only(bottom: DsSpace.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Shipment".tr, style: TextStyle(fontSize: 16, fontFamily: AppThemeData.semiBold, color: textColor)),
-          const SizedBox(height: 8),
-          row("Tracking number".tr, order.trackingNumber),
-          row("Tracking status".tr, (ParcelTrackingService.currentStatus(order) ?? '').tr),
+          Row(
+            children: [
+              DsIconWell(icon: Icons.local_shipping_outlined, tone: DsTone.brand, size: 36),
+              const DsGap(DsSpace.md),
+              Expanded(child: Text("Shipment".tr, style: t.titleSm.w700)),
+            ],
+          ),
+          const DsGap(DsSpace.sm),
+          if ((order.trackingNumber ?? '').isNotEmpty || trackingStatus.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: DsSpace.sm),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.md),
+                decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brMd),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if ((order.trackingNumber ?? '').isNotEmpty) ...[
+                      Text("Tracking number".tr, style: t.overline),
+                      Text(order.trackingNumber!, style: t.titleSm.w700.tabular),
+                    ],
+                    if (trackingStatus.isNotEmpty) ...[
+                      const DsGap(DsSpace.sm),
+                      Row(
+                        children: [
+                          Text("Tracking status".tr, style: t.caption),
+                          const DsGap(DsSpace.sm),
+                          Flexible(child: DsStatusChip(label: trackingStatus, status: ParcelTrackingService.currentStatus(order))),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
           row("Type".tr, order.shipmentType == null ? null : _label(order.shipmentType)),
           row("Scope".tr, order.scope == null ? null : _label(order.scope)),
           row("Route".tr, origin.isEmpty && destination.isEmpty ? null : '$origin  →  $destination'),
@@ -96,33 +118,23 @@ class ParcelShipmentInfoCard extends StatelessWidget {
           row("Content".tr, order.contentDescription),
           row("Declared value".tr, order.declaredValue),
           row("Proof of delivery".tr, order.deliveryProof?['type']?.toString()),
-          if (order.trackingEvents.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text("Timeline".tr, style: TextStyle(fontSize: 15, fontFamily: AppThemeData.semiBold, color: textColor)),
-            const SizedBox(height: 6),
-            ...order.trackingEvents.reversed.map(
-              (e) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.circle, size: 10, color: AppThemeData.primary300),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text((e.status ?? '').tr, style: TextStyle(color: textColor, fontFamily: AppThemeData.semiBold)),
-                          Text(
-                            [if (e.at != null) Constant.timestampToDateTime(e.at!), if (e.role != null) e.role!.tr, if (e.note != null) e.note!].join(' · '),
-                            style: TextStyle(color: subColor, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          if (events.isNotEmpty) ...[
+            const DsDivider(spacing: DsSpace.lg),
+            Text("Timeline".tr, style: t.labelSm.withColor(c.textPrimary)),
+            const DsGap(DsSpace.md),
+            DsTimeline(
+              steps: [
+                for (var i = 0; i < events.length; i++)
+                  DsTimelineStep(
+                    title: (events[i].status ?? '').tr,
+                    subtitle: [
+                      if (events[i].at != null) Constant.timestampToDateTime(events[i].at!),
+                      if (events[i].role != null) events[i].role!.tr,
+                      if (events[i].note != null) events[i].note!,
+                    ].join(' · '),
+                    state: i == 0 ? DsStepState.current : DsStepState.done,
+                  ),
+              ],
             ),
           ],
         ],

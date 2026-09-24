@@ -6,351 +6,274 @@ import 'package:driver/models/car_makes.dart';
 import 'package:driver/models/section_model.dart';
 import 'package:driver/models/vehicle_type.dart';
 import 'package:driver/models/zone_model.dart';
-import 'package:driver/themes/app_them_data.dart';
-import 'package:driver/themes/text_field_widget.dart';
-import 'package:driver/themes/theme_controller.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 
 import '../../models/car_model.dart' show CarModel;
-import '../../themes/responsive.dart' show Responsive;
 
+/// Archetype H – multi-step-feeling creation form: grouped `DsFormSection`s,
+/// selectable section tiles, one vehicle card per selected section and a
+/// sticky primary action.
 class DriverCreateScreen extends StatelessWidget {
   const DriverCreateScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: DriverCreateController(),
       builder: (controller) {
+        final c = context.dsColors;
+        final t = context.dsText;
         final isEdit = controller.driverModel.value.id != null &&
             controller.driverModel.value.id!.isNotEmpty;
 
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(isEdit ? 'Update Driver'.tr : 'Create Driver'.tr),
-          ),
+        // Read eagerly inside the tracked builder so the tiles rebuild.
+        final ownerSections = controller.ownerSections.toList();
+        final sectionTiles = <Widget>[
+          for (var i = 0; i < ownerSections.length; i++)
+            _SectionChoiceTile(
+              index: i,
+              title: ownerSections[i].name ?? '',
+              subtitle: controller.serviceFlagLabel(ownerSections[i].serviceTypeFlag),
+              serviceTypeFlag: ownerSections[i].serviceTypeFlag,
+              selected: controller.isSectionSelected(ownerSections[i]),
+              onTap: () async {
+                await controller.toggleSection(ownerSections[i]);
+              },
+            ),
+        ];
+
+        return DsScaffold(
+          title: isEdit ? 'Update Driver'.tr : 'Create Driver'.tr,
+          subtitle: isEdit ? controller.driverModel.value.fullName() : 'Add a driver to your fleet'.tr,
           body: controller.isLoading.value
-              ? Constant.loader()
-              : Column(
-                  children: [
-                    Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 12),
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.lg),
+                  child: DsSkeletonForm(fields: 6),
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── Section selection (owner's sections only) ────
+                      DsFormSection(
+                        title: "Select Sections".tr,
+                        icon: Icons.grid_view_rounded,
+                        children: [
+                          if (ownerSections.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.all(DsSpace.md),
+                              child: Text("No sections available".tr, style: t.bodySecondary),
+                            )
+                          else
+                            DsAdaptiveGrid(minItemWidth: 260, children: sectionTiles),
+                        ],
+                      ),
 
-                            // ── Section selection (owner's sections only) ────
-                            _Label("Select Sections".tr, isDark),
-                            const SizedBox(height: 6),
-                            controller.ownerSections.isEmpty
-                                ? Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Text(
-                                      "No sections available".tr,
-                                      style: TextStyle(
-                                        color: isDark
-                                            ? AppThemeData.grey400
-                                            : AppThemeData.grey600,
-                                      ),
-                                    ),
-                                  )
-                                : Container(
-                                    decoration: BoxDecoration(
-                                      color: isDark
-                                          ? AppThemeData.grey900
-                                          : AppThemeData.grey50,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: isDark
-                                            ? AppThemeData.greyDark400
-                                            : AppThemeData.grey400,
-                                      ),
-                                    ),
-                                    child: Column(
-                                      children: controller.ownerSections.map((section) {
-                                        final isChecked =
-                                            controller.isSectionSelected(section);
-                                        return CheckboxListTile(
-                                          dense: true,
-                                          title: Text(
-                                            section.name ?? '',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: isDark
-                                                  ? AppThemeData.grey50
-                                                  : AppThemeData.grey900,
-                                              fontFamily: AppThemeData.medium,
-                                            ),
-                                          ),
-                                          subtitle: Text(
-                                            controller.serviceFlagLabel(
-                                                section.serviceTypeFlag),
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: isDark
-                                                  ? AppThemeData.grey400
-                                                  : AppThemeData.grey600,
-                                              fontFamily: AppThemeData.regular,
-                                            ),
-                                          ),
-                                          value: isChecked,
-                                          activeColor: AppThemeData.primary300,
-                                          checkColor: Colors.white,
-                                          onChanged: (_) async {
-                                            await controller.toggleSection(section);
-                                          },
-                                        );
-                                      }).toList(),
-                                    ),
-                                  ),
-                            const SizedBox(height: 12),
+                      // ── Per-section vehicle cards (for selected cab / rental sections) ─
+                      ...controller.selectedSections
+                          .where((s) => controller.sectionNeedsVehicle(s))
+                          .map((section) {
+                        final sid = section.id ?? '';
+                        final vehicleTypes =
+                            controller.vehicleTypesPerSection[sid] ??
+                                <VehicleType>[].obs;
+                        final selectedVehicle =
+                            controller.selectedVehiclePerSection[sid] ??
+                                VehicleType().obs;
+                        final selectedRideType =
+                            controller.selectedRideTypePerSection[sid] ??
+                                RxString('ride');
+                        final selectedCarMakes =
+                            controller.selectedCarMakesPerSection[sid] ??
+                                Rx<CarMakes>(CarMakes());
+                        final carModels =
+                            controller.carModelListPerSection[sid] ??
+                                <CarModel>[].obs;
+                        final selectedCarModel =
+                            controller.selectedCarModelPerSection[sid] ??
+                                Rx<CarModel>(CarModel());
+                        final carPlate =
+                            controller.carPlatePerSection[sid] ??
+                                Rx<TextEditingController>(
+                                    TextEditingController());
 
-                            // ── Per-section vehicle cards (for selected cab / rental sections) ─
-                            ...controller.selectedSections
-                                .where((s) => controller.sectionNeedsVehicle(s))
-                                .map((section) {
-                              final sid = section.id ?? '';
-                              final vehicleTypes =
-                                  controller.vehicleTypesPerSection[sid] ??
-                                      <VehicleType>[].obs;
-                              final selectedVehicle =
-                                  controller.selectedVehiclePerSection[sid] ??
-                                      VehicleType().obs;
-                              final selectedRideType =
-                                  controller.selectedRideTypePerSection[sid] ??
-                                      RxString('ride');
-                              final selectedCarMakes =
-                                  controller.selectedCarMakesPerSection[sid] ??
-                                      Rx<CarMakes>(CarMakes());
-                              final carModels =
-                                  controller.carModelListPerSection[sid] ??
-                                      <CarModel>[].obs;
-                              final selectedCarModel =
-                                  controller.selectedCarModelPerSection[sid] ??
-                                      Rx<CarModel>(CarModel());
-                              final carPlate =
-                                  controller.carPlatePerSection[sid] ??
-                                      Rx<TextEditingController>(
-                                          TextEditingController());
+                        return _SectionVehicleCard(
+                          section: section,
+                          vehicleTypes: vehicleTypes,
+                          selectedVehicle: selectedVehicle,
+                          isCab: section.serviceTypeFlag == 'cab-service',
+                          selectedRideType: selectedRideType,
+                          carMakesList: controller.carMakesList,
+                          selectedCarMakes: selectedCarMakes,
+                          carModels: carModels,
+                          selectedCarModel: selectedCarModel,
+                          carPlate: carPlate,
+                          onBrandChanged: () =>
+                              controller.getCarModelForSection(sid),
+                        );
+                      }),
 
-                              return _SectionVehicleCard(
-                                section: section,
-                                vehicleTypes: vehicleTypes,
-                                selectedVehicle: selectedVehicle,
-                                isCab: section.serviceTypeFlag == 'cab-service',
-                                selectedRideType: selectedRideType,
-                                carMakesList: controller.carMakesList,
-                                selectedCarMakes: selectedCarMakes,
-                                carModels: carModels,
-                                selectedCarModel: selectedCarModel,
-                                carPlate: carPlate,
-                                onBrandChanged: () =>
-                                    controller.getCarModelForSection(sid),
-                                isDark: isDark,
-                              );
-                            }),
+                      // ── Driver profile ────────────────────────────────
+                      DsFormSection(
+                        title: 'Driver Details'.tr,
+                        icon: Icons.badge_outlined,
+                        children: [
+                          // ── Zone ─────────────────────────────────────
+                          DsDropdown<ZoneModel>(
+                            label: "Zone".tr,
+                            hint: 'Select zone'.tr,
+                            prefixIcon: Icons.map_outlined,
+                            value: controller.selectedZone.value.id == null
+                                ? null
+                                : controller.selectedZone.value,
+                            items: controller.zoneList
+                                .map((item) => DropdownMenuItem<ZoneModel>(
+                                      value: item,
+                                      child: Text(item.name ?? '', overflow: TextOverflow.ellipsis),
+                                    ))
+                                .toList(),
+                            onChanged: (v) {
+                              controller.selectedZone.value = v!;
+                              controller.update();
+                            },
+                          ),
 
-                            // ── Zone ─────────────────────────────────────────
-                            _Label("Zone".tr, isDark),
-                            const SizedBox(height: 6),
-                            _Dropdown<ZoneModel>(
-                              hint: 'Select zone'.tr,
-                              value: controller.selectedZone.value.id == null
-                                  ? null
-                                  : controller.selectedZone.value,
-                              items: controller.zoneList,
-                              label: (item) => item.name ?? '',
-                              isDark: isDark,
-                              onChanged: (v) {
-                                controller.selectedZone.value = v!;
-                                controller.update();
-                              },
-                            ),
-                            const SizedBox(height: 10),
-
-                            // ── Name ──────────────────────────────────────────
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFieldWidget(
-                                    title: 'First Name'.tr,
-                                    controller:
-                                        controller.firstNameEditingController.value,
-                                    hintText: 'Enter First Name'.tr,
-                                    prefix: _svgIcon(
-                                        "assets/icons/ic_user.svg", isDark),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: TextFieldWidget(
-                                    title: 'Last Name'.tr,
-                                    controller:
-                                        controller.lastNameEditingController.value,
-                                    hintText: 'Enter Last Name'.tr,
-                                    prefix: _svgIcon(
-                                        "assets/icons/ic_user.svg", isDark),
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            // ── Email ─────────────────────────────────────────
-                            TextFieldWidget(
-                              title: 'Email Address'.tr,
-                              textInputType: TextInputType.emailAddress,
-                              controller: controller.emailEditingController.value,
-                              hintText: 'Enter Email Address'.tr,
-                              enable: !isEdit,
-                              prefix:
-                                  _svgIcon("assets/icons/ic_mail.svg", isDark),
-                            ),
-
-                            // ── Phone ─────────────────────────────────────────
-                            TextFieldWidget(
-                              title: 'Phone Number'.tr,
-                              controller:
-                                  controller.phoneNUmberEditingController.value,
-                              hintText: 'Enter Phone Number'.tr,
-                              textInputType:
-                                  const TextInputType.numberWithOptions(
-                                      signed: true, decimal: true),
-                              textInputAction: TextInputAction.done,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                    RegExp('[0-9]')),
-                              ],
-                              prefix: CountryCodePicker(
-                                onInit: (value) {
-                                  controller
-                                      .countryCodeEditingController
-                                      .value
-                                      .text = value?.dialCode ??
-                                      Constant.defaultCountryCode;
-                                  controller
-                                      .countryISOCodeEditingController
-                                      .value
-                                      .text = value?.code ??
-                                      Constant.defaultCountryCode;
-                                },
-                                onChanged: (value) {
-                                  controller
-                                      .countryCodeEditingController
-                                      .value
-                                      .text = value.dialCode ??
-                                      Constant.defaultCountryCode;
-                                  controller
-                                      .countryISOCodeEditingController
-                                      .value
-                                      .text = value.code ??
-                                      Constant.defaultCountryCode;
-                                },
-                                dialogTextStyle: TextStyle(
-                                  color: isDark
-                                      ? AppThemeData.grey50
-                                      : AppThemeData.grey900,
-                                  fontWeight: FontWeight.w500,
-                                  fontFamily: AppThemeData.medium,
-                                ),
-                                dialogBackgroundColor: isDark
-                                    ? AppThemeData.grey800
-                                    : AppThemeData.grey100,
-                                initialSelection: controller
-                                    .countryISOCodeEditingController.value.text,
-                                comparator: (a, b) =>
-                                    b.name!.compareTo(a.name.toString()),
-                                textStyle: TextStyle(
-                                  fontSize: 14,
-                                  color: isDark
-                                      ? AppThemeData.grey50
-                                      : AppThemeData.grey900,
-                                  fontFamily: AppThemeData.medium,
-                                ),
-                                searchDecoration: InputDecoration(
-                                    iconColor: isDark
-                                        ? AppThemeData.grey50
-                                        : AppThemeData.grey900),
-                                searchStyle: TextStyle(
-                                  color: isDark
-                                      ? AppThemeData.grey50
-                                      : AppThemeData.grey900,
-                                  fontWeight: FontWeight.w500,
-                                  fontFamily: AppThemeData.medium,
+                          // ── Name ──────────────────────────────────────
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: DsTextField(
+                                  label: 'First Name'.tr,
+                                  controller:
+                                      controller.firstNameEditingController.value,
+                                  hint: 'Enter First Name'.tr,
+                                  prefixIcon: Icons.person_outline,
                                 ),
                               ),
-                            ),
-
-                            // ── Password (create only) ────────────────────────
-                            if (!isEdit) ...[
-                              TextFieldWidget(
-                                title: 'Password'.tr,
-                                controller:
-                                    controller.passwordEditingController.value,
-                                hintText: 'Enter Password'.tr,
-                                obscureText: controller.passwordVisible.value,
-                                prefix: _svgIcon(
-                                    "assets/icons/ic_lock.svg", isDark),
-                                suffix: _passwordToggle(
-                                  controller.passwordVisible.value,
-                                  isDark,
-                                  () => controller.passwordVisible.value =
-                                      !controller.passwordVisible.value,
-                                ),
-                              ),
-                              TextFieldWidget(
-                                title: 'Confirm Password'.tr,
-                                controller: controller
-                                    .conformPasswordEditingController.value,
-                                hintText: 'Enter Confirm Password'.tr,
-                                obscureText:
-                                    controller.conformPasswordVisible.value,
-                                prefix: _svgIcon(
-                                    "assets/icons/ic_lock.svg", isDark),
-                                suffix: _passwordToggle(
-                                  controller.conformPasswordVisible.value,
-                                  isDark,
-                                  () =>
-                                      controller.conformPasswordVisible.value =
-                                          !controller
-                                              .conformPasswordVisible.value,
+                              const DsGap(DsSpace.md),
+                              Expanded(
+                                child: DsTextField(
+                                  label: 'Last Name'.tr,
+                                  controller:
+                                      controller.lastNameEditingController.value,
+                                  hint: 'Enter Last Name'.tr,
+                                  prefixIcon: Icons.person_outline,
                                 ),
                               ),
                             ],
+                          ),
 
-                            const SizedBox(height: 16),
+                          // ── Email ─────────────────────────────────────
+                          DsTextField(
+                            label: 'Email Address'.tr,
+                            keyboardType: TextInputType.emailAddress,
+                            controller: controller.emailEditingController.value,
+                            hint: 'Enter Email Address'.tr,
+                            enabled: !isEdit,
+                            prefixIcon: Icons.mail_outline,
+                          ),
+
+                          // ── Phone ─────────────────────────────────────
+                          DsTextField(
+                            label: 'Phone Number'.tr,
+                            controller:
+                                controller.phoneNUmberEditingController.value,
+                            hint: 'Enter Phone Number'.tr,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                                    signed: true, decimal: true),
+                            textInputAction: TextInputAction.done,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                  RegExp('[0-9]')),
+                            ],
+                            prefix: CountryCodePicker(
+                              onInit: (value) {
+                                controller
+                                    .countryCodeEditingController
+                                    .value
+                                    .text = value?.dialCode ??
+                                    Constant.defaultCountryCode;
+                                controller
+                                    .countryISOCodeEditingController
+                                    .value
+                                    .text = value?.code ??
+                                    Constant.defaultCountryCode;
+                              },
+                              onChanged: (value) {
+                                controller
+                                    .countryCodeEditingController
+                                    .value
+                                    .text = value.dialCode ??
+                                    Constant.defaultCountryCode;
+                                controller
+                                    .countryISOCodeEditingController
+                                    .value
+                                    .text = value.code ??
+                                    Constant.defaultCountryCode;
+                              },
+                              dialogTextStyle: t.bodyStrong,
+                              dialogBackgroundColor: c.surfaceRaised,
+                              initialSelection: controller
+                                  .countryISOCodeEditingController.value.text,
+                              comparator: (a, b) =>
+                                  b.name!.compareTo(a.name.toString()),
+                              textStyle: t.bodyStrong,
+                              searchDecoration: InputDecoration(iconColor: c.iconDefault),
+                              searchStyle: t.bodyStrong,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // ── Password (create only) ────────────────────────
+                      if (!isEdit)
+                        DsFormSection(
+                          title: 'Security'.tr,
+                          icon: Icons.lock_outline_rounded,
+                          children: [
+                            _PasswordField(
+                              label: 'Password'.tr,
+                              hint: 'Enter Password'.tr,
+                              controller:
+                                  controller.passwordEditingController.value,
+                              obscured: controller.passwordVisible.value,
+                              onToggle: () => controller.passwordVisible.value =
+                                  !controller.passwordVisible.value,
+                            ),
+                            _PasswordField(
+                              label: 'Confirm Password'.tr,
+                              hint: 'Enter Confirm Password'.tr,
+                              controller: controller
+                                  .conformPasswordEditingController.value,
+                              obscured:
+                                  controller.conformPasswordVisible.value,
+                              onToggle: () =>
+                                  controller.conformPasswordVisible.value =
+                                      !controller
+                                          .conformPasswordVisible.value,
+                            ),
                           ],
                         ),
-                      ),
-                    ),
-
-                    // ── Save button ───────────────────────────────────────────
-                    InkWell(
-                      onTap: () => _onSave(controller, isEdit),
-                      child: Container(
-                        color: AppThemeData.primary300,
-                        width: Responsive.width(100, context),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Text(
-                          'Save'.tr,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: AppThemeData.grey50,
-                            fontSize: 16,
-                            fontFamily: AppThemeData.medium,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+
+          // ── Save button ───────────────────────────────────────────
+          bottomBar: DsStickyBar(
+            child: DsButton.primary(
+              label: 'Save'.tr,
+              icon: Icons.check_rounded,
+              size: DsButtonSize.lg,
+              expand: true,
+              onPressed: () => _onSave(controller, isEdit),
+            ),
+          ),
         );
       },
     );
@@ -430,35 +353,127 @@ class DriverCreateScreen extends StatelessWidget {
       controller.signUp();
     }
   }
+}
 
-  Widget _svgIcon(String asset, bool isDark) => Padding(
-        padding: const EdgeInsets.all(12),
-        child: SvgPicture.asset(
-          asset,
-          colorFilter: ColorFilter.mode(
-            isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-            BlendMode.srcIn,
-          ),
-        ),
-      );
+// ── Password field (visibility driven by the controller's observable) ─────────
 
-  Widget _passwordToggle(bool visible, bool isDark, VoidCallback onTap) =>
-      Padding(
-        padding: const EdgeInsets.all(12),
-        child: InkWell(
-          onTap: onTap,
-          child: SvgPicture.asset(
-            visible
-                ? "assets/icons/ic_password_show.svg"
-                : "assets/icons/ic_password_close.svg",
-            colorFilter: ColorFilter.mode(
-              isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-              BlendMode.srcIn,
+class _PasswordField extends StatelessWidget {
+  final String label;
+  final String hint;
+  final TextEditingController controller;
+  final bool obscured;
+  final VoidCallback onToggle;
+
+  const _PasswordField({
+    required this.label,
+    required this.hint,
+    required this.controller,
+    required this.obscured,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DsFieldLabel(label),
+          TextFormField(
+            controller: controller,
+            obscureText: obscured,
+            style: DsTypography.bodyStrong.copyWith(color: c.textPrimary),
+            decoration: DsInputDecoration.of(
+              context,
+              hint: hint,
+              prefixIcon: Icons.lock_outline_rounded,
+              suffix: IconButton(
+                tooltip: obscured ? 'Show password'.tr : 'Hide password'.tr,
+                icon: Icon(obscured ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 20),
+                onPressed: onToggle,
+              ),
             ),
           ),
-        ),
-      );
+        ],
+      ),
+    );
+  }
+}
 
+// ── Selectable section tile ───────────────────────────────────────────────────
+
+class _SectionChoiceTile extends StatelessWidget {
+  final int index;
+  final String title;
+  final String subtitle;
+  final String? serviceTypeFlag;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SectionChoiceTile({
+    required this.index,
+    required this.title,
+    required this.subtitle,
+    required this.serviceTypeFlag,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final section = DsSection.fromServiceType(serviceTypeFlag);
+    final accent = c.section(section);
+    return DsFadeSlideIn(
+      index: index,
+      child: DsCard.outlined(
+        onTap: onTap,
+        borderColor: selected ? c.brand : null,
+        padding: const EdgeInsets.all(DsSpace.md),
+        semanticLabel: '$title, $subtitle',
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: accent.soft, borderRadius: BorderRadius.circular(12)),
+              child: Icon(section.icon, size: 20, color: accent.strong),
+            ),
+            const DsGap(DsSpace.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title, style: t.titleSm, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  const DsGap(DsSpace.xxs),
+                  Text(subtitle, style: t.caption, maxLines: 2, overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            const DsGap(DsSpace.sm),
+            AnimatedContainer(
+              duration: DsMotion.of(context, DsMotion.fast),
+              curve: DsMotion.standard,
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: selected ? c.brand : Colors.transparent,
+                border: Border.all(color: selected ? c.brand : c.borderStrong, width: 1.6),
+                borderRadius: DsRadius.brXs,
+              ),
+              child: selected ? Icon(Icons.check_rounded, size: 16, color: c.onBrand) : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ── Per-section vehicle card ──────────────────────────────────────────────────
@@ -475,7 +490,6 @@ class _SectionVehicleCard extends StatelessWidget {
   final Rx<CarModel> selectedCarModel;
   final Rx<TextEditingController> carPlate;
   final VoidCallback onBrandChanged;
-  final bool isDark;
 
   const _SectionVehicleCard({
     required this.section,
@@ -489,22 +503,16 @@ class _SectionVehicleCard extends StatelessWidget {
     required this.selectedCarModel,
     required this.carPlate,
     required this.onBrandChanged,
-    required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Obx(() => Container(
-          width: double.infinity,
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: isDark ? AppThemeData.greyDark50 : AppThemeData.surface,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isDark ? AppThemeData.greyDark400 : AppThemeData.grey300,
-            ),
-          ),
+    final c = context.dsColors;
+    final t = context.dsText;
+    final accent = c.section(DsSection.fromServiceType(section.serviceTypeFlag));
+    return Obx(() => DsCard.outlined(
+          margin: const EdgeInsets.only(bottom: DsSpace.lg),
+          padding: const EdgeInsets.all(DsSpace.lg),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -513,49 +521,35 @@ class _SectionVehicleCard extends StatelessWidget {
                 children: [
                   Container(
                     width: 4,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: AppThemeData.primary300,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+                    height: 18,
+                    decoration: BoxDecoration(color: accent.main, borderRadius: DsRadius.brPill),
                   ),
-                  const SizedBox(width: 8),
+                  const DsGap(DsSpace.sm),
                   Expanded(
-                    child: Text(
-                      section.name ?? '',
-                      style: TextStyle(
-                        fontFamily: AppThemeData.semiBold,
-                        fontSize: 14,
-                        color: isDark
-                            ? AppThemeData.greyDark900
-                            : AppThemeData.grey800,
-                      ),
-                    ),
+                    child: Text(section.name ?? '', style: t.titleSm, maxLines: 2, overflow: TextOverflow.ellipsis),
                   ),
+                  Icon(Icons.directions_car_outlined, size: 20, color: c.textMuted),
                 ],
               ),
-              const SizedBox(height: 10),
+              const DsGap(DsSpace.lg),
 
               // Vehicle type dropdown
               if (vehicleTypes.isEmpty)
-                Text(
-                  "No vehicle types for this section".tr,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: isDark
-                        ? AppThemeData.greyDark400
-                        : AppThemeData.grey500,
-                  ),
-                )
+                Text("No vehicle types for this section".tr, style: t.bodySecondary)
               else
-                _Dropdown<VehicleType>(
+                DsDropdown<VehicleType>(
+                  label: 'Vehicle Type'.tr,
                   hint: 'Vehicle Type'.tr,
+                  bottomSpacing: 0,
                   value: vehicleTypes.contains(selectedVehicle.value)
                       ? selectedVehicle.value
                       : null,
-                  items: vehicleTypes,
-                  label: (item) => item.name ?? '',
-                  isDark: isDark,
+                  items: vehicleTypes
+                      .map((item) => DropdownMenuItem<VehicleType>(
+                            value: item,
+                            child: Text(item.name ?? '', overflow: TextOverflow.ellipsis),
+                          ))
+                      .toList(),
                   onChanged: (v) => selectedVehicle.value = v!,
                 ),
 
@@ -564,18 +558,8 @@ class _SectionVehicleCard extends StatelessWidget {
                   (section.rideType == 'ride' ||
                       section.rideType == 'intercity' ||
                       section.rideType == 'both')) ...[
-                const SizedBox(height: 10),
-                Text(
-                  "Ride Type".tr,
-                  style: TextStyle(
-                    fontFamily: AppThemeData.semiBold,
-                    fontSize: 13,
-                    color: isDark
-                        ? AppThemeData.greyDark900
-                        : AppThemeData.grey700,
-                  ),
-                ),
-                const SizedBox(height: 4),
+                const DsGap(DsSpace.lg),
+                DsFieldLabel("Ride Type".tr),
                 Row(
                   children: [
                     if (section.rideType == 'ride' ||
@@ -584,7 +568,6 @@ class _SectionVehicleCard extends StatelessWidget {
                         label: 'Ride'.tr,
                         value: 'ride',
                         groupValue: selectedRideType.value,
-                        isDark: isDark,
                         onChanged: (v) => selectedRideType.value = v!,
                       ),
                     if (section.rideType == 'intercity' ||
@@ -593,7 +576,6 @@ class _SectionVehicleCard extends StatelessWidget {
                         label: 'Intercity'.tr,
                         value: 'intercity',
                         groupValue: selectedRideType.value,
-                        isDark: isDark,
                         onChanged: (v) => selectedRideType.value = v!,
                       ),
                     if (section.rideType == 'both')
@@ -601,7 +583,6 @@ class _SectionVehicleCard extends StatelessWidget {
                         label: 'Both'.tr,
                         value: 'both',
                         groupValue: selectedRideType.value,
-                        isDark: isDark,
                         onChanged: (v) => selectedRideType.value = v!,
                       ),
                   ],
@@ -609,15 +590,20 @@ class _SectionVehicleCard extends StatelessWidget {
               ],
 
               // Car brand
-              const SizedBox(height: 10),
-              _Dropdown<CarMakes>(
+              const DsGap(DsSpace.lg),
+              DsDropdown<CarMakes>(
+                label: 'Car Brand'.tr,
                 hint: 'Car Brand'.tr,
+                bottomSpacing: 0,
                 value: selectedCarMakes.value.id == null
                     ? null
                     : selectedCarMakes.value,
-                items: carMakesList,
-                label: (item) => item.name ?? '',
-                isDark: isDark,
+                items: carMakesList
+                    .map((item) => DropdownMenuItem<CarMakes>(
+                          value: item,
+                          child: Text(item.name ?? '', overflow: TextOverflow.ellipsis),
+                        ))
+                    .toList(),
                 onChanged: (v) {
                   if (v != null) {
                     selectedCarMakes.value = v;
@@ -627,28 +613,35 @@ class _SectionVehicleCard extends StatelessWidget {
               ),
 
               // Car model
-              const SizedBox(height: 10),
-              _Dropdown<CarModel>(
+              const DsGap(DsSpace.lg),
+              DsDropdown<CarModel>(
                 key: ValueKey('carModel_${selectedCarMakes.value.id}_${carModels.length}'),
+                label: 'Car Model'.tr,
                 hint: 'Car Model'.tr,
+                bottomSpacing: 0,
                 value: selectedCarModel.value.id == null
                     ? null
                     : selectedCarModel.value,
-                items: carModels,
-                label: (item) => item.name ?? '',
-                isDark: isDark,
+                items: carModels
+                    .map((item) => DropdownMenuItem<CarModel>(
+                          value: item,
+                          child: Text(item.name ?? '', overflow: TextOverflow.ellipsis),
+                        ))
+                    .toList(),
                 onChanged: (v) {
                   if (v != null) selectedCarModel.value = v;
                 },
               ),
 
               // Car plate number
-              const SizedBox(height: 10),
-              TextFieldWidget(
-                title: 'Car Plate Number'.tr,
+              const DsGap(DsSpace.lg),
+              DsTextField(
+                label: 'Car Plate Number'.tr,
                 controller: carPlate.value,
-                hintText: 'Enter Car Plate Number'.tr,
+                hint: 'Enter Car Plate Number'.tr,
                 textInputAction: TextInputAction.next,
+                textCapitalization: TextCapitalization.characters,
+                bottomSpacing: 0,
               ),
             ],
           ),
@@ -656,127 +649,66 @@ class _SectionVehicleCard extends StatelessWidget {
   }
 }
 
+/// Radio-style choice chip: selected only when it matches [groupValue], so an
+/// unset ride type stays visibly unselected (same as the old radio list).
 class _RideOption extends StatelessWidget {
   final String label;
   final String value;
   final String groupValue;
-  final bool isDark;
   final ValueChanged<String?> onChanged;
 
   const _RideOption({
     required this.label,
     required this.value,
     required this.groupValue,
-    required this.isDark,
     required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final selected = value == groupValue;
     return Expanded(
-      child: RadioListTile<String>(
-        dense: true,
-        visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-        contentPadding: EdgeInsets.zero,
-        title: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey800,
+      child: Padding(
+        padding: const EdgeInsetsDirectional.only(end: DsSpace.sm),
+        child: Semantics(
+          selected: selected,
+          child: DsPressable(
+            onTap: () => onChanged(value),
+            child: AnimatedContainer(
+              duration: DsMotion.of(context, DsMotion.fast),
+              curve: DsMotion.standard,
+              constraints: const BoxConstraints(minHeight: 48),
+              padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+              decoration: BoxDecoration(
+                color: selected ? c.brandSoft : c.surfaceAlt,
+                borderRadius: DsRadius.brMd,
+                border: Border.all(color: selected ? c.brand : c.border, width: selected ? 1.6 : 1),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    selected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+                    size: 18,
+                    color: selected ? c.brand : c.textMuted,
+                  ),
+                  const DsGap(DsSpace.xs),
+                  Flexible(
+                    child: Text(
+                      label,
+                      style: selected ? t.label.withColor(c.brandStrong) : t.body,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
-        value: value,
-        groupValue: groupValue,
-        activeColor: AppThemeData.primary300,
-        onChanged: onChanged,
       ),
-    );
-  }
-}
-
-// ── Shared helpers ────────────────────────────────────────────────────────────
-
-class _Label extends StatelessWidget {
-  final String text;
-  final bool isDark;
-  const _Label(this.text, this.isDark);
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: TextStyle(
-        fontFamily: AppThemeData.semiBold,
-        fontSize: 14,
-        color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-      ),
-    );
-  }
-}
-
-class _Dropdown<T> extends StatelessWidget {
-  final String hint;
-  final T? value;
-  final List<T> items;
-  final String Function(T) label;
-  final bool isDark;
-  final ValueChanged<T?> onChanged;
-
-  const _Dropdown({
-    super.key,
-    required this.hint,
-    required this.value,
-    required this.items,
-    required this.label,
-    required this.isDark,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final borderColor =
-        isDark ? AppThemeData.greyDark400 : AppThemeData.grey400;
-    return DropdownButtonFormField<T>(
-      hint: Text(
-        hint,
-        style: TextStyle(
-          fontSize: 14,
-          color: isDark ? AppThemeData.grey700 : AppThemeData.grey700,
-          fontFamily: AppThemeData.regular,
-        ),
-      ),
-      icon: const Icon(Icons.keyboard_arrow_down),
-      dropdownColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-      decoration: InputDecoration(
-        isDense: true,
-        filled: true,
-        fillColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-        border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: borderColor)),
-        enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: borderColor)),
-        focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: borderColor, width: 1.2)),
-        errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Colors.red)),
-        disabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: borderColor)),
-      ),
-      value: value,
-      style: TextStyle(
-        fontSize: 14,
-        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-        fontFamily: AppThemeData.medium,
-      ),
-      onChanged: onChanged,
-      items: items.map((item) {
-        return DropdownMenuItem<T>(value: item, child: Text(label(item)));
-      }).toList(),
     );
   }
 }

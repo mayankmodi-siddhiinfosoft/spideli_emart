@@ -10,20 +10,21 @@ import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/themes/app_them_data.dart';
-import 'package:driver/themes/responsive.dart';
-import 'package:driver/themes/round_button_fill.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/utils.dart';
-import 'package:driver/widget/my_separator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart' as flutterMap;
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:timelines_plus/timelines_plus.dart';
 
+/// Archetype A / B / C — the driver's job screen. The map stays full-bleed,
+/// a [DsMapButton] recentres it, and the bottom third changes with the job:
+/// an incoming [DsRequestCard] while the order is pending, then a docked
+/// [DsMapPanel] with the route, the people to contact and the one xl action
+/// for the current step.
 class HomeScreen extends StatelessWidget {
   final bool? isAppBarShow;
 
@@ -34,76 +35,33 @@ class HomeScreen extends StatelessWidget {
     final themeController = Get.find<ThemeController>();
     final dashController = Get.put(DashBoardController());
     return Obx(() {
-      final isDark = themeController.isDark.value;
+      // Kept as the observable read that rebuilds this screen on a theme
+      // change; colors now come from `context.dsColors`.
+      themeController.isDark.value;
       return GetX(
         init: HomeController(),
         builder: (controller) {
-          return Scaffold(
-            appBar: isAppBarShow == true
-                ? AppBar(
-                    backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                    centerTitle: false,
-                    iconTheme: const IconThemeData(color: AppThemeData.grey900, size: 20),
-                    title: Text(
-                      "Order".tr,
-                      style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 18, fontFamily: AppThemeData.medium),
-                    ),
-                  )
-                : null,
+          return DsScaffold(
+            // Edge-to-edge: the map owns the full width on every screen size.
+            maxContentWidth: null,
+            appBar: isAppBarShow == true ? DsAppBar(title: "Order".tr) : null,
             body: controller.isLoading.value
                 ? Constant.loader()
                 : controller.driverModel.value.vendorID?.isEmpty == true &&
-                       
                         controller.driverModel.value.isDocumentVerify == false &&
                         controller.driverModel.value.isAutoVerify == false
-                    ? Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Container(
-                              decoration: ShapeDecoration(
-                                color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(120),
-                                ),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(20),
-                                child: SvgPicture.asset("assets/icons/ic_document.svg"),
-                              ),
-                            ),
-                            const SizedBox(
-                              height: 12,
-                            ),
-                            Text(
-                              "Document Verification in Pending".tr,
-                              style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                            ),
-                            const SizedBox(
-                              height: 5,
-                            ),
-                            Text(
-                              "Your documents are being reviewed. We will notify you once the verification is complete.".tr,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                            ),
-                            const SizedBox(
-                              height: 20,
-                            ),
-                            RoundedButtonFill(
-                              title: "View Status".tr,
-                              width: 55,
-                              height: 5.5,
-                              color: AppThemeData.primary300,
-                              textColor: AppThemeData.grey50,
-                              onPress: () async {
-                                DashBoardController dashBoardController = Get.put(DashBoardController());
-                                dashBoardController.drawerIndex.value = 4;
-                              },
-                            ),
-                          ],
+                    ? Center(
+                        child: DsEmptyState(
+                          icon: Icons.assignment_outlined,
+                          tone: DsTone.warning,
+                          title: "Document Verification in Pending".tr,
+                          message: "Your documents are being reviewed. We will notify you once the verification is complete.".tr,
+                          actionLabel: "View Status".tr,
+                          actionIcon: Icons.arrow_forward_rounded,
+                          onAction: () async {
+                            DashBoardController dashBoardController = Get.put(DashBoardController());
+                            dashBoardController.drawerIndex.value = 4;
+                          },
                         ),
                       )
                     : Column(
@@ -112,30 +70,16 @@ class HomeScreen extends StatelessWidget {
                             num wallet = dashController.userModel.value.walletAmount ?? 0.0;
                             return Constant.userModel?.vendorID?.isEmpty == true && wallet < double.parse(Constant.minimumDepositToRideAccept)
                                 ? Padding(
-                                    padding: const EdgeInsets.only(bottom: 10),
-                                    child: Container(
-                                        decoration: BoxDecoration(color: AppThemeData.danger50, borderRadius: BorderRadius.circular(10)),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(8.0),
-                                          child: Text(
-                                            "${'You have to minimum'.tr} ${Constant.amountShow(amount: Constant.minimumDepositToRideAccept.toString())} ${'wallet amount to receiving Order'.tr}",
-                                            style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 14, fontFamily: AppThemeData.semiBold),
-                                          ),
-                                        )),
+                                    padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.sm),
+                                    child: DsInlineAlert(
+                                      tone: DsTone.warning,
+                                      icon: Icons.account_balance_wallet_outlined,
+                                      message:
+                                          "${'You have to minimum'.tr} ${Constant.amountShow(amount: Constant.minimumDepositToRideAccept.toString())} ${'wallet amount to receiving Order'.tr}",
+                                    ),
                                   )
                                 : const SizedBox();
                           }),
-                          // Constant.userModel?.vendorID?.isEmpty == true &&
-                          //         double.parse(Constant.userModel!.walletAmount == null ? "0.0" : Constant.userModel!.walletAmount.toString()) <
-                          //             double.parse(Constant.minimumDepositToRideAccept)
-                          //     ? Padding(
-                          //         padding: const EdgeInsets.all(8.0),
-                          //         child: Text(
-                          //           "${'You have to minimum'.tr} ${Constant.amountShow(amount: Constant.minimumDepositToRideAccept.toString())} ${'wallet amount to receiving Order'.tr}",
-                          //           style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 14, fontFamily: AppThemeData.semiBold),
-                          //         ),
-                          //       )
-                          //     : const SizedBox(),
                           Expanded(
                             child: Constant.mapType == "inappmap"
                                 ? Stack(
@@ -201,11 +145,12 @@ class HomeScreen extends StatelessWidget {
                                               ),
                                             ),
                                       if (Constant.mapType == "inappmap" && Constant.selectedMapType == "osm")
-                                        Positioned(
-                                          top: 20,
-                                          right: 20,
-                                          child: FloatingActionButton(
-                                            heroTag: 'center_osm',
+                                        PositionedDirectional(
+                                          top: DsSpace.xl,
+                                          end: DsSpace.xl,
+                                          child: DsMapButton(
+                                            icon: Icons.my_location_rounded,
+                                            semanticLabel: "My location".tr,
                                             onPressed: () {
                                               try {
                                                 controller.animateToSource();
@@ -213,74 +158,20 @@ class HomeScreen extends StatelessWidget {
                                                 // ignore
                                               }
                                             },
-                                            child: const Icon(Icons.my_location),
                                           ),
                                         ),
                                     ],
                                   )
-                                : Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                      children: [
-                                        SvgPicture.asset("assets/images/ic_location_map.svg"),
-                                        const SizedBox(
-                                          height: 10,
-                                        ),
-                                        Text(
-                                          "${'Navigate with'.tr} ${Constant.mapType == "google" ? "Google Map" : Constant.mapType == "googleGo" ? "Google Go" : Constant.mapType == "waze" ? "Waze Map" : Constant.mapType == "mapswithme" ? "MapsWithMe Map" : Constant.mapType == "yandexNavi" ? "VandexNavi Map" : Constant.mapType == "yandexMaps" ? "Vandex Map" : ""}",
-                                          style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                                        ),
-                                        Text(
-                                          "${'Easily find your destination with a single tap redirect to'.tr}  ${Constant.mapType == "google" ? "Google Map" : Constant.mapType == "googleGo" ? "Google Go" : Constant.mapType == "waze" ? "Waze Map" : Constant.mapType == "mapswithme" ? "MapsWithMe Map" : Constant.mapType == "yandexNavi" ? "VandexNavi Map" : Constant.mapType == "yandexMaps" ? "Vandex Map" : ""} ${'for seamless navigation.'.tr}",
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontSize: 16, fontFamily: AppThemeData.regular),
-                                        ),
-                                        const SizedBox(
-                                          height: 30,
-                                        ),
-                                        RoundedButtonFill(
-                                          title:
-                                              "${'Redirect'.tr} ${Constant.mapType == "google" ? "Google Map" : Constant.mapType == "googleGo" ? "Google Go" : Constant.mapType == "waze" ? "Waze Map" : Constant.mapType == "mapswithme" ? "MapsWithMe Map" : Constant.mapType == "yandexNavi" ? "VandexNavi Map" : Constant.mapType == "yandexMaps" ? "Vandex Map" : ""}"
-                                                  .tr,
-                                          width: 55,
-                                          height: 5.5,
-                                          color: AppThemeData.primary300,
-                                          textColor: AppThemeData.grey50,
-                                          onPress: () async {
-                                            if (controller.currentOrder.value.id != null) {
-                                              if (controller.currentOrder.value.status != Constant.driverPending) {
-                                                if (controller.currentOrder.value.status == Constant.orderShipped) {
-                                                  Utils.redirectMap(
-                                                      name: controller.currentOrder.value.vendor!.title.toString(),
-                                                      latitude: controller.currentOrder.value.vendor!.latitude ?? 0.0,
-                                                      longLatitude: controller.currentOrder.value.vendor!.longitude ?? 0.0);
-                                                } else if (controller.currentOrder.value.status == Constant.orderInTransit) {
-                                                  Utils.redirectMap(
-                                                      name: controller.currentOrder.value.author!.firstName.toString(),
-                                                      latitude: controller.currentOrder.value.address!.location!.latitude ?? 0.0,
-                                                      longLatitude: controller.currentOrder.value.address!.location!.longitude ?? 0.0);
-                                                }
-                                              } else {
-                                                Utils.redirectMap(
-                                                    name: controller.currentOrder.value.author!.firstName.toString(),
-                                                    latitude: controller.currentOrder.value.vendor!.latitude ?? 0.0,
-                                                    longLatitude: controller.currentOrder.value.vendor!.longitude ?? 0.0);
-                                              }
-                                            }
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                                : _externalMapPanel(context, controller),
                           ),
-                          controller.currentOrder.value.id != null && controller.currentOrder.value.status == Constant.driverPending ? showDriverBottomSheet(isDark, controller) : Container(),
+                          controller.currentOrder.value.id != null && controller.currentOrder.value.status == Constant.driverPending
+                              ? showDriverBottomSheet(context, controller)
+                              : Container(),
                           controller.currentOrder.value.id != null &&
                                   (controller.currentOrder.value.status == Constant.driverAccepted ||
                                       controller.currentOrder.value.status == Constant.orderShipped ||
                                       controller.currentOrder.value.status == Constant.orderInTransit)
-                              ? buildOrderActionsCard(isDark, controller)
+                              ? buildOrderActionsCard(context, controller)
                               : Container(),
                         ],
                       ),
@@ -290,267 +181,73 @@ class HomeScreen extends StatelessWidget {
     });
   }
 
-  Padding showDriverBottomSheet(bool isDark, HomeController controller) {
-    double distanceInMeters = Geolocator.distanceBetween(controller.currentOrder.value.vendor!.latitude ?? 0.0, controller.currentOrder.value.vendor!.longitude ?? 0.0,
-        controller.currentOrder.value.address!.location!.latitude ?? 0.0, controller.currentOrder.value.address!.location!.longitude ?? 0.0);
-    double kilometer = distanceInMeters / 1000;
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Container(
-        decoration: ShapeDecoration(
-          color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(8.0),
+  /// Name of the external navigation app the driver chose in settings.
+  String _mapName() {
+    return Constant.mapType == "google"
+        ? "Google Map"
+        : Constant.mapType == "googleGo"
+            ? "Google Go"
+            : Constant.mapType == "waze"
+                ? "Waze Map"
+                : Constant.mapType == "mapswithme"
+                    ? "MapsWithMe Map"
+                    : Constant.mapType == "yandexNavi"
+                        ? "VandexNavi Map"
+                        : Constant.mapType == "yandexMaps"
+                            ? "Vandex Map"
+                            : "";
+  }
+
+  /// Shown instead of the in-app map when the driver navigates with an
+  /// external app. Archetype L: one illustration, one clear xl action.
+  Widget _externalMapPanel(BuildContext context, HomeController controller) {
+    final t = context.dsText;
+    final mapName = _mapName();
+    return Center(
+      child: DsResponsive(
+        maxWidth: DsLayout.contentMax,
+        child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Timeline.tileBuilder(
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                physics: const NeverScrollableScrollPhysics(),
-                theme: TimelineThemeData(
-                  nodePosition: 0,
-                  // indicatorPosition: 0,
-                ),
-                builder: TimelineTileBuilder.connected(
-                  contentsAlign: ContentsAlign.basic,
-                  indicatorBuilder: (context, index) {
-                    return index == 0
-                        ? Container(
-                            decoration: ShapeDecoration(
-                              color: AppThemeData.primary50,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(120),
-                              ),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(10),
-                              child: SvgPicture.asset(
-                                "assets/icons/ic_building.svg",
-                                colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn),
-                              ),
-                            ),
-                          )
-                        : Container(
-                            decoration: ShapeDecoration(
-                              color: AppThemeData.carRent50,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(120),
-                              ),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(10),
-                              child: SvgPicture.asset(
-                                "assets/icons/ic_location.svg",
-                                colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn),
-                              ),
-                            ),
-                          );
-                  },
-                  connectorBuilder: (context, index, connectorType) {
-                    return const DashedLineConnector(
-                      color: AppThemeData.grey300,
-                      gap: 3,
-                    );
-                  },
-                  contentsBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                      child: index == 0
-                          ? Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  "${controller.currentOrder.value.vendor!.title}",
-                                  textAlign: TextAlign.start,
-                                  style: TextStyle(
-                                    fontFamily: AppThemeData.semiBold,
-                                    fontSize: 16,
-                                    color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                  ),
-                                ),
-                                Text(
-                                  "${controller.currentOrder.value.vendor!.location}",
-                                  textAlign: TextAlign.start,
-                                  style: TextStyle(
-                                    fontFamily: AppThemeData.medium,
-                                    fontSize: 14,
-                                    color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                  ),
-                                ),
-                              ],
-                            )
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  "Deliver to the".tr,
-                                  textAlign: TextAlign.start,
-                                  style: TextStyle(
-                                    fontFamily: AppThemeData.semiBold,
-                                    fontSize: 16,
-                                    color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                  ),
-                                ),
-                                Text(
-                                  controller.currentOrder.value.author!.fullName(),
-                                  textAlign: TextAlign.start,
-                                  style: TextStyle(
-                                    fontFamily: AppThemeData.semiBold,
-                                    fontSize: 14,
-                                    color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                  ),
-                                ),
-                                Text(
-                                  controller.currentOrder.value.address!.getFullAddress(),
-                                  textAlign: TextAlign.start,
-                                  style: TextStyle(
-                                    fontFamily: AppThemeData.medium,
-                                    fontSize: 14,
-                                    color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                    );
-                  },
-                  itemCount: 2,
-                ),
+              const Center(child: DsIconWell(icon: Icons.near_me_rounded, size: 88, circle: true)),
+              const DsGap(DsSpace.xl),
+              Text("${'Navigate with'.tr} $mapName", textAlign: TextAlign.center, style: t.headline),
+              const DsGap(DsSpace.sm),
+              Text(
+                "${'Easily find your destination with a single tap redirect to'.tr}  $mapName ${'for seamless navigation.'.tr}",
+                textAlign: TextAlign.center,
+                style: t.bodySecondary,
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-              ),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Text(
-                      "Trip Distance".tr,
-                      textAlign: TextAlign.start,
-                      style: TextStyle(
-                        fontFamily: AppThemeData.regular,
-                        color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    "${double.parse(kilometer.toString()).toStringAsFixed(2)} ${Constant.distanceType}",
-                    textAlign: TextAlign.start,
-                    style: TextStyle(
-                      fontFamily: AppThemeData.semiBold,
-                      color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
-              Visibility(
-                visible: (controller.driverModel.value.vendorID?.isEmpty == true),
-                child: Column(children: [
-                  const SizedBox(
-                    height: 5,
-                  ),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          "Delivery Charge".tr,
-                          textAlign: TextAlign.start,
-                          style: TextStyle(
-                            fontFamily: AppThemeData.regular,
-                            color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        Constant.amountShow(currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.deliveryCharge),
-                        textAlign: TextAlign.start,
-                        style: TextStyle(
-                          fontFamily: AppThemeData.semiBold,
-                          color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                ]),
-              ),
-              const SizedBox(
-                height: 5,
-              ),
-              controller.currentOrder.value.tipAmount == null || controller.currentOrder.value.tipAmount!.isEmpty || double.parse(controller.currentOrder.value.tipAmount.toString()) <= 0
-                  ? const SizedBox()
-                  : Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            "Tips".tr,
-                            textAlign: TextAlign.start,
-                            style: TextStyle(
-                              fontFamily: AppThemeData.regular,
-                              color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          Constant.amountShow(currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.tipAmount),
-                          textAlign: TextAlign.start,
-                          style: TextStyle(
-                            fontFamily: AppThemeData.semiBold,
-                            color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-              const SizedBox(
-                height: 10,
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: RoundedButtonFill(
-                      title: "Reject".tr,
-                      width: 24,
-                      height: 5.5,
-                      borderRadius: 10,
-                      color: AppThemeData.danger300,
-                      textColor: AppThemeData.grey50,
-                      onPress: () {
-                        controller.rejectOrder();
-                      },
-                    ),
-                  ),
-                  const SizedBox(
-                    width: 10,
-                  ),
-                  Expanded(
-                    child: RoundedButtonFill(
-                      title: "Accept".tr,
-                      width: 24,
-                      height: 5.5,
-                      borderRadius: 10,
-                      color: AppThemeData.success400,
-                      textColor: AppThemeData.grey50,
-                      onPress: () {
-                        controller.acceptOrder();
-                      },
-                    ),
-                  )
-                ],
-              ),
-              const SizedBox(
-                height: 10,
+              const DsGap(DsSpace.xxl),
+              DsButton.primary(
+                label: "${'Redirect'.tr} $mapName".tr,
+                icon: Icons.navigation_rounded,
+                size: DsButtonSize.xl,
+                expand: true,
+                onPressed: () async {
+                  if (controller.currentOrder.value.id != null) {
+                    if (controller.currentOrder.value.status != Constant.driverPending) {
+                      if (controller.currentOrder.value.status == Constant.orderShipped) {
+                        Utils.redirectMap(
+                            name: controller.currentOrder.value.vendor!.title.toString(),
+                            latitude: controller.currentOrder.value.vendor!.latitude ?? 0.0,
+                            longLatitude: controller.currentOrder.value.vendor!.longitude ?? 0.0);
+                      } else if (controller.currentOrder.value.status == Constant.orderInTransit) {
+                        Utils.redirectMap(
+                            name: controller.currentOrder.value.author!.firstName.toString(),
+                            latitude: controller.currentOrder.value.address!.location!.latitude ?? 0.0,
+                            longLatitude: controller.currentOrder.value.address!.location!.longitude ?? 0.0);
+                      }
+                    } else {
+                      Utils.redirectMap(
+                          name: controller.currentOrder.value.author!.firstName.toString(),
+                          latitude: controller.currentOrder.value.vendor!.latitude ?? 0.0,
+                          longLatitude: controller.currentOrder.value.vendor!.longitude ?? 0.0);
+                    }
+                  }
+                },
               ),
             ],
           ),
@@ -559,7 +256,74 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Container buildOrderActionsCard(isDark, HomeController controller) {
+  /// Archetype B — the incoming request, docked under the map.
+  Widget showDriverBottomSheet(BuildContext context, HomeController controller) {
+    double distanceInMeters = Geolocator.distanceBetween(controller.currentOrder.value.vendor!.latitude ?? 0.0, controller.currentOrder.value.vendor!.longitude ?? 0.0,
+        controller.currentOrder.value.address!.location!.latitude ?? 0.0, controller.currentOrder.value.address!.location!.longitude ?? 0.0);
+    double kilometer = distanceInMeters / 1000;
+
+    final bool isFreelanceDriver = controller.driverModel.value.vendorID?.isEmpty == true;
+    final String tip = controller.currentOrder.value.tipAmount ?? '';
+    final bool hasTip = tip.isNotEmpty && double.parse(tip.toString()) > 0;
+
+    return SafeArea(
+      top: false,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: DsLayout.contentMax),
+        child: Padding(
+          padding: const EdgeInsets.all(DsSpace.md),
+          child: DsRequestCard(
+            title: "New Order".tr,
+            section: DsSection.delivery,
+            sectionLabel: Constant.sectionNameFromId(controller.currentOrder.value.sectionId),
+            fare: isFreelanceDriver
+                ? Constant.amountShow(
+                    currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.deliveryCharge)
+                : null,
+            fareCaption: isFreelanceDriver ? "Delivery Charge".tr : null,
+            stops: [
+              DsRouteStop(
+                kind: DsStopKind.pickup,
+                label: "${controller.currentOrder.value.vendor!.title}",
+                address: "${controller.currentOrder.value.vendor!.location}",
+              ),
+              DsRouteStop(
+                kind: DsStopKind.drop,
+                label: "${'Deliver to the'.tr} · ${controller.currentOrder.value.author!.fullName()}",
+                address: controller.currentOrder.value.address!.getFullAddress(),
+              ),
+            ],
+            metrics: [
+              DsTripMetric(
+                icon: Icons.route_rounded,
+                value: "${double.parse(kilometer.toString()).toStringAsFixed(2)} ${Constant.distanceType}",
+                label: "Trip Distance".tr,
+              ),
+              if (hasTip)
+                DsTripMetric(
+                  icon: Icons.volunteer_activism_outlined,
+                  value: Constant.amountShow(
+                      currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.tipAmount),
+                  label: "Tips".tr,
+                ),
+            ],
+            onReject: () {
+              controller.rejectOrder();
+            },
+            onAccept: () {
+              controller.acceptOrder();
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Archetype C — the live job panel: who to reach, what to collect and the
+  /// single xl action for the current step.
+  Widget buildOrderActionsCard(BuildContext context, HomeController controller) {
+    final t = context.dsText;
+
     double subTotal = 0.0;
     double couponAmount = 0.0;
     double specialDiscountAmount = 0.0;
@@ -696,441 +460,188 @@ class HomeScreen extends StatelessWidget {
       totalAmount = (subTotal - totalDiscount) + totalTaxAmount + deliveryCharge + packagingCharge + platformFee;
     }
 
-    return Container(
-      color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-      child: Column(
+    final String status = controller.currentOrder.value.status.toString();
+    final bool atStore = controller.currentOrder.value.status == Constant.orderShipped || controller.currentOrder.value.status == Constant.driverAccepted;
+    final bool isCod = controller.currentOrder.value.paymentMethod!.toLowerCase() == "cod";
+    final String tip = controller.currentOrder.value.tipAmount ?? '';
+    final bool hasTip = tip.isNotEmpty && double.parse(tip.toString()) > 0;
+
+    return DsMapPanel(
+      header: Row(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                controller.currentOrder.value.status == Constant.orderShipped || controller.currentOrder.value.status == Constant.driverAccepted
-                    ? Row(
-                        children: [
-                          Container(
-                            decoration: ShapeDecoration(
-                              color: AppThemeData.primary50,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(120),
-                              ),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(10),
-                              child: SvgPicture.asset(
-                                "assets/icons/ic_building.svg",
-                                colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(
-                            width: 10,
-                          ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  "${controller.currentOrder.value.vendor!.title}",
-                                  textAlign: TextAlign.start,
-                                  style: TextStyle(
-                                    fontFamily: AppThemeData.semiBold,
-                                    fontSize: 16,
-                                    color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                  ),
-                                ),
-                                Text(
-                                  "${controller.currentOrder.value.vendor!.location}",
-                                  textAlign: TextAlign.start,
-                                  style: TextStyle(
-                                    fontFamily: AppThemeData.medium,
-                                    fontSize: 14,
-                                    color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(
-                            width: 10,
-                          ),
-                          InkWell(
-                            onTap: () {
-                              Constant.makePhoneCall(controller.currentOrder.value.vendor!.phonenumber.toString());
-                            },
-                            child: Container(
-                              width: 38,
-                              height: 38,
-                              decoration: ShapeDecoration(
-                                shape: RoundedRectangleBorder(
-                                  side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                  borderRadius: BorderRadius.circular(120),
-                                ),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(8.0),
-                                child: SvgPicture.asset("assets/icons/ic_phone_call.svg"),
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    : Timeline.tileBuilder(
-                        shrinkWrap: true,
-                        padding: EdgeInsets.zero,
-                        physics: const NeverScrollableScrollPhysics(),
-                        theme: TimelineThemeData(
-                          nodePosition: 0,
-                          // indicatorPosition: 0,
-                        ),
-                        builder: TimelineTileBuilder.connected(
-                          contentsAlign: ContentsAlign.basic,
-                          indicatorBuilder: (context, index) {
-                            return index == 0
-                                ? Container(
-                                    decoration: ShapeDecoration(
-                                      color: AppThemeData.primary50,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(120),
-                                      ),
-                                    ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(10),
-                                      child: SvgPicture.asset(
-                                        "assets/icons/ic_building.svg",
-                                        colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn),
-                                      ),
-                                    ),
-                                  )
-                                : Container(
-                                    decoration: ShapeDecoration(
-                                      color: AppThemeData.carRent50,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(120),
-                                      ),
-                                    ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(10),
-                                      child: SvgPicture.asset(
-                                        "assets/icons/ic_location.svg",
-                                        colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn),
-                                      ),
-                                    ),
-                                  );
-                          },
-                          connectorBuilder: (context, index, connectorType) {
-                            return const DashedLineConnector(
-                              color: AppThemeData.grey300,
-                              gap: 3,
-                            );
-                          },
-                          contentsBuilder: (context, index) {
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                              child: index == 0
-                                  ? Row(
-                                      children: [
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                "${controller.currentOrder.value.vendor!.title}",
-                                                textAlign: TextAlign.start,
-                                                style: TextStyle(
-                                                  fontFamily: AppThemeData.semiBold,
-                                                  fontSize: 16,
-                                                  color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                ),
-                                              ),
-                                              Text(
-                                                "${controller.currentOrder.value.vendor!.location}",
-                                                textAlign: TextAlign.start,
-                                                style: TextStyle(
-                                                  fontFamily: AppThemeData.medium,
-                                                  fontSize: 14,
-                                                  color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(
-                                          width: 5,
-                                        ),
-                                        InkWell(
-                                          onTap: () {
-                                            Constant.makePhoneCall(controller.currentOrder.value.vendor!.phonenumber.toString());
-                                          },
-                                          child: Container(
-                                            width: 42,
-                                            height: 42,
-                                            decoration: ShapeDecoration(
-                                              shape: RoundedRectangleBorder(
-                                                side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                borderRadius: BorderRadius.circular(120),
-                                              ),
-                                            ),
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(8.0),
-                                              child: SvgPicture.asset("assets/icons/ic_phone_call.svg"),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  : Row(
-                                      children: [
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                "Deliver to the".tr,
-                                                textAlign: TextAlign.start,
-                                                style: TextStyle(
-                                                  fontFamily: AppThemeData.semiBold,
-                                                  fontSize: 16,
-                                                  color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                ),
-                                              ),
-                                              Text(
-                                                controller.currentOrder.value.author?.fullName() ?? '',
-                                                textAlign: TextAlign.start,
-                                                style: TextStyle(
-                                                  fontFamily: AppThemeData.semiBold,
-                                                  fontSize: 14,
-                                                  color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                ),
-                                              ),
-                                              Text(
-                                                controller.currentOrder.value.address!.getFullAddress(),
-                                                textAlign: TextAlign.start,
-                                                style: TextStyle(
-                                                  fontFamily: AppThemeData.medium,
-                                                  fontSize: 14,
-                                                  color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(
-                                          width: 5,
-                                        ),
-                                        InkWell(
-                                          onTap: () {
-                                            Constant.makePhoneCall(controller.currentOrder.value.author!.phoneNumber.toString());
-                                          },
-                                          child: Container(
-                                            width: 42,
-                                            height: 42,
-                                            decoration: ShapeDecoration(
-                                              shape: RoundedRectangleBorder(
-                                                side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                borderRadius: BorderRadius.circular(120),
-                                              ),
-                                            ),
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(8.0),
-                                              child: SvgPicture.asset("assets/icons/ic_phone_call.svg"),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(
-                                          width: 5,
-                                        ),
-                                        InkWell(
-                                          onTap: () async {
-                                            ShowToastDialog.showLoader("Please wait".tr);
-
-                                            UserModel? customer = await FireStoreUtils.getUserProfile(controller.currentOrder.value.authorID.toString());
-                                            UserModel? driver = await FireStoreUtils.getUserProfile(controller.currentOrder.value.driverID.toString());
-
-                                            ShowToastDialog.closeLoader();
-
-                                            Get.to(const ChatScreen(), arguments: {
-                                              "senderName": driver!.fullName(),
-                                              "receivedName": customer!.fullName(),
-                                              "orderId": controller.orderModel.value.id,
-                                              "senderId": driver.id,
-                                              "receivedId": customer.id,
-                                              "receivedProfileUrl": customer.profilePictureURL ?? "",
-                                              "senderProfileUrl": driver.profilePictureURL ?? "",
-                                              "token": customer.fcmToken,
-                                              "chatType": Constant.userRoleDriver,
-                                            });
-                                          },
-                                          child: Container(
-                                            width: 42,
-                                            height: 42,
-                                            decoration: ShapeDecoration(
-                                              shape: RoundedRectangleBorder(
-                                                side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                borderRadius: BorderRadius.circular(120),
-                                              ),
-                                            ),
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(8.0),
-                                              child: SvgPicture.asset("assets/icons/ic_wechat.svg"),
-                                            ),
-                                          ),
-                                        )
-                                      ],
-                                    ),
-                            );
-                          },
-                          itemCount: 2,
-                        ),
-                      ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 20),
-                  child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                ),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        "Payment Type".tr,
-                        textAlign: TextAlign.start,
-                        style: TextStyle(
-                          fontFamily: AppThemeData.regular,
-                          color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      controller.currentOrder.value.paymentMethod!.toLowerCase() == "cod" ? "Cash on delivery" : "Online",
-                      textAlign: TextAlign.start,
-                      style: TextStyle(
-                        fontFamily: AppThemeData.semiBold,
-                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(
-                  height: 5,
-                ),
-                controller.currentOrder.value.paymentMethod!.toLowerCase() == "cod"
-                    ? Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              "Collect Payment from customer".tr,
-                              textAlign: TextAlign.start,
-                              style: TextStyle(
-                                fontFamily: AppThemeData.regular,
-                                color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            Constant.amountShow(currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: totalAmount.toString()),
-                            textAlign: TextAlign.start,
-                            style: TextStyle(
-                              fontFamily: AppThemeData.semiBold,
-                              color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                      )
-                    : const SizedBox(),
-                const SizedBox(
-                  height: 5,
-                ),
-                controller.currentOrder.value.tipAmount == null || controller.currentOrder.value.tipAmount!.isEmpty || double.parse(controller.currentOrder.value.tipAmount.toString()) <= 0
-                    ? const SizedBox()
-                    : Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              "Tips".tr,
-                              textAlign: TextAlign.start,
-                              style: TextStyle(
-                                fontFamily: AppThemeData.regular,
-                                color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            Constant.amountShow(currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.tipAmount),
-                            textAlign: TextAlign.start,
-                            style: TextStyle(
-                              fontFamily: AppThemeData.semiBold,
-                              color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                const SizedBox(
-                  height: 10,
-                ),
-              ],
-            ),
+          Expanded(child: DsStatusChip(label: status.tr, status: status, pulse: true)),
+          const DsGap(DsSpace.sm),
+          Text(
+            Constant.orderId(orderId: controller.currentOrder.value.id.toString()),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: t.labelSm.tabular,
           ),
-          InkWell(
-            onTap: () async {
-              if (controller.currentOrder.value.status == Constant.orderShipped || controller.currentOrder.value.status == Constant.driverAccepted) {
-                Get.to(const PickupOrderScreen(), arguments: {"orderModel": controller.currentOrder.value})?.then((v) async {
-                  if (v == true) {
-                    OrderModel? ordermodel = await FireStoreUtils.getOrderById(controller.currentOrder.value.id!);
-                    if (ordermodel?.id != null) {
-                      controller.currentOrder.value = ordermodel!;
-                    }
-                    controller.update();
-                  }
-                });
-              } else {
-                Get.to(const DeliverOrderScreen(), arguments: {"orderModel": controller.currentOrder.value})!.then(
-                  (value) async {
-                    if (value == true) {
-                      await AudioPlayerService.playSound(false);
-                      controller.driverModel.value.inProgressOrderID!.remove(controller.currentOrder.value.id);
-                      await FireStoreUtils.updateUser(controller.driverModel.value);
-                      controller.currentOrder.value = OrderModel();
-                      controller.clearMap();
-                      if (Constant.singleOrderReceive == false) {
-                        Get.back();
-                      }
-                    }
-                  },
-                );
-              }
-            },
-            child: Container(
-              color: AppThemeData.primary300,
-              width: Responsive.width(100, Get.context!),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Text(
-                  controller.currentOrder.value.status == Constant.orderShipped || controller.currentOrder.value.status == Constant.driverAccepted
-                      ? "Reached store for Pickup".tr
-                      : controller.driverModel.value.vendorID?.isEmpty == true
-                          ? "Reached the Customers Door Steps".tr
-                          : "Order Delivered".tr,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: isDark ? AppThemeData.grey900 : AppThemeData.grey900,
-                    fontSize: 16,
-                    fontFamily: AppThemeData.semiBold,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ),
-            ),
-          )
         ],
       ),
+      actions: DsButton.primary(
+        label: atStore
+            ? "Reached store for Pickup".tr
+            : controller.driverModel.value.vendorID?.isEmpty == true
+                ? "Reached the Customers Door Steps".tr
+                : "Order Delivered".tr,
+        icon: atStore ? Icons.storefront_rounded : Icons.flag_rounded,
+        size: DsButtonSize.xl,
+        expand: true,
+        onPressed: () async {
+          if (controller.currentOrder.value.status == Constant.orderShipped || controller.currentOrder.value.status == Constant.driverAccepted) {
+            Get.to(const PickupOrderScreen(), arguments: {"orderModel": controller.currentOrder.value})?.then((v) async {
+              if (v == true) {
+                OrderModel? ordermodel = await FireStoreUtils.getOrderById(controller.currentOrder.value.id!);
+                if (ordermodel?.id != null) {
+                  controller.currentOrder.value = ordermodel!;
+                }
+                controller.update();
+              }
+            });
+          } else {
+            Get.to(const DeliverOrderScreen(), arguments: {"orderModel": controller.currentOrder.value})!.then(
+              (value) async {
+                if (value == true) {
+                  await AudioPlayerService.playSound(false);
+                  controller.driverModel.value.inProgressOrderID!.remove(controller.currentOrder.value.id);
+                  await FireStoreUtils.updateUser(controller.driverModel.value);
+                  controller.currentOrder.value = OrderModel();
+                  controller.clearMap();
+                  if (Constant.singleOrderReceive == false) {
+                    Get.back();
+                  }
+                }
+              },
+            );
+          }
+        },
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          atStore ? _storeRow(context, controller) : _routeWithContacts(context, controller),
+          const DsGap(DsSpace.lg),
+          DsInfoRow(
+            label: "Payment Type".tr,
+            value: isCod ? "Cash on delivery" : "Online",
+            icon: isCod ? Icons.payments_outlined : Icons.credit_card_rounded,
+            divider: hasTip,
+          ),
+          if (hasTip)
+            DsInfoRow(
+              label: "Tips".tr,
+              icon: Icons.volunteer_activism_outlined,
+              value: Constant.amountShow(
+                  currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.tipAmount),
+            ),
+          if (isCod) ...[
+            const DsGap(DsSpace.md),
+            DsInlineAlert(
+              tone: DsTone.warning,
+              icon: Icons.account_balance_wallet_outlined,
+              title: "Collect Payment from customer".tr,
+              message: Constant.amountShow(currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: totalAmount.toString()),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Heading to the store: just the store and a way to call it.
+  Widget _storeRow(BuildContext context, HomeController controller) {
+    final t = context.dsText;
+    return Row(
+      children: [
+        const DsIconWell(icon: Icons.storefront_rounded, circle: true),
+        const DsGap(DsSpace.md),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("${controller.currentOrder.value.vendor!.title}", style: t.titleSm.w700),
+              Text("${controller.currentOrder.value.vendor!.location}", style: t.bodySm),
+            ],
+          ),
+        ),
+        const DsGap(DsSpace.sm),
+        DsIconButton(
+          icon: Icons.call_rounded,
+          semanticLabel: "Call".tr,
+          variant: DsIconButtonVariant.brand,
+          onPressed: () {
+            Constant.makePhoneCall(controller.currentOrder.value.vendor!.phonenumber.toString());
+          },
+        ),
+      ],
+    );
+  }
+
+  /// On the way to the customer: both stops with their contact shortcuts.
+  Widget _routeWithContacts(BuildContext context, HomeController controller) {
+    return DsRouteStops(
+      stops: [
+        DsRouteStop(
+          kind: DsStopKind.pickup,
+          done: true,
+          label: "${controller.currentOrder.value.vendor!.title}",
+          address: "${controller.currentOrder.value.vendor!.location}",
+          trailing: DsIconButton(
+            icon: Icons.call_rounded,
+            semanticLabel: "Call".tr,
+            variant: DsIconButtonVariant.outlined,
+            onPressed: () {
+              Constant.makePhoneCall(controller.currentOrder.value.vendor!.phonenumber.toString());
+            },
+          ),
+        ),
+        DsRouteStop(
+          kind: DsStopKind.drop,
+          label: "${'Deliver to the'.tr} · ${controller.currentOrder.value.author?.fullName() ?? ''}",
+          address: controller.currentOrder.value.address!.getFullAddress(),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DsIconButton(
+                icon: Icons.call_rounded,
+                semanticLabel: "Call".tr,
+                variant: DsIconButtonVariant.outlined,
+                onPressed: () {
+                  Constant.makePhoneCall(controller.currentOrder.value.author!.phoneNumber.toString());
+                },
+              ),
+              const DsGap(DsSpace.xs),
+              DsIconButton(
+                icon: Icons.chat_bubble_outline_rounded,
+                semanticLabel: "Chat".tr,
+                variant: DsIconButtonVariant.brand,
+                onPressed: () async {
+                  ShowToastDialog.showLoader("Please wait".tr);
+
+                  UserModel? customer = await FireStoreUtils.getUserProfile(controller.currentOrder.value.authorID.toString());
+                  UserModel? driver = await FireStoreUtils.getUserProfile(controller.currentOrder.value.driverID.toString());
+
+                  ShowToastDialog.closeLoader();
+
+                  Get.to(const ChatScreen(), arguments: {
+                    "senderName": driver!.fullName(),
+                    "receivedName": customer!.fullName(),
+                    "orderId": controller.orderModel.value.id,
+                    "senderId": driver.id,
+                    "receivedId": customer.id,
+                    "receivedProfileUrl": customer.profilePictureURL ?? "",
+                    "senderProfileUrl": driver.profilePictureURL ?? "",
+                    "token": customer.fcmToken,
+                    "chatType": Constant.userRoleDriver,
+                  });
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

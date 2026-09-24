@@ -1,127 +1,164 @@
 import 'package:driver/app/owner_screen/driver_create_screen.dart';
 import 'package:driver/app/owner_screen/driver_order_list.dart';
 import 'package:driver/controllers/owner_home_controller.dart';
-import 'package:driver/themes/app_them_data.dart';
-import 'package:driver/themes/round_button_fill.dart';
-import 'package:driver/themes/theme_controller.dart';
-import 'package:driver/utils/network_image_widget.dart';
+import 'package:driver/models/user_model.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
+/// Archetype G – fleet roster: outlined driver cards with avatar, contact and
+/// an availability status chip.
 class ViewAllDriverScreen extends StatelessWidget {
   const ViewAllDriverScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
-
     return GetX<OwnerHomeController>(
       init: Get.find<OwnerHomeController>(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            title: Text("All Drivers".tr),
-          ),
-          body: controller.driverList.isEmpty
-              ? Center(child: Text("No drivers found".tr))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(10),
-                  itemCount: controller.driverList.length,
+        final drivers = controller.driverList.toList();
+        final online = drivers.where((d) => d.isActive != false).length;
+        return DsScaffold.collapsing(
+          title: "All Drivers".tr,
+          subtitle: drivers.isEmpty ? null : '${'Online'.tr}: $online / ${drivers.length}',
+          slivers: [
+            if (drivers.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: DsEmptyState(
+                  icon: Icons.groups_outlined,
+                  title: "No drivers found".tr,
+                ),
+              )
+            else
+              DsSliverResponsive(
+                top: DsSpace.md,
+                bottom: DsSpace.xxxl,
+                sliver: SliverList.builder(
+                  itemCount: drivers.length,
                   itemBuilder: (context, index) {
-                    final driver = controller.driverList[index];
-                    return Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: isDark ? AppThemeData.greyDark300 : AppThemeData.grey300,
-                          ),
-                        ),
-                        padding: EdgeInsets.all(10),
-                        child: Row(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: NetworkImageWidget(
-                                imageUrl: driver.profilePictureURL ?? '',
-                                height: 42,
-                                width: 42,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    driver.fullName(),
-                                    style: AppThemeData.semiBoldTextStyle(
-                                      fontSize: 16,
-                                      color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${driver.countryCode ?? ''} ${driver.phoneNumber ?? ''}',
-                                    style: AppThemeData.mediumTextStyle(
-                                      fontSize: 12,
-                                      color: isDark ? AppThemeData.greyDark700 : AppThemeData.grey700,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            RoundedButtonFill(
-                              title: driver.isActive == false ? "Offline" : "Online".tr,
-                              height: 3.5,
-                              width: 18,
-                              borderRadius: 10,
-                              color: driver.isActive == false ? AppThemeData.danger300 : AppThemeData.success300,
-                              textColor: AppThemeData.grey50,
-                              onPress: () {},
-                            ),
-                            PopupMenuButton<String>(
-                              onSelected: (value) {
-                                if (value == 'Edit Driver') {
-                                  Get.to(() => const DriverCreateScreen(), arguments: {"driverModel": driver})?.then((value0) {
-                                    if (value0 == true) controller.getDriverList();
-                                  });
-                                } else if (value == 'Delete Driver') {
-                                  controller.deleteDriver(driver.id.toString());
-                                } else if (value == 'View All Order') {
-                                  Get.to(() => const DriverOrderList(), arguments: {
-                                    "driverId": driver.id,
-                                    "serviceType": driver.serviceTypes?.first,
-                                  });
-                                }
-                              },
-                              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                                PopupMenuItem<String>(
-                                  value: 'Edit Driver',
-                                  child: Text('Edit Driver'.tr, style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.greyDark50)),
-                                ),
-                                PopupMenuItem<String>(
-                                  value: 'Delete Driver',
-                                  child: Text('Delete Driver'.tr, style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.greyDark50)),
-                                ),
-                                PopupMenuItem<String>(
-                                  value: 'View All Order',
-                                  child: Text('View All Order'.tr, style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.greyDark50)),
-                                ),
-                              ],
-                              color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                              icon: Icon(Icons.more_vert, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                            ),
-                          ],
-                        ),
+                    final driver = drivers[index];
+                    return DsFadeSlideIn(
+                      index: index,
+                      child: _DriverCard(
+                        driver: driver,
+                        onEdit: () {
+                          Get.to(() => const DriverCreateScreen(), arguments: {"driverModel": driver})?.then((value0) {
+                            if (value0 == true) controller.getDriverList();
+                          });
+                        },
+                        onDelete: () {
+                          controller.deleteDriver(driver.id.toString());
+                        },
+                        onViewOrders: () {
+                          Get.to(() => const DriverOrderList(), arguments: {
+                            "driverId": driver.id,
+                            "serviceType": driver.serviceTypes?.first,
+                          });
+                        },
                       ),
                     );
                   },
                 ),
+              ),
+          ],
         );
       },
+    );
+  }
+}
+
+class _DriverCard extends StatelessWidget {
+  final UserModel driver;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final VoidCallback onViewOrders;
+
+  const _DriverCard({
+    required this.driver,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onViewOrders,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final isOnline = driver.isActive != false;
+    return DsCard.outlined(
+      margin: const EdgeInsets.only(bottom: DsSpace.md),
+      padding: const EdgeInsets.all(DsSpace.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              DsAvatar(
+                imageUrl: driver.profilePictureURL ?? '',
+                name: driver.fullName(),
+                size: 46,
+                statusTone: isOnline ? DsTone.success : DsTone.neutral,
+              ),
+              const DsGap(DsSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(driver.fullName(), style: t.titleSm, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    const DsGap(DsSpace.xxs),
+                    Text(
+                      '${driver.countryCode ?? ''} ${driver.phoneNumber ?? ''}',
+                      style: t.bodySm,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const DsGap(DsSpace.sm),
+              PopupMenuButton<String>(
+                tooltip: 'More'.tr,
+                onSelected: (value) {
+                  if (value == 'Edit Driver') {
+                    onEdit();
+                  } else if (value == 'Delete Driver') {
+                    onDelete();
+                  } else if (value == 'View All Order') {
+                    onViewOrders();
+                  }
+                },
+                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                  PopupMenuItem<String>(value: 'Edit Driver', child: Text('Edit Driver'.tr, style: t.body)),
+                  PopupMenuItem<String>(value: 'Delete Driver', child: Text('Delete Driver'.tr, style: t.body)),
+                  PopupMenuItem<String>(value: 'View All Order', child: Text('View All Order'.tr, style: t.body)),
+                ],
+                color: c.surfaceRaised,
+                icon: Icon(Icons.more_vert, color: c.iconDefault),
+              ),
+            ],
+          ),
+          const DsGap(DsSpace.md),
+          Row(
+            children: [
+              DsBadge(
+                label: isOnline ? "Online".tr : "Offline".tr,
+                tone: isOnline ? DsTone.success : DsTone.neutral,
+                icon: isOnline ? Icons.wifi_tethering_rounded : Icons.wifi_tethering_off_rounded,
+                small: true,
+              ),
+              const Spacer(),
+              DsButton.ghost(
+                label: 'View All Order'.tr,
+                size: DsButtonSize.sm,
+                trailingIcon: Icons.chevron_right_rounded,
+                onPressed: onViewOrders,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

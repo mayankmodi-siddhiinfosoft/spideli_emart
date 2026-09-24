@@ -7,21 +7,19 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/parcel_dashboard_controller.dart';
 import 'package:driver/controllers/parcel_home_controller.dart';
 import 'package:driver/models/parcel_order_model.dart';
-import 'package:driver/themes/app_them_data.dart';
-import 'package:driver/themes/round_button_fill.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
-import 'package:driver/utils/network_image_widget.dart';
-import 'package:driver/widget/dotted_line.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
-import 'package:timelines_plus/timelines_plus.dart';
 
 import '../../constant/show_toast_dialog.dart';
 import '../../models/user_model.dart';
 import '../../utils/fire_store_utils.dart';
 import '../chat_screens/chat_screen.dart';
 
+/// Parcel home (archetype A/J hybrid): a scan-first job board. The scan FAB
+/// stays on top of a live list of assigned parcels, each one a route card with
+/// its own on-the-road action.
 class ParcelHomeScreen extends StatelessWidget {
   const ParcelHomeScreen({super.key});
 
@@ -33,494 +31,325 @@ class ParcelHomeScreen extends StatelessWidget {
       return GetX(
           init: ParcelHomeController(),
           builder: (controller) {
+            final c = context.dsColors;
+            final t = context.dsText;
             final bool isVerified = !(Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false);
-            return Scaffold(
-              backgroundColor: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-              floatingActionButton: controller.isLoading.value || !isVerified
-                  ? null
-                  : FloatingActionButton.extended(
-                      heroTag: 'parcelScan',
-                      backgroundColor: AppThemeData.primary300,
-                      onPressed: () => Get.to(() => const ParcelScanScreen())!.then((_) => controller.getParcelList()),
-                      icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
-                      label: Text("Scan parcel".tr, style: const TextStyle(color: Colors.white)),
+            final bool isLoading = controller.isLoading.value;
+            final bool docsPending = Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false;
+            final bool isOffline = controller.userModel.value.isActive == false;
+            final List<ParcelOrderModel> orders = controller.parcelOrdersList.toList();
+
+            Widget body;
+            if (isLoading) {
+              body = const DsSkeletonList(itemCount: 4);
+            } else if (docsPending) {
+              body = DsEmptyState(
+                icon: Icons.assignment_outlined,
+                tone: DsTone.warning,
+                title: "Document Verification in Pending".tr,
+                message: "Your documents are being reviewed. We will notify you once the verification is complete.".tr,
+                actionLabel: "View Status".tr,
+                actionIcon: Icons.verified_user_outlined,
+                onAction: () async {
+                  ParcelDashboardController dashBoardController = Get.put(ParcelDashboardController());
+                  dashBoardController.drawerIndex.value = 4;
+                },
+              );
+            } else if (isOffline) {
+              body = DsEmptyState(
+                icon: Icons.wifi_tethering_off_rounded,
+                tone: DsTone.neutral,
+                title: 'You’re Currently Offline'.tr,
+                message: 'Switch to online mode to accept and deliver parcel orders.'.tr,
+              );
+            } else if (orders.isEmpty) {
+              body = Column(
+                children: [
+                  Obx(() {
+                    final user = controller.userModel.value;
+                    final controllerOwner = controller.ownerModel.value;
+
+                    final num wallet = user.walletAmount ?? 0.0;
+                    final num ownerWallet = controllerOwner.walletAmount ?? 0.0;
+                    final String? ownerId = user.ownerId;
+
+                    final num minDeposit = double.parse(Constant.minimumDepositToRideAccept);
+
+                    // 🧠 Logic:
+                    // If individual driver → check driver's own wallet
+                    // If owner driver → check owner's wallet
+                    if ((ownerId == null || ownerId.isEmpty) && wallet < minDeposit) {
+                      // Individual driver case
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, 0),
+                        child: DsInlineAlert(
+                          tone: DsTone.warning,
+                          icon: Icons.account_balance_wallet_outlined,
+                          message:
+                              "${'You must have at least'.tr} ${Constant.amountShow(amount: Constant.minimumDepositToRideAccept.toString())} ${'in your wallet to receive orders'.tr}",
+                        ),
+                      );
+                    } else if (ownerId != null && ownerId.isNotEmpty && ownerWallet < minDeposit) {
+                      // Owner-driver case
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, 0),
+                        child: DsInlineAlert(
+                          tone: DsTone.warning,
+                          icon: Icons.account_balance_wallet_outlined,
+                          message: "Your owner doesn't have the minimum wallet amount to receive orders. Please contact your owner.".tr,
+                        ),
+                      );
+                    } else {
+                      return const SizedBox();
+                    }
+                  }),
+                  Expanded(
+                    child: DsEmptyState(
+                      icon: Icons.inventory_2_outlined,
+                      title: 'No parcel requests available in your selected zone.'.tr,
+                      message: 'Try changing the location or date.'.tr,
+                      actionLabel: "Search Parcel".tr,
+                      actionIcon: Icons.search_rounded,
+                      onAction: () {
+                        Get.to(ParcelSearchScreen())!.then((value) {
+                          if (value != null && value is bool && value) {
+                            controller.getParcelList();
+                          }
+                        });
+                      },
                     ),
-              body: controller.isLoading.value
-                  ? Constant.loader()
-                  : Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.center,
+                  ),
+                ],
+              );
+            } else {
+              body = RefreshIndicator(
+                color: c.brand,
+                onRefresh: () async {
+                  await controller.getParcelList();
+                },
+                child: CustomScrollView(
+                  slivers: [
+                    DsSliverResponsive(
+                      top: DsSpace.lg,
+                      sliver: SliverToBoxAdapter(
+                        child: DsFadeSlideIn(
+                          child: Row(
                             children: [
-                              Container(
-                                decoration: ShapeDecoration(
-                                  color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(120),
-                                  ),
+                              DsSectionBadge(section: DsSection.parcel, label: "Parcel".tr),
+                              const DsGap(DsSpace.sm),
+                              Expanded(
+                                child: Text(
+                                  "${'Active parcels'.tr} · ${orders.length}",
+                                  style: t.labelSm,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(20),
-                                  child: SvgPicture.asset("assets/icons/ic_document.svg"),
-                                ),
-                              ),
-                              const SizedBox(
-                                height: 12,
-                              ),
-                              Text(
-                                "Document Verification in Pending".tr,
-                                style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                              ),
-                              const SizedBox(
-                                height: 5,
-                              ),
-                              Text(
-                                "Your documents are being reviewed. We will notify you once the verification is complete.".tr,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                              ),
-                              const SizedBox(
-                                height: 20,
-                              ),
-                              RoundedButtonFill(
-                                title: "View Status".tr,
-                                width: 55,
-                                height: 5.5,
-                                color: AppThemeData.primary300,
-                                textColor: AppThemeData.grey50,
-                                onPress: () async {
-                                  ParcelDashboardController dashBoardController = Get.put(ParcelDashboardController());
-                                  dashBoardController.drawerIndex.value = 4;
-                                },
                               ),
                             ],
                           ),
-                        )
-                      : controller.userModel.value.isActive == false
-                          ? Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  SvgPicture.asset("assets/images/empty_parcel.svg"),
-                                  SizedBox(
-                                    height: 20,
-                                  ),
-                                  Text(
-                                    'You’re Currently Offline'.tr,
-                                    textAlign: TextAlign.center,
-                                    style: AppThemeData.mediumTextStyle(
-                                      fontSize: 18,
-                                      color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    height: 10,
-                                  ),
-                                  Text(
-                                    'Switch to online mode to accept and deliver parcel orders.'.tr,
-                                    textAlign: TextAlign.center,
-                                    style: AppThemeData.mediumTextStyle(
-                                      fontSize: 14,
-                                      color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : controller.parcelOrdersList.isEmpty
-                              ? Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                                  child: Column(
-                                    children: [
-                                      Obx(() {
-                                        final user = controller.userModel.value;
-                                        final controllerOwner = controller.ownerModel.value;
+                        ),
+                      ),
+                    ),
+                    DsSliverResponsive(
+                      top: DsSpace.md,
+                      bottom: 96,
+                      sliver: SliverList.separated(
+                        itemCount: orders.length,
+                        separatorBuilder: (_, _) => const DsGap(DsSpace.lg),
+                        itemBuilder: (context, index) {
+                          ParcelOrderModel parcelBookingData = orders[index];
+                          return DsFadeSlideIn(
+                            index: index,
+                            child: _ParcelJobCard(
+                              order: parcelBookingData,
+                              amount: Constant.amountShow(
+                                      currency: RegionService.currencyForRecord(parcelBookingData.regionId),
+                                      amount: controller.calculateParcelTotalAmountBooking(parcelBookingData))
+                                  .tr,
+                              onOpen: () {
+                                Get.to(() => const ParcelOrderDetails(), arguments: parcelBookingData);
+                              },
+                              onChat: () async {
+                                ShowToastDialog.showLoader("Please wait".tr);
 
-                                        final num wallet = user.walletAmount ?? 0.0;
-                                        final num ownerWallet = controllerOwner.walletAmount ?? 0.0;
-                                        final String? ownerId = user.ownerId;
+                                UserModel? customer = await FireStoreUtils.getUserProfile(parcelBookingData.authorID.toString());
+                                UserModel? driver = await FireStoreUtils.getUserProfile(parcelBookingData.driverId.toString());
 
-                                        final num minDeposit = double.parse(Constant.minimumDepositToRideAccept);
+                                ShowToastDialog.closeLoader();
 
-                                        // 🧠 Logic:
-                                        // If individual driver → check driver's own wallet
-                                        // If owner driver → check owner's wallet
-                                        if ((ownerId == null || ownerId.isEmpty) && wallet < minDeposit) {
-                                          // Individual driver case
-                                          return Padding(
-                                            padding: const EdgeInsets.only(bottom: 10, left: 10, right: 10),
-                                            child: Container(
-                                              decoration: BoxDecoration(
-                                                color: AppThemeData.danger50,
-                                                borderRadius: BorderRadius.circular(10),
-                                              ),
-                                              child: Padding(
-                                                padding: const EdgeInsets.all(8.0),
-                                                child: Text(
-                                                  "${'You must have at least'.tr} ${Constant.amountShow(amount: Constant.minimumDepositToRideAccept.toString())} ${'in your wallet to receive orders'.tr}",
-                                                  style: TextStyle(
-                                                    color: AppThemeData.grey900,
-                                                    fontSize: 14,
-                                                    fontFamily: AppThemeData.semiBold,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        } else if (ownerId != null && ownerId.isNotEmpty && ownerWallet < minDeposit) {
-                                          // Owner-driver case
-                                          return Padding(
-                                            padding: const EdgeInsets.only(bottom: 10, left: 10, right: 10),
-                                            child: Container(
-                                              decoration: BoxDecoration(
-                                                color: AppThemeData.danger50,
-                                                borderRadius: BorderRadius.circular(10),
-                                              ),
-                                              child: Padding(
-                                                padding: const EdgeInsets.all(8.0),
-                                                child: Text(
-                                                  "Your owner doesn't have the minimum wallet amount to receive orders. Please contact your owner.".tr,
-                                                  style: TextStyle(
-                                                    color: AppThemeData.grey900,
-                                                    fontSize: 14,
-                                                    fontFamily: AppThemeData.semiBold,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        } else {
-                                          return const SizedBox();
-                                        }
-                                      }),
-                                      // (double.parse(Constant.userModel!.walletAmount == null ? "0.0" : Constant.userModel!.walletAmount.toString()) <
-                                      //     double.parse(Constant.minimumDepositToRideAccept) &&
-                                      //     (Constant.userModel?.ownerId == null || Constant.userModel!.ownerId!.isEmpty))
-                                      //     ? Container(
-                                      //         decoration: BoxDecoration(color: AppThemeData.danger50, borderRadius: BorderRadius.circular(10)),
-                                      //         child: Padding(
-                                      //           padding: const EdgeInsets.all(8.0),
-                                      //           child: Text(
-                                      //             "${'You have to minimum'.tr} ${Constant.amountShow(amount: Constant.minimumDepositToRideAccept.toString())} ${'wallet amount to receiving Order'.tr}",
-                                      //             style: TextStyle(color: isDark ? AppThemeData.danger300 : AppThemeData.danger300, fontSize: 14, fontFamily: AppThemeData.semiBold),
-                                      //           ),
-                                      //         ),
-                                      //       )
-                                      //     : const SizedBox(),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.center,
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            SvgPicture.asset("assets/images/empty_parcel.svg"),
-                                            SizedBox(
-                                              height: 20,
-                                            ),
-                                            Text(
-                                              'No parcel requests available in your selected zone.'.tr,
-                                              textAlign: TextAlign.center,
-                                              style: AppThemeData.mediumTextStyle(
-                                                fontSize: 18,
-                                                color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                                              ),
-                                            ),
-                                            SizedBox(
-                                              height: 10,
-                                            ),
-                                            Text(
-                                              'Try changing the location or date.'.tr,
-                                              textAlign: TextAlign.center,
-                                              style: AppThemeData.mediumTextStyle(
-                                                fontSize: 14,
-                                                color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                                              ),
-                                            ),
-                                            SizedBox(
-                                              height: 20,
-                                            ),
-                                            RoundedButtonFill(
-                                              title: "Search Parcel".tr,
-                                              height: 5.5,
-                                              color: AppThemeData.primary300,
-                                              textColor: AppThemeData.grey50,
-                                              onPress: () {
-                                                Get.to(ParcelSearchScreen())!.then((value) {
-                                                  if (value != null && value is bool && value) {
-                                                    controller.getParcelList();
-                                                  }
-                                                });
-                                              },
-                                            )
-                                          ],
-                                        ),
-                                      )
-                                    ],
-                                  ),
-                                )
-                              : Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 15),
-                                  child: RefreshIndicator(
-                                    onRefresh: () async {
-                                      await controller.getParcelList();
-                                    },
-                                    child: ListView.builder(
-                                      itemCount: controller.parcelOrdersList.length,
-                                      shrinkWrap: true,
-                                      itemBuilder: (context, index) {
-                                        ParcelOrderModel parcelBookingData = controller.parcelOrdersList[index];
-                                        return InkWell(
-                                          onTap: () {
-                                            Get.to(() => const ParcelOrderDetails(), arguments: parcelBookingData);
-                                          },
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              borderRadius: BorderRadius.circular(15),
-                                              color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                                              border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Container(
-                                                  decoration: BoxDecoration(
-                                                    color: isDark ? AppThemeData.greyDark100 : AppThemeData.grey100,
-                                                    borderRadius: BorderRadius.circular(10),
-                                                  ),
-                                                  child: Padding(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                                    child: Timeline.tileBuilder(
-                                                      shrinkWrap: true,
-                                                      padding: EdgeInsets.zero,
-                                                      physics: const NeverScrollableScrollPhysics(),
-                                                      theme: TimelineThemeData(
-                                                        nodePosition: 0,
-                                                        // indicatorPosition: 0,
-                                                      ),
-                                                      builder: TimelineTileBuilder.connected(
-                                                        contentsAlign: ContentsAlign.basic,
-                                                        indicatorBuilder: (context, index) {
-                                                          return index == 0
-                                                              ? SvgPicture.asset("assets/icons/ic_source.svg")
-                                                              : index == 1
-                                                                  ? SvgPicture.asset("assets/icons/ic_destination.svg")
-                                                                  : SizedBox();
-                                                        },
-                                                        connectorBuilder: (context, index, connectorType) {
-                                                          return DashedLineConnector(
-                                                            color: isDark ? AppThemeData.greyDark300 : AppThemeData.grey300,
-                                                            gap: 4,
-                                                          );
-                                                        },
-                                                        contentsBuilder: (context, index) {
-                                                          return Padding(
-                                                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                                            child: Text(
-                                                              index == 0 ? "${parcelBookingData.sender!.address}" : "${parcelBookingData.receiver!.address}",
-                                                              style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                                            ),
-                                                          );
-                                                        },
-                                                        itemCount: 2,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 16),
-                                                Padding(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 15),
-                                                  child: Row(
-                                                    children: [
-                                                      ClipOval(
-                                                        child: NetworkImageWidget(
-                                                          imageUrl: parcelBookingData.author!.profilePictureURL.toString(),
-                                                          width: 52,
-                                                          height: 52,
-                                                          fit: BoxFit.cover,
-                                                        ),
-                                                      ),
-                                                      SizedBox(
-                                                        width: 10,
-                                                      ),
-                                                      Expanded(
-                                                        child: Column(
-                                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                                          children: [
-                                                            Text(
-                                                              parcelBookingData.author!.fullName().tr,
-                                                              textAlign: TextAlign.start,
-                                                              style: AppThemeData.boldTextStyle(fontSize: 16, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      InkWell(
-                                                        onTap: () async {
-                                                          ShowToastDialog.showLoader("Please wait".tr);
+                                Get.to(const ChatScreen(), arguments: {
+                                  "senderName": driver!.fullName(),
+                                  "receivedName": customer!.fullName(),
+                                  "orderId": parcelBookingData.id,
+                                  "senderId": driver.id,
+                                  "receivedId": customer.id,
+                                  "receivedProfileUrl": customer.profilePictureURL ?? "",
+                                  "senderProfileUrl": driver.profilePictureURL ?? "",
+                                  "token": customer.fcmToken,
+                                  "chatType": Constant.userRoleDriver,
+                                });
+                              },
+                              onPickup: () async {
+                                controller.pickupParcel(parcelBookingData);
+                              },
+                              onDeliver: () async {
+                                controller.completeParcel(parcelBookingData, context: context, isDark: isDark);
+                              },
+                              onTrack: () async {
+                                Get.to(() => ParcelTrackingScreen(), arguments: {'parcelOrder': parcelBookingData});
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
 
-                                                          UserModel? customer = await FireStoreUtils.getUserProfile(parcelBookingData.authorID.toString());
-                                                          UserModel? driver = await FireStoreUtils.getUserProfile(parcelBookingData.driverId.toString());
-
-                                                          ShowToastDialog.closeLoader();
-
-                                                          Get.to(const ChatScreen(), arguments: {
-                                                            "senderName": driver!.fullName(),
-                                                            "receivedName": customer!.fullName(),
-                                                            "orderId": parcelBookingData.id,
-                                                            "senderId": driver.id,
-                                                            "receivedId": customer.id,
-                                                            "receivedProfileUrl": customer.profilePictureURL ?? "",
-                                                            "senderProfileUrl": driver.profilePictureURL ?? "",
-                                                            "token": customer.fcmToken,
-                                                            "chatType": Constant.userRoleDriver,
-                                                          });
-                                                        },
-                                                        child: Container(
-                                                          width: 50,
-                                                          height: 42,
-                                                          decoration: ShapeDecoration(
-                                                            shape: RoundedRectangleBorder(
-                                                              side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                              borderRadius: BorderRadius.circular(120),
-                                                            ),
-                                                          ),
-                                                          child: Padding(
-                                                            padding: const EdgeInsets.all(8.0),
-                                                            child: SvgPicture.asset("assets/icons/ic_wechat.svg"),
-                                                          ),
-                                                        ),
-                                                      )
-                                                    ],
-                                                  ),
-                                                ),
-                                                SizedBox(
-                                                  height: 12,
-                                                ),
-                                                Row(
-                                                  children: [
-                                                    Expanded(
-                                                      child: Column(
-                                                        children: [
-                                                          SvgPicture.asset(
-                                                            "assets/icons/ic_amount.svg",
-                                                            colorFilter: ColorFilter.mode(isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, BlendMode.srcIn),
-                                                          ),
-                                                          SizedBox(
-                                                            height: 5,
-                                                          ),
-                                                          Text(
-                                                            Constant.amountShow(currency: RegionService.currencyForRecord(parcelBookingData.regionId), amount: controller.calculateParcelTotalAmountBooking(parcelBookingData)).tr,
-                                                            textAlign: TextAlign.start,
-                                                            style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                                          )
-                                                        ],
-                                                      ),
-                                                    ),
-                                                    Expanded(
-                                                      child: Column(
-                                                        children: [
-                                                          SvgPicture.asset(
-                                                            "assets/icons/ic_date.svg",
-                                                            colorFilter: ColorFilter.mode(isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, BlendMode.srcIn),
-                                                          ),
-                                                          SizedBox(
-                                                            height: 5,
-                                                          ),
-                                                          Text(
-                                                            '${Constant.timestampToDate(parcelBookingData.senderPickupDateTime!)}  '.tr,
-                                                            textAlign: TextAlign.start,
-                                                            style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                                          )
-                                                        ],
-                                                      ),
-                                                    ),
-                                                    Expanded(
-                                                      child: Column(
-                                                        children: [
-                                                          SvgPicture.asset(
-                                                            "assets/icons/weight-line.svg",
-                                                            colorFilter: ColorFilter.mode(isDark ? AppThemeData.greyDark900 : AppThemeData.grey900, BlendMode.srcIn),
-                                                          ),
-                                                          SizedBox(
-                                                            height: 5,
-                                                          ),
-                                                          Text(
-                                                            '${parcelBookingData.parcelWeight}'.tr,
-                                                            textAlign: TextAlign.start,
-                                                            style: AppThemeData.semiBoldTextStyle(fontSize: 14, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900),
-                                                          )
-                                                        ],
-                                                      ),
-                                                    )
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 16),
-                                                DottedLine(
-                                                  dashColor: Colors.grey,
-                                                  lineThickness: 1.0,
-                                                  dashLength: 4.0,
-                                                  dashGapLength: 3.0,
-                                                  direction: Axis.horizontal,
-                                                ),
-                                                const SizedBox(height: 16),
-                                                parcelBookingData.status == Constant.driverAccepted
-                                                    ? Padding(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 15),
-                                                        child: RoundedButtonFill(
-                                                          title: "Pickup Parcel".tr,
-                                                          height: 5.5,
-                                                          color: AppThemeData.success400,
-                                                          textColor: AppThemeData.grey50,
-                                                          onPress: () async {
-                                                            controller.pickupParcel(parcelBookingData);
-                                                          },
-                                                        ),
-                                                      )
-                                                    : Padding(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 15),
-                                                        child: RoundedButtonFill(
-                                                          title: "Deliver Parcel".tr,
-                                                          height: 5.5,
-                                                          color: AppThemeData.success400,
-                                                          textColor: AppThemeData.grey50,
-                                                          onPress: () async {
-                                                            controller.completeParcel(parcelBookingData, context: context, isDark: isDark);
-                                                          },
-                                                        ),
-                                                      ),
-                                                parcelBookingData.status == Constant.driverAccepted || parcelBookingData.status == Constant.orderInTransit
-                                                    ? Padding(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 15),
-                                                        child: Column(
-                                                          children: [
-                                                            const SizedBox(height: 16),
-                                                            RoundedButtonFill(
-                                                              title: "Parcel Track".tr,
-                                                              height: 5.5,
-                                                              color: AppThemeData.success400,
-                                                              textColor: AppThemeData.grey50,
-                                                              onPress: () async {
-                                                                Get.to(() => ParcelTrackingScreen(), arguments: {'parcelOrder': parcelBookingData});
-                                                              },
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      )
-                                                    : SizedBox.shrink(),
-                                                const SizedBox(height: 16),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ),
+            return DsScaffold(
+              backgroundColor: c.background,
+              floatingActionButton: isLoading || !isVerified
+                  ? null
+                  : FloatingActionButton.extended(
+                      heroTag: 'parcelScan',
+                      backgroundColor: c.brand,
+                      foregroundColor: c.onBrand,
+                      onPressed: () => Get.to(() => const ParcelScanScreen())!.then((_) => controller.getParcelList()),
+                      icon: const Icon(Icons.qr_code_scanner),
+                      label: Text("Scan parcel".tr, style: t.label.withColor(c.onBrand)),
+                    ),
+              body: body,
             );
           });
     });
+  }
+}
+
+/// One assigned parcel: route, customer, numbers and the step's action.
+class _ParcelJobCard extends StatelessWidget {
+  final ParcelOrderModel order;
+  final String amount;
+  final VoidCallback onOpen;
+  final VoidCallback onChat;
+  final VoidCallback onPickup;
+  final VoidCallback onDeliver;
+  final VoidCallback onTrack;
+
+  const _ParcelJobCard({
+    required this.order,
+    required this.amount,
+    required this.onOpen,
+    required this.onChat,
+    required this.onPickup,
+    required this.onDeliver,
+    required this.onTrack,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final bool isAccepted = order.status == Constant.driverAccepted;
+    final bool showTrack = order.status == Constant.driverAccepted || order.status == Constant.orderInTransit;
+    return DsCard.outlined(
+      onTap: onOpen,
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            color: c.surfaceAlt,
+            padding: const EdgeInsets.all(DsSpace.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    DsSectionBadge(section: DsSection.parcel, label: "Parcel".tr),
+                    const DsGap(DsSpace.sm),
+                    if ((order.status ?? '').isNotEmpty) Flexible(child: DsStatusChip(label: order.status!.tr, status: order.status)),
+                  ],
+                ),
+                const DsGap(DsSpace.md),
+                DsRouteStops(
+                  stops: [
+                    DsRouteStop(kind: DsStopKind.pickup, label: 'Pickup'.tr, address: "${order.sender!.address}"),
+                    DsRouteStop(kind: DsStopKind.drop, label: 'Delivery'.tr, address: "${order.receiver!.address}"),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(DsSpace.lg),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    DsAvatar(imageUrl: order.author!.profilePictureURL.toString(), name: order.author!.fullName(), size: 48),
+                    const DsGap(DsSpace.md),
+                    Expanded(
+                      child: Text(
+                        order.author!.fullName().tr,
+                        textAlign: TextAlign.start,
+                        style: t.titleSm.w700,
+                      ),
+                    ),
+                    const DsGap(DsSpace.sm),
+                    DsIconButton(
+                      icon: Icons.chat_bubble_outline_rounded,
+                      semanticLabel: "Chat".tr,
+                      variant: DsIconButtonVariant.tonal,
+                      onPressed: onChat,
+                    ),
+                  ],
+                ),
+                const DsGap(DsSpace.lg),
+                DsTripMetrics(
+                  items: [
+                    DsTripMetric(icon: Icons.payments_outlined, value: amount, label: 'Amount'.tr),
+                    DsTripMetric(icon: Icons.event_outlined, value: '${Constant.timestampToDate(order.senderPickupDateTime!)}  '.tr, label: 'Date'.tr),
+                    DsTripMetric(icon: Icons.scale_outlined, value: '${order.parcelWeight}'.tr, label: 'Weight'.tr),
+                  ],
+                ),
+                const DsGap(DsSpace.lg),
+                isAccepted
+                    ? DsButton.success(
+                        label: "Pickup Parcel".tr,
+                        icon: Icons.inventory_2_outlined,
+                        size: DsButtonSize.xl,
+                        expand: true,
+                        onPressed: onPickup,
+                      )
+                    : DsButton.success(
+                        label: "Deliver Parcel".tr,
+                        icon: Icons.check_circle_outline_rounded,
+                        size: DsButtonSize.xl,
+                        expand: true,
+                        onPressed: onDeliver,
+                      ),
+                showTrack
+                    ? Column(
+                        children: [
+                          const DsGap(DsSpace.md),
+                          DsButton.tonal(
+                            label: "Parcel Track".tr,
+                            icon: Icons.location_on_outlined,
+                            size: DsButtonSize.lg,
+                            expand: true,
+                            onPressed: onTrack,
+                          ),
+                        ],
+                      )
+                    : const SizedBox.shrink(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

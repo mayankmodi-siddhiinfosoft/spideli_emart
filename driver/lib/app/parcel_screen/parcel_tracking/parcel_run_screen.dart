@@ -4,14 +4,16 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/parcel_home_controller.dart';
 import 'package:driver/models/parcel_order_model.dart';
 import 'package:driver/services/parcel_tracking_service.dart';
-import 'package:driver/themes/app_them_data.dart';
-import 'package:driver/themes/theme_controller.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 /// "Parcel run" manifest (spec 9: Manifest ▸ Scan each parcel at hand-over ▸ Update status).
 /// Lists the in-progress parcels of this driver and, for a company, of its fleet — sorted by next action.
+///
+/// Archetype J/D: a collapsing manifest where every row carries its tracking
+/// number, route, current status, the next step and a scan shortcut.
 class ParcelRunScreen extends StatefulWidget {
   const ParcelRunScreen({super.key});
 
@@ -57,76 +59,154 @@ class _ParcelRunScreenState extends State<ParcelRunScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Get.find<ThemeController>().isDark.value;
-    final textColor = isDark ? AppThemeData.grey50 : AppThemeData.grey900;
-    final subColor = isDark ? AppThemeData.grey300 : AppThemeData.grey600;
     final me = FireStoreUtils.getCurrentUid();
-    return Scaffold(
-      appBar: AppBar(
-        title: Text("Parcel run".tr),
-        actions: [IconButton(onPressed: () => Get.to(() => const ParcelScanScreen())!.then((_) => _load()), icon: const Icon(Icons.qr_code_scanner))],
-      ),
-      backgroundColor: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-      body: _loading
-          ? Constant.loader()
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: _parcels.isEmpty
-                  ? ListView(children: [
-                      Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Text("No parcels in progress.".tr, textAlign: TextAlign.center, style: TextStyle(color: subColor)),
-                      )
-                    ])
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _parcels.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 12),
-                      itemBuilder: (context, i) {
-                        final o = _parcels[i];
-                        final next = ParcelTrackingService.nextActions(o);
-                        final status = ParcelTrackingService.currentStatus(o) ?? o.status ?? '';
-                        final driverName = o.driverId != me ? _drivers[o.driverId] : null;
-                        return InkWell(
-                          onTap: () => Get.to(() => const ParcelOrderDetails(), arguments: o),
-                          child: Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: isDark ? AppThemeData.greyDark200 : AppThemeData.grey200),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(o.trackingNumber ?? Constant.orderId(orderId: o.id ?? ''), style: TextStyle(color: textColor, fontFamily: AppThemeData.semiBold)),
-                                      const SizedBox(height: 2),
-                                      Text(_route(o), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: textColor, fontSize: 13)),
-                                      const SizedBox(height: 4),
-                                      Text("${'Status'.tr}: ${status.tr}", style: TextStyle(color: subColor, fontSize: 12)),
-                                      Text(
-                                        next.statuses.isEmpty ? (next.reason ?? '').tr : "${'Next'.tr}: ${next.statuses.map((e) => e.tr).join(' / ')}",
-                                        style: TextStyle(color: AppThemeData.primary300, fontSize: 12),
-                                      ),
-                                      if (driverName != null && driverName.isNotEmpty) Text("${'Driver'.tr}: $driverName", style: TextStyle(color: subColor, fontSize: 12)),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                FilledButton.icon(
-                                  onPressed: () => Get.to(() => ParcelScanScreen(expectedOrderId: o.id))!.then((_) => _load()),
-                                  icon: const Icon(Icons.qr_code_scanner, size: 18),
-                                  label: Text("Scan".tr),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+    return DsScaffold.collapsing(
+      title: "Parcel run".tr,
+      subtitle: _loading ? null : "${_parcels.length} ${'Parcels'.tr}",
+      onRefresh: _load,
+      actions: [
+        DsIconButton(
+          icon: Icons.qr_code_scanner,
+          semanticLabel: "Scan parcel".tr,
+          variant: DsIconButtonVariant.tonal,
+          onPressed: () => Get.to(() => const ParcelScanScreen())!.then((_) => _load()),
+        ),
+      ],
+      slivers: [
+        if (_loading)
+          const SliverToBoxAdapter(child: DsSkeletonList(itemCount: 5))
+        else if (_parcels.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: DsEmptyState(
+              icon: Icons.inventory_2_outlined,
+              title: "No parcels in progress.".tr,
+              actionLabel: "Scan parcel".tr,
+              actionIcon: Icons.qr_code_scanner,
+              onAction: () => Get.to(() => const ParcelScanScreen())!.then((_) => _load()),
             ),
+          )
+        else
+          DsSliverResponsive(
+            top: DsSpace.sm,
+            bottom: DsSpace.xxl,
+            sliver: SliverList.separated(
+              itemCount: _parcels.length,
+              separatorBuilder: (_, _) => const DsGap(DsSpace.md),
+              itemBuilder: (context, i) {
+                final o = _parcels[i];
+                final next = ParcelTrackingService.nextActions(o);
+                final status = ParcelTrackingService.currentStatus(o) ?? o.status ?? '';
+                final driverName = o.driverId != me ? _drivers[o.driverId] : null;
+                return DsFadeSlideIn(
+                  index: i,
+                  child: _ManifestCard(
+                    title: o.trackingNumber ?? Constant.orderId(orderId: o.id ?? ''),
+                    route: _route(o),
+                    status: status,
+                    nextLabel: next.statuses.isEmpty ? (next.reason ?? '').tr : "${'Next'.tr}: ${next.statuses.map((e) => e.tr).join(' / ')}",
+                    driverName: driverName,
+                    onTap: () => Get.to(() => const ParcelOrderDetails(), arguments: o),
+                    onScan: () => Get.to(() => ParcelScanScreen(expectedOrderId: o.id))!.then((_) => _load()),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// One line of the manifest.
+class _ManifestCard extends StatelessWidget {
+  final String title;
+  final String route;
+  final String status;
+  final String nextLabel;
+  final String? driverName;
+  final VoidCallback onTap;
+  final VoidCallback onScan;
+
+  const _ManifestCard({
+    required this.title,
+    required this.route,
+    required this.status,
+    required this.nextLabel,
+    required this.driverName,
+    required this.onTap,
+    required this.onScan,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsCard.outlined(
+      onTap: onTap,
+      padding: const EdgeInsets.all(DsSpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: Text(title, style: t.titleSm.w700.tabular)),
+              const DsGap(DsSpace.sm),
+              DsIconWell(icon: Icons.local_shipping_outlined, tone: DsTone.brand, size: 32),
+            ],
+          ),
+          if (status.isNotEmpty) ...[
+            const DsGap(DsSpace.sm),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: DsStatusChip(label: "${'Status'.tr}: ${status.tr}", status: status),
+            ),
+          ],
+          const DsGap(DsSpace.sm),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.alt_route_rounded, size: 16, color: c.iconDefault),
+              const DsGap(DsSpace.sm),
+              Expanded(
+                child: Text(route, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySm.withColor(c.textPrimary)),
+              ),
+            ],
+          ),
+          if (nextLabel.isNotEmpty) ...[
+            const DsGap(DsSpace.sm),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.east_rounded, size: 16, color: c.brandStrong),
+                const DsGap(DsSpace.sm),
+                Expanded(child: Text(nextLabel, style: t.labelSm.withColor(c.brandStrong))),
+              ],
+            ),
+          ],
+          if (driverName != null && driverName!.isNotEmpty) ...[
+            const DsGap(DsSpace.sm),
+            Row(
+              children: [
+                Icon(Icons.person_outline_rounded, size: 16, color: c.iconDefault),
+                const DsGap(DsSpace.sm),
+                Expanded(child: Text("${'Driver'.tr}: $driverName", style: t.caption)),
+              ],
+            ),
+          ],
+          const DsGap(DsSpace.md),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: DsButton.tonal(
+              label: "Scan".tr,
+              icon: Icons.qr_code_scanner,
+              size: DsButtonSize.sm,
+              onPressed: onScan,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

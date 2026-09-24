@@ -8,279 +8,225 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/chat_controller.dart';
 import 'package:driver/models/conversation_model.dart';
-import 'package:driver/themes/app_them_data.dart';
-import 'package:driver/themes/theme_controller.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/utils/fire_store_utils.dart';
-import 'package:driver/utils/network_image_widget.dart';
 import 'package:driver/widget/firebase_pagination/src/firestore_pagination.dart';
 import 'package:driver/widget/firebase_pagination/src/models/view_type.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
+/// Order chat (archetype I): customer identity in the app bar, asymmetric
+/// bubbles and a sticky composer.
 class ChatScreen extends StatelessWidget {
   const ChatScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
         init: ChatController(),
         builder: (controller) {
-          return Scaffold(
-            appBar: AppBar(
-                backgroundColor: isDark ? AppThemeData.surfaceDark : AppThemeData.surface,
-                centerTitle: false,
-                titleSpacing: 0,
-                title: Text(
-                  controller.receivedName.value,
-                  textAlign: TextAlign.start,
-                  style: TextStyle(
-                    fontFamily: AppThemeData.medium,
-                    fontSize: 16,
-                    color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
+          final c = context.dsColors;
+          final t = context.dsText;
+          return DsScaffold(
+            backgroundColor: c.background,
+            appBar: DsAppBar(
+              titleWidget: Row(
+                children: [
+                  DsAvatar(
+                    imageUrl: controller.receivedProfileUrl.value,
+                    name: controller.receivedName.value,
+                    size: 40,
                   ),
-                ),
-                bottom: PreferredSize(
-                    preferredSize: Size.fromHeight(10), // height of the bottom section
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 55, bottom: 8),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          "${"Order".tr} ${Constant.orderId(orderId: controller.orderId.value.toString())}",
-                          style: TextStyle(
-                            fontFamily: AppThemeData.medium,
-                            fontSize: 14,
-                            color: isDark ? AppThemeData.grey200 : AppThemeData.grey700,
-                          ),
-                        ),
-                      ),
-                    ))),
-            body: Column(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      FocusScope.of(context).unfocus();
-                    },
-                    child: FirestorePagination(
-                      reverse: true,
-                      controller: controller.scrollController.value,
-                      physics: const BouncingScrollPhysics(),
-                      itemBuilder: (context, documentSnapshots, index) {
-                        ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
-
-                        return chatItemView(isDark, chatmodel.senderId == FireStoreUtils.getCurrentUid(), chatmodel);
-                      },
-                      onEmpty: Constant.showEmptyView(message: "No Conversion found".tr, isDark: isDark),
-                      query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
-                      isLive: true,
-                      viewType: ViewType.list,
-                    ),
-                  ),
-                ),
-                Container(
-                  color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  const DsGap(DsSpace.md),
+                  Expanded(
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            InkWell(
-                                onTap: () {
-                                  onCameraClick(context, controller);
-                                },
-                                child: SvgPicture.asset("assets/icons/ic_picture_one.svg")),
-                            Flexible(
-                                child: Padding(
-                              padding: const EdgeInsets.only(left: 10),
-                              child: TextField(
-                                textInputAction: TextInputAction.send,
-                                keyboardType: TextInputType.text,
-                                textCapitalization: TextCapitalization.sentences,
-                                controller: controller.messageController.value,
-                                decoration: InputDecoration(
-                                  contentPadding: const EdgeInsets.only(top: 3, left: 10),
-                                  focusedBorder: InputBorder.none,
-                                  enabledBorder: InputBorder.none,
-                                  hintText: 'Type message here....'.tr,
-                                ),
-                                onSubmitted: (value) async {
-                                  if (controller.messageController.value.text.isNotEmpty) {
-                                    controller.sendMessage(controller.messageController.value.text, null, '', 'text');
-                                    Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
-                                    controller.messageController.value.clear();
-                                  }
-                                },
-                              ),
-                            )),
-                            InkWell(
-                              onTap: () {
-                                if (controller.messageController.value.text.isNotEmpty) {
-                                  controller.sendMessage(controller.messageController.value.text, null, '', 'text');
-                                  Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
-                                  controller.messageController.value.clear();
-                                }
-                              },
-                              child: Container(
-                                margin: const EdgeInsets.only(left: 10),
-                                decoration: BoxDecoration(
-                                  color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                                  borderRadius: BorderRadius.circular(30),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(10),
-                                  child: SvgPicture.asset("assets/icons/ic_send.svg"),
-                                ),
-                              ),
-                            ),
-                          ],
+                        Text(
+                          controller.receivedName.value,
+                          textAlign: TextAlign.start,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: t.titleSm.w600,
                         ),
-                        const SizedBox(
-                          height: 20,
+                        Text(
+                          "${"Order".tr} ${Constant.orderId(orderId: controller.orderId.value.toString())}",
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: t.caption.tabular,
                         ),
                       ],
                     ),
                   ),
+                ],
+              ),
+            ),
+            body: GestureDetector(
+              onTap: () {
+                FocusScope.of(context).unfocus();
+              },
+              child: FirestorePagination(
+                reverse: true,
+                controller: controller.scrollController.value,
+                physics: const BouncingScrollPhysics(),
+                itemBuilder: (context, documentSnapshots, index) {
+                  ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+
+                  return chatItemView(context, chatmodel.senderId == FireStoreUtils.getCurrentUid(), chatmodel);
+                },
+                onEmpty: DsEmptyState(
+                  icon: Icons.forum_outlined,
+                  compact: true,
+                  title: "No Conversion found".tr,
                 ),
-              ],
+                query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
+                isLive: true,
+                viewType: ViewType.list,
+              ),
+            ),
+            bottomBar: DsStickyBar(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  DsIconButton(
+                    icon: Icons.add_photo_alternate_outlined,
+                    semanticLabel: 'Send Media'.tr,
+                    variant: DsIconButtonVariant.tonal,
+                    onPressed: () {
+                      onCameraClick(context, controller);
+                    },
+                  ),
+                  const DsGap(DsSpace.sm),
+                  Flexible(
+                    child: TextField(
+                      textInputAction: TextInputAction.send,
+                      keyboardType: TextInputType.text,
+                      textCapitalization: TextCapitalization.sentences,
+                      controller: controller.messageController.value,
+                      minLines: 1,
+                      maxLines: 4,
+                      cursorColor: c.brand,
+                      style: t.body,
+                      decoration: DsInputDecoration.of(context, hint: 'Type message here....'.tr),
+                      onSubmitted: (value) async {
+                        if (controller.messageController.value.text.isNotEmpty) {
+                          controller.sendMessage(controller.messageController.value.text, null, '', 'text');
+                          Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
+                          controller.messageController.value.clear();
+                        }
+                      },
+                    ),
+                  ),
+                  const DsGap(DsSpace.sm),
+                  DsIconButton(
+                    icon: Icons.send_rounded,
+                    semanticLabel: 'Send'.tr,
+                    variant: DsIconButtonVariant.filled,
+                    size: 52,
+                    onPressed: () {
+                      if (controller.messageController.value.text.isNotEmpty) {
+                        controller.sendMessage(controller.messageController.value.text, null, '', 'text');
+                        Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
+                        controller.messageController.value.clear();
+                      }
+                    },
+                  ),
+                ],
+              ),
             ),
           );
         });
   }
 
-  Widget chatItemView(bool isDark, bool isMe, ConversationModel data) {
-    return Container(
-      padding: EdgeInsets.only(left: isMe ? 80 : 10, right: isMe ? 10 : 80, top: 10, bottom: 10),
-      child: isMe
-          ? Align(
-              alignment: Alignment.topRight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  data.messageType == "text"
-                      ? Container(
-                          decoration: BoxDecoration(
-                            borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12), bottomLeft: Radius.circular(12)),
-                            color: AppThemeData.secondary300,
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          child: Text(
-                            data.message.toString(),
-                            style: const TextStyle(
-                              fontFamily: AppThemeData.medium,
-                              fontSize: 16,
-                              color: AppThemeData.grey50,
-                            ),
-                          ),
-                        )
-                      : data.messageType == "image"
-                          ? ClipRRect(
-                              borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12), bottomLeft: Radius.circular(12)),
-                              child: Stack(alignment: Alignment.center, children: [
-                                GestureDetector(
-                                  onTap: () {
-                                    Get.to(FullScreenImageViewer(imageUrl: data.url!.url));
-                                  },
-                                  child: Hero(
-                                    tag: data.url!.url,
-                                    child: NetworkImageWidget(
-                                      imageUrl: data.url!.url,
-                                      height: 100,
-                                      width: 100,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                                ),
-                              ]),
-                            )
-                          : FloatingActionButton(
-                              mini: true,
-                              heroTag: data.id,
-                              backgroundColor: AppThemeData.secondary300,
-                              onPressed: () {
-                                Get.to(FullScreenVideoViewer(heroTag: data.id.toString(), videoUrl: data.url!.url));
-                              },
-                              child: const Icon(
-                                Icons.play_arrow,
-                                color: Colors.white,
-                              ),
-                            ),
-                  const SizedBox(height: 5),
-                  Text(DateFormat('MMM d, yyyy hh:mm aa').format(DateTime.fromMillisecondsSinceEpoch(data.createdAt!.millisecondsSinceEpoch)),
-                      style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                ],
-              ),
-            )
-          : Align(
-              alignment: Alignment.topLeft,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  data.messageType == "text"
-                      ? Container(
-                          decoration: BoxDecoration(
-                            borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12), bottomRight: Radius.circular(12)),
-                            color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          child: Text(
-                            data.message.toString(),
-                            style: TextStyle(
-                              fontFamily: AppThemeData.medium,
-                              fontSize: 16,
-                              color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                            ),
-                          ),
-                        )
-                      : data.messageType == "image"
-                          ? ConstrainedBox(
-                              constraints: const BoxConstraints(
-                                minWidth: 50,
-                                maxWidth: 200,
-                              ),
-                              child: ClipRRect(
-                                borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12), bottomRight: Radius.circular(12)),
-                                child: Stack(alignment: Alignment.center, children: [
-                                  GestureDetector(
-                                    onTap: () {
-                                      Get.to(FullScreenImageViewer(imageUrl: data.url!.url));
-                                    },
-                                    child: Hero(
-                                      tag: data.url!.url,
-                                      child: NetworkImageWidget(
-                                        imageUrl: data.url!.url,
-                                      ),
-                                    ),
-                                  ),
-                                ]),
-                              ))
-                          : FloatingActionButton(
-                              mini: true,
-                              heroTag: data.id,
-                              backgroundColor: AppThemeData.secondary300,
-                              onPressed: () {
-                                Get.to(FullScreenVideoViewer(heroTag: data.id.toString(), videoUrl: data.url!.url));
-                              },
-                              child: const Icon(
-                                Icons.play_arrow,
-                                color: Colors.white,
-                              ),
-                            ),
-                  const SizedBox(height: 5),
-                  Text(DateFormat('MMM d, yyyy hh:mm aa').format(DateTime.fromMillisecondsSinceEpoch(data.createdAt!.millisecondsSinceEpoch)),
-                      style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                ],
+  Widget chatItemView(BuildContext context, bool isMe, ConversationModel data) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final BorderRadius radius = isMe
+        ? const BorderRadius.only(
+            topLeft: Radius.circular(DsRadius.lg),
+            topRight: Radius.circular(DsRadius.lg),
+            bottomLeft: Radius.circular(DsRadius.lg),
+            bottomRight: Radius.circular(DsRadius.xs),
+          )
+        : const BorderRadius.only(
+            topLeft: Radius.circular(DsRadius.lg),
+            topRight: Radius.circular(DsRadius.lg),
+            bottomRight: Radius.circular(DsRadius.lg),
+            bottomLeft: Radius.circular(DsRadius.xs),
+          );
+
+    Widget bubble() {
+      if (data.messageType == "text") {
+        return Container(
+          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            color: isMe ? c.brand : c.surface,
+            border: isMe ? null : Border.all(color: c.border),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+          child: Text(
+            data.message.toString(),
+            style: t.body.withColor(isMe ? c.onBrand : c.textPrimary),
+          ),
+        );
+      }
+      if (data.messageType == "image") {
+        return ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 50, maxWidth: 200),
+          child: ClipRRect(
+            borderRadius: radius,
+            child: GestureDetector(
+              onTap: () {
+                Get.to(FullScreenImageViewer(imageUrl: data.url!.url));
+              },
+              child: Hero(
+                tag: data.url!.url,
+                child: DsImage(
+                  url: data.url!.url,
+                  width: 180,
+                  height: 180,
+                  radius: 0,
+                ),
               ),
             ),
+          ),
+        );
+      }
+      return DsPressable(
+        onTap: () {
+          Get.to(FullScreenVideoViewer(heroTag: data.id.toString(), videoUrl: data.url!.url));
+        },
+        child: Container(
+          width: 120,
+          height: 88,
+          decoration: BoxDecoration(borderRadius: radius, color: c.surfaceAlt, border: Border.all(color: c.border)),
+          alignment: Alignment.center,
+          child: DsIconWell(icon: Icons.play_arrow_rounded, tone: DsTone.brand, size: 44, circle: true),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(left: isMe ? 80 : DsSpace.lg, right: isMe ? DsSpace.lg : 80, top: DsSpace.sm, bottom: DsSpace.sm),
+      child: Align(
+        alignment: isMe ? Alignment.topRight : Alignment.topLeft,
+        child: Column(
+          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            bubble(),
+            const DsGap(DsSpace.xs),
+            Text(
+              DateFormat('MMM d, yyyy hh:mm aa').format(DateTime.fromMillisecondsSinceEpoch(data.createdAt!.millisecondsSinceEpoch)),
+              style: t.caption,
+            ),
+          ],
+        ),
+      ),
     );
   }
 

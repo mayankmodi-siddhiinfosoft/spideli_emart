@@ -4,16 +4,14 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/owner_dashboard_controller.dart';
 import 'package:driver/controllers/owner_home_controller.dart';
 import 'package:driver/models/user_model.dart';
-import 'package:driver/themes/app_them_data.dart';
-import 'package:driver/themes/responsive.dart';
-import 'package:driver/themes/round_button_fill.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
-import 'package:driver/utils/network_image_widget.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'driver_order_list.dart';
 
+/// Fleet owner dashboard – archetype E/G hybrid: an earnings hero, a KPI grid
+/// and the fleet roster with live online status.
 class OwnerHomeScreen extends StatelessWidget {
   const OwnerHomeScreen({super.key});
 
@@ -22,415 +20,267 @@ class OwnerHomeScreen extends StatelessWidget {
     final themeController = Get.find<ThemeController>();
     final dashController = Get.put(OwnerDashboardController());
     return Obx(() {
-      final isDark = themeController.isDark.value;
+      themeController.isDark.value;
+      final c = context.dsColors;
+      final t = context.dsText;
       return GetX(
           init: OwnerHomeController(),
           builder: (controller) {
             return Scaffold(
+              backgroundColor: c.background,
               body: controller.isLoading.value
-                  ? Constant.loader()
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.lg),
+                      child: DsSkeletonDashboard(tiles: 4),
+                    )
                   : Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false
                       ? Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Container(
-                                decoration: ShapeDecoration(
-                                  color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(120),
-                                  ),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(20),
-                                  child: SvgPicture.asset("assets/icons/ic_document.svg"),
-                                ),
-                              ),
-                              const SizedBox(
-                                height: 12,
-                              ),
-                              Text(
-                                "Document Verification in Pending".tr,
-                                style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                              ),
-                              const SizedBox(
-                                height: 5,
-                              ),
-                              Text(
-                                "Your documents are being reviewed. We will notify you once the verification is complete.".tr,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                              ),
-                              const SizedBox(
-                                height: 20,
-                              ),
-                              RoundedButtonFill(
-                                title: "View Status".tr,
-                                width: 55,
-                                height: 5.5,
-                                color: AppThemeData.primary300,
-                                textColor: AppThemeData.grey50,
-                                onPress: () {
+                          padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
+                          child: Center(
+                            child: DsResponsive(
+                              maxWidth: 520,
+                              child: DsEmptyState(
+                                icon: Icons.assignment_outlined,
+                                tone: DsTone.warning,
+                                title: "Document Verification in Pending".tr,
+                                message: "Your documents are being reviewed. We will notify you once the verification is complete.".tr,
+                                actionLabel: "View Status".tr,
+                                actionIcon: Icons.visibility_outlined,
+                                onAction: () {
                                   OwnerDashboardController dashBoardController = Get.put(OwnerDashboardController());
                                   dashBoardController.drawerIndex.value = 4;
                                 },
                               ),
-                            ],
+                            ),
                           ),
                         )
-                      : SingleChildScrollView(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            child: Column(
-                              children: [
-                                Obx(() {
-                                  num wallet = dashController.userModel.value.walletAmount ?? 0.0;
-                                  return wallet < double.parse(Constant.ownerMinimumDepositToRideAccept)
-                                      ? Padding(
-                                          padding: const EdgeInsets.only(bottom: 10),
-                                          child: Container(
-                                            decoration: BoxDecoration(color: AppThemeData.danger50, borderRadius: BorderRadius.circular(10)),
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(8.0),
-                                              child: Text(
-                                                "You must have a minimum of ${Constant.amountShow(amount: Constant.ownerMinimumDepositToRideAccept.toString())} in your wallet to receive orders to your driver"
-                                                    .tr,
-                                                style: TextStyle(
-                                                  color: AppThemeData.danger300,
-                                                  fontSize: 14,
-                                                  fontFamily: AppThemeData.semiBold,
-                                                ),
-                                              ),
+                      : DsResponsive(
+                          maxWidth: DsLayout.wideMax,
+                          child: SingleChildScrollView(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: DsFadeSlideIn.stagger([
+                                  Obx(() {
+                                    num wallet = dashController.userModel.value.walletAmount ?? 0.0;
+                                    return wallet < double.parse(Constant.ownerMinimumDepositToRideAccept)
+                                        ? Padding(
+                                            padding: const EdgeInsets.only(bottom: DsSpace.md),
+                                            child: DsInlineAlert(
+                                              tone: DsTone.danger,
+                                              icon: Icons.account_balance_wallet_outlined,
+                                              message:
+                                                  "You must have a minimum of ${Constant.amountShow(amount: Constant.ownerMinimumDepositToRideAccept.toString())} in your wallet to receive orders to your driver"
+                                                      .tr,
                                             ),
-                                          ),
-                                        )
-                                      : const SizedBox();
-                                }),
-                                SizedBox(
-                                  height: 10,
-                                ),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          color: AppThemeData.homePageGradiant[0],
-                                          borderRadius: BorderRadius.circular(10),
-                                        ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(8.0),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              // SvgPicture.asset("assets/icons/ic_ride.svg"),
-                                              SizedBox(
-                                                height: 10,
-                                              ),
-                                              Text(
-                                                controller.totalRidesAllDrivers.toString(),
-                                                textAlign: TextAlign.center,
-                                                style: AppThemeData.boldTextStyle(
-                                                  fontSize: 16,
-                                                  color: AppThemeData.grey900,
-                                                ),
-                                              ),
-                                              SizedBox(
-                                                height: 5,
-                                              ),
-                                              Text(
-                                                'Total Bookings'.tr,
-                                                textAlign: TextAlign.center,
-                                                style: AppThemeData.mediumTextStyle(
-                                                  fontSize: 12,
-                                                  color: AppThemeData.grey900,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      width: 10,
-                                    ),
-                                    Expanded(
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          color: AppThemeData.homePageGradiant[1],
-                                          borderRadius: BorderRadius.circular(10),
-                                        ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(8.0),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              // SvgPicture.asset("assets/icons/ic_total_ride.svg"),
-                                              SizedBox(
-                                                height: 10,
-                                              ),
-                                              Text(
-                                                '${controller.driverList.length} ',
-                                                textAlign: TextAlign.center,
-                                                style: AppThemeData.boldTextStyle(
-                                                  fontSize: 16,
-                                                  color: AppThemeData.grey900,
-                                                ),
-                                              ),
-                                              SizedBox(
-                                                height: 5,
-                                              ),
-                                              Text(
-                                                'Total Drivers'.tr,
-                                                textAlign: TextAlign.center,
-                                                style: AppThemeData.mediumTextStyle(
-                                                  fontSize: 12,
-                                                  color: AppThemeData.grey900,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                SizedBox(
-                                  height: 10,
-                                ),
-                                Container(
-                                  width: Responsive.width(100, context),
-                                  decoration: BoxDecoration(
-                                    color: AppThemeData.homePageGradiant[2],
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(8.0),
-                                    child: Column(
+                                          )
+                                        : const SizedBox();
+                                  }),
+                                  const DsGap(DsSpace.sm),
+
+                                  // ── Earnings hero ────────────────────────────
+                                  DsCard.gradient(
+                                    child: Row(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        SvgPicture.asset("assets/icons/ic_earning.svg"),
-                                        SizedBox(
-                                          height: 10,
-                                        ),
-                                        Text(
-                                          '${Constant.currencyModel!.symbol.toString()}${controller.totalEarningsAllDrivers.toStringAsFixed(2)}',
-                                          textAlign: TextAlign.center,
-                                          style: AppThemeData.boldTextStyle(
-                                            fontSize: 16,
-                                            color: AppThemeData.grey900,
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Earnings'.tr,
+                                                style: t.labelSm.copyWith(color: Colors.white.withValues(alpha: 0.85)),
+                                              ),
+                                              const DsGap(DsSpace.xs),
+                                              DsAnimatedCounter(
+                                                value: controller.totalEarningsAllDrivers,
+                                                style: t.metricLg.copyWith(color: Colors.white),
+                                                format: (v) => '${Constant.currencyModel!.symbol.toString()}${v.toStringAsFixed(2)}',
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                        SizedBox(
-                                          height: 5,
-                                        ),
-                                        Text(
-                                          'Earnings'.tr,
-                                          textAlign: TextAlign.center,
-                                          style: AppThemeData.mediumTextStyle(
-                                            fontSize: 12,
-                                            color: AppThemeData.grey900,
-                                          ),
-                                        ),
+                                        const DsGap(DsSpace.md),
+                                        const DsIconWell(icon: Icons.trending_up_rounded, size: 48, circle: true, onBrand: true),
                                       ],
                                     ),
                                   ),
-                                ),
-                                SizedBox(
-                                  height: 30,
-                                ),
-                                controller.driverList.isEmpty
-                                    ? SizedBox()
-                                    : Column(
-                                        mainAxisAlignment: MainAxisAlignment.start,
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                  const DsGap(DsSpace.md),
+
+                                  // ── KPI tiles ────────────────────────────────
+                                  DsAdaptiveGrid(
+                                    minItemWidth: 160,
+                                    children: [
+                                      DsStatTile(
+                                        icon: Icons.receipt_long_rounded,
+                                        label: 'Total Bookings'.tr,
+                                        countTo: controller.totalRidesAllDrivers,
+                                        format: (v) => v.toInt().toString(),
+                                        tone: DsTone.info,
+                                      ),
+                                      DsStatTile(
+                                        icon: Icons.groups_rounded,
+                                        label: 'Total Drivers'.tr,
+                                        countTo: controller.driverList.length,
+                                        format: (v) => v.toInt().toString(),
+                                        tone: DsTone.brand,
+                                        onTap: () {
+                                          Get.to(ViewAllDriverScreen())!.then(
+                                            (value) {
+                                              controller.getDriverList();
+                                            },
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                  const DsGap(DsSpace.xxl),
+
+                                  // ── Fleet roster ─────────────────────────────
+                                  if (controller.driverList.isNotEmpty) ...[
+                                    DsSectionHeader(
+                                      title: 'Your Available Drivers'.tr,
+                                      subtitle: 'Real-time status and earnings summary'.tr,
+                                      actionLabel: 'View all'.tr,
+                                      onAction: () {
+                                        Get.to(ViewAllDriverScreen())!.then(
+                                          (value) {
+                                            controller.getDriverList();
+                                          },
+                                        );
+                                      },
+                                    ),
+                                    const DsGap(DsSpace.md),
+                                    DsCard(
+                                      padding: EdgeInsets.zero,
+                                      child: Column(
                                         children: [
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      'Your Available Drivers'.tr,
-                                                      textAlign: TextAlign.center,
-                                                      style: AppThemeData.boldTextStyle(
-                                                        fontSize: 16,
-                                                        color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                                                      ),
-                                                    ),
-                                                    Text(
-                                                      'Real-time status and earnings summary'.tr,
-                                                      textAlign: TextAlign.center,
-                                                      style: AppThemeData.mediumTextStyle(
-                                                        fontSize: 12,
-                                                        color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              InkWell(
-                                                onTap: () {
-                                                  Get.to(ViewAllDriverScreen())!.then(
-                                                    (value) {
+                                          for (var index = 0; index < (controller.driverList.length > 5 ? 5 : controller.driverList.length); index++) ...[
+                                            if (index > 0) DsDivider(spacing: 0, indent: 68),
+                                            _DriverRow(
+                                              index: index,
+                                              driverModel: controller.driverList[index],
+                                              isActive: controller.driverList[index].isActive != false,
+                                              onEdit: () {
+                                                Get.to(DriverCreateScreen(), arguments: {"driverModel": controller.driverList[index]})!.then(
+                                                  (value0) {
+                                                    if (value0 == true) {
                                                       controller.getDriverList();
-                                                    },
-                                                  );
-                                                },
-                                                child: Text(
-                                                  'View all'.tr,
-                                                  textAlign: TextAlign.center,
-                                                  style: AppThemeData.mediumTextStyle(
-                                                      fontSize: 16, color: isDark ? AppThemeData.primary300 : AppThemeData.primary300, decoration: TextDecoration.underline),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          SizedBox(
-                                            height: 16,
-                                          ),
-                                          Container(
-                                            decoration: BoxDecoration(
-                                              borderRadius: BorderRadius.circular(10),
-                                              border: Border.all(
-                                                color: isDark ? AppThemeData.greyDark300 : AppThemeData.grey300,
-                                              ),
-                                            ),
-                                            child: ListView.builder(
-                                              // itemCount: controller.driverList.length,
-                                              // physics: NeverScrollableScrollPhysics(),
-                                              // shrinkWrap: true,
-                                              itemCount: controller.driverList.length > 5 ? 5 : controller.driverList.length,
-                                              physics: const NeverScrollableScrollPhysics(),
-                                              shrinkWrap: true,
-                                              itemBuilder: (context, index) {
-                                                UserModel driverModel = controller.driverList[index];
-                                                return Padding(
-                                                  padding: const EdgeInsets.all(8.0),
-                                                  child: Row(
-                                                    children: [
-                                                      ClipRRect(
-                                                        borderRadius: BorderRadius.circular(10),
-                                                        child: NetworkImageWidget(
-                                                          imageUrl: driverModel.profilePictureURL.toString(),
-                                                          height: 42,
-                                                          width: 42,
-                                                          fit: BoxFit.fill,
-                                                        ),
-                                                      ),
-                                                      SizedBox(
-                                                        width: 10,
-                                                      ),
-                                                      Expanded(
-                                                        child: Column(
-                                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                                          children: [
-                                                            Text(
-                                                              driverModel.fullName(),
-                                                              textAlign: TextAlign.center,
-                                                              style: AppThemeData.semiBoldTextStyle(
-                                                                fontSize: 16,
-                                                                color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                                                              ),
-                                                            ),
-                                                            Text(
-                                                              '${driverModel.countryCode} ${driverModel.phoneNumber}',
-                                                              textAlign: TextAlign.center,
-                                                              style: AppThemeData.mediumTextStyle(
-                                                                fontSize: 12,
-                                                                color: isDark ? AppThemeData.greyDark700 : AppThemeData.grey700,
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      SizedBox(
-                                                        width: 10,
-                                                      ),
-                                                      RoundedButtonFill(
-                                                        title: driverModel.isActive == false ? "Offline" : "Online".tr,
-                                                        height: 3.5,
-                                                        width: 18,
-                                                        borderRadius: 10,
-                                                        color: driverModel.isActive == false ? AppThemeData.danger300 : AppThemeData.success300,
-                                                        textColor: AppThemeData.grey50,
-                                                        onPress: () async {},
-                                                      ),
-                                                      PopupMenuButton<String>(
-                                                        padding: EdgeInsets.zero,
-                                                        onSelected: (value) {
-                                                          if (value == 'Edit Driver') {
-                                                            Get.to(DriverCreateScreen(), arguments: {"driverModel": driverModel})!.then(
-                                                              (value0) {
-                                                                if (value0 == true) {
-                                                                  controller.getDriverList();
-                                                                }
-                                                              },
-                                                            );
-                                                          } else if (value == 'Delete Driver') {
-                                                            controller.deleteDriver(driverModel.id.toString());
-                                                          } else if (value == 'View All Order') {
-                                                            print("driver ::::::: ${driverModel.email}");
-                                                            Get.to(() => const DriverOrderList(), arguments: {
-                                                              "driverId": driverModel.id,
-                                                              "serviceType": driverModel.serviceTypes?.first,
-                                                            });
-                                                          }
-                                                        },
-                                                        itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                                                          PopupMenuItem<String>(
-                                                            value: 'Edit Driver',
-                                                            child: Text('Edit Driver'.tr, style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.greyDark50)),
-                                                          ),
-                                                          PopupMenuItem<String>(
-                                                            value: 'Delete Driver',
-                                                            child: Text('Delete Driver'.tr, style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.greyDark50)),
-                                                          ),
-                                                          PopupMenuItem<String>(
-                                                            value: 'View All Order',
-                                                            child: Text('View All Order'.tr, style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.greyDark50)),
-                                                          ),
-                                                        ],
-                                                        color: isDark ? AppThemeData.greyDark50 : AppThemeData.grey50,
-                                                        icon: Icon(Icons.more_vert, color: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900), // Three dots icon
-                                                      ),
-                                                    ],
-                                                  ),
+                                                    }
+                                                  },
                                                 );
                                               },
+                                              onDelete: () {
+                                                controller.deleteDriver(controller.driverList[index].id.toString());
+                                              },
+                                              onViewOrders: () {
+                                                final UserModel driverModel = controller.driverList[index];
+                                                print("driver ::::::: ${driverModel.email}");
+                                                Get.to(() => const DriverOrderList(), arguments: {
+                                                  "driverId": driverModel.id,
+                                                  "serviceType": driverModel.serviceTypes?.first,
+                                                });
+                                              },
                                             ),
-                                          ),
+                                          ],
                                         ],
                                       ),
-                                SizedBox(
-                                  height: 30,
-                                ),
-                              ],
+                                    ),
+                                  ],
+                                  const DsGap(DsSpace.huge),
+                                ]),
+                              ),
                             ),
                           ),
                         ),
               floatingActionButton: (Constant.userModel?.isDocumentVerify == true && Constant.userModel?.isAutoVerify == false) || Constant.userModel?.isAutoVerify == true
-                  ? ClipOval(
-                      child: FloatingActionButton(
-                        onPressed: () {
-                          Get.to(DriverCreateScreen())!.then((value) {
-                            if (value == true) {
-                              controller.getDriverList();
-                            }
-                          });
-                        },
-                        backgroundColor: AppThemeData.primary300,
-                        child: Icon(
-                          Icons.add,
-                          color: AppThemeData.grey50,
-                        ),
-                      ),
+                  ? FloatingActionButton.extended(
+                      onPressed: () {
+                        Get.to(DriverCreateScreen())!.then((value) {
+                          if (value == true) {
+                            controller.getDriverList();
+                          }
+                        });
+                      },
+                      backgroundColor: c.brand,
+                      foregroundColor: c.onBrand,
+                      icon: const Icon(Icons.add_rounded),
+                      label: Text('Add Driver'.tr, style: t.label.copyWith(color: c.onBrand)),
                     )
-                  : SizedBox.shrink(),
+                  : const SizedBox.shrink(),
             );
           });
     });
+  }
+}
+
+/// One fleet driver row: avatar with a live status ring, name, phone, an
+/// online / offline status chip and the existing actions menu.
+class _DriverRow extends StatelessWidget {
+  final int index;
+  final UserModel driverModel;
+  final bool isActive;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final VoidCallback onViewOrders;
+
+  const _DriverRow({
+    required this.index,
+    required this.driverModel,
+    required this.isActive,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onViewOrders,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return DsFadeSlideIn(
+      index: index,
+      child: DsListTile(
+        leading: DsAvatar(
+          imageUrl: driverModel.profilePictureURL.toString(),
+          name: driverModel.fullName(),
+          size: 44,
+          statusTone: isActive ? DsTone.success : DsTone.neutral,
+        ),
+        title: driverModel.fullName(),
+        subtitle: '${driverModel.countryCode ?? ''} ${driverModel.phoneNumber ?? ''}',
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DsBadge(
+              label: isActive ? "Online".tr : "Offline".tr,
+              tone: isActive ? DsTone.success : DsTone.neutral,
+              icon: isActive ? Icons.circle : Icons.circle_outlined,
+              small: true,
+            ),
+            PopupMenuButton<String>(
+              padding: EdgeInsets.zero,
+              tooltip: 'More'.tr,
+              onSelected: (value) {
+                if (value == 'Edit Driver') {
+                  onEdit();
+                } else if (value == 'Delete Driver') {
+                  onDelete();
+                } else if (value == 'View All Order') {
+                  onViewOrders();
+                }
+              },
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(value: 'Edit Driver', child: Text('Edit Driver'.tr, style: t.body)),
+                PopupMenuItem<String>(value: 'Delete Driver', child: Text('Delete Driver'.tr, style: t.body)),
+                PopupMenuItem<String>(value: 'View All Order', child: Text('View All Order'.tr, style: t.body)),
+              ],
+              color: c.surfaceRaised,
+              icon: Icon(Icons.more_vert, color: c.iconDefault),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

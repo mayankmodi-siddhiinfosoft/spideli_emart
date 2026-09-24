@@ -1,142 +1,174 @@
-import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/change_section_controller.dart';
-import 'package:driver/themes/app_them_data.dart';
-import 'package:driver/themes/theme_controller.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
+/// Archetype H – service selection: selectable section tiles in an adaptive
+/// grid with a sticky primary action.
 class ChangeSectionScreen extends StatelessWidget {
   const ChangeSectionScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX(
       init: ChangeSectionController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-            centerTitle: false,
-            titleSpacing: 0,
-            title: Text(
-              "Change Section".tr,
-              style: TextStyle(
-                color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                fontSize: 18,
-                fontFamily: AppThemeData.medium,
-              ),
+        final t = context.dsText;
+
+        // Read eagerly inside the tracked builder so selection changes rebuild.
+        final sections = controller.allSections.toList();
+        final tiles = <Widget>[
+          for (var i = 0; i < sections.length; i++)
+            _SectionTile(
+              index: i,
+              title: sections[i].name ?? '',
+              subtitle: controller.serviceFlagLabel(sections[i].serviceTypeFlag),
+              serviceTypeFlag: sections[i].serviceTypeFlag,
+              selected: controller.isSectionSelected(sections[i]),
+              onTap: () async {
+                await controller.toggleSection(sections[i]);
+              },
             ),
-          ),
-          body: controller.isLoading.value
-              ? Constant.loader()
-              : SingleChildScrollView(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                    child: Column(
+        ];
+        final selectedCount = sections.where(controller.isSectionSelected).length;
+
+        return DsScaffold(
+          title: "Change Section".tr,
+          body: DsAsync(
+            isLoading: controller.isLoading.value,
+            skeleton: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.xl),
+              child: DsSkeletonGrid(itemCount: 4, minItemWidth: 220, imageAspectRatio: 2.4),
+            ),
+            builder: (_) => SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.xl, DsSpace.lg, DsSpace.xxxl),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: DsFadeSlideIn.stagger([
+                  DsCard.tinted(
+                    tone: DsTone.info,
+                    child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          "Select the sections you want to serve. You can add or remove sections anytime.".tr,
-                          style: TextStyle(
-                            color: isDark ? AppThemeData.grey400 : AppThemeData.grey600,
-                            fontSize: 14,
-                            fontFamily: AppThemeData.regular,
+                        const DsIconWell(icon: Icons.tune_rounded, tone: DsTone.info, size: 40),
+                        const DsGap(DsSpace.md),
+                        Expanded(
+                          child: Text(
+                            "Select the sections you want to serve. You can add or remove sections anytime.".tr,
+                            style: t.body,
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          "Available Sections".tr,
-                          style: TextStyle(
-                            fontFamily: AppThemeData.semiBold,
-                            fontSize: 14,
-                            color: isDark ? AppThemeData.grey100 : AppThemeData.grey800,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        controller.allSections.isEmpty
-                            ? Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Text(
-                                    "No sections available".tr,
-                                    style: TextStyle(
-                                      color: isDark ? AppThemeData.grey400 : AppThemeData.grey600,
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : Container(
-                                decoration: BoxDecoration(
-                                  color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: isDark ? AppThemeData.grey700 : AppThemeData.grey300,
-                                  ),
-                                ),
-                                child: Column(
-                                  children: controller.allSections.map((section) {
-                                    final isChecked = controller.isSectionSelected(section);
-                                    return CheckboxListTile(
-                                      dense: true,
-                                      title: Text(
-                                        section.name ?? '',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                          fontFamily: AppThemeData.medium,
-                                        ),
-                                      ),
-                                      subtitle: Text(
-                                        controller.serviceFlagLabel(section.serviceTypeFlag),
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: isDark ? AppThemeData.grey400 : AppThemeData.grey600,
-                                          fontFamily: AppThemeData.regular,
-                                        ),
-                                      ),
-                                      value: isChecked,
-                                      activeColor: AppThemeData.primary300,
-                                      checkColor: Colors.white,
-                                      onChanged: (_) async {
-                                        await controller.toggleSection(section);
-                                      },
-                                    );
-                                  }).toList(),
-                                ),
-                              ),
                       ],
                     ),
                   ),
-                ),
-          bottomNavigationBar: Padding(
-            padding: const EdgeInsets.all(16),
-            child: InkWell(
-              onTap: () => controller.saveChanges(),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppThemeData.primary300,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                width: double.infinity,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  child: Text(
-                    "Save Changes".tr,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: AppThemeData.grey50,
-                      fontSize: 16,
-                      fontFamily: AppThemeData.medium,
-                    ),
+                  const DsGap(DsSpace.xl),
+                  DsSectionHeader(
+                    title: "Available Sections".tr,
+                    trailing: sections.isEmpty
+                        ? null
+                        : DsBadge(
+                            label: '$selectedCount/${sections.length}',
+                            tone: DsTone.brand,
+                            small: true,
+                          ),
                   ),
-                ),
+                  const DsGap(DsSpace.md),
+                  if (sections.isEmpty)
+                    DsEmptyState(
+                      icon: Icons.grid_view_rounded,
+                      title: "No sections available".tr,
+                      compact: true,
+                    )
+                  else
+                    DsAdaptiveGrid(minItemWidth: 260, children: tiles),
+                ], offset: const Offset(0, 18)),
               ),
+            ),
+          ),
+          bottomBar: DsStickyBar(
+            child: DsButton.primary(
+              label: "Save Changes".tr,
+              icon: Icons.check_rounded,
+              size: DsButtonSize.lg,
+              expand: true,
+              onPressed: () => controller.saveChanges(),
             ),
           ),
         );
       },
+    );
+  }
+}
+
+/// Selectable service tile (archetype H): icon well in the section accent,
+/// name, service label and a check affordance.
+class _SectionTile extends StatelessWidget {
+  final int index;
+  final String title;
+  final String subtitle;
+  final String? serviceTypeFlag;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SectionTile({
+    required this.index,
+    required this.title,
+    required this.subtitle,
+    required this.serviceTypeFlag,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final section = DsSection.fromServiceType(serviceTypeFlag);
+    final accent = c.section(section);
+    return DsFadeSlideIn(
+      index: index,
+      child: DsCard.outlined(
+        onTap: onTap,
+        borderColor: selected ? c.brand : null,
+        padding: const EdgeInsets.all(DsSpace.lg),
+        semanticLabel: '$title, $subtitle',
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: accent.soft, borderRadius: BorderRadius.circular(13)),
+              child: Icon(section.icon, size: 22, color: accent.strong),
+            ),
+            const DsGap(DsSpace.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title, style: t.titleSm, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  const DsGap(DsSpace.xxs),
+                  Text(subtitle, style: t.caption, maxLines: 2, overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            const DsGap(DsSpace.sm),
+            AnimatedContainer(
+              duration: DsMotion.of(context, DsMotion.fast),
+              curve: DsMotion.standard,
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                color: selected ? c.brand : Colors.transparent,
+                border: Border.all(color: selected ? c.brand : c.borderStrong, width: 1.6),
+                borderRadius: DsRadius.brXs,
+              ),
+              child: selected ? Icon(Icons.check_rounded, size: 18, color: c.onBrand) : null,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

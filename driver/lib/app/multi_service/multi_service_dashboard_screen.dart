@@ -7,7 +7,7 @@ import 'package:driver/controllers/cab_dashboard_controller.dart';
 import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/controllers/parcel_dashboard_controller.dart';
 import 'package:driver/controllers/rental_dashboard_controller.dart';
-import 'package:driver/themes/app_them_data.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -20,6 +20,9 @@ class MultiServiceDashboardController extends GetxController {
 /// Unified dashboard for drivers registered to multiple services.
 /// Shows a BottomNavigationBar with one tab per registered service.
 /// Each tab renders the full existing service dashboard.
+///
+/// Archetype A/K shell: the service switcher is a raised, hairline-topped bar
+/// whose active tab is tinted with that service's section accent.
 class MultiServiceDashboardScreen extends StatelessWidget {
   const MultiServiceDashboardScreen({super.key});
 
@@ -46,33 +49,40 @@ class MultiServiceDashboardScreen extends StatelessWidget {
     }
   }
 
-  BottomNavigationBarItem _navItemForService(String serviceType) {
+  ({IconData icon, IconData activeIcon, String label}) _tabSpec(String serviceType) {
     switch (serviceType) {
       case 'cab-service':
-        return const BottomNavigationBarItem(
-          icon: Icon(Icons.local_taxi_outlined),
-          activeIcon: Icon(Icons.local_taxi),
-          label: 'Cab',
-        );
+        return (icon: Icons.local_taxi_outlined, activeIcon: Icons.local_taxi, label: 'Cab');
       case 'parcel_delivery':
-        return const BottomNavigationBarItem(
-          icon: Icon(Icons.inventory_2_outlined),
-          activeIcon: Icon(Icons.inventory_2),
-          label: 'Parcel',
-        );
+        return (icon: Icons.inventory_2_outlined, activeIcon: Icons.inventory_2, label: 'Parcel');
       case 'rental-service':
-        return const BottomNavigationBarItem(
-          icon: Icon(Icons.car_rental_outlined),
-          activeIcon: Icon(Icons.car_rental),
-          label: 'Rental',
-        );
+        return (icon: Icons.car_rental_outlined, activeIcon: Icons.car_rental, label: 'Rental');
       default:
-        return const BottomNavigationBarItem(
-          icon: Icon(Icons.delivery_dining_outlined),
-          activeIcon: Icon(Icons.delivery_dining),
-          label: 'Delivery',
-        );
+        return (icon: Icons.delivery_dining_outlined, activeIcon: Icons.delivery_dining, label: 'Delivery');
     }
+  }
+
+  BottomNavigationBarItem _navItemForService(BuildContext context, String serviceType, bool selected) {
+    final c = context.dsColors;
+    final spec = _tabSpec(serviceType);
+    final accent = c.section(DsSection.fromServiceType(serviceType));
+    Widget pill(IconData icon, bool active) => AnimatedContainer(
+          duration: DsMotion.of(context, DsMotion.base),
+          curve: DsMotion.emphasized,
+          margin: const EdgeInsets.only(bottom: DsSpace.xxs),
+          padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.xs),
+          decoration: BoxDecoration(
+            color: active ? accent.soft : Colors.transparent,
+            borderRadius: DsRadius.brPill,
+          ),
+          child: Icon(icon, size: 22, color: active ? accent.strong : c.textMuted),
+        );
+    return BottomNavigationBarItem(
+      icon: pill(spec.icon, false),
+      activeIcon: pill(spec.activeIcon, true),
+      label: spec.label,
+      tooltip: spec.label,
+    );
   }
 
   @override
@@ -90,35 +100,50 @@ class MultiServiceDashboardScreen extends StatelessWidget {
       init: MultiServiceDashboardController(),
       builder: (controller) {
         return Obx(() {
-          final isDark = themeController.isDark.value;
+          themeController.isDark.value;
+          final index = controller.currentIndex.value;
+          final c = context.dsColors;
           return Scaffold(
+            backgroundColor: c.background,
             body: IndexedStack(
-              index: controller.currentIndex.value,
+              index: index,
               children: serviceTypes.map(_dashboardForService).toList(),
             ),
-            bottomNavigationBar: BottomNavigationBar(
-              currentIndex: controller.currentIndex.value,
-              onTap: (index) {
-                controller.currentIndex.value = index;
-                // Reset each dashboard to home screen when switching tabs
-                if (Get.isRegistered<DashBoardController>()) {
-                  Get.find<DashBoardController>().drawerIndex.value = 0;
-                }
-                if (Get.isRegistered<CabDashBoardController>()) {
-                  Get.find<CabDashBoardController>().drawerIndex.value = 0;
-                }
-                if (Get.isRegistered<ParcelDashboardController>()) {
-                  Get.find<ParcelDashboardController>().drawerIndex.value = 0;
-                }
-                if (Get.isRegistered<RentalDashboardController>()) {
-                  Get.find<RentalDashboardController>().drawerIndex.value = 0;
-                }
-              },
-              type: BottomNavigationBarType.fixed,
-              selectedItemColor: AppThemeData.primary300,
-              unselectedItemColor: isDark ? AppThemeData.grey400 : AppThemeData.grey500,
-              backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-              items: serviceTypes.map(_navItemForService).toList(),
+            bottomNavigationBar: DecoratedBox(
+              decoration: BoxDecoration(
+                color: c.surface,
+                border: Border(top: BorderSide(color: c.divider)),
+                boxShadow: DsShadows.sm(context),
+              ),
+              child: BottomNavigationBar(
+                currentIndex: index,
+                onTap: (index) {
+                  controller.currentIndex.value = index;
+                  // Reset each dashboard to home screen when switching tabs
+                  if (Get.isRegistered<DashBoardController>()) {
+                    Get.find<DashBoardController>().drawerIndex.value = 0;
+                  }
+                  if (Get.isRegistered<CabDashBoardController>()) {
+                    Get.find<CabDashBoardController>().drawerIndex.value = 0;
+                  }
+                  if (Get.isRegistered<ParcelDashboardController>()) {
+                    Get.find<ParcelDashboardController>().drawerIndex.value = 0;
+                  }
+                  if (Get.isRegistered<RentalDashboardController>()) {
+                    Get.find<RentalDashboardController>().drawerIndex.value = 0;
+                  }
+                },
+                type: BottomNavigationBarType.fixed,
+                selectedItemColor: c.textPrimary,
+                unselectedItemColor: c.textMuted,
+                selectedLabelStyle: DsTypography.labelSm,
+                unselectedLabelStyle: DsTypography.labelSm,
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                items: [
+                  for (var i = 0; i < serviceTypes.length; i++) _navItemForService(context, serviceTypes[i], i == index),
+                ],
+              ),
             ),
           );
         });

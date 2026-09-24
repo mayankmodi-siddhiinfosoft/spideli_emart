@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:driver/constant/constant.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart' as flutterMap;
 import 'package:get/get.dart';
@@ -8,6 +9,8 @@ import 'package:latlong2/latlong.dart' as location;
 import '../../controllers/parcel_tracking_controller.dart';
 import '../../themes/app_them_data.dart';
 
+/// Live parcel map (archetype C, map only): the map stays edge-to-edge under a
+/// transparent DS app bar; markers, polylines and the controller are untouched.
 class ParcelTrackingScreen extends StatelessWidget {
   const ParcelTrackingScreen({super.key});
 
@@ -16,18 +19,15 @@ class ParcelTrackingScreen extends StatelessWidget {
     return GetX<ParcelTrackingController>(
       init: ParcelTrackingController(),
       builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            elevation: 2,
-            backgroundColor: AppThemeData.primary300,
-            title: Text("Map view".tr),
-            leading: InkWell(
-                onTap: () {
-                  Get.back();
-                },
-                child: const Icon(
-                  Icons.arrow_back,
-                )),
+        final c = context.dsColors;
+        return DsScaffold(
+          backgroundColor: c.background,
+          maxContentWidth: null,
+          appBar: DsAppBar(
+            title: "Map view".tr,
+            onBack: () {
+              Get.back();
+            },
           ),
           body: controller.isLoading.value
               ? Constant.loader()

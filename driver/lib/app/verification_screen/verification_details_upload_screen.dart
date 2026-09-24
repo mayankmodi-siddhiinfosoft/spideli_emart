@@ -1,358 +1,173 @@
-import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:dotted_border/dotted_border.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/verification_details_upload_controller.dart';
-import 'package:driver/themes/app_them_data.dart';
-import 'package:driver/themes/responsive.dart';
-import 'package:driver/themes/round_button_fill.dart';
-import 'package:driver/themes/theme_controller.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 
+/// Archetype F/H – document upload: a short brief, the review outcome, the
+/// expiry field and one large picker tile per side, with Upload in a sticky
+/// bar.
 class VerificationDetailsUploadScreen extends StatelessWidget {
   const VerificationDetailsUploadScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-    final isDark = themeController.isDark.value;
     return GetX<DetailsUploadController>(
         init: DetailsUploadController(),
         builder: (controller) {
-          return Scaffold(
-            appBar: AppBar(
-              backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-              centerTitle: false,
-              automaticallyImplyLeading: false,
-              titleSpacing: 0,
-              leading: InkWell(
-                onTap: () {
-                  Get.back();
-                },
-                child: Icon(
-                  Icons.chevron_left_outlined,
-                  color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                ),
-              ),
-              title: Text(
-                "${controller.documentModel.value.title}",
-                style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.bold, fontSize: 18),
-              ),
-              elevation: 0,
-            ),
-            body: controller.isLoading.value
-                ? Constant.loader()
-                : SingleChildScrollView(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "${'Upload'.tr} ${controller.documentModel.value.title} ${'for Verification'.tr}",
-                            style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.bold, fontSize: 22),
-                          ),
-                          const SizedBox(
-                            height: 5,
-                          ),
-                          Text(
-                            "${'Please upload a valid'.tr} ${controller.documentModel.value.title} ${'to verify your identity complete the registration process.'.tr}".tr,
-                            style: TextStyle(fontSize: 16, color: isDark ? AppThemeData.grey200 : AppThemeData.grey700, fontFamily: AppThemeData.regular),
-                          ),
-                          const SizedBox(
-                            height: 20,
-                          ),
-                          if (controller.documents.value.verificationStatus == 'rejected' && controller.documents.value.rejectReason != null)
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(12),
-                              margin: const EdgeInsets.only(bottom: 10),
-                              decoration: BoxDecoration(color: AppThemeData.danger50, borderRadius: BorderRadius.circular(10)),
-                              child: Text(
-                                "${'Rejected'.tr}: ${controller.documents.value.rejectReason}",
-                                style: TextStyle(color: AppThemeData.danger300, fontFamily: AppThemeData.medium, fontSize: 14),
-                              ),
-                            ),
-                          if (controller.needsExpiryDate || controller.expiryDate.value != null)
-                            ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: Icon(Icons.event, color: AppThemeData.primary300),
-                              title: Text("Expiry date".tr, style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.bold, fontSize: 16)),
-                              subtitle: Text(
-                                controller.expiryDate.value == null ? "Select the expiry date".tr : Constant.timestampToDate(Timestamp.fromDate(controller.expiryDate.value!)),
-                                style: TextStyle(
-                                  color: controller.documents.value.isExpired ? AppThemeData.danger300 : (isDark ? AppThemeData.grey300 : AppThemeData.grey600),
-                                  fontFamily: AppThemeData.regular,
-                                ),
-                              ),
-                              onTap: !controller.canUpload
-                                  ? null
-                                  : () async {
-                                      final picked = await showDatePicker(
-                                        context: context,
-                                        initialDate: controller.expiryDate.value ?? DateTime.now().add(const Duration(days: 1)),
-                                        firstDate: DateTime.now(),
-                                        lastDate: DateTime(2100),
-                                      );
-                                      if (picked != null) controller.expiryDate.value = picked;
-                                    },
-                            ),
-                          Visibility(
-                            visible: controller.documentModel.value.frontSide == true ? true : false,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    "${'Front Side of'} ${controller.documentModel.value.title.toString()}",
-                                    style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.bold, fontSize: 16),
-                                  ),
-                                  const SizedBox(
-                                    height: 10,
-                                  ),
-                                  controller.frontImage.value.isNotEmpty
-                                      ? InkWell(
-                                          onTap: () {
-                                            if (controller.documents.value.status != "uploaded" || controller.documents.value.status == "rejected") {
-                                              buildBottomSheet(context, controller, "front");
-                                            }
-                                          },
-                                          child: SizedBox(
-                                            height: Responsive.height(20, context),
-                                            width: Responsive.width(90, context),
-                                            child: ClipRRect(
-                                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                                              child: Constant().hasValidUrl(controller.frontImage.value) == false
-                                                  ? Image.file(
-                                                      File(controller.frontImage.value),
-                                                      height: Responsive.height(20, context),
-                                                      width: Responsive.width(80, context),
-                                                      fit: BoxFit.fill,
-                                                    )
-                                                  : CachedNetworkImage(
-                                                      imageUrl: controller.frontImage.value.toString(),
-                                                      fit: BoxFit.fill,
-                                                      height: Responsive.height(20, context),
-                                                      width: Responsive.width(80, context),
-                                                      placeholder: (context, url) => Constant.loader(),
-                                                      errorWidget: (context, url, error) => Image.network(
-                                                          'https://firebasestorage.googleapis.com/v0/b/goride-1a752.appspot.com/o/placeholderImages%2Fuser-placeholder.jpeg?alt=media&token=34a73d67-ba1d-4fe4-a29f-271d3e3ca115'),
-                                                    ),
-                                            ),
-                                          ),
-                                        )
-                                      : DottedBorder(
-                                          options: RoundedRectDottedBorderOptions(
-                                            radius: const Radius.circular(12),
-                                            dashPattern: const [6, 6, 6, 6],
-                                            color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                                          ),
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                              borderRadius: const BorderRadius.all(
-                                                Radius.circular(12),
-                                              ),
-                                            ),
-                                            child: SizedBox(
-                                                height: Responsive.height(22, context),
-                                                width: Responsive.width(90, context),
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                                  mainAxisAlignment: MainAxisAlignment.center,
-                                                  children: [
-                                                    SvgPicture.asset(
-                                                      'assets/icons/ic_folder.svg',
-                                                    ),
-                                                    const SizedBox(
-                                                      height: 10,
-                                                    ),
-                                                    Text(
-                                                      "Choose a image and upload here".tr,
-                                                      style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.medium,
-                                                          fontSize: 16),
-                                                    ),
-                                                    const SizedBox(
-                                                      height: 5,
-                                                    ),
-                                                    Text(
-                                                      "JPEG, PNG".tr,
-                                                      style: TextStyle(
-                                                          fontSize: 12, color: isDark ? AppThemeData.grey200 : AppThemeData.grey700, fontFamily: AppThemeData.regular),
-                                                    ),
-                                                    const SizedBox(
-                                                      height: 10,
-                                                    ),
-                                                    RoundedButtonFill(
-                                                      title: "Brows Image".tr,
-                                                      color: AppThemeData.carRent50,
-                                                      textColor: AppThemeData.primary300,
-                                                      width: 30,
-                                                      height: 5,
-                                                      onPress: () async {
-                                                        buildBottomSheet(context, controller, "front");
-                                                      },
-                                                    ),
-                                                  ],
-                                                )),
-                                          ),
-                                        ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          Visibility(
-                            visible: controller.documentModel.value.backSide == true ? true : false,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    "${'Back side of'.tr} ${controller.documentModel.value.title.toString()}",
-                                    style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.bold, fontSize: 16),
-                                  ),
-                                  const SizedBox(
-                                    height: 10,
-                                  ),
-                                  controller.backImage.value.isNotEmpty
-                                      ? InkWell(
-                                          onTap: () {
-                                            if (controller.documents.value.status != "uploaded" || controller.documents.value.status == "rejected") {
-                                              buildBottomSheet(context, controller, "back");
-                                            }
-                                          },
-                                          child: SizedBox(
-                                            height: Responsive.height(20, context),
-                                            width: Responsive.width(90, context),
-                                            child: ClipRRect(
-                                              borderRadius: const BorderRadius.all(Radius.circular(10)),
-                                              child: Constant().hasValidUrl(controller.backImage.value) == false
-                                                  ? Image.file(
-                                                      File(controller.backImage.value),
-                                                      height: Responsive.height(20, context),
-                                                      width: Responsive.width(80, context),
-                                                      fit: BoxFit.fill,
-                                                    )
-                                                  : CachedNetworkImage(
-                                                      imageUrl: controller.backImage.value.toString(),
-                                                      fit: BoxFit.fill,
-                                                      height: Responsive.height(20, context),
-                                                      width: Responsive.width(80, context),
-                                                      placeholder: (context, url) => Constant.loader(),
-                                                      errorWidget: (context, url, error) => Image.network(
-                                                          'https://firebasestorage.googleapis.com/v0/b/goride-1a752.appspot.com/o/placeholderImages%2Fuser-placeholder.jpeg?alt=media&token=34a73d67-ba1d-4fe4-a29f-271d3e3ca115'),
-                                                    ),
-                                            ),
-                                          ),
-                                        )
-                                      : DottedBorder(
-                                          options: RoundedRectDottedBorderOptions(
-                                            radius: const Radius.circular(12),
-                                            dashPattern: const [6, 6, 6, 6],
-                                            color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                                          ),
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                              borderRadius: const BorderRadius.all(
-                                                Radius.circular(12),
-                                              ),
-                                            ),
-                                            child: SizedBox(
-                                                height: Responsive.height(22, context),
-                                                width: Responsive.width(90, context),
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                                  mainAxisAlignment: MainAxisAlignment.center,
-                                                  children: [
-                                                    SvgPicture.asset(
-                                                      'assets/icons/ic_folder.svg',
-                                                    ),
-                                                    const SizedBox(
-                                                      height: 10,
-                                                    ),
-                                                    Text(
-                                                      "Choose a image and upload here".tr,
-                                                      style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontFamily: AppThemeData.medium,
-                                                          fontSize: 16),
-                                                    ),
-                                                    const SizedBox(
-                                                      height: 5,
-                                                    ),
-                                                    Text(
-                                                      "JPEG, PNG".tr,
-                                                      style: TextStyle(
-                                                          fontSize: 12, color: isDark ? AppThemeData.grey200 : AppThemeData.grey700, fontFamily: AppThemeData.regular),
-                                                    ),
-                                                    const SizedBox(
-                                                      height: 10,
-                                                    ),
-                                                    RoundedButtonFill(
-                                                      title: "Brows Image".tr,
-                                                      color: AppThemeData.carRent50,
-                                                      textColor: AppThemeData.primary300,
-                                                      width: 30,
-                                                      height: 5,
-                                                      onPress: () async {
-                                                        buildBottomSheet(context, controller, "back");
-                                                      },
-                                                    ),
-                                                  ],
-                                                )),
-                                          ),
-                                        ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(
-                            height: 30,
-                          ),
-                        ],
+          final c = context.dsColors;
+          final t = context.dsText;
+
+          // Reads stay inside the tracked builder.
+          final String title = "${controller.documentModel.value.title}";
+          final bool frontSide = controller.documentModel.value.frontSide == true;
+          final bool backSide = controller.documentModel.value.backSide == true;
+          final String frontImage = controller.frontImage.value;
+          final String backImage = controller.backImage.value;
+          final String status = controller.documents.value.verificationStatus;
+          final String? rejectReason = controller.documents.value.rejectReason;
+          final DateTime? expiryDate = controller.expiryDate.value;
+          final bool isExpired = controller.documents.value.isExpired;
+          final bool canUpload = controller.canUpload;
+          final bool showExpiry = controller.needsExpiryDate || expiryDate != null;
+
+          return DsScaffold(
+            title: title,
+            onBack: () {
+              Get.back();
+            },
+            body: DsAsync(
+              isLoading: controller.isLoading.value,
+              skeleton: const DsSkeletonDetail(mediaHeight: 180),
+              builder: (_) => SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, DsSpace.xxxl),
+                child: DsResponsive(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: DsFadeSlideIn.stagger([
+                      Text(
+                        "${'Upload'.tr} $title ${'for Verification'.tr}",
+                        style: t.headline,
                       ),
-                    ),
-                  ),
-            bottomNavigationBar: !controller.canUpload
-                ? const SizedBox()
-                : InkWell(
-                    onTap: () {
-                      if (controller.needsExpiryDate && controller.expiryDate.value == null) {
-                        ShowToastDialog.showToast("Please select the expiry date of the document.".tr);
-                      } else if (controller.expiryDate.value != null && controller.expiryDate.value!.isBefore(DateTime.now())) {
-                        ShowToastDialog.showToast("This document has expired. Please upload a valid document.".tr);
-                      } else if (controller.documentModel.value.frontSide == true && controller.frontImage.value.isEmpty) {
-                        ShowToastDialog.showToast("Please upload front side of document.".tr);
-                      } else if (controller.documentModel.value.backSide == true && controller.backImage.value.isEmpty) {
-                        ShowToastDialog.showToast("Please upload back side of document.".tr);
-                      } else {
-                        ShowToastDialog.showLoader("Please wait.".tr);
-                        controller.uploadDocument();
-                      }
-                    },
-                    child: Container(
-                      color: AppThemeData.primary300,
-                      width: Responsive.width(100, context),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Text(
-                          "Upload Document".tr,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: isDark ? AppThemeData.grey50 : AppThemeData.grey50,
-                            fontSize: 16,
-                            fontFamily: AppThemeData.medium,
-                            fontWeight: FontWeight.w400,
+                      const DsGap(DsSpace.xs),
+                      Text(
+                        "${'Please upload a valid'.tr} $title ${'to verify your identity complete the registration process.'.tr}".tr,
+                        style: t.bodySecondary,
+                      ),
+                      const DsGap(DsSpace.lg),
+                      if (status == 'rejected' && rejectReason != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: DsSpace.md),
+                          child: DsInlineAlert(
+                            tone: DsTone.danger,
+                            message: "${'Rejected'.tr}: $rejectReason",
                           ),
                         ),
-                      ),
+                      if (showExpiry)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: DsSpace.lg),
+                          child: DsCard.outlined(
+                            onTap: !canUpload
+                                ? null
+                                : () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: controller.expiryDate.value ?? DateTime.now().add(const Duration(days: 1)),
+                                      firstDate: DateTime.now(),
+                                      lastDate: DateTime(2100),
+                                    );
+                                    if (picked != null) controller.expiryDate.value = picked;
+                                  },
+                            child: Row(
+                              children: [
+                                DsIconWell(
+                                  icon: Icons.event_outlined,
+                                  tone: isExpired ? DsTone.danger : DsTone.brand,
+                                  size: 44,
+                                ),
+                                const DsGap(DsSpace.md),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text("Expiry date".tr, style: t.titleSm),
+                                      const DsGap(DsSpace.xxs),
+                                      Text(
+                                        expiryDate == null
+                                            ? "Select the expiry date".tr
+                                            : Constant.timestampToDate(Timestamp.fromDate(expiryDate)),
+                                        style: isExpired ? t.bodySm.withColor(c.dangerStrong) : t.bodySm,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (canUpload) Icon(Icons.edit_calendar_outlined, size: 20, color: c.textMuted),
+                              ],
+                            ),
+                          ),
+                        ),
+                      if (frontSide)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: DsSpace.lg),
+                          child: _SidePicker(
+                            title: "${'Front Side of'} $title",
+                            image: frontImage,
+                            onPick: () => buildBottomSheet(context, controller, "front"),
+                            onTapExisting: () {
+                              if (controller.documents.value.status != "uploaded" || controller.documents.value.status == "rejected") {
+                                buildBottomSheet(context, controller, "front");
+                              }
+                            },
+                          ),
+                        ),
+                      if (backSide)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: DsSpace.lg),
+                          child: _SidePicker(
+                            title: "${'Back side of'.tr} $title",
+                            image: backImage,
+                            onPick: () => buildBottomSheet(context, controller, "back"),
+                            onTapExisting: () {
+                              if (controller.documents.value.status != "uploaded" || controller.documents.value.status == "rejected") {
+                                buildBottomSheet(context, controller, "back");
+                              }
+                            },
+                          ),
+                        ),
+                    ], offset: const Offset(0, 18)),
+                  ),
+                ),
+              ),
+            ),
+            bottomBar: !canUpload
+                ? null
+                : DsStickyBar(
+                    child: DsButton.primary(
+                      label: "Upload Document".tr,
+                      icon: Icons.cloud_upload_outlined,
+                      size: DsButtonSize.lg,
+                      expand: true,
+                      onPressed: () {
+                        if (controller.needsExpiryDate && controller.expiryDate.value == null) {
+                          ShowToastDialog.showToast("Please select the expiry date of the document.".tr);
+                        } else if (controller.expiryDate.value != null && controller.expiryDate.value!.isBefore(DateTime.now())) {
+                          ShowToastDialog.showToast("This document has expired. Please upload a valid document.".tr);
+                        } else if (controller.documentModel.value.frontSide == true && controller.frontImage.value.isEmpty) {
+                          ShowToastDialog.showToast("Please upload front side of document.".tr);
+                        } else if (controller.documentModel.value.backSide == true && controller.backImage.value.isEmpty) {
+                          ShowToastDialog.showToast("Please upload back side of document.".tr);
+                        } else {
+                          ShowToastDialog.showLoader("Please wait.".tr);
+                          controller.uploadDocument();
+                        }
+                      },
                     ),
                   ),
           );
@@ -360,71 +175,190 @@ class VerificationDetailsUploadScreen extends StatelessWidget {
   }
 
   Future buildBottomSheet(BuildContext context, DetailsUploadController controller, String type) {
+    final c = DsColors.of(context);
     return showModalBottomSheet(
         context: context,
+        backgroundColor: c.surfaceRaised,
+        shape: const RoundedRectangleBorder(borderRadius: DsRadius.sheetTop),
         builder: (context) {
-          final themeController = Get.find<ThemeController>();
-          final isDark = themeController.isDark.value;
           return StatefulBuilder(builder: (context, setState) {
-            return SizedBox(
-              height: Responsive.height(22, context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 15),
-                    child: Text(
-                      "Please Select".tr,
-                      style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey900, fontFamily: AppThemeData.bold, fontSize: 16),
-                    ),
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(18.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            IconButton(
-                                onPressed: () => controller.pickFile(source: ImageSource.camera, type: type),
-                                icon: const Icon(
-                                  Icons.camera_alt,
-                                  size: 32,
-                                )),
-                            Padding(
-                              padding: const EdgeInsets.only(top: 3),
-                              child: Text("Camera".tr),
-                            ),
-                          ],
-                        ),
+            final t = context.dsText;
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(DsSpace.xl, DsSpace.md, DsSpace.xl, DsSpace.xl),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(color: c.borderStrong, borderRadius: DsRadius.brPill),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.all(18.0),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            IconButton(
-                                onPressed: () => controller.pickFile(source: ImageSource.gallery, type: type),
-                                icon: const Icon(
-                                  Icons.photo_library_sharp,
-                                  size: 32,
-                                )),
-                            Padding(
-                              padding: const EdgeInsets.only(top: 3),
-                              child: Text("Gallery".tr),
-                            ),
-                          ],
+                    ),
+                    const DsGap(DsSpace.lg),
+                    Text("Please Select".tr, textAlign: TextAlign.center, style: t.title),
+                    const DsGap(DsSpace.xl),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _PickerTile(
+                            icon: Icons.camera_alt_rounded,
+                            label: "Camera".tr,
+                            onTap: () => controller.pickFile(source: ImageSource.camera, type: type),
+                          ),
                         ),
-                      )
-                    ],
-                  ),
-                ],
+                        const DsGap(DsSpace.md),
+                        Expanded(
+                          child: _PickerTile(
+                            icon: Icons.photo_library_rounded,
+                            label: "Gallery".tr,
+                            onTap: () => controller.pickFile(source: ImageSource.gallery, type: type),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             );
           });
         });
+  }
+}
+
+/// Upload tile for one side of a document: empty state is a dashed drop zone,
+/// filled state shows the picture and can be replaced.
+class _SidePicker extends StatelessWidget {
+  final String title;
+  final String image;
+  final VoidCallback onPick;
+  final VoidCallback onTapExisting;
+
+  const _SidePicker({
+    required this.title,
+    required this.image,
+    required this.onPick,
+    required this.onTapExisting,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: t.titleSm),
+        const DsGap(DsSpace.md),
+        if (image.isNotEmpty)
+          DsPressable(
+            onTap: onTapExisting,
+            child: ClipRRect(
+              borderRadius: DsRadius.brLg,
+              child: SizedBox(
+                height: 190,
+                width: double.infinity,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Constant().hasValidUrl(image) == false
+                        ? Image.file(File(image), fit: BoxFit.cover)
+                        : CachedNetworkImage(
+                            imageUrl: image,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => DsShimmer(child: DsSkeleton.box(height: 190)),
+                            errorWidget: (context, url, error) => Container(
+                              color: c.surfaceAlt,
+                              alignment: Alignment.center,
+                              child: Icon(Icons.broken_image_outlined, color: c.textMuted),
+                            ),
+                          ),
+                    PositionedDirectional(
+                      bottom: DsSpace.sm,
+                      end: DsSpace.sm,
+                      child: DsBadge(
+                        label: "Brows Image".tr,
+                        tone: DsTone.brand,
+                        style: DsBadgeStyle.solid,
+                        icon: Icons.photo_camera_outlined,
+                        small: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+        else
+          DottedBorder(
+            options: RoundedRectDottedBorderOptions(
+              radius: const Radius.circular(DsRadius.lg),
+              dashPattern: const [6, 6, 6, 6],
+              color: c.borderStrong,
+            ),
+            child: Container(
+              decoration: BoxDecoration(
+                color: c.surfaceAlt,
+                borderRadius: DsRadius.brLg,
+              ),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.xxl),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const DsIconWell(icon: Icons.folder_open_rounded, tone: DsTone.brand, size: 52, circle: true),
+                  const DsGap(DsSpace.md),
+                  Text(
+                    "Choose a image and upload here".tr,
+                    textAlign: TextAlign.center,
+                    style: t.titleSm,
+                  ),
+                  const DsGap(DsSpace.xxs),
+                  Text("JPEG, PNG".tr, style: t.caption),
+                  const DsGap(DsSpace.lg),
+                  DsButton.tonal(
+                    label: "Brows Image".tr,
+                    icon: Icons.add_photo_alternate_outlined,
+                    size: DsButtonSize.sm,
+                    onPressed: () async {
+                      onPick();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Camera / gallery choice inside the picker sheet.
+class _PickerTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _PickerTile({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.dsText;
+    return DsCard.outlined(
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(vertical: DsSpace.xl),
+      semanticLabel: label,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DsIconWell(icon: icon, tone: DsTone.brand, size: 48, circle: true),
+          const DsGap(DsSpace.md),
+          Text(label, style: t.bodyStrong),
+        ],
+      ),
+    );
   }
 }

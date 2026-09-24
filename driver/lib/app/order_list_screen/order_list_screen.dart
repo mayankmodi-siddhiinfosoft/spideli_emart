@@ -4,15 +4,14 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/controllers/order_list_controller.dart';
 import 'package:driver/models/order_model.dart';
-import 'package:driver/themes/app_them_data.dart';
-import 'package:driver/themes/round_button_fill.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
-import 'package:driver/widget/my_separator.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
-import 'package:timelines_plus/timelines_plus.dart';
 
+/// Archetype J — history list. Each trip is an outlined card with the order id
+/// and live status on top, a compact pickup → drop route and the driver's
+/// earnings for that trip at the bottom.
 class OrderListScreen extends StatelessWidget {
   const OrderListScreen({super.key});
 
@@ -20,378 +19,166 @@ class OrderListScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final themeController = Get.find<ThemeController>();
     return Obx(() {
-      final isDark = themeController.isDark.value;
+      // Kept as the observable read that rebuilds this screen on a theme
+      // change; colors now come from `context.dsColors`.
+      themeController.isDark.value;
       return GetX(
           init: OrderListController(),
           builder: (controller) {
-            return Scaffold(
-              body: controller.isLoading.value
-                  ? Constant.loader()
-                  : Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Container(
-                                decoration: ShapeDecoration(
-                                  color: isDark ? AppThemeData.grey700 : AppThemeData.grey200,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(120),
-                                  ),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(20),
-                                  child: SvgPicture.asset("assets/icons/ic_document.svg"),
-                                ),
-                              ),
-                              const SizedBox(
-                                height: 12,
-                              ),
-                              Text(
-                                "Document Verification in Pending".tr,
-                                style: TextStyle(color: isDark ? AppThemeData.grey100 : AppThemeData.grey800, fontSize: 22, fontFamily: AppThemeData.semiBold),
-                              ),
-                              const SizedBox(
-                                height: 5,
-                              ),
-                              Text(
-                                "Your documents are being reviewed. We will notify you once the verification is complete.".tr,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: isDark ? AppThemeData.grey50 : AppThemeData.grey500, fontSize: 16, fontFamily: AppThemeData.bold),
-                              ),
-                              const SizedBox(
-                                height: 20,
-                              ),
-                              RoundedButtonFill(
-                                title: "View Status".tr,
-                                width: 55,
-                                height: 5.5,
-                                color: AppThemeData.primary300,
-                                textColor: AppThemeData.grey50,
-                                onPress: () async {
-                                  DashBoardController dashBoardController = Get.put(DashBoardController());
-                                  dashBoardController.drawerIndex.value = 4;
-                                },
-                              ),
-                            ],
-                          ),
-                        )
-                      : Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          child: controller.orderList.isEmpty
-                              ? Constant.showEmptyView(message: "Order Not found".tr, isDark: isDark)
-                              : ListView.builder(
-                                  shrinkWrap: true,
-                                  itemCount: controller.orderList.length,
-                                  itemBuilder: (context, index) {
-                                    OrderModel orderModel = controller.orderList[index];
-                                    return Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 5),
-                                      child: InkWell(
-                                        onTap: () {
-                                          Get.to(const OrderDetailsScreen(), arguments: {"orderModel": orderModel});
-                                        },
-                                        child: Container(
-                                          decoration: ShapeDecoration(
-                                            color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(16),
-                                            ),
-                                          ),
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(8.0),
-                                            child: Column(
-                                              children: [
-                                                Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Expanded(
-                                                      child: Text(
-                                                        "Order ID".tr,
-                                                        textAlign: TextAlign.start,
-                                                        style: TextStyle(
-                                                          fontFamily: AppThemeData.regular,
-                                                          color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    Text(
-                                                      Constant.orderId(orderId: orderModel.id.toString()),
-                                                      textAlign: TextAlign.start,
-                                                      style: TextStyle(
-                                                        fontFamily: AppThemeData.semiBold,
-                                                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(
-                                                  height: 5,
-                                                ),
-                                                Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Expanded(
-                                                      child: Text(
-                                                        "Status".tr,
-                                                        textAlign: TextAlign.start,
-                                                        style: TextStyle(
-                                                          fontFamily: AppThemeData.regular,
-                                                          color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    Text(
-                                                      orderModel.status.toString(),
-                                                      textAlign: TextAlign.start,
-                                                      style: TextStyle(
-                                                        fontFamily: AppThemeData.semiBold,
-                                                        color: Constant.statusColor(status: orderModel.status),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(
-                                                  height: 5,
-                                                ),
-                                                Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Expanded(
-                                                      child: Text(
-                                                        "Date".tr,
-                                                        textAlign: TextAlign.start,
-                                                        style: TextStyle(
-                                                          fontFamily: AppThemeData.regular,
-                                                          color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    Text(
-                                                      Constant.timestampToDateTime(orderModel.createdAt!),
-                                                      textAlign: TextAlign.start,
-                                                      style: TextStyle(
-                                                        fontFamily: AppThemeData.semiBold,
-                                                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 5),
-                                                Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Expanded(
-                                                      child: Text(
-                                                        "Section".tr,
-                                                        textAlign: TextAlign.start,
-                                                        style: TextStyle(
-                                                          fontFamily: AppThemeData.regular,
-                                                          color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    Text(
-                                                      Constant.sectionNameFromId(orderModel.sectionId),
-                                                      textAlign: TextAlign.start,
-                                                      style: TextStyle(
-                                                        fontFamily: AppThemeData.semiBold,
-                                                        color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                Padding(
-                                                  padding: const EdgeInsets.symmetric(vertical: 10),
-                                                  child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                ),
-                                                Timeline.tileBuilder(
-                                                  shrinkWrap: true,
-                                                  padding: EdgeInsets.zero,
-                                                  physics: const NeverScrollableScrollPhysics(),
-                                                  theme: TimelineThemeData(
-                                                    nodePosition: 0,
-                                                    // indicatorPosition: 0,
-                                                  ),
-                                                  builder: TimelineTileBuilder.connected(
-                                                    contentsAlign: ContentsAlign.basic,
-                                                    indicatorBuilder: (context, index) {
-                                                      return index == 0
-                                                          ? Container(
-                                                              decoration: ShapeDecoration(
-                                                                color: AppThemeData.primary50,
-                                                                shape: RoundedRectangleBorder(
-                                                                  borderRadius: BorderRadius.circular(120),
-                                                                ),
-                                                              ),
-                                                              child: Padding(
-                                                                padding: const EdgeInsets.all(10),
-                                                                child: SvgPicture.asset(
-                                                                  "assets/icons/ic_building.svg",
-                                                                  colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn),
-                                                                ),
-                                                              ),
-                                                            )
-                                                          : Container(
-                                                              decoration: ShapeDecoration(
-                                                                color: AppThemeData.carRent50,
-                                                                shape: RoundedRectangleBorder(
-                                                                  borderRadius: BorderRadius.circular(120),
-                                                                ),
-                                                              ),
-                                                              child: Padding(
-                                                                padding: const EdgeInsets.all(10),
-                                                                child: SvgPicture.asset(
-                                                                  "assets/icons/ic_location.svg",
-                                                                  colorFilter: ColorFilter.mode(AppThemeData.primary300, BlendMode.srcIn),
-                                                                ),
-                                                              ),
-                                                            );
-                                                    },
-                                                    connectorBuilder: (context, index, connectorType) {
-                                                      return const DashedLineConnector(
-                                                        color: AppThemeData.grey300,
-                                                        gap: 3,
-                                                      );
-                                                    },
-                                                    contentsBuilder: (context, index) {
-                                                      return Padding(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                                        child: index == 0
-                                                            ? Column(
-                                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                                children: [
-                                                                  Text(
-                                                                    "${orderModel.vendor!.title}",
-                                                                    textAlign: TextAlign.start,
-                                                                    style: TextStyle(
-                                                                      fontFamily: AppThemeData.semiBold,
-                                                                      fontSize: 16,
-                                                                      color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                                    ),
-                                                                  ),
-                                                                  Text(
-                                                                    "${orderModel.vendor!.location}",
-                                                                    textAlign: TextAlign.start,
-                                                                    style: TextStyle(
-                                                                      fontFamily: AppThemeData.medium,
-                                                                      fontSize: 12,
-                                                                      color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                                    ),
-                                                                  ),
-                                                                ],
-                                                              )
-                                                            : Column(
-                                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                                children: [
-                                                                  Text(
-                                                                    "Deliver to the".tr,
-                                                                    textAlign: TextAlign.start,
-                                                                    style: TextStyle(
-                                                                      fontFamily: AppThemeData.semiBold,
-                                                                      fontSize: 16,
-                                                                      color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                                    ),
-                                                                  ),
-                                                                  Text(
-                                                                    orderModel.address!.getFullAddress(),
-                                                                    textAlign: TextAlign.start,
-                                                                    style: TextStyle(
-                                                                      fontFamily: AppThemeData.medium,
-                                                                      fontSize: 12,
-                                                                      color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                                    ),
-                                                                  ),
-                                                                ],
-                                                              ),
-                                                      );
-                                                    },
-                                                    itemCount: 2,
-                                                  ),
-                                                ),
-                                                Visibility(
-                                                  visible: (Constant.userModel?.vendorID?.isEmpty == true),
-                                                  child: Column(children: [
-                                                    Padding(
-                                                      padding: const EdgeInsets.symmetric(vertical: 5),
-                                                      child: MySeparator(color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-                                                    ),
-                                                    const SizedBox(
-                                                      height: 10,
-                                                    ),
-                                                    Row(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      children: [
-                                                        Expanded(
-                                                          child: Text(
-                                                            "Delivery Charge".tr,
-                                                            textAlign: TextAlign.start,
-                                                            style: TextStyle(
-                                                              fontFamily: AppThemeData.regular,
-                                                              color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                              fontSize: 16,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                        Text(
-                                                          Constant.amountShow(currency: RegionService.currencyForRecord(orderModel.regionId), amount: orderModel.deliveryCharge),
-                                                          textAlign: TextAlign.start,
-                                                          style: TextStyle(
-                                                            fontFamily: AppThemeData.semiBold,
-                                                            color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                            fontSize: 16,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ]),
-                                                ),
-                                                const SizedBox(
-                                                  height: 5,
-                                                ),
-                                                orderModel.tipAmount == null || orderModel.tipAmount!.isEmpty || double.parse(orderModel.tipAmount.toString()) <= 0
-                                                    ? const SizedBox()
-                                                    : Row(
-                                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                                        children: [
-                                                          Expanded(
-                                                            child: Text(
-                                                              "Tips".tr,
-                                                              textAlign: TextAlign.start,
-                                                              style: TextStyle(
-                                                                fontFamily: AppThemeData.regular,
-                                                                color: isDark ? AppThemeData.grey300 : AppThemeData.grey600,
-                                                                fontSize: 16,
-                                                              ),
-                                                            ),
-                                                          ),
-                                                          Text(
-                                                            Constant.amountShow(currency: RegionService.currencyForRecord(orderModel.regionId), amount: orderModel.tipAmount),
-                                                            textAlign: TextAlign.start,
-                                                            style: TextStyle(
-                                                              fontFamily: AppThemeData.semiBold,
-                                                              color: isDark ? AppThemeData.grey50 : AppThemeData.grey900,
-                                                              fontSize: 16,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                const SizedBox(
-                                                  height: 10,
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                        ),
+            final bool isLoading = controller.isLoading.value;
+            final List<OrderModel> orders = controller.orderList.toList();
+            final bool documentsPending = Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false;
+
+            return DsScaffold(
+              body: documentsPending
+                  ? _documentsPendingView(context)
+                  : DsAsync(
+                      isLoading: isLoading,
+                      skeleton: const DsSkeletonList(itemCount: 4, trailing: false),
+                      isEmpty: orders.isEmpty,
+                      empty: DsEmptyState(
+                        icon: Icons.receipt_long_outlined,
+                        title: "Order Not found".tr,
+                        message: "Completed and ongoing deliveries will appear here.".tr,
+                      ),
+                      builder: (_) => ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+                        itemCount: orders.length,
+                        itemBuilder: (context, index) {
+                          return DsFadeSlideIn(
+                            index: index,
+                            child: _orderCard(context, orders[index]),
+                          );
+                        },
+                      ),
+                    ),
             );
           });
     });
+  }
+
+  Widget _documentsPendingView(BuildContext context) {
+    return Center(
+      child: DsEmptyState(
+        icon: Icons.assignment_outlined,
+        tone: DsTone.warning,
+        title: "Document Verification in Pending".tr,
+        message: "Your documents are being reviewed. We will notify you once the verification is complete.".tr,
+        actionLabel: "View Status".tr,
+        actionIcon: Icons.arrow_forward_rounded,
+        onAction: () async {
+          DashBoardController dashBoardController = Get.put(DashBoardController());
+          dashBoardController.drawerIndex.value = 4;
+        },
+      ),
+    );
+  }
+
+  Widget _orderCard(BuildContext context, OrderModel orderModel) {
+    final c = context.dsColors;
+    final t = context.dsText;
+
+    final String tip = orderModel.tipAmount ?? '';
+    final bool hasTip = tip.isNotEmpty && double.parse(tip.toString()) > 0;
+    final bool showEarnings = Constant.userModel?.vendorID?.isEmpty == true;
+
+    return DsCard.outlined(
+      margin: const EdgeInsets.only(bottom: DsSpace.md),
+      padding: const EdgeInsets.all(DsSpace.lg),
+      semanticLabel: '${"Order ID".tr} ${Constant.orderId(orderId: orderModel.id.toString())}',
+      onTap: () {
+        Get.to(const OrderDetailsScreen(), arguments: {"orderModel": orderModel});
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("Order ID".tr, style: t.caption),
+                    Text(
+                      Constant.orderId(orderId: orderModel.id.toString()),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: t.titleSm.w700.tabular,
+                    ),
+                  ],
+                ),
+              ),
+              const DsGap(DsSpace.sm),
+              Semantics(
+                label: "${"Status".tr}: ${orderModel.status.toString().tr}",
+                excludeSemantics: true,
+                child: DsStatusChip(label: orderModel.status.toString().tr, status: orderModel.status),
+              ),
+            ],
+          ),
+          const DsGap(DsSpace.md),
+          Wrap(
+            spacing: DsSpace.sm,
+            runSpacing: DsSpace.xs,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Semantics(
+                label: "${"Section".tr}: ${Constant.sectionNameFromId(orderModel.sectionId)}",
+                excludeSemantics: true,
+                child: DsSectionBadge(section: DsSection.delivery, label: Constant.sectionNameFromId(orderModel.sectionId)),
+              ),
+              Semantics(
+                label: "${"Date".tr}: ${Constant.timestampToDateTime(orderModel.createdAt!)}",
+                excludeSemantics: true,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.schedule_rounded, size: 14, color: c.textMuted),
+                    const DsGap(DsSpace.xs),
+                    Text(Constant.timestampToDateTime(orderModel.createdAt!), style: t.caption),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const DsGap(DsSpace.lg),
+          DsRouteStops(
+            addressMaxLines: 1,
+            stops: [
+              DsRouteStop(
+                kind: DsStopKind.pickup,
+                label: "${orderModel.vendor!.title}",
+                address: "${orderModel.vendor!.location}",
+              ),
+              DsRouteStop(
+                kind: DsStopKind.drop,
+                label: "Deliver to the".tr,
+                address: orderModel.address!.getFullAddress(),
+              ),
+            ],
+          ),
+          if (showEarnings || hasTip) ...[
+            const DsGap(DsSpace.md),
+            DsTripMetrics(
+              items: [
+                if (showEarnings)
+                  DsTripMetric(
+                    icon: Icons.delivery_dining_rounded,
+                    value: Constant.amountShow(currency: RegionService.currencyForRecord(orderModel.regionId), amount: orderModel.deliveryCharge),
+                    label: "Delivery Charge".tr,
+                  ),
+                if (hasTip)
+                  DsTripMetric(
+                    icon: Icons.volunteer_activism_outlined,
+                    value: Constant.amountShow(currency: RegionService.currencyForRecord(orderModel.regionId), amount: orderModel.tipAmount),
+                    label: "Tips".tr,
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }

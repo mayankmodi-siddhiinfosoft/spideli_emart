@@ -1,6 +1,6 @@
 import 'package:driver/constant/constant.dart';
 import 'package:driver/models/cab_order_model.dart';
-import 'package:driver/themes/app_them_data.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -12,6 +12,8 @@ import 'package:url_launcher/url_launcher.dart';
 /// field is absent, so rides without these fields look exactly as before.
 class CabRideExtras extends StatelessWidget {
   final CabOrderModel order;
+
+  /// Kept for call-site compatibility; colors now come from `context.dsColors`.
   final bool isDark;
 
   /// When set, the next unreached stop shows a "Reached" button.
@@ -37,37 +39,24 @@ class CabRideExtras extends StatelessWidget {
   static bool _hasCancellation(CabOrderModel order) =>
       (order.cancelReason?.isNotEmpty ?? false) && [Constant.orderCancelled, Constant.orderRejected, Constant.driverRejected].contains(order.status);
 
-  Color get _label =>isDark ? AppThemeData.grey300 : AppThemeData.grey600;
-
-  Color get _value => isDark ? AppThemeData.grey50 : AppThemeData.grey900;
-
   @override
   Widget build(BuildContext context) {
     if (!hasContent(order, showCancellation: showCancellation)) return const SizedBox();
+    final c = context.dsColors;
+    final t = context.dsText;
     final children = <Widget>[];
 
     if (order.writtenCommunicationOnly == true) {
-      children.add(Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(color: AppThemeData.warning50, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppThemeData.warning300)),
-        child: Row(
-          children: [
-            Icon(Icons.chat_bubble_outline, size: 18, color: AppThemeData.warning400),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                "Written communication only - contact the customer by chat, do not call".tr,
-                style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 13, color: AppThemeData.grey900),
-              ),
-            ),
-          ],
-        ),
+      children.add(DsInlineAlert(
+        tone: DsTone.warning,
+        icon: Icons.chat_bubble_outline_rounded,
+        message: "Written communication only - contact the customer by chat, do not call".tr,
       ));
     }
 
     if (order.isForSomeoneElse) {
       children.add(_section(
+        context,
         "Rider (booked for someone else)".tr,
         Row(
           children: [
@@ -75,16 +64,26 @@ class CabRideExtras extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (order.riderName != null) Text(order.riderName!, style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 15, color: _value)),
-                  if (order.riderPhone != null) Text(order.riderPhone!, style: TextStyle(fontFamily: AppThemeData.regular, fontSize: 13, color: _label)),
+                  if (order.riderName != null) Text(order.riderName!, style: t.titleSm.withColor(c.textPrimary)),
+                  if (order.riderPhone != null) Text(order.riderPhone!, style: t.bodySm.withColor(c.textSecondary).tabular),
                 ],
               ),
             ),
             if (order.riderPhone != null && order.writtenCommunicationOnly != true)
-              _roundIcon(Icons.call_outlined, () => Constant.makePhoneCall(order.riderPhone!)),
+              DsIconButton(
+                icon: Icons.call_outlined,
+                semanticLabel: "Call rider".tr,
+                variant: DsIconButtonVariant.outlined,
+                onPressed: () => Constant.makePhoneCall(order.riderPhone!),
+              ),
             if (order.riderPhone != null) ...[
-              const SizedBox(width: 8),
-              _roundIcon(Icons.sms_outlined, () => launchUrl(Uri(scheme: 'sms', path: order.riderPhone!))),
+              const DsGap(DsSpace.sm),
+              DsIconButton(
+                icon: Icons.sms_outlined,
+                semanticLabel: "Send SMS to rider".tr,
+                variant: DsIconButtonVariant.outlined,
+                onPressed: () => launchUrl(Uri(scheme: 'sms', path: order.riderPhone!)),
+              ),
             ],
           ],
         ),
@@ -92,51 +91,47 @@ class CabRideExtras extends StatelessWidget {
     }
 
     if (order.hasPassengers) {
-      children.add(_row("Passengers".tr, "${order.adults} ${'adults'.tr}, ${order.children} ${'children'.tr}"));
+      children.add(DsInfoRow(label: "Passengers".tr, value: "${order.adults} ${'adults'.tr}, ${order.children} ${'children'.tr}"));
     }
 
     if (order.instructions?.trim().isNotEmpty ?? false) {
-      children.add(_section("Instructions".tr, Text(order.instructions!.trim(), style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: _value))));
+      children.add(_section(context, "Instructions".tr, Text(order.instructions!.trim(), style: t.body.withColor(c.textPrimary))));
     }
 
     final stops = order.orderedStops;
     if (stops.isNotEmpty) {
       final nextIndex = stops.indexWhere((s) => s['reached'] != true);
       children.add(_section(
+        context,
         "Stops".tr,
         Column(
           children: List.generate(stops.length, (i) {
             final stop = stops[i];
             final reached = stop['reached'] == true;
             return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 12,
-                    backgroundColor: reached ? AppThemeData.success400 : AppThemeData.primary50,
+                  Container(
+                    width: 26,
+                    height: 26,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: reached ? c.successSoft : c.brandSoft, shape: BoxShape.circle),
                     child: reached
-                        ? const Icon(Icons.check, size: 14, color: Colors.white)
-                        : Text("${i + 1}", style: TextStyle(fontSize: 12, fontFamily: AppThemeData.semiBold, color: AppThemeData.primary300)),
+                        ? Icon(Icons.check_rounded, size: 15, color: c.successStrong)
+                        : Text("${i + 1}", style: t.labelSm.withColor(c.brandStrong)),
                   ),
-                  const SizedBox(width: 10),
+                  const DsGap(DsSpace.md),
                   Expanded(
                     child: Text(
                       stop['address']?.toString() ?? '',
-                      style: TextStyle(
-                        fontFamily: AppThemeData.medium,
-                        fontSize: 14,
-                        color: reached ? _label : _value,
-                        decoration: reached ? TextDecoration.lineThrough : null,
-                      ),
+                      style: reached ? t.body.withColor(c.textMuted).strike : t.body.withColor(c.textPrimary),
                     ),
                   ),
-                  if (!reached && onStopReached != null && i == nextIndex)
-                    TextButton(
-                      style: TextButton.styleFrom(backgroundColor: AppThemeData.primary300, foregroundColor: Colors.white, visualDensity: VisualDensity.compact),
-                      onPressed: () => onStopReached!(i),
-                      child: Text("Reached".tr),
-                    ),
+                  if (!reached && onStopReached != null && i == nextIndex) ...[
+                    const DsGap(DsSpace.sm),
+                    DsButton.tonal(label: "Reached".tr, size: DsButtonSize.sm, onPressed: () => onStopReached!(i)),
+                  ],
                 ],
               ),
             );
@@ -151,54 +146,36 @@ class CabRideExtras extends StatelessWidget {
           : order.cancelledBy == 'customer'
               ? "by customer".tr
               : '';
-      children.add(_section("${'Cancellation reason'.tr} $by".trim(), Text(order.cancelReason!, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: AppThemeData.danger300))));
+      children.add(DsInlineAlert(
+        tone: DsTone.danger,
+        icon: Icons.block_rounded,
+        title: "${'Cancellation reason'.tr} $by".trim(),
+        message: order.cancelReason!,
+      ));
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final child in children) Padding(padding: const EdgeInsets.only(bottom: 8), child: child),
+          for (var i = 0; i < children.length; i++)
+            Padding(padding: const EdgeInsets.only(bottom: DsSpace.sm), child: DsFadeSlideIn(index: i, child: children[i])),
         ],
       ),
     );
   }
 
-  Widget _section(String title, Widget body) {
+  Widget _section(BuildContext context, String title, Widget body) {
+    final c = context.dsColors;
+    final t = context.dsText;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: TextStyle(fontFamily: AppThemeData.regular, fontSize: 13, color: _label)),
-        const SizedBox(height: 4),
+        Text(title, style: t.overline.withColor(c.textMuted)),
+        const DsGap(DsSpace.xs),
         body,
       ],
-    );
-  }
-
-  Widget _row(String title, String value) {
-    return Row(
-      children: [
-        Expanded(child: Text(title, style: TextStyle(fontFamily: AppThemeData.regular, fontSize: 16, color: _label))),
-        Text(value, style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 16, color: _value)),
-      ],
-    );
-  }
-
-  Widget _roundIcon(IconData icon, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        width: 38,
-        height: 38,
-        decoration: ShapeDecoration(
-          shape: RoundedRectangleBorder(
-            side: BorderSide(width: 1, color: isDark ? AppThemeData.grey700 : AppThemeData.grey200),
-            borderRadius: BorderRadius.circular(120),
-          ),
-        ),
-        child: Icon(icon, size: 20, color: AppThemeData.primary300),
-      ),
     );
   }
 }

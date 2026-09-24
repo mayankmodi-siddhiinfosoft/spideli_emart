@@ -1,9 +1,7 @@
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/rental_order_model.dart';
-import 'package:driver/themes/app_them_data.dart';
-import 'package:driver/themes/round_button_fill.dart';
-import 'package:driver/themes/text_field_widget.dart';
+import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/utils/rental_proposal_service.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +13,8 @@ import 'package:get/get.dart';
 /// Reject or Counter; [onChanged] is called after a successful response.
 class RentalProposalCard extends StatelessWidget {
   final RentalOrderModel order;
+
+  /// Kept for call-site compatibility; colors now come from `context.dsColors`.
   final bool isDark;
   final VoidCallback? onChanged;
 
@@ -37,82 +37,83 @@ class RentalProposalCard extends StatelessWidget {
     }
   }
 
+  DsTone _statusTone(String? status) {
+    switch (status) {
+      case 'accepted':
+        return DsTone.success;
+      case 'rejected':
+        return DsTone.danger;
+      case 'countered':
+        return DsTone.info;
+      default:
+        return DsTone.warning;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (order.priceProposal == null) return const SizedBox();
+    final c = context.dsColors;
+    final t = context.dsText;
     final status = order.proposalStatus;
-    final textColor = isDark ? AppThemeData.grey50 : AppThemeData.grey900;
-    final subColor = isDark ? AppThemeData.grey300 : AppThemeData.grey600;
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isDark ? AppThemeData.greyDark100 : AppThemeData.primary50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppThemeData.primary300.withValues(alpha: 0.4)),
-      ),
+    return DsCard.tinted(
+      tone: DsTone.brand,
+      margin: const EdgeInsets.only(bottom: DsSpace.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.local_offer_outlined, size: 18, color: AppThemeData.primary300),
-              const SizedBox(width: 6),
-              Expanded(child: Text("Customer price proposal".tr, style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 15, color: textColor))),
-              Text(_money(order.proposedAmount), style: TextStyle(fontFamily: AppThemeData.bold, fontSize: 16, color: AppThemeData.primary300)),
+              Icon(Icons.local_offer_outlined, size: 18, color: c.brandStrong),
+              const DsGap(DsSpace.sm),
+              Expanded(child: Text("Customer price proposal".tr, style: t.titleSm)),
+              Text(_money(order.proposedAmount), style: t.titleSm.withColor(c.brandStrong).w700.tabular),
             ],
           ),
-          const SizedBox(height: 4),
-          Text("${'Listed price'.tr}: ${(order.listedPrice ?? order.subTotal) == null ? '--' : Constant.amountShow(currency: RegionService.currencyForRecord(order.regionId), amount: order.listedPrice ?? order.subTotal)}",
-              style: TextStyle(fontFamily: AppThemeData.regular, fontSize: 13, color: subColor)),
+          const DsGap(DsSpace.xs),
+          Text(
+            "${'Listed price'.tr}: ${(order.listedPrice ?? order.subTotal) == null ? '--' : Constant.amountShow(currency: RegionService.currencyForRecord(order.regionId), amount: order.listedPrice ?? order.subTotal)}",
+            style: t.bodySm,
+          ),
           if (order.proposalMessage != null) ...[
-            const SizedBox(height: 4),
-            Text("\"${order.proposalMessage!}\"", style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 13, fontStyle: FontStyle.italic, color: textColor)),
+            const DsGap(DsSpace.xs),
+            Text("\"${order.proposalMessage!}\"", style: t.body.copyWith(fontStyle: FontStyle.italic)),
           ],
           if (status == 'countered' && order.counterAmount != null) ...[
-            const SizedBox(height: 4),
-            Text("${'Your counter-offer'.tr}: ${_money(order.counterAmount)}", style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 13, color: textColor)),
+            const DsGap(DsSpace.xs),
+            Text("${'Your counter-offer'.tr}: ${_money(order.counterAmount)}", style: t.bodyStrong),
           ],
-          const SizedBox(height: 4),
-          Text(_statusLabel(status), style: TextStyle(fontFamily: AppThemeData.semiBold, fontSize: 13, color: status == 'rejected' ? AppThemeData.danger300 : subColor)),
+          const DsGap(DsSpace.sm),
+          DsBadge(label: _statusLabel(status), tone: _statusTone(status), small: true),
           if (status == 'pending' && order.id != null) ...[
-            const SizedBox(height: 10),
+            const DsGap(DsSpace.md),
             Row(
               children: [
                 Expanded(
-                  child: RoundedButtonFill(
-                    title: "Reject".tr,
-                    height: 4.5,
-                    fontSizes: 13,
-                    borderRadius: 10,
-                    color: isDark ? AppThemeData.greyDark300 : AppThemeData.grey300,
-                    textColor: isDark ? AppThemeData.greyDark900 : AppThemeData.grey900,
-                    onPress: () => _run(() => RentalProposalService.reject(order.id!), "Proposal rejected".tr),
+                  child: DsButton.secondary(
+                    label: "Reject".tr,
+                    size: DsButtonSize.sm,
+                    expand: true,
+                    onPressed: () => _run(() => RentalProposalService.reject(order.id!), "Proposal rejected".tr),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const DsGap(DsSpace.sm),
                 Expanded(
-                  child: RoundedButtonFill(
-                    title: "Counter".tr,
-                    height: 4.5,
-                    fontSizes: 13,
-                    borderRadius: 10,
-                    color: AppThemeData.warning300,
-                    textColor: AppThemeData.grey900,
-                    onPress: () => _counter(),
+                  child: DsButton.tonal(
+                    label: "Counter".tr,
+                    size: DsButtonSize.sm,
+                    expand: true,
+                    color: c.warningStrong,
+                    onPressed: () => _counter(),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const DsGap(DsSpace.sm),
                 Expanded(
-                  child: RoundedButtonFill(
-                    title: "Accept".tr,
-                    height: 4.5,
-                    fontSizes: 13,
-                    borderRadius: 10,
-                    color: AppThemeData.success400,
-                    textColor: AppThemeData.grey50,
-                    onPress: () => _run(() => RentalProposalService.accept(order.id!), "Proposal accepted".tr),
+                  child: DsButton.success(
+                    label: "Accept".tr,
+                    size: DsButtonSize.sm,
+                    expand: true,
+                    onPressed: () => _run(() => RentalProposalService.accept(order.id!), "Proposal accepted".tr),
                   ),
                 ),
               ],
@@ -135,43 +136,39 @@ class RentalProposalCard extends StatelessWidget {
     final amountController = TextEditingController();
     final messageController = TextEditingController();
     final result = await Get.dialog<bool>(
-      AlertDialog(
-        backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-        title: Text("Counter-offer".tr, style: TextStyle(fontFamily: AppThemeData.semiBold, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFieldWidget(
-                title: 'Amount'.tr,
-                controller: amountController,
-                hintText: 'Enter your price'.tr,
-                textInputType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-              ),
-              TextFieldWidget(
-                title: 'Message (optional)'.tr,
-                controller: messageController,
-                hintText: 'Add a message for the customer'.tr,
-                maxLine: 2,
-              ),
-            ],
-          ),
+      DsDialog(
+        title: "Counter-offer".tr,
+        icon: Icons.price_change_outlined,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DsTextField(
+              label: 'Amount'.tr,
+              controller: amountController,
+              hint: 'Enter your price'.tr,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+            ),
+            DsTextField(
+              label: 'Message (optional)'.tr,
+              controller: messageController,
+              hint: 'Add a message for the customer'.tr,
+              maxLines: 2,
+              bottomSpacing: 0,
+            ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Get.back(result: false), child: Text("Cancel".tr)),
-          TextButton(
-            onPressed: () {
-              final value = num.tryParse(amountController.text.trim());
-              if (value == null || value <= 0) {
-                ShowToastDialog.showToast("Please enter a valid amount".tr);
-                return;
-              }
-              Get.back(result: true);
-            },
-            child: Text("Send".tr),
-          ),
-        ],
+        secondaryLabel: "Cancel".tr,
+        onSecondary: () => Get.back(result: false),
+        primaryLabel: "Send".tr,
+        onPrimary: () {
+          final value = num.tryParse(amountController.text.trim());
+          if (value == null || value <= 0) {
+            ShowToastDialog.showToast("Please enter a valid amount".tr);
+            return;
+          }
+          Get.back(result: true);
+        },
       ),
     );
     if (result == true) {
