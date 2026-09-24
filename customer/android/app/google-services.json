@@ -15,6 +15,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "248496578266-bnt22driro46qf4in0di9o5t5b1t928c.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.spideli.customer",
+            "certificate_hash": "0925ce8ea7d4404dafe1c1e846996e01544ca4b1"
+          }
+        },
+        {
           "client_id": "248496578266-h99v5hjse9e1jgfbsq47323iig501pje.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -67,6 +75,14 @@
           }
         },
         {
+          "client_id": "248496578266-gp9q3j3hdfj6v7j7b30bg56u6e7hpvue.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.spideli.driver",
+            "certificate_hash": "9716abd76c408fea7f1709243cb92825a19efe8b"
+          }
+        },
+        {
           "client_id": "248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -102,6 +118,14 @@
         }
       },
       "oauth_client": [
+        {
+          "client_id": "248496578266-6dru12a4eoithgoflep0c44ah28jlijr.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.spideli.provider",
+            "certificate_hash": "ea8dc0d92004a6552837d248419bdbfb8bd1f10b"
+          }
+        },
         {
           "client_id": "248496578266-bvv56nlma7ar54qerv3402hjbbo1gmf8.apps.googleusercontent.com",
           "client_type": 1,
@@ -155,6 +179,14 @@
           }
         },
         {
+          "client_id": "248496578266-q45cqkf4g1h6shq9v9apmi2os7iknrcl.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.spideli.store",
+            "certificate_hash": "0ccbc27a214275ce18f559ca7479ad1e825d7a54"
+          }
+        },
+        {
           "client_id": "248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -190,6 +222,14 @@
         }
       },
       "oauth_client": [
+        {
+          "client_id": "248496578266-gvsnbc3lsvt9m5724k0j2sj5iehm7nmn.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.spideli.worker",
+            "certificate_hash": "ef36ea11358e68e7717db72332482050767d0f5c"
+          }
+        },
         {
           "client_id": "248496578266-qeooo9frmbkah2aonugs66qjef8j36q5.apps.googleusercontent.com",
           "client_type": 1,
