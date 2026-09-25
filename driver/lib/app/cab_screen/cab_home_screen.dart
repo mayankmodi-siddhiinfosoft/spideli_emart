@@ -128,6 +128,8 @@ class CabHomeScreen extends StatelessWidget {
   Widget _documentPendingView(BuildContext context) {
     return Center(
       child: DsResponsive(
+        // Fill the Center, and center the content inside it.
+        alignment: Alignment.center,
         padded: true,
         maxWidth: 480,
         child: SingleChildScrollView(

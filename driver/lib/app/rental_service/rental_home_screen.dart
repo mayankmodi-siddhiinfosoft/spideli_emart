@@ -127,7 +127,7 @@ class RentalHomeScreen extends StatelessWidget {
   }
 
   Widget _centered(Widget child) => Center(
-        child: DsResponsive(padded: true, maxWidth: 480, child: SingleChildScrollView(child: child)),
+        child: DsResponsive(alignment: Alignment.center, padded: true, maxWidth: 480, child: SingleChildScrollView(child: child)),
       );
 
   /// Minimum-deposit warning (driver's own wallet, or the owner's).

@@ -205,6 +205,8 @@ class HomeScreen extends StatelessWidget {
     final mapName = _mapName();
     return Center(
       child: DsResponsive(
+        // Fill the Center, and center the content inside it.
+        alignment: Alignment.center,
         maxWidth: DsLayout.contentMax,
         child: SingleChildScrollView(
           child: Column(

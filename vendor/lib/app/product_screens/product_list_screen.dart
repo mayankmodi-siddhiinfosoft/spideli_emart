@@ -198,6 +198,8 @@ class ProductListScreen extends StatelessWidget {
       hasScrollBody: false,
       child: Center(
         child: DsResponsive(
+          // Fill the Center, and center the content inside it.
+          alignment: Alignment.center,
           padded: true,
           child: DsFadeSlideIn(child: Padding(padding: const EdgeInsets.only(bottom: DsSpace.huge), child: child)),
         ),

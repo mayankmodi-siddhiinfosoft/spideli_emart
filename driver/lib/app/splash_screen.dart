@@ -22,6 +22,8 @@ class SplashScreen extends StatelessWidget {
               child: SafeArea(
                 child: Center(
                   child: DsResponsive(
+                    // Fill the Center, and center the content inside it.
+                    alignment: Alignment.center,
                     maxWidth: 440,
                     padded: true,
                     child: Column(

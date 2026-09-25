@@ -38,6 +38,8 @@ class OwnerHomeScreen extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
                           child: Center(
                             child: DsResponsive(
+                              // Fill the Center, and center the content inside it.
+                              alignment: Alignment.center,
                               maxWidth: 520,
                               child: DsEmptyState(
                                 icon: Icons.assignment_outlined,
