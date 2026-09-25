@@ -9,9 +9,13 @@ import 'package:customer/utils/region_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-/// "My plan" (spec 7.7): status of the full order-history plan, renewal
-/// date, the plans on sale in the customer's region, and past purchases
-/// (the `subscription_history` rows serve as invoices).
+/// "Subscriptions" (spec 7.7, WEB spec §5 "Naming and layout"): status of
+/// the platform plan the customer holds, renewal date, the plans on sale in
+/// their region, and past purchases (the `subscription_history` rows serve as
+/// invoices). The website renamed this screen from "Order History Plans" to
+/// **Subscriptions** because store-sold plans land beside them; the app keeps
+/// the same wording on the page and in the account menu. The class name is
+/// unchanged so no navigation breaks.
 ///
 /// Archetype **H/E**: a status hero tinted by plan state, plan cards with a
 /// price badge and benefit bullets, then invoice cards.
@@ -48,6 +52,16 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
   }
 
   Future<void> _buy(CustomerPlan plan) async {
+    // The card's own state (courtesy): the button is already disabled for a
+    // plan held in date, this only keeps a stale screen honest. The real
+    // guard is [CustomerPlanService.purchaseBlockedReason], passed below and
+    // run on fresh data immediately before the charge (WEB spec §5).
+    final String? blocked = await CustomerPlanService.purchaseBlockedReason(plan);
+    if (blocked != null) {
+      ShowToastDialog.showToast(blocked);
+      await _load();
+      return;
+    }
     final result = await Get.to(
       () => GatewayCheckoutScreen(
         title: "${"Full order history".tr} - ${plan.name}",
@@ -57,6 +71,9 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
         amount: plan.price,
         currency: CustomerPlanService.currency,
         regionId: RegionService.customerRegionId,
+        // Repeated where the money moves, on a fresh read of the customer
+        // document: a plan already held in date is refused there too.
+        preCharge: () => CustomerPlanService.purchaseBlockedReason(plan),
         onPaid: (method) => CustomerPlanService.recordPurchase(plan, paymentType: method),
       ),
     );
@@ -69,7 +86,7 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
   @override
   Widget build(BuildContext context) {
     return DsScaffold(
-      title: "My plan".tr,
+      title: "Subscriptions".tr,
       maxContentWidth: DsLayout.contentMax,
       body: DsAsync(
         isLoading: _loading,
@@ -95,7 +112,10 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
     final c = DsColors.of(context);
     final plan = CustomerPlanService.customerPlanOf(_user);
     final Timestamp? expiry = CustomerPlanService.expiryOf(_user);
-    final bool active = CustomerPlanService.hasFullHistory(_user);
+    // The SAME "in date" test the plan cards below use (expiry in the future
+    // or absent), read off the SAME `_user` document, so the summary and the
+    // cards can never describe different states (WEB spec §5).
+    final bool active = CustomerPlanService.isInDate(_user);
     String statusText;
     DsTone tone;
     if (plan == null) {
@@ -144,15 +164,24 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
     );
   }
 
-  bool get _lifetime => CustomerPlanService.hasFullHistory(_user) && CustomerPlanService.expiryOf(_user) == null;
-
   List<Widget> _planCards(BuildContext context) {
     final c = DsColors.of(context);
     if (_plans.isEmpty) return [SubUi.empty(context, "No plan is offered in your region yet.".tr, icon: Icons.workspace_premium_outlined)];
+    // One read of `_user` (loaded once in [_load]) decides every card, so the
+    // status card above and the cards below can never disagree (WEB spec §5).
+    final String? heldId = CustomerPlanService.heldPlanId(_user);
+    final bool heldInDate = CustomerPlanService.isInDate(_user);
     return _plans.map((p) {
+      // WEB spec §5, "Already subscribed": the SAME plan in date is not for
+      // sale (badge + green border + disabled action); the same plan once
+      // EXPIRED is offered again as a renewal; a DIFFERENT plan stays
+      // purchasable so a customer can move between plans.
+      final bool isHeld = heldId != null && heldId == p.id;
+      final bool isCurrent = isHeld && heldInDate;
+      final bool isRenewal = isHeld && !heldInDate;
       return SubUi.card(
         context,
-        borderColor: _lifetime ? null : c.brand,
+        borderColor: isCurrent ? c.successStrong : c.brand,
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -164,6 +193,11 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
                 SubUi.price(context, "${Constant.amountShow(amount: p.price, currency: CustomerPlanService.currency)} / ${p.periodLabel}"),
               ],
             ),
+            if (isCurrent)
+              Padding(
+                padding: const EdgeInsets.only(top: DsSpace.sm),
+                child: Align(alignment: Alignment.centerLeft, child: SubUi.chip("Current plan".tr, DsTone.success)),
+              ),
             if (p.description.isNotEmpty) Padding(padding: const EdgeInsets.only(top: DsSpace.xs), child: SubUi.body(context, p.description)),
             if (p.points.isNotEmpty) const DsGap(DsSpace.md),
             ...p.points.map(
@@ -181,10 +215,10 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
             ),
             const DsGap(DsSpace.lg),
             DsButton.primary(
-              label: _lifetime ? "You already have lifetime access".tr : (CustomerPlanService.hasFullHistory(_user) ? "Renew".tr : "Subscribe".tr),
+              label: isCurrent ? "Current plan".tr : (isRenewal ? "Renew".tr : "Subscribe".tr),
               expand: true,
-              icon: _lifetime ? Icons.all_inclusive_rounded : Icons.bolt_rounded,
-              onPressed: _lifetime ? null : () => _buy(p),
+              icon: isCurrent ? Icons.verified_rounded : (isRenewal ? Icons.refresh_rounded : Icons.bolt_rounded),
+              onPressed: isCurrent ? null : () => _buy(p),
             ),
           ],
         ),

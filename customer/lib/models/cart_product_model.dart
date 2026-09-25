@@ -191,17 +191,34 @@ class LinePrice {
 
   const LinePrice({required this.unit, required this.isWholesale, required this.minQty});
 
-  /// The highest tier whose minQty <= [quantity], only when cheaper than
-  /// [retail]; otherwise [retail].
+  /// The HIGHEST tier where `quantity >= minQty` AND the tier is cheaper than
+  /// [retail]; otherwise [retail] (WEB spec §10, `applyWholesalePrice()`).
+  ///
+  /// The cheaper-than-retail test is PER TIER, not a blanket skip: a discount
+  /// can beat tier 1 while a deeper tier still applies. Walking the sorted
+  /// list forwards and keeping the last match gives both rules in one pass -
+  /// and never "take the highest tier reached, then clamp to retail", which
+  /// would charge retail for a quantity that a lower tier prices below it.
   static LinePrice resolve({required double retail, required List<WholesaleTier> tiers, required int quantity}) {
+    final List<WholesaleTier> sorted = tiers.where((t) => t.isUsable).toList()..sort((a, b) => a.minQtyValue.compareTo(b.minQtyValue));
     WholesaleTier? reached;
-    for (final WholesaleTier tier in tiers) {
-      if (tier.isUsable && tier.minQtyValue <= quantity && (reached == null || tier.minQtyValue >= reached.minQtyValue)) reached = tier;
+    for (final WholesaleTier tier in sorted) {
+      if (tier.minQtyValue <= quantity && (retail <= 0 || tier.priceValue < retail)) reached = tier;
     }
-    if (reached != null && (retail <= 0 || reached.priceValue < retail)) {
-      return LinePrice(unit: reached.priceValue, isWholesale: true, minQty: reached.minQty);
-    }
+    if (reached != null) return LinePrice(unit: reached.priceValue, isWholesale: true, minQty: reached.minQty);
     return LinePrice(unit: retail, isWholesale: false, minQty: '');
+  }
+
+  /// The next tier UP from [quantity] that would cost less than [currentUnit]
+  /// (the price the customer pays now), or null when there is nothing better
+  /// to offer - the step-up is suppressed rather than advertising a tier that
+  /// is not actually cheaper.
+  static WholesaleTier? nextTier({required List<WholesaleTier> tiers, required int quantity, required double currentUnit}) {
+    final List<WholesaleTier> sorted = tiers.where((t) => t.isUsable).toList()..sort((a, b) => a.minQtyValue.compareTo(b.minQtyValue));
+    for (final WholesaleTier tier in sorted) {
+      if (tier.minQtyValue > quantity && (currentUnit <= 0 || tier.priceValue < currentUnit)) return tier;
+    }
+    return null;
   }
 }
 

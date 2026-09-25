@@ -306,6 +306,12 @@ class RestaurantDetailsController extends GetxController {
 
   Future<void> addToCart({required ProductModel productModel, required String price, required String discountPrice, required bool isIncrement, required int quantity, VariantInfo? variantInfo}) async {
     CartProductModel cartProductModel = CartProductModel();
+    // A `saleType: wholesale` line is not sold singly: the floor is the ENTRY
+    // tier of this line (the selected variant's, when it carries its own).
+    // The quantity box is a courtesy - the request is what decides - but zero
+    // still removes the line.
+    final int floor = WholesalePricing.minOrderQuantityFor(productModel, vendorModel.value, variantId: variantInfo?.variantId);
+    if (quantity > 0 && quantity < floor) quantity = floor;
 
     String adOnsPrice = "0";
     for (int i = 0; i < productModel.addOnsPrice!.length; i++) {

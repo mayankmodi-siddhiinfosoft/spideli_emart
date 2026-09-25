@@ -5,6 +5,8 @@ import 'package:customer/models/vendor_model.dart';
 import 'package:customer/screen_ui/multi_vendor_service/restaurant_details_screen/restaurant_details_screen.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/wholesale_pricing.dart';
+import 'package:customer/widget/shop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -20,7 +22,10 @@ class EcommerceProductCard extends StatelessWidget {
   /// the current text scale, so nothing clips at 1.3x–2x.
   static double gridExtent(BuildContext context) {
     final scaler = MediaQuery.textScalerOf(context);
-    final text = scaler.scale(20) + scaler.scale(22) + scaler.scale(24);
+    // Name, price, rating badge - plus the wholesale badge's row, which is
+    // kept in the extent for every card so a grid stays even whether or not a
+    // given product carries a wholesale tier.
+    final text = scaler.scale(20) + scaler.scale(22) + scaler.scale(24) + scaler.scale(22);
     return _mediaHeight + text + DsSpace.xxl;
   }
 
@@ -119,7 +124,12 @@ class EcommerceProductCard extends StatelessWidget {
                             ),
                           ],
                         ),
-                    const DsGap(DsSpace.sm),
+                    const DsGap(DsSpace.xs),
+                    // The entry tier, worded exactly as on every other listing.
+                    WholesaleBadge(
+                      label: WholesalePricing.listingBadgeLabel(productModel, vendorModel!, currency: RegionService.currencyForVendorId(productModel.vendorID)),
+                    ),
+                    const DsGap(DsSpace.xs),
                     DsBadge(
                       label: "${Constant.calculateReview(reviewCount: productModel.reviewsCount.toString(), reviewSum: productModel.reviewsSum.toString())} (${productModel.reviewsSum})",
                       tone: DsTone.warning,

@@ -12,7 +12,9 @@ import 'package:get/get.dart';
 
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
+import '../../../utils/wholesale_pricing.dart';
 import '../../../widget/restaurant_image_view.dart';
+import '../../../widget/shop_widgets.dart';
 import '../../auth_screens/login_screen.dart';
 import '../restaurant_details_screen/restaurant_details_screen.dart';
 
@@ -126,7 +128,11 @@ Future<Map<String, dynamic>> _getPrice(ProductModel productModel) async {
     disPrice = Constant.productCommissionPrice(vendorModel, productModel.disPrice.toString());
   }
 
-  return {'price': price, 'disPrice': disPrice};
+  // The entry-tier badge, worded as on every other listing.
+  final String wholesale = vendorModel == null
+      ? ''
+      : WholesalePricing.listingBadgeLabel(productModel, vendorModel, currency: RegionService.currencyForVendorId(productModel.vendorID));
+  return {'price': price, 'disPrice': disPrice, 'wholesale': wholesale};
 }
 
 class _StoreTab extends StatelessWidget {
@@ -312,6 +318,7 @@ class _FavouriteItemCard extends StatelessWidget {
             Map<String, dynamic> map = snapshot.data!;
             String price = map['price'];
             String disPrice = map['disPrice'];
+            String wholesale = map['wholesale'] ?? '';
             return DsCard.outlined(
               margin: const EdgeInsets.only(bottom: DsSpace.md),
               padding: const EdgeInsets.all(DsSpace.md),
@@ -363,6 +370,7 @@ class _FavouriteItemCard extends StatelessWidget {
                                   ),
                                 ],
                               ),
+                        if (wholesale.isNotEmpty) ...[const DsGap(DsSpace.xs), WholesaleBadge(label: wholesale)],
                         const DsGap(DsSpace.xs),
                         Row(
                           children: [

@@ -24,12 +24,16 @@ class GatewayCheckoutScreen extends StatelessWidget {
   /// 5) that differs from what the screen shows.
   final String? note;
 
-  const GatewayCheckoutScreen({super.key, required this.title, required this.amount, required this.currency, required this.regionId, required this.onPaid, this.note});
+  /// Optional last check run where the money moves: null lets the charge go
+  /// ahead, a message refuses it (see [GatewayCheckoutController.preCharge]).
+  final Future<String?> Function()? preCharge;
+
+  const GatewayCheckoutScreen({super.key, required this.title, required this.amount, required this.currency, required this.regionId, required this.onPaid, this.note, this.preCharge});
 
   @override
   Widget build(BuildContext context) {
     return GetX<GatewayCheckoutController>(
-      init: GatewayCheckoutController(amount: amount, regionId: regionId, description: note ?? title, onPaid: onPaid),
+      init: GatewayCheckoutController(amount: amount, regionId: regionId, description: note ?? title, onPaid: onPaid, preCharge: preCharge),
       global: false,
       builder: (controller) {
         final c = context.dsColors;

@@ -105,6 +105,56 @@ class CustomerPlanService {
     return value is Timestamp ? value : null;
   }
 
+  /// The id of the customer plan the user currently holds, else null. The
+  /// snapshot's own `id` first (that is what was bought), falling back to
+  /// `subscriptionPlanId` for a snapshot written without one.
+  static String? heldPlanId(Map<String, dynamic>? user) {
+    final plan = customerPlanOf(user);
+    if (plan == null) return null;
+    final String fromSnapshot = plan['id']?.toString() ?? '';
+    if (fromSnapshot.isNotEmpty) return fromSnapshot;
+    final String fromUser = user?['subscriptionPlanId']?.toString() ?? '';
+    return fromUser.isEmpty ? null : fromUser;
+  }
+
+  /// Whether the plan the customer holds is still "in date" (WEB spec §5,
+  /// "Already subscribed"): `subscriptionExpiryDate` in the future **or
+  /// absent** - absent means a plan that never expires, not a missing one.
+  /// False when they hold no customer plan at all.
+  static bool isInDate(Map<String, dynamic>? user) {
+    if (customerPlanOf(user) == null) return false;
+    final Timestamp? expiry = expiryOf(user);
+    if (expiry == null) return true; // never expires
+    return expiry.toDate().isAfter(DateTime.now());
+  }
+
+  /// True when the customer already holds [planId] and has not used it up -
+  /// the one rule behind the *Current plan* badge, the disabled action and
+  /// the check at the payment (WEB spec §5). A DIFFERENT plan is never
+  /// blocked: a customer may move between plans. The SAME plan once expired
+  /// is not blocked either: that is a renewal, a fresh purchase.
+  static bool holdsPlanInDate(Map<String, dynamic>? user, String planId) {
+    if (planId.isEmpty) return false;
+    return isInDate(user) && heldPlanId(user) == planId;
+  }
+
+  /// The message refusing a purchase of [plan], or null when it may go
+  /// ahead. Re-read FRESH from `users/{uid}` and called immediately before
+  /// the money moves (WEB spec §5: "the same check is repeated inside the
+  /// click handler, where the money moves" - a disabled button is a
+  /// courtesy, not a guard). A read that fails never blocks a purchase.
+  static Future<String?> purchaseBlockedReason(CustomerPlan plan) async {
+    try {
+      final user = await currentUserData();
+      if (holdsPlanInDate(user, plan.id)) {
+        return "You already have this plan and it is still active. You can renew it once it expires, or choose a different plan.".tr;
+      }
+    } catch (e) {
+      log("CustomerPlanService: plan re-check failed, purchase allowed: $e");
+    }
+    return null;
+  }
+
   /// The new expiry when [plan] is bought now. Null = never expires.
   static DateTime? newExpiry(CustomerPlan plan, Map<String, dynamic>? user) {
     if (plan.neverExpires) return null;

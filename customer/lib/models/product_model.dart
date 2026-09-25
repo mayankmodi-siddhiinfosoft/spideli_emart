@@ -48,6 +48,12 @@ class ProductModel {
   /// "retail" | "wholesale" | "both"; absent = "retail" when wholesale is off, else "both".
   String? saleType;
 
+  /// Wholesale terms written with the store panel's HTML editor (price table,
+  /// minimum order terms, packaging notes). Rendered under the description
+  /// when the product has a wholesale tier - **sanitised first**, see
+  /// `WholesalePricing.safeDetailsHtml`.
+  String? wholesaleDetails;
+
   /// Wholesale prices only for verified Business customers.
   bool? wholesaleBusinessOnly;
 
@@ -98,6 +104,7 @@ class ProductModel {
     this.wholesaleMinQty,
     this.wholesaleTiers,
     this.saleType,
+    this.wholesaleDetails,
     this.wholesaleBusinessOnly,
     this.fulfilment,
   });
@@ -157,6 +164,7 @@ class ProductModel {
         }
       }
     }
+    wholesaleDetails = parseWholesaleString(json['wholesaleDetails']);
     final String rawSaleType = parseWholesaleString(json['saleType']).toLowerCase();
     saleType = rawSaleType.isEmpty ? null : rawSaleType;
     wholesaleBusinessOnly = parseWholesaleBool(json['wholesaleBusinessOnly']);

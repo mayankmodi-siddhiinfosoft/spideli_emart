@@ -4,6 +4,8 @@ import 'package:customer/controllers/search_controller.dart';
 import 'package:customer/models/product_model.dart';
 import 'package:customer/models/vendor_model.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/wholesale_pricing.dart';
+import 'package:customer/widget/shop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
@@ -131,7 +133,12 @@ class SearchScreen extends StatelessWidget {
       disPrice = Constant.productCommissionPrice(vendorModel, productModel.disPrice.toString());
     }
 
-    return {'price': price, 'disPrice': disPrice};
+    // The entry-tier badge, worded as on every other listing (the store's own
+    // commission and currency, so it matches the store page).
+    final String wholesale = vendorModel == null
+        ? ''
+        : WholesalePricing.listingBadgeLabel(productModel, vendorModel, currency: RegionService.currencyForVendorId(productModel.vendorID));
+    return {'price': price, 'disPrice': disPrice, 'wholesale': wholesale};
   }
 }
 
@@ -218,6 +225,7 @@ class _ProductResultRow extends StatelessWidget {
             Map<String, dynamic> map = snapshot.data!;
             String price = map['price'];
             String disPrice = map['disPrice'];
+            String wholesale = map['wholesale'] ?? '';
             return DsCard.outlined(
               onTap: onTap,
               semanticLabel: productModel.name.toString(),
@@ -264,6 +272,7 @@ class _ProductResultRow extends StatelessWidget {
                                   ),
                                 ],
                               ),
+                        if (wholesale.isNotEmpty) ...[const DsGap(DsSpace.xs), WholesaleBadge(label: wholesale)],
                         const DsGap(DsSpace.xs),
                         Row(
                           children: [

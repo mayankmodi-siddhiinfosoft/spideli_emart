@@ -1,6 +1,7 @@
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/currency_model.dart';
 import 'package:customer/themes/app_them_data.dart';
+import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/wholesale_pricing.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -156,6 +157,24 @@ class BottomSearchBar extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// The wholesale pill every listing carries: the ENTRY tier's offer
+/// ("Wholesale 3,500 from 15 units"), or the pack floor of a wholesale-only
+/// product ("Sold in a minimum of 15 units"). Build the label with
+/// [WholesalePricing.listingBadgeLabel] so every surface words it the same.
+/// An empty label draws nothing.
+class WholesaleBadge extends StatelessWidget {
+  final String label;
+  final bool small;
+
+  const WholesaleBadge({super.key, required this.label, this.small = true});
+
+  @override
+  Widget build(BuildContext context) {
+    if (label.isEmpty) return const SizedBox.shrink();
+    return DsBadge(label: label, tone: DsTone.brand, icon: Icons.inventory_2_outlined, small: small);
   }
 }
 

@@ -398,7 +398,13 @@ class CartController extends GetxController {
     }
   }
 
+  /// Changes a cart line's quantity. A `saleType: wholesale` line is not sold
+  /// singly, so a quantity below its floor (the ENTRY tier) is raised rather
+  /// than trusted - but **zero still removes the line**: a customer who may
+  /// not buy five of something sold in tens is the store's decision, one who
+  /// cannot get it out of their cart is a fault.
   Future<void> addToCart({required CartProductModel cartProductModel, required bool isIncrement, required int quantity}) async {
+    if (quantity > 0 && quantity < cartProductModel.minOrderQuantity) quantity = cartProductModel.minOrderQuantity;
     if (isIncrement) {
       cartProvider.addToCart(Get.context!, cartProductModel, quantity);
     } else {

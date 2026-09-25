@@ -38,6 +38,10 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 ///   none. It decides DISCOVERY only (which sections and stores are offered,
 ///   and the currency shown before a store is chosen); every price, payment
 ///   method and delivery charge comes from the store's region.
+/// * [customerRegionIds] widens whatever the ladder resolved to the other
+///   published regions of the same COUNTRY - the website's same-country
+///   bridge (WEB spec §1). Discovery only; [customerRegionId], which money
+///   reads, is never bridged.
 ///
 /// `regions`, `currencies` and `zone` are small collections; they are read
 /// once and kept in memory. With no region data everything behaves exactly as
@@ -158,11 +162,29 @@ class RegionService {
   }
 
   /// The website's same-country bridge (WEB spec §1): the other published
-  /// regions of [regionId]'s country. Discovery only - never pricing.
+  /// regions of [regionId]'s country, resolved on `regions.countryCode` ONLY
+  /// (never `code`, a free-text label that reads "GB" for Gabon).
+  /// **Discovery only** - never a price, a payment gateway or a delivery
+  /// charge, which always come from the STORE's own region.
   static List<String> sameCountryRegionIds(String? regionId) {
     final region = regionById(regionId);
     if (region == null || _isEmpty(region.countryCode)) return const [];
     return regionIdsForCountry(region.countryCode);
+  }
+
+  /// [ids] plus every other published region of the same COUNTRY - the
+  /// website's same-country bridge (WEB spec §1): a visitor resolved to
+  /// Douala also sees Cameroon and Yaoundé stores, because a region holding
+  /// no stores of its own is otherwise a dead end. Used only when building
+  /// the DISCOVERY region set; an empty [ids] stays empty, so an unresolved
+  /// visitor keeps seeing everything.
+  static List<String> withSameCountryRegions(List<String> ids) {
+    if (ids.isEmpty) return ids;
+    final Set<String> all = {...ids};
+    for (final id in ids) {
+      all.addAll(sameCountryRegionIds(id));
+    }
+    return all.toList();
   }
 
   static ZoneModel? zoneById(String? zoneId) {
@@ -328,26 +350,32 @@ class RegionService {
   /// `ServiceListController.loadData`. Filter here, nowhere else.
   ///
   /// The ladder, each rung used only when the ones above it found nothing:
-  /// explicit choice -> the zone(s) around the customer (plus the other
-  /// regions of that country, the website's same-country bridge) -> the
-  /// customer's country matched on `countryCode` -> `RegionDefaults` ->
-  /// empty, which filters nothing at all.
+  /// explicit choice -> the zone(s) around the customer -> the customer's
+  /// country matched on `countryCode` -> `RegionDefaults` -> empty, which
+  /// filters nothing at all.
+  ///
+  /// **The same-country bridge (WEB spec §1).** Whatever rung resolves, the
+  /// set is widened to every other PUBLISHED region of the same COUNTRY, on
+  /// `regions.countryCode` only - never on `code`, a free-text label that
+  /// reads "GB" for Gabon. A visitor resolved to Douala therefore also sees
+  /// Cameroon and Yaoundé stores and services, because a region holding no
+  /// stores of its own is otherwise a dead end. The bridge is DISCOVERY
+  /// only: it widens what is offered and nothing else. It never reaches a
+  /// price, a payment gateway or a delivery charge - those come from the
+  /// store's own region through [currencyForVendor] / [customerRegionId],
+  /// which is deliberately NOT bridged. The unresolved case is untouched: an
+  /// empty list still shows everything.
   static List<String> get customerRegionIds {
     final String? chosen = selectedRegionId;
-    if (chosen != null) return [chosen];
+    if (chosen != null) return withSameCountryRegions([chosen]);
     // A region the admin unpublished is dropped; one we know nothing about is
     // kept, so a missing / unread `regions` collection behaves as before.
     final List<String> fromZone = zoneRegionIds.where((id) => regionById(id)?.publish != false).toList();
-    if (fromZone.isNotEmpty) {
-      final Set<String> ids = {...fromZone};
-      for (final id in fromZone) {
-        ids.addAll(sameCountryRegionIds(id));
-      }
-      return ids.toList();
-    }
+    if (fromZone.isNotEmpty) return withSameCountryRegions(fromZone);
+    // Already every published region of the country; bridged for symmetry.
     final List<String> fromCountry = regionIdsForCountry(_customerCountryCode);
-    if (fromCountry.isNotEmpty) return fromCountry;
-    if (isPublished(defaultRegionId)) return [defaultRegionId!];
+    if (fromCountry.isNotEmpty) return withSameCountryRegions(fromCountry);
+    if (isPublished(defaultRegionId)) return withSameCountryRegions([defaultRegionId!]);
     return const [];
   }
 

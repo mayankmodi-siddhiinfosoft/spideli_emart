@@ -140,10 +140,17 @@ class ProfileScreen extends StatelessWidget {
                           DsTileGroup(
                             title: "Account & Subscriptions".tr,
                             children: [
-                              _tile(context, "assets/icons/ic_orders.svg", "My plan".tr, () {
+                              // "Subscriptions", as the website renamed it
+                              // from "Order History Plans" (WEB spec §5,
+                              // "Naming and layout") - the screen is named
+                              // for what it is, not for what today's single
+                              // plan happens to unlock. The store-sold
+                              // subscriptions keep their own entry beside it,
+                              // labelled so the two never read alike.
+                              _tile(context, "assets/icons/ic_orders.svg", "Subscriptions".tr, () {
                                 Get.to(() => const MyPlanScreen());
                               }),
-                              _tile(context, "assets/icons/ic_dinin_order.svg", "My subscriptions".tr, () {
+                              _tile(context, "assets/icons/ic_dinin_order.svg", "Store subscriptions".tr, () {
                                 Get.to(() => const MyStoreSubscriptionsScreen());
                               }),
                               _tile(context, "assets/icons/ic_wallet.svg", "Payment methods".tr, () {

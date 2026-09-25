@@ -60,7 +60,16 @@ class GatewayCheckoutController extends GetxController {
   final String description;
   final Future<void> Function(String paymentMethod) onPaid;
 
-  GatewayCheckoutController({required this.amount, required this.regionId, required this.description, required this.onPaid});
+  /// Optional last check run IMMEDIATELY BEFORE the money moves: it returns
+  /// null to let the charge go ahead, or the message to refuse with. The
+  /// customer plan purchase uses it to re-read `users/{uid}` and refuse a
+  /// plan the customer already holds in date (WEB spec §5) - the disabled
+  /// button on the plan card is a courtesy, this is the guard. It runs on
+  /// every charge attempt, and never on a retry of the record step (that
+  /// payment already happened).
+  final Future<String?> Function()? preCharge;
+
+  GatewayCheckoutController({required this.amount, required this.regionId, required this.description, required this.onPaid, this.preCharge});
 
   RxBool isLoading = true.obs;
   RxString selectedPaymentMethod = ''.obs;
@@ -218,6 +227,13 @@ class GatewayCheckoutController extends GetxController {
     }
     isPaying.value = true;
     try {
+      // Where the money moves: the caller's own last check, on fresh data.
+      final String? refusal = await preCharge?.call();
+      if (refusal != null) {
+        ShowToastDialog.showToast(refusal);
+        return;
+      }
+      if (!context.mounted) return;
       await _charge(context, method);
     } finally {
       isPaying.value = false;

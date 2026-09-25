@@ -11,6 +11,7 @@ import 'package:customer/models/vendor_model.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 
@@ -759,6 +760,9 @@ class ProductListView extends StatelessWidget {
     );
     final bool businessOnly = productModel.isBusinessOnlyProduct;
     final int minQty = WholesalePricing.minOrderQuantityFor(productModel, controller.vendorModel.value, variantId: defaultVariantId);
+    // The entry-tier pill this listing advertises ("Sold in a minimum of N
+    // units" on a wholesale-only line), worded as on every other listing.
+    final String wholesaleBadge = WholesalePricing.listingBadgeLabel(productModel, controller.vendorModel.value, variantId: defaultVariantId, currency: currency);
     final bool hasOptions = selectedVariants.isNotEmpty || (productModel.addOnsTitle != null && productModel.addOnsTitle!.isNotEmpty);
     final bool canBuy = controller.isOpen.value == true && Constant.userModel != null && !businessOnly;
 
@@ -875,8 +879,11 @@ class ProductListView extends StatelessWidget {
                       ),
                     if (businessOnly)
                       _note(context, "Business customers only".tr, c.dangerStrong)
-                    else if (wholesaleOnly)
-                      _note(context, "${'Wholesale only'.tr} · ${'Minimum order'.tr}: $minQty ${'pcs'.tr}", c.brandStrong)
+                    else if (wholesaleBadge.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: DsSpace.xxs),
+                        child: WholesaleBadge(label: wholesaleBadge),
+                      )
                     else if (productModel.hasWholesaleTier && productModel.wholesaleBlockedForCustomer)
                       _note(context, "Wholesale prices for Business customers only".tr, c.textMuted),
                     Row(
@@ -1114,6 +1121,24 @@ class ProductListView extends StatelessWidget {
           Text(controller.vendorModel.value.title ?? '', style: valueStyle),
           if ((controller.vendorModel.value.location ?? '').isNotEmpty) Text(controller.vendorModel.value.location!, style: labelStyle),
           if ((productModel.description ?? '').isNotEmpty) ...[heading("Description".tr), Text(productModel.description!, style: labelStyle)],
+          // Wholesale terms typed in the store panel (HTML): rendered under the
+          // description when the product has a tier, and SANITISED first - a
+          // store account must not be able to run code, or pull remote content,
+          // in a customer's app (WEB spec §10).
+          if (productModel.hasWholesaleTier && WholesalePricing.safeDetailsHtml(productModel.wholesaleDetails).isNotEmpty) ...[
+            heading("Wholesale details".tr),
+            Html(
+              shrinkWrap: true,
+              data: WholesalePricing.safeDetailsHtml(productModel.wholesaleDetails),
+              style: {
+                "body": Style(margin: Margins.zero, padding: HtmlPaddings.zero, color: c.textSecondary, fontFamily: DsTypography.family, fontSize: FontSize(13), lineHeight: LineHeight.number(1.5)),
+                "table": Style(border: Border.all(color: c.border)),
+                "td": Style(padding: HtmlPaddings.all(4), border: Border.all(color: c.border)),
+                "th": Style(padding: HtmlPaddings.all(4), border: Border.all(color: c.border), color: c.textPrimary),
+                "a": Style(color: c.brandStrong),
+              },
+            ),
+          ],
           if (showDetails && ((productModel.grams ?? 0) != 0 || (productModel.calories ?? 0) != 0 || (productModel.proteins ?? 0) != 0 || (productModel.fats ?? 0) != 0)) ...[
             heading("Additional details".tr),
             if ((productModel.grams ?? 0) != 0) detailRow("Gram".tr, productModel.grams.toString()),
@@ -1176,6 +1201,16 @@ class ProductDetailsView extends StatelessWidget {
       builder: (controller) {
         final c = context.dsColors;
         final t = context.dsText;
+        // Read inside the GetX builder, so the note under the quantity box is
+        // redrawn on every quantity change AND on every variant selection.
+        final String? variantId = controller.selectedVariantId(productModel);
+        final int lineMinQty = WholesalePricing.minOrderQuantityFor(productModel, controller.vendorModel.value, variantId: variantId);
+        final WholesaleNote wholesaleNote = WholesalePricing.noteFor(
+          retail: WholesalePricing.retailPrice(productModel, controller.vendorModel.value, variantId: variantId),
+          tiers: WholesalePricing.customerTiers(productModel, controller.vendorModel.value, variantId: variantId),
+          quantity: controller.quantity.value,
+        );
+        final currency = RegionService.currencyForVendor(controller.vendorModel.value);
         return DsScaffold(
           backgroundColor: c.surfaceRaised,
           maxContentWidth: DsLayout.contentMax,
@@ -1312,6 +1347,15 @@ class ProductDetailsView extends StatelessWidget {
                                           } else {
                                             controller.quantity.value = 1;
                                           }
+                                          // The box opens at the floor of the
+                                          // variant now selected: a wholesale-only
+                                          // line is not sold below its entry tier.
+                                          final int floor = WholesalePricing.minOrderQuantityFor(
+                                            productModel,
+                                            controller.vendorModel.value,
+                                            variantId: controller.selectedVariantId(productModel),
+                                          );
+                                          if (controller.quantity.value < floor) controller.quantity.value = floor;
 
                                           controller.update();
                                           controller.calculatePrice(productModel);
@@ -1395,116 +1439,145 @@ class ProductDetailsView extends StatelessWidget {
             ),
           ),
           bottomBar: DsStickyBar(
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Container(
-                    constraints: const BoxConstraints(minHeight: 48),
-                    decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brPill),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        DsIconButton(
-                          icon: Icons.remove_rounded,
-                          semanticLabel: 'Remove'.tr,
-                          size: 36,
-                          onPressed: () {
-                            // Wholesale-only products can't go below their minimum quantity
-                            // (the SELECTED variant's, when it carries its own threshold).
-                            if (controller.quantity.value >
-                                WholesalePricing.minOrderQuantityFor(productModel, controller.vendorModel.value, variantId: controller.selectedVariantId(productModel))) {
-                              controller.quantity.value -= 1;
-                              controller.update();
-                            }
-                          },
-                        ),
-                        Text(controller.quantity.value.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.label.tabular),
-                        DsIconButton(
-                          icon: Icons.add_rounded,
-                          semanticLabel: 'Add item'.tr,
-                          size: 36,
-                          onPressed: () {
-                            if (productModel.itemAttribute == null) {
-                              if (controller.quantity.value < (productModel.quantity ?? 0) || (productModel.quantity ?? 0) == -1) {
-                                controller.quantity.value += 1;
-                                controller.update();
-                              } else {
-                                ShowToastDialog.showToast("Out of stock".tr);
-                              }
-                            } else {
-                              int totalQuantity = int.parse(
-                                productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).first.variantQuantity.toString(),
-                              );
-                              if (controller.quantity.value < totalQuantity || totalQuantity == -1) {
-                                controller.quantity.value += 1;
-                                controller.update();
-                              } else {
-                                ShowToastDialog.showToast("Out of stock".tr);
-                              }
-                            }
-                          },
-                        ),
-                      ],
+                // Where this quantity stands on the wholesale ladder: the tier
+                // in force, then the next one and how many more units reach it
+                // (suppressed when it would not actually cost less).
+                if (lineMinQty > 1)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: DsSpace.xs),
+                    child: Text(WholesalePricing.minimumLabel(lineMinQty), style: t.labelSm.withColor(c.brandStrong)),
+                  ),
+                if (wholesaleNote.applied != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: DsSpace.xxs),
+                    child: Text(
+                      "${'Wholesale price applied'.tr} — ${Constant.amountShow(amount: wholesaleNote.applied!.unit.toString(), currency: currency)} ${'each'.tr}",
+                      style: t.labelSm.withColor(c.successStrong),
                     ),
                   ),
-                ),
-                const DsGap(DsSpace.md),
-                Expanded(
-                  flex: 2,
-                  child: DsButton.primary(
-                    label: "${'Add item'.tr} ${Constant.amountShow(amount: controller.calculatePrice(productModel), currency: RegionService.currencyForVendor(controller.vendorModel.value))}".tr,
-                    size: DsButtonSize.lg,
-                    expand: true,
-                    onPressed: () async {
-                      if (productModel.itemAttribute == null) {
-                        await controller.addToCart(
-                          productModel: productModel,
-                          price: Constant.productCommissionPrice(controller.vendorModel.value, productModel.price.toString()),
-                          discountPrice: double.parse(productModel.disPrice.toString()) <= 0 ? "0" : Constant.productCommissionPrice(controller.vendorModel.value, productModel.disPrice.toString()),
-                          isIncrement: true,
-                          quantity: controller.quantity.value,
-                        );
-                      } else {
-                        String variantPrice = "0";
-                        if (productModel.itemAttribute!.variants!.any((e) => e.variantSku == controller.selectedVariants.join('-'))) {
-                          variantPrice = Constant.productCommissionPrice(
-                            controller.vendorModel.value,
-                            productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantPrice ?? '0',
-                          );
-                        }
-
-                        Map<String, String> mapData = {};
-                        for (var element in productModel.itemAttribute!.attributes!) {
-                          mapData.addEntries([
-                            MapEntry(
-                              controller.attributesList.firstWhere((e) => e.id == element.attributeId).title.toString(),
-                              controller.selectedVariants[productModel.itemAttribute!.attributes!.indexOf(element)],
-                            ),
-                          ]);
-                        }
-
-                        VariantInfo variantInfo = VariantInfo(
-                          variantPrice: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantPrice ?? '0',
-                          variantSku: controller.selectedVariants.join('-'),
-                          variantOptions: mapData,
-                          variantImage: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantImage ?? '',
-                          variantId: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantId ?? '0',
-                        );
-
-                        await controller.addToCart(
-                          productModel: productModel,
-                          price: variantPrice,
-                          discountPrice: "0",
-                          isIncrement: true,
-                          variantInfo: variantInfo,
-                          quantity: controller.quantity.value,
-                        );
-                      }
-                      controller.update();
-                      Get.back();
-                    },
+                if (wholesaleNote.next != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: DsSpace.xs),
+                    child: Text("${WholesalePricing.entryLabel(wholesaleNote.next!, currency)} · ${'add'.tr} ${wholesaleNote.unitsToNext} ${'more'.tr}", style: t.caption),
                   ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        constraints: const BoxConstraints(minHeight: 48),
+                        decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brPill),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            DsIconButton(
+                              icon: Icons.remove_rounded,
+                              semanticLabel: 'Remove'.tr,
+                              size: 36,
+                              onPressed: () {
+                                // Wholesale-only products can't go below their minimum quantity
+                                // (the SELECTED variant's, when it carries its own threshold).
+                                if (controller.quantity.value >
+                                    WholesalePricing.minOrderQuantityFor(productModel, controller.vendorModel.value, variantId: controller.selectedVariantId(productModel))) {
+                                  controller.quantity.value -= 1;
+                                  controller.update();
+                                }
+                              },
+                            ),
+                            Text(controller.quantity.value.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.label.tabular),
+                            DsIconButton(
+                              icon: Icons.add_rounded,
+                              semanticLabel: 'Add item'.tr,
+                              size: 36,
+                              onPressed: () {
+                                if (productModel.itemAttribute == null) {
+                                  if (controller.quantity.value < (productModel.quantity ?? 0) || (productModel.quantity ?? 0) == -1) {
+                                    controller.quantity.value += 1;
+                                    controller.update();
+                                  } else {
+                                    ShowToastDialog.showToast("Out of stock".tr);
+                                  }
+                                } else {
+                                  int totalQuantity = int.parse(
+                                    productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).first.variantQuantity.toString(),
+                                  );
+                                  if (controller.quantity.value < totalQuantity || totalQuantity == -1) {
+                                    controller.quantity.value += 1;
+                                    controller.update();
+                                  } else {
+                                    ShowToastDialog.showToast("Out of stock".tr);
+                                  }
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const DsGap(DsSpace.md),
+                    Expanded(
+                      flex: 2,
+                      child: DsButton.primary(
+                        label: "${'Add item'.tr} ${Constant.amountShow(amount: controller.calculatePrice(productModel), currency: RegionService.currencyForVendor(controller.vendorModel.value))}".tr,
+                        size: DsButtonSize.lg,
+                        expand: true,
+                        onPressed: () async {
+                          if (productModel.itemAttribute == null) {
+                            await controller.addToCart(
+                              productModel: productModel,
+                              price: Constant.productCommissionPrice(controller.vendorModel.value, productModel.price.toString()),
+                              discountPrice: double.parse(productModel.disPrice.toString()) <= 0
+                                  ? "0"
+                                  : Constant.productCommissionPrice(controller.vendorModel.value, productModel.disPrice.toString()),
+                              isIncrement: true,
+                              quantity: controller.quantity.value,
+                            );
+                          } else {
+                            String variantPrice = "0";
+                            if (productModel.itemAttribute!.variants!.any((e) => e.variantSku == controller.selectedVariants.join('-'))) {
+                              variantPrice = Constant.productCommissionPrice(
+                                controller.vendorModel.value,
+                                productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantPrice ?? '0',
+                              );
+                            }
+
+                            Map<String, String> mapData = {};
+                            for (var element in productModel.itemAttribute!.attributes!) {
+                              mapData.addEntries([
+                                MapEntry(
+                                  controller.attributesList.firstWhere((e) => e.id == element.attributeId).title.toString(),
+                                  controller.selectedVariants[productModel.itemAttribute!.attributes!.indexOf(element)],
+                                ),
+                              ]);
+                            }
+
+                            VariantInfo variantInfo = VariantInfo(
+                              variantPrice: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantPrice ?? '0',
+                              variantSku: controller.selectedVariants.join('-'),
+                              variantOptions: mapData,
+                              variantImage: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantImage ?? '',
+                              variantId: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantId ?? '0',
+                            );
+
+                            await controller.addToCart(
+                              productModel: productModel,
+                              price: variantPrice,
+                              discountPrice: "0",
+                              isIncrement: true,
+                              variantInfo: variantInfo,
+                              quantity: controller.quantity.value,
+                            );
+                          }
+                          controller.update();
+                          Get.back();
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

@@ -161,7 +161,10 @@ class _MyStoreSubscriptionsScreenState extends State<MyStoreSubscriptionsScreen>
       child: DsScaffold(
         maxContentWidth: DsLayout.contentMax,
         appBar: DsAppBar(
-          title: "My subscriptions".tr,
+          // "Store subscriptions": the platform plans screen is now named
+          // "Subscriptions" after the website (WEB spec §5), so this one says
+          // whose subscriptions it lists.
+          title: "Store subscriptions".tr,
           bottom: DsTabBar(tabs: ["Subscriptions".tr, "Payments".tr]),
         ),
         body: DsAsync(

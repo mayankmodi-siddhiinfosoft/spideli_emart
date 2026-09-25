@@ -17,6 +17,7 @@ import 'package:get/get.dart';
 import '../../../models/user_model.dart';
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
+import '../../../utils/wholesale_pricing.dart';
 import '../../../widget/shop_widgets.dart';
 import '../../widgets/order_ui.dart';
 import '../restaurant_details_screen/restaurant_details_screen.dart';
@@ -180,9 +181,12 @@ class CartScreen extends StatelessWidget {
                                                   ),
                                             Builder(
                                               builder: (context) {
-                                                // Next cheaper tier, so the customer sees when the price switches.
-                                                final next = (cartProductModel.lineMeta?.tiers ?? const []).firstWhereOrNull(
-                                                  (t) => t.isUsable && t.minQtyValue > (cartProductModel.quantity ?? 0) && t.priceValue < cartProductModel.chargedUnitPrice,
+                                                // Next cheaper tier, so the customer sees when the price
+                                                // switches - the same helper the product page's note uses.
+                                                final next = LinePrice.nextTier(
+                                                  tiers: cartProductModel.lineMeta?.tiers ?? const [],
+                                                  quantity: cartProductModel.quantity ?? 0,
+                                                  currentUnit: cartProductModel.chargedUnitPrice,
                                                 );
                                                 if (next == null) return const SizedBox.shrink();
                                                 return Text(
@@ -191,6 +195,9 @@ class CartScreen extends StatelessWidget {
                                                 );
                                               },
                                             ),
+                                            // Sold in packs: the floor this line may not go below (zero still removes it).
+                                            if (cartProductModel.lineMeta?.isWholesaleOnly == true && cartProductModel.minOrderQuantity > 1)
+                                              Text(WholesalePricing.minimumLabel(cartProductModel.minOrderQuantity), style: t.labelSm.withColor(c.brandStrong)),
                                             if (cartProductModel.lineMeta != null && !cartProductModel.lineMeta!.fulfilment.contains(foodTypeToFulfilment(foodType)))
                                               Padding(
                                                 padding: const EdgeInsets.only(top: DsSpace.xs),
