@@ -1,4 +1,5 @@
 import 'package:driver/app/parcel_screen/parcel_tracking/parcel_shipment_info_card.dart';
+import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
@@ -36,38 +37,36 @@ class ParcelOrderDetails extends StatelessWidget {
                       children: DsFadeSlideIn.stagger([
                         // ---------------------------------------------- header
                         DsCard.gradient(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.local_shipping_outlined, size: 20, color: Colors.white.withValues(alpha: 0.9)),
-                                  const DsGap(DsSpace.sm),
-                                  Expanded(
-                                    child: Text(
-                                      "Parcel".tr,
-                                      style: t.overline.withColor(Colors.white.withValues(alpha: 0.85)),
-                                    ),
+                          child: OrderHeaderRow(
+                            title: Row(
+                              children: [
+                                Icon(Icons.local_shipping_outlined, size: 20, color: Colors.white.withValues(alpha: 0.9)),
+                                const DsGap(DsSpace.sm),
+                                Expanded(
+                                  child: Text(
+                                    "Parcel".tr,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: t.overline.withColor(Colors.white.withValues(alpha: 0.85)),
                                   ),
-                                  if ((order.status ?? '').isNotEmpty)
-                                    Flexible(
-                                      child: Text(
-                                        order.status!.tr,
-                                        textAlign: TextAlign.end,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: t.labelSm.withColor(Colors.white),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              const DsGap(DsSpace.sm),
-                              Text(
-                                "${'Order Id:'.tr} ${Constant.orderId(orderId: controller.parcelOrder.value.id.toString())}".tr,
-                                textAlign: TextAlign.start,
-                                style: t.title.withColor(Colors.white).tabular,
-                              ),
-                            ],
+                                ),
+                              ],
+                            ),
+                            trailing: (order.status ?? '').isEmpty
+                                ? null
+                                : Text(
+                                    order.status!.tr,
+                                    textAlign: TextAlign.end,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: t.labelSm.withColor(Colors.white),
+                                  ),
+                            subtitle: OrderIdLine(
+                              label: 'Order Id:'.tr,
+                              id: controller.parcelOrder.value.id.toString(),
+                              copiedMessage: "Order ID copied to clipboard".tr,
+                              onColor: Colors.white,
+                            ),
                           ),
                         ),
                         const DsGap(DsSpace.lg),
@@ -233,14 +232,14 @@ class ParcelOrderDetails extends StatelessWidget {
                               const DsGap(DsSpace.sm),
 
                               // Subtotal
-                              DsInfoRow(
+                              OrderMoneyRow(
                                 label: "Subtotal".tr,
                                 value: Constant.amountShow(
                                     currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.subTotal.value.toString()),
                               ),
 
                               // Discount
-                              DsInfoRow(
+                              OrderMoneyRow(
                                 label: "Discount".tr,
                                 value: Constant.amountShow(
                                     currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.discount.value.toString()),
@@ -248,7 +247,7 @@ class ParcelOrderDetails extends StatelessWidget {
 
                               // Tax List
                               ...List.generate(controller.parcelOrder.value.taxSetting!.length, (index) {
-                                return DsInfoRow(
+                                return OrderMoneyRow(
                                   label:
                                       "${controller.parcelOrder.value.taxSetting![index].title} ${controller.parcelOrder.value.taxSetting![index].type == 'fix' ? '' : '(${controller.parcelOrder.value.taxSetting![index].tax}%)'}",
                                   value: Constant.amountShow(
@@ -263,16 +262,13 @@ class ParcelOrderDetails extends StatelessWidget {
                                 );
                               }),
 
-                              const DsDivider(spacing: DsSpace.md),
-
                               // Total
-                              DsInfoRow(
+                              OrderTotalRow(
                                 label: "Order Total".tr,
                                 value: Constant.amountShow(
                                     currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId), amount: controller.totalAmount.value.toString()),
-                                emphasize: true,
                               ),
-                              DsInfoRow(
+                              OrderMoneyRow(
                                 label:
                                     "Admin Commission (${controller.parcelOrder.value.adminCommission}${controller.parcelOrder.value.adminCommissionType == "Percentage" || controller.parcelOrder.value.adminCommissionType == "percentage" ? "%" : Constant.currencyModel!.symbol})"
                                         .tr,

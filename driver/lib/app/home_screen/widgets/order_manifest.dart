@@ -1,3 +1,4 @@
+import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/models/cart_product_model.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
@@ -40,46 +41,36 @@ class _ManifestRow extends StatelessWidget {
     final variants = product.variantInfo?.variantOptions ?? {};
     final extras = product.extras ?? [];
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              DsImage(url: product.photo.toString(), width: 64, height: 64, radius: DsRadius.md),
-              const DsGap(DsSpace.md),
-              Expanded(child: Text("${product.name}", style: t.bodyStrong)),
-              const DsGap(DsSpace.sm),
-              DsBadge(label: "x ${product.quantity}", tone: DsTone.brand, small: true),
-            ],
+    return OrderItemRow(
+      name: "${product.name}",
+      imageUrl: product.photo.toString(),
+      quantityLabel: "x ${product.quantity}",
+      quantityTone: DsTone.brand,
+      details: [
+        if (variants.isNotEmpty) ...[
+          const DsGap(DsSpace.md),
+          Text("Variants".tr, style: t.labelSm),
+          const DsGap(DsSpace.xs),
+          Wrap(
+            spacing: DsSpace.sm,
+            runSpacing: DsSpace.sm,
+            children: List.generate(
+              variants.length,
+              (i) => DsBadge(label: "${variants.keys.elementAt(i)} : ${variants[variants.keys.elementAt(i)]}", small: true),
+            ).toList(),
           ),
-          if (variants.isNotEmpty) ...[
-            const DsGap(DsSpace.md),
-            Text("Variants".tr, style: t.labelSm),
-            const DsGap(DsSpace.xs),
-            Wrap(
-              spacing: DsSpace.sm,
-              runSpacing: DsSpace.sm,
-              children: List.generate(
-                variants.length,
-                (i) => DsBadge(label: "${variants.keys.elementAt(i)} : ${variants[variants.keys.elementAt(i)]}", small: true),
-              ).toList(),
-            ),
-          ],
-          if (extras.isNotEmpty) ...[
-            const DsGap(DsSpace.md),
-            Text("Addons".tr, style: t.labelSm),
-            const DsGap(DsSpace.xs),
-            Wrap(
-              spacing: DsSpace.sm,
-              runSpacing: DsSpace.sm,
-              children: List.generate(extras.length, (i) => DsBadge(label: extras[i].toString(), small: true)).toList(),
-            ),
-          ],
         ],
-      ),
+        if (extras.isNotEmpty) ...[
+          const DsGap(DsSpace.md),
+          Text("Addons".tr, style: t.labelSm),
+          const DsGap(DsSpace.xs),
+          Wrap(
+            spacing: DsSpace.sm,
+            runSpacing: DsSpace.sm,
+            children: List.generate(extras.length, (i) => DsBadge(label: extras[i].toString(), small: true)).toList(),
+          ),
+        ],
+      ],
     );
   }
 }

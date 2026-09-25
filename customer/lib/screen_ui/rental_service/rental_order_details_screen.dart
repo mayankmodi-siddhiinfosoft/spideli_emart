@@ -8,6 +8,7 @@ import 'package:customer/screen_ui/multi_vendor_service/wallet_screen/wallet_scr
 import 'package:customer/screen_ui/rental_service/rental_review_screen.dart';
 import 'package:customer/screen_ui/rental_service/widget/rental_common_widgets.dart';
 import 'package:customer/screen_ui/rental_service/widget/rental_proposal_widgets.dart';
+import 'package:customer/screen_ui/widgets/order_ui.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:flutter/material.dart';
@@ -68,21 +69,16 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                     RentalInfoCard(
                       child: Column(
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text("${'Booking Id :'.tr} ${controller.order.value.id}", style: t.bodyStrong.tabular),
-                              ),
-                              const DsGap(DsSpace.sm),
-                              DsIconButton(
-                                icon: Icons.copy_rounded,
-                                semanticLabel: "Booking ID copied to clipboard".tr,
-                                onPressed: () {
-                                  Clipboard.setData(ClipboardData(text: controller.order.value.id.toString()));
-                                  ShowToastDialog.showToast("Booking ID copied to clipboard".tr);
-                                },
-                              ),
-                            ],
+                          OrderIdHeader(
+                            title: 'Booking Id :'.tr,
+                            id: controller.order.value.id.toString(),
+                            statusLabel: controller.order.value.status,
+                            status: controller.order.value.status,
+                            copySemanticLabel: "Booking ID copied to clipboard".tr,
+                            onCopy: () {
+                              Clipboard.setData(ClipboardData(text: controller.order.value.id.toString()));
+                              ShowToastDialog.showToast("Booking ID copied to clipboard".tr);
+                            },
                           ),
                           const DsGap(DsSpace.sm),
                           Row(
@@ -119,25 +115,13 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                       RentalInfoCard(
                         title: "Your Preference".tr,
                         icon: Icons.tune_rounded,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(controller.order.value.rentalPackageModel!.name ?? "-", style: t.title),
-                                  const DsGap(DsSpace.xs),
-                                  Text(controller.order.value.rentalPackageModel!.description ?? "", style: t.bodySecondary),
-                                ],
-                              ),
-                            ),
-                            const DsGap(DsSpace.md),
-                            Text(
-                              Constant.amountShow(amount: controller.order.value.rentalPackageModel!.baseFare.toString(), currency: controller.bookingCurrency),
-                              style: t.title.tabular,
-                            ),
-                          ],
+                        child: OrderItemRow(
+                          name: controller.order.value.rentalPackageModel!.name ?? "-",
+                          price: Constant.amountShow(amount: controller.order.value.rentalPackageModel!.baseFare.toString(), currency: controller.bookingCurrency),
+                          footer: Padding(
+                            padding: const EdgeInsets.only(top: DsSpace.xs),
+                            child: Text(controller.order.value.rentalPackageModel!.description ?? "", maxLines: 3, overflow: TextOverflow.ellipsis, style: t.bodySecondary),
+                          ),
                         ),
                       ),
                     const DsGap(DsSpace.lg),

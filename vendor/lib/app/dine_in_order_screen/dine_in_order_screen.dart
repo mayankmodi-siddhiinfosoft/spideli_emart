@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:vendor/app/add_restaurant_screen/add_restaurant_screen.dart';
 import 'package:vendor/app/dine_in_screen/dine_in_create_screen.dart';
 import 'package:vendor/app/verification_screen/verification_screen.dart';
+import 'package:vendor/app/widgets/order_ui.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/send_notification.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
@@ -225,7 +226,8 @@ class DineInOrderScreen extends StatelessWidget {
                               ),
                             ),
                             const DsGap(DsSpace.sm),
-                            DsStatusChip(label: status, status: status, pulse: isNew && showActions),
+                            // Never wraps, and stays on the name's first line.
+                            Flexible(child: DsStatusChip(label: status, status: status, pulse: isNew && showActions)),
                           ],
                         ),
                         const DsGap(DsSpace.xs),
@@ -269,17 +271,11 @@ class DineInOrderScreen extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.lg),
-              child: Row(
-                children: [
-                  Icon(Icons.event_rounded, size: 16, color: c.textMuted),
-                  const DsGap(DsSpace.xs),
-                  Text("Date and Time".tr, style: t.caption),
-                  const DsGap(DsSpace.sm),
-                  Expanded(
-                    child: Text(Constant.timestampToDateTime(orderModel.date!), textAlign: TextAlign.end, style: t.label),
-                  ),
-                ],
+              padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.xs, DsSpace.lg, DsSpace.md),
+              child: OrderMoneyRow(
+                icon: Icons.event_rounded,
+                label: "Date and Time".tr,
+                value: Constant.timestampToDateTime(orderModel.date!),
               ),
             ),
             if (showActions)

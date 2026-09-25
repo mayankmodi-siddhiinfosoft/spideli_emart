@@ -17,6 +17,7 @@ import 'package:vendor/app/chat_screens/restaurant_inbox_screen.dart';
 import 'package:vendor/app/driver_screens/add_driver_screen.dart';
 import 'package:vendor/app/product_rating_view_screen/product_rating_view_screen.dart';
 import 'package:vendor/app/verification_screen/verification_screen.dart';
+import 'package:vendor/app/widgets/order_ui.dart';
 import 'package:vendor/constant/collection_name.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/send_notification.dart';
@@ -1061,17 +1062,28 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
           ),
-          // Status + reference
+          // Identity + status: one heading, one value, chip on the same line.
           Padding(
-            padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, 0),
-            child: Wrap(
-              spacing: DsSpace.sm,
-              runSpacing: DsSpace.sm,
-              crossAxisAlignment: WrapCrossAlignment.center,
+            padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.sm, DsSpace.lg, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                DsStatusChip(label: orderModel.status.toString().tr, status: orderModel.status, pulse: isNew),
-                DsBadge(label: "${"Order".tr} ${Constant.orderId(orderId: orderModel.id.toString())}", icon: Icons.tag_rounded),
-                if (orderModel.scheduleTime != null) DsBadge(label: "Schedule Time".tr, icon: Icons.event_outlined, tone: DsTone.warning),
+                OrderIdHeader(
+                  label: "Order".tr,
+                  shortId: Constant.orderId(orderId: orderModel.id.toString()),
+                  fullId: orderModel.id.toString(),
+                  // The card tap opens the order, so the id is not tappable here.
+                  copyable: false,
+                  statusChip: DsStatusChip(label: orderModel.status.toString().tr, status: orderModel.status, pulse: isNew),
+                ),
+                if (orderModel.scheduleTime != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: DsSpace.xs),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: DsBadge(label: "Schedule Time".tr, icon: Icons.event_outlined, tone: DsTone.warning),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1101,24 +1113,26 @@ class HomeScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _SummaryRow(label: "Order Date".tr, value: Constant.timestampToDateTime(orderModel.createdAt!)),
+                OrderMoneyRow(label: "Order Date".tr, value: Constant.timestampToDateTime(orderModel.createdAt!), padding: const EdgeInsets.symmetric(vertical: DsSpace.xs)),
                 if (Constant.vendorAdminCommission?.isEnabled == true)
-                  _SummaryRow(label: "Admin Commissions".tr, value: "-${Constant.amountShow(currency: orderCurrency, amount: adminCommission.toString())}".tr, valueColor: c.dangerStrong),
+                  OrderMoneyRow(
+                    label: "Admin Commissions".tr,
+                    value: "-${Constant.amountShow(currency: orderCurrency, amount: adminCommission.toString())}".tr,
+                    valueColor: c.dangerStrong,
+                    padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+                  ),
                 if (orderModel.scheduleTime != null)
-                  _SummaryRow(label: "Schedule Time".tr, value: Constant.timestampToDateTime(orderModel.scheduleTime!).tr, valueColor: c.brandStrong),
-                Padding(padding: const EdgeInsets.symmetric(vertical: DsSpace.sm), child: Divider(height: 1, thickness: 1, color: c.border)),
-                Row(
-                  children: [
-                    Expanded(child: Text("Total Amount".tr, style: t.label)),
-                    DsGap.sm,
-                    Flexible(
-                      child: Text(
-                        Constant.amountShow(currency: orderCurrency, amount: totalAmount.toString()).tr,
-                        textAlign: TextAlign.end,
-                        style: t.title.tabular,
-                      ),
-                    ),
-                  ],
+                  OrderMoneyRow(
+                    label: "Schedule Time".tr,
+                    value: Constant.timestampToDateTime(orderModel.scheduleTime!).tr,
+                    valueColor: c.brandStrong,
+                    padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+                  ),
+                OrderTotalRow(
+                  label: "Total Amount".tr,
+                  value: Constant.amountShow(currency: orderCurrency, amount: totalAmount.toString()).tr,
+                  valueColor: c.textPrimary,
+                  padding: EdgeInsets.zero,
                 ),
               ],
             ),
@@ -1159,50 +1173,33 @@ class HomeScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("${product.quantity}x ${product.name}".tr, style: t.bodyStrong),
-                  WholesaleTag(product: product, isDark: isDark),
-                ],
-              ),
-            ),
-            DsGap.md,
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  Constant.amountShow(currency: orderCurrency, amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
-                  style: t.bodyStrong.tabular,
-                ),
-                if (showRatings)
-                  Semantics(
-                    button: true,
-                    child: InkWell(
-                      borderRadius: DsRadius.brXs,
-                      onTap: () {
-                        Get.to(const ProductRatingViewScreen(), arguments: {"orderModel": orderModel, "productId": product.id});
-                      },
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(minHeight: 48),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.star_rounded, size: 16, color: c.warning),
-                            const DsGap(DsSpace.xxs),
-                            Text("View Ratings".tr, style: t.link.copyWith(fontSize: 13)),
-                          ],
-                        ),
+        OrderItemRow(
+          name: "${product.name}".tr,
+          quantityLabel: "×${product.quantity}",
+          price: Constant.amountShow(currency: orderCurrency, amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
+          subtitle: WholesaleTag(product: product, isDark: isDark),
+          trailing: showRatings
+              ? Semantics(
+                  button: true,
+                  child: InkWell(
+                    borderRadius: DsRadius.brXs,
+                    onTap: () {
+                      Get.to(const ProductRatingViewScreen(), arguments: {"orderModel": orderModel, "productId": product.id});
+                    },
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 48),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.star_rounded, size: 16, color: c.warning),
+                          const DsGap(DsSpace.xxs),
+                          Text("View Ratings".tr, style: t.link.copyWith(fontSize: 13)),
+                        ],
                       ),
                     ),
                   ),
-              ],
-            ),
-          ],
+                )
+              : null,
         ),
         if (!(product.variantInfo == null || product.variantInfo!.variantOptions!.isEmpty)) ...[
           const DsGap(DsSpace.sm),
@@ -1911,32 +1908,6 @@ class _StatusTrack extends StatelessWidget {
               ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _SummaryRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color? valueColor;
-
-  const _SummaryRow({required this.label, required this.value, this.valueColor});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.dsText;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: DsSpace.xxs),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: Text(label, style: t.bodySm)),
-          DsGap.sm,
-          Flexible(
-            child: Text(value, textAlign: TextAlign.end, style: t.bodyStrong.tabular.copyWith(color: valueColor)),
-          ),
-        ],
       ),
     );
   }

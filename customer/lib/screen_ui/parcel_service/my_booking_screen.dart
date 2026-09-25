@@ -1,5 +1,6 @@
 import 'package:customer/screen_ui/auth_screens/login_screen.dart';
 import 'package:customer/screen_ui/parcel_service/parcel_order_details.dart';
+import 'package:customer/screen_ui/widgets/order_ui.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -116,14 +117,22 @@ class _BookingCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.event_outlined, size: 14, color: c.textMuted),
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(Icons.event_outlined, size: 14, color: c.textMuted),
+              ),
               const DsGap(DsSpace.xs),
-              Expanded(child: Text(dateLabel, style: t.caption)),
-              if (order.status != null) DsStatusChip(label: order.status!.tr, status: order.status),
+              Expanded(child: Text(dateLabel, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.caption)),
+              if (order.status != null) ...[
+                const DsGap(DsSpace.sm),
+                DsStatusChip(label: order.status!.tr, status: order.status),
+              ],
             ],
           ),
-          const DsGap(DsSpace.md),
+          OrderIdLine(id: order.id.toString(), compact: true, copyable: false),
+          const DsGap(DsSpace.sm),
           _RouteBlock(order: order),
         ],
       ),

@@ -1,3 +1,4 @@
+import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -200,17 +201,21 @@ class OwnerOrderListScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                DsSectionBadge(section: DsSection.cab, label: 'Cab'.tr),
-                                const Spacer(),
-                                Flexible(
-                                  child: DsStatusChip(
-                                    label: order.status.toString(),
-                                    status: order.status?.toString(),
-                                  ),
-                                ),
-                              ],
+                            OrderHeaderRow(
+                              title: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: DsSectionBadge(section: DsSection.cab, label: 'Cab'.tr),
+                              ),
+                              trailing: DsStatusChip(
+                                label: order.status.toString(),
+                                status: order.status?.toString(),
+                              ),
+                              subtitle: OrderIdLine(
+                                label: 'Order Id:'.tr,
+                                id: order.id.toString(),
+                                copyable: false,
+                                copiedMessage: "Order ID copied to clipboard".tr,
+                              ),
                             ),
                             const DsGap(DsSpace.md),
                             DsRouteStops(
@@ -288,13 +293,18 @@ class OwnerOrderListScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                DsSectionBadge(section: DsSection.parcel, label: 'Parcel'.tr),
-                                const Spacer(),
-                                if (order.status != null)
-                                  Flexible(child: DsStatusChip(label: order.status!, status: order.status)),
-                              ],
+                            OrderHeaderRow(
+                              title: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: DsSectionBadge(section: DsSection.parcel, label: 'Parcel'.tr),
+                              ),
+                              trailing: order.status == null ? null : DsStatusChip(label: order.status!, status: order.status),
+                              subtitle: OrderIdLine(
+                                label: 'Order Id:'.tr,
+                                id: order.id.toString(),
+                                copyable: false,
+                                copiedMessage: "Order ID copied to clipboard".tr,
+                              ),
                             ),
                             const DsGap(DsSpace.sm),
                             _orderDate(
@@ -416,13 +426,18 @@ class OwnerOrderListScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                DsSectionBadge(section: DsSection.rental, label: 'Rental'.tr),
-                                const Spacer(),
-                                if (order.status != null)
-                                  Flexible(child: DsStatusChip(label: order.status ?? '', status: order.status)),
-                              ],
+                            OrderHeaderRow(
+                              title: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: DsSectionBadge(section: DsSection.rental, label: 'Rental'.tr),
+                              ),
+                              trailing: order.status == null ? null : DsStatusChip(label: order.status ?? '', status: order.status),
+                              subtitle: OrderIdLine(
+                                label: "Booking Id :",
+                                id: order.id.toString(),
+                                copyable: false,
+                                copiedMessage: "Booking ID copied to clipboard".tr,
+                              ),
                             ),
                             const DsGap(DsSpace.md),
                             Row(
@@ -518,7 +533,10 @@ class OwnerOrderListScreen extends StatelessWidget {
                                     Constant.amountShow(
                                         currency: RegionService.currencyForRecord(order.regionId),
                                         amount: order.rentalPackageModel!.baseFare.toString()),
-                                    style: t.title.tabular,
+                                    textAlign: TextAlign.end,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: OrderUi.price(context),
                                   ),
                                 ],
                               ),
@@ -578,14 +596,19 @@ class OwnerOrderListScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                DsSectionBadge(section: DsSection.delivery, label: 'Delivery'.tr),
-                                const Spacer(),
-                                // ── Status ───────────────────────
-                                if (order.status != null)
-                                  Flexible(child: DsStatusChip(label: order.status!, status: order.status)),
-                              ],
+                            // ── Section, status and order id ──
+                            OrderHeaderRow(
+                              title: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: DsSectionBadge(section: DsSection.delivery, label: 'Delivery'.tr),
+                              ),
+                              trailing: order.status == null ? null : DsStatusChip(label: order.status!, status: order.status),
+                              subtitle: OrderIdLine(
+                                label: "Order ID".tr,
+                                id: order.id.toString(),
+                                copyable: false,
+                                copiedMessage: "Order ID copied to clipboard".tr,
+                              ),
                             ),
                             const DsGap(DsSpace.sm),
                             // ── Order date ───────────────────

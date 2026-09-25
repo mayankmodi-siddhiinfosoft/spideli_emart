@@ -2,6 +2,7 @@ import 'package:country_code_picker/country_code_picker.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/cab_ride_options.dart';
 import 'package:customer/models/cab_order_model.dart';
+import 'package:customer/screen_ui/widgets/order_ui.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/text_field_widget.dart';
 import 'package:customer/utils/utils.dart';
@@ -180,37 +181,12 @@ class CabBillRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    final labelStyle = emphasize
-        ? t.bodyStrong
-        : onTap != null
-        ? t.body.copyWith(color: c.textSecondary, decoration: TextDecoration.underline, decorationColor: c.textSecondary)
-        : t.body.withColor(c.textSecondary);
-    final row = Padding(
-      padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Flexible(child: Text(label, style: labelStyle)),
-          if (labelSuffix != null && labelSuffix!.isNotEmpty) ...[
-            const DsGap(DsSpace.xs),
-            Flexible(
-              child: Text(labelSuffix!, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.labelSm.withColor(c.brandStrong)),
-            ),
-          ],
-          if (onTap != null) ...[const DsGap(DsSpace.xs), Icon(Icons.info_outline_rounded, size: 15, color: c.textMuted)],
-          const Spacer(),
-          const DsGap(DsSpace.md),
-          Text(value, style: (emphasize ? t.title : t.bodyStrong).withColor(valueColor ?? c.textPrimary).tabular),
-        ],
-      ),
-    );
-    if (onTap == null) return row;
-    return Material(
-      type: MaterialType.transparency,
-      child: InkWell(onTap: onTap, borderRadius: DsRadius.brXs, child: row),
-    );
+    // One shared bill row for every service: label left, amount right aligned
+    // in tabular figures, total separated and heavier.
+    if (emphasize) {
+      return OrderTotalRow(label: label, value: value, divider: false, valueColor: valueColor);
+    }
+    return OrderMoneyRow(label: label, value: value, valueColor: valueColor, labelSuffix: labelSuffix, underline: onTap != null, onTap: onTap);
   }
 }
 

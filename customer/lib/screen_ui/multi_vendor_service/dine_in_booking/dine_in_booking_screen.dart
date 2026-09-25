@@ -5,6 +5,8 @@ import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
+
+import '../../widgets/order_ui.dart';
 import 'dine_in_booking_details.dart';
 
 /// Archetype F — reservation history. Upcoming / History pills over
@@ -96,11 +98,24 @@ class _BookingCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      DsStatusChip(label: status, status: status),
-                      const DsGap(DsSpace.sm),
-                      Text(bookingModel.vendor!.title.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                      // Venue and status share the first line; the chip never
+                      // wraps away from the title it belongs to.
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: Text(bookingModel.vendor!.title.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.titleSm)),
+                          const DsGap(DsSpace.sm),
+                          DsStatusChip(label: status, status: status),
+                        ],
+                      ),
                       const DsGap(DsSpace.xxs),
-                      Text(Constant.timestampToDateTime(bookingModel.createdAt!), style: t.caption),
+                      Row(
+                        children: [
+                          Expanded(child: Text(Constant.timestampToDateTime(bookingModel.createdAt!), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption)),
+                          const DsGap(DsSpace.sm),
+                          OrderIdLine(id: bookingModel.id.toString(), compact: true, copyable: false),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -112,29 +127,8 @@ class _BookingCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.md),
             child: Column(
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: Text("Name".tr, style: t.bodySecondary)),
-                    const DsGap(DsSpace.md),
-                    Expanded(
-                      child: Text(
-                        "${bookingModel.guestFirstName} ${bookingModel.guestLastName}",
-                        textAlign: TextAlign.end,
-                        style: t.bodyStrong,
-                      ),
-                    ),
-                  ],
-                ),
-                const DsGap(DsSpace.sm),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: Text("Guest Number".tr, style: t.bodySecondary)),
-                    const DsGap(DsSpace.md),
-                    Expanded(child: Text(bookingModel.totalGuest.toString(), textAlign: TextAlign.end, style: t.bodyStrong.tabular)),
-                  ],
-                ),
+                OrderMoneyRow(label: "Name".tr, value: "${bookingModel.guestFirstName} ${bookingModel.guestLastName}"),
+                OrderMoneyRow(label: "Guest Number".tr, value: bookingModel.totalGuest.toString()),
               ],
             ),
           ),

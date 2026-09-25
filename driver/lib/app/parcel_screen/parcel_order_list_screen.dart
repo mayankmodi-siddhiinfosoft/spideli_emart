@@ -1,4 +1,5 @@
 import 'package:driver/app/parcel_screen/parcel_order_details.dart';
+import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -121,35 +122,34 @@ class _ParcelHistoryCard extends StatelessWidget {
             width: double.infinity,
             color: c.surfaceAlt,
             padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            child: OrderHeaderRow(
+              title: OrderIdLine(
+                label: 'Order Id:'.tr,
+                id: order.id.toString(),
+                copyable: false,
+                copiedMessage: "Order ID copied to clipboard".tr,
+              ),
+              trailing: order.status == null ? null : DsStatusChip(label: order.status!, status: order.status),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(dateLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySm.withColor(c.infoStrong)),
+                  const DsGap(DsSpace.xxs),
+                  Row(
                     children: [
-                      Text(dateLabel, style: t.bodySm.withColor(c.infoStrong)),
-                      const DsGap(DsSpace.xxs),
-                      Row(
-                        children: [
-                          Text("${'Section:'.tr} ", style: t.caption),
-                          Flexible(
-                            child: Text(
-                              sectionName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: t.labelSm.withColor(c.textPrimary),
-                            ),
-                          ),
-                        ],
+                      Text("${'Section:'.tr} ", style: t.caption),
+                      Flexible(
+                        child: Text(
+                          sectionName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: t.labelSm.withColor(c.textPrimary),
+                        ),
                       ),
                     ],
                   ),
-                ),
-                if (order.status != null) ...[
-                  const DsGap(DsSpace.sm),
-                  DsStatusChip(label: order.status!, status: order.status),
                 ],
-              ],
+              ),
             ),
           ),
           Padding(

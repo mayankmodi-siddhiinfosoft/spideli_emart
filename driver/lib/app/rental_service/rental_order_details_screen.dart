@@ -6,8 +6,8 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/app/widgets/order_ui.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import '../../controllers/rental_order_details_controller.dart';
 
@@ -86,23 +86,16 @@ class RentalOrderDetailsScreen extends StatelessWidget {
   }
 
   Widget _bookingCard(BuildContext context, RentalOrderDetailsController controller) {
-    final t = context.dsText;
+    final String status = controller.order.value.status ?? '';
     return DsCard(
       child: Column(
         children: [
-          Row(
-            children: [
-              Expanded(child: Text("Booking Id : ${controller.order.value.id}", style: t.bodyStrong.tabular)),
-              DsIconButton(
-                icon: Icons.copy_rounded,
-                semanticLabel: "Copy booking ID".tr,
-                variant: DsIconButtonVariant.tonal,
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: controller.order.value.id.toString()));
-                  ShowToastDialog.showToast("Booking ID copied to clipboard".tr);
-                },
-              ),
-            ],
+          OrderIdHeader(
+            label: "Booking Id :",
+            id: controller.order.value.id.toString(),
+            copiedMessage: "Booking ID copied to clipboard".tr,
+            copySemanticLabel: "Copy booking ID".tr,
+            trailing: status.isEmpty ? null : DsStatusChip(label: status, status: status),
           ),
           const DsGap(DsSpace.md),
           DsRouteStops(
@@ -144,7 +137,10 @@ class RentalOrderDetailsScreen extends StatelessWidget {
               Text(
                 Constant.amountShow(
                     currency: RegionService.currencyForRecord(controller.order.value.regionId), amount: controller.order.value.rentalPackageModel!.baseFare.toString()),
-                style: t.title.w700.tabular,
+                textAlign: TextAlign.end,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: OrderUi.price(context),
               ),
             ],
           ),
@@ -271,17 +267,17 @@ class RentalOrderDetailsScreen extends StatelessWidget {
         children: [
           Text("Rental Details".tr, style: t.titleSm),
           const DsDivider(spacing: DsSpace.sm),
-          DsInfoRow(label: 'Rental Package'.tr, value: order.rentalPackageModel!.name.toString().tr),
-          DsInfoRow(
+          OrderMoneyRow(label: 'Rental Package'.tr, value: order.rentalPackageModel!.name.toString().tr, valueMaxLines: 2),
+          OrderMoneyRow(
             label: 'Rental Package Price'.tr,
             value: Constant.amountShow(currency: RegionService.currencyForRecord(order.regionId), amount: order.rentalPackageModel!.baseFare.toString()).tr,
           ),
-          DsInfoRow(
+          OrderMoneyRow(
             label: 'Including ${Constant.distanceType.tr}',
             value: "${order.rentalPackageModel!.includedDistance.toString()} ${Constant.distanceType}".tr,
           ),
-          DsInfoRow(label: 'Including Hours'.tr, value: "${order.rentalPackageModel!.includedHours.toString()} Hr".tr),
-          DsInfoRow(label: 'Extra ${Constant.distanceType}', value: controller.getExtraKm()),
+          OrderMoneyRow(label: 'Including Hours'.tr, value: "${order.rentalPackageModel!.includedHours.toString()} Hr".tr),
+          OrderMoneyRow(label: 'Extra ${Constant.distanceType}', value: controller.getExtraKm()),
 
           // Padding(
           //   padding: const EdgeInsets.symmetric(vertical: 10),
@@ -303,7 +299,7 @@ class RentalOrderDetailsScreen extends StatelessWidget {
           //   ),
           // ),
           if (order.endTime != null)
-            DsInfoRow(
+            OrderMoneyRow(
               label: 'Extra Minutes'.tr,
               value:
                   "${order.endTime == null ? "0" : (((order.endTime!.toDate().difference(order.startTime!.toDate()).inMinutes) - (int.parse(order.rentalPackageModel!.includedHours.toString()) * 60)).clamp(0, double.infinity).toInt().toString())} Min",
@@ -323,8 +319,8 @@ class RentalOrderDetailsScreen extends StatelessWidget {
         children: [
           Text("Order Summary".tr, style: t.overline),
           const DsGap(DsSpace.sm),
-          DsInfoRow(label: "Subtotal".tr, value: Constant.amountShow(currency: currency, amount: controller.subTotal.value.toString())),
-          DsInfoRow(
+          OrderMoneyRow(label: "Subtotal".tr, value: Constant.amountShow(currency: currency, amount: controller.subTotal.value.toString())),
+          OrderMoneyRow(
             label: "Discount".tr,
             value: Constant.amountShow(currency: currency, amount: controller.discount.value.toString()),
             valueTone: DsTone.danger,
@@ -332,7 +328,7 @@ class RentalOrderDetailsScreen extends StatelessWidget {
           ...List.generate(order.taxSetting?.length ?? 0, (index) {
             final taxModel = order.taxSetting![index];
             final taxTitle = "${taxModel.title} ${taxModel.type == 'fix' ? '(${Constant.amountShow(currency: currency, amount: taxModel.tax)})' : '(${taxModel.tax}%)'}";
-            return DsInfoRow(
+            return OrderMoneyRow(
               label: taxTitle,
               value: Constant.amountShow(
                 currency: currency,
@@ -343,9 +339,8 @@ class RentalOrderDetailsScreen extends StatelessWidget {
               ),
             );
           }),
-          const DsDivider(spacing: DsSpace.sm),
-          DsInfoRow(label: "Order Total".tr, value: Constant.amountShow(currency: currency, amount: controller.totalAmount.value.toString()), emphasize: true),
-          DsInfoRow(
+          OrderTotalRow(label: "Order Total".tr, value: Constant.amountShow(currency: currency, amount: controller.totalAmount.value.toString())),
+          OrderMoneyRow(
             label: "Admin Commission (${order.adminCommission}${order.adminCommissionType == "Percentage" || order.adminCommissionType == "percentage" ? "%" : Constant.currencyModel!.symbol})".tr,
             value: Constant.amountShow(currency: currency, amount: controller.adminCommission.value.toString()),
             valueTone: DsTone.danger,

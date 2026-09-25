@@ -11,6 +11,7 @@ import '../../payment/create_razor_pay_order_model.dart';
 import '../../payment/rozorpay_conroller.dart';
 import '../../themes/show_toast_dialog.dart';
 import '../multi_vendor_service/wallet_screen/wallet_screen.dart';
+import '../widgets/order_ui.dart';
 import 'parcel_shipping_widgets.dart';
 
 /// Parcel checkout (archetype C — cart / checkout): the route recap and the
@@ -247,12 +248,11 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Row(
-                              children: [
-                                Expanded(child: Text("Order Total".tr, style: t.bodySecondary)),
-                                const DsGap(DsSpace.md),
-                                Text(Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.parcelCurrency), style: t.title.tabular),
-                              ],
+                            OrderTotalRow(
+                              label: "Order Total".tr,
+                              value: Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.parcelCurrency),
+                              divider: false,
+                              padding: EdgeInsets.zero,
                             ),
                             const DsGap(DsSpace.md),
                             DsButton.primary(
@@ -578,6 +578,8 @@ class ParcelMetricTile extends StatelessWidget {
 }
 
 /// One bill line. [emphasis] is the total row, [onTap] opens the tax details.
+/// Both come from the shared order widgets, so the parcel bill lines up with
+/// every other bill in the app.
 class ParcelSummaryRow extends StatelessWidget {
   final String label;
   final String value;
@@ -590,28 +592,8 @@ class ParcelSummaryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    final row = Padding(
-      padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: (emphasis ? t.titleSm : t.body).copyWith(decoration: underline ? TextDecoration.underline : TextDecoration.none, decorationColor: c.textSecondary),
-            ),
-          ),
-          const DsGap(DsSpace.md),
-          Text(
-            value,
-            style: emphasis ? t.title.tabular.withColor(c.brandStrong) : t.bodyStrong.tabular.withColor(tone == null ? c.textPrimary : c.tone(tone!).strong),
-          ),
-        ],
-      ),
-    );
-    if (onTap == null) return row;
-    return InkWell(borderRadius: DsRadius.brSm, onTap: onTap, child: row);
+    if (emphasis) return OrderTotalRow(label: label, value: value, divider: false);
+    return OrderMoneyRow(label: label, value: value, tone: tone, underline: underline, onTap: onTap);
   }
 }
 

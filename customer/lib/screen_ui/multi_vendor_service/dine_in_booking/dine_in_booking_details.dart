@@ -7,6 +7,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../widgets/order_ui.dart';
+
 /// Archetype F (detail) — reservation ticket: status hero, the restaurant with
 /// map / call actions, then the booking facts.
 class DineInBookingDetails extends StatelessWidget {
@@ -35,22 +37,12 @@ class DineInBookingDetails extends StatelessWidget {
                       // ---------- status hero ----------
                       DsCard.tinted(
                         tone: DsTone.fromStatus(booking.status),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text("${'Order'.tr} ${Constant.orderId(orderId: booking.id.toString())}", style: t.title.tabular),
-                                  const DsGap(DsSpace.xs),
-                                  Text("${booking.totalGuest} ${'Peoples'.tr}", style: t.bodySecondary),
-                                ],
-                              ),
-                            ),
-                            const DsGap(DsSpace.md),
-                            DsStatusChip(label: status, status: booking.status),
-                          ],
+                        child: OrderIdHeader(
+                          title: 'Order'.tr,
+                          id: booking.id.toString(),
+                          subtitle: "${booking.totalGuest} ${'Peoples'.tr}",
+                          statusLabel: status,
+                          status: booking.status,
                         ),
                       ),
 
@@ -122,15 +114,11 @@ class DineInBookingDetails extends StatelessWidget {
                       DsCard(
                         child: Column(
                           children: [
-                            _factRow(context, "Name".tr, "${booking.guestFirstName} ${booking.guestLastName}"),
-                            const DsGap(DsSpace.md),
-                            _factRow(context, "Phone number".tr, "${booking.guestPhone}", tabular: true),
-                            const DsGap(DsSpace.md),
-                            _factRow(context, "Date and Time".tr, Constant.timestampToDateTime(booking.date!), tabular: true),
-                            const DsGap(DsSpace.md),
-                            _factRow(context, "Guest".tr, "${booking.totalGuest}", tabular: true),
-                            const DsGap(DsSpace.md),
-                            _factRow(context, "Discount".tr, "${booking.discount} %", tabular: true),
+                            OrderMoneyRow(label: "Name".tr, value: "${booking.guestFirstName} ${booking.guestLastName}"),
+                            OrderMoneyRow(label: "Phone number".tr, value: "${booking.guestPhone}"),
+                            OrderMoneyRow(label: "Date and Time".tr, value: Constant.timestampToDateTime(booking.date!)),
+                            OrderMoneyRow(label: "Guest".tr, value: "${booking.totalGuest}"),
+                            OrderMoneyRow(label: "Discount".tr, value: "${booking.discount} %"),
                           ],
                         ),
                       ),
@@ -142,15 +130,4 @@ class DineInBookingDetails extends StatelessWidget {
     );
   }
 
-  Widget _factRow(BuildContext context, String label, String value, {bool tabular = false}) {
-    final t = context.dsText;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: Text(label, style: t.bodySecondary)),
-        const DsGap(DsSpace.md),
-        Expanded(child: Text(value, textAlign: TextAlign.end, style: tabular ? t.bodyStrong.tabular : t.bodyStrong)),
-      ],
-    );
-  }
 }

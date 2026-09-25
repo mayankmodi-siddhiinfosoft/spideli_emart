@@ -1,3 +1,4 @@
+import 'package:driver/app/widgets/order_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../constant/constant.dart';
@@ -103,33 +104,33 @@ class _CabOrderTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          OrderHeaderRow(
+            title: OrderIdLine(
+              label: 'Order Id:'.tr,
+              id: order.id.toString(),
+              copyable: false,
+              copiedMessage: "Order ID copied to clipboard".tr,
+            ),
+            trailing: DsStatusChip(label: order.status.toString(), status: order.status),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("${'Booking Date:'.tr} $bookingDate".tr, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                const DsGap(DsSpace.xxs),
+                Row(
                   children: [
-                    Text("${'Booking Date:'.tr} $bookingDate".tr, style: t.titleSm),
-                    const DsGap(DsSpace.xxs),
-                    Row(
-                      children: [
-                        Text("${'Section:'.tr} ", style: t.caption),
-                        Flexible(
-                          child: Text(
-                            Constant.sectionNameFromId(order.sectionId),
-                            style: t.caption.withColor(c.textPrimary).w600,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
+                    Text("${'Section:'.tr} ", style: t.caption),
+                    Flexible(
+                      child: Text(
+                        Constant.sectionNameFromId(order.sectionId),
+                        style: t.caption.withColor(c.textPrimary).w600,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),
-              ),
-              const DsGap(DsSpace.sm),
-              DsStatusChip(label: order.status.toString(), status: order.status),
-            ],
+              ],
+            ),
           ),
           const DsGap(DsSpace.lg),
           DsRouteStops(

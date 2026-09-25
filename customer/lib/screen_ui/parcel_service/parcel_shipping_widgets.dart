@@ -2,6 +2,7 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/models/currency_model.dart';
 import 'package:customer/models/parcel_order_model.dart';
 import 'package:customer/models/parcel_shipping_models.dart';
+import 'package:customer/screen_ui/widgets/order_ui.dart';
 import 'package:customer/service/parcel_shipping_service.dart';
 import 'package:customer/themes/app_them_data.dart';
 import 'package:customer/themes/ds/ds.dart';
@@ -113,21 +114,6 @@ class ParcelBreakdownCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    Widget row(String l, double v, {bool bold = false}) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
-      child: Row(
-        children: [
-          Expanded(child: Text(l, style: bold ? t.titleSm : t.body)),
-          const DsGap(DsSpace.md),
-          Text(
-            Constant.amountShow(amount: v.toString(), currency: currency),
-            style: bold ? t.titleSm.tabular.withColor(c.brandStrong) : t.bodyStrong.tabular,
-          ),
-        ],
-      ),
-    );
     final lines = ParcelLabels.breakdownLines(breakdown);
     final double subtotal = lines.fold(0.0, (a, e) => a + e.value);
     return ParcelCard(
@@ -135,9 +121,8 @@ class ParcelBreakdownCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ParcelCardTitle(title ?? "Shipping price".tr, icon: Icons.receipt_long_rounded),
-          for (final l in lines) row(l.key, l.value),
-          const DsDivider(spacing: DsSpace.md),
-          row("Shipping total".tr, subtotal, bold: true),
+          for (final l in lines) OrderMoneyRow(label: l.key, value: Constant.amountShow(amount: l.value.toString(), currency: currency)),
+          OrderTotalRow(label: "Shipping total".tr, value: Constant.amountShow(amount: subtotal.toString(), currency: currency)),
         ],
       ),
     );
@@ -297,14 +282,16 @@ class ParcelShippingSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
+    // Label column is proportional, not a fixed 118px, so it still reads at
+    // 1.3x text scale; values stay capped at two lines.
     Widget pair(String label, String value) => Padding(
       padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 118, child: Text(label, style: t.bodySm.withColor(c.textMuted))),
-          const DsGap(DsSpace.sm),
-          Expanded(child: Text(value, style: t.bodyStrong)),
+          Expanded(flex: 2, child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySm.withColor(c.textMuted))),
+          const DsGap(DsSpace.md),
+          Expanded(flex: 3, child: Text(value, maxLines: 3, overflow: TextOverflow.ellipsis, style: t.bodyStrong)),
         ],
       ),
     );

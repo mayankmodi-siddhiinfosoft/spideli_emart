@@ -6,6 +6,8 @@ import 'package:flutter_map/flutter_map.dart' as flutterMap;
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmap;
 
+import '../../widgets/order_ui.dart';
+
 /// Archetype D — live map. The map stays edge to edge and untouched; the
 /// chrome floats above it as a glass header instead of an opaque app bar.
 class LiveTrackingScreen extends StatelessWidget {
@@ -69,7 +71,18 @@ class LiveTrackingScreen extends StatelessWidget {
                             children: [
                               Icon(Icons.near_me_rounded, size: 18, color: c.brandStrong),
                               const DsGap(DsSpace.sm),
-                              Flexible(child: Text("Live Tracking".tr, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm)),
+                              Flexible(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text("Live Tracking".tr, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                                    // Same short, never-wrapping id as the list
+                                    // and the detail screen.
+                                    OrderIdLine(id: controller.orderModel.value.id.toString(), compact: true, copyable: false),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
                         ),

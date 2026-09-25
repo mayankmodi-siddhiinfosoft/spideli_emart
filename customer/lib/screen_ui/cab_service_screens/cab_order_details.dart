@@ -1,6 +1,7 @@
 import 'package:customer/utils/order_receipt_pdf.dart';
 import 'package:customer/utils/ride_receipt_pdf.dart';
 import 'package:customer/utils/region_service.dart';
+import 'package:customer/screen_ui/widgets/order_ui.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:customer/screen_ui/cab_service_screens/widget/cab_ride_options_widgets.dart';
@@ -153,8 +154,6 @@ class _RideHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.dsColors;
-    final t = context.dsText;
     return DsObserve(
       builder: (_) {
         final order = controller.cabOrder.value;
@@ -167,17 +166,14 @@ class _RideHero extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DsStatusChip(label: status, status: order.status, pulse: order.status == Constant.orderInTransit),
-                      ),
-                    ],
+                  OrderIdHeader(
+                    title: 'Order Id:'.tr,
+                    id: order.id.toString(),
+                    subtitle: "${'Booking Date:'.tr} ${controller.formatDate(order.scheduleDateTime!)}".tr,
+                    statusLabel: status,
+                    status: order.status,
+                    pulse: order.status == Constant.orderInTransit,
                   ),
-                  const DsGap(DsSpace.md),
-                  Text("${'Order Id:'.tr} ${Constant.orderId(orderId: order.id.toString())}".tr, style: t.titleSm.tabular),
-                  const DsGap(DsSpace.xxs),
-                  Text("${'Booking Date:'.tr} ${controller.formatDate(order.scheduleDateTime!)}".tr, style: t.bodySm.withColor(c.textSecondary)),
                 ],
               ),
             ),

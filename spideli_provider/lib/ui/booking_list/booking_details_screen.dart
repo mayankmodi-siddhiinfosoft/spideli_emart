@@ -20,8 +20,8 @@ import 'package:spideliprovider/ui/chat_screen/chat_screen.dart';
 import 'package:spideliprovider/utils/booking_receipt_pdf.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:spideliprovider/widgets/common_ui.dart';
+import 'package:spideliprovider/widgets/order_ui.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
@@ -191,39 +191,13 @@ class BookingDetailsScreen extends StatelessWidget {
             ],
           ),
           const DsDivider(spacing: DsSpace.md),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Text(
-              'Booking ID'.tr,
-              style: t.caption,
-            ),
-            Flexible(
-              child: InkWell(
-                borderRadius: DsRadius.brSm,
-                onTap: () async {
-                  await Clipboard.setData(ClipboardData(text: "${onProviderOrder.id}")).then((value) {
-                    ShowToastDialog.showToast("Booking ID Copied");
-                  });
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: DsSpace.sm, horizontal: DsSpace.xs),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          '# ${onProviderOrder.id}',
-                          overflow: TextOverflow.ellipsis,
-                          style: t.bodySm.withColor(c.brand),
-                        ),
-                      ),
-                      const DsGap(DsSpace.xs),
-                      Icon(Icons.copy_rounded, size: 14, color: c.brand),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ]),
+          // One heading, one value: the short id stays on a single line and the
+          // full id is copied on tap.
+          OrderIdHeader(
+            label: 'Booking ID'.tr,
+            shortId: shortBookingId("${onProviderOrder.id}"),
+            fullId: "${onProviderOrder.id}",
+          ),
         ],
       ),
     );
@@ -532,7 +506,6 @@ class BookingDetailsScreen extends StatelessWidget {
 
   Widget _extraChargesCard(BuildContext context, OnProviderOrderModel onProviderOrder) {
     if (onProviderOrder.extraCharges.toString() == "") return const SizedBox();
-    final t = context.dsText;
 
     return Padding(
       padding: const EdgeInsets.only(top: DsSpace.md),
@@ -540,31 +513,17 @@ class BookingDetailsScreen extends StatelessWidget {
         tone: DsTone.info,
         padding: const EdgeInsets.all(DsSpace.md),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(child: Text("Total Extra Charges : ", style: t.bodyStrong)),
-                Text(
-                  amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: onProviderOrder.extraCharges.toString()),
-                  style: t.bodyStrong.tabular,
-                ),
-              ],
+            OrderMoneyRow(
+              label: "Total Extra Charges : ",
+              value: amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: onProviderOrder.extraCharges.toString()),
+              padding: EdgeInsets.zero,
             ),
-            const DsGap(DsSpace.sm),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: Text("Extra charge Notes : ", style: t.bodyStrong)),
-                Flexible(
-                  child: Text(
-                    onProviderOrder.extraChargesDescription.toString(),
-                    textAlign: TextAlign.end,
-                    style: t.bodyStrong,
-                  ),
-                ),
-              ],
+            OrderMoneyRow(
+              label: "Extra charge Notes : ",
+              value: onProviderOrder.extraChargesDescription.toString(),
+              padding: const EdgeInsets.only(top: DsSpace.sm),
             ),
           ],
         ),
@@ -600,14 +559,11 @@ class BookingDetailsScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(child: Text("Admin commission".tr, style: t.bodyStrong)),
-                Text(
-                  "(-${amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.adminComm.value.toString())})",
-                  style: t.label.withColor(c.dangerStrong).tabular,
-                ),
-              ],
+            OrderMoneyRow(
+              label: "Admin commission".tr,
+              value: "(-${amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.adminComm.value.toString())})",
+              valueColor: c.dangerStrong,
+              padding: EdgeInsets.zero,
             ),
             const DsGap(DsSpace.sm),
             Text(
@@ -810,58 +766,37 @@ class BookingDetailsScreen extends StatelessWidget {
     final BuildContext ctx = context;
     final t = ctx.dsText;
 
-    Widget row(String label, Widget value, {TextStyle? labelStyle}) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: DsSpace.md, horizontal: DsSpace.md),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Flexible(child: Text(label, style: labelStyle ?? t.body)),
-              const DsGap(DsSpace.md),
-              value,
-            ],
-          ),
-        );
+    // One row per line, one padding for the whole block: labels left, amounts
+    // right in a single tabular column.
+    const EdgeInsets rowPadding = EdgeInsets.symmetric(vertical: DsSpace.md, horizontal: DsSpace.md);
 
     return DsCard(
       padding: EdgeInsets.zero,
       child: Column(
         children: [
-          row(
-            "Price".tr,
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  (onProviderOrder.provider.disPrice == "" || onProviderOrder.provider.disPrice == "0")
-                      ? '${amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: onProviderOrder.provider.price.toString())} × ${onProviderOrder.quantity.toStringAsFixed(2)}'
-                      : '${amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: onProviderOrder.provider.disPrice.toString())} × ${onProviderOrder.quantity.toStringAsFixed(2)}',
-                  style: t.caption,
-                ),
-                const DsGap(DsSpace.sm),
-                Text(
-                  amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.price.toString()),
-                  style: t.bodyStrong.tabular,
-                ),
-              ],
+          Padding(
+            padding: rowPadding,
+            child: OrderItemRow(
+              name: "Price".tr,
+              meta: (onProviderOrder.provider.disPrice == "" || onProviderOrder.provider.disPrice == "0")
+                  ? '${amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: onProviderOrder.provider.price.toString())} × ${onProviderOrder.quantity.toStringAsFixed(2)}'
+                  : '${amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: onProviderOrder.provider.disPrice.toString())} × ${onProviderOrder.quantity.toStringAsFixed(2)}',
+              price: amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.price.toString()),
             ),
           ),
           if (controller.discount.value != 0) const DsDivider(spacing: 0, indent: DsSpace.md),
           if (controller.discount.value != 0)
-            row(
-              "Discount".tr,
-              Text(
-                '(- ${amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.discount.value.toString())})',
-                style: t.bodyStrong.withColor(ctx.dsColors.successStrong).tabular,
-              ),
+            OrderMoneyRow(
+              label: "Discount".tr,
+              value: '(- ${amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.discount.value.toString())})',
+              valueColor: ctx.dsColors.successStrong,
+              padding: rowPadding,
             ),
           const DsDivider(spacing: 0, indent: DsSpace.md),
-          row(
-            "SubTotal".tr,
-            Text(
-              amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.subTotal.toString()),
-              style: t.bodyStrong.tabular,
-            ),
+          OrderMoneyRow(
+            label: "SubTotal".tr,
+            value: amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.subTotal.toString()),
+            padding: rowPadding,
           ),
           const DsDivider(spacing: 0, indent: DsSpace.md),
           ListView.builder(
@@ -872,14 +807,13 @@ class BookingDetailsScreen extends StatelessWidget {
               TaxModel taxModel = onProviderOrder.taxModel![index];
               return Column(
                 children: [
-                  row(
-                    "${taxModel.title.toString()} (${taxModel.type == "fix" ? amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: taxModel.tax) : "${taxModel.tax}%"})",
-                    Text(
-                      amountShow(
-                          currency: RegionService.currencyForBooking(onProviderOrder.regionId),
-                          amount: getTaxValue(amount: (double.parse(controller.subTotal.toString())).toString(), taxModel: taxModel).toString()),
-                      style: t.bodyStrong.tabular,
-                    ),
+                  OrderMoneyRow(
+                    label:
+                        "${taxModel.title.toString()} (${taxModel.type == "fix" ? amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: taxModel.tax) : "${taxModel.tax}%"})",
+                    value: amountShow(
+                        currency: RegionService.currencyForBooking(onProviderOrder.regionId),
+                        amount: getTaxValue(amount: (double.parse(controller.subTotal.toString())).toString(), taxModel: taxModel).toString()),
+                    padding: rowPadding,
                   ),
                   const DsDivider(spacing: 0, indent: DsSpace.md),
                 ],
@@ -887,9 +821,10 @@ class BookingDetailsScreen extends StatelessWidget {
             },
           ),
           if (onProviderOrder.notes!.isNotEmpty)
-            row(
-              "Remarks".tr,
-              InkWell(
+            OrderMoneyRow(
+              label: "Remarks".tr,
+              padding: rowPadding,
+              valueWidget: InkWell(
                 borderRadius: DsRadius.brSm,
                 onTap: () {
                   viewNotesheet(onProviderOrder.notes ?? "", Provider.of<DarkThemeProvider>(ctx, listen: false), ctx);
@@ -903,19 +838,13 @@ class BookingDetailsScreen extends StatelessWidget {
                 ),
               ),
             ),
-          Container(
-            decoration: BoxDecoration(
-              color: ctx.dsColors.surfaceAlt,
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(DsRadius.lg)),
-            ),
-            child: row(
-              "Total Amount".tr,
-              Text(
-                amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.totalAmount.toString()),
-                style: t.title.tabular,
-              ),
-              labelStyle: t.titleSm,
-            ),
+          OrderTotalRow(
+            label: "Total Amount".tr,
+            value: amountShow(currency: RegionService.currencyForBooking(onProviderOrder.regionId), amount: controller.totalAmount.toString()),
+            divider: false,
+            background: ctx.dsColors.surfaceAlt,
+            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(DsRadius.lg)),
+            padding: rowPadding,
           ),
         ],
       ),

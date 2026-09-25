@@ -7,6 +7,7 @@ import '../../constant/constant.dart';
 import '../../controllers/my_booking_on_demand_controller.dart';
 import '../../models/onprovider_order_model.dart';
 import '../../models/worker_model.dart';
+import '../widgets/order_ui.dart';
 import 'on_demand_order_details_screen.dart';
 
 /// Archetype F – booking history. Pill tabs over status-led booking cards
@@ -103,11 +104,25 @@ class _BookingCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    DsStatusChip(label: order.status, status: order.status),
-                    const DsGap(DsSpace.sm),
-                    Text(order.provider.title.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                    // Service name and status share the first line; the price
+                    // closes the row on the right, in tabular figures.
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: Text(order.provider.title.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.titleSm)),
+                        const DsGap(DsSpace.sm),
+                        DsStatusChip(label: order.status, status: order.status),
+                      ],
+                    ),
                     const DsGap(DsSpace.xs),
-                    buildPriceText(context, order),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        OrderIdLine(id: order.id, compact: true, copyable: false),
+                        const DsGap(DsSpace.sm),
+                        Expanded(child: Align(alignment: AlignmentDirectional.centerEnd, child: buildPriceText(context, order))),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -173,17 +188,6 @@ class _BookingCard extends StatelessWidget {
   }
 
   Widget detailRow(BuildContext context, String label, String value) {
-    final t = context.dsText;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: Text(label.tr, style: t.bodySm)),
-          const DsGap(DsSpace.md),
-          Flexible(child: Text(value.tr, textAlign: TextAlign.end, style: t.bodyStrong.tabular)),
-        ],
-      ),
-    );
+    return OrderMoneyRow(label: label.tr, value: value.tr);
   }
 }

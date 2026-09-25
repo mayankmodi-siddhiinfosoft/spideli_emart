@@ -1,3 +1,4 @@
+import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/order_list_screen/order_details_screen.dart';
 import 'package:driver/constant/constant.dart';
@@ -92,30 +93,16 @@ class OrderListScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text("Order ID".tr, style: t.caption),
-                    Text(
-                      Constant.orderId(orderId: orderModel.id.toString()),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: t.titleSm.w700.tabular,
-                    ),
-                  ],
-                ),
-              ),
-              const DsGap(DsSpace.sm),
-              Semantics(
-                label: "${"Status".tr}: ${orderModel.status.toString().tr}",
-                excludeSemantics: true,
-                child: DsStatusChip(label: orderModel.status.toString().tr, status: orderModel.status),
-              ),
-            ],
+          OrderIdHeader(
+            label: "Order ID".tr,
+            id: orderModel.id.toString(),
+            copyable: false,
+            copiedMessage: "Order ID copied to clipboard".tr,
+            trailing: Semantics(
+              label: "${"Status".tr}: ${orderModel.status.toString().tr}",
+              excludeSemantics: true,
+              child: DsStatusChip(label: orderModel.status.toString().tr, status: orderModel.status),
+            ),
           ),
           const DsGap(DsSpace.md),
           Wrap(

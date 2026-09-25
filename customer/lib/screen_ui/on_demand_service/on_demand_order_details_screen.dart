@@ -9,6 +9,7 @@ import '../../controllers/on_demand_order_details_controller.dart';
 import '../../constant/constant.dart';
 import '../../themes/show_toast_dialog.dart';
 import '../multi_vendor_service/chat_screens/chat_screen.dart';
+import '../widgets/order_ui.dart';
 import 'on_demand_payment_screen.dart';
 import 'on_demand_review_screen.dart';
 import 'package:customer/utils/order_receipt_pdf.dart';
@@ -62,46 +63,24 @@ class OnDemandOrderDetailsScreen extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                children: [
-                                  Expanded(child: DsStatusChip(label: status, status: status, pulse: status == Constant.orderOngoing)),
-                                ],
-                              ),
-                              const DsGap(DsSpace.md),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(child: Text('Booking ID'.tr, style: t.bodySecondary)),
-                                  const DsGap(DsSpace.sm),
-                                  InkWell(
-                                    onTap: () {
-                                      final bookingId = controller.onProviderOrder.value?.id ?? '';
-                                      if (bookingId.isEmpty) return;
-                                      Clipboard.setData(ClipboardData(text: bookingId)).then((value) {
-                                        SnackBar snackBar = SnackBar(
-                                          content: Text("Booking ID Copied".tr, textAlign: TextAlign.center, style: t.bodyStrong.withColor(context.dsColors.onSurfaceInverse)),
-                                          backgroundColor: context.dsColors.surfaceInverse,
-                                        );
-                                        ScaffoldMessenger.of(context).showSnackBar(snackBar);
-                                      });
-                                    },
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Flexible(
-                                          child: Text(
-                                            '# ${controller.onProviderOrder.value?.id ?? ''}',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: t.bodyStrong.withColor(context.dsColors.brandStrong).tabular,
-                                          ),
-                                        ),
-                                        const DsGap(DsSpace.xs),
-                                        Icon(Icons.copy_rounded, size: 14, color: context.dsColors.brandStrong),
-                                      ],
-                                    ),
-                                  ),
-                                ],
+                              OrderIdHeader(
+                                title: 'Booking ID'.tr,
+                                id: controller.onProviderOrder.value?.id ?? '',
+                                statusLabel: status,
+                                status: status,
+                                pulse: status == Constant.orderOngoing,
+                                copySemanticLabel: "Booking ID Copied".tr,
+                                onCopy: () {
+                                  final bookingId = controller.onProviderOrder.value?.id ?? '';
+                                  if (bookingId.isEmpty) return;
+                                  Clipboard.setData(ClipboardData(text: bookingId)).then((value) {
+                                    SnackBar snackBar = SnackBar(
+                                      content: Text("Booking ID Copied".tr, textAlign: TextAlign.center, style: t.bodyStrong.withColor(context.dsColors.onSurfaceInverse)),
+                                      backgroundColor: context.dsColors.surfaceInverse,
+                                    );
+                                    ScaffoldMessenger.of(context).showSnackBar(snackBar);
+                                  });
+                                },
                               ),
                               const DsDivider(spacing: DsSpace.md),
                               Row(
@@ -458,26 +437,15 @@ class OnDemandOrderDetailsScreen extends StatelessWidget {
                                 padding: const EdgeInsets.all(DsSpace.md),
                                 child: Column(
                                   children: [
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Expanded(child: Text("Total Extra Charges : ".tr, style: t.bodyStrong)),
-                                        const DsGap(DsSpace.sm),
-                                        Text(
-                                          Constant.amountShow(amount: controller.onProviderOrder.value?.extraCharges.toString(), currency: RegionService.currencyForRecord(controller.onProviderOrder.value?.regionId)),
-                                          style: t.bodyStrong.tabular,
-                                        ),
-                                      ],
+                                    OrderMoneyRow(
+                                      label: "Total Extra Charges : ".tr,
+                                      strongLabel: true,
+                                      value: Constant.amountShow(
+                                        amount: controller.onProviderOrder.value?.extraCharges.toString(),
+                                        currency: RegionService.currencyForRecord(controller.onProviderOrder.value?.regionId),
+                                      ),
                                     ),
-                                    const DsGap(DsSpace.xs),
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Expanded(child: Text("Extra charge Notes : ".tr, style: t.bodySm)),
-                                        const DsGap(DsSpace.sm),
-                                        Flexible(child: Text(controller.onProviderOrder.value?.extraChargesDescription ?? '', textAlign: TextAlign.end, style: t.bodySm)),
-                                      ],
-                                    ),
+                                    OrderMoneyRow(label: "Extra charge Notes : ".tr, value: controller.onProviderOrder.value?.extraChargesDescription ?? ''),
                                   ],
                                 ),
                               ),
@@ -493,13 +461,10 @@ class OnDemandOrderDetailsScreen extends StatelessWidget {
                             child: Column(
                               children: [
                                 controller.onProviderOrder.value?.newScheduleDateTime != null
-                                    ? Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Expanded(child: Text("New Date : ".tr, style: t.bodyStrong)),
-                                        const DsGap(DsSpace.sm),
-                                        Text(DateFormat('dd-MMM-yyyy hh:mm a').format(controller.onProviderOrder.value!.newScheduleDateTime!.toDate()), style: t.bodyStrong.tabular),
-                                      ],
+                                    ? OrderMoneyRow(
+                                      label: "New Date : ".tr,
+                                      strongLabel: true,
+                                      value: DateFormat('dd-MMM-yyyy hh:mm a').format(controller.onProviderOrder.value!.newScheduleDateTime!.toDate()),
                                     )
                                     : SizedBox(),
                                 controller.onProviderOrder.value?.status == Constant.orderPlaced || controller.onProviderOrder.value?.status == Constant.orderAccepted
@@ -724,29 +689,13 @@ class OnDemandOrderDetailsScreen extends StatelessWidget {
             ),
             controller.discountAmount.value != 0 ? const DsDivider(spacing: DsSpace.xs) : const SizedBox(),
             controller.discountAmount.value != 0
-                ? Padding(
-                  padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "${"Discount".tr} ${controller.discountType.value == 'Percentage' || controller.discountType.value == 'Percent' ? "(${controller.discountLabel.value}%)" : "(${Constant.amountShow(amount: controller.discountLabel.value, currency: RegionService.currencyForRecord(controller.onProviderOrder.value?.regionId))})"}",
-                              style: t.body,
-                            ),
-                            Text(controller.offerCode.value, style: t.caption),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        "(-${Constant.amountShow(amount: controller.discountAmount.value.toString(), currency: RegionService.currencyForRecord(controller.onProviderOrder.value?.regionId))})",
-                        style: t.bodyStrong.withColor(c.dangerStrong).tabular,
-                      ),
-                    ],
-                  ),
+                ? OrderMoneyRow(
+                  label:
+                      "${"Discount".tr} ${controller.discountType.value == 'Percentage' || controller.discountType.value == 'Percent' ? "(${controller.discountLabel.value}%)" : "(${Constant.amountShow(amount: controller.discountLabel.value, currency: RegionService.currencyForRecord(controller.onProviderOrder.value?.regionId))})"}",
+                  labelExtra: Text(controller.offerCode.value, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption),
+                  value:
+                      "(-${Constant.amountShow(amount: controller.discountAmount.value.toString(), currency: RegionService.currencyForRecord(controller.onProviderOrder.value?.regionId))})",
+                  valueColor: c.dangerStrong,
                 )
                 : const SizedBox(),
 
@@ -768,25 +717,12 @@ class OnDemandOrderDetailsScreen extends StatelessWidget {
     });
   }
 
+  /// Bill line of the price card — the shared row, so it lines up with every
+  /// other bill in the app.
   Widget rowText(BuildContext context, String title, String value, {bool? underline, bool total = false}) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: (total ? t.titleSm : t.body).copyWith(decoration: underline == true ? TextDecoration.underline : TextDecoration.none, decorationColor: c.textSecondary),
-            ),
-          ),
-          const DsGap(DsSpace.md),
-          Flexible(child: Text(value, textAlign: TextAlign.end, style: total ? t.title.withColor(c.brandStrong).tabular : t.bodyStrong.tabular)),
-        ],
-      ),
-    );
+    const EdgeInsets padding = EdgeInsets.symmetric(vertical: DsSpace.sm);
+    if (total) return OrderTotalRow(label: title, value: value, divider: false, padding: padding);
+    return OrderMoneyRow(label: title, value: value, underline: underline == true, padding: padding);
   }
 
   Future<void> showCancelBookingDialog(BuildContext context, OnDemandOrderDetailsController controller) {
@@ -843,15 +779,7 @@ class OnDemandOrderDetailsScreen extends StatelessWidget {
   }
 
   Widget amountRow(BuildContext context, {required String title, required String amount, bool highlight = false}) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: Text(title.tr, style: t.bodySecondary)),
-        const DsGap(DsSpace.md),
-        Text(amount, style: highlight ? t.titleSm.withColor(c.brandStrong).tabular : t.bodyStrong.tabular),
-      ],
-    );
+    if (highlight) return OrderTotalRow(label: title.tr, value: amount, divider: false, padding: EdgeInsets.zero);
+    return OrderMoneyRow(label: title.tr, value: amount, padding: EdgeInsets.zero);
   }
 }

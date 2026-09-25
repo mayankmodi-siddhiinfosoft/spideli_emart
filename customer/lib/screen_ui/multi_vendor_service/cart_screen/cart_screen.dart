@@ -18,6 +18,7 @@ import '../../../models/user_model.dart';
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
 import '../../../widget/shop_widgets.dart';
+import '../../widgets/order_ui.dart';
 import '../restaurant_details_screen/restaurant_details_screen.dart';
 import '../wallet_screen/wallet_screen.dart';
 import 'coupon_list_screen.dart';
@@ -455,16 +456,9 @@ class CartScreen extends StatelessWidget {
                                 underline: true,
                               ),
                             ),
-                            sectionDivider(isDark),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(child: Text("To Pay".tr, style: t.titleSm)),
-                                Text(
-                                  Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: currency),
-                                  style: t.title.tabular,
-                                ),
-                              ],
+                            OrderTotalRow(
+                              label: "To Pay".tr,
+                              value: Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: currency),
                             ),
                           ],
                         ),
@@ -853,6 +847,8 @@ class CartScreen extends StatelessWidget {
   }
 }
 
+/// The cart bill line — the shared [OrderMoneyRow], so the checkout bill and
+/// the order receipt read exactly the same.
 class _AmountRow extends StatelessWidget {
   final String title;
   final String amount;
@@ -865,26 +861,14 @@ class _AmountRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title.tr,
-                style: t.body.copyWith(color: textColour ?? c.textSecondary, decoration: underline == true ? TextDecoration.underline : TextDecoration.none, decorationColor: c.textSecondary),
-              ),
-              ?leadingExtra,
-            ],
-          ),
-        ),
-        const DsGap(DsSpace.sm),
-        trailing ?? Text(amount, style: t.bodyStrong.tabular.withColor(amountColor ?? c.textPrimary)),
-      ],
+    return OrderMoneyRow(
+      label: title.tr,
+      value: amount,
+      valueColor: amountColor,
+      underline: underline == true,
+      labelExtra: leadingExtra,
+      valueWidget: trailing,
+      padding: EdgeInsets.zero,
     );
   }
 }

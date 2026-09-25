@@ -4,6 +4,7 @@ import 'package:customer/payment/create_razor_pay_order_model.dart';
 import 'package:customer/payment/rozorpay_conroller.dart';
 import 'package:customer/screen_ui/auth_screens/login_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
+import 'package:customer/screen_ui/widgets/order_ui.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:flutter/material.dart';
@@ -347,13 +348,20 @@ class _RideHistoryCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text("${'Booking Date:'.tr} ${controller.formatDate(order.scheduleDateTime!)}".tr, textAlign: TextAlign.start, style: t.labelSm),
+                child: Text(
+                  "${'Booking Date:'.tr} ${controller.formatDate(order.scheduleDateTime!)}".tr,
+                  textAlign: TextAlign.start,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.labelSm,
+                ),
               ),
               const DsGap(DsSpace.sm),
               DsStatusChip(label: order.status.toString(), status: order.status),
             ],
           ),
-          const DsGap(DsSpace.md),
+          OrderIdLine(id: order.id.toString(), compact: true, copyable: false),
+          const DsGap(DsSpace.sm),
           CabRouteRail(source: order.sourceLocationName.toString(), destination: order.destinationLocationName.toString()),
           if (Constant.isEnableOTPTripStart == true) ...[
             const DsGap(DsSpace.md),

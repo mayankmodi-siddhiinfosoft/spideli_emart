@@ -12,6 +12,7 @@ import 'package:spideliworker/ui/documents/documents_screen.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 import 'package:spideliworker/utils/region_service.dart';
 import 'package:spideliworker/widgets/common_ui.dart';
+import 'package:spideliworker/widgets/order_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
@@ -280,32 +281,18 @@ class _JobCard extends StatelessWidget {
     return DsStatusChip(label: label.tr, status: order.status, pulse: order.status == ORDER_STATUS_ONGOING);
   }
 
+  /// Label left, value right — the same row the booking detail uses, so both
+  /// surfaces align identically.
   Widget _row(BuildContext context, IconData icon, String label, String value, {bool divider = true}) {
     final c = context.dsColors;
-    final t = context.dsText;
     return Column(
       children: [
         if (divider) Divider(height: 1, color: c.divider, indent: DsSpace.huge),
-        Padding(
+        OrderMoneyRow(
+          icon: icon,
+          label: label.tr,
+          value: value,
           padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, size: 16, color: c.textMuted),
-              const DsGap(DsSpace.md),
-              Text(label.tr, style: t.caption),
-              const DsGap(DsSpace.md),
-              Expanded(
-                child: Text(
-                  value,
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 2,
-                  textAlign: TextAlign.end,
-                  style: t.bodyStrong,
-                ),
-              ),
-            ],
-          ),
         ),
       ],
     );
@@ -395,8 +382,17 @@ class _JobCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Align(alignment: AlignmentDirectional.centerStart, child: _badge()),
-                const DsGap(DsSpace.sm),
+                // Identity and status on one line: the id never wraps and the
+                // chip is aligned to the heading. The card tap opens the job,
+                // so the id itself is not tappable here.
+                OrderIdHeader(
+                  label: 'Booking ID'.tr,
+                  shortId: shortBookingId(order.id),
+                  fullId: order.id,
+                  copyable: false,
+                  statusChip: _badge(),
+                ),
+                const DsGap(DsSpace.xs),
                 Text(
                   order.provider.title.toString(),
                   maxLines: 2,

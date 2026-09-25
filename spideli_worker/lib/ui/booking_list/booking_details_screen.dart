@@ -12,8 +12,8 @@ import 'package:spideliworker/utils/region_service.dart';
 import 'package:spideliworker/ui/chat_screen/chat_screen.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 import 'package:spideliworker/widgets/common_ui.dart';
+import 'package:spideliworker/widgets/order_ui.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
@@ -211,37 +211,13 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
               ),
             ],
           ),
-          const DsGap(DsSpace.md),
-          Semantics(
-            button: true,
+          const DsGap(DsSpace.sm),
+          // One heading, one value: the short id stays on a single line and the
+          // full id is copied on tap.
+          OrderIdHeader(
             label: 'Booking ID'.tr,
-            child: InkWell(
-              borderRadius: DsRadius.brSm,
-              onTap: () async {
-                await Clipboard.setData(ClipboardData(text: onProviderOrder.id)).then((value) {
-                  ShowToastDialog.showToast("Booking ID Copied");
-                });
-              },
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 40),
-                child: Row(
-                  children: [
-                    Text('Booking ID'.tr, style: t.caption),
-                    const DsGap(DsSpace.sm),
-                    Expanded(
-                      child: Text(
-                        '# ${onProviderOrder.id}',
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.end,
-                        style: t.bodySm.withColor(c.brandStrong).tabular,
-                      ),
-                    ),
-                    const DsGap(DsSpace.sm),
-                    Icon(Icons.copy_rounded, size: 16, color: c.brandStrong),
-                  ],
-                ),
-              ),
-            ),
+            shortId: shortBookingId(onProviderOrder.id),
+            fullId: onProviderOrder.id,
           ),
         ],
       ),
@@ -434,37 +410,23 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   Widget extraChargesCard(BuildContext context, OnProviderOrderModel onProviderOrder) {
-    final t = context.dsText;
     if (onProviderOrder.extraCharges.toString() == "") return const SizedBox();
     return Padding(
       padding: const EdgeInsets.only(top: DsSpace.md),
       child: DsCard.tinted(
         tone: DsTone.info,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text("Total Extra Charges : ", style: t.bodyStrong),
-                Text(
-                  amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.extraCharges.toString()),
-                  style: t.bodyStrong.tabular,
-                ),
-              ],
+            OrderMoneyRow(
+              label: "Total Extra Charges : ",
+              value: amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.extraCharges.toString()),
+              padding: EdgeInsets.zero,
             ),
-            const DsGap(DsSpace.sm),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(child: Text("Extra charge Notes : ", style: t.bodyStrong)),
-                Flexible(
-                  child: Text(
-                    onProviderOrder.extraChargesDescription.toString(),
-                    textAlign: TextAlign.end,
-                    style: t.bodyStrong,
-                  ),
-                ),
-              ],
+            OrderMoneyRow(
+              label: "Extra charge Notes : ",
+              value: onProviderOrder.extraChargesDescription.toString(),
+              padding: const EdgeInsets.only(top: DsSpace.sm),
             ),
           ],
         ),
@@ -590,59 +552,40 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
     final BuildContext ctx = context;
     final c = ctx.dsColors;
-    final t = ctx.dsText;
 
-    Widget line({required Widget label, required Widget value}) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: DsSpace.sm, horizontal: DsSpace.lg),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [label, const DsGap(DsSpace.md), Flexible(child: value)]),
-        );
+    // One row per line, one padding for the whole block: labels left, amounts
+    // right in a single tabular column.
+    const EdgeInsets rowPadding = EdgeInsets.symmetric(vertical: DsSpace.sm, horizontal: DsSpace.lg);
     Widget rule() => Padding(padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg), child: Divider(height: 1, color: c.divider));
 
     return DsCard.outlined(
       padding: EdgeInsets.zero,
       child: Column(
         children: [
-          line(
-            label: Text("Price".tr, style: t.bodyStrong),
-            value: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    (onProviderOrder.provider.disPrice == "" || onProviderOrder.provider.disPrice == "0")
-                        ? '${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.provider.price.toString())} × ${onProviderOrder.quantity}'
-                        : '${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.provider.disPrice.toString())} × ${onProviderOrder.quantity}',
-                    overflow: TextOverflow.ellipsis,
-                    style: t.bodySecondary.tabular,
-                  ),
-                ),
-                const DsGap(DsSpace.md),
-                Text(
-                  amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.price.toString()),
-                  style: t.bodyStrong.tabular,
-                ),
-              ],
+          Padding(
+            padding: rowPadding,
+            child: OrderItemRow(
+              name: "Price".tr,
+              meta: (onProviderOrder.provider.disPrice == "" || onProviderOrder.provider.disPrice == "0")
+                  ? '${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.provider.price.toString())} × ${onProviderOrder.quantity}'
+                  : '${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: onProviderOrder.provider.disPrice.toString())} × ${onProviderOrder.quantity}',
+              price: amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.price.toString()),
             ),
           ),
           controller.discount.value != 0 ? rule() : const SizedBox(),
           controller.discount.value != 0
-              ? line(
-                  label: Text("Discount".tr, style: t.bodyStrong),
-                  value: Text(
-                    '(- ${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.discount.value.toString())})',
-                    textAlign: TextAlign.end,
-                    style: t.bodyStrong.withColor(c.successStrong).tabular,
-                  ),
+              ? OrderMoneyRow(
+                  label: "Discount".tr,
+                  value: '(- ${amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.discount.value.toString())})',
+                  valueColor: c.successStrong,
+                  padding: rowPadding,
                 )
               : const SizedBox(),
           rule(),
-          line(
-            label: Text("SubTotal".tr, style: t.bodyStrong),
-            value: Text(
-              amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.subTotal.toString()),
-              textAlign: TextAlign.end,
-              style: t.bodyStrong.tabular,
-            ),
+          OrderMoneyRow(
+            label: "SubTotal".tr,
+            value: amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.subTotal.toString()),
+            padding: rowPadding,
           ),
           rule(),
           ListView.builder(
@@ -653,20 +596,13 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
               TaxModel taxModel = onProviderOrder.taxModel![index];
               return Column(
                 children: [
-                  line(
-                    label: Flexible(
-                      child: Text(
+                  OrderMoneyRow(
+                    label:
                         "${taxModel.title.toString()} (${taxModel.type == "fix" ? amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: taxModel.tax) : "${taxModel.tax}%"})",
-                        style: t.bodySecondary,
-                      ),
-                    ),
-                    value: Text(
-                      amountShow(
-                          currency: RegionService.currencyForRegion(onProviderOrder.regionId),
-                          amount: getTaxValue(amount: (double.parse(controller.subTotal.toString())).toString(), taxModel: taxModel).toString()),
-                      textAlign: TextAlign.end,
-                      style: t.bodyStrong.tabular,
-                    ),
+                    value: amountShow(
+                        currency: RegionService.currencyForRegion(onProviderOrder.regionId),
+                        amount: getTaxValue(amount: (double.parse(controller.subTotal.toString())).toString(), taxModel: taxModel).toString()),
+                    padding: rowPadding,
                   ),
                   rule(),
                 ],
@@ -674,30 +610,25 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             },
           ),
           onProviderOrder.notes.isNotEmpty
-              ? line(
-                  label: Text("Remarks".tr, style: t.bodyStrong),
-                  value: Align(
-                    alignment: AlignmentDirectional.centerEnd,
-                    child: DsButton.ghost(
-                      label: "View".tr,
-                      size: DsButtonSize.sm,
-                      onPressed: () {
-                        viewNotesheet(onProviderOrder.notes, ctx);
-                      },
-                    ),
+              ? OrderMoneyRow(
+                  label: "Remarks".tr,
+                  padding: rowPadding,
+                  valueWidget: DsButton.ghost(
+                    label: "View".tr,
+                    size: DsButtonSize.sm,
+                    onPressed: () {
+                      viewNotesheet(onProviderOrder.notes, ctx);
+                    },
                   ),
                 )
               : const SizedBox.shrink(),
-          Container(
-            decoration: BoxDecoration(color: c.brandSoft, borderRadius: const BorderRadius.vertical(bottom: Radius.circular(DsRadius.md))),
-            child: line(
-              label: Text("Total Amount".tr, style: t.label),
-              value: Text(
-                amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.totalAmount.toString()),
-                textAlign: TextAlign.end,
-                style: t.metric.copyWith(fontSize: 20).withColor(c.brandStrong).tabular,
-              ),
-            ),
+          OrderTotalRow(
+            label: "Total Amount".tr,
+            value: amountShow(currency: RegionService.currencyForRegion(onProviderOrder.regionId), amount: controller.totalAmount.toString()),
+            divider: false,
+            background: c.brandSoft,
+            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(DsRadius.md)),
+            padding: rowPadding,
           ),
         ],
       ),

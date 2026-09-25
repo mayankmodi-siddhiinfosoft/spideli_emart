@@ -1,3 +1,4 @@
+import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/order_details_controller.dart';
@@ -58,30 +59,15 @@ class OrderDetailsScreen extends StatelessWidget {
   }
 
   Widget _summaryCard(BuildContext context, OrderDetailsController controller) {
-    final c = context.dsColors;
-    final t = context.dsText;
     final status = controller.orderModel.value.status.toString();
     return DsCard.tinted(
       tone: DsTone.fromStatus(status),
       padding: const EdgeInsets.all(DsSpace.lg),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text("Order".tr, style: t.caption),
-                Text(
-                  "${'Order'.tr} ${Constant.orderId(orderId: controller.orderModel.value.id.toString())}".tr,
-                  style: t.title.w700.tabular.withColor(c.textPrimary),
-                ),
-              ],
-            ),
-          ),
-          const DsGap(DsSpace.md),
-          DsStatusChip(label: status.tr, status: status, pulse: DsTone.fromStatus(status) == DsTone.info),
-        ],
+      child: OrderIdHeader(
+        label: "Order".tr,
+        id: controller.orderModel.value.id.toString(),
+        copiedMessage: "Order ID copied to clipboard".tr,
+        trailing: DsStatusChip(label: status.tr, status: status, pulse: DsTone.fromStatus(status) == DsTone.info),
       ),
     );
   }
@@ -124,95 +110,64 @@ class OrderDetailsScreen extends StatelessWidget {
           CartProductModel cartProductModel = products[index];
           final bool discounted =
               double.parse(cartProductModel.discountPrice == null || cartProductModel.discountPrice!.isEmpty ? "0.0" : cartProductModel.discountPrice.toString()) > 0;
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          return OrderItemRow(
+            name: "${cartProductModel.name}",
+            imageUrl: cartProductModel.photo.toString(),
+            quantityLabel: "x ${cartProductModel.quantity}",
+            price: discounted
+                ? Constant.amountShow(currency: currency, amount: cartProductModel.discountPrice.toString())
+                : Constant.amountShow(currency: currency, amount: cartProductModel.price),
+            originalPrice: discounted ? Constant.amountShow(currency: currency, amount: cartProductModel.price) : null,
+            details: [
+              if (!(cartProductModel.variantInfo == null || cartProductModel.variantInfo!.variantOptions!.isEmpty)) ...[
+                const DsGap(DsSpace.md),
+                Text("Variants".tr, style: t.labelSm),
+                const DsGap(DsSpace.xs),
+                Wrap(
+                  spacing: DsSpace.sm,
+                  runSpacing: DsSpace.sm,
+                  children: List.generate(
+                    cartProductModel.variantInfo!.variantOptions!.length,
+                    (i) => DsBadge(
+                      label:
+                          "${cartProductModel.variantInfo!.variantOptions!.keys.elementAt(i)} : ${cartProductModel.variantInfo!.variantOptions![cartProductModel.variantInfo!.variantOptions!.keys.elementAt(i)]}",
+                      small: true,
+                    ),
+                  ).toList(),
+                ),
+              ],
+              if (!(cartProductModel.extras == null || cartProductModel.extras!.isEmpty)) ...[
+                const DsGap(DsSpace.md),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    DsImage(url: cartProductModel.photo.toString(), width: 64, height: 64, radius: DsRadius.md),
+                    Expanded(child: Text("Addons".tr, style: t.labelSm)),
                     const DsGap(DsSpace.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(child: Text("${cartProductModel.name}", style: t.bodyStrong)),
-                              const DsGap(DsSpace.sm),
-                              DsBadge(label: "x ${cartProductModel.quantity}", small: true),
-                            ],
-                          ),
-                          const DsGap(DsSpace.xs),
-                          discounted
-                              ? Row(
-                                  children: [
-                                    Text(
-                                      Constant.amountShow(currency: currency, amount: cartProductModel.discountPrice.toString()),
-                                      style: t.titleSm.w700.tabular,
-                                    ),
-                                    const DsGap(DsSpace.sm),
-                                    Text(
-                                      Constant.amountShow(currency: currency, amount: cartProductModel.price),
-                                      style: t.bodySm.strike.withColor(c.textMuted).tabular,
-                                    ),
-                                  ],
-                                )
-                              : Text(
-                                  Constant.amountShow(currency: currency, amount: cartProductModel.price),
-                                  style: t.titleSm.w700.tabular,
-                                ),
-                        ],
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: OrderUi.valueColumnMin, maxWidth: OrderUi.valueColumnMax),
+                      child: Text(
+                        Constant.amountShow(
+                            currency: currency,
+                            amount: (double.parse(cartProductModel.extrasPrice.toString()) * double.parse(cartProductModel.quantity.toString())).toString()),
+                        textAlign: TextAlign.end,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.bodyStrong.withColor(c.brandStrong).tabular,
                       ),
                     ),
                   ],
                 ),
-                if (!(cartProductModel.variantInfo == null || cartProductModel.variantInfo!.variantOptions!.isEmpty)) ...[
-                  const DsGap(DsSpace.md),
-                  Text("Variants".tr, style: t.labelSm),
-                  const DsGap(DsSpace.xs),
-                  Wrap(
-                    spacing: DsSpace.sm,
-                    runSpacing: DsSpace.sm,
-                    children: List.generate(
-                      cartProductModel.variantInfo!.variantOptions!.length,
-                      (i) => DsBadge(
-                        label:
-                            "${cartProductModel.variantInfo!.variantOptions!.keys.elementAt(i)} : ${cartProductModel.variantInfo!.variantOptions![cartProductModel.variantInfo!.variantOptions!.keys.elementAt(i)]}",
-                        small: true,
-                      ),
-                    ).toList(),
-                  ),
-                ],
-                if (!(cartProductModel.extras == null || cartProductModel.extras!.isEmpty)) ...[
-                  const DsGap(DsSpace.md),
-                  Row(
-                    children: [
-                      Expanded(child: Text("Addons".tr, style: t.labelSm)),
-                      const DsGap(DsSpace.sm),
-                      Text(
-                        Constant.amountShow(
-                            currency: currency,
-                            amount: (double.parse(cartProductModel.extrasPrice.toString()) * double.parse(cartProductModel.quantity.toString())).toString()),
-                        style: t.bodyStrong.withColor(c.brandStrong).tabular,
-                      ),
-                    ],
-                  ),
-                  const DsGap(DsSpace.xs),
-                  Wrap(
-                    spacing: DsSpace.sm,
-                    runSpacing: DsSpace.sm,
-                    children: List.generate(
-                      cartProductModel.extras!.length,
-                      (i) => DsBadge(label: cartProductModel.extras![i].toString(), small: true),
-                    ).toList(),
-                  ),
-                ],
+                const DsGap(DsSpace.xs),
+                Wrap(
+                  spacing: DsSpace.sm,
+                  runSpacing: DsSpace.sm,
+                  children: List.generate(
+                    cartProductModel.extras!.length,
+                    (i) => DsBadge(label: cartProductModel.extras![i].toString(), small: true),
+                  ).toList(),
+                ),
               ],
-            ),
+            ],
           );
         },
       ),
@@ -233,14 +188,14 @@ class OrderDetailsScreen extends StatelessWidget {
       child: Column(
         children: [
           /// Item Total
-          DsInfoRow(
+          OrderMoneyRow(
             label: "Item totals".tr,
             value: Constant.amountShow(currency: currency, amount: controller.subTotal.value.toString()),
             divider: true,
           ),
 
           /// Coupon Discount
-          DsInfoRow(
+          OrderMoneyRow(
             label: "Coupon Discount".tr,
             value: "- (${Constant.amountShow(currency: currency, amount: controller.couponAmount.value.toString())})",
             valueTone: DsTone.danger,
@@ -249,7 +204,7 @@ class OrderDetailsScreen extends StatelessWidget {
 
           /// Special Discount
           if (controller.orderModel.value.vendor!.specialDiscountEnable == true)
-            DsInfoRow(
+            OrderMoneyRow(
               label: "Special Discount".tr,
               value: "- (${Constant.amountShow(currency: currency, amount: controller.specialDiscountAmount.value.toString())})",
               valueTone: DsTone.danger,
@@ -257,7 +212,7 @@ class OrderDetailsScreen extends StatelessWidget {
             ),
 
           /// Packaging
-          DsInfoRow(
+          OrderMoneyRow(
             label: "Packaging charge".tr,
             value: Constant.amountShow(currency: currency, amount: controller.packagingCharge.value.toString()),
             divider: true,
@@ -265,28 +220,36 @@ class OrderDetailsScreen extends StatelessWidget {
 
           /// Delivery Fee
           if (controller.orderModel.value.takeAway == false)
-            DsInfoRow(
+            OrderMoneyRow(
               label: "Delivery Fee".tr,
               divider: true,
               valueWidget: (controller.orderModel.value.vendor!.isSelfDelivery == true || controller.orderModel.value.isFreeDelivery == true)
-                  ? Text('Free Delivery'.tr, textAlign: TextAlign.end, style: t.bodyStrong.withColor(c.successStrong))
+                  ? Text(
+                      'Free Delivery'.tr,
+                      textAlign: TextAlign.end,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: t.bodyStrong.withColor(c.successStrong),
+                    )
                   : Text(
                       Constant.amountShow(currency: currency, amount: controller.deliveryCharges.value.toString()),
                       textAlign: TextAlign.end,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: t.bodyStrong.tabular,
                     ),
             ),
 
           /// Delivery Tips
           if (showTips)
-            DsInfoRow(
+            OrderMoneyRow(
               label: "Delivery Tips".tr,
               value: Constant.amountShow(currency: currency, amount: controller.deliveryTips.toString()),
               divider: true,
             ),
 
           /// Platform Fee
-          DsInfoRow(
+          OrderMoneyRow(
             label: "Platform fee".tr,
             value: Constant.amountShow(currency: currency, amount: controller.platformFee.value.toString()),
             divider: true,
@@ -297,32 +260,25 @@ class OrderDetailsScreen extends StatelessWidget {
             onTap: () {
               showBillBifurcationDialog(context, controller);
             },
-            child: DsInfoRow(
+            child: OrderMoneyRow(
               label: "Tax amount".tr,
+              labelIcon: Icons.info_outline_rounded,
               divider: true,
-              valueWidget: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      Constant.amountShow(currency: currency, amount: controller.totalTaxAmount.value.toString()),
-                      textAlign: TextAlign.end,
-                      style: t.bodyStrong.withColor(c.brandStrong).tabular,
-                    ),
-                  ),
-                  const DsGap(DsSpace.xs),
-                  Icon(Icons.info_outline_rounded, size: 16, color: c.brandStrong),
-                ],
+              valueWidget: Text(
+                Constant.amountShow(currency: currency, amount: controller.totalTaxAmount.value.toString()),
+                textAlign: TextAlign.end,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: t.bodyStrong.withColor(c.brandStrong).tabular,
               ),
             ),
           ),
 
           /// To Pay
-          DsInfoRow(
+          OrderTotalRow(
             label: "To Pay".tr,
             value: Constant.amountShow(currency: currency, amount: controller.totalAmount.value.toString()),
-            emphasize: true,
-            valueTone: DsTone.brand,
+            divider: false,
           ),
         ],
       ),
@@ -344,21 +300,29 @@ class OrderDetailsScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.sm),
       child: Column(
         children: [
-          DsInfoRow(
+          OrderMoneyRow(
             label: "Delivery Fee".tr,
             divider: true,
             valueWidget: (controller.orderModel.value.vendor!.isSelfDelivery == true || controller.orderModel.value.isFreeDelivery == true)
-                ? Text('Free Delivery'.tr, textAlign: TextAlign.end, style: t.bodyStrong.withColor(c.successStrong))
+                ? Text(
+                    'Free Delivery'.tr,
+                    textAlign: TextAlign.end,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: t.bodyStrong.withColor(c.successStrong),
+                  )
                 : Text(
                     Constant.amountShow(currency: currency, amount: controller.deliveryCharges.value.toString()),
                     textAlign: TextAlign.end,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: t.bodyStrong.tabular,
                   ),
           ),
 
           /// Delivery Tips
           if (showTips)
-            DsInfoRow(
+            OrderMoneyRow(
               label: "Delivery Tips".tr,
               value: Constant.amountShow(currency: currency, amount: controller.deliveryTips.toString()),
               divider: true,
@@ -366,7 +330,7 @@ class OrderDetailsScreen extends StatelessWidget {
 
           if (driverTaxed)
             for (int index = 0; index < driverDeliveryTax.length; index++)
-              DsInfoRow(
+              OrderMoneyRow(
                 label: "${driverDeliveryTax[index].title} ${'Tax on Delivery Fee'.tr}",
                 value: Constant.amountShow(
                     currency: currency,
@@ -378,11 +342,10 @@ class OrderDetailsScreen extends StatelessWidget {
               ),
 
           /// To Pay
-          DsInfoRow(
+          OrderTotalRow(
             label: "To Pay".tr,
             value: Constant.amountShow(currency: currency, amount: controller.totalAmount.value.toString()),
-            emphasize: true,
-            valueTone: DsTone.brand,
+            divider: false,
           ),
         ],
       ),
@@ -409,19 +372,19 @@ void showBillBifurcationDialog(BuildContext context, OrderDetailsController cont
           mainAxisSize: MainAxisSize.min,
           children: [
             controller.orderModel.value.taxScope == 'product'
-                ? DsInfoRow(
+                ? OrderMoneyRow(
                     label: "Tax on item total".tr,
                     value: Constant.amountShow(currency: currency, amount: controller.productTaxAmount.value.toString()),
                     divider: true,
                   )
-                : DsInfoRow(
+                : OrderMoneyRow(
                     label: "Tax on Order Total".tr,
                     value: Constant.amountShow(currency: currency, amount: controller.orderTaxAmount.value.toString()),
                     divider: true,
                   ),
             if (driverTaxed)
               for (int index = 0; index < driverDeliveryTax.length; index++)
-                DsInfoRow(
+                OrderMoneyRow(
                   label: "${driverDeliveryTax[index].title} ${'Tax on Delivery Fee'.tr}",
                   value: Constant.amountShow(
                       currency: currency,
@@ -432,7 +395,7 @@ void showBillBifurcationDialog(BuildContext context, OrderDetailsController cont
                   divider: true,
                 ),
             for (int index = 0; index < packagingTax.length; index++)
-              DsInfoRow(
+              OrderMoneyRow(
                 label: "${packagingTax[index].title} ${'Tax on Packaging Fee'.tr}",
                 value: controller.packagingCharge.value == 0.0
                     ? Constant.amountShow(currency: currency, amount: controller.packagingCharge.value.toString())
@@ -445,7 +408,7 @@ void showBillBifurcationDialog(BuildContext context, OrderDetailsController cont
                 divider: true,
               ),
             for (int index = 0; index < platformTax.length; index++)
-              DsInfoRow(
+              OrderMoneyRow(
                 label: "${platformTax[index].title} ${'Tax on Platform Fee'.tr}",
                 value: controller.platformFee.value == 0.0
                     ? Constant.amountShow(currency: currency, amount: controller.platformFee.value.toString())
@@ -457,11 +420,10 @@ void showBillBifurcationDialog(BuildContext context, OrderDetailsController cont
                         ).toString()),
                 divider: true,
               ),
-            DsInfoRow(
+            OrderTotalRow(
               label: "Total Tax Amount".tr,
               value: Constant.amountShow(currency: currency, amount: controller.totalTaxAmount.value.toString()),
-              emphasize: true,
-              valueTone: DsTone.brand,
+              divider: false,
             ),
           ],
         ),

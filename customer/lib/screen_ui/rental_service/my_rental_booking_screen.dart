@@ -3,6 +3,7 @@ import 'package:customer/models/rental_order_model.dart';
 import 'package:customer/screen_ui/auth_screens/login_screen.dart';
 import 'package:customer/screen_ui/rental_service/rental_order_details_screen.dart';
 import 'package:customer/screen_ui/rental_service/widget/rental_proposal_widgets.dart';
+import 'package:customer/screen_ui/widgets/order_ui.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -155,7 +156,9 @@ class _RentalBookingCard extends StatelessWidget {
                           children: [
                             Icon(Icons.event_rounded, size: 13, color: c.textMuted),
                             const DsGap(DsSpace.xs),
-                            Expanded(child: Text(Constant.timestampToDateTime(order.bookingDateTime!), style: t.caption)),
+                            Expanded(child: Text(Constant.timestampToDateTime(order.bookingDateTime!), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption)),
+                            const DsGap(DsSpace.sm),
+                            OrderIdLine(id: order.id.toString(), compact: true, copyable: false),
                           ],
                         ),
                       ),
@@ -186,28 +189,17 @@ class _RentalBookingCard extends StatelessWidget {
           const DsGap(DsSpace.md),
           Text("Package info :".tr, style: t.overline),
           const DsGap(DsSpace.xs),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(order.rentalPackageModel!.name.toString(), style: t.titleSm),
-                    const DsGap(DsSpace.xxs),
-                    Text(order.rentalPackageModel!.description.toString(), style: t.bodySm),
-                  ],
-                ),
-              ),
-              const DsGap(DsSpace.md),
-              Text(
-                Constant.amountShow(
-                  amount: order.rentalPackageModel!.baseFare.toString(),
-                  currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: order.regionId, zoneId: order.zoneId)),
-                ),
-                style: t.title.tabular,
-              ),
-            ],
+          OrderItemRow(
+            compact: true,
+            name: order.rentalPackageModel!.name.toString(),
+            price: Constant.amountShow(
+              amount: order.rentalPackageModel!.baseFare.toString(),
+              currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: order.regionId, zoneId: order.zoneId)),
+            ),
+            footer: Padding(
+              padding: const EdgeInsets.only(top: DsSpace.xxs),
+              child: Text(order.rentalPackageModel!.description.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySm),
+            ),
           ),
           if (Constant.isEnableOTPTripStartForRental == true) ...[
             const DsGap(DsSpace.md),

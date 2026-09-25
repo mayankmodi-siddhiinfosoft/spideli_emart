@@ -17,6 +17,7 @@ import 'package:spideliprovider/ui/booking_list/booking_details_screen.dart';
 import 'package:spideliprovider/ui/booking_list/verify_otp_screen.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:spideliprovider/widgets/common_ui.dart';
+import 'package:spideliprovider/widgets/order_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
@@ -287,8 +288,17 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _statusChip(onProviderOrder, chipMode),
-                    const DsGap(DsSpace.sm),
+                    // Identity and status on one line: the id never wraps and
+                    // the chip is aligned to the heading. The card tap opens
+                    // the booking, so the id itself is not tappable here.
+                    OrderIdHeader(
+                      label: 'Booking ID'.tr,
+                      shortId: shortBookingId("${onProviderOrder.id}"),
+                      fullId: "${onProviderOrder.id}",
+                      copyable: false,
+                      statusChip: _statusChip(onProviderOrder, chipMode),
+                    ),
+                    const DsGap(DsSpace.xs),
                     Text(
                       onProviderOrder.provider.title.toString(),
                       style: t.titleSm,
@@ -434,29 +444,14 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
 
   Widget _detailDivider(BuildContext context) => Divider(height: 1, thickness: 1, color: context.dsColors.divider);
 
+  /// Label left, value right — the same row the booking detail uses, so both
+  /// surfaces align identically.
   Widget _detailRow(BuildContext context, {required IconData icon, required String label, required String value}) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    return Padding(
+    return OrderMoneyRow(
+      icon: icon,
+      label: label,
+      value: value,
       padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 16, color: c.iconDefault),
-          const DsGap(DsSpace.sm),
-          Text(label, style: t.caption),
-          const DsGap(DsSpace.md),
-          Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: t.bodyStrong,
-            ),
-          ),
-        ],
-      ),
     );
   }
 

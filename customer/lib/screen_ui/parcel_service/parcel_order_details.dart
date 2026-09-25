@@ -10,6 +10,7 @@ import '../../service/fire_store_utils.dart';
 import '../../themes/show_toast_dialog.dart';
 import '../multi_vendor_service/chat_screens/chat_screen.dart';
 import '../../models/parcel_order_model.dart';
+import '../widgets/order_ui.dart';
 import '../../utils/parcel_receipt_pdf.dart';
 import 'parcel_order_confirmation.dart';
 import 'parcel_shipping_widgets.dart';
@@ -24,7 +25,6 @@ class ParcelOrderDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.dsColors;
     final t = context.dsText;
     final l = context.dsLayout;
     return GetX(
@@ -96,18 +96,12 @@ class ParcelOrderDetails extends StatelessWidget {
                     ],
                     ParcelCard(
                       padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
-                      child: Row(
-                        children: [
-                          Icon(Icons.tag_rounded, size: 18, color: c.brandStrong),
-                          const DsGap(DsSpace.sm),
-                          Expanded(
-                            child: Text(
-                              "${'Order Id:'.tr} ${Constant.orderId(orderId: controller.parcelOrder.value.id.toString())}".tr,
-                              textAlign: TextAlign.start,
-                              style: t.titleSm.tabular,
-                            ),
-                          ),
-                        ],
+                      child: OrderIdHeader(
+                        title: 'Order Id:'.tr,
+                        id: controller.parcelOrder.value.id.toString(),
+                        // The tracking hero above already carries the status.
+                        statusLabel: controller.parcelOrder.value.isTrackable ? null : statusLabel,
+                        status: controller.parcelOrder.value.parcelStatus ?? controller.parcelOrder.value.status ?? '',
                       ),
                     ),
                     const DsGap(DsSpace.lg),

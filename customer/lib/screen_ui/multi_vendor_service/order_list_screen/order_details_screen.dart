@@ -14,6 +14,7 @@ import 'package:get/get.dart';
 
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
+import '../../widgets/order_ui.dart';
 import '../chat_screens/chat_screen.dart';
 import '../rate_us_screen/rate_product_screen.dart';
 import 'live_tracking_screen.dart';
@@ -96,29 +97,13 @@ class OrderDetailsScreen extends StatelessWidget {
                       // ---------- status hero ----------
                       DsCard.tinted(
                         tone: DsTone.fromStatus(status),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    "${'Order'.tr} ${Constant.orderId(orderId: order.id.toString())}".tr,
-                                    style: t.title.tabular,
-                                  ),
-                                  const DsGap(DsSpace.xs),
-                                  Text(Constant.timestampToDateTime(order.createdAt!), style: t.caption),
-                                ],
-                              ),
-                            ),
-                            const DsGap(DsSpace.md),
-                            DsStatusChip(
-                              label: status.tr,
-                              status: status,
-                              pulse: status == Constant.orderShipped || status == Constant.orderInTransit,
-                            ),
-                          ],
+                        child: OrderIdHeader(
+                          title: 'Order'.tr,
+                          id: order.id.toString(),
+                          subtitle: Constant.timestampToDateTime(order.createdAt!),
+                          statusLabel: status.tr,
+                          status: status,
+                          pulse: status == Constant.orderShipped || status == Constant.orderInTransit,
                         ),
                       ),
 
@@ -273,14 +258,9 @@ class OrderDetailsScreen extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            const DsDivider(spacing: DsSpace.md),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(child: Text("To Pay".tr, style: t.titleSm)),
-                                const DsGap(DsSpace.md),
-                                Text(Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: currency), style: t.title.tabular.withColor(c.brandStrong)),
-                              ],
+                            OrderTotalRow(
+                              label: "To Pay".tr,
+                              value: Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: currency),
                             ),
                           ],
                         ),
@@ -335,23 +315,10 @@ class OrderDetailsScreen extends StatelessWidget {
     );
   }
 
-  /// Label / value row used by the bill and the meta card.
+  /// Label / value row used by the bill and the meta card — the shared
+  /// [OrderMoneyRow], so the receipt lines up exactly like the cart bill.
   Widget _billRow(BuildContext context, {required String title, required String amount, Color? amountColor, bool underline = false, bool strongTitle = false}) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Text(
-            title,
-            style: (strongTitle ? t.body : t.bodySecondary).copyWith(decoration: underline ? TextDecoration.underline : TextDecoration.none, decorationColor: c.textSecondary),
-          ),
-        ),
-        const DsGap(DsSpace.md),
-        Text(amount, textAlign: TextAlign.end, style: t.bodyStrong.tabular.withColor(amountColor ?? c.textPrimary)),
-      ],
-    );
+    return OrderMoneyRow(label: title, value: amount, valueColor: amountColor, underline: underline, strongLabel: strongTitle, padding: EdgeInsets.zero);
   }
 
   void showBillBifurcationDialog(BuildContext context, OrderDetailsController controller) {
@@ -360,7 +327,6 @@ class OrderDetailsScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) {
-        final t = context.dsText;
         return DsDialog(
           title: "Tax Details".tr,
           icon: Icons.percent_rounded,
@@ -437,16 +403,9 @@ class OrderDetailsScreen extends StatelessWidget {
                   );
                 },
               ),
-              const DsDivider(spacing: DsSpace.md),
-              Row(
-                children: [
-                  Expanded(child: Text("Total Tax Amount".tr, style: t.titleSm)),
-                  const DsGap(DsSpace.md),
-                  Text(
-                    Constant.amountShow(amount: controller.totalTaxAmount.value.toString(), currency: currency),
-                    style: t.titleSm.tabular.withColor(context.dsColors.brandStrong),
-                  ),
-                ],
+              OrderTotalRow(
+                label: "Total Tax Amount".tr,
+                value: Constant.amountShow(amount: controller.totalTaxAmount.value.toString(), currency: currency),
               ),
             ],
           ),
@@ -666,63 +625,42 @@ class _ProductTile extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DsImage(url: cartProductModel.photo.toString(), width: 56, height: 56, radius: DsRadius.md, errorIcon: Icons.fastfood_outlined),
-            const DsGap(DsSpace.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: Text("${cartProductModel.name}", style: t.bodyLg)),
-                      const DsGap(DsSpace.sm),
-                      Text("x ${cartProductModel.quantity}", style: t.bodyLg.tabular.withColor(c.textSecondary)),
-                    ],
+        OrderItemRow(
+          leading: DsImage(url: cartProductModel.photo.toString(), width: 56, height: 56, radius: DsRadius.md, errorIcon: Icons.fastfood_outlined),
+          name: "${cartProductModel.name}",
+          quantity: "${cartProductModel.quantity}",
+          price: discounted
+              ? Constant.amountShow(amount: cartProductModel.discountPrice.toString(), currency: currency)
+              : Constant.amountShow(amount: cartProductModel.price, currency: currency),
+          originalPrice: discounted ? Constant.amountShow(amount: cartProductModel.price, currency: currency) : null,
+          footer: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (cartProductModel.isWholesale == true)
+                Padding(
+                  padding: const EdgeInsets.only(top: DsSpace.xs),
+                  child: DsBadge(
+                    small: true,
+                    tone: DsTone.brand,
+                    label: (cartProductModel.wholesaleMinQty ?? '').isEmpty
+                        ? 'Wholesale price'.tr
+                        : "${'Wholesale price'.tr} · ${'from'.tr} ${cartProductModel.wholesaleMinQty} ${'pcs'.tr}",
                   ),
-                  const DsGap(DsSpace.xxs),
-                  discounted
-                      ? Row(
-                          children: [
-                            Text(Constant.amountShow(amount: cartProductModel.discountPrice.toString(), currency: currency), style: t.titleSm.tabular),
-                            const DsGap(DsSpace.sm),
-                            Text(
-                              Constant.amountShow(amount: cartProductModel.price, currency: currency),
-                              style: t.bodySm.tabular.withColor(c.textMuted).strike,
-                            ),
-                          ],
-                        )
-                      : Text(Constant.amountShow(amount: cartProductModel.price, currency: currency), style: t.titleSm.tabular),
-                  if (cartProductModel.isWholesale == true)
-                    Padding(
-                      padding: const EdgeInsets.only(top: DsSpace.xs),
-                      child: DsBadge(
-                        small: true,
-                        tone: DsTone.brand,
-                        label: (cartProductModel.wholesaleMinQty ?? '').isEmpty
-                            ? 'Wholesale price'.tr
-                            : "${'Wholesale price'.tr} · ${'from'.tr} ${cartProductModel.wholesaleMinQty} ${'pcs'.tr}",
+                ),
+              if (Constant.taxScope == "product")
+                cartProductModel.taxSetting?.isEmpty == true
+                    ? const SizedBox()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: DsSpace.xs),
+                        child: Text(
+                          "${'Tax:'.tr} ${Constant.getTaxDisplayText(cartProductModel.taxSetting, currency: currency)}",
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: t.caption.withColor(c.infoStrong),
+                        ),
                       ),
-                    ),
-                  if (Constant.taxScope == "product")
-                    cartProductModel.taxSetting?.isEmpty == true
-                        ? const SizedBox()
-                        : Padding(
-                            padding: const EdgeInsets.only(top: DsSpace.xs),
-                            child: Text(
-                              "${'Tax:'.tr} ${Constant.getTaxDisplayText(cartProductModel.taxSetting, currency: currency)}",
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: t.caption.withColor(c.infoStrong),
-                            ),
-                          ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
         if (cartProductModel.variantInfo != null && cartProductModel.variantInfo!.variantOptions!.isNotEmpty)
           Padding(
@@ -751,18 +689,14 @@ class _ProductTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(child: Text("Addons".tr, style: t.label.withColor(c.textSecondary))),
-                    const DsGap(DsSpace.sm),
-                    Text(
-                      Constant.amountShow(
-                        amount: (double.parse(cartProductModel.extrasPrice.toString()) * double.parse(cartProductModel.quantity.toString())).toString(),
-                        currency: currency,
-                      ),
-                      style: t.bodyStrong.tabular.withColor(c.brandStrong),
-                    ),
-                  ],
+                OrderMoneyRow(
+                  label: "Addons".tr,
+                  value: Constant.amountShow(
+                    amount: (double.parse(cartProductModel.extrasPrice.toString()) * double.parse(cartProductModel.quantity.toString())).toString(),
+                    currency: currency,
+                  ),
+                  valueColor: c.brandStrong,
+                  padding: EdgeInsets.zero,
                 ),
                 const DsGap(DsSpace.sm),
                 Wrap(

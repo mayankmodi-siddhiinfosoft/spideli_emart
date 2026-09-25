@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../controllers/theme_controller.dart';
 import '../../../themes/show_toast_dialog.dart';
+import '../../widgets/order_ui.dart';
 import '../../auth_screens/login_screen.dart';
 import 'live_tracking_screen.dart';
 import 'order_details_screen.dart';
@@ -240,11 +241,24 @@ class _OrderCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      DsStatusChip(label: status, status: status, pulse: status == Constant.orderShipped || status == Constant.orderInTransit),
-                      const DsGap(DsSpace.sm),
-                      Text(orderModel.vendor!.title.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                      // Store name and status share the first line; the chip
+                      // never wraps and never drifts away from the title.
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: Text(orderModel.vendor!.title.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.titleSm)),
+                          const DsGap(DsSpace.sm),
+                          DsStatusChip(label: status, status: status, pulse: status == Constant.orderShipped || status == Constant.orderInTransit),
+                        ],
+                      ),
                       const DsGap(DsSpace.xxs),
-                      Text(Constant.timestampToDateTime(orderModel.createdAt!), style: t.caption),
+                      Row(
+                        children: [
+                          Expanded(child: Text(Constant.timestampToDateTime(orderModel.createdAt!), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption)),
+                          const DsGap(DsSpace.sm),
+                          OrderIdLine(id: orderModel.id.toString(), compact: true, copyable: false),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -262,28 +276,18 @@ class _OrderCard extends StatelessWidget {
               separatorBuilder: (context, index) => const DsGap(DsSpace.sm),
               itemBuilder: (context, index) {
                 CartProductModel cartProduct = orderModel.products![index];
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      margin: const EdgeInsets.only(top: 2),
-                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm, vertical: 1),
-                      decoration: BoxDecoration(color: c.surface, borderRadius: DsRadius.brXs),
-                      child: Text("${cartProduct.quantity}", style: t.labelSm.tabular),
-                    ),
-                    const DsGap(DsSpace.sm),
-                    Expanded(child: Text(cartProduct.name.toString(), style: t.body)),
-                    const DsGap(DsSpace.sm),
-                    Text(
-                      Constant.amountShow(
-                        amount: double.parse(cartProduct.discountPrice.toString()) <= 0
-                            ? (double.parse('${cartProduct.price ?? 0}') * double.parse('${cartProduct.quantity ?? 0}')).toString()
-                            : (double.parse('${cartProduct.discountPrice ?? 0}') * double.parse('${cartProduct.quantity ?? 0}')).toString(),
-                        currency: RegionService.currencyForRecord(orderModel.regionId),
-                      ),
-                      style: t.bodyStrong.tabular,
-                    ),
-                  ],
+                return OrderItemRow(
+                  compact: true,
+                  quantityLeading: true,
+                  onAltSurface: true,
+                  quantity: "${cartProduct.quantity}",
+                  name: cartProduct.name.toString(),
+                  price: Constant.amountShow(
+                    amount: double.parse(cartProduct.discountPrice.toString()) <= 0
+                        ? (double.parse('${cartProduct.price ?? 0}') * double.parse('${cartProduct.quantity ?? 0}')).toString()
+                        : (double.parse('${cartProduct.discountPrice ?? 0}') * double.parse('${cartProduct.quantity ?? 0}')).toString(),
+                    currency: RegionService.currencyForRecord(orderModel.regionId),
+                  ),
                 );
               },
             ),

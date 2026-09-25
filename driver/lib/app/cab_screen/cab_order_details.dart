@@ -1,4 +1,5 @@
 import 'package:driver/app/cab_screen/widget/cab_ride_extras.dart';
+import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -63,7 +64,7 @@ class CabOrderDetails extends StatelessWidget {
   }
 
   Widget _orderIdCard(BuildContext context, CabOrderDetailsController controller) {
-    final t = context.dsText;
+    final order = controller.cabOrder.value;
     return DsCard.tinted(
       tone: DsTone.brand,
       child: Row(
@@ -71,9 +72,11 @@ class CabOrderDetails extends StatelessWidget {
           DsIconWell(icon: Icons.confirmation_number_outlined, tone: DsTone.brand),
           const DsGap(DsSpace.md),
           Expanded(
-            child: Text(
-              "${'Order Id:'.tr} ${Constant.orderId(orderId: controller.cabOrder.value.id.toString())}".tr,
-              style: t.titleSm.tabular,
+            child: OrderIdHeader(
+              label: 'Order Id:'.tr,
+              id: order.id.toString(),
+              copiedMessage: "Order ID copied to clipboard".tr,
+              trailing: DsStatusChip(label: order.status.toString(), status: order.status),
             ),
           ),
         ],
@@ -88,15 +91,11 @@ class CabOrderDetails extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text("${'Booking Date:'.tr}${controller.formatDate(order.scheduleDateTime!)}".tr, style: t.titleSm),
-              ),
-              const DsGap(DsSpace.sm),
-              DsStatusChip(label: order.status.toString(), status: order.status),
-            ],
+          Text(
+            "${'Booking Date:'.tr}${controller.formatDate(order.scheduleDateTime!)}".tr,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: t.titleSm,
           ),
           const DsGap(DsSpace.lg),
           DsRouteStops(
@@ -230,14 +229,14 @@ class CabOrderDetails extends StatelessWidget {
           const DsGap(DsSpace.sm),
 
           // Subtotal
-          DsInfoRow(label: "Subtotal".tr, value: Constant.amountShow(currency: currency, amount: controller.subTotal.value.toString())),
+          OrderMoneyRow(label: "Subtotal".tr, value: Constant.amountShow(currency: currency, amount: controller.subTotal.value.toString())),
 
           // Discount
-          DsInfoRow(label: "Discount".tr, value: Constant.amountShow(currency: currency, amount: controller.discount.value.toString())),
+          OrderMoneyRow(label: "Discount".tr, value: Constant.amountShow(currency: currency, amount: controller.discount.value.toString())),
 
           // Tax List
           ...List.generate(order.taxSetting!.length, (index) {
-            return DsInfoRow(
+            return OrderMoneyRow(
               label:
                   "${order.taxSetting![index].title} ${order.taxSetting![index].type == 'fix' ? '' : '(${order.taxSetting![index].tax}%)'}",
               value: Constant.amountShow(
@@ -250,11 +249,9 @@ class CabOrderDetails extends StatelessWidget {
             );
           }),
 
-          const DsDivider(spacing: DsSpace.sm),
-
           // Total
-          DsInfoRow(label: "Order Total".tr, value: Constant.amountShow(currency: currency, amount: controller.totalAmount.value.toString()), emphasize: true),
-          DsInfoRow(
+          OrderTotalRow(label: "Order Total".tr, value: Constant.amountShow(currency: currency, amount: controller.totalAmount.value.toString())),
+          OrderMoneyRow(
             label: "Admin Commission (${order.adminCommission}${order.adminCommissionType == "Percentage" || order.adminCommissionType == "percentage" ? "%" : Constant.currencyModel!.symbol})".tr,
             value: Constant.amountShow(currency: currency, amount: controller.adminCommission.value.toString()),
             valueTone: DsTone.danger,

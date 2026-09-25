@@ -1,3 +1,4 @@
+import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/rental_service/rental_order_details_screen.dart';
 import 'package:flutter/material.dart';
@@ -93,29 +94,15 @@ class _RentalOrderTile extends StatelessWidget {
               const DsGap(DsSpace.md),
               Expanded(
                 //prevents overflow
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          //text wraps if too long
-                          child: Text(
-                            order.sourceLocationName ?? "-",
-                            style: t.titleSm,
-                            overflow: TextOverflow.ellipsis, //safe cutoff
-                            maxLines: 2,
-                          ),
-                        ),
-                        if (order.status != null) ...[
-                          const DsGap(DsSpace.sm),
-                          DsStatusChip(label: order.status ?? '', status: order.status),
-                        ],
-                      ],
-                    ),
-                    if (order.bookingDateTime != null) Text(Constant.timestampToDateTime(order.bookingDateTime!), style: t.caption),
-                  ],
+                child: OrderHeaderRow(
+                  title: Text(
+                    order.sourceLocationName ?? "-",
+                    style: t.titleSm,
+                    overflow: TextOverflow.ellipsis, //safe cutoff
+                    maxLines: 2,
+                  ),
+                  trailing: order.status == null ? null : DsStatusChip(label: order.status ?? '', status: order.status),
+                  subtitle: order.bookingDateTime == null ? null : Text(Constant.timestampToDateTime(order.bookingDateTime!), style: t.caption),
                 ),
               ),
             ],
@@ -175,7 +162,10 @@ class _RentalOrderTile extends StatelessWidget {
                 const DsGap(DsSpace.md),
                 Text(
                   Constant.amountShow(currency: RegionService.currencyForRecord(order.regionId), amount: order.rentalPackageModel!.baseFare.toString()),
-                  style: t.title.w700.tabular,
+                  textAlign: TextAlign.end,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: OrderUi.price(context),
                 ),
               ],
             ),

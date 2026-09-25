@@ -277,6 +277,7 @@ const Map<String, String> enUS = {
   "Payment Pending": "Payment Pending",
   "Please collect the payment from the customer through the app.": "Please collect the payment from the customer through the app.",
   "Booking ID copied to clipboard": "Booking ID copied to clipboard",
+  "Order ID copied to clipboard": "Order ID copied to clipboard",
   "Your Preference": "Your Preference",
   "Rental Details": "Rental Details",
   "Rental Package": "Rental Package",

@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/themes/theme_controller.dart';
 import 'package:vendor/app/product_rating_view_screen/product_rating_view_screen.dart';
+import 'package:vendor/app/widgets/order_ui.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/controller/order_details_controller.dart';
 import 'package:vendor/models/cart_product_model.dart';
@@ -35,6 +36,8 @@ class OrderDetailsScreen extends StatelessWidget {
         final DsTone statusTone = DsTone.fromStatus(status);
 
         // ---------------- Status hero ----------------
+        // One heading, one value: the id never wraps and the status chip sits
+        // on the heading's first line.
         final Widget statusHero = DsCard.gradient(
           gradient: DsGradients.tone(context, statusTone == DsTone.neutral ? DsTone.brand : statusTone),
           child: Row(
@@ -42,21 +45,21 @@ class OrderDetailsScreen extends StatelessWidget {
               DsIconWell(icon: _statusIcon(statusTone), onBrand: true, size: 52),
               DsGap.lg,
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "${"Order".tr} ${Constant.orderId(orderId: controller.orderModel.value.id.toString())}",
-                      textAlign: TextAlign.start,
-                      style: t.title.copyWith(color: Colors.white),
+                child: OrderIdHeader(
+                  label: "Order".tr,
+                  shortId: Constant.orderId(orderId: controller.orderModel.value.id.toString()),
+                  fullId: controller.orderModel.value.id.toString(),
+                  onGradient: true,
+                  statusChip: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
+                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: DsRadius.brPill),
+                    child: Text(
+                      controller.orderModel.value.status.toString().tr,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: t.labelSm.copyWith(color: Colors.white),
                     ),
-                    const DsGap(DsSpace.sm),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
-                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: DsRadius.brPill),
-                      child: Text(controller.orderModel.value.status.toString().tr, style: t.labelSm.copyWith(color: Colors.white)),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ],
@@ -152,45 +155,38 @@ class OrderDetailsScreen extends StatelessWidget {
         );
 
         // ---------------- Bill ----------------
+        // One money row per line: muted label left, tabular amount right, so
+        // every figure in the block lines up in one column.
         final Widget bill = DsCard(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               /// Item Total
-              amountRow(
-                title: "Item totals".tr,
-                amount: Constant.amountShow(currency: controller.orderCurrency, amount: controller.subTotal.value.toString()),
-                isDark: isDark,
+              OrderMoneyRow(
+                label: "Item totals".tr,
+                value: Constant.amountShow(currency: controller.orderCurrency, amount: controller.subTotal.value.toString()),
               ),
 
-              const SizedBox(height: 10),
-
               /// Coupon Discount
-              amountRow(
-                title: "Coupon Discount",
-                amount: "- (${Constant.amountShow(currency: controller.orderCurrency, amount: controller.couponAmount.value.toString())})",
-                isDark: isDark,
-                amountColor: c.dangerStrong,
+              OrderMoneyRow(
+                label: "Coupon Discount".tr,
+                value: "- (${Constant.amountShow(currency: controller.orderCurrency, amount: controller.couponAmount.value.toString())})",
+                valueColor: c.dangerStrong,
               ),
 
               /// Special Discount
-              if (controller.orderModel.value.vendor?.specialDiscountEnable == true) ...[
-                const SizedBox(height: 10),
-                amountRow(
-                  title: "Special Discount",
-                  amount: "- (${Constant.amountShow(currency: controller.orderCurrency, amount: controller.specialDiscountAmount.value.toString())})",
-                  isDark: isDark,
-                  amountColor: c.dangerStrong,
+              if (controller.orderModel.value.vendor?.specialDiscountEnable == true)
+                OrderMoneyRow(
+                  label: "Special Discount".tr,
+                  value: "- (${Constant.amountShow(currency: controller.orderCurrency, amount: controller.specialDiscountAmount.value.toString())})",
+                  valueColor: c.dangerStrong,
                 ),
-              ],
-              if (controller.orderModel.value.packagingChargeEnable == true) const SizedBox(height: 10),
 
               if (controller.orderModel.value.packagingChargeEnable == true)
-                amountRow(
-                  title: "Packaging charge",
-                  amount: Constant.amountShow(currency: controller.orderCurrency, amount: controller.packagingCharge.value.toString()),
-                  isDark: isDark,
+                OrderMoneyRow(
+                  label: "Packaging charge".tr,
+                  value: Constant.amountShow(currency: controller.orderCurrency, amount: controller.packagingCharge.value.toString()),
                 ),
-              if (controller.orderModel.value.packagingChargeEnable == true) const SizedBox(height: 10),
               sectionDivider(isDark),
 
               /// Tax
@@ -200,34 +196,24 @@ class OrderDetailsScreen extends StatelessWidget {
                   showBillBifurcationDialog(context, isDark, controller);
                 },
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 44),
+                  constraints: const BoxConstraints(minHeight: 48),
                   child: Center(
-                    child: amountRow(
-                      title: "Tax amount",
-                      amount: Constant.amountShow(currency: controller.orderCurrency, amount: controller.totalTaxAmount.value.toString()),
-                      isDark: isDark,
-                      textColour: c.brandStrong,
-                      underline: true,
+                    child: OrderMoneyRow(
+                      label: "Tax amount".tr,
+                      value: Constant.amountShow(currency: controller.orderCurrency, amount: controller.totalTaxAmount.value.toString()),
+                      labelColor: c.brandStrong,
+                      underlineLabel: true,
                     ),
                   ),
                 ),
               ),
 
-              sectionDivider(isDark),
-
               /// To Pay
-              Container(
-                padding: const EdgeInsets.all(DsSpace.md),
-                decoration: BoxDecoration(color: c.brandSoft, borderRadius: DsRadius.brMd),
-                child: Row(
-                  children: [
-                    Expanded(child: Text("To Pay".tr, style: t.titleSm)),
-                    Text(
-                      Constant.amountShow(currency: controller.orderCurrency, amount: controller.totalAmount.value.toString()),
-                      style: t.title.tabular.copyWith(color: c.brandStrong),
-                    ),
-                  ],
-                ),
+              OrderTotalRow(
+                label: "To Pay".tr,
+                value: Constant.amountShow(currency: controller.orderCurrency, amount: controller.totalAmount.value.toString()),
+                background: c.brandSoft,
+                borderRadius: DsRadius.brMd,
               ),
             ],
           ),
@@ -357,62 +343,48 @@ class OrderDetailsScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: [
-                  Text("${product.quantity}x ${product.name}".tr, style: t.bodyStrong),
-                  WholesaleTag(product: product, isDark: isDark),
-                  product.taxSetting!.isEmpty
-                      ? const SizedBox()
-                      : Padding(
-                          padding: const EdgeInsets.only(top: DsSpace.xxs),
-                          child: Text(
-                            "Tax: ${Constant.getTaxDisplayText(product.taxSetting, currency: controller.orderCurrency)}",
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: t.caption.copyWith(color: c.brandStrong),
-                          ),
-                        ),
-                ],
-              ),
-            ),
-            DsGap.md,
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  Constant.amountShow(currency: controller.orderCurrency, amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
-                  style: t.bodyStrong.tabular,
-                ),
-                Semantics(
-                  button: true,
-                  child: InkWell(
-                    borderRadius: DsRadius.brXs,
-                    splashColor: Colors.transparent,
-                    onTap: () {
-                      Get.to(const ProductRatingViewScreen(), arguments: {"orderModel": controller.orderModel.value, "productId": product.id});
-                    },
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minHeight: 48),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.star_rounded, size: 16, color: c.warning),
-                          const DsGap(DsSpace.xxs),
-                          Text("View Ratings".tr, style: t.link.copyWith(fontSize: 13)),
-                        ],
+        OrderItemRow(
+          name: "${product.name}".tr,
+          quantityLabel: "×${product.quantity}",
+          price: Constant.amountShow(currency: controller.orderCurrency, amount: (product.unitPrice * double.parse(product.quantity.toString())).toString()),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              WholesaleTag(product: product, isDark: isDark),
+              product.taxSetting!.isEmpty
+                  ? const SizedBox()
+                  : Padding(
+                      padding: const EdgeInsets.only(top: DsSpace.xxs),
+                      child: Text(
+                        "Tax: ${Constant.getTaxDisplayText(product.taxSetting, currency: controller.orderCurrency)}",
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.caption.copyWith(color: c.brandStrong),
                       ),
                     ),
-                  ),
+            ],
+          ),
+          trailing: Semantics(
+            button: true,
+            child: InkWell(
+              borderRadius: DsRadius.brXs,
+              splashColor: Colors.transparent,
+              onTap: () {
+                Get.to(const ProductRatingViewScreen(), arguments: {"orderModel": controller.orderModel.value, "productId": product.id});
+              },
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.star_rounded, size: 16, color: c.warning),
+                    const DsGap(DsSpace.xxs),
+                    Text("View Ratings".tr, style: t.link.copyWith(fontSize: 13)),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ],
+          ),
         ),
         if (!(product.variantInfo == null || product.variantInfo!.variantOptions!.isEmpty)) ...[
           const DsGap(DsSpace.xs),
@@ -494,32 +466,6 @@ class OrderDetailsScreen extends StatelessWidget {
     );
   }
 
-  Widget amountRow({required String title, required String amount, required bool isDark, Color? textColour, Color? amountColor, bool? underline, Widget? trailing}) {
-    return Builder(
-      builder: (context) {
-        final c = context.dsColors;
-        final t = context.dsText;
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Text(
-                title.tr,
-                style: t.body.copyWith(
-                  color: textColour ?? c.textSecondary,
-                  decoration: underline == true ? TextDecoration.underline : TextDecoration.none,
-                  decorationColor: textColour ?? c.textSecondary,
-                ),
-              ),
-            ),
-            DsGap.sm,
-            trailing ?? Text(amount, style: t.bodyStrong.tabular.copyWith(color: amountColor ?? c.textPrimary)),
-          ],
-        );
-      },
-    );
-  }
-
   Widget sectionDivider(bool isDark) {
     return Builder(
       builder: (context) => Padding(
@@ -533,7 +479,6 @@ class OrderDetailsScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) {
-        final c = context.dsColors;
         final t = context.dsText;
         return Dialog(
           insetPadding: const EdgeInsets.all(DsSpace.lg),
@@ -555,40 +500,33 @@ class OrderDetailsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   if (controller.productTaxAmount.value > 0)
-                    amountRow(
-                      title: "Tax on item total",
-                      amount: Constant.amountShow(currency: controller.orderCurrency, amount: controller.productTaxAmount.value.toString()),
-                      isDark: isDark,
+                    OrderMoneyRow(
+                      label: "Tax on item total".tr,
+                      value: Constant.amountShow(currency: controller.orderCurrency, amount: controller.productTaxAmount.value.toString()),
                     ),
                   if (controller.orderTaxAmount.value > 0)
-                    amountRow(
-                      title: "Tax on Order Total",
-                      amount: Constant.amountShow(currency: controller.orderCurrency, amount: controller.orderTaxAmount.value.toString()),
-                      isDark: isDark,
+                    OrderMoneyRow(
+                      label: "Tax on Order Total".tr,
+                      value: Constant.amountShow(currency: controller.orderCurrency, amount: controller.orderTaxAmount.value.toString()),
                     ),
                   sectionDivider(isDark),
                   if (controller.packagingTaxAmount.value > 0)
                     for (int index = 0; index < controller.orderModel.value.packagingTax!.length; index++)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: DsSpace.xs),
-                        child: amountRow(
-                          title: "${controller.orderModel.value.packagingTax![index].title} ${'Tax on Packaging Fee'.tr}",
-                          amount: Constant.amountShow(
-                            currency: controller.orderCurrency,
-                            amount: Constant.calculateTax(taxModel: controller.orderModel.value.packagingTax![index], amount: controller.packagingCharge.value.toString()).toString(),
-                          ),
-                          isDark: isDark,
+                      OrderMoneyRow(
+                        label: "${controller.orderModel.value.packagingTax![index].title} ${'Tax on Packaging Fee'.tr}".tr,
+                        value: Constant.amountShow(
+                          currency: controller.orderCurrency,
+                          amount: Constant.calculateTax(taxModel: controller.orderModel.value.packagingTax![index], amount: controller.packagingCharge.value.toString()).toString(),
                         ),
                       ),
-                  if (controller.packagingTaxAmount.value > 0) const SizedBox(height: 10),
                   if (controller.packagingTaxAmount.value > 0) sectionDivider(isDark),
 
                   /// To Pay
-                  amountRow(
-                    title: "Total Tax Amount",
-                    amount: Constant.amountShow(currency: controller.orderCurrency, amount: controller.totalTaxAmount.value.toString()),
-                    amountColor: c.brandStrong,
-                    isDark: isDark,
+                  OrderTotalRow(
+                    label: "Total Tax Amount".tr,
+                    value: Constant.amountShow(currency: controller.orderCurrency, amount: controller.totalTaxAmount.value.toString()),
+                    divider: false,
+                    padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
                   ),
                   const SizedBox(height: 20),
                   Align(

@@ -1,4 +1,5 @@
 import 'package:customer/constant/constant.dart';
+import 'package:customer/screen_ui/widgets/order_ui.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -52,28 +53,10 @@ class RentalSummaryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    final row = Padding(
-      padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: (emphasis ? t.titleSm : t.body).copyWith(decoration: underline ? TextDecoration.underline : TextDecoration.none, decorationColor: c.textSecondary),
-            ),
-          ),
-          const DsGap(DsSpace.md),
-          Text(
-            value,
-            style: emphasis ? t.title.tabular.withColor(c.brandStrong) : t.bodyStrong.tabular.withColor(tone == null ? c.textPrimary : c.tone(tone!).strong),
-          ),
-        ],
-      ),
-    );
-    if (onTap == null) return row;
-    return InkWell(borderRadius: DsRadius.brSm, onTap: onTap, child: row);
+    // Shared bill row / total row, so the rental bill lines up with the rest
+    // of the app.
+    if (emphasis) return OrderTotalRow(label: label, value: value, divider: false);
+    return OrderMoneyRow(label: label, value: value, tone: tone, underline: underline, onTap: onTap);
   }
 }
 
@@ -86,18 +69,7 @@ class RentalDetailRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = context.dsText;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: Text(label, textAlign: TextAlign.start, style: t.bodySecondary)),
-          const DsGap(DsSpace.md),
-          Flexible(child: Text(value, textAlign: TextAlign.end, style: t.bodyStrong.tabular)),
-        ],
-      ),
-    );
+    return OrderMoneyRow(label: label, value: value, padding: const EdgeInsets.symmetric(vertical: DsSpace.sm));
   }
 }
 
