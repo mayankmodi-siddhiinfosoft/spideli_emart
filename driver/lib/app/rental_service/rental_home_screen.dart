@@ -9,6 +9,7 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/rental_dashboard_controller.dart';
 import 'package:driver/controllers/rental_home_controller.dart';
 import 'package:driver/models/rental_order_model.dart';
+import 'package:driver/services/driver_job_queue_service.dart';
 import 'package:driver/themes/custom_dialog_box.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
@@ -66,6 +67,7 @@ class RentalHomeScreen extends StatelessWidget {
                               ? Column(
                                   children: [
                                     _walletAlert(context, controller),
+                                    const _NewRentalJobsBanner(),
                                     Expanded(
                                       child: _centered(
                                         DsEmptyState(
@@ -86,6 +88,7 @@ class RentalHomeScreen extends StatelessWidget {
                                   padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
                                   child: Column(
                                     children: [
+                                      const _NewRentalJobsBanner(gutter: false),
                                       const DsGap(DsSpace.sm),
                                       DsTextField(
                                         hint: 'Search new ride'.tr,
@@ -522,5 +525,36 @@ class RentalHomeScreen extends StatelessWidget {
       ),
       barrierDismissible: true,
     );
+  }
+}
+
+/// Badge for the automatic driver-notification queue (admin spec §14): the
+/// rental bookings placed while the driver was offline, found the moment they
+/// came back online. Hidden — and costing nothing — when there are none.
+class _NewRentalJobsBanner extends StatelessWidget {
+  /// False where the surrounding layout already applies the horizontal gutter.
+  final bool gutter;
+
+  const _NewRentalJobsBanner({this.gutter = true});
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final int waiting = DriverJobQueueService.rentalJobCount.value;
+      if (waiting <= 0) return const SizedBox.shrink();
+      return Padding(
+        padding: EdgeInsets.fromLTRB(gutter ? DsSpace.lg : 0, DsSpace.lg, gutter ? DsSpace.lg : 0, 0),
+        child: DsInlineAlert(
+          tone: DsTone.brand,
+          icon: Icons.notifications_active_outlined,
+          title: "New rental requests".tr,
+          message: waiting == 1
+              ? "1 rental request is waiting for you.".tr
+              : "$waiting ${'rental requests are waiting for you.'.tr}",
+          actionLabel: "View requests".tr,
+          onAction: () => Get.to(RentalBookingSearchScreen()),
+        ),
+      );
+    });
   }
 }

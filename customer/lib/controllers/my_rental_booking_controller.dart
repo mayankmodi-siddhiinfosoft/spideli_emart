@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:customer/utils/rental_proposal_service.dart';
 import 'package:customer/widget/cancel_reason_sheet.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
+import 'package:customer/constant/collection_name.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/wallet_transaction_model.dart';
 import 'package:customer/screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
@@ -119,6 +120,15 @@ class MyRentalBookingController extends GetxController {
   }
 
   Future<void> completeOrder() async {
+    // rental_orders.regionId = the DRIVER's region (admin spec §1). Filled
+    // only when the Driver app left it empty; a region already on the booking
+    // is never replaced.
+    selectedOrder.value.regionId = await FireStoreUtils.ensureRideRegion(
+      collection: CollectionName.rentalOrders,
+      orderId: selectedOrder.value.id,
+      driverId: selectedOrder.value.driverId,
+      currentRegionId: selectedOrder.value.regionId,
+    );
     if (selectedPaymentMethod.value == PaymentGateway.cod.name) {
       selectedOrder.value.paymentMethod = selectedPaymentMethod.value;
       await FireStoreUtils.rentalOrderPlace(selectedOrder.value).then((value) {

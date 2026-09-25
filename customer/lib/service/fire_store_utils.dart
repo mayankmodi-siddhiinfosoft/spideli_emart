@@ -2135,6 +2135,39 @@ class FireStoreUtils {
     await fireStore.collection(CollectionName.rentalOrders).doc(orderModel.id).setKnownFields(orderModel.toJson());
   }
 
+  /// `rides` / `rental_orders`.`regionId` is resolved through the DRIVER
+  /// (admin spec §1) — never through the store, and never through the pickup
+  /// once a driver is on the record. The Driver app stamps its own region when
+  /// it accepts; this is the customer-side safety net so a record that reached
+  /// a driver can never stay unplaced (invisible to a region-bound admin).
+  ///
+  /// It only ever FILLS an empty value: the transaction re-reads the document
+  /// and gives up the moment it finds a `regionId` there, so it is idempotent
+  /// and can never replace the driver's region with the pickup region. Single
+  /// known field, so nothing else on the document is touched.
+  ///
+  /// Returns the region the record carries afterwards (null when still none).
+  static Future<String?> ensureRideRegion({required String collection, required String? orderId, required String? driverId, String? currentRegionId}) async {
+    if (currentRegionId != null && currentRegionId.isNotEmpty) return currentRegionId;
+    if (orderId == null || orderId.isEmpty || driverId == null || driverId.isEmpty) return currentRegionId;
+    final String? driverRegion = await RegionService.userRegionId(driverId);
+    if (driverRegion == null || driverRegion.isEmpty) return currentRegionId;
+    final ref = fireStore.collection(collection).doc(orderId);
+    try {
+      return await fireStore.runTransaction<String?>((tx) async {
+        final snap = await tx.get(ref);
+        if (!snap.exists) return null;
+        final String existing = snap.data()?['regionId']?.toString() ?? '';
+        if (existing.isNotEmpty) return existing;
+        tx.update(ref, {'regionId': driverRegion});
+        return driverRegion;
+      });
+    } catch (e) {
+      log("ensureRideRegion($collection/$orderId) failed: $e");
+      return currentRegionId;
+    }
+  }
+
   static Future<CabOrderModel?> getCabOrderById(String orderId) async {
     CabOrderModel? orderModel;
     try {
@@ -2726,8 +2759,10 @@ class FireStoreUtils {
     }
 
     try {
+      // Known fields only, like the other ride writes: the Driver app's
+      // `regionId` (and anything else the app does not model) survives.
       final docRef = fireStore.collection(CollectionName.rides).doc(orderModel.id);
-      await docRef.set(orderModel.toJson(), SetOptions(merge: true));
+      await docRef.setKnownFields(orderModel.toJson());
     } catch (e) {
       print("Error updating OnDemand order: $e");
       rethrow;

@@ -334,10 +334,19 @@ class Variants {
   String? variantSku;
 
   /// Variant-level wholesale unit price; "" means "use the product's wholesalePrice".
-  /// The threshold is never per variant: the product's wholesaleMinQty governs.
+  /// This app edits it; the Store panel may write it as `wholesalePrice`
+  /// instead (STORE spec §3), which is accepted on read.
   String? variantWholesalePrice;
 
-  Variants({this.variantId, this.variantImage, this.variantPrice, this.variantQuantity, this.variantSku, this.variantWholesalePrice});
+  /// Store-panel variant fields (`item_attribute.variants[].wholesaleEnabled` /
+  /// `wholesaleMinQty`, STORE spec §3). This app has no editor for them: they
+  /// are parsed and written straight back so saving a product here can never
+  /// drop what the Store panel set. Null = the variant does not carry the
+  /// field, and nothing is invented on write.
+  bool? wholesaleEnabled;
+  String? wholesaleMinQty;
+
+  Variants({this.variantId, this.variantImage, this.variantPrice, this.variantQuantity, this.variantSku, this.variantWholesalePrice, this.wholesaleEnabled, this.wholesaleMinQty});
 
   Variants.fromJson(Map<String, dynamic> json) {
     variantId = json['variant_id'];
@@ -345,7 +354,10 @@ class Variants {
     variantPrice = json['variant_price'] ?? '0';
     variantQuantity = json['variant_quantity'] ?? '0';
     variantSku = json['variant_sku'];
-    variantWholesalePrice = parseWholesaleString(json['variant_wholesale_price']);
+    variantWholesalePrice = parseWholesaleString(json.containsKey('variant_wholesale_price') ? json['variant_wholesale_price'] : json['wholesalePrice']);
+    wholesaleEnabled = parseWholesaleBoolOrNull(json['wholesaleEnabled']);
+    final String minQty = parseWholesaleString(json['wholesaleMinQty']);
+    wholesaleMinQty = minQty.isEmpty ? null : minQty;
   }
 
   Map<String, dynamic> toJson() {
@@ -356,6 +368,8 @@ class Variants {
     data['variant_quantity'] = variantQuantity;
     data['variant_sku'] = variantSku;
     data['variant_wholesale_price'] = variantWholesalePrice ?? '';
+    if (wholesaleEnabled != null) data['wholesaleEnabled'] = wholesaleEnabled;
+    if (wholesaleMinQty != null) data['wholesaleMinQty'] = wholesaleMinQty;
     return data;
   }
 }
@@ -367,6 +381,21 @@ bool parseWholesaleBool(dynamic value) {
   if (value is num) return value != 0;
   if (value is String) return value.trim().toLowerCase() == 'true' || value.trim() == '1';
   return false;
+}
+
+/// Tri-state read of a wholesale bool: `true` / `false` only when the document
+/// says so EXPLICITLY, null when the field is absent, null or blank - so an
+/// absent or blank field is never mistaken for a decision to switch off.
+bool? parseWholesaleBoolOrNull(dynamic value) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  if (value is String) {
+    final String v = value.trim().toLowerCase();
+    if (v.isEmpty) return null;
+    if (v == 'true' || v == '1') return true;
+    if (v == 'false' || v == '0') return false;
+  }
+  return null;
 }
 
 /// Parses `fulfilment`: a list (or comma-separated string) of modes; keeps

@@ -447,14 +447,20 @@ class CartController extends GetxController {
         if (product.isBusinessOnlyProduct) {
           problems.add("${'"'}$name${'"'}: ${'Business customers only'.tr}");
         }
+        // Minimum per LINE, not per product: a variant may carry its own
+        // `wholesaleMinQty` (STORE spec §3), which the refreshed line meta
+        // already holds. Without one this is the product's figure, exactly as
+        // before - as it also is when the store could not be read.
+        int minQty = product.minOrderQuantity;
         if (vendorModel.value.id != null) {
           final CartLineMeta meta = WholesalePricing.metaFor(product, vendorModel.value, variantId: variantId);
           final String before = jsonEncode(line.lineMeta?.toJson());
           line.lineMeta = meta;
           if (before != jsonEncode(meta.toJson())) await DatabaseHelper.instance.updateCartProduct(line);
+          minQty = meta.minOrderQty;
         }
-        if ((line.quantity ?? 0) < product.minOrderQuantity) {
-          problems.add("${'"'}$name${'"'}: ${'Minimum order'.tr} ${product.minOrderQuantity} ${'pcs'.tr}");
+        if ((line.quantity ?? 0) < minQty) {
+          problems.add("${'"'}$name${'"'}: ${'Minimum order'.tr} $minQty ${'pcs'.tr}");
         }
       }
     } catch (e) {

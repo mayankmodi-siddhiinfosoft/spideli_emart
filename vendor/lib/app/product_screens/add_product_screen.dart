@@ -1084,6 +1084,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                               variantPrice: variant.variantPrice,
                                               variantQuantity: variant.variantQuantity,
                                               variantWholesalePrice: variant.variantWholesalePrice,
+                                              // Store-panel variant fields this app does not edit
+                                              // (STORE spec §3): carried over, never dropped.
+                                              wholesaleEnabled: variant.wholesaleEnabled,
+                                              wholesaleMinQty: variant.wholesaleMinQty,
                                             );
                                             variantsTemp.add(variantsModel);
                                           }

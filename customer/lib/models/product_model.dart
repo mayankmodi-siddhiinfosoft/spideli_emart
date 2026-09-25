@@ -321,9 +321,30 @@ class Variants {
   /// Variant wholesale unit price (Store app): replaces tier 1's price for this
   /// variant only; ""/absent = the product's tier 1 price. Round-tripped so a
   /// write-back of item_attribute (stock update) never drops it.
+  ///
+  /// Read from the app's own `variant_wholesale_price` key, falling back to
+  /// the Store spec's `wholesalePrice` on `item_attribute.variants[]`
+  /// (STORE spec §3) when only that one is present.
   String? variantWholesalePrice;
 
-  Variants({this.variantId, this.variantImage, this.variantPrice, this.variantQuantity, this.variantSku, this.variantWholesalePrice});
+  /// Variant-level wholesale switch, `item_attribute.variants[].wholesaleEnabled`
+  /// (STORE spec §3). **Tri-state on purpose:**
+  /// * `false` (explicitly written) - THIS variant is retail-only, whatever the
+  ///   product-level switch says;
+  /// * `true` - no change: the product's tiers still govern;
+  /// * null (absent, blank, or not a boolean) - no opinion, today's behaviour:
+  ///   the product-level switch and thresholds govern.
+  ///
+  /// An absent or default-written field therefore can never switch wholesale
+  /// off - see [parseWholesaleBoolOrNull].
+  bool? wholesaleEnabled;
+
+  /// Variant-level `wholesaleMinQty` (STORE spec §3): the quantity at which
+  /// THIS variant reaches its wholesale price, replacing the product's first
+  /// threshold for this variant only. ""/absent = the product's threshold.
+  String? wholesaleMinQty;
+
+  Variants({this.variantId, this.variantImage, this.variantPrice, this.variantQuantity, this.variantSku, this.variantWholesalePrice, this.wholesaleEnabled, this.wholesaleMinQty});
 
   Variants.fromJson(Map<String, dynamic> json) {
     variantId = json['variant_id'];
@@ -331,7 +352,16 @@ class Variants {
     variantPrice = json['variant_price'] ?? '0';
     variantQuantity = json['variant_quantity'] ?? '0';
     variantSku = json['variant_sku'];
-    variantWholesalePrice = json.containsKey('variant_wholesale_price') ? parseWholesaleString(json['variant_wholesale_price']) : null;
+    if (json.containsKey('variant_wholesale_price')) {
+      variantWholesalePrice = parseWholesaleString(json['variant_wholesale_price']);
+    } else if (json.containsKey('wholesalePrice')) {
+      variantWholesalePrice = parseWholesaleString(json['wholesalePrice']);
+    } else {
+      variantWholesalePrice = null;
+    }
+    wholesaleEnabled = parseWholesaleBoolOrNull(json['wholesaleEnabled']);
+    final String minQty = parseWholesaleString(json['wholesaleMinQty']);
+    wholesaleMinQty = minQty.isEmpty ? null : minQty;
   }
 
   Map<String, dynamic> toJson() {
@@ -341,8 +371,22 @@ class Variants {
     data['variant_price'] = variantPrice;
     data['variant_quantity'] = variantQuantity;
     data['variant_sku'] = variantSku;
+    // Written back only when the document carried them, so a stock-update
+    // round trip of item_attribute never drops - nor invents - these fields.
     if (variantWholesalePrice != null) data['variant_wholesale_price'] = variantWholesalePrice;
+    if (wholesaleEnabled != null) data['wholesaleEnabled'] = wholesaleEnabled;
+    if (wholesaleMinQty != null) data['wholesaleMinQty'] = wholesaleMinQty;
     return data;
+  }
+
+  /// The variant's own wholesale threshold when it carries a usable one
+  /// (>= 2 units, the same floor [WholesaleTier.isUsable] applies), else null
+  /// = use the product's.
+  int? get wholesaleMinQtyValue {
+    final String raw = (wholesaleMinQty ?? '').trim();
+    if (raw.isEmpty) return null;
+    final int qty = int.tryParse(raw) ?? (double.tryParse(raw)?.toInt() ?? 0);
+    return qty >= 2 ? qty : null;
   }
 }
 
@@ -378,6 +422,25 @@ bool parseWholesaleBool(dynamic value) {
   if (value is num) return value != 0;
   if (value is String) return value.trim().toLowerCase() == 'true' || value.trim() == '1';
   return false;
+}
+
+/// Tri-state read of a wholesale bool: `true` / `false` only when the document
+/// says so EXPLICITLY, null when the field is absent, null or blank.
+///
+/// A missing or blank field must never read as `false`, because `false` is a
+/// decision ("this one is retail-only") while absence means "no opinion, the
+/// level above governs". Only a real boolean, a number, or the words
+/// "true"/"false"/"1"/"0" count as a decision.
+bool? parseWholesaleBoolOrNull(dynamic value) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  if (value is String) {
+    final String v = value.trim().toLowerCase();
+    if (v.isEmpty) return null;
+    if (v == 'true' || v == '1') return true;
+    if (v == 'false' || v == '0') return false;
+  }
+  return null;
 }
 
 /// Parses `fulfilment` (list or comma-separated string); null when absent/empty.

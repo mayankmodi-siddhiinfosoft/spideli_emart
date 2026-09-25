@@ -7,6 +7,7 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/parcel_dashboard_controller.dart';
 import 'package:driver/controllers/parcel_home_controller.dart';
 import 'package:driver/models/parcel_order_model.dart';
+import 'package:driver/services/driver_job_queue_service.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:flutter/material.dart';
@@ -103,6 +104,7 @@ class ParcelHomeScreen extends StatelessWidget {
                       return const SizedBox();
                     }
                   }),
+                  const _NewParcelJobsBanner(),
                   Expanded(
                     child: DsEmptyState(
                       icon: Icons.inventory_2_outlined,
@@ -129,6 +131,9 @@ class ParcelHomeScreen extends StatelessWidget {
                 },
                 child: CustomScrollView(
                   slivers: [
+                    const DsSliverResponsive(
+                      sliver: SliverToBoxAdapter(child: _NewParcelJobsBanner(gutter: false)),
+                    ),
                     DsSliverResponsive(
                       top: DsSpace.lg,
                       sliver: SliverToBoxAdapter(
@@ -223,6 +228,41 @@ class ParcelHomeScreen extends StatelessWidget {
               body: body,
             );
           });
+    });
+  }
+}
+
+/// Badge for the automatic driver-notification queue (admin spec §14): the
+/// parcel requests placed while the driver was offline, found the moment they
+/// came back online. Hidden — and costing nothing — when there are none.
+class _NewParcelJobsBanner extends StatelessWidget {
+  /// False inside a sliver that already applies the responsive gutter.
+  final bool gutter;
+
+  const _NewParcelJobsBanner({this.gutter = true});
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final int waiting = DriverJobQueueService.parcelJobCount.value;
+      if (waiting <= 0) return const SizedBox.shrink();
+      return Padding(
+        padding: EdgeInsets.fromLTRB(gutter ? DsSpace.lg : 0, DsSpace.lg, gutter ? DsSpace.lg : 0, 0),
+        child: DsInlineAlert(
+          tone: DsTone.brand,
+          icon: Icons.notifications_active_outlined,
+          title: "New parcel requests".tr,
+          message: waiting == 1
+              ? "1 parcel request is waiting for you.".tr
+              : "$waiting ${'parcel requests are waiting for you.'.tr}",
+          actionLabel: "View requests".tr,
+          onAction: () {
+            Get.to(ParcelSearchScreen())!.then((value) {
+              if (Get.isRegistered<ParcelHomeController>()) Get.find<ParcelHomeController>().getParcelList();
+            });
+          },
+        ),
+      );
     });
   }
 }

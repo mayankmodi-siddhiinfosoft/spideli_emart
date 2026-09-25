@@ -1,4 +1,3 @@
-import 'package:driver/utils/region_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/send_notification.dart';
@@ -6,6 +5,8 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/parcel_category.dart';
 import 'package:driver/models/parcel_order_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/carrier_dispatch_service.dart';
+import 'package:driver/services/parcel_dispatch_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/widget/geoflutterfire/src/geoflutterfire.dart';
 import 'package:driver/widget/geoflutterfire/src/models/point.dart';
@@ -152,49 +153,73 @@ class ParcelSearchController extends GetxController {
         )
         .first;
 
-    final filtered = docs.where((doc) {
+    // Zone / date / destination are decided in memory as before; region and
+    // carrier need a lookup, so the pass is a loop rather than a `where`.
+    final List<ParcelOrderModel> result = [];
+    for (final doc in docs) {
       final data = doc.data() as Map<String, dynamic>;
-      if (data['senderPickupDateTime'] == null) return false;
+      if (!_matchesSearchInput(data, date: date, destLat: destLat, destLng: destLng)) continue;
 
-      final driverZoneId = driverModel.value.zoneId;
+      // Zone-bound (spec 9.1), scope-aware (admin spec §11/§12): a same-city
+      // parcel keeps today's rule; an intercity / intercountry parcel is also
+      // offered to drivers of the region it ENDS in.
+      if (await ParcelDispatchService.isOutOfDriverRegion(data, driver: driverModel.value)) continue;
 
-      // ✅ Check both sender and receiver zone
-      final senderZoneId = data['senderZoneId'];
-      final receiverZoneId = data['receiverZoneId'];
+      // Carrier-bound dispatch (admin spec §11): an order carrying a
+      // `carrierId` belongs to that company's own drivers. An order with no
+      // carrier — and a carrier nothing is linked to — behaves as today.
+      if (!await CarrierDispatchService.driverServesCarrier(data['carrierId']?.toString(), driverModel.value)) continue;
 
-      if (senderZoneId == null && receiverZoneId == null) return false;
+      result.add(ParcelOrderModel.fromJson(data));
+    }
 
-      // Match if driver zone equals either sender or receiver zone
-      final zoneMatch = (senderZoneId == driverZoneId) || (receiverZoneId == driverZoneId);
-      if (!zoneMatch) return false;
+    return result;
+  }
 
-      // Zone-bound (spec 9.1): only requests of the driver's region.
-      if (RegionService.isOutOfDriverRegion(data['regionId']?.toString(), driver: driverModel.value)) return false;
+  /// The unchanged in-memory rules of the parcel search: the job must have a
+  /// pickup date, touch the driver's zone at either end, fall on the searched
+  /// day, and end near the searched destination when one was given.
+  bool _matchesSearchInput(
+    Map<String, dynamic> data, {
+    required DateTime date,
+    double? destLat,
+    double? destLng,
+  }) {
+    if (data['senderPickupDateTime'] == null) return false;
 
-      // ✅ Date check
-      final Timestamp ts = data['senderPickupDateTime'];
-      final orderDate = ts.toDate().toLocal();
-      final inputDate = date.toLocal();
+    final driverZoneId = driverModel.value.zoneId;
 
-      bool sameDay = orderDate.year == inputDate.year && orderDate.month == inputDate.month && orderDate.day == inputDate.day;
+    // ✅ Check both sender and receiver zone
+    final senderZoneId = data['senderZoneId'];
+    final receiverZoneId = data['receiverZoneId'];
 
-      if (!sameDay) return false;
+    if (senderZoneId == null && receiverZoneId == null) return false;
 
-      // ✅ Destination check
-      if (destLat != null && destLng != null && data['receiverLatLong'] != null) {
-        final rec = data['receiverLatLong'];
-        double recLat = rec['latitude'];
-        double recLng = rec['longitude'];
+    // Match if driver zone equals either sender or receiver zone
+    final zoneMatch = (senderZoneId == driverZoneId) || (receiverZoneId == driverZoneId);
+    if (!zoneMatch) return false;
 
-        double distance = Geoflutterfire().point(latitude: destLat, longitude: destLng).kmDistance(lat: recLat, lng: recLng);
+    // ✅ Date check
+    final Timestamp ts = data['senderPickupDateTime'];
+    final orderDate = ts.toDate().toLocal();
+    final inputDate = date.toLocal();
 
-        if (distance > double.parse(Constant.parcelRadius)) return false;
-      }
+    bool sameDay = orderDate.year == inputDate.year && orderDate.month == inputDate.month && orderDate.day == inputDate.day;
 
-      return true;
-    }).toList();
+    if (!sameDay) return false;
 
-    return filtered.map((e) => ParcelOrderModel.fromJson(e.data()!)).toList();
+    // ✅ Destination check
+    if (destLat != null && destLng != null && data['receiverLatLong'] != null) {
+      final rec = data['receiverLatLong'];
+      double recLat = rec['latitude'];
+      double recLng = rec['longitude'];
+
+      double distance = Geoflutterfire().point(latitude: destLat, longitude: destLng).kmDistance(lat: recLat, lng: recLng);
+
+      if (distance > double.parse(Constant.parcelRadius)) return false;
+    }
+
+    return true;
   }
 
   Future<void> pickDateTime() async {

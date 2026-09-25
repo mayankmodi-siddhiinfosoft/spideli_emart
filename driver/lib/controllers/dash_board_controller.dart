@@ -4,6 +4,7 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/driver_job_queue_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/utils/preferences.dart';
@@ -38,6 +39,9 @@ class DashBoardController extends GetxController {
           userModel.value = UserModel.fromJson(event.data()!);
           Constant.userModel = UserModel.fromJson(event.data()!);
           RegionService.applyDriver(Constant.userModel);
+          // Automatic driver-notification queue (admin spec §14): re-offer the
+          // orders placed while this driver was away, once per going-online.
+          DriverJobQueueService.onDriverSnapshot(userModel.value);
         }
       },
     );

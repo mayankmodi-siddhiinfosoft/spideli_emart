@@ -4,6 +4,7 @@ import 'dart:developer';
 import 'dart:io';
 import 'dart:math' as maths;
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
+import 'package:customer/constant/collection_name.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/cab_order_model.dart';
 import 'package:customer/models/payment_model/cod_setting_model.dart';
@@ -195,7 +196,14 @@ class MyCabBookingController extends GetxController {
   /// Payment methods for paying [order]: the ride's region, else its
   /// driver's region (spec 18.7).
   Future<void> preparePaymentFor(CabOrderModel order) async {
-    final String? region = (order.regionId?.isNotEmpty == true) ? order.regionId : await RegionService.userRegionId(order.driverId);
+    // Also persists the DRIVER's region on a ride the Driver app left
+    // unplaced, so paying can never leave an accepted ride without a region.
+    final String? region = await FireStoreUtils.ensureRideRegion(
+      collection: CollectionName.rides,
+      orderId: order.id,
+      driverId: order.driverId,
+      currentRegionId: order.regionId,
+    );
     order.regionId ??= region;
     await refreshPaymentRegion(region);
   }

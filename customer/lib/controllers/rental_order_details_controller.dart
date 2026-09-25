@@ -140,6 +140,16 @@ class RentalOrderDetailsController extends GetxController {
         }
       });
 
+      // A driver is on the booking: make sure `rental_orders.regionId` holds
+      // the DRIVER's region, filling it only when the Driver app left it empty
+      // (never replacing one that is already there).
+      order.value.regionId = await FireStoreUtils.ensureRideRegion(
+        collection: CollectionName.rentalOrders,
+        orderId: order.value.id,
+        driverId: order.value.driverId,
+        currentRegionId: order.value.regionId,
+      );
+
       await FireStoreUtils.getReviewsbyID(order.value.id.toString()).then((value) {
         if (value != null) {
           ratingModel.value = value;

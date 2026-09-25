@@ -115,6 +115,9 @@ class RentalConformationController extends GetxController {
     // Creation write; `priceProposal` / `listedPrice` are not in toJson (the
     // Driver app answers the proposal), so they are added here.
     await FireStoreUtils.fireStore.collection(CollectionName.rentalOrders).doc(rentalOrderModel.value.id).setKnownFields({...rentalOrderModel.value.toJson(), ...?extraFields}).then((value) async {
+      // The customer carries `users.regionIds` (array) only - appended with
+      // every region they order in, exactly as the ride flows do.
+      await FireStoreUtils.addCustomerRegion(rentalOrderModel.value.regionId);
       await FireStoreUtils.sendCarBookEmail(orderModel: rentalOrderModel.value);
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast(successMessage ?? "Order placed successfully".tr);

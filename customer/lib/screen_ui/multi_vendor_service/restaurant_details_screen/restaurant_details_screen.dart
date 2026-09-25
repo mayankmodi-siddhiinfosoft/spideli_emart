@@ -748,13 +748,17 @@ class ProductListView extends StatelessWidget {
 
     final currency = RegionService.currencyForVendor(controller.vendorModel.value);
     // Retail + wholesale tiers side by side (spec 8.2), in the store's currency.
+    // Wholesale-only and the minimum are read for THIS variant: one that
+    // carries `wholesaleEnabled: false` is retail-only and keeps its price
+    // visible (STORE spec §3). Without that field nothing changes.
+    final bool wholesaleOnly = WholesalePricing.isWholesaleOnlyFor(productModel, variantId: defaultVariantId);
     final List<PriceBand> bands = WholesalePricing.bands(
       retail: WholesalePricing.retailPrice(productModel, controller.vendorModel.value, variantId: defaultVariantId),
       tiers: WholesalePricing.customerTiers(productModel, controller.vendorModel.value, variantId: defaultVariantId),
-      wholesaleOnly: productModel.isWholesaleOnly,
+      wholesaleOnly: wholesaleOnly,
     );
     final bool businessOnly = productModel.isBusinessOnlyProduct;
-    final int minQty = productModel.minOrderQuantity;
+    final int minQty = WholesalePricing.minOrderQuantityFor(productModel, controller.vendorModel.value, variantId: defaultVariantId);
     final bool hasOptions = selectedVariants.isNotEmpty || (productModel.addOnsTitle != null && productModel.addOnsTitle!.isNotEmpty);
     final bool canBuy = controller.isOpen.value == true && Constant.userModel != null && !businessOnly;
 
@@ -845,7 +849,7 @@ class ProductListView extends StatelessWidget {
                     Text(productModel.name.toString(), style: t.titleSm),
                     const DsGap(DsSpace.xxs),
                     // Wholesale-only products hide the retail price.
-                    if (!productModel.isWholesaleOnly)
+                    if (!wholesaleOnly)
                       double.parse(disPrice) <= 0
                           ? Text(
                               Constant.amountShow(amount: price, currency: currency),
@@ -864,14 +868,14 @@ class ProductListView extends StatelessWidget {
                                 ),
                               ],
                             ),
-                    if (productModel.isWholesaleOnly || bands.length > 1)
+                    if (wholesaleOnly || bands.length > 1)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
                         child: PriceTiersView(bands: bands, currency: currency, isDark: isDark, compact: true),
                       ),
                     if (businessOnly)
                       _note(context, "Business customers only".tr, c.dangerStrong)
-                    else if (productModel.isWholesaleOnly)
+                    else if (wholesaleOnly)
                       _note(context, "${'Wholesale only'.tr} · ${'Minimum order'.tr}: $minQty ${'pcs'.tr}", c.brandStrong)
                     else if (productModel.hasWholesaleTier && productModel.wholesaleBlockedForCustomer)
                       _note(context, "Wholesale prices for Business customers only".tr, c.textMuted),
@@ -1406,8 +1410,10 @@ class ProductDetailsView extends StatelessWidget {
                           semanticLabel: 'Remove'.tr,
                           size: 36,
                           onPressed: () {
-                            // Wholesale-only products can't go below their minimum quantity.
-                            if (controller.quantity.value > productModel.minOrderQuantity) {
+                            // Wholesale-only products can't go below their minimum quantity
+                            // (the SELECTED variant's, when it carries its own threshold).
+                            if (controller.quantity.value >
+                                WholesalePricing.minOrderQuantityFor(productModel, controller.vendorModel.value, variantId: controller.selectedVariantId(productModel))) {
                               controller.quantity.value -= 1;
                               controller.update();
                             }

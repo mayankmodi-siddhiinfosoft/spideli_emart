@@ -53,6 +53,11 @@ class UserModel {
   /// "individual" | "company" (spec 4.11). Absent = individual.
   String? driverType;
 
+  /// The delivery carrier (`delivery_carriers/{id}`) this driver is registered
+  /// under — admin spec §11. Read only; the panel owns it. Absent = the driver
+  /// belongs to no carrier and sees platform work exactly as before.
+  String? carrierId;
+
   /// Company identification (spec 4.11), additive on the user doc.
   String? companyName;
   String? operatingLicence;
@@ -183,6 +188,8 @@ class UserModel {
     isAutoVerify = json['isAutoVerify'];
     regionId = _str(json['regionId']);
     driverType = _str(json['driverType']);
+    // Carrier membership, read tolerantly: the panel may spell it either way.
+    carrierId = _str(json['carrierId']) ?? _str(json['deliveryCarrierId']);
     companyName = _str(json['companyName']);
     operatingLicence = _str(json['operatingLicence']);
     commercialRegister = _str(json['commercialRegister']);
@@ -262,6 +269,7 @@ class UserModel {
     // value the admin panel set (e.g. regionId).
     if (regionId != null) data['regionId'] = regionId;
     if (driverType != null) data['driverType'] = driverType;
+    if (carrierId != null) data['carrierId'] = carrierId;
     if (companyName != null) data['companyName'] = companyName;
     if (operatingLicence != null) data['operatingLicence'] = operatingLicence;
     if (commercialRegister != null) data['commercialRegister'] = commercialRegister;

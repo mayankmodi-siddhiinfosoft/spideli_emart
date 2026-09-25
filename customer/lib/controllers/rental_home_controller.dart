@@ -146,6 +146,10 @@ class RentalHomeController extends GetxController {
     print(sourceTextEditController.value.text);
 
     RentalOrderModel rentalOrderModel = RentalOrderModel();
+    // rental_orders.regionId at creation: the region the pickup resolves to,
+    // if known (the Driver app writes the driver's region on accept, and
+    // `FireStoreUtils.ensureRideRegion` fills it from the driver if it did not).
+    rentalOrderModel.regionId = RegionService.regionAt(sourceLocation.latitude, sourceLocation.longitude);
     rentalOrderModel.id = Constant.getUuid();
     rentalOrderModel.authorID = userModel.value.id;
     rentalOrderModel.author = userModel.value;

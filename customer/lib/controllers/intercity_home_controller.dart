@@ -170,6 +170,15 @@ class IntercityHomeController extends GetxController with CabRideOptions {
           final status = currentOrder.value.status;
 
           if (status == Constant.driverAccepted || status == Constant.orderInTransit) {
+            // A driver is on the ride: make sure `rides.regionId` holds the
+            // DRIVER's region, filling it only when the Driver app left it
+            // empty (never replacing one that is already there).
+            currentOrder.value.regionId = await FireStoreUtils.ensureRideRegion(
+              collection: CollectionName.rides,
+              orderId: currentOrder.value.id,
+              driverId: currentOrder.value.driverId,
+              currentRegionId: currentOrder.value.regionId,
+            );
             FireStoreUtils.fireStore.collection(CollectionName.users).doc(currentOrder.value.driverId).snapshots().listen((event) async {
               if (event.exists && event.data() != null) {
                 UserModel driverModel0 = UserModel.fromJson(event.data()!);

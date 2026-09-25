@@ -32,26 +32,71 @@ class WholesalePricing {
 
   /// Wholesale tiers this customer can get on [product] (or one of its
   /// variants), commission-inclusive; empty when wholesale does not apply.
+  ///
+  /// Variant-level overrides (STORE spec §3, `item_attribute.variants[]`), all
+  /// of them optional and all of them additive - a variant that carries none
+  /// of these fields behaves exactly as before, governed by the product-level
+  /// switch and thresholds:
+  /// * `wholesaleEnabled: false` (explicit) - this variant is RETAIL-ONLY;
+  /// * `wholesalePrice` / `variant_wholesale_price` - replaces tier 1's price
+  ///   for this variant;
+  /// * `wholesaleMinQty` - replaces tier 1's threshold for this variant.
+  ///
+  /// Tiers 2+ stay the product's, so the multi-tier extension keeps working.
   static List<WholesaleTier> customerTiers(ProductModel product, VendorModel vendor, {String? variantId}) {
     if (product.wholesaleBlockedForCustomer) return <WholesaleTier>[];
+    final Variants? variant = _variant(product, variantId);
+    // Only an EXPLICIT false makes one variant retail-only. Absent / blank /
+    // non-boolean reads as null and changes nothing (parseWholesaleBoolOrNull),
+    // so a default-written field can never silently switch wholesale off.
+    if (variant?.wholesaleEnabled == false) return <WholesaleTier>[];
     final List<WholesaleTier> tiers = product.activeWholesaleTiers;
     if (tiers.isEmpty) return tiers;
-    final String variantWholesale = (_variant(product, variantId)?.variantWholesalePrice ?? '').trim();
+    final String variantWholesale = (variant?.variantWholesalePrice ?? '').trim();
+    final int? variantMinQty = variant?.wholesaleMinQtyValue;
     final List<WholesaleTier> out = [];
     for (int i = 0; i < tiers.length; i++) {
       String raw = tiers[i].price;
-      if (i == 0 && (double.tryParse(variantWholesale) ?? 0) > 0) raw = variantWholesale;
-      out.add(WholesaleTier(minQty: tiers[i].minQty, price: Constant.productCommissionPrice(vendor, raw)));
+      String minQty = tiers[i].minQty;
+      if (i == 0) {
+        if ((double.tryParse(variantWholesale) ?? 0) > 0) raw = variantWholesale;
+        if (variantMinQty != null) minQty = variantMinQty.toString();
+      }
+      out.add(WholesaleTier(minQty: minQty, price: Constant.productCommissionPrice(vendor, raw)));
     }
+    // The variant's own threshold can push tier 1 past a later tier; keep the
+    // list ordered so the bands render and the tiers read in order (the price
+    // itself is picked by highest reached minQty, which is order-independent).
+    out.sort((a, b) => a.minQtyValue.compareTo(b.minQtyValue));
     return out;
+  }
+
+  /// True when this line's variant EXPLICITLY carries `wholesaleEnabled: false`
+  /// (STORE spec §3): that one variant is retail-only, whatever the product's
+  /// switch says. A product-level line, or a variant without the field, is
+  /// never retail-only by this rule - so this is false and nothing changes.
+  static bool isRetailOnlyVariant(ProductModel product, String? variantId) => _variant(product, variantId)?.wholesaleEnabled == false;
+
+  /// [ProductModel.isWholesaleOnly] for ONE line: a retail-only variant of a
+  /// wholesale-only product is still bought at retail, so its retail price
+  /// stays visible and no wholesale minimum is imposed on it.
+  static bool isWholesaleOnlyFor(ProductModel product, {String? variantId}) => product.isWholesaleOnly && !isRetailOnlyVariant(product, variantId);
+
+  /// Minimum order quantity of ONE line: on a wholesale-only line the first
+  /// tier that line can reach - so a variant with its own `wholesaleMinQty`
+  /// asks for its own minimum - and 1 otherwise, as before.
+  static int minOrderQuantityFor(ProductModel product, VendorModel vendor, {String? variantId}) {
+    if (!isWholesaleOnlyFor(product, variantId: variantId)) return 1;
+    final List<WholesaleTier> tiers = customerTiers(product, vendor, variantId: variantId);
+    return tiers.isEmpty ? product.minOrderQuantity : tiers.first.minQtyValue;
   }
 
   /// What a cart line of [product] needs to reprice itself.
   static CartLineMeta metaFor(ProductModel product, VendorModel vendor, {String? variantId}) {
     return CartLineMeta(
       tiers: customerTiers(product, vendor, variantId: variantId),
-      saleType: product.effectiveSaleType,
-      minOrderQty: product.minOrderQuantity,
+      saleType: isRetailOnlyVariant(product, variantId) ? ProductModel.saleTypeRetail : product.effectiveSaleType,
+      minOrderQty: minOrderQuantityFor(product, vendor, variantId: variantId),
       fulfilment: product.effectiveFulfilment,
     );
   }

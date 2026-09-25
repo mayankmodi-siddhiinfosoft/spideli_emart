@@ -309,6 +309,24 @@ class RegionService {
   /// about money: a price, a payment method or a delivery charge always comes
   /// from the STORE's region (admin spec §2/§3, WEB spec §1).
   ///
+  /// **THE ANSWER to "service availability - the customer's location, or their
+  /// account?" (ADMIN spec §18, WEB spec §10): the LOCATION.** Availability is
+  /// the customer's CURRENT location resolved through the delivery zone to
+  /// region(s); when it cannot be resolved this returns an empty list and
+  /// EVERYTHING is shown (`isAvailableInAnyRegion`), never nothing.
+  ///
+  /// `users/{uid}.regionIds` is deliberately NOT read here. It is an
+  /// append-only record of where the customer has already ordered
+  /// (`FireStoreUtils.addCustomerRegion`), written for the admin panel - not
+  /// an input to availability. A customer who travels sees the services of
+  /// where they ARE, not of where they once ordered. Customers never carry a
+  /// `regionId` string either; do not start writing one.
+  ///
+  /// This getter is the ONLY place availability regions are computed: home,
+  /// the "More" panel and its search, and the per-service dashboards all read
+  /// the one region-filtered section list built from it in
+  /// `ServiceListController.loadData`. Filter here, nowhere else.
+  ///
   /// The ladder, each rung used only when the ones above it found nothing:
   /// explicit choice -> the zone(s) around the customer (plus the other
   /// regions of that country, the website's same-country bridge) -> the
