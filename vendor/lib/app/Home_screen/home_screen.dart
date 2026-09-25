@@ -429,6 +429,12 @@ class HomeScreen extends StatelessWidget {
                         await FireStoreUtils.updateUserWallet(amount: finalAmount.toString(), userId: orderModel.author!.id.toString());
                       }
 
+                      // A new order is normally rejected before anything was
+                      // credited, but a POS / panel-created order can already
+                      // carry a credit. Guarded: an order that was never
+                      // credited is not debited.
+                      await FireStoreUtils.reverseVendorCreditForOrder(orderModel);
+
                       ShowToastDialog.closeLoader();
                       controller.getOrder();
                       Get.back();
@@ -778,45 +784,7 @@ class HomeScreen extends StatelessWidget {
                 // from its wallet rows - rather than recomputing it: the recomputed
                 // figure left out the packaging charge, and an order that was never
                 // credited must not be debited at all.
-                final credited = await FireStoreUtils.netVendorCreditForOrder(orderModel.id.toString());
-                final String vendorOwnerId = (orderModel.vendor?.author ?? FireStoreUtils.getCurrentUid()).toString();
-                if (credited.total > 0) {
-                  WalletTransactionModel historyTaxModel = WalletTransactionModel(
-                    amount: credited.tax,
-                    id: const Uuid().v4(),
-                    orderId: orderModel.id,
-                    userId: vendorOwnerId,
-                    date: Timestamp.now(),
-                    isTopup: false,
-                    paymentMethod: "tax",
-                    paymentStatus: "success",
-                    note: "Order tax refunded to customer",
-                    transactionUser: "vendor",
-                  );
-
-                  WalletTransactionModel historyModel = WalletTransactionModel(
-                    amount: credited.orderAmount,
-                    id: const Uuid().v4(),
-                    orderId: orderModel.id,
-                    userId: vendorOwnerId,
-                    date: Timestamp.now(),
-                    isTopup: false,
-                    paymentMethod: "Wallet",
-                    paymentStatus: "success",
-                    note: "Order amount refunded to customer",
-                    transactionUser: "vendor",
-                  );
-
-                  await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(historyTaxModel.id).set(historyTaxModel.toJson());
-                  await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(historyModel.id).set(historyModel.toJson());
-                  // Debit the store that took the order and its owner (not the
-                  // logged-in user, who may be an employee).
-                  await FireStoreUtils.adjustVendorWallet(
-                    amount: -credited.total,
-                    vendorId: (orderModel.vendorID ?? orderModel.vendor?.id).toString(),
-                    ownerId: vendorOwnerId,
-                  );
-                }
+                await FireStoreUtils.reverseVendorCreditForOrder(orderModel);
                 await controller.getOrder();
                 Get.back();
                 ShowToastDialog.closeLoader();
@@ -869,6 +837,10 @@ class HomeScreen extends StatelessWidget {
                         orderModel.status = Constant.orderCompleted;
                         await AudioPlayerService.playSound(false);
                         await FireStoreUtils.updateOrder(orderModel);
+                        // Last completion path that never credited the store
+                        // (APP-SPEC-STORE.md §2). Idempotent: an order already
+                        // credited on Accept / Shipped is skipped.
+                        await FireStoreUtils.restaurantVendorWalletSet(orderModel);
                         SendNotification.sendOneNotification(
                           token: orderModel.author!.fcmToken.toString(),
                           title: "Order Delivered".tr,

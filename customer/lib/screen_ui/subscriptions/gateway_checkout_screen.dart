@@ -18,12 +18,18 @@ class GatewayCheckoutScreen extends StatelessWidget {
   final String? regionId;
   final Future<void> Function(String paymentMethod) onPaid;
 
-  const GatewayCheckoutScreen({super.key, required this.title, required this.amount, required this.currency, required this.regionId, required this.onPaid});
+  /// What the wallet row / gateway reference calls this payment. Defaults to
+  /// [title]; a caller passes it when the panels have fixed a wording (the
+  /// customer plan purchase writes `note: "Subscription purchase"`, WEB spec
+  /// 5) that differs from what the screen shows.
+  final String? note;
+
+  const GatewayCheckoutScreen({super.key, required this.title, required this.amount, required this.currency, required this.regionId, required this.onPaid, this.note});
 
   @override
   Widget build(BuildContext context) {
     return GetX<GatewayCheckoutController>(
-      init: GatewayCheckoutController(amount: amount, regionId: regionId, description: title, onPaid: onPaid),
+      init: GatewayCheckoutController(amount: amount, regionId: regionId, description: note ?? title, onPaid: onPaid),
       global: false,
       builder: (controller) {
         final c = context.dsColors;

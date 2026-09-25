@@ -1,3 +1,4 @@
+import 'package:customer/utils/customer_plan_service.dart';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
@@ -296,7 +297,8 @@ class GatewayCheckoutController extends GetxController {
       id: Constant.getUuid(),
       amount: value,
       date: Timestamp.now(),
-      paymentMethod: PaymentGateway.wallet.name,
+      // "Wallet", as the web panel writes it (APP-SPEC-WEB.md section 5).
+      paymentMethod: CustomerPlanService.gatewayLabel(PaymentGateway.wallet.name),
       transactionUser: "user",
       userId: FireStoreUtils.getCurrentUid(),
       isTopup: false,

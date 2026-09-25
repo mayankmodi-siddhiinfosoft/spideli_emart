@@ -251,6 +251,10 @@ class ParcelOrderModel {
       'originPickupPointId': originPickupPointId,
       'deliveryMethod': deliveryMethod,
       'destinationPickupPointId': destinationPickupPointId,
+      // The admin panel links a parcel to its point with a single
+      // `pickupPointId` (admin spec §12): the origin point when there is one,
+      // else the destination. Ours stay the truth for the app.
+      'pickupPointId': originPickupPointId ?? destinationPickupPointId,
       'pickupCode': pickupCode,
       'declaredValue': declaredValue,
       'dimensions': dimensions,

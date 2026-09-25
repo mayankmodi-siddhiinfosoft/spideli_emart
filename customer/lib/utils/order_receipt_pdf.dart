@@ -29,10 +29,34 @@ import 'package:syncfusion_flutter_pdf/pdf.dart';
 class OrderReceiptPdf {
   OrderReceiptPdf._();
 
+  // ---------------- receipt or order summary ----------------
+
+  /// Cancelled and rejected orders are **never headed "Receipt"** - not on
+  /// the button, not in the document, not in the file name (WEB spec 8).
+  /// Those orders were never paid for, and a document headed Receipt would be
+  /// passed on as though they had been.
+  ///
+  /// "Driver Rejected" is not one of them: the order is back with dispatch and
+  /// still live.
+  static bool isVoidedStatus(String? status) {
+    final String s = (status ?? '').trim().toLowerCase();
+    if (s.isEmpty) return false;
+    if (s == Constant.driverRejected.toLowerCase()) return false;
+    return s.contains('cancel') || s.contains('reject');
+  }
+
+  /// "Receipt", or "Order Summary" for a cancelled / rejected order.
+  static String documentTitle(String? status) => isVoidedStatus(status) ? "Order Summary".tr : "Receipt".tr;
+
   // ---------------- entry points ----------------
 
-  /// Bottom sheet with "Share" (WhatsApp, email ... via the share sheet) and "Download".
-  static void showOptions(BuildContext context, Future<ReceiptData> Function() data) {
+  /// Bottom sheet with "Share" (WhatsApp, email ... via the share sheet) and
+  /// "Download". The receipt is resolved first so both rows can be named for
+  /// what the document actually is (WEB spec 8).
+  static Future<void> showOptions(BuildContext context, Future<ReceiptData> Function() data) async {
+    final ReceiptData receipt = await data();
+    if (!context.mounted) return;
+    final String what = receipt.documentTitle;
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -43,18 +67,18 @@ class OrderReceiptPdf {
               children: [
                 ListTile(
                   leading: Icon(Icons.share_outlined, color: AppThemeData.primary300),
-                  title: Text("Share receipt (WhatsApp, email...)".tr),
+                  title: Text("${"Share".tr} $what ${"(WhatsApp, email...)".tr}"),
                   onTap: () async {
                     Navigator.pop(ctx);
-                    await share(await data());
+                    await share(receipt);
                   },
                 ),
                 ListTile(
                   leading: Icon(Icons.download_outlined, color: AppThemeData.primary300),
-                  title: Text("Download receipt (PDF)".tr),
+                  title: Text("${"Download".tr} $what (PDF)"),
                   onTap: () async {
                     Navigator.pop(ctx);
-                    await download(await data());
+                    await download(receipt);
                   },
                 ),
                 ListTile(leading: const Icon(Icons.close, color: Colors.grey), title: Text("Cancel".tr), onTap: () => Navigator.pop(ctx)),
@@ -71,13 +95,13 @@ class OrderReceiptPdf {
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(file.path, mimeType: 'application/pdf')],
-          subject: "${"Receipt".tr} ${data.orderLabel}",
-          text: "${data.partyName} - ${"Receipt".tr} ${data.orderLabel}".trim(),
+          subject: "${data.documentTitle} ${data.orderLabel}",
+          text: "${data.partyName} - ${data.documentTitle} ${data.orderLabel}".trim(),
         ),
       );
     } catch (e) {
       log("Receipt share failed: $e");
-      ShowToastDialog.showToast("Could not share the receipt.".tr);
+      ShowToastDialog.showToast("Could not share the document.".tr);
     }
   }
 
@@ -91,14 +115,14 @@ class OrderReceiptPdf {
         final Directory downloads = Directory('/storage/emulated/0/Download');
         if (await downloads.exists()) {
           await file.copy('${downloads.path}/${file.uri.pathSegments.last}');
-          ShowToastDialog.showToast("Receipt downloaded in download folder".tr);
+          ShowToastDialog.showToast("${data.documentTitle} ${"downloaded in download folder".tr}");
           return;
         }
       } catch (e) {
         log("Receipt copy to Download failed: $e");
       }
     }
-    ShowToastDialog.showToast("Receipt saved".tr);
+    ShowToastDialog.showToast("${data.documentTitle} ${"saved".tr}");
   }
 
   static Future<File?> _save(ReceiptData data) async {
@@ -108,14 +132,16 @@ class OrderReceiptPdf {
       final List<int> bytes = _build(data, logo);
       final Directory dir = await getApplicationDocumentsDirectory();
       final String orderNo = data.orderId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
-      final File file = File('${dir.path}/receipt_${orderNo.isEmpty ? 'order' : orderNo}.pdf');
+      // Never "receipt_..." for an order that was cancelled or rejected.
+      final String prefix = data.isOrderSummary ? 'order_summary' : 'receipt';
+      final File file = File('${dir.path}/${prefix}_${orderNo.isEmpty ? 'order' : orderNo}.pdf');
       await file.writeAsBytes(bytes, flush: true);
       ShowToastDialog.closeLoader();
       return file;
     } catch (e, s) {
       log("Receipt PDF failed: $e", stackTrace: s);
       ShowToastDialog.closeLoader();
-      ShowToastDialog.showToast("Could not create the receipt. Please try again.".tr);
+      ShowToastDialog.showToast("Could not create the document. Please try again.".tr);
       return null;
     }
   }
@@ -179,6 +205,7 @@ class OrderReceiptPdf {
       totals: totals,
       totalPaid: c.totalAmount.value,
       currency: currency,
+      status: order.status ?? '',
     );
   }
 
@@ -221,6 +248,7 @@ class OrderReceiptPdf {
       totals: [...totals, if (extra > 0) ReceiptTotal((order.extraChargesDescription ?? '').isNotEmpty ? '${'Extra charges'.tr} (${order.extraChargesDescription})' : 'Extra charges'.tr, extra)],
       totalPaid: c.totalAmount.value + extra,
       currency: currency,
+      status: order.status,
     );
   }
 
@@ -285,8 +313,9 @@ class OrderReceiptPdf {
     w.rule();
     w.gap(8);
 
-    // Order number + barcode.
-    w.line('${'Receipt'.tr} - ${d.orderLabel}', w.headingFont);
+    // Order number + barcode. "Order Summary" when the order was cancelled or
+    // rejected - it was never paid for (WEB spec 8).
+    w.line('${d.documentTitle} - ${d.orderLabel}', w.headingFont);
     w.gap(4);
     if (d.orderId.isNotEmpty) {
       w.barcode(d.orderId, height: 38);
@@ -375,9 +404,20 @@ class ReceiptData {
   final double totalPaid;
   final CurrencyModel? currency;
 
+  /// The order's own status. Decides whether this document is a receipt or an
+  /// order summary (WEB spec 8).
+  final String status;
+
   /// Extra titled blocks printed after the customer (driver, route, vehicle,
   /// rental period ...). Empty for shopping orders.
   final List<ReceiptBlock> blocks;
+
+  /// A cancelled or rejected order is never headed "Receipt".
+  bool get isOrderSummary => OrderReceiptPdf.isVoidedStatus(status);
+
+  /// "Receipt" or "Order Summary" - heading, button, share subject and file
+  /// name all read this one value.
+  String get documentTitle => OrderReceiptPdf.documentTitle(status);
 
   ReceiptData({
     required this.orderId,
@@ -396,6 +436,7 @@ class ReceiptData {
     required this.totals,
     required this.totalPaid,
     required this.currency,
+    this.status = '',
     this.blocks = const [],
   });
 }

@@ -90,6 +90,12 @@ class _ParcelCarrierSelectionScreenState extends State<ParcelCarrierSelectionScr
                 for (int i = 0; i < options.length; i++) _optionTile(options[i], i, currency),
                 const DsGap(DsSpace.sm),
                 ParcelBreakdownCard(currency: currency, breakdown: ParcelLabels.breakdownOf(options[selected].quote, currency?.code)),
+                // The carrier's own conditions (delivery_carriers.conditions),
+                // shown where the carrier is chosen.
+                if ((options[selected].carrier?.conditions ?? '').isNotEmpty) ...[
+                  const DsGap(DsSpace.md),
+                  DsInlineAlert(tone: DsTone.info, title: "Carrier conditions".tr, message: options[selected].carrier!.conditions),
+                ],
               ],
             ),
         ]),

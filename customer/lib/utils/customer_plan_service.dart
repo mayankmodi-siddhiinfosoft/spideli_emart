@@ -59,9 +59,17 @@ class CustomerPlanService {
   /// Plans are priced in the customer's current region currency.
   static CurrencyModel? get currency => RegionService.customerCurrency;
 
-  /// `planFor == "customer"`, `isEnable == true`, `regionIds` empty or
-  /// containing the customer's region, and [CustomerPlan.isSellable].
-  /// Cheapest first.
+  /// The offer, exactly as the web panel builds it (WEB spec 5, "Offering
+  /// plans"): `planFor == "customer"`, `isEnable == true`, then dropped only
+  /// when `regionIds` is non-empty AND excludes the customer's region. Absent
+  /// or empty `regionIds` = sold everywhere, and a customer whose region could
+  /// not be resolved is shown EVERY plan rather than none
+  /// ([RegionService.isAvailableInAnyRegion] returns true on an empty region
+  /// list). Cheapest first.
+  ///
+  /// No other gate: a plan the admin enabled is offered even when it carries
+  /// no `features.fullOrderHistory`, so the app and the website never show a
+  /// different catalogue.
   static Future<List<CustomerPlan>> availablePlans() async {
     await RegionService.ensureLoaded();
     final snap = await _db.collection(CollectionName.subscriptionPlans).where('planFor', isEqualTo: 'customer').get();
@@ -72,11 +80,7 @@ class CustomerPlanService {
       data['id'] = (data['id']?.toString().isNotEmpty ?? false) ? data['id'] : doc.id;
       if (data['isEnable'] != true) continue;
       if (!RegionService.isAvailableInAnyRegion(data['regionIds'], regions)) continue;
-      final plan = CustomerPlan(data);
-      // Only plans that actually unlock full history and last a real period
-      // ("-1" = never expires; ""/"0"/invalid would expire immediately).
-      if (!plan.isSellable) continue;
-      list.add(plan);
+      list.add(CustomerPlan(data));
     }
     list.sort((a, b) => a.priceValue.compareTo(b.priceValue));
     return list;
@@ -113,15 +117,40 @@ class CustomerPlanService {
     return base.add(Duration(days: plan.days));
   }
 
-  /// Writes the purchase after a successful payment: the plan fields on
-  /// `users/{uid}` (field update, never a full set) and one
-  /// `subscription_history` row, in one batch.
+  /// The note the wallet row of a plan purchase carries (WEB spec 5).
+  static const String purchaseNote = 'Subscription purchase';
+
+  /// The gateway name as the panels write it: "Wallet", "Stripe", "Razorpay"
+  /// ... (WEB spec 5 writes `payment_type`/`payment_method` capitalised).
+  static String gatewayLabel(String paymentType) {
+    final String trimmed = paymentType.trim();
+    if (trimmed.isEmpty) return 'Wallet';
+    return trimmed[0].toUpperCase() + trimmed.substring(1);
+  }
+
+  /// Writes the purchase after a successful payment, matching the shape the
+  /// web panel writes (WEB spec 5):
+  ///
+  /// * `users/{uid}` - `subscriptionPlanId`, `subscription_plan` (the whole
+  ///   plan document as a snapshot) and `subscriptionExpiryDate`
+  ///   (`Timestamp`, or null when `expiryDay == "-1"`). A field update, never
+  ///   a full set; `wallet_amount` was already debited inside
+  ///   `FireStoreUtils.debitWalletIfSufficient`, which re-reads the balance in
+  ///   its own transaction and refuses the debit if it moved.
+  /// * `wallet/{newId}` - the purchase row. The wallet debit writes its own
+  ///   row, so it is only written here for the card gateways, which move no
+  ///   wallet money but must still leave the same record.
+  /// * `subscription_history/{newId}` - the invoice row.
+  ///
+  /// The plan documents are written in ONE batch: all of them or none.
   static Future<void> recordPurchase(CustomerPlan plan, {required String paymentType}) async {
     final uid = FireStoreUtils.getCurrentUid();
     final user = await currentUserData();
     final DateTime? expiry = newExpiry(plan, user);
     final Timestamp? expiryTs = expiry == null ? null : Timestamp.fromDate(expiry);
     final Map<String, dynamic> snapshot = {...plan.raw, 'id': plan.id, 'planFor': 'customer'};
+    final String method = gatewayLabel(paymentType);
+    final String? regionId = RegionService.customerRegionId;
 
     final batch = _db.batch();
     batch.update(_db.collection(CollectionName.users).doc(uid), {
@@ -129,17 +158,36 @@ class CustomerPlanService {
       'subscription_plan': snapshot,
       'subscriptionExpiryDate': expiryTs,
     });
+    // Card gateways: the wallet was never touched, so the purchase row the
+    // wallet debit would have written is written here instead. Paying FROM the
+    // wallet already wrote it inside the debit transaction - never twice.
+    if (paymentType.trim().toLowerCase() != 'wallet') {
+      final String walletId = Constant.getUuid();
+      batch.set(_db.collection(CollectionName.wallet).doc(walletId), {
+        'id': walletId,
+        'user_id': uid,
+        'amount': plan.priceValue,
+        'date': FieldValue.serverTimestamp(),
+        'isTopUp': false,
+        'note': purchaseNote,
+        'payment_method': method,
+        'payment_status': 'success',
+        'transactionUser': 'user',
+        // Additive: the region the money was taken in (spec 18.12).
+        'regionId': ?regionId,
+      });
+    }
     final historyId = Constant.getUuid();
     batch.set(_db.collection(CollectionName.subscriptionHistory).doc(historyId), {
       'id': historyId,
       'user_id': uid,
       'subscription_plan': snapshot,
       'expiry_date': expiryTs,
-      'payment_type': paymentType,
-      'createdAt': Timestamp.now(),
+      'payment_type': method,
+      'createdAt': FieldValue.serverTimestamp(),
       // Additive: the region the plan was bought in, so the invoice shows
       // the currency it was paid in.
-      'regionId': RegionService.customerRegionId,
+      'regionId': regionId,
     });
     await batch.commit();
     log("CustomerPlanService: plan ${plan.id} recorded, expiry $expiry");

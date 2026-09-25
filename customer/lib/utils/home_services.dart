@@ -171,11 +171,12 @@ class HomeServices {
       }
     }
 
+    final String? othersId = _othersGroupId(groups);
     final List<ServiceGroupView> result = [];
     bool ungroupedPlaced = false;
     for (final g in groups) {
       List<SectionModel> services = members[g.id]!;
-      if (g.id == othersGroupId && ungrouped.isNotEmpty) {
+      if (g.id == othersId && ungrouped.isNotEmpty) {
         services = _byOrder([...services, ...ungrouped]);
         ungroupedPlaced = true;
       }
@@ -186,6 +187,22 @@ class HomeServices {
       result.add(ServiceGroupView(id: othersGroupId, title: 'Others'.tr, services: ungrouped));
     }
     return result;
+  }
+
+  /// The client's own "Others" group, when they have one: the seeded id
+  /// `others`, else a published group NAMED "Others" whatever its id (the
+  /// client renames and re-creates groups; nothing here is hardcoded beyond
+  /// recognising their own heading). Null = none, and the ungrouped services
+  /// get a trailing "Others" group of their own.
+  static String? _othersGroupId(List<ServiceGroupModel> groups) {
+    for (final g in groups) {
+      if (g.id == othersGroupId) return g.id;
+    }
+    for (final g in groups) {
+      final String name = g.name.trim().toLowerCase();
+      if (name == 'others' || name == 'other' || name == 'autres') return g.id;
+    }
+    return null;
   }
 
   /// Stable sort by the section `order`; services without one keep their

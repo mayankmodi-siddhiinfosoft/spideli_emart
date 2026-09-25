@@ -12,6 +12,7 @@ import '../../../themes/show_toast_dialog.dart';
 import '../../auth_screens/login_screen.dart';
 import 'live_tracking_screen.dart';
 import 'order_details_screen.dart';
+import 'order_period_picker.dart';
 
 /// Archetype F — order history. A ledger-style list: each order is a receipt
 /// card (store thumb + status, a tinted strip of line items, an action rail).
@@ -32,6 +33,12 @@ class OrderScreen extends StatelessWidget {
         // tracked builder, and handed to the lazily-built item builders.
         final bool isLoading = controller.isLoading.value;
         final int hiddenCount = controller.hiddenOrderCount.value;
+        final int hiddenDelivered = controller.hiddenDeliveredCount.value;
+        final int hiddenCancelled = controller.hiddenCancelledCount.value;
+        final int hiddenRejected = controller.hiddenRejectedCount.value;
+        final bool canChoosePeriod = controller.canChoosePeriod.value;
+        final HistoryPeriod period = controller.period.value;
+        final List<DateTime> months = controller.availableMonths.toList();
         final List<OrderModel> allList = controller.allList.toList();
         final List<OrderModel> inProgressList = controller.inProgressList.toList();
         final List<OrderModel> deliveredList = controller.deliveredList.toList();
@@ -69,6 +76,9 @@ class OrderScreen extends StatelessWidget {
                             ],
                           ),
                         ),
+                        // WEB spec 9: entitled customers choose the month or
+                        // the span they want to see, across every tab.
+                        if (canChoosePeriod) OrderPeriodBar(controller: controller, period: period, months: months),
                         const DsGap(DsSpace.md),
                         DsTabBar(
                           scrollable: true,
@@ -94,10 +104,12 @@ class OrderScreen extends StatelessWidget {
                                         },
                                       ),
                                     ),
-                              _OrderList(orders: inProgressList, controller: controller),
-                              _OrderList(orders: deliveredList, controller: controller),
-                              _OrderList(orders: cancelledList, controller: controller),
-                              _OrderList(orders: rejectedList, controller: controller),
+                              // The free limit is applied PER TAB, so each tab
+                              // carries its own "older orders" notice.
+                              _OrderList(orders: inProgressList, controller: controller, isDark: isDark),
+                              _OrderList(orders: deliveredList, controller: controller, isDark: isDark, hiddenCount: hiddenDelivered),
+                              _OrderList(orders: cancelledList, controller: controller, isDark: isDark, hiddenCount: hiddenCancelled),
+                              _OrderList(orders: rejectedList, controller: controller, isDark: isDark, hiddenCount: hiddenRejected),
                             ],
                           ),
                         ),
@@ -111,23 +123,29 @@ class OrderScreen extends StatelessWidget {
   }
 }
 
-/// One status tab: pull-to-refresh + staggered receipt cards.
+/// One status tab: pull-to-refresh + staggered receipt cards, followed by the
+/// "see older orders" prompt when this tab's own history is capped.
 class _OrderList extends StatelessWidget {
   final List<OrderModel> orders;
   final OrderController controller;
+  final bool isDark;
+  final int hiddenCount;
 
-  const _OrderList({required this.orders, required this.controller});
+  const _OrderList({required this.orders, required this.controller, required this.isDark, this.hiddenCount = 0});
 
   @override
   Widget build(BuildContext context) {
-    if (orders.isEmpty) return const _NoOrders();
+    if (orders.isEmpty && hiddenCount == 0) return const _NoOrders();
     return RefreshIndicator(
       onRefresh: () => controller.getOrder(),
       child: ListView.builder(
-        itemCount: orders.length,
+        itemCount: orders.length + (hiddenCount > 0 ? 1 : 0),
         shrinkWrap: true,
         padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
         itemBuilder: (context, index) {
+          if (index == orders.length) {
+            return OlderOrdersPrompt(hiddenCount: hiddenCount, isDark: isDark, onReturn: controller.getOrder);
+          }
           OrderModel orderModel = orders[index];
           return DsFadeSlideIn(index: index, child: _OrderCard(orderModel: orderModel, controller: controller));
         },

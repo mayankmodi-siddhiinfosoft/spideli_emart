@@ -102,9 +102,11 @@ class RegionService {
 
   static bool get hasRegions => _regions.isNotEmpty;
 
-  /// All regions, sorted by name.
+  /// Regions offered in pickers: published only (an absent `publish` counts
+  /// as published), sorted by name. Unpublished regions stay readable through
+  /// [regionById], so an existing record keeps its currency.
   static List<RegionModel> get regions {
-    final list = _regions.values.toList();
+    final list = _regions.values.where((r) => r.publish).toList();
     list.sort((a, b) => (a.name ?? '').toLowerCase().compareTo((b.name ?? '').toLowerCase()));
     return list;
   }

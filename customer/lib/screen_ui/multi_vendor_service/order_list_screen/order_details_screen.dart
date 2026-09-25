@@ -43,12 +43,14 @@ class OrderDetailsScreen extends StatelessWidget {
           appBar: DsAppBar(
             title: "Order Details".tr,
             actions: [
-              // PDF receipt: download / share (spec 7.6).
+              // PDF receipt: download / share (spec 7.6). A cancelled or
+              // rejected order is headed "Order Summary" - on the button too,
+              // never "Receipt" (WEB spec 8).
               if (!isLoading)
                 Padding(
                   padding: const EdgeInsets.only(right: DsSpace.sm),
                   child: DsButton.ghost(
-                    label: "Receipt".tr,
+                    label: OrderReceiptPdf.documentTitle(status),
                     icon: Icons.receipt_long_outlined,
                     size: DsButtonSize.sm,
                     onPressed: () => OrderReceiptPdf.showOptions(context, () => OrderReceiptPdf.fromOrder(controller)),

@@ -10,7 +10,7 @@ import 'package:customer/screen_ui/parcel_service/parcel_shipping_widgets.dart';
 import 'package:customer/service/parcel_shipping_service.dart';
 import 'package:customer/themes/app_them_data.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
-import 'package:customer/utils/order_receipt_pdf.dart' show Code128;
+import 'package:customer/utils/order_receipt_pdf.dart' show Code128, OrderReceiptPdf;
 import 'package:customer/utils/region_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -59,7 +59,19 @@ class ParcelAmounts {
 class ParcelReceiptPdf {
   ParcelReceiptPdf._();
 
+  /// A cancelled parcel was never paid for, so its document is an order
+  /// summary and never a receipt (WEB spec 8). The parcel's own status wins
+  /// over the order status.
+  static bool isVoided(ParcelOrderModel order) => OrderReceiptPdf.isVoidedStatus(order.parcelStatus ?? order.status);
+
+  /// "Parcel receipt" / "Mail receipt", or "Order Summary" when cancelled.
+  static String documentTitle(ParcelOrderModel order) {
+    if (isVoided(order)) return "Order Summary".tr;
+    return order.shipmentType == ParcelShipping.mail ? 'Mail receipt'.tr : 'Parcel receipt'.tr;
+  }
+
   static void showOptions(BuildContext context, ParcelOrderModel order) {
+    final String what = documentTitle(order);
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -70,7 +82,7 @@ class ParcelReceiptPdf {
               children: [
                 ListTile(
                   leading: Icon(Icons.share_outlined, color: AppThemeData.primary300),
-                  title: Text("Share receipt (WhatsApp, email...)".tr),
+                  title: Text("${"Share".tr} $what ${"(WhatsApp, email...)".tr}"),
                   onTap: () async {
                     Navigator.pop(ctx);
                     await share(order);
@@ -78,7 +90,7 @@ class ParcelReceiptPdf {
                 ),
                 ListTile(
                   leading: Icon(Icons.download_outlined, color: AppThemeData.primary300),
-                  title: Text("Download receipt (PDF)".tr),
+                  title: Text("${"Download".tr} $what (PDF)"),
                   onTap: () async {
                     Navigator.pop(ctx);
                     await download(order);
@@ -94,32 +106,34 @@ class ParcelReceiptPdf {
   static Future<void> share(ParcelOrderModel order) async {
     final File? file = await _save(order);
     if (file == null) return;
+    final String what = documentTitle(order);
     try {
       await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path, mimeType: 'application/pdf')], subject: "${"Receipt".tr} ${order.trackingNumber ?? order.id}", text: "${"Parcel receipt".tr} ${order.trackingNumber ?? ''}".trim()),
+        ShareParams(files: [XFile(file.path, mimeType: 'application/pdf')], subject: "$what ${order.trackingNumber ?? order.id}", text: "$what ${order.trackingNumber ?? ''}".trim()),
       );
     } catch (e) {
       log("Parcel receipt share failed: $e");
-      ShowToastDialog.showToast("Could not share the receipt.".tr);
+      ShowToastDialog.showToast("Could not share the document.".tr);
     }
   }
 
   static Future<void> download(ParcelOrderModel order) async {
     final File? file = await _save(order);
     if (file == null) return;
+    final String what = documentTitle(order);
     if (Platform.isAndroid) {
       try {
         final Directory downloads = Directory('/storage/emulated/0/Download');
         if (await downloads.exists()) {
           await file.copy('${downloads.path}/${file.uri.pathSegments.last}');
-          ShowToastDialog.showToast("Receipt downloaded in download folder".tr);
+          ShowToastDialog.showToast("$what ${"downloaded in download folder".tr}");
           return;
         }
       } catch (e) {
         log("Parcel receipt copy failed: $e");
       }
     }
-    ShowToastDialog.showToast("Receipt saved".tr);
+    ShowToastDialog.showToast("$what ${"saved".tr}");
   }
 
   static Future<File?> _save(ParcelOrderModel order) async {
@@ -133,14 +147,15 @@ class ParcelReceiptPdf {
       final List<int> bytes = _build(order, RegionService.currencyForRecord(order.regionId), qr, logo, from, to);
       final Directory dir = await getApplicationDocumentsDirectory();
       final String name = (order.trackingNumber ?? order.id ?? 'parcel').replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
-      final File file = File('${dir.path}/parcel_receipt_$name.pdf');
+      // Never "..._receipt_..." for a cancelled parcel.
+      final File file = File('${dir.path}/${isVoided(order) ? 'parcel_order_summary' : 'parcel_receipt'}_$name.pdf');
       await file.writeAsBytes(bytes, flush: true);
       ShowToastDialog.closeLoader();
       return file;
     } catch (e, s) {
       log("Parcel receipt failed: $e", stackTrace: s);
       ShowToastDialog.closeLoader();
-      ShowToastDialog.showToast("Could not create the receipt. Please try again.".tr);
+      ShowToastDialog.showToast("Could not create the document. Please try again.".tr);
       return null;
     }
   }
@@ -247,7 +262,7 @@ class ParcelReceiptPdf {
     }
     final double headW = width - left - qrSize - 10;
     double ty = top;
-    ty += text(o.shipmentType == ParcelShipping.mail ? 'Mail receipt'.tr : 'Parcel receipt'.tr, title, left, ty, headW) + 4;
+    ty += text(documentTitle(o), title, left, ty, headW) + 4;
     ty += text(o.trackingNumber ?? '', heading, left, ty, headW) + 2;
     ty += text('${'Order'.tr} ${Constant.orderId(orderId: o.id ?? '')}', small, left, ty, headW, brush: muted);
     if (qr.isNotEmpty) {

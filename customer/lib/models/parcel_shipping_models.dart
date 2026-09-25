@@ -153,11 +153,15 @@ class DeliveryCarrierModel {
     );
   }
 
-  /// Contract "Carriers": published, not explicitly unverified, serving the
-  /// origin region, able to carry the weight.
+  /// Contract "Carriers" (admin spec §11): published, not explicitly
+  /// unverified, serving the origin region, able to carry the weight.
+  ///
+  /// Every field is optional and a missing one is "not set", never zero:
+  /// empty `regionIds` = served everywhere, and an UNRESOLVED origin region
+  /// hides nothing (the platform-wide `regionIds` rule).
   bool isEligible({required String? originRegionId, required double weightKg}) {
     if (!publish || isVerified == false) return false;
-    if (regionIds.isNotEmpty && (originRegionId == null || !regionIds.contains(originRegionId))) return false;
+    if (regionIds.isNotEmpty && originRegionId != null && originRegionId.isNotEmpty && !regionIds.contains(originRegionId)) return false;
     if (maxWeight != null && maxWeight! > 0 && maxWeight! < weightKg) return false;
     return true;
   }

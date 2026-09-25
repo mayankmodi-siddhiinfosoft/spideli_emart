@@ -51,6 +51,9 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
     final result = await Get.to(
       () => GatewayCheckoutScreen(
         title: "${"Full order history".tr} - ${plan.name}",
+        // The wallet row reads "Subscription purchase", as the web panel
+        // writes it (WEB spec 5); the card above keeps the plan's name.
+        note: CustomerPlanService.purchaseNote,
         amount: plan.price,
         currency: CustomerPlanService.currency,
         regionId: RegionService.customerRegionId,

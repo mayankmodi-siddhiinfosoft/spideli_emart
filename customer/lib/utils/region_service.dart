@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
+import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/collection_name.dart';
@@ -11,6 +13,7 @@ import 'package:customer/models/vendor_model.dart';
 import 'package:customer/models/zone_model.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/utils/preferences.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// Everything region-related for the Customer app, in one place (spec 18.4 -
@@ -29,8 +32,12 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 ///   (`Constant.currencyModel`), i.e. exactly what the app showed before
 ///   regions existed.
 /// * The customer's current region(s) are computed ONLY in
-///   [customerRegionIds] (current location -> published delivery zone
-///   containing it -> that zone's `regionIds`).
+///   [customerRegionIds] / [customerRegionId], on one ladder: an explicit
+///   choice -> the published delivery zone(s) around them -> their country,
+///   matched on `countryCode` (never `code`) -> `settings/RegionDefaults` ->
+///   none. It decides DISCOVERY only (which sections and stores are offered,
+///   and the currency shown before a store is chosen); every price, payment
+///   method and delivery charge comes from the store's region.
 ///
 /// `regions`, `currencies` and `zone` are small collections; they are read
 /// once and kept in memory. With no region data everything behaves exactly as
@@ -47,6 +54,20 @@ class RegionService {
   static final Map<String, ZoneModel> _zones = {};
   static Future<void>? _loading;
   static bool _loaded = false;
+
+  /// `settings/RegionDefaults.defaultRegionId` (admin spec §5): the LAST rung
+  /// of the ladder - used only when location and country match no region, and
+  /// never over a region already resolved. Empty = behaviour before it existed.
+  static String? defaultRegionId;
+
+  /// Country of the customer, ISO code, once known: the reverse-geocoded
+  /// country of their location, else the device locale's country.
+  static String? _customerCountryCode;
+  static Future<void>? _countryLoading;
+
+  /// Preferences key of an explicit region choice (rung 1). No picker ships
+  /// today; [setSelectedRegion] is the single entry point when one does.
+  static const String selectedRegionKey = 'selectedRegionId';
 
   // ---------------------------------------------------------------------------
   // Loading
@@ -90,6 +111,17 @@ class RegionService {
       log("RegionService load failed: $e", stackTrace: s);
       _loading = null;
     }
+    // Last rung of the ladder; a missing document leaves it null (= today).
+    try {
+      final doc = await _db.collection(CollectionName.settings).doc('RegionDefaults').get();
+      final String? value = doc.data()?['defaultRegionId']?.toString();
+      defaultRegionId = _isEmpty(value) ? null : value;
+    } catch (e) {
+      log("RegionService RegionDefaults not loaded: $e");
+    }
+    // Rung 3 needs a country; resolving it is a best-effort background step so
+    // nothing waits on it (the ladder simply skips the rung until it lands).
+    unawaited(ensureCustomerCountry());
   }
 
   // ---------------------------------------------------------------------------
@@ -99,6 +131,39 @@ class RegionService {
   static bool get hasRegions => _regions.isNotEmpty;
 
   static RegionModel? regionById(String? regionId) => _isEmpty(regionId) ? null : _regions[regionId];
+
+  /// Every region the admin publishes, sorted by name. Unpublished regions
+  /// stay readable through [regionById] so an old record keeps its currency,
+  /// but they are never offered or matched.
+  static List<RegionModel> get publishedRegions {
+    final list = _regions.values.where((r) => r.publish).toList();
+    list.sort((a, b) => (a.name ?? '').toLowerCase().compareTo((b.name ?? '').toLowerCase()));
+    return list;
+  }
+
+  /// True when the region exists and is published.
+  static bool isPublished(String? regionId) => regionById(regionId)?.publish == true;
+
+  /// Published regions of [countryCode], matched on `countryCode` ONLY -
+  /// `code` is a free-text label (Gabon reads "GB") and is never matched.
+  static List<String> regionIdsForCountry(String? countryCode) {
+    if (_isEmpty(countryCode)) return const [];
+    return publishedRegions.where((r) => r.isInCountry(countryCode)).map((r) => r.id!).toList();
+  }
+
+  /// The country's region when exactly one published region claims it.
+  static String? regionIdForCountry(String? countryCode) {
+    final ids = regionIdsForCountry(countryCode);
+    return ids.length == 1 ? ids.first : null;
+  }
+
+  /// The website's same-country bridge (WEB spec §1): the other published
+  /// regions of [regionId]'s country. Discovery only - never pricing.
+  static List<String> sameCountryRegionIds(String? regionId) {
+    final region = regionById(regionId);
+    if (region == null || _isEmpty(region.countryCode)) return const [];
+    return regionIdsForCountry(region.countryCode);
+  }
 
   static ZoneModel? zoneById(String? zoneId) {
     if (_isEmpty(zoneId)) return null;
@@ -213,13 +278,59 @@ class RegionService {
     return null;
   }
 
+  /// An explicit region choice, if one was ever made (rung 1). Null when the
+  /// stored id names no published region.
+  static String? get selectedRegionId {
+    try {
+      final String value = Preferences.getString(selectedRegionKey);
+      return isPublished(value) ? value : null;
+    } catch (_) {
+      // Preferences not initialised yet: no choice has been made.
+      return null;
+    }
+  }
+
+  /// Remembers (or clears, with null) an explicit region choice.
+  static Future<void> setSelectedRegion(String? regionId) async {
+    await Preferences.setString(selectedRegionKey, regionId ?? '');
+  }
+
   /// Regions of the published delivery zone(s) containing the customer's
-  /// current location. Empty = unresolved (no location, no zone, or zones
-  /// without region data): callers then show everything, as today.
-  static List<String> get customerRegionIds {
+  /// current location (rung 2). Empty = no location, no zone, or zones
+  /// without region data.
+  static List<String> get zoneRegionIds {
     final point = customerLocation;
     if (point == null) return const [];
     return regionIdsAt(point.latitude, point.longitude);
+  }
+
+  /// The customer's DISCOVERY regions - which sections and stores are offered
+  /// and which currency is shown before a store is chosen. It decides nothing
+  /// about money: a price, a payment method or a delivery charge always comes
+  /// from the STORE's region (admin spec §2/§3, WEB spec §1).
+  ///
+  /// The ladder, each rung used only when the ones above it found nothing:
+  /// explicit choice -> the zone(s) around the customer (plus the other
+  /// regions of that country, the website's same-country bridge) -> the
+  /// customer's country matched on `countryCode` -> `RegionDefaults` ->
+  /// empty, which filters nothing at all.
+  static List<String> get customerRegionIds {
+    final String? chosen = selectedRegionId;
+    if (chosen != null) return [chosen];
+    // A region the admin unpublished is dropped; one we know nothing about is
+    // kept, so a missing / unread `regions` collection behaves as before.
+    final List<String> fromZone = zoneRegionIds.where((id) => regionById(id)?.publish != false).toList();
+    if (fromZone.isNotEmpty) {
+      final Set<String> ids = {...fromZone};
+      for (final id in fromZone) {
+        ids.addAll(sameCountryRegionIds(id));
+      }
+      return ids.toList();
+    }
+    final List<String> fromCountry = regionIdsForCountry(_customerCountryCode);
+    if (fromCountry.isNotEmpty) return fromCountry;
+    if (isPublished(defaultRegionId)) return [defaultRegionId!];
+    return const [];
   }
 
   /// Regions of the published delivery zone(s) containing a point.
@@ -241,10 +352,54 @@ class RegionService {
     return ids.length == 1 ? ids.first : null;
   }
 
-  /// The customer's region when it resolves to exactly one, else null.
+  /// The customer's region when the ladder resolves to exactly one, else
+  /// null. Same rungs as [customerRegionIds]: explicit choice -> a zone
+  /// serving exactly one region -> the country (`countryCode`, never `code`)
+  /// when exactly one published region claims it -> `RegionDefaults` -> none.
   static String? get customerRegionId {
-    final ids = customerRegionIds;
-    return ids.length == 1 ? ids.first : null;
+    final String? chosen = selectedRegionId;
+    if (chosen != null) return chosen;
+    final List<String> fromZone = zoneRegionIds;
+    if (fromZone.length == 1) return fromZone.first;
+    if (fromZone.isEmpty) {
+      final String? fromCountry = regionIdForCountry(_customerCountryCode);
+      if (fromCountry != null) return fromCountry;
+      if (isPublished(defaultRegionId)) return defaultRegionId;
+    }
+    return null;
+  }
+
+  /// The customer's country (ISO code), resolved once: the country of the
+  /// location the app works with, else the device locale's country. Failures
+  /// leave it null, which simply skips the country rung of the ladder.
+  static Future<String?> ensureCustomerCountry({bool force = false}) async {
+    if (_customerCountryCode != null && !force) return _customerCountryCode;
+    if (force) _countryLoading = null;
+    _countryLoading ??= _loadCustomerCountry();
+    await _countryLoading;
+    return _customerCountryCode;
+  }
+
+  /// The country code as last resolved (null until [ensureCustomerCountry]).
+  static String? get customerCountryCode => _customerCountryCode;
+
+  static Future<void> _loadCustomerCountry() async {
+    final point = customerLocation;
+    if (point != null) {
+      try {
+        final places = await Geocoding().placemarkFromCoordinates(point.latitude, point.longitude);
+        final String? iso = places.isNotEmpty ? places.first.isoCountryCode : null;
+        if (!_isEmpty(iso)) {
+          _customerCountryCode = iso!.toUpperCase();
+          return;
+        }
+      } catch (e) {
+        log("RegionService country lookup failed: $e");
+      }
+    }
+    final String? locale = ui.PlatformDispatcher.instance.locale.countryCode;
+    if (!_isEmpty(locale)) _customerCountryCode = locale!.toUpperCase();
+    _countryLoading = null; // an unresolved country may be retried later
   }
 
   // ---------------------------------------------------------------------------

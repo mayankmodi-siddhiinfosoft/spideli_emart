@@ -700,6 +700,53 @@ class FireStoreUtils {
     return (orderAmount: orderAmount, tax: tax, total: orderAmount + tax);
   }
 
+  /// Takes back exactly what [orderModel] credited the store — read from its
+  /// own `wallet` rows via [netVendorCreditForOrder], never recomputed — when
+  /// the order is refunded, cancelled or rejected.
+  ///
+  /// An order that was never credited (rejected before it was accepted, or
+  /// completed by a driver on a build that did not yet credit the store) has a
+  /// net credit of 0 and is **not** debited. Reversing twice is also a no-op:
+  /// the second call reads the credit net of the first reversal.
+  static Future<void> reverseVendorCreditForOrder(OrderModel orderModel) async {
+    final String orderId = orderModel.id?.toString() ?? '';
+    if (orderId.isEmpty) return;
+    final credited = await netVendorCreditForOrder(orderId);
+    if (credited.total <= 0) return;
+    final String vendorOwnerId = (orderModel.vendor?.author ?? getCurrentUid()).toString();
+
+    WalletTransactionModel historyTaxModel = WalletTransactionModel(
+      amount: credited.tax,
+      id: const Uuid().v4(),
+      orderId: orderId,
+      userId: vendorOwnerId,
+      date: Timestamp.now(),
+      isTopup: false,
+      paymentMethod: "tax",
+      paymentStatus: "success",
+      note: "Order tax refunded to customer",
+      transactionUser: "vendor",
+    );
+    WalletTransactionModel historyModel = WalletTransactionModel(
+      amount: credited.orderAmount,
+      id: const Uuid().v4(),
+      orderId: orderId,
+      userId: vendorOwnerId,
+      date: Timestamp.now(),
+      isTopup: false,
+      paymentMethod: "Wallet",
+      paymentStatus: "success",
+      note: "Order amount refunded to customer",
+      transactionUser: "vendor",
+    );
+    await fireStore.collection(CollectionName.wallet).doc(historyTaxModel.id).set(historyTaxModel.toJson());
+    await fireStore.collection(CollectionName.wallet).doc(historyModel.id).set(historyModel.toJson());
+
+    // Debit the store that took the order and its owner (not the logged-in
+    // user, who may be an employee).
+    await adjustVendorWallet(amount: -credited.total, vendorId: (orderModel.vendorID ?? orderModel.vendor?.id).toString(), ownerId: vendorOwnerId);
+  }
+
   static Future<bool> _isOrderAlreadyCredited(String orderId) async {
     final snapshot = await fireStore.collection(CollectionName.wallet).where('order_id', isEqualTo: orderId).get();
     return snapshot.docs.any((doc) {

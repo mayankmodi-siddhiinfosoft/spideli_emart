@@ -5,6 +5,7 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:driver/models/wallet_transaction_model.dart';
 import 'package:driver/services/audio_player_service.dart';
+import 'package:driver/services/vendor_wallet_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:get/get.dart';
 
@@ -39,6 +40,10 @@ class DeliverOrderController extends GetxController {
     await AudioPlayerService.playSound(false);
     orderModel.value.status = Constant.orderCompleted;
     await FireStoreUtils.updateWallateAmount(orderModel.value);
+    // APP-SPEC-STORE.md §2 / APP-SPEC-ADMIN.md §7: the delivery also has to
+    // credit the STORE. updateWallateAmount() only moves the driver's balance.
+    // Idempotent, and a no-op when the Store app already credited this order.
+    await VendorWalletService.creditStoreForCompletedOrder(orderModel.value);
     if (orderModel.value.cashback?.cashbackValue != null && orderModel.value.cashback?.id != null) {
       WalletTransactionModel transactionModel = WalletTransactionModel(
           id: Constant.getUuid(),

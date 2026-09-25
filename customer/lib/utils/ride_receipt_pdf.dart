@@ -66,6 +66,7 @@ class RideReceiptPdf {
       ],
       totalPaid: c.totalAmount.value,
       currency: RegionService.currencyForRecord(order.regionId),
+      status: order.status ?? '',
     );
   }
 
@@ -118,6 +119,9 @@ class RideReceiptPdf {
       ],
       totalPaid: c.totalAmount.value,
       currency: c.bookingCurrency,
+      // A cancelled or rejected booking is headed "Order Summary", never
+      // "Receipt" (WEB spec 8).
+      status: order.status ?? '',
     );
   }
 
