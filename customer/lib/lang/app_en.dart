@@ -794,4 +794,16 @@ const Map<String, String> enUS = {
   'Enter Manually location': 'Enter Manually location',
   "No bookings found": "No bookings found",
   'The store is not available in your area. Change other location first.': 'The store is not available in your area. Change other location first.',
+  // Parcel SMS to the receiver (PARCEL-SMS-OUTBOX.md): the body of the message
+  // queued in `parcel_sms_outbox`, not UI copy.
+  'A parcel is on its way to you. Tracking number {tracking}.': 'A parcel is on its way to you. Tracking number {tracking}.',
+  'Your parcel {tracking} has been collected and is on its way.': 'Your parcel {tracking} has been collected and is on its way.',
+  'Your parcel {tracking} is in transit.': 'Your parcel {tracking} is in transit.',
+  'Your parcel {tracking} has arrived in the destination city.': 'Your parcel {tracking} has arrived in the destination city.',
+  'Your parcel {tracking} is ready for collection at the pickup point.': 'Your parcel {tracking} is ready for collection at the pickup point.',
+  'Your parcel {tracking} is out for delivery today.': 'Your parcel {tracking} is out for delivery today.',
+  'Your parcel {tracking} has been delivered.': 'Your parcel {tracking} has been delivered.',
+  'Your parcel {tracking} is on its way back to the sender.': 'Your parcel {tracking} is on its way back to the sender.',
+  'Your parcel {tracking} has been cancelled.': 'Your parcel {tracking} has been cancelled.',
+  'Pickup code {code}.': 'Pickup code {code}.',
 };

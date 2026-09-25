@@ -149,7 +149,7 @@ class ParcelOrderDetailsController extends GetxController {
     await FireStoreUtils.parcelOrderPlace(parcelOrder.value);
     if (parcelOrder.value.isTrackable) {
       try {
-        await ParcelShippingService.append(parcelOrder.value.id!, ParcelShippingService.event(ParcelShipping.cancelled));
+        await ParcelShippingService.append(parcelOrder.value.id!, ParcelShippingService.event(ParcelShipping.cancelled), order: parcelOrder.value);
       } catch (e) {
         debugPrint('Cancelled event not appended: $e');
       }

@@ -96,7 +96,7 @@ class ParcelMyBookingController extends GetxController {
       order.status = Constant.orderCancelled;
       await FireStoreUtils.parcelOrderPlace(order);
       if (order.isTrackable) {
-        await ParcelShippingService.append(order.id!, ParcelShippingService.event(ParcelShipping.cancelled)).catchError((_) {});
+        await ParcelShippingService.append(order.id!, ParcelShippingService.event(ParcelShipping.cancelled), order: order).catchError((_) {});
       }
 
       listenParcelOrders();

@@ -53,6 +53,7 @@ class CollectionName {
   static const String providersWorkers = 'providers_workers';
   static const String promos = 'promos';
   static const String parcelCoupons = 'parcel_coupons';
+  static const String parcelSmsOutbox = 'parcel_sms_outbox';
   static const String rentalVehicleType = 'rental_vehicle_type';
   static const String rentalPackages = 'rental_packages';
   static const String rentalCoupons = 'rental_coupons';

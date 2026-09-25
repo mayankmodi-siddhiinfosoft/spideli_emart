@@ -508,6 +508,12 @@ status written by a driver never passes through Laravel. A Cloud Function
 watching `parcel_orders` is the only candidate that fires whoever moved the
 parcel.
 
+> **App half built, 25 Sep.** Both apps now write one request document to
+> `parcel_sms_outbox` in the same batch as the tracking status, gated on
+> `settings/SMSGateway.isEnabled` and `.parcelEvents` (absent = inert). The
+> sender is still to be built: read pending, send via OBITSMS, stamp
+> `sendState`/`sentAt`/`error`. Contract: **`.claude/PARCEL-SMS-OUTBOX.md`**.
+
 ---
 
 ## 18. Open questions

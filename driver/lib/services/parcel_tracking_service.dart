@@ -5,6 +5,7 @@ import 'package:driver/constant/send_notification.dart';
 import 'package:driver/models/parcel_order_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/models/wallet_transaction_model.dart';
+import 'package:driver/services/parcel_sms_outbox.dart';
 import 'package:driver/app/wallet_screen/payment_list_screen.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/foundation.dart';
@@ -260,7 +261,24 @@ class ParcelTrackingService {
     if (o.status == Constant.driverAccepted && ParcelTrackingStatus.rank(status) >= 2 && !isDriverFinalStep(o, status)) {
       data['status'] = Constant.orderInTransit;
     }
-    await _doc(o.id!).update(data);
+    // The receiver's SMS request, when one is due, is committed with the status itself:
+    // no message can be queued for a status write that failed.
+    final ParcelSmsRequest? sms = await ParcelSmsOutbox.requestFor(o, status);
+    if (sms == null) {
+      await _doc(o.id!).update(data);
+    } else {
+      final WriteBatch batch = FireStoreUtils.fireStore.batch();
+      batch.update(_doc(o.id!), data);
+      ParcelSmsOutbox.addToBatch(batch, sms);
+      // The SMS must never cost the driver the status write: a refused outbox
+      // (rules) falls back to the plain update, with no message queued.
+      try {
+        await batch.commit();
+      } catch (e) {
+        debugPrint('ParcelSmsOutbox: batch refused ($e) — writing $status without the SMS request');
+        await _doc(o.id!).update(data);
+      }
+    }
     o.parcelStatus = status;
     if (data['status'] != null) o.status = data['status'];
   }
