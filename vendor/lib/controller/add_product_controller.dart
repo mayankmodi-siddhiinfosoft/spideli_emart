@@ -396,8 +396,18 @@ class AddProductController extends GetxController {
     _onTierChanged();
   }
 
+  /// Tier 1 is the entry-level offer the legacy wholesalePrice /
+  /// wholesaleMinQty pair is written from (STORE spec 3), so it is created the
+  /// moment wholesale pricing is switched on and cannot be removed while it
+  /// stays on - the switch (or "Retail") is what turns wholesale off.
+  bool canRemoveWholesaleTier(int index) => index > 0 || !wholesaleEnabled.value;
+
   void removeWholesaleTier(int index) {
     if (index < 0 || index >= wholesaleTierInputs.length) return;
+    if (!canRemoveWholesaleTier(index)) {
+      ShowToastDialog.showToast("The first tier stays while wholesale pricing is on. Turn wholesale pricing off to remove it.".tr);
+      return;
+    }
     final removed = wholesaleTierInputs.removeAt(index);
     // Dispose after the frame so the removed TextFields are unmounted first.
     WidgetsBinding.instance.addPostFrameCallback((_) => removed.dispose());

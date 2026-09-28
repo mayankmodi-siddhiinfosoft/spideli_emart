@@ -18,13 +18,11 @@ class OrderController extends GetxController {
 
   RxBool isLoading = true.obs;
 
-  /// Orders hidden by the free order-history limit (spec 18.9), PER TAB -
-  /// each tab caps its own history, so a tab is never left empty by another
-  /// tab's orders (WEB spec 6). 0 = nothing hidden in that tab.
+  /// Orders hidden by the free order-history limit (spec 18.9) ACROSS THE
+  /// WHOLE HISTORY - one allowance for every tab, so there is one count and
+  /// one notice (WEB spec 6, 28 Sep). 0 = the allowance hid nothing, and the
+  /// notice must not appear.
   RxInt hiddenOrderCount = 0.obs;
-  RxInt hiddenDeliveredCount = 0.obs;
-  RxInt hiddenCancelledCount = 0.obs;
-  RxInt hiddenRejectedCount = 0.obs;
 
   /// WEB spec 9 - the period picker, offered to entitled customers only.
   RxBool canChoosePeriod = false.obs;
@@ -40,12 +38,17 @@ class OrderController extends GetxController {
   /// Everything the query returned, before the period and the free limit.
   final List<OrderModel> _fetched = [];
 
-  /// Newest orders each tab may show; null = all.
+  /// Newest orders the customer may see across the WHOLE history; null = all.
   int? _limit;
 
   /// The limit is on order HISTORY. Orders still being placed, prepared or
   /// delivered are always shown, however old, so a customer can always track
   /// and act on them.
+  ///
+  /// DEVIATION from WEB spec 6, kept deliberately and reported to the panel
+  /// team: the spec hides everything past the allowance whatever its status.
+  /// An in-progress order still counts against the allowance here - it is only
+  /// never hidden.
   static const Set<String> activeStatuses = {
     Constant.orderPlaced,
     Constant.orderAccepted,
@@ -76,14 +79,6 @@ class OrderController extends GetxController {
       _fetched
         ..clear()
         ..addAll(value);
-      availableMonths.value = OrderHistoryLimit.monthsOf(_fetched, (OrderModel o) => o.createdAt);
-      // A month that no longer has orders (or a picker the customer is no
-      // longer entitled to) falls back to the whole history.
-      if (!canChoosePeriod.value) {
-        period.value = const HistoryPeriod.all();
-      } else if (period.value.mode == HistoryPeriodMode.month && !availableMonths.contains(period.value.month)) {
-        period.value = const HistoryPeriod.all();
-      }
       renderOrders();
     }
 
@@ -96,61 +91,58 @@ class OrderController extends GetxController {
     renderOrders();
   }
 
-  /// Splits the loaded orders into the tabs, applying the period first and the
-  /// free limit PER TAB afterwards - the same funnel, so the two can never
-  /// disagree about which orders a customer may see.
+  /// Draws the tabs through ONE funnel (WEB spec 6, 28 Sep + WEB spec 9):
+  ///
+  ///   whole history -> free allowance -> chosen period -> this tab's statuses
+  ///
+  /// The allowance is worked out once, here, before any tab is built, so all
+  /// five tabs are views of one decision rather than five. A tab may therefore
+  /// come back empty while orders of that kind exist, because newer orders in
+  /// other tabs used the allowance up - the rule, not a fault.
   void renderOrders() {
     // The free-limit notice is cleared before each redraw, or it would linger
     // after the customer narrowed to a period that was under the limit anyway.
     hiddenOrderCount.value = 0;
-    hiddenDeliveredCount.value = 0;
-    hiddenCancelledCount.value = 0;
-    hiddenRejectedCount.value = 0;
 
-    final HistoryPeriod chosen = period.value;
-    final List<OrderModel> inPeriod = _fetched.where((o) => chosen.contains(o.createdAt)).toList();
-
-    final List<OrderModel> active = inPeriod.where((o) => activeStatuses.contains(o.status)).toList();
-    final List<OrderModel> finished = inPeriod.where((o) => !activeStatuses.contains(o.status)).toList();
-
-    final List<OrderModel> delivered = finished.where((o) => o.status == Constant.orderCompleted).toList();
-    final List<OrderModel> cancelled = finished.where((o) => o.status == Constant.orderCancelled).toList();
-    final List<OrderModel> rejected = finished.where((o) => o.status == Constant.orderRejected).toList();
-    // Anything finished that none of the three tabs claims (older or custom
-    // statuses) still belongs in "All", capped like its own tab.
-    final List<OrderModel> other = finished
-        .where((o) => o.status != Constant.orderCompleted && o.status != Constant.orderCancelled && o.status != Constant.orderRejected)
-        .toList();
-
-    final List<OrderModel> visibleDelivered = _cap(delivered);
-    final List<OrderModel> visibleCancelled = _cap(cancelled);
-    final List<OrderModel> visibleRejected = _cap(rejected);
-    final List<OrderModel> visibleOther = _cap(other);
-
-    hiddenDeliveredCount.value = delivered.length - visibleDelivered.length;
-    hiddenCancelledCount.value = cancelled.length - visibleCancelled.length;
-    hiddenRejectedCount.value = rejected.length - visibleRejected.length;
-
-    deliveredList.value = _newestFirst(visibleDelivered);
-    cancelledList.value = _newestFirst(visibleCancelled);
-    rejectedList.value = _newestFirst(visibleRejected);
-    inProgressList.value = _newestFirst(
-      active
-          .where((p0) => p0.status == Constant.orderAccepted || p0.status == Constant.driverPending || p0.status == Constant.orderShipped || p0.status == Constant.orderInTransit)
-          .toList(),
+    // ONE whole-history decision, of any kind, before any tab exists.
+    final FreeOrderAllowance<OrderModel> allowance = OrderHistoryLimit.applyFreeOrderAllowance(
+      _fetched,
+      _limit,
+      (OrderModel o) => o.createdAt,
+      keepAlways: (OrderModel o) => activeStatuses.contains(o.status),
     );
+    hiddenOrderCount.value = allowance.hiddenCount;
 
-    // "All" is exactly what the other tabs show, so the tabs and the combined
-    // list can never contradict each other.
-    final List<OrderModel> all = [...active, ...visibleDelivered, ...visibleCancelled, ...visibleRejected, ...visibleOther];
-    hiddenOrderCount.value = finished.length - (visibleDelivered.length + visibleCancelled.length + visibleRejected.length + visibleOther.length);
-    allList.value = _newestFirst(all);
+    // The picker may only ever offer months of orders the customer may see, so
+    // the months come from the allowance rather than from the whole query.
+    availableMonths.value = OrderHistoryLimit.monthsOf(allowance.visible, (OrderModel o) => o.createdAt);
+    // A month that no longer has orders (or a picker the customer is no longer
+    // entitled to) falls back to the whole history.
+    if (!canChoosePeriod.value) {
+      period.value = const HistoryPeriod.all();
+    } else if (period.value.mode == HistoryPeriodMode.month && !availableMonths.contains(period.value.month)) {
+      period.value = const HistoryPeriod.all();
+    }
+
+    // WEB spec 9, in the same funnel and AFTER the allowance: the allowance
+    // settles what the customer MAY see, the period narrows what they chose to
+    // look at. The two can never disagree.
+    final FreeOrderAllowance<OrderModel> visible = allowance.inPeriod(period.value);
+
+    // Each tab only narrows the one allowance to its own statuses; nothing here
+    // can reach past it.
+    deliveredList.value = OrderHistoryLimit.limitOrderHistory(visible, (OrderModel o) => o.status == Constant.orderCompleted);
+    cancelledList.value = OrderHistoryLimit.limitOrderHistory(visible, (OrderModel o) => o.status == Constant.orderCancelled);
+    rejectedList.value = OrderHistoryLimit.limitOrderHistory(visible, (OrderModel o) => o.status == Constant.orderRejected);
+    inProgressList.value = OrderHistoryLimit.limitOrderHistory(
+      visible,
+      (OrderModel o) =>
+          o.status == Constant.orderAccepted || o.status == Constant.driverPending || o.status == Constant.orderShipped || o.status == Constant.orderInTransit,
+    );
+    // "All" is exactly the allowance, so the tabs and the combined list can
+    // never contradict each other.
+    allList.value = visible.visible;
   }
-
-  List<OrderModel> _cap(List<OrderModel> orders) => OrderHistoryLimit.newest(orders, _limit, (OrderModel o) => o.createdAt);
-
-  List<OrderModel> _newestFirst(List<OrderModel> orders) =>
-      [...orders]..sort((a, b) => (b.createdAt?.millisecondsSinceEpoch ?? 0).compareTo(a.createdAt?.millisecondsSinceEpoch ?? 0));
 
   final CartProvider cartProvider = CartProvider();
 

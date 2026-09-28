@@ -17,8 +17,11 @@ import 'order_period_picker.dart';
 
 /// Archetype F — order history. A ledger-style list: each order is a receipt
 /// card (store thumb + status, a tinted strip of line items, an action rail).
-/// The free order-history limit and its "See older orders" prompt are kept
-/// exactly as they were.
+///
+/// The free order-history limit (WEB spec 6, 28 Sep) is ONE whole-history
+/// decision taken in the controller before any tab is built, so this screen
+/// shows ONE "See older orders" notice, above the tabs where the customer meets
+/// it whichever tab they are on — including a tab the allowance left empty.
 class OrderScreen extends StatelessWidget {
   const OrderScreen({super.key});
 
@@ -34,9 +37,6 @@ class OrderScreen extends StatelessWidget {
         // tracked builder, and handed to the lazily-built item builders.
         final bool isLoading = controller.isLoading.value;
         final int hiddenCount = controller.hiddenOrderCount.value;
-        final int hiddenDelivered = controller.hiddenDeliveredCount.value;
-        final int hiddenCancelled = controller.hiddenCancelledCount.value;
-        final int hiddenRejected = controller.hiddenRejectedCount.value;
         final bool canChoosePeriod = controller.canChoosePeriod.value;
         final HistoryPeriod period = controller.period.value;
         final List<DateTime> months = controller.availableMonths.toList();
@@ -80,6 +80,15 @@ class OrderScreen extends StatelessWidget {
                         // WEB spec 9: entitled customers choose the month or
                         // the span they want to see, across every tab.
                         if (canChoosePeriod) OrderPeriodBar(controller: controller, period: period, months: months),
+                        // ONE notice for the one allowance, and only when the
+                        // allowance actually hid something — on the ninth
+                        // order, not merely on having eight. Above the tabs, so
+                        // a tab the allowance emptied still explains itself.
+                        if (hiddenCount > 0)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, 0),
+                            child: OlderOrdersPrompt(hiddenCount: hiddenCount, isDark: isDark, onReturn: controller.getOrder, margin: EdgeInsets.zero),
+                          ),
                         const DsGap(DsSpace.md),
                         DsTabBar(
                           scrollable: true,
@@ -88,29 +97,15 @@ class OrderScreen extends StatelessWidget {
                         Expanded(
                           child: TabBarView(
                             children: [
-                              allList.isEmpty && hiddenCount == 0
-                                  ? const _NoOrders()
-                                  : RefreshIndicator(
-                                      onRefresh: () => controller.getOrder(),
-                                      child: ListView.builder(
-                                        itemCount: allList.length + (hiddenCount > 0 ? 1 : 0),
-                                        shrinkWrap: true,
-                                        padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
-                                        itemBuilder: (context, index) {
-                                          if (index == allList.length) {
-                                            return OlderOrdersPrompt(hiddenCount: hiddenCount, isDark: isDark, onReturn: controller.getOrder);
-                                          }
-                                          OrderModel orderModel = allList[index];
-                                          return DsFadeSlideIn(index: index, child: _OrderCard(orderModel: orderModel, controller: controller));
-                                        },
-                                      ),
-                                    ),
-                              // The free limit is applied PER TAB, so each tab
-                              // carries its own "older orders" notice.
-                              _OrderList(orders: inProgressList, controller: controller, isDark: isDark),
-                              _OrderList(orders: deliveredList, controller: controller, isDark: isDark, hiddenCount: hiddenDelivered),
-                              _OrderList(orders: cancelledList, controller: controller, isDark: isDark, hiddenCount: hiddenCancelled),
-                              _OrderList(orders: rejectedList, controller: controller, isDark: isDark, hiddenCount: hiddenRejected),
+                              // Every tab is a view of the one allowance, so
+                              // every tab is drawn the same way. A tab that the
+                              // allowance left empty shows the empty state; the
+                              // notice above the tabs is what explains it.
+                              _OrderList(orders: allList, controller: controller),
+                              _OrderList(orders: inProgressList, controller: controller),
+                              _OrderList(orders: deliveredList, controller: controller),
+                              _OrderList(orders: cancelledList, controller: controller),
+                              _OrderList(orders: rejectedList, controller: controller),
                             ],
                           ),
                         ),
@@ -124,29 +119,25 @@ class OrderScreen extends StatelessWidget {
   }
 }
 
-/// One status tab: pull-to-refresh + staggered receipt cards, followed by the
-/// "see older orders" prompt when this tab's own history is capped.
+/// One status tab: pull-to-refresh + staggered receipt cards. The tab narrows
+/// the one whole-history allowance to its own statuses and nothing more, so an
+/// empty tab is simply a tab whose orders the allowance did not reach.
 class _OrderList extends StatelessWidget {
   final List<OrderModel> orders;
   final OrderController controller;
-  final bool isDark;
-  final int hiddenCount;
 
-  const _OrderList({required this.orders, required this.controller, required this.isDark, this.hiddenCount = 0});
+  const _OrderList({required this.orders, required this.controller});
 
   @override
   Widget build(BuildContext context) {
-    if (orders.isEmpty && hiddenCount == 0) return const _NoOrders();
+    if (orders.isEmpty) return const _NoOrders();
     return RefreshIndicator(
       onRefresh: () => controller.getOrder(),
       child: ListView.builder(
-        itemCount: orders.length + (hiddenCount > 0 ? 1 : 0),
+        itemCount: orders.length,
         shrinkWrap: true,
         padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
         itemBuilder: (context, index) {
-          if (index == orders.length) {
-            return OlderOrdersPrompt(hiddenCount: hiddenCount, isDark: isDark, onReturn: controller.getOrder);
-          }
           OrderModel orderModel = orders[index];
           return DsFadeSlideIn(index: index, child: _OrderCard(orderModel: orderModel, controller: controller));
         },

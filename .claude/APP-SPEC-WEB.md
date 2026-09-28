@@ -256,10 +256,22 @@ Reads `settings/OrderHistory` (`isLimitEnabled`, `freeOrderLimit`) — see
 `APP-SPEC-ADMIN.md` §8. An active customer subscription whose plan has
 `features.fullOrderHistory == true` lifts it.
 
-**Applied PER TAB, not across the whole history — client decision, 24 Sep.**
-The order screen has four tabs (completed, pending, rejected, cancelled) and
-each shows its own most recent `freeOrderLimit` orders. Capping the combined
-list leaves tabs empty, which reads as a fault rather than a limit.
+**Applied ACROSS THE WHOLE HISTORY — client decision, 28 Sep**, replacing the
+per-tab rule of 24 Sep. A customer without a subscription sees their most recent
+`freeOrderLimit` orders **of any kind**; everything older is hidden whichever
+tab it would sit in. The number is **8**.
+
+The allowance is worked out **once per render**, in `applyFreeOrderAllowance()`,
+before any tab is built — so all four tabs draw from one decision rather than
+four. `limitOrderHistory()` then only narrows a tab to its own statuses within
+what the allowance permits.
+
+**A tab can be empty while orders of that kind exist**, because newer orders in
+other tabs used the allowance up. The client was shown this and chose it
+anyway; it is the rule, not a fault.
+
+The notice appears **only when the allowance actually hid something** — on
+reaching the ninth order, in the client's words, not merely on having eight.
 
 **It applies only to a customer viewing their own history.** Nothing shared.
 

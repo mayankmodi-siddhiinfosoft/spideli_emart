@@ -485,7 +485,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                           ),
                                     if (Constant.selectedSection?.isProductDetails == true)
                                       DsFormSection(
-                                        title: "Product Type and Takeaway options".tr,
+                                        // Takeaway moved to its own "Available for"
+                                        // section below; this one is diet only.
+                                        title: "Product type".tr,
                                         icon: Icons.eco_outlined,
                                         children: [
                                           _switchTile(
@@ -1076,20 +1078,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                         for (var element in list) {
                                           bool productIsInList = controller.itemAttributes.value!.variants!.any((product) => product.variantSku == element);
                                           if (productIsInList) {
-                                            Variants variant = controller.itemAttributes.value!.variants!.firstWhere((product) => product.variantSku == element);
-                                            Variants variantsModel = Variants(
-                                              variantSku: variant.variantSku,
-                                              variantId: variant.variantId,
-                                              variantImage: variant.variantImage,
-                                              variantPrice: variant.variantPrice,
-                                              variantQuantity: variant.variantQuantity,
-                                              variantWholesalePrice: variant.variantWholesalePrice,
-                                              // Store-panel variant fields this app does not edit
-                                              // (STORE spec §3): carried over, never dropped.
-                                              wholesaleEnabled: variant.wholesaleEnabled,
-                                              wholesaleMinQty: variant.wholesaleMinQty,
-                                            );
-                                            variantsTemp.add(variantsModel);
+                                            // The surviving variant is kept as the same
+                                            // object, not copied field by field: that is
+                                            // what carries the Store panel's own variant
+                                            // fields (STORE spec §3) across the rebuild.
+                                            variantsTemp.add(controller.itemAttributes.value!.variants!.firstWhere((product) => product.variantSku == element));
                                           }
                                         }
                                         controller.itemAttributes.value!.variants!.clear();
@@ -1619,12 +1612,24 @@ class _AddProductScreenState extends State<AddProductScreen> {
                               ),
                               Padding(
                                 padding: const EdgeInsets.only(top: 22),
-                                child: DsIconButton(
-                                  icon: Icons.delete_outline_rounded,
-                                  semanticLabel: "Remove tier".tr,
-                                  color: c.danger,
-                                  onPressed: () => controller.removeWholesaleTier(i),
-                                ),
+                                // Tier 1 is what the legacy wholesalePrice /
+                                // wholesaleMinQty pair is written from, so it
+                                // stays while wholesale pricing is on.
+                                child: controller.canRemoveWholesaleTier(i)
+                                    ? DsIconButton(
+                                        icon: Icons.delete_outline_rounded,
+                                        semanticLabel: "Remove tier".tr,
+                                        color: c.danger,
+                                        onPressed: () => controller.removeWholesaleTier(i),
+                                      )
+                                    : Tooltip(
+                                        message: "The first tier stays while wholesale pricing is on".tr,
+                                        child: SizedBox(
+                                          width: 40,
+                                          height: 40,
+                                          child: Icon(Icons.lock_outline_rounded, size: 18, color: c.textDisabled),
+                                        ),
+                                      ),
                               ),
                             ],
                           ),
@@ -1657,7 +1662,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     ),
                     const DsGap(DsSpace.sm),
                     Text(
-                      "Up to 5 tiers. Each tier needs a minimum quantity of at least 2 and a price below the regular price; a bigger quantity must have a lower price. A variant's own wholesale price (in the variants table) replaces the first tier's price for that variant."
+                      "Up to 5 tiers. Each tier needs a minimum quantity of at least 2 and a price below the regular price; a bigger quantity must have a lower price. Tier 1 stays while wholesale pricing is on. A variant's own wholesale price (in the variants table) replaces the first tier's price for that variant."
                           .tr,
                       style: hintStyle,
                     ),
@@ -1721,8 +1726,24 @@ class _AddProductScreenState extends State<AddProductScreen> {
   }
 
   /// Delivery / Takeaway availability for this product (at least one).
+  ///
+  /// This is the control the Store panel calls **"Takeaway only"** (STORE spec
+  /// 3a): the saved `takeawayOption` is `takeaway && !delivery`, and ticking
+  /// takeaway on its own does not *add* takeaway - it **hides the product from
+  /// every delivery customer**. The label and the line underneath say so, so a
+  /// vendor cannot lose their delivery trade on a product by accident.
   Widget _buildFulfilmentSection(AddProductController controller, bool isDark) {
+    final c = context.dsColors;
     final t = context.dsText;
+    final bool delivery = controller.fulfilDelivery.value;
+    final bool takeaway = controller.fulfilTakeaway.value;
+    final bool takeawayOnly = takeaway && !delivery;
+    final bool deliveryOnly = delivery && !takeaway;
+    final String consequence = takeawayOnly
+        ? "Takeaway only: this product is hidden from every delivery customer. Add Delivery to sell it to them again.".tr
+        : deliveryOnly
+        ? "Delivery only: this product is hidden from customers ordering takeaway.".tr
+        : "Customers can only order this product with the selected options.".tr;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1730,21 +1751,32 @@ class _AddProductScreenState extends State<AddProductScreen> {
           children: [
             _fulfilmentOption(
               icon: Icons.delivery_dining_outlined,
-              label: "Delivery".tr,
-              selected: controller.fulfilDelivery.value,
+              label: deliveryOnly ? "Delivery only".tr : "Delivery".tr,
+              selected: delivery,
               onSelected: (value) => controller.toggleFulfilment(ProductModel.fulfilmentDelivery, value),
             ),
             const DsGap(DsSpace.md),
             _fulfilmentOption(
               icon: Icons.storefront_outlined,
-              label: "Takeaway".tr,
-              selected: controller.fulfilTakeaway.value,
+              label: takeawayOnly ? "Takeaway only".tr : "Takeaway".tr,
+              selected: takeaway,
               onSelected: (value) => controller.toggleFulfilment(ProductModel.fulfilmentTakeaway, value),
             ),
           ],
         ),
         const DsGap(DsSpace.sm),
-        Text("Customers can only order this product with the selected options.".tr, style: t.caption),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              takeawayOnly ? Icons.warning_amber_rounded : Icons.info_outline_rounded,
+              size: 16,
+              color: takeawayOnly ? c.warningStrong : c.textSecondary,
+            ),
+            const DsGap(DsSpace.sm),
+            Expanded(child: Text(consequence, style: takeawayOnly ? t.caption.withColor(c.warningStrong) : t.caption)),
+          ],
+        ),
       ],
     );
   }

@@ -1,9 +1,13 @@
 # App Spec — Store Panel
 
 **Panel:** Spideli eMart store / vendor panel (`spideli-emart-store`)
-**Written:** 24 September 2026
-**Status:** everything below is **built and live** unless the section says
-otherwise.
+**Written:** 24 September 2026  
+**Last changed:** 28 September 2026 — the POS now honours tiers and sale type
+**Status:** everything below is **built** unless the section says otherwise. The
+25 September items — wholesale tiers, sale type, the takeaway relabel, and the
+website's tier pricing — went up that day. The **28 September** item, tiers and
+the pack minimum in this panel's Point Of Sale and the admin panel's, is built
+and **waiting to be uploaded**: `UPLOAD-FILE-LIST-28-09-2026.txt`.
 
 **This file replaces three separate specs** — `app-spec-multiple-stores.md`,
 `app-spec-vendor-subscription.md` and `app-spec-wholesale-pricing.md`. Those
@@ -22,7 +26,8 @@ stay on disk as history. **Edit this one.**
 |---|---|---|---|
 | 1 | The panel follows the region, and writes one | points 1, 2 | ✅ |
 | 2 | Multiple stores on one account | point 3 | ✅ |
-| 3 | Wholesale pricing | point 17 | ✅ |
+| 3 | Wholesale pricing, in tiers | point 17 | ✅ panel, POS, store app and website |
+| 3a | "Takeaway Option" means takeaway ONLY | — | ✅ relabelled |
 | 4 | Subscriptions a store sells to its customers | point 19 | ✅ selling side |
 | 5 | The store's own platform subscription | Document 1 | ✅ |
 | 6 | Open questions | — | — |
@@ -107,24 +112,49 @@ people and are unaffected by multi-store.
 
 ## 3. Wholesale pricing
 
-Client point 17, Document 1's Commercial Management.
+Client point 17, Document 1's Commercial Management, extended on 25 September
+by the client's own example: *"For 15 items or more, the price is 3,500. For
+100 items or more, 2,500. For 500 items or more, 2,000."*
 
 ```json
 // vendor_products/{id}
 {
   "wholesaleEnabled": true,
-  "wholesalePrice": "700",
-  "wholesaleMinQty": "10"
+  "wholesaleTiers": [
+    { "minQty": "15",  "price": "3500" },
+    { "minQty": "100", "price": "2500" },
+    { "minQty": "500", "price": "2000" }
+  ],
+  "saleType": "both",
+  "wholesaleDetails": "<p>Sold in cases of 12…</p>",
+
+  "wholesalePrice": "3500",
+  "wholesaleMinQty": "15"
 }
 ```
 
 | Field | Type | Notes |
 |---|---|---|
 | `wholesaleEnabled` | bool | **Off by default** — the *"certain products"* of the client's wording |
-| `wholesalePrice` | string | Unit price once the threshold is met. String, matching how `price` and `disPrice` are already stored |
-| `wholesaleMinQty` | string | Units required to qualify |
+| `wholesaleTiers` | array | Up to **5** `{minQty, price}`, sorted smallest quantity first. The shape the store app already writes |
+| `saleType` | string | `"retail"`, `"wholesale"` or `"both"`. Written `"retail"` automatically whenever `wholesaleEnabled` is false |
+| `wholesaleDetails` | string | Rich text (HTML) — a price table, minimum order terms, packaging or delivery notes |
+| `wholesalePrice` | string | **Tier one's price.** Kept for readers that predate tiers |
+| `wholesaleMinQty` | string | **Tier one's quantity.** Same reason |
 
-Variants carry the same three fields on `item_attribute.variants[]`.
+Variants carry `variant_wholesale_price` on `item_attribute.variants[]`. **A
+variant has one wholesale price, not a ladder** — tiers are a product-level
+thing, and a variant's own price replaces them rather than layering on top.
+
+### Tier one is written twice, deliberately
+
+`wholesalePrice` and `wholesaleMinQty` are **not** abandoned. The panel writes
+tier one into them on every save, so anything reading the older pair keeps
+working untouched and sees the entry-level offer. Nothing has to be migrated,
+and nothing has to be changed in step.
+
+The store app does the same. If the app edits a product the panel saved, or the
+other way round, both shapes stay in agreement.
 
 ### The price-resolution rule
 
@@ -132,13 +162,109 @@ Applied in this order, and **the retail path is unchanged** when wholesale is
 off:
 
 1. `wholesaleEnabled` is false or absent → retail, exactly as today
-2. quantity **below** `wholesaleMinQty` → retail
-3. quantity **at or above** `wholesaleMinQty` → `wholesalePrice`
+2. no tier the quantity reaches → retail
+3. otherwise → the **highest** tier whose `minQty` the quantity has reached
+
+**Every unit on the line gets that price**, not only the units above the
+threshold. 500 units at the 500 tier is 500 × 2,000, not 15 at one price and
+the rest at another.
+
+**A tier that is not cheaper than what the customer would otherwise pay is
+skipped.** The test is per tier, so a product on promotion can have its first
+tier undercut by the discount while a deeper tier still applies.
 
 **A discount does not stack on a wholesale price.** Wholesale already *is* the
 reduced price; applying `disPrice` on top of it discounts twice.
 
+### Validation the panel enforces
+
+- At most 5 tiers
+- Each `minQty` at least **2**, each price **below** the retail price
+- Quantities strictly increasing, prices strictly decreasing — a larger order
+  can never cost more per unit
+
+Tier one is created the moment wholesale is switched on and cannot be deleted
+while it is on, because it is what the older pair is written from.
+
+### Where this is built
+
+| | Tiers | `saleType` | `wholesaleDetails` |
+|---|---|---|---|
+| Store panel, item form | ✅ live 25 Sep | ✅ live 25 Sep | ✅ live 25 Sep |
+| **Store panel, POS** | ✅ **28 Sep** | ✅ **28 Sep** | — |
+| Store app | ✅ | ✅ | — |
+| Customer website | ✅ live 25 Sep | ✅ **live 25 Sep** | ✅ |
+| **Admin panel, POS** | ✅ **28 Sep** | ✅ **28 Sep** | — |
+| Customer app | ❌ | ❌ | ❌ |
+
+**The customer app is the only side left.** It prices from tier one and will
+sell a single unit of a wholesale-only product, so an app order can differ from
+the same basket on the website or at either counter.
+
+**The website resolves tiers on the server**, in
+`ProductController::applyWholesalePrice()`, and reprices a line whenever its
+quantity changes — including *downwards*, so a customer who drops from 500 to 5
+goes back to retail. The product page shows the tier in force and what the next
+one up would cost.
+
+**Both Point Of Sale screens now run the same function**, on their own cart keys
+(`original_base_price` rather than `item_price`). Three controllers, one rule —
+if they drift, the same basket prices differently over the counter and on the
+website, which is exactly what this section exists to prevent.
+
+### `saleType` — what "wholesale only" does — 28 September
+
+Answered by the client on 25 September and now built everywhere except the app.
+**A wholesale-only product is not sold singly.** The floor is the **entry tier**
+— the cheapest quantity that unlocks a wholesale price, not the deepest. A
+product sold in tens with a better price at fifty still sells tens.
+
+| | How the floor is held |
+|---|---|
+| Website | the quantity box opens at the minimum, the stepper will not go below it, a typed quantity is corrected on blur, and the server raises anything lower |
+| Both POS screens | the modal has no quantity picker, so adding puts a **pack** in the cart; minus stops at the minimum and says why |
+| Everywhere | **removing the line always works.** A customer who cannot buy five of something sold in tens is the store's decision; one who cannot empty their cart is a fault |
+
+The product card and the cart line say "Sold in a minimum of N units", and the
+cart line also says **which** tier is running — which matters once a product
+carries three of them.
+
+### How the rule is checked
+
+`applyWholesalePrice()`, `saleTypeMinimum()`, `enforceSaleTypeQuantity()` and
+`normaliseSaleType()` are exercised directly through reflection in each of the
+three controllers — 29 checks on the website, 34 on each POS. They cover every
+step of the ladder, a discount undercutting every tier, a tier list arriving as
+JSON text, a product with no tiers at all, the pack floor per sale type, and
+unrecognised `saleType` values falling back to `both`. **Run these against any
+change to the rule**; the browser side of the POS has not been driven, since it
+needs a signed-in account.
+
 ---
+
+## 3a. "Takeaway Option" means takeaway ONLY
+
+Not wholesale, but it sits on the same form and was corrected in the same pass.
+
+`takeawayOption` has always meant **takeaway only**, on every side:
+
+- the store app writes `takeawayOption = takeaway && !delivery`
+- the website filters with `takeawayOption == <the customer's mode>`, a strict
+  equality — so a product is takeaway-only or delivery-only, never both
+
+The data was never in dispute. **The panel's label was.** It read *"Takeaway
+Option"*, which reads as *adding* takeaway to a product, when ticking it in fact
+**hides the product from every delivery customer**. A vendor could lose their
+delivery trade on a product by ticking a box they thought was additive.
+
+Renamed to **"Takeaway only"** on 25 September, with the consequence spelled out
+underneath it. Wording only — no stored data changed and no existing product was
+touched.
+
+> **"Both" is not expressible today.** The app's `fulfilment: ["delivery",
+> "takeaway"]` array can say it, but the website's strict equality cannot act on
+> it. Supporting it properly means changing the customer site's filter, not just
+> adding a field.
 
 ## 4. Subscriptions a store sells to its customers
 
@@ -228,13 +354,20 @@ They are invisible to these screens by construction, with no filter needed.
       subscriptions. No longer provisional.
 - [ ] Is store→customer subscription meant to create recurring **deliveries**,
       or only to record who paid? (§4)
+- [ ] What should **"Wholesale only"** do to a retail customer on the website —
+      hide the product, block small quantities, or require a business account?
+      The field is stored and nothing acts on it (§3).
+- [ ] Should a product ever be **both** delivery and takeaway? It cannot be
+      today, and making it possible is customer-site work (§3a).
 
 **With the app developer:**
 
 - [ ] Credit `vendors/{id}.wallet_amount` on order completion (§2).
 - [ ] The customer half of §4 — browsing and paying for a store's plan.
 - [ ] Wholesale in the cart: does the app apply the threshold per line, or
-      across the basket? (§3)
+      across the basket? The website applies it **per line** (§3).
+- [ ] Do the customer app and the admin panel need to show tiers, or is the
+      website enough for now? (§3)
 
 **Closed:** legacy wallet balances. The client said on 22 September that the
 current data is temporary and will be replaced, so **no migration is being

@@ -257,10 +257,16 @@ class ProductModel {
       data['taxSetting'] = taxSetting!.map((v) => v.toJson()).toList();
     }
     final bool enabled = wholesaleEnabled ?? false;
-    final List<WholesaleTier> tiers = enabled ? sortedWholesaleTiers : <WholesaleTier>[];
+    // Wholesale off: write back what the document already carried instead of
+    // blanking it. Turning wholesale off in the product form clears these on
+    // the model itself, so that path still writes empties - but a save that
+    // never touched wholesale (the publish switch in the product list, an
+    // import, a tax change) must not wipe what the Store panel set.
+    final List<WholesaleTier> tiers = enabled ? sortedWholesaleTiers : <WholesaleTier>[...?wholesaleTiers];
     data['wholesaleEnabled'] = enabled;
     data['wholesaleTiers'] = tiers.map((t) => t.toJson()).toList();
-    // Legacy single-tier mirror of the first tier (web panels, POS, customer app).
+    // Legacy single-tier mirror of the first tier, written on EVERY save so the
+    // panel and the app agree whichever edited last (STORE spec §3).
     data['wholesalePrice'] = tiers.isNotEmpty ? tiers.first.price : '';
     data['wholesaleMinQty'] = tiers.isNotEmpty ? tiers.first.minQty : '';
     data['saleType'] = effectiveSaleType;
@@ -278,9 +284,18 @@ class ItemAttribute {
   List<Attributes>? attributes;
   List<Variants>? variants;
 
+  /// Keys on `item_attribute` that this app does not edit. `item_attribute` is
+  /// written as one whole map (a merge would leave removed variants behind),
+  /// so anything not listed here has to be carried across by hand.
+  Map<String, dynamic> _extraFields = <String, dynamic>{};
+
   ItemAttribute({this.attributes, this.variants});
 
   ItemAttribute.fromJson(Map<String, dynamic> json) {
+    _extraFields = {
+      for (final entry in json.entries)
+        if (entry.key != 'attributes' && entry.key != 'variants') entry.key: entry.value,
+    };
     if (json['attributes'] != null) {
       attributes = <Attributes>[];
       json['attributes'].forEach((v) {
@@ -296,7 +311,7 @@ class ItemAttribute {
   }
 
   Map<String, dynamic> toJson() {
-    final Map<String, dynamic> data = <String, dynamic>{};
+    final Map<String, dynamic> data = <String, dynamic>{..._extraFields};
     if (attributes != null) {
       data['attributes'] = attributes!.map((v) => v.toJson()).toList();
     }
@@ -346,9 +361,33 @@ class Variants {
   bool? wholesaleEnabled;
   String? wholesaleMinQty;
 
+  /// Keys on the stored variant map that this app knows about. Everything else
+  /// is kept in [_extraFields] and written straight back.
+  static const Set<String> _knownKeys = {
+    'variant_id',
+    'variant_image',
+    'variant_price',
+    'variant_quantity',
+    'variant_sku',
+    'variant_wholesale_price',
+    'wholesalePrice',
+    'wholesaleEnabled',
+    'wholesaleMinQty',
+  };
+
+  /// Anything the Store panel writes on a variant that this app has no editor
+  /// for. Held as read and written back first, so a save here can never drop a
+  /// panel-only field; the fields above are re-written afterwards, so an edit
+  /// made here always wins over the copy that was read.
+  Map<String, dynamic> _extraFields = <String, dynamic>{};
+
   Variants({this.variantId, this.variantImage, this.variantPrice, this.variantQuantity, this.variantSku, this.variantWholesalePrice, this.wholesaleEnabled, this.wholesaleMinQty});
 
   Variants.fromJson(Map<String, dynamic> json) {
+    _extraFields = {
+      for (final entry in json.entries)
+        if (!_knownKeys.contains(entry.key)) entry.key: entry.value,
+    };
     variantId = json['variant_id'];
     variantImage = json['variant_image'];
     variantPrice = json['variant_price'] ?? '0';
@@ -361,7 +400,7 @@ class Variants {
   }
 
   Map<String, dynamic> toJson() {
-    final Map<String, dynamic> data = <String, dynamic>{};
+    final Map<String, dynamic> data = <String, dynamic>{..._extraFields};
     data['variant_id'] = variantId;
     data['variant_image'] = variantImage;
     data['variant_price'] = variantPrice;
