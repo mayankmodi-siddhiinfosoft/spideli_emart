@@ -548,6 +548,9 @@ class FireStoreUtils {
         .then((value) {
           for (var element in value.docs) {
             ProductModel walletTransactionModel = ProductModel.fromJson(element.data());
+            // Wholesale-only products are not shown to a customer without an
+            // approved business account (WEB spec §19).
+            if (walletTransactionModel.hiddenForCustomer) continue;
             list.add(walletTransactionModel);
           }
         })
@@ -968,6 +971,10 @@ class FireStoreUtils {
         .then((value) {
           for (var element in value.docs) {
             ProductModel productModel = ProductModel.fromJson(element.data());
+            // Wholesale-only products are not shown to a customer without an
+            // approved business account (WEB spec §19) - the store page and
+            // search both read this list.
+            if (productModel.hiddenForCustomer) continue;
             if (!filterByOrderType || productModel.allowsFoodType(selectedFoodType)) list.add(productModel);
           }
         })
@@ -1498,7 +1505,10 @@ class FireStoreUtils {
     QuerySnapshot<Map<String, dynamic>> currencyQuery = await fireStore.collection(CollectionName.vendorProducts).where('categoryID', isEqualTo: categoryId).where('publish', isEqualTo: true).get();
     await Future.forEach(currencyQuery.docs, (QueryDocumentSnapshot<Map<String, dynamic>> document) {
       try {
-        productList.add(ProductModel.fromJson(document.data()));
+        final ProductModel product = ProductModel.fromJson(document.data());
+        // Wholesale-only products are not shown to a customer without an
+        // approved business account (WEB spec §19).
+        if (!product.hiddenForCustomer) productList.add(product);
       } catch (e) {
         print('FireStoreUtils.getCurrencys Parse error $e');
       }
@@ -1547,7 +1557,10 @@ class FireStoreUtils {
             .get();
     await Future.forEach(productsQuery.docs, (QueryDocumentSnapshot<Map<String, dynamic>> document) {
       try {
-        products.add(ProductModel.fromJson(document.data()));
+        final ProductModel product = ProductModel.fromJson(document.data());
+        // Wholesale-only products are not shown to a customer without an
+        // approved business account (WEB spec §19).
+        if (!product.hiddenForCustomer) products.add(product);
       } catch (e) {
         print('product**-FireStoreUtils.getAllProducts Parse error $e');
       }

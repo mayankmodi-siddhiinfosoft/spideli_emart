@@ -225,8 +225,10 @@ class LinePrice {
 /// Product data a cart line needs to reprice itself (local cart only).
 class CartLineMeta {
   /// Usable wholesale tiers for this line, commission-inclusive (the same
-  /// basis as the line's price), tier 1 replaced by the variant's wholesale
-  /// price when set. Empty when wholesale does not apply to this customer.
+  /// basis as the line's price), the whole ladder SHIFTED to the variant's
+  /// wholesale price when it carries one - it is tier one's price, not the
+  /// variant's only price. Empty when wholesale does not apply to this
+  /// customer (WEB spec §19: no approved business account, no tiers).
   List<WholesaleTier> tiers;
 
   /// Effective sale type of the product ("retail" | "wholesale" | "both").

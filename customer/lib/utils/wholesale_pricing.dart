@@ -14,15 +14,17 @@ import 'package:get/get.dart';
 /// product; variants never aggregate):
 ///   1. the highest wholesale tier whose minQty <= Q whose price is LOWER than
 ///      the retail price - tested per tier, so a discount that beats tier 1
-///      never hides a deeper tier (a variant with its own wholesale price has
-///      that one price instead of the product's ladder);
+///      never hides a deeper tier (a variant's own wholesale price SHIFTS that
+///      ladder, it does not replace it - see [customerTiers]);
 ///   2. else disPrice when set and lower than price;
 ///   3. else price.
 /// All figures are commission-inclusive (Constant.productCommissionPrice),
-/// like the retail prices the app already shows. `wholesaleBusinessOnly`
-/// products get wholesale prices only for a customer whose business account
-/// the admin approved (`BusinessAccount.isApproved`, via
-/// `ProductModel.wholesaleBlockedForCustomer`).
+/// like the retail prices the app already shows.
+///
+/// **Wholesale is for approved business accounts only** (WEB spec §19): every
+/// tier here comes from `ProductModel.activeWholesaleTiers`, which is empty
+/// unless `WholesaleEntitlement.mayBuyWholesale`, so one switch withholds the
+/// badge, the ladder, the minimum and the price at once.
 class WholesalePricing {
   WholesalePricing._();
 
@@ -34,41 +36,67 @@ class WholesalePricing {
   /// Wholesale tiers this customer can get on [product] (or one of its
   /// variants), commission-inclusive; empty when wholesale does not apply.
   ///
-  /// Variant-level fields (STORE spec §3, `item_attribute.variants[]`), all of
-  /// them optional - a variant that carries none of them behaves exactly as
-  /// before, governed by the product-level switch and thresholds:
-  /// * `wholesaleEnabled: false` (explicit) - this variant is RETAIL-ONLY;
-  /// * `wholesalePrice` / `variant_wholesale_price` - **replaces** the
-  ///   product's tiers for this variant with the ONE price it names, kept at
-  ///   the product's entry quantity (WEB spec §10, "A variant has one price,
-  ///   not a ladder"): charging a variant at a product tier it never offered
-  ///   would be wrong;
-  /// * `wholesaleMinQty` - the quantity that price is reached at, replacing
-  ///   the product's entry threshold for this variant.
+  /// **A variant SHIFTS the ladder, it does not replace it** - the 30 September
+  /// rule of STORE spec §3 / WEB spec §10, which the store panel, both POS
+  /// screens and the website all implement and which this must match to the
+  /// last unit.
   ///
-  /// A variant with a threshold but no price of its own only moves tier 1's
-  /// threshold; the product's ladder still applies to it.
+  /// `variant_wholesale_price` is that variant's **TIER-ONE** price. The
+  /// product's tiers own the quantity breaks and the steps between them; the
+  /// variant shifts the whole ladder to start at its own figure, and the steps
+  /// are kept as **differences, not ratios**:
+  ///
+  /// ```
+  /// product tiers      10 -> 949    50 -> 849    150 -> 749
+  ///
+  /// variant blank   =>  949   849   749     the product's ladder, unchanged
+  /// variant 949     =>  949   849   749     identical - the commonest case
+  /// variant 999     =>  999   899   799     fifty more, throughout
+  /// variant 899     =>  899   799   699     fifty less, throughout
+  /// ```
+  ///
+  /// A tier that would fall to **zero or below is dropped, not clamped**: a
+  /// ladder that deep means the figures are wrong, and inventing a price would
+  /// hide it.
+  ///
+  /// Read the old way - "this variant's only wholesale price" - it destroyed
+  /// the ladder: a product with tiers at 10/50/150 charged the entry price at
+  /// every quantity once sizes existed, and 50 of a tiered kurti charged 959
+  /// instead of 859. That is the bug this replaces.
+  ///
+  /// The other variant-level fields (STORE spec §3, `item_attribute.variants[]`)
+  /// are unchanged and all optional - **absent is the normal case** and means
+  /// the rule above:
+  /// * `wholesaleEnabled: false` (explicit) - this variant is RETAIL-ONLY;
+  /// * `wholesaleMinQty` - the quantity tier one is reached at for this
+  ///   variant, replacing the product's entry threshold. It moves tier one's
+  ///   threshold only; the rest of the ladder is the product's.
   static List<WholesaleTier> customerTiers(ProductModel product, VendorModel vendor, {String? variantId}) {
-    if (product.wholesaleBlockedForCustomer) return <WholesaleTier>[];
     final Variants? variant = _variant(product, variantId);
     // Only an EXPLICIT false makes one variant retail-only. Absent / blank /
     // non-boolean reads as null and changes nothing (parseWholesaleBoolOrNull),
     // so a default-written field can never silently switch wholesale off.
     if (variant?.wholesaleEnabled == false) return <WholesaleTier>[];
+    // Empty for a customer without an approved business account (WEB §19), so
+    // the one switch upstream withholds every tier below.
     final List<WholesaleTier> tiers = product.activeWholesaleTiers;
     if (tiers.isEmpty) return tiers;
-    final String variantWholesale = (variant?.variantWholesalePrice ?? '').trim();
+    final double variantEntry = double.tryParse((variant?.variantWholesalePrice ?? '').trim()) ?? 0;
     final int? variantMinQty = variant?.wholesaleMinQtyValue;
+    // Blank / zero = no opinion: the product's ladder applies unchanged.
+    final double shift = variantEntry > 0 ? variantEntry - tiers.first.priceValue : 0;
     final List<WholesaleTier> out = [];
-    if ((double.tryParse(variantWholesale) ?? 0) > 0) {
-      // One price, at the product's entry quantity (or the variant's own).
-      out.add(WholesaleTier(minQty: (variantMinQty ?? tiers.first.minQtyValue).toString(), price: Constant.productCommissionPrice(vendor, variantWholesale)));
-      return out;
-    }
     for (int i = 0; i < tiers.length; i++) {
+      // Differences, not ratios: "a hundred rupees a step" stays true when a
+      // size costs fifty more.
+      final double shifted = tiers[i].priceValue + shift;
+      if (shifted <= 0) continue; // dropped, never clamped
+      // Untouched when nothing shifts, so a blank variant is byte-identical to
+      // the product's own ladder.
+      final String price = shift == 0 ? tiers[i].price : shifted.toStringAsFixed(2);
       String minQty = tiers[i].minQty;
       if (i == 0 && variantMinQty != null) minQty = variantMinQty.toString();
-      out.add(WholesaleTier(minQty: minQty, price: Constant.productCommissionPrice(vendor, tiers[i].price)));
+      out.add(WholesaleTier(minQty: minQty, price: Constant.productCommissionPrice(vendor, price)));
     }
     // The variant's own threshold can push tier 1 past a later tier; keep the
     // list ordered so the bands render and the tiers read in order (the price
@@ -76,6 +104,21 @@ class WholesalePricing {
     out.sort((a, b) => a.minQtyValue.compareTo(b.minQtyValue));
     return out;
   }
+
+  /// The products a listing may draw (WEB spec §19): a **wholesale-only**
+  /// product is hidden outright from a customer without an approved business
+  /// account - product lists, new arrivals, search, the store page, both home
+  /// screens and favourites. A mixed product stays, at retail.
+  ///
+  /// Filter the list BEFORE the card loop rather than returning nothing inside
+  /// it, so an all-hidden result falls through to each screen's own empty
+  /// message instead of drawing a blank row.
+  ///
+  /// `ProductModel.hiddenForCustomer` reads the raw product document, never the
+  /// computed price: a customer who may not buy wholesale has no computed
+  /// tiers, so keying this on them would leak every wholesale-only product to
+  /// exactly the customers it hides them from.
+  static List<ProductModel> visibleProducts(Iterable<ProductModel> products) => products.where((p) => !p.hiddenForCustomer).toList();
 
   /// True when this line's variant EXPLICITLY carries `wholesaleEnabled: false`
   /// (STORE spec §3): that one variant is retail-only, whatever the product's
@@ -122,8 +165,15 @@ class WholesalePricing {
   /// Price bands shown side by side on the product: retail from 1 unit (not
   /// for wholesale-only products), then each tier that is cheaper than retail,
   /// with its quantity range.
-  static List<PriceBand> bands({required double retail, required List<WholesaleTier> tiers, required bool wholesaleOnly}) {
-    final List<WholesaleTier> useful = tiers.where((t) => t.isUsable && (wholesaleOnly || retail <= 0 || t.priceValue < retail)).toList()..sort((a, b) => a.minQtyValue.compareTo(b.minQtyValue));
+  ///
+  /// [stock] is the units the line actually has (-1 = unlimited): a tier the
+  /// chosen size cannot physically reach is not advertised at all (WEB spec
+  /// §10, "A size that cannot make up a pack says so" - 60 left in a size and
+  /// "749 from 150 units" was an invitation into a stock error).
+  static List<PriceBand> bands({required double retail, required List<WholesaleTier> tiers, required bool wholesaleOnly, int stock = -1}) {
+    final List<WholesaleTier> useful =
+        tiers.where((t) => t.isUsable && (wholesaleOnly || retail <= 0 || t.priceValue < retail) && (stock < 0 || t.minQtyValue <= stock)).toList()
+          ..sort((a, b) => a.minQtyValue.compareTo(b.minQtyValue));
     final List<PriceBand> out = [];
     if (!wholesaleOnly) {
       out.add(PriceBand(price: retail, from: 1, to: useful.isEmpty ? null : useful.first.minQtyValue - 1, isWholesale: false));
@@ -164,11 +214,69 @@ class WholesalePricing {
 
   /// The note under the product page's quantity box (WEB spec §10,
   /// `updateWholesaleNote()`), for [quantity] of this product / variant.
-  static WholesaleNote noteFor({required double retail, required List<WholesaleTier> tiers, required int quantity}) {
-    final LinePrice current = LinePrice.resolve(retail: retail, tiers: tiers, quantity: quantity);
-    final WholesaleTier? next = LinePrice.nextTier(tiers: tiers, quantity: quantity, currentUnit: current.unit);
+  ///
+  /// [stock] is the units the line actually has (-1 = unlimited). A step up the
+  /// chosen size cannot reach is **not offered**: the box will not go there and
+  /// the stock will not grow, so "add 90 more" would be a dead end.
+  static WholesaleNote noteFor({required double retail, required List<WholesaleTier> tiers, required int quantity, int stock = -1}) {
+    final List<WholesaleTier> reachable = stock < 0 ? tiers : tiers.where((t) => t.minQtyValue <= stock).toList();
+    final LinePrice current = LinePrice.resolve(retail: retail, tiers: reachable, quantity: quantity);
+    final WholesaleTier? next = LinePrice.nextTier(tiers: reachable, quantity: quantity, currentUnit: current.unit);
     return WholesaleNote(applied: current.isWholesale ? current : null, next: next, unitsToNext: next == null ? 0 : next.minQtyValue - quantity);
   }
+
+  // ------------- WEB spec §10, the two 30 September product-page rules -------------
+
+  /// Units this line actually has: the selected variant's stock, else the
+  /// product's. **-1 means unlimited**, the value both panels use.
+  static int stockFor(ProductModel product, {String? variantId}) {
+    final Variants? variant = _variant(product, variantId);
+    if (variant != null) return int.tryParse((variant.variantQuantity ?? '').trim()) ?? 0;
+    return product.quantity ?? 0;
+  }
+
+  /// The ENTRY tier of this line - the cheapest quantity that unlocks a
+  /// wholesale price, and on a wholesale-only product the only price the
+  /// customer can actually pay. null when this line has no wholesale tier.
+  static WholesaleTier? entryTierFor(ProductModel product, VendorModel vendor, {String? variantId}) {
+    final List<WholesaleTier> tiers = customerTiers(product, vendor, variantId: variantId);
+    return tiers.isEmpty ? null : tiers.first;
+  }
+
+  /// **A wholesale-only product shows a price a customer can pay** (WEB spec
+  /// §10, 30 September): the headline is the ENTRY tier for the selected
+  /// variant, not the retail price - a single piece is not for sale at any
+  /// price, so showing the retail figure was showing a price nobody could pay.
+  ///
+  /// null for retail and mixed products: there the retail headline is honest,
+  /// so the check is on the sale type alone.
+  static WholesaleTier? headlineTierFor(ProductModel product, VendorModel vendor, {String? variantId}) {
+    if (!isWholesaleOnlyFor(product, variantId: variantId)) return null;
+    return entryTierFor(product, vendor, variantId: variantId);
+  }
+
+  /// "per piece, from 10 units" - under the wholesale-only headline price.
+  static String headlineMinimumLabel(int minQty) => "${'per piece, from'.tr} $minQty ${'units'.tr}";
+
+  /// **A size that cannot make up a pack says so** (WEB spec §10, 30
+  /// September): the units still missing before this line could reach its
+  /// entry tier, or 0 when it is workable.
+  ///
+  /// A wholesale-only line opens its quantity box at the entry tier; if the
+  /// chosen size holds less than that, every route out is a dead end - the box
+  /// will not go lower and the stock will not go higher - and add-to-cart used
+  /// to fail with a stock error that named neither the size nor a way out.
+  static int packShortfall(ProductModel product, VendorModel vendor, {String? variantId}) {
+    if (!isWholesaleOnlyFor(product, variantId: variantId)) return 0;
+    final int stock = stockFor(product, variantId: variantId);
+    if (stock < 0) return 0; // unlimited
+    final int minQty = minOrderQuantityFor(product, vendor, variantId: variantId);
+    return stock < minQty ? minQty - stock : 0;
+  }
+
+  /// "Only 60 left in this option - 150 needed for the smallest pack".
+  static String shortfallLabel(int stock, int minQty) =>
+      "${'Only'.tr} $stock ${'left in this option'.tr} — $minQty ${'needed for the smallest pack'.tr}";
 
   /// [wholesaleDetails] with everything that could run or fetch code removed
   /// (WEB spec §10, `safeWholesaleDetails()`): a price table is the point of

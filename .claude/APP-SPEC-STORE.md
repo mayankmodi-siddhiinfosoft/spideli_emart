@@ -2,12 +2,15 @@
 
 **Panel:** Spideli eMart store / vendor panel (`spideli-emart-store`)
 **Written:** 24 September 2026  
-**Last changed:** 28 September 2026 — the POS now honours tiers and sale type
+**Last changed:** 30 September 2026 — `wholesaleBusinessOnly`, a sale type
+column on the items list, and variants no longer flattening the price ladder
 **Status:** everything below is **built** unless the section says otherwise. The
 25 September items — wholesale tiers, sale type, the takeaway relabel, and the
-website's tier pricing — went up that day. The **28 September** item, tiers and
-the pack minimum in this panel's Point Of Sale and the admin panel's, is built
-and **waiting to be uploaded**: `UPLOAD-FILE-LIST-28-09-2026.txt`.
+website's tier pricing — went up that day, and the 28 September item — tiers and
+the pack minimum in both Point Of Sale screens — followed it. The **30
+September** items — the business-only switch, the sale type column on the items
+list, and the variant ladder fix across all three panels — went up the same day.
+**Nothing in this file is waiting to be uploaded.**
 
 **This file replaces three separate specs** — `app-spec-multiple-stores.md`,
 `app-spec-vendor-subscription.md` and `app-spec-wholesale-pricing.md`. Those
@@ -126,6 +129,7 @@ by the client's own example: *"For 15 items or more, the price is 3,500. For
     { "minQty": "500", "price": "2000" }
   ],
   "saleType": "both",
+  "wholesaleBusinessOnly": false,
   "wholesaleDetails": "<p>Sold in cases of 12…</p>",
 
   "wholesalePrice": "3500",
@@ -138,13 +142,14 @@ by the client's own example: *"For 15 items or more, the price is 3,500. For
 | `wholesaleEnabled` | bool | **Off by default** — the *"certain products"* of the client's wording |
 | `wholesaleTiers` | array | Up to **5** `{minQty, price}`, sorted smallest quantity first. The shape the store app already writes |
 | `saleType` | string | `"retail"`, `"wholesale"` or `"both"`. Written `"retail"` automatically whenever `wholesaleEnabled` is false |
+| `wholesaleBusinessOnly` | bool | Withhold the tier prices from customers without an **approved** business account. Written `false` whenever wholesale is off or `saleType` is `"retail"` |
 | `wholesaleDetails` | string | Rich text (HTML) — a price table, minimum order terms, packaging or delivery notes |
 | `wholesalePrice` | string | **Tier one's price.** Kept for readers that predate tiers |
 | `wholesaleMinQty` | string | **Tier one's quantity.** Same reason |
 
-Variants carry `variant_wholesale_price` on `item_attribute.variants[]`. **A
-variant has one wholesale price, not a ladder** — tiers are a product-level
-thing, and a variant's own price replaces them rather than layering on top.
+Variants carry `variant_wholesale_price` on `item_attribute.variants[]` — see
+"A variant shifts the ladder" below. It is **optional**, and blank is the
+normal case.
 
 ### Tier one is written twice, deliberately
 
@@ -155,6 +160,60 @@ and nothing has to be changed in step.
 
 The store app does the same. If the app edits a product the panel saved, or the
 other way round, both shapes stay in agreement.
+
+### A variant shifts the ladder, it does not replace it — 30 September
+
+**This was wrong until 30 September and it cost real money.** The rule is
+recorded here in full because three controllers and one browser file now
+implement it, and they must agree.
+
+`variant_wholesale_price` is **that variant's TIER-ONE price**, not its only
+price. The product's tiers own the quantity breaks and the steps between them;
+a variant shifts the whole ladder to start at its own figure.
+
+```
+product tiers      10 -> 949    50 -> 849    150 -> 749
+
+variant blank   =>  949   849   749     the product's ladder, unchanged
+variant 949     =>  949   849   749     identical - the commonest case
+variant 999     =>  999   899   799     fifty more, throughout
+variant 899     =>  899   799   699     fifty less, throughout
+```
+
+Steps are kept as **differences, not ratios**: a store setting 949/849/749 means
+"a hundred rupees a step", and that stays true when a size costs fifty more. A
+tier that would fall to zero or below is **dropped, not clamped** — a ladder
+that deep means the figures are wrong, and inventing a price would hide it.
+
+**Read the old way it destroyed the ladder.** Taken as "this variant's only
+wholesale price", a product with tiers at 10/50/150 charged the entry price at
+every quantity the moment sizes were added — and the item form *required* a
+figure on every variant, so there was no way to configure it correctly. Reported
+live on 30 September: 50 of a tiered kurti charged 959 instead of 859.
+
+**Nothing had to be re-entered.** A variant carrying the product's own tier-one
+price — which is what the form obliged every store to enter — resolves to the
+identical ladder, so existing products started pricing correctly on upload.
+
+**The field is optional now.** Blank means "no opinion" and the product's tiers
+apply as written, which is what a store wants when the sizes cost the same.
+Requiring a figure was the cause, not the symptom. When one *is* given it must
+still be below that variant's own price.
+
+**Implemented in four places, which must not drift:**
+
+| Where | Function |
+|---|---|
+| Customer website | `variantWholesaleTiers()` in `layouts/footer.blade.php` |
+| Store panel POS | `variantWholesaleTiers()` in `pos/index.blade.php` |
+| Admin panel POS | `variantWholesaleTiers()` in `pos/index.blade.php` |
+| Both item forms | the validation that made the figure optional |
+
+> **Still not possible:** a variant with its own *quantity breaks*. A size gets
+> one figure and the product's shape. And with variants the deeper tiers are
+> **per size** — a 150 tier needs 150 of one size, not 150 across a mixed pack.
+> Whether a mixed pack should reach it is the app team's open "per line or
+> across the basket" question.
 
 ### The price-resolution rule
 
@@ -188,14 +247,16 @@ while it is on, because it is what the older pair is written from.
 
 ### Where this is built
 
-| | Tiers | `saleType` | `wholesaleDetails` |
-|---|---|---|---|
-| Store panel, item form | ✅ live 25 Sep | ✅ live 25 Sep | ✅ live 25 Sep |
-| **Store panel, POS** | ✅ **28 Sep** | ✅ **28 Sep** | — |
-| Store app | ✅ | ✅ | — |
-| Customer website | ✅ live 25 Sep | ✅ **live 25 Sep** | ✅ |
-| **Admin panel, POS** | ✅ **28 Sep** | ✅ **28 Sep** | — |
-| Customer app | ❌ | ❌ | ❌ |
+| | Tiers | `saleType` | `wholesaleDetails` | `wholesaleBusinessOnly` |
+|---|---|---|---|---|
+| Store panel, item form | ✅ live 25 Sep | ✅ live 25 Sep | ✅ live 25 Sep | ✅ **30 Sep** |
+| **Store panel, items list** | shown as the entry tier | ✅ **30 Sep** column | — | ❌ not shown |
+| **Store panel, POS** | ✅ **28 Sep** | ✅ **28 Sep** | — | ❌ deliberate |
+| Store app | ✅ | ✅ | — | ✅ reads it per product |
+| Customer website | ✅ live 25 Sep | ✅ **live 25 Sep** | ✅ | ❌ gates per **account** instead |
+| **Admin panel, POS** | ✅ **28 Sep** | ✅ **28 Sep** | — | ❌ deliberate |
+| Admin panel, item form | ❌ | ❌ | ❌ | ❌ |
+| Customer app | ❌ | ❌ | ❌ | ❌ |
 
 **The customer app is the only side left.** It prices from tier one and will
 sell a single unit of a wholesale-only product, so an app order can differ from
@@ -228,6 +289,48 @@ product sold in tens with a better price at fifty still sells tens.
 The product card and the cart line say "Sold in a minimum of N units", and the
 cart line also says **which** tier is running — which matters once a product
 carries three of them.
+
+### `wholesaleBusinessOnly` — built 30 September, and it does nothing on the website
+
+The store app has carried this switch for some time — *"Only verified Business
+customers get wholesale prices"* — and `APP-SPEC-STORE-APP.md` §5 names the
+field without describing it. The behaviour is defined in
+`APP-SPEC-CUSTOMER-APP.md` §6: *"Business-only wholesale prices apply only to an
+approved account."*
+
+**The panel now has the same switch**, under the tier list on Create and Edit
+Item. It is shown only while wholesale is on **and** `saleType` is not
+`"retail"` — with no wholesale price there is nothing to withhold — and it is
+**cleared, not merely hidden**, when it stops applying, so a `true` cannot be
+stranded on a product with no wholesale pricing.
+
+"Verified" is not the customer's own claim. It is
+`accountType == "business"` **and** `businessProfile.status == "approved"`, the
+admin panel's decision (ADMIN §18). Pending or rejected buys nothing.
+
+> ⚠️ **The panel and the website apply this idea at different levels.**
+>
+> | | Scope |
+> |---|---|
+> | Store app, and now this panel | **per product** — this product's tiers need a business account |
+> | Customer website, since 30 Sep | **per account, for everything** — no approved business account means no wholesale anywhere |
+>
+> The client's words were *"wholesale products/items only will be show to the
+> Customer who have a Business account"* — a blanket rule, and that is what
+> WEB §19 built. **So the switch changes nothing on the website today**: the
+> site already withholds every tier from unapproved customers, whatever this
+> field says. Only the app reads it per product.
+>
+> This is on the record as a question for the app team, not a defect on either
+> side. Two things follow from it:
+>
+> - **The default is `false`.** If the website were ever changed to honour the
+>   field, every existing product would open up to ordinary customers — quietly
+>   undoing the 30 September decision. Whoever builds that must treat absent or
+>   `false` as "business only" or migrate the data first.
+> - **Neither POS reads it**, deliberately. Staff serving a walk-in is a
+>   different situation from a customer shopping online, and that should be a
+>   decision rather than an oversight.
 
 ### How the rule is checked
 
@@ -280,30 +383,48 @@ subscription system and it must not touch the other two.**
 The third uses **its own collections** precisely so it cannot collide with the
 shared `subscription_plans`.
 
+**Corrected 28 Sep 2026 against the code.** The shapes below were written
+from the proposal and several field names never matched what the panel
+actually writes — `name`/`duration`/`points`/`regionIds` do not exist. These
+are the real ones, taken from `customer_subscriptions/create.blade.php` and
+from what the store and admin panels read back.
+
 ```json
 // vendor_subscription_plans — what a store offers
 {
   "id": "…",
   "vendorID": "…",
-  "name": "Daily bread — monthly",
+  "regionId": "…",          // singular: a plan belongs to one store,
+  "sectionId": "…",         // and a store to one region and one section
+  "title": "Daily bread — monthly",
+  "description": "…",
+  "photo": "…",
   "price": 15000,
-  "duration": 30,
-  "points": ["…"],
+  "expiryDay": "30",         // days; "-1" never expires
+  "plan_points": ["…"],     // what the customer actually gets
   "isEnable": true,
-  "regionIds": ["…"]
+  "createdAt": "<Timestamp>"
 }
 ```
 
 ```json
 // vendor_subscriptions — who is subscribed
-{ "planId": "…", "vendorID": "…", "customerId": "…", "expiryDate": "<Timestamp>" }
+{ "id": "…", "planId": "…", "vendorID": "…", "customerId": "…",
+  "plan": { … },            // a SNAPSHOT of the plan, not a reference
+  "startDate": "<Timestamp>", "expiryDate": "<Timestamp>|null",
+  "status": "active", "createdAt": "<Timestamp>" }
 ```
 
 ```json
 // vendor_subscription_payments
-{ "planId": "…", "vendorID": "…", "customerId": "…",
-  "amount": 15000, "adminCommission": 1500, "createdAt": "<Timestamp>" }
+{ "id": "…", "planId": "…", "vendorID": "…", "customerId": "…",
+  "amount": 15000, "adminCommission": 1500, "vendorEarning": 13500,
+  "payment_method": "Wallet", "createdAt": "<Timestamp>" }
 ```
+
+`plan` on the subscription is a **snapshot**, and both panels rely on it: the
+Subscribers tab reads `subscription.plan.title` so a store renaming or deleting
+a plan cannot change what an existing subscriber is shown.
 
 **The commission is recorded on each payment**, not read from the store's
 current rate. Changing the platform's cut later must never rewrite what an
@@ -317,7 +438,72 @@ older payment earned. **Preserve this when writing a payment.**
 | A plan carries its points — what the customer actually gets | ✅ built |
 | The store sees its subscribers and their payments | ✅ built |
 | The platform sees every plan, subscriber and payment | ✅ built in admin |
-| **A customer browses, subscribes and pays** | ⬜ **missing** |
+| **A customer browses, subscribes and pays** | ✅ **built 28 Sep 2026** — customer web panel |
+
+### The customer half — built 28 September 2026
+
+On the **store's page** in the customer website, above the products. A store
+with no plans renders nothing, which is every store today.
+
+- Plans are `vendor_subscription_plans` where `vendorID` is this store and
+  `isEnable` is true, dropped when `regionId` is set and differs from the
+  customer's region. A plan with no `regionId`, or a customer with no resolved
+  region, is shown rather than hidden — the same rule the rest of the panel
+  uses for an unresolved region.
+- Priced in **the store's** region currency, not the browsing region's.
+- Paid from the wallet, or **by any gateway the customer's region carries** -
+  the plan is remembered, the customer tops the wallet up for the shortfall
+  through the existing flow, and the subscription completes by itself on the
+  way back. Client decision, 28 Sep: the alternative was an eighth copy of all
+  twelve gateway integrations, each untestable without live keys.
+- The purchase itself is one Firestore transaction with the balance re-read
+  inside it, so a double click cannot pay twice.
+- **The price is re-read when a topped-up purchase completes**, never taken
+  from what was saved. A plan whose price changed, or which was switched off,
+  while the customer was paying buys nothing and says so - the money is in the
+  wallet and the decision is theirs.
+
+**Four writes, all or none:**
+
+```
+users/{customerId}                    wallet_amount = balance - price
+wallet/{new}                          the customer's own ledger line
+vendor_subscriptions/{new}            what the Subscribers tab reads
+vendor_subscription_payments/{new}    what the Payments tab reads
+```
+
+**Nothing is written onto the customer document beyond the debit.**
+`subscriptionPlanId`, `subscription_plan` and `subscriptionExpiryDate` belong
+to the platform's own plan; a store plan must never overwrite them, or a
+customer's bread subscription would silently replace their order-history plan.
+
+**The commission is deducted, not added.** Document 1: *"The application's
+commission must also be deducted from this service."* So the customer pays the
+store's price and the platform's cut comes out of it — the opposite of a
+product, where commission is added on top of the vendor's price. The rate is
+the store's own `adminCommission` when it has one, otherwise the section's, and
+it is **capped at the price** so a fixed cut larger than a cheap plan cannot
+hand the store a negative earning. It is written onto the payment and never
+re-derived.
+
+A plan the customer already holds and has not used up shows a *Current plan*
+badge with its button shut, and the check is repeated where the money moves.
+The customer also sees everything they hold from any store on the
+**Subscriptions** screen, expired ones included — a customer asking what
+happened to their bread delivery needs to see that it ran out.
+
+### Expiry — nothing runs, and nothing needs to
+
+A subscription stops granting anything the moment its `expiryDate` passes,
+because every screen works that out as it reads. **`status` is written
+`"active"` at purchase and nothing ever changes it**, so the obvious query
+`where('status','==','active')` counts lapsed subscribers too — it caught the
+plan list on this panel, fixed 28 Sep by counting on the date instead.
+
+What is genuinely missing is that **nobody is ever told** a subscription has
+lapsed. A scheduled job is specced in `app-spec-subscription-expiry.md` in the
+admin repo's `docs\`, with the flow, the fields and the setup for both a Laravel
+cron and a Cloud Function. Not built, and it needs the client's word first.
 
 > **It is provisional.** These screens were built against an option with **no
 > automatic fulfilment**. A restaurant can sell a monthly bread subscription
@@ -354,9 +540,14 @@ They are invisible to these screens by construction, with no filter needed.
       subscriptions. No longer provisional.
 - [ ] Is store→customer subscription meant to create recurring **deliveries**,
       or only to record who paid? (§4)
-- [ ] What should **"Wholesale only"** do to a retail customer on the website —
-      hide the product, block small quantities, or require a business account?
-      The field is stored and nothing acts on it (§3).
+- [x] ~~What should **"Wholesale only"** do to a retail customer?~~ **Answered
+      25 Sep, built 28 Sep**: it is not sold singly, and the floor is the entry
+      tier. Live on the website and both POS screens (§3).
+- [ ] **Per product or per account?** The store app — and now this panel —
+      marks wholesale business-only **per product**. The website, on the
+      client's 30 September instruction, withholds wholesale from unapproved
+      customers **for everything**. Under the website's rule the per-product
+      switch can never do anything. Which is intended? (§3)
 - [ ] Should a product ever be **both** delivery and takeaway? It cannot be
       today, and making it possible is customer-site work (§3a).
 
@@ -368,6 +559,10 @@ They are invisible to these screens by construction, with no filter needed.
       across the basket? The website applies it **per line** (§3).
 - [ ] Do the customer app and the admin panel need to show tiers, or is the
       website enough for now? (§3)
+- [ ] **`wholesaleBusinessOnly` has no documented behaviour.**
+      `APP-SPEC-STORE-APP.md` §5 names the field and says nothing about it; the
+      rule is only in `APP-SPEC-CUSTOMER-APP.md` §6. Does the app withhold the
+      price, or hide the product entirely? (§3)
 
 **Closed:** legacy wallet balances. The client said on 22 September that the
 current data is temporary and will be replaced, so **no migration is being

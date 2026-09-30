@@ -196,6 +196,14 @@ class ParcelCodesCard extends StatelessWidget {
               child: Column(
                 children: [
                   if (hasQr) QrImageView(data: order.qrValue!, size: 170, backgroundColor: Colors.white),
+                  // The QR carries the public tracking page when a site URL is
+                  // configured (WEB spec §15): say so, because the person
+                  // scanning it is usually the receiver, who has no account.
+                  if (hasQr && ParcelShippingService.orderIdFromTrackingUrl(order.qrValue!) != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: DsSpace.xs),
+                      child: Text("Scan to track this parcel".tr, style: t.caption.copyWith(color: Colors.black54), textAlign: TextAlign.center),
+                    ),
                   if (hasQr && hasTracking) const DsGap(DsSpace.lg),
                   if (hasTracking) Code128BarcodeWidget(value: order.trackingNumber!),
                 ],

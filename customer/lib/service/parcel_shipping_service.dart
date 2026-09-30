@@ -3,6 +3,7 @@ import 'dart:math' show Random;
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/collection_name.dart';
+import 'package:customer/constant/constant.dart';
 import 'package:customer/models/parcel_order_model.dart';
 import 'package:customer/models/parcel_shipping_models.dart';
 import 'package:customer/service/fire_store_utils.dart';
@@ -129,16 +130,52 @@ class ParcelShippingService {
 
   static String newPickupCode() => (100000 + _random.nextInt(900000)).toString();
 
-  static String qrValueFor(String orderId) => 'spideli:parcel:$orderId';
+  static const String qrPrefix = 'spideli:parcel:';
 
-  /// Accepts a QR value (`spideli:parcel:<id>`), a tracking number or an order id.
+  /// The website's public tracking page for a parcel, or null when no site URL
+  /// is configured (`settings/Version.websiteUrl`).
+  ///
+  /// The receipt's QR must reach a page, not a bare code: the person scanning
+  /// it is the RECEIVER, who has no account (WEB spec §15 - the website's own
+  /// receipt encodes `track-parcel/{id}`).
+  static String? trackingUrlFor(String orderId) {
+    final String base = (Constant.websiteUrl ?? '').trim();
+    if (base.isEmpty || orderId.isEmpty) return null;
+    if (!base.startsWith('http://') && !base.startsWith('https://')) return null;
+    final String root = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    return '$root/track-parcel/$orderId';
+  }
+
+  /// What the receipt's QR encodes: the public tracking URL when the site URL
+  /// is configured, else the app-only `spideli:parcel:<id>` value. Both are
+  /// resolved by this app's [findOrder] and by the Driver app's scanner, so a
+  /// parcel created before the setting existed keeps working.
+  static String qrValueFor(String orderId) => trackingUrlFor(orderId) ?? '$qrPrefix$orderId';
+
+  /// Pulls the order id out of a `track-parcel/{id}` URL, whatever host it
+  /// carries. Null when the value is not one.
+  static String? orderIdFromTrackingUrl(String value) {
+    final String v = value.trim();
+    if (!v.toLowerCase().startsWith('http://') && !v.toLowerCase().startsWith('https://')) return null;
+    final Uri? uri = Uri.tryParse(v);
+    if (uri == null) return null;
+    final List<String> parts = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+    final int i = parts.lastIndexWhere((s) => s.toLowerCase() == 'track-parcel');
+    if (i < 0 || i + 1 >= parts.length) return null;
+    return Uri.decodeComponent(parts[i + 1]).trim();
+  }
+
+  /// Accepts a QR value (a `track-parcel/{id}` URL or `spideli:parcel:<id>`),
+  /// a tracking number or an order id.
   static Future<ParcelOrderModel?> findOrder(String input) async {
     final String value = input.trim();
     if (value.isEmpty) return null;
-    const String prefix = 'spideli:parcel:';
+    const String prefix = qrPrefix;
     if (value.toLowerCase().startsWith(prefix)) {
       return _byId(value.substring(prefix.length).trim());
     }
+    final String? fromUrl = orderIdFromTrackingUrl(value);
+    if (fromUrl != null) return _byId(fromUrl);
     try {
       final snap = await _orders.where('trackingNumber', isEqualTo: value.toUpperCase()).limit(1).get();
       if (snap.docs.isNotEmpty) return ParcelOrderModel.fromJson(snap.docs.first.data());

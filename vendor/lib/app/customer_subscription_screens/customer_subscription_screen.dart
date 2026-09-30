@@ -171,7 +171,13 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
                       ] else ...[
                         _scheduleLine(Icons.info_outline, "No delivery schedule - edit to add one".tr, tone: DsTone.warning),
                       ],
-                      if (plan.items.isNotEmpty) _scheduleLine(Icons.inventory_2_outlined, CustomerSubscriptionController.itemsLabel(plan.items)),
+                      if (plan.items.isNotEmpty)
+                        _scheduleLine(Icons.inventory_2_outlined, CustomerSubscriptionController.itemsLabel(plan.items))
+                      // What the customer gets, as stored in `plan_points` -
+                      // shown for plans whose points were entered in the panel
+                      // and which carry no delivery lines here.
+                      else if (plan.planPoints.isNotEmpty)
+                        _scheduleLine(Icons.check_circle_outline, plan.planPoints.join(" · ")),
                     ],
                   ),
                 ),
@@ -437,11 +443,19 @@ class _CustomerSubscriptionScreenState extends State<CustomerSubscriptionScreen>
                         const DsGap(DsSpace.md),
                         Divider(height: 1, thickness: 1, color: c.divider),
                         const DsGap(DsSpace.sm),
+                        // The commission comes OUT of the price (STORE spec 4):
+                        // amount - commission = what the store earned, with the
+                        // stored figures shown as recorded.
                         _labelValue("Amount".tr, _money(payment.amount, regionId: payment.regionId), isDark),
-                        _labelValue("Admin commission".tr, _money(payment.adminCommission, regionId: payment.regionId), isDark),
+                        _labelValue(
+                          "Admin commission".tr,
+                          "- ${_money(payment.commissionValue.toString(), regionId: payment.regionId)}",
+                          isDark,
+                          valueColor: c.textSecondary,
+                        ),
                         if ((payment.adminCommissionType ?? '').isNotEmpty)
                           _labelValue("Commission type".tr, payment.adminCommissionType!.capitalizeFirst ?? payment.adminCommissionType!, isDark),
-                        _labelValue("Store earning".tr, _money(payment.vendorEarning, regionId: payment.regionId), isDark, valueColor: c.successStrong),
+                        _labelValue("Store earning".tr, _money(payment.earningValue.toString(), regionId: payment.regionId), isDark, valueColor: c.successStrong),
                         _labelValue("Payment method".tr, (payment.paymentMethod ?? '').isEmpty ? '-' : payment.paymentMethod!, isDark),
                         if ((payment.status ?? '').isNotEmpty) _labelValue("Status".tr, payment.status!.capitalizeFirst ?? payment.status!, isDark),
                         _labelValue("Date".tr, payment.createdAt == null ? '-' : Constant.timestampToDateTime(payment.createdAt!), isDark),

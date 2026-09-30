@@ -27,6 +27,13 @@ class VendorSubscriptionPlanModel {
   bool? isEnable;
   Timestamp? createdAt;
 
+  /// What the customer gets, as the panel and the customer website show it:
+  /// `plan_points` (STORE spec 4 - NOT `points`). The panel's plan form owns
+  /// this list; it is read and written back here so a save from this app can
+  /// never drop it, and it is filled from [items] when a plan created here has
+  /// no points of its own (the delivery lines ARE what the customer gets).
+  List<String> planPoints = [];
+
   /// What one delivery contains.
   List<VendorSubscriptionPlanItem> items = [];
 
@@ -50,11 +57,13 @@ class VendorSubscriptionPlanModel {
     this.expiryDay,
     this.isEnable,
     this.createdAt,
+    List<String>? planPoints,
     List<VendorSubscriptionPlanItem>? items,
     this.frequency,
     List<String>? deliveryDays,
     this.timeSlot,
-  })  : items = items ?? [],
+  })  : planPoints = planPoints ?? [],
+        items = items ?? [],
         deliveryDays = deliveryDays ?? [];
 
   VendorSubscriptionPlanModel.fromJson(Map<String, dynamic> json) {
@@ -62,11 +71,19 @@ class VendorSubscriptionPlanModel {
     vendorID = json['vendorID']?.toString();
     regionId = json['regionId']?.toString();
     sectionId = json['sectionId']?.toString();
-    title = json['title']?.toString();
+    // The panel writes `title` and `expiryDay` (STORE spec 4). `name` and
+    // `duration` were never written by it, but anything already stored under
+    // those names is still read rather than shown blank.
+    title = (json['title'] ?? json['name'])?.toString();
     description = json['description']?.toString();
     photo = json['photo']?.toString();
     price = json['price']?.toString();
-    expiryDay = json['expiryDay']?.toString();
+    expiryDay = (json['expiryDay'] ?? json['duration'])?.toString();
+    // `plan_points` is the stored name; `points` is tolerated on read only.
+    final dynamic rawPoints = json['plan_points'] ?? json['points'];
+    if (rawPoints is List) {
+      planPoints = rawPoints.map((e) => e?.toString().trim() ?? '').where((e) => e.isNotEmpty).toList();
+    }
     isEnable = json['isEnable'] is bool ? json['isEnable'] : json['isEnable']?.toString() == 'true';
     createdAt = parseSubscriptionTimestamp(json['createdAt']);
 
@@ -104,6 +121,9 @@ class VendorSubscriptionPlanModel {
       'isEnable': isEnable ?? true,
       'createdAt': createdAt,
     };
+    // Written under the panel's own name, and only when there is something to
+    // write, so a plan that never had points keeps its document shape.
+    if (planPoints.isNotEmpty) data['plan_points'] = List<String>.from(planPoints);
     // Schedule fields are written only when set, so an unscheduled plan's
     // document keeps its original shape.
     if (items.isNotEmpty) data['items'] = items.map((e) => e.toJson()).toList();
@@ -160,6 +180,16 @@ class VendorSubscriptionPlanItem {
 
   /// Tolerates numbers or numeric strings from other clients; 0 when unparseable.
   double get quantityValue => double.tryParse((quantity ?? '').trim()) ?? 0;
+
+  /// One line of what the customer gets, e.g. "Baguette × 2"; "" without a name.
+  String get label {
+    final String itemName = (name ?? '').trim();
+    if (itemName.isEmpty) return '';
+    final double qty = quantityValue;
+    if (qty <= 0) return itemName;
+    final String qtyText = qty == qty.roundToDouble() ? qty.toInt().toString() : qty.toString();
+    return "$itemName × $qtyText";
+  }
 }
 
 /// Delivery window as 24h "HH:mm" strings, e.g. `{from: "07:00", to: "09:00"}`.

@@ -48,6 +48,11 @@ class VendorSubscriptionPlanModel {
   String? price;
   String? expiryDay;
   bool? isEnable;
+
+  /// `plan_points` - what the customer actually gets, as the store and admin
+  /// panels write it (APP-SPEC-STORE.md §4). Read tolerantly: `plan_points`
+  /// first, then the `planPoints` / `points` spellings earlier drafts used.
+  List<String> planPoints = [];
   List<VendorSubscriptionPlanItem> items = [];
   String? frequency;
   List<String> deliveryDays = [];
@@ -65,6 +70,13 @@ class VendorSubscriptionPlanModel {
     price = json['price']?.toString();
     expiryDay = json['expiryDay']?.toString();
     isEnable = json['isEnable'] is bool ? json['isEnable'] : json['isEnable']?.toString() == 'true';
+    final dynamic points = json['plan_points'] ?? json['planPoints'] ?? json['points'];
+    if (points is List) {
+      planPoints = points.map((e) => e?.toString().trim() ?? '').where((e) => e.isNotEmpty).toList();
+    } else if (points is String && points.trim().isNotEmpty) {
+      // A panel that stored one textarea: one point per line.
+      planPoints = points.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    }
     if (json['items'] is List) {
       items = (json['items'] as List)
           .whereType<Map>()
@@ -89,7 +101,11 @@ class VendorSubscriptionPlanModel {
   /// the id always set.
   Map<String, dynamic> snapshot() => {...raw, 'id': id};
 
+  /// `expiryDay` is days as a string; `"-1"` means the plan never expires
+  /// (APP-SPEC-STORE.md §4), and so does anything unparseable or <= 0.
   int get expiryDays => int.tryParse(expiryDay ?? '') ?? 0;
+
+  bool get neverExpires => expiryDays <= 0;
 
   double get priceValue => double.tryParse(price ?? '') ?? 0;
 

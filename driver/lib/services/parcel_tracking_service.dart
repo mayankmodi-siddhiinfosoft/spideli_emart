@@ -74,7 +74,26 @@ class ParcelTrackingService {
 
   // ── Scan resolution ────────────────────────────────────────────────────
 
-  /// Accepts a `qrValue` (`spideli:parcel:<id>`), a raw `trackingNumber` or a raw order id.
+  /// Pulls the order id out of a public tracking URL (`.../track-parcel/{id}`),
+  /// whatever host it carries. Null when the value is not one.
+  ///
+  /// The customer app's receipt QR encodes that URL when a site URL is
+  /// configured, because the person scanning a parcel label is usually the
+  /// receiver, who has no account (WEB spec §15). A driver scanning the same
+  /// label must still land on the order.
+  static String? orderIdFromTrackingUrl(String value) {
+    final String v = value.trim().toLowerCase();
+    if (!v.startsWith('http://') && !v.startsWith('https://')) return null;
+    final Uri? uri = Uri.tryParse(value.trim());
+    if (uri == null) return null;
+    final List<String> parts = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+    final int i = parts.lastIndexWhere((s) => s.toLowerCase() == 'track-parcel');
+    if (i < 0 || i + 1 >= parts.length) return null;
+    return Uri.decodeComponent(parts[i + 1]).trim();
+  }
+
+  /// Accepts a `qrValue` (a `track-parcel/{id}` URL or `spideli:parcel:<id>`),
+  /// a raw `trackingNumber` or a raw order id.
   static Future<ParcelOrderModel?> resolveScan(String raw) async {
     final value = raw.trim();
     if (value.isEmpty) return null;
@@ -82,6 +101,8 @@ class ParcelTrackingService {
       if (value.toLowerCase().startsWith(qrPrefix)) {
         return await getById(value.substring(qrPrefix.length).trim());
       }
+      final String? fromUrl = orderIdFromTrackingUrl(value);
+      if (fromUrl != null) return await getById(fromUrl);
       for (final candidate in {value, value.toUpperCase()}) {
         final q = await FireStoreUtils.fireStore.collection(CollectionName.parcelOrders).where('trackingNumber', isEqualTo: candidate).limit(1).get();
         if (q.docs.isNotEmpty) return ParcelOrderModel.fromJson(q.docs.first.data());

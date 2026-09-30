@@ -270,7 +270,11 @@ class ProductModel {
     data['wholesalePrice'] = tiers.isNotEmpty ? tiers.first.price : '';
     data['wholesaleMinQty'] = tiers.isNotEmpty ? tiers.first.minQty : '';
     data['saleType'] = effectiveSaleType;
-    data['wholesaleBusinessOnly'] = enabled && wholesaleBusinessOnly == true;
+    // Only while wholesale is on AND the sale type is not retail - with no
+    // wholesale price there is nothing to withhold. Written false (not omitted)
+    // whenever it stops applying, so a `true` can never be stranded on a
+    // product that has no wholesale pricing (STORE spec 3, 30 September).
+    data['wholesaleBusinessOnly'] = enabled && effectiveSaleType != saleTypeRetail && wholesaleBusinessOnly == true;
     // Only when the owner chose the modes: writing the default would mark every
     // older product as explicitly restricted the first time it is saved.
     if (hasExplicitFulfilment) {

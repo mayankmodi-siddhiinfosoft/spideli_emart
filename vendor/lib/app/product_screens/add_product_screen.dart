@@ -1201,7 +1201,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  DsFieldLabel("Wholesale price (1st tier)".tr),
+                  // Optional (STORE spec 3): blank keeps the product's ladder
+                  // for this variant, a figure is this variant's tier one and
+                  // shifts the whole ladder with it.
+                  DsFieldLabel("Wholesale price (1st tier, optional)".tr),
                   TextFormField(
                     initialValue: e.variantWholesalePrice,
                     textInputAction: TextInputAction.done,
@@ -1662,25 +1665,30 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     ),
                     const DsGap(DsSpace.sm),
                     Text(
-                      "Up to 5 tiers. Each tier needs a minimum quantity of at least 2 and a price below the regular price; a bigger quantity must have a lower price. Tier 1 stays while wholesale pricing is on. A variant's own wholesale price (in the variants table) replaces the first tier's price for that variant."
+                      "Up to 5 tiers. Each tier needs a minimum quantity of at least 2 and a price below the regular price; a bigger quantity must have a lower price. Tier 1 stays while wholesale pricing is on. A variant's own wholesale price (in the variants table) is optional: leave it blank and these tiers apply to that variant unchanged, or enter its first-tier price and the other tiers shift by the same amounts."
                           .tr,
                       style: hintStyle,
                     ),
                     const DsGap(DsSpace.sm),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(minHeight: 56),
-                      child: Row(
-                        children: [
-                          DsIconWell(icon: Icons.verified_outlined, size: 36, tone: DsTone.info),
-                          const DsGap(DsSpace.md),
-                          Expanded(child: Text("Only verified Business customers get wholesale prices".tr, style: t.bodyStrong)),
-                          Switch.adaptive(
-                            value: controller.wholesaleBusinessOnly.value,
-                            onChanged: (value) => controller.wholesaleBusinessOnly.value = value,
-                          ),
-                        ],
+                    // Shown only while wholesale is on AND the sale type is not
+                    // retail - with no wholesale price there is nothing to
+                    // withhold (STORE spec 3). Leaving it clears the stored
+                    // value too, see AddProductController.setSaleType.
+                    if (saleType != ProductModel.saleTypeRetail)
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 56),
+                        child: Row(
+                          children: [
+                            DsIconWell(icon: Icons.verified_outlined, size: 36, tone: DsTone.info),
+                            const DsGap(DsSpace.md),
+                            Expanded(child: Text("Only verified Business customers get wholesale prices".tr, style: t.bodyStrong)),
+                            Switch.adaptive(
+                              value: controller.wholesaleBusinessOnly.value,
+                              onChanged: (value) => controller.wholesaleBusinessOnly.value = value,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                   ],
                 ),
         ),

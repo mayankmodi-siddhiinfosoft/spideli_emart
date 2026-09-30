@@ -753,10 +753,14 @@ class ProductListView extends StatelessWidget {
     // carries `wholesaleEnabled: false` is retail-only and keeps its price
     // visible (STORE spec §3). Without that field nothing changes.
     final bool wholesaleOnly = WholesalePricing.isWholesaleOnlyFor(productModel, variantId: defaultVariantId);
+    // Units this option holds (-1 = unlimited): a tier it cannot physically
+    // reach is not advertised (WEB spec §10, 30 September).
+    final int stock = WholesalePricing.stockFor(productModel, variantId: defaultVariantId);
     final List<PriceBand> bands = WholesalePricing.bands(
       retail: WholesalePricing.retailPrice(productModel, controller.vendorModel.value, variantId: defaultVariantId),
       tiers: WholesalePricing.customerTiers(productModel, controller.vendorModel.value, variantId: defaultVariantId),
       wholesaleOnly: wholesaleOnly,
+      stock: stock,
     );
     final bool businessOnly = productModel.isBusinessOnlyProduct;
     final int minQty = WholesalePricing.minOrderQuantityFor(productModel, controller.vendorModel.value, variantId: defaultVariantId);
@@ -764,7 +768,13 @@ class ProductListView extends StatelessWidget {
     // units" on a wholesale-only line), worded as on every other listing.
     final String wholesaleBadge = WholesalePricing.listingBadgeLabel(productModel, controller.vendorModel.value, variantId: defaultVariantId, currency: currency);
     final bool hasOptions = selectedVariants.isNotEmpty || (productModel.addOnsTitle != null && productModel.addOnsTitle!.isNotEmpty);
-    final bool canBuy = controller.isOpen.value == true && Constant.userModel != null && !businessOnly;
+    // A wholesale-only product with less stock than the smallest pack is a dead
+    // end: the box will not go lower and the stock will not go higher. With
+    // options the sheet says so per size; without them this card is the only
+    // place to say it, and to stop the sale.
+    final int shortfall = WholesalePricing.packShortfall(productModel, controller.vendorModel.value, variantId: defaultVariantId);
+    final bool shortOfAPack = !hasOptions && shortfall > 0;
+    final bool canBuy = controller.isOpen.value == true && Constant.userModel != null && !businessOnly && !shortOfAPack;
 
     /// Opens the options sheet (variants / add-ons), prefilled from the cart.
     void openOptions() {
@@ -852,26 +862,28 @@ class ProductListView extends StatelessWidget {
                     const DsGap(DsSpace.xs),
                     Text(productModel.name.toString(), style: t.titleSm),
                     const DsGap(DsSpace.xxs),
-                    // Wholesale-only products hide the retail price.
-                    if (!wholesaleOnly)
-                      double.parse(disPrice) <= 0
-                          ? Text(
-                              Constant.amountShow(amount: price, currency: currency),
-                              style: t.titleSm.tabular.withColor(c.brandStrong),
-                            )
-                          : Row(
-                              children: [
-                                Text(
-                                  Constant.amountShow(amount: disPrice, currency: currency),
-                                  style: t.titleSm.tabular.withColor(c.brandStrong),
-                                ),
-                                const DsGap(DsSpace.xs),
-                                Text(
-                                  Constant.amountShow(amount: price, currency: currency),
-                                  style: t.bodySm.tabular.strike,
-                                ),
-                              ],
-                            ),
+                    // A LISTING card keeps the retail price with the wholesale
+                    // badge beside it, as the website's cards do - the product
+                    // detail is where a wholesale-only product shows the entry
+                    // tier instead (WEB spec §10, 30 September).
+                    double.parse(disPrice) <= 0
+                        ? Text(
+                            Constant.amountShow(amount: price, currency: currency),
+                            style: t.titleSm.tabular.withColor(c.brandStrong),
+                          )
+                        : Row(
+                            children: [
+                              Text(
+                                Constant.amountShow(amount: disPrice, currency: currency),
+                                style: t.titleSm.tabular.withColor(c.brandStrong),
+                              ),
+                              const DsGap(DsSpace.xs),
+                              Text(
+                                Constant.amountShow(amount: price, currency: currency),
+                                style: t.bodySm.tabular.strike,
+                              ),
+                            ],
+                          ),
                     if (wholesaleOnly || bands.length > 1)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
@@ -879,13 +891,13 @@ class ProductListView extends StatelessWidget {
                       ),
                     if (businessOnly)
                       _note(context, "Business customers only".tr, c.dangerStrong)
+                    else if (shortOfAPack)
+                      _note(context, WholesalePricing.shortfallLabel(stock, minQty), c.dangerStrong)
                     else if (wholesaleBadge.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(bottom: DsSpace.xxs),
                         child: WholesaleBadge(label: wholesaleBadge),
-                      )
-                    else if (productModel.hasWholesaleTier && productModel.wholesaleBlockedForCustomer)
-                      _note(context, "Wholesale prices for Business customers only".tr, c.textMuted),
+                      ),
                     Row(
                       children: [
                         Icon(Icons.star_rounded, size: 15, color: c.warning),
@@ -1005,7 +1017,16 @@ class ProductListView extends StatelessWidget {
               curve: DsMotion.standard,
               alignment: Alignment.topCenter,
               child: controller.expandedProductId.value == productModel.id && productModel.id != null
-                  ? _infoPanel(context, isDark, productModel, bands, canBuy, addToCartFromInfo)
+                  ? _infoPanel(
+                      context,
+                      isDark,
+                      productModel,
+                      bands,
+                      canBuy,
+                      addToCartFromInfo,
+                      WholesalePricing.headlineTierFor(productModel, controller.vendorModel.value, variantId: defaultVariantId),
+                      shortOfAPack ? WholesalePricing.shortfallLabel(stock, minQty) : '',
+                    )
                   : const SizedBox(width: double.infinity),
             ),
           ),
@@ -1022,6 +1043,11 @@ class ProductListView extends StatelessWidget {
   }
 
   Future productDetailsBottomSheet(BuildContext context, ProductModel productModel) {
+    // A wholesale-only product is refused outright to a customer without an
+    // approved business account, with a pointer to the application (WEB spec
+    // §19): the listings hide it, but a banner or a shared link does not go
+    // through a listing.
+    if (refuseWholesaleOnlyProduct(productModel)) return Future.value();
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1044,7 +1070,16 @@ class ProductListView extends StatelessWidget {
   /// former "Info" popup): images, name, prices (retail + wholesale tiers),
   /// rating, store name and address, description, additional details and an
   /// Add to cart button.
-  Widget _infoPanel(BuildContext context, bool isDark, ProductModel productModel, List<PriceBand> bands, bool canBuy, VoidCallback onAdd) {
+  Widget _infoPanel(
+    BuildContext context,
+    bool isDark,
+    ProductModel productModel,
+    List<PriceBand> bands,
+    bool canBuy,
+    VoidCallback onAdd,
+    WholesaleTier? headlineTier,
+    String shortfallNote,
+  ) {
     final c = DsColors.of(context);
     final t = DsTextTheme(c);
     final currency = RegionService.currencyForVendor(controller.vendorModel.value);
@@ -1100,11 +1135,21 @@ class ProductListView extends StatelessWidget {
           const DsGap(DsSpace.md),
           Text(productModel.name ?? '', style: t.titleSm),
           const DsGap(DsSpace.xs),
+          // A wholesale-only product's headline is the ENTRY tier, the only
+          // price a customer can actually pay, with the minimum beneath it.
+          // Retail and mixed products draw nothing here and keep the retail
+          // headline of the card above (WEB spec §10, 30 September).
+          if (headlineTier != null) ...[WholesaleOnlyHeadline(tier: headlineTier, currency: currency), const DsGap(DsSpace.xs)],
           if (bands.isNotEmpty) PriceTiersView(bands: bands, currency: currency, isDark: isDark),
           if (productModel.isBusinessOnlyProduct)
             Padding(
               padding: const EdgeInsets.only(top: DsSpace.xs),
               child: _note(context, "Business customers only".tr, c.dangerStrong),
+            )
+          else if (shortfallNote.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: DsSpace.xs),
+              child: _note(context, shortfallNote, c.dangerStrong),
             ),
           const DsGap(DsSpace.sm),
           Row(
@@ -1205,11 +1250,20 @@ class ProductDetailsView extends StatelessWidget {
         // redrawn on every quantity change AND on every variant selection.
         final String? variantId = controller.selectedVariantId(productModel);
         final int lineMinQty = WholesalePricing.minOrderQuantityFor(productModel, controller.vendorModel.value, variantId: variantId);
+        // Units the SELECTED option holds (-1 = unlimited), and the units it is
+        // short of the smallest pack. A size that cannot make up a pack says so
+        // and cannot be added; a tier it can never reach is not advertised
+        // (WEB spec §10, 30 September).
+        final int stock = WholesalePricing.stockFor(productModel, variantId: variantId);
+        final int shortfall = WholesalePricing.packShortfall(productModel, controller.vendorModel.value, variantId: variantId);
         final WholesaleNote wholesaleNote = WholesalePricing.noteFor(
           retail: WholesalePricing.retailPrice(productModel, controller.vendorModel.value, variantId: variantId),
           tiers: WholesalePricing.customerTiers(productModel, controller.vendorModel.value, variantId: variantId),
           quantity: controller.quantity.value,
+          stock: stock,
         );
+        // The headline of a wholesale-only product, per selected size.
+        final WholesaleTier? headlineTier = WholesalePricing.headlineTierFor(productModel, controller.vendorModel.value, variantId: variantId);
         final currency = RegionService.currencyForVendor(controller.vendorModel.value);
         return DsScaffold(
           backgroundColor: c.surfaceRaised,
@@ -1268,6 +1322,10 @@ class ProductDetailsView extends StatelessWidget {
                               ],
                             ),
                             Text(productModel.description.toString(), style: t.bodySm),
+                            // A wholesale-only product is not for sale singly,
+                            // so its headline is the ENTRY tier of the size
+                            // selected - not a retail price nobody can pay.
+                            if (headlineTier != null) ...[const DsGap(DsSpace.xs), WholesaleOnlyHeadline(tier: headlineTier, currency: currency)],
                           ],
                         ),
                       ),
@@ -1451,6 +1509,9 @@ class ProductDetailsView extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: DsSpace.xs),
                     child: Text(WholesalePricing.minimumLabel(lineMinQty), style: t.labelSm.withColor(c.brandStrong)),
                   ),
+                // This size cannot make up a pack: say which size is short and
+                // by how much, and do not let it be added.
+                PackShortfallNote(stock: stock, minQty: lineMinQty, shortfall: shortfall),
                 if (wholesaleNote.applied != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: DsSpace.xxs),
@@ -1525,56 +1586,61 @@ class ProductDetailsView extends StatelessWidget {
                         label: "${'Add item'.tr} ${Constant.amountShow(amount: controller.calculatePrice(productModel), currency: RegionService.currencyForVendor(controller.vendorModel.value))}".tr,
                         size: DsButtonSize.lg,
                         expand: true,
-                        onPressed: () async {
-                          if (productModel.itemAttribute == null) {
-                            await controller.addToCart(
-                              productModel: productModel,
-                              price: Constant.productCommissionPrice(controller.vendorModel.value, productModel.price.toString()),
-                              discountPrice: double.parse(productModel.disPrice.toString()) <= 0
-                                  ? "0"
-                                  : Constant.productCommissionPrice(controller.vendorModel.value, productModel.disPrice.toString()),
-                              isIncrement: true,
-                              quantity: controller.quantity.value,
-                            );
-                          } else {
-                            String variantPrice = "0";
-                            if (productModel.itemAttribute!.variants!.any((e) => e.variantSku == controller.selectedVariants.join('-'))) {
-                              variantPrice = Constant.productCommissionPrice(
-                                controller.vendorModel.value,
-                                productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantPrice ?? '0',
-                              );
-                            }
+                        // Disabled until a workable option is chosen: this size
+                        // cannot make up the smallest pack, and every route out
+                        // of it is a dead end (WEB spec §10, 30 September).
+                        onPressed: shortfall > 0
+                            ? null
+                            : () async {
+                                if (productModel.itemAttribute == null) {
+                                  await controller.addToCart(
+                                    productModel: productModel,
+                                    price: Constant.productCommissionPrice(controller.vendorModel.value, productModel.price.toString()),
+                                    discountPrice: double.parse(productModel.disPrice.toString()) <= 0
+                                        ? "0"
+                                        : Constant.productCommissionPrice(controller.vendorModel.value, productModel.disPrice.toString()),
+                                    isIncrement: true,
+                                    quantity: controller.quantity.value,
+                                  );
+                                } else {
+                                  String variantPrice = "0";
+                                  if (productModel.itemAttribute!.variants!.any((e) => e.variantSku == controller.selectedVariants.join('-'))) {
+                                    variantPrice = Constant.productCommissionPrice(
+                                      controller.vendorModel.value,
+                                      productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantPrice ?? '0',
+                                    );
+                                  }
 
-                            Map<String, String> mapData = {};
-                            for (var element in productModel.itemAttribute!.attributes!) {
-                              mapData.addEntries([
-                                MapEntry(
-                                  controller.attributesList.firstWhere((e) => e.id == element.attributeId).title.toString(),
-                                  controller.selectedVariants[productModel.itemAttribute!.attributes!.indexOf(element)],
-                                ),
-                              ]);
-                            }
+                                  Map<String, String> mapData = {};
+                                  for (var element in productModel.itemAttribute!.attributes!) {
+                                    mapData.addEntries([
+                                      MapEntry(
+                                        controller.attributesList.firstWhere((e) => e.id == element.attributeId).title.toString(),
+                                        controller.selectedVariants[productModel.itemAttribute!.attributes!.indexOf(element)],
+                                      ),
+                                    ]);
+                                  }
 
-                            VariantInfo variantInfo = VariantInfo(
-                              variantPrice: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantPrice ?? '0',
-                              variantSku: controller.selectedVariants.join('-'),
-                              variantOptions: mapData,
-                              variantImage: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantImage ?? '',
-                              variantId: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantId ?? '0',
-                            );
+                                  VariantInfo variantInfo = VariantInfo(
+                                    variantPrice: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantPrice ?? '0',
+                                    variantSku: controller.selectedVariants.join('-'),
+                                    variantOptions: mapData,
+                                    variantImage: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantImage ?? '',
+                                    variantId: productModel.itemAttribute!.variants!.firstWhere((e) => e.variantSku == controller.selectedVariants.join('-')).variantId ?? '0',
+                                  );
 
-                            await controller.addToCart(
-                              productModel: productModel,
-                              price: variantPrice,
-                              discountPrice: "0",
-                              isIncrement: true,
-                              variantInfo: variantInfo,
-                              quantity: controller.quantity.value,
-                            );
-                          }
-                          controller.update();
-                          Get.back();
-                        },
+                                  await controller.addToCart(
+                                    productModel: productModel,
+                                    price: variantPrice,
+                                    discountPrice: "0",
+                                    isIncrement: true,
+                                    variantInfo: variantInfo,
+                                    quantity: controller.quantity.value,
+                                  );
+                                }
+                                controller.update();
+                                Get.back();
+                              },
                       ),
                     ),
                   ],

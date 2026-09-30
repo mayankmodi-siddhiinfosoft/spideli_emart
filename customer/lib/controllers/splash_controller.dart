@@ -9,6 +9,7 @@ import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart'
 import 'package:customer/service/localization_service.dart';
 import 'package:customer/utils/notification_service.dart';
 import 'package:customer/utils/preferences.dart';
+import 'package:customer/utils/wholesale_entitlement.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get/get.dart';
 import '../screen_ui/auth_screens/login_screen.dart';
@@ -53,6 +54,10 @@ class SplashController extends GetxController {
                 if (userModel.active == true) {
                   userModel.fcmToken = await NotificationService.getToken();
                   await FireStoreUtils.updateUser(userModel);
+                  // Whether wholesale applies at all (WEB spec §19): looked up
+                  // ONCE and awaited here, so no listing renders on a guess.
+                  // Every failure path answers "retail".
+                  await WholesaleEntitlement.load(force: true);
                   if (userModel.shippingAddress != null && userModel.shippingAddress!.isNotEmpty) {
                     if (userModel.shippingAddress!.where((element) => element.isDefault == true).isNotEmpty) {
                       Constant.selectedLocation = userModel.shippingAddress!.where((element) => element.isDefault == true).single;

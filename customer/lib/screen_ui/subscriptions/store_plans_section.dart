@@ -31,6 +31,40 @@ String storePlanScheduleText(VendorSubscriptionPlanModel plan) {
 
 String storePlanItemsText(VendorSubscriptionPlanModel plan) => plan.items.map((i) => "${i.name} × ${i.quantity ?? '1'}").join(', ');
 
+/// `plan_points` - what the customer is buying, one ticked line each
+/// (APP-SPEC-WEB.md §11: "Plan points are listed, so the customer sees what
+/// they are buying").
+class StorePlanPoints extends StatelessWidget {
+  final List<String> points;
+  final int? maxLines;
+
+  const StorePlanPoints({super.key, required this.points, this.maxLines});
+
+  @override
+  Widget build(BuildContext context) {
+    if (points.isEmpty) return const SizedBox();
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final point in points)
+          Padding(
+            padding: const EdgeInsets.only(bottom: DsSpace.xxs),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(padding: const EdgeInsets.only(top: 2), child: Icon(Icons.check_circle_rounded, size: 14, color: c.successStrong)),
+                const DsGap(DsSpace.xs),
+                Expanded(child: Text(point, maxLines: maxLines, overflow: maxLines == null ? null : TextOverflow.ellipsis, style: t.bodySm)),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// Store page section (spec 4.7 / 7.9): the store's enabled subscription
 /// plans. Renders nothing when the store sells none.
 ///
@@ -47,6 +81,10 @@ class StorePlansSection extends StatefulWidget {
 class _StorePlansSectionState extends State<StorePlansSection> {
   List<VendorSubscriptionPlanModel> _plans = [];
 
+  /// Plan ids the customer holds and has not used up: the card says so
+  /// instead of inviting the same purchase again.
+  Set<String> _held = {};
+
   @override
   void initState() {
     super.initState();
@@ -57,6 +95,10 @@ class _StorePlansSectionState extends State<StorePlansSection> {
     try {
       final plans = await StoreSubscriptionService.plansForStore(widget.vendor.id ?? '');
       if (mounted) setState(() => _plans = plans);
+    } catch (_) {}
+    try {
+      final held = await StoreSubscriptionService.heldPlanIds();
+      if (mounted) setState(() => _held = held);
     } catch (_) {}
   }
 
@@ -71,7 +113,7 @@ class _StorePlansSectionState extends State<StorePlansSection> {
       children: [
         DsSectionHeader(title: "Subscriptions".tr, icon: Icons.event_repeat_rounded, subtitle: "Get it delivered again and again.".tr),
         SizedBox(
-          height: 186,
+          height: 210,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.only(bottom: DsSpace.xs),
@@ -79,6 +121,7 @@ class _StorePlansSectionState extends State<StorePlansSection> {
             separatorBuilder: (context, index) => const DsGap(DsSpace.md),
             itemBuilder: (context, index) {
               final plan = _plans[index];
+              final bool held = _held.contains(plan.id ?? '');
               return DsFadeSlideIn(
                 index: index,
                 offset: const Offset(16, 0),
@@ -100,9 +143,15 @@ class _StorePlansSectionState extends State<StorePlansSection> {
                           ],
                         ),
                         const DsGap(DsSpace.sm),
-                        SubUi.price(context, "${Constant.amountShow(amount: plan.price, currency: currency)} / ${StoreSubscriptionService.periodLabel(plan.expiryDay).tr}"),
+                        Row(
+                          children: [
+                            Expanded(child: SubUi.price(context, StoreSubscriptionService.priceWithPeriod(plan, currency))),
+                            if (held) ...[const DsGap(DsSpace.xs), DsStatusChip(label: "Current plan".tr, tone: DsTone.success)],
+                          ],
+                        ),
                         const DsGap(DsSpace.xs),
-                        if (plan.items.isNotEmpty) Text(storePlanItemsText(plan), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySm),
+                        if (plan.planPoints.isNotEmpty) StorePlanPoints(points: plan.planPoints.take(2).toList(), maxLines: 1),
+                        if (plan.planPoints.isEmpty && plan.items.isNotEmpty) Text(storePlanItemsText(plan), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySm),
                         if (plan.hasSchedule)
                           Padding(
                             padding: const EdgeInsets.only(top: DsSpace.xxs),
@@ -117,7 +166,7 @@ class _StorePlansSectionState extends State<StorePlansSection> {
                         const Spacer(),
                         Row(
                           children: [
-                            Text("Subscribe".tr, style: t.label.withColor(c.brandStrong)),
+                            Text(held ? "Renew".tr : "Subscribe".tr, style: t.label.withColor(c.brandStrong)),
                             const DsGap(DsSpace.xs),
                             Icon(Icons.arrow_forward_rounded, size: 16, color: c.brandStrong),
                           ],
@@ -210,6 +259,44 @@ class _StoreSubscribeScreenState extends State<StoreSubscribeScreen> {
     if (picked != null) setState(() => _start = _clampStart(picked));
   }
 
+  /// The plan as re-read where the money moves, with the commission computed
+  /// from that reading. Both are what [StoreSubscriptionService.recordPurchase]
+  /// then stores, so nothing is taken from the copy the screen loaded.
+  VendorSubscriptionPlanModel? _charged;
+  SubscriptionCommission? _chargedCommission;
+
+  /// Runs IMMEDIATELY BEFORE the charge (WEB spec §11, "Three things stop a
+  /// wrong charge"): the plan is re-read, and a switched-off or deleted plan,
+  /// a changed price, or a subscription bought in the meantime buys nothing
+  /// and says so. Returns null to let the charge go ahead.
+  Future<String?> _preCharge(double agreedPrice, DateTime startDate) async {
+    final String planId = widget.plan.id ?? '';
+    final fresh = await StoreSubscriptionService.planById(planId);
+    if (fresh == null || fresh.isEnable != true) {
+      return "This subscription is no longer offered. Nothing was charged.".tr;
+    }
+    if (!StoreSubscriptionService.offeredInCustomerRegion(fresh)) {
+      return "This subscription is not available in your region. Nothing was charged.".tr;
+    }
+    if ((fresh.priceValue - agreedPrice).abs() > 0.009) {
+      return "The price of this subscription changed. Nothing was charged - please start again.".tr;
+    }
+    // Repeated here, not only on the card: entitlement is worked out from the
+    // date, so a renewal may not start before the running one ends.
+    final current = await StoreSubscriptionService.currentFor(planId);
+    if (current != null) {
+      final end = current.expiryDate?.toDate();
+      if (end == null) return "You already have this subscription. Nothing was charged.".tr;
+      final endDay = DateTime(end.year, end.month, end.day);
+      if (endDay.isAfter(startDate)) {
+        return "${"You already have this subscription until".tr} ${VendorSubscriptionModel.dayFormat.format(endDay)}. ${"Nothing was charged - please start again.".tr}";
+      }
+    }
+    _charged = fresh;
+    _chargedCommission = await StoreSubscriptionService.commissionFor(widget.vendor.id ?? '', fresh.priceValue);
+    return null;
+  }
+
   Future<void> _pay() async {
     if (_loadingCurrent) return;
     if (Constant.userModel == null) {
@@ -227,16 +314,25 @@ class _StoreSubscribeScreenState extends State<StoreSubscribeScreen> {
     final clamped = _clampStart(_start);
     if (clamped != _start) setState(() => _start = clamped);
     final DateTime startDate = _start;
-    ShowToastDialog.showLoader("Please wait...".tr);
-    final commission = await StoreSubscriptionService.commissionFor(vendor.id ?? '', plan.priceValue);
-    ShowToastDialog.closeLoader();
+    final double agreedPrice = plan.priceValue;
+    _charged = null;
+    _chargedCommission = null;
     final result = await Get.to(
       () => GatewayCheckoutScreen(
         title: "${vendor.title ?? ''} - ${plan.title ?? ''}",
         amount: plan.price ?? '0',
+        // The STORE's region currency, not the browsing region's.
         currency: RegionService.currencyForVendor(vendor),
         regionId: regionId,
-        onPaid: (method) => StoreSubscriptionService.recordPurchase(plan: plan, vendor: vendor, address: _address!, startDate: startDate, paymentMethod: method, commission: commission),
+        preCharge: () => _preCharge(agreedPrice, startDate),
+        onPaid: (method) async => StoreSubscriptionService.recordPurchase(
+          plan: _charged ?? plan,
+          vendor: vendor,
+          address: _address!,
+          startDate: startDate,
+          paymentMethod: method,
+          commission: _chargedCommission ?? await StoreSubscriptionService.commissionFor(vendor.id ?? '', agreedPrice),
+        ),
       ),
     );
     if (result == true) {
@@ -282,12 +378,22 @@ class _StoreSubscribeScreenState extends State<StoreSubscribeScreen> {
                   children: [
                     Expanded(child: SubUi.title(context, plan.title ?? '-')),
                     const DsGap(DsSpace.sm),
-                    SubUi.price(context, "${Constant.amountShow(amount: plan.price, currency: currency)} / ${StoreSubscriptionService.periodLabel(plan.expiryDay).tr}"),
+                    SubUi.price(context, StoreSubscriptionService.priceWithPeriod(plan, currency)),
                   ],
                 ),
+                if (_current != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: DsSpace.xs),
+                    child: DsStatusChip(label: "Current plan".tr, tone: DsTone.success),
+                  ),
                 if ((plan.description ?? '').isNotEmpty) Padding(padding: const EdgeInsets.only(top: DsSpace.xs), child: SubUi.body(context, plan.description!)),
+                if (plan.planPoints.isNotEmpty) ...[
+                  const DsGap(DsSpace.md),
+                  StorePlanPoints(points: plan.planPoints),
+                ],
                 const DsGap(DsSpace.md),
                 SubUi.row(context, "Store".tr, widget.vendor.title ?? '-'),
+                SubUi.row(context, "Validity".tr, StoreSubscriptionService.periodLabel(plan.expiryDay).tr),
                 if (plan.items.isNotEmpty) SubUi.row(context, "Each delivery".tr, storePlanItemsText(plan)),
                 if (plan.frequency != null) SubUi.row(context, "Frequency".tr, plan.frequency == VendorSubscriptionPlanModel.frequencyDaily ? "Daily".tr : "Weekly".tr),
                 if (plan.effectiveDeliveryDays.isNotEmpty) SubUi.row(context, "Delivery days".tr, plan.effectiveDeliveryDays.map((d) => d.tr).join(', ')),

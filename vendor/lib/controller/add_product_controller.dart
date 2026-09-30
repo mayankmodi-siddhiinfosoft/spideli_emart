@@ -428,9 +428,14 @@ class AddProductController extends GetxController {
   }
 
   /// Retail turns wholesale off; Wholesale/Both turn it on (tiers required).
+  ///
+  /// "Business customers only" applies only while there IS a wholesale price to
+  /// withhold, so going back to Retail CLEARS it rather than just hiding it
+  /// (STORE spec 3) - a `true` must never be stranded on a retail product.
   void setSaleType(String type) {
     saleType.value = type;
     wholesaleEnabled.value = type != ProductModel.saleTypeRetail;
+    if (!wholesaleEnabled.value) wholesaleBusinessOnly.value = false;
     if (wholesaleEnabled.value && wholesaleTierInputs.isEmpty) {
       wholesaleTierInputs.add(_newTierInput());
     }
@@ -483,8 +488,13 @@ class AddProductController extends GetxController {
   /// pricing is off). Tiers are sorted by min quantity before checking:
   /// price > 0 and below the regular price, minQty an integer >= 2, minQty
   /// strictly increasing and price strictly decreasing as quantity rises.
-  /// Variant wholesale prices keep the single-tier rules and only replace the
-  /// FIRST tier's price for that variant.
+  ///
+  /// A variant's wholesale price is OPTIONAL (STORE spec 3, "A variant shifts
+  /// the ladder, it does not replace it"): blank means the product's tiers apply
+  /// to that variant unchanged, and a figure is that variant's TIER-ONE price -
+  /// the rest of the ladder follows it by the same differences. So the only
+  /// rule on a figure that IS given is that it stays below that variant's own
+  /// price; it may be any distance from the product's own tier one.
   String? validateWholesale() {
     if (!wholesaleEnabled.value) return null;
     final double retail = double.tryParse(regularPriceController.value.text.trim()) ?? 0;
@@ -520,38 +530,40 @@ class AddProductController extends GetxController {
     }
     for (final variant in itemAttributes.value?.variants ?? <Variants>[]) {
       final String raw = (variant.variantWholesalePrice ?? '').trim();
-      if (raw.isEmpty) continue;
-      final double? variantWholesale = double.tryParse(raw);
       final double variantRetail = double.tryParse((variant.variantPrice ?? '').trim()) ?? 0;
+      if (raw.isEmpty) {
+        // No figure: the product's own ladder is what this variant is charged,
+        // so every tier of it has to be below the variant's price.
+        if (variantRetail <= 0) continue;
+        for (final tier in tiers) {
+          if ((double.tryParse(tier.price) ?? 0) >= variantRetail) {
+            return "${"Wholesale tier price must be lower than every variant price".tr} (${variant.variantSku ?? ''}, ${"from".tr} ${tier.minQty})";
+          }
+        }
+        continue;
+      }
+      final double? variantWholesale = double.tryParse(raw);
       if (variantWholesale == null || variantWholesale <= 0) {
         return "${"Please enter a valid wholesale price for variant".tr} ${variant.variantSku ?? ''}";
       }
+      // The one rule on a figure that is given. The deeper tiers shift with it,
+      // so they are below it by construction and need no check of their own.
       if (variantWholesale >= variantRetail) {
         return "${"Variant wholesale price must be lower than the variant price".tr} (${variant.variantSku ?? ''})";
-      }
-      // The variant's price replaces tier 1 only; tiers 2+ still apply to it,
-      // so they must stay cheaper than the variant's tier 1.
-      if (tiers.length > 1 && variantWholesale <= (double.tryParse(tiers[1].price) ?? 0)) {
-        return "${"Variant wholesale price must be higher than the next wholesale tier".tr} (${variant.variantSku ?? ''})";
-      }
-    }
-    // Tiers 2+ apply to every variant: each must be below every variant's retail price.
-    for (final variant in itemAttributes.value?.variants ?? <Variants>[]) {
-      final double variantRetail = double.tryParse((variant.variantPrice ?? '').trim()) ?? 0;
-      if (variantRetail <= 0) continue;
-      for (final tier in tiers.skip(1)) {
-        if ((double.tryParse(tier.price) ?? 0) >= variantRetail) {
-          return "${"Wholesale tier price must be lower than every variant price".tr} (${variant.variantSku ?? ''}, ${"from".tr} ${tier.minQty})";
-        }
       }
     }
     return null;
   }
 
   /// Copies the wholesale, sale type and fulfilment inputs onto [productModel].
-  /// When wholesale is off, tiers become [], the legacy fields "" and every
-  /// variant wholesale price is cleared. The legacy wholesalePrice /
-  /// wholesaleMinQty always mirror the first (lowest-quantity) tier.
+  /// When wholesale is off, tiers become [], the legacy fields "", the
+  /// business-only flag false and every variant wholesale price is cleared. The
+  /// legacy wholesalePrice / wholesaleMinQty always mirror the first
+  /// (lowest-quantity) tier.
+  ///
+  /// A variant's wholesale price is written back EXACTLY as the store left it -
+  /// blank stays blank (never 0, never the product's own price), because blank
+  /// means "this variant follows the product's tiers" (STORE spec 3).
   void applyWholesaleToProduct() {
     final bool enabled = wholesaleEnabled.value;
     final List<WholesaleTier> tiers = enabled
@@ -562,7 +574,9 @@ class AddProductController extends GetxController {
     productModel.value.wholesalePrice = tiers.isNotEmpty ? tiers.first.price : '';
     productModel.value.wholesaleMinQty = tiers.isNotEmpty ? tiers.first.minQty : '';
     productModel.value.saleType = enabled ? saleType.value : ProductModel.saleTypeRetail;
-    productModel.value.wholesaleBusinessOnly = enabled && wholesaleBusinessOnly.value;
+    // Cleared, not just hidden: false is written whenever there is no wholesale
+    // price to withhold, so a `true` cannot be stranded on the product.
+    productModel.value.wholesaleBusinessOnly = enabled && saleType.value != ProductModel.saleTypeRetail && wholesaleBusinessOnly.value;
     final List<String> chosen = [if (fulfilDelivery.value) ProductModel.fulfilmentDelivery, if (fulfilTakeaway.value) ProductModel.fulfilmentTakeaway];
     final bool unchanged = _loadedFulfilment != null && _loadedFulfilment!.length == chosen.length && _loadedFulfilment!.every(chosen.contains);
     productModel.value.fulfilment = (!_loadedFulfilmentExplicit && unchanged) ? null : chosen;

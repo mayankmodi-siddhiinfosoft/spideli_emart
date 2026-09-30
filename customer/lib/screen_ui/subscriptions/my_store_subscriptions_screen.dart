@@ -284,10 +284,15 @@ class _MyStoreSubscriptionsScreenState extends State<MyStoreSubscriptionsScreen>
           const DsGap(DsSpace.md),
           DsDivider(spacing: DsSpace.xs),
           const DsGap(DsSpace.sm),
-          if (plan != null) SubUi.row(context, "Price".tr, "${Constant.amountShow(amount: plan.price, currency: currency)} / ${StoreSubscriptionService.periodLabel(plan.expiryDay).tr}"),
+          if (plan != null) SubUi.row(context, "Price".tr, StoreSubscriptionService.priceWithPeriod(plan, currency)),
           if (plan != null && plan.items.isNotEmpty) SubUi.row(context, "Each delivery".tr, storePlanItemsText(plan)),
           if (plan != null && plan.hasSchedule) SubUi.row(context, "Schedule".tr, storePlanScheduleText(plan)),
-          SubUi.row(context, "Period".tr, "${s.startDate == null ? '-' : Constant.timestampToDate(s.startDate!)}  →  ${s.expiryDate == null ? '-' : Constant.timestampToDate(s.expiryDate!)}"),
+          // `expiryDate` is nullable: a plan with `expiryDay` "-1" never ends.
+          SubUi.row(
+            context,
+            "Period".tr,
+            "${s.startDate == null ? '-' : Constant.timestampToDate(s.startDate!)}  →  ${s.expiryDate == null ? "No end date".tr : Constant.timestampToDate(s.expiryDate!)}",
+          ),
           if (s.deliveryAddressText.isNotEmpty) SubUi.row(context, "Deliver to".tr, s.deliveryAddressText),
           if (pausedNow)
             SubUi.row(
@@ -317,6 +322,10 @@ class _MyStoreSubscriptionsScreenState extends State<MyStoreSubscriptionsScreen>
               ),
             ),
           if (s.cancelledAt != null) SubUi.row(context, "Cancelled on".tr, Constant.timestampToDate(s.cancelledAt!)),
+          // From the stored snapshot, so a renamed or deleted plan still shows
+          // what this subscriber bought (APP-SPEC-STORE.md §4).
+          if (plan != null && plan.planPoints.isNotEmpty)
+            Padding(padding: const EdgeInsets.only(top: DsSpace.sm), child: StorePlanPoints(points: plan.planPoints)),
           if (running) ...[
             const DsGap(DsSpace.lg),
             Wrap(

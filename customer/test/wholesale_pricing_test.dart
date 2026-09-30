@@ -3,9 +3,21 @@ import 'package:customer/models/admin_commission_model.dart';
 import 'package:customer/models/cart_product_model.dart';
 import 'package:customer/models/product_model.dart';
 import 'package:customer/models/section_model.dart';
+import 'package:customer/models/user_model.dart';
 import 'package:customer/models/vendor_model.dart';
+import 'package:customer/utils/wholesale_entitlement.dart';
 import 'package:customer/utils/wholesale_pricing.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+/// The signed-in customer, as the session holds them. WEB spec §19 reads
+/// `accountType` + `businessProfile.status` off exactly this.
+UserModel customer({String? accountType, String? status}) => UserModel(id: 'u1')
+  ..accountType = accountType
+  ..businessProfile = status == null ? null : <String, dynamic>{'status': status};
+
+/// The only customer wholesale applies to: a business account the ADMIN
+/// approved.
+UserModel approvedBusinessCustomer() => customer(accountType: 'business', status: 'approved');
 
 /// The resolution rule of WEB spec §10 / STORE spec §3, which this app has to
 /// share with the website to the last unit:
@@ -17,6 +29,18 @@ import 'package:flutter_test/flutter_test.dart';
 /// a retail of 4,000) are the worked example of the spec, so they are the
 /// worked example here.
 void main() {
+  // WEB spec §19: wholesale is for APPROVED business accounts only, so every
+  // test of the ladder below is a test of what such a customer is charged. What
+  // everybody ELSE gets has its own group at the bottom.
+  setUp(() {
+    WholesaleEntitlement.invalidate();
+    Constant.userModel = approvedBusinessCustomer();
+  });
+  tearDown(() {
+    Constant.userModel = null;
+    WholesaleEntitlement.invalidate();
+  });
+
   // The tiers as the panel may post them: out of order, and carrying the junk
   // rows `normaliseWholesaleTiers()` drops (no quantity, blank price).
   List<WholesaleTier> clientTiers() => WholesaleTier.parseList([
@@ -232,7 +256,23 @@ void main() {
     });
   });
 
-  group('variants', () {
+  // ------------------------------------------------------------------------
+  // WEB spec §10 / STORE spec §3, "A variant shifts the ladder, it does not
+  // replace it" - 30 September. Read the old way ("this variant's only
+  // wholesale price") it DESTROYED the ladder and overcharged: 50 of a tiered
+  // kurti was charged 959 instead of 859.
+  //
+  //   product tiers      10 -> 949    50 -> 849    150 -> 749
+  //
+  //   variant blank   =>  949   849   749     the product's ladder, unchanged
+  //   variant 949     =>  949   849   749     identical - the commonest case
+  //   variant 999     =>  999   899   799     fifty more, throughout
+  //   variant 899     =>  899   799   699     fifty less, throughout
+  //
+  // Steps are DIFFERENCES, not ratios. A tier that would fall to zero or below
+  // is DROPPED, not clamped.
+  // ------------------------------------------------------------------------
+  group('a variant shifts the ladder, it does not replace it', () {
     setUp(() {
       Constant.sectionConstantModel = SectionModel(adminCommision: AdminCommission(isEnabled: false, amount: '0', commissionType: 'Percent'));
     });
@@ -240,59 +280,291 @@ void main() {
 
     final VendorModel vendor = VendorModel(id: 'v1');
 
-    Map<String, dynamic> productWithVariant(Map<String, dynamic> variant) => {
+    /// The kurti of the live report: retail 1,509 a piece, tiers a hundred
+    /// rupees apart.
+    Map<String, dynamic> kurti(Map<String, dynamic> variant, {List<Map<String, String>>? tiers}) => {
       'id': 'p7',
-      'price': '4000',
+      'price': '1509',
       'wholesaleEnabled': true,
-      'wholesaleTiers': [
-        {'minQty': '15', 'price': '3500'},
-        {'minQty': '100', 'price': '2500'},
-        {'minQty': '500', 'price': '2000'},
-      ],
+      'wholesaleTiers':
+          tiers ??
+          [
+            {'minQty': '10', 'price': '949'},
+            {'minQty': '50', 'price': '849'},
+            {'minQty': '150', 'price': '749'},
+          ],
       'item_attribute': {
         'attributes': [],
         'variants': [
-          {'variant_id': 'v-a', 'variant_price': '4200', 'variant_sku': 'A', ...variant},
+          {'variant_id': 'v-a', 'variant_price': '1509', 'variant_sku': 'A', ...variant},
         ],
       },
     };
 
-    test("a variant's own wholesale price REPLACES the product's tiers", () {
-      final ProductModel product = ProductModel.fromJson(productWithVariant({'variant_wholesale_price': '3800'}));
-      final List<WholesaleTier> tiers = WholesalePricing.customerTiers(product, vendor, variantId: 'v-a');
-      expect(tiers.length, 1);
-      expect(tiers.first.minQtyValue, 15);
-      expect(tiers.first.priceValue, 3800);
-      // 600 units of the variant pay its one price, never the product's 2,000.
-      expect(LinePrice.resolve(retail: 4200, tiers: tiers, quantity: 600).unit, 3800);
+    List<double> ladder(Map<String, dynamic> variant, {List<Map<String, String>>? tiers}) =>
+        WholesalePricing.customerTiers(ProductModel.fromJson(kurti(variant, tiers: tiers)), vendor, variantId: 'v-a').map((t) => t.priceValue).toList();
+
+    List<int> breaks(Map<String, dynamic> variant) =>
+        WholesalePricing.customerTiers(ProductModel.fromJson(kurti(variant)), vendor, variantId: 'v-a').map((t) => t.minQtyValue).toList();
+
+    test('blank is the normal case: the product\'s ladder, unchanged', () {
+      expect(ladder({}), [949, 849, 749]);
+      expect(breaks({}), [10, 50, 150]);
+      // Byte-identical to the product's own tiers, not a re-rendered copy.
+      final ProductModel product = ProductModel.fromJson(kurti({}));
+      expect(
+        WholesalePricing.customerTiers(product, vendor, variantId: 'v-a').map((t) => t.price).toList(),
+        WholesalePricing.customerTiers(product, vendor).map((t) => t.price).toList(),
+      );
     });
 
-    test('with its own threshold, that one price sits at that threshold', () {
-      final ProductModel product = ProductModel.fromJson(productWithVariant({'variant_wholesale_price': '3800', 'wholesaleMinQty': '25'}));
-      final List<WholesaleTier> tiers = WholesalePricing.customerTiers(product, vendor, variantId: 'v-a');
-      expect(tiers.length, 1);
-      expect(tiers.first.minQtyValue, 25);
-      expect(LinePrice.resolve(retail: 4200, tiers: tiers, quantity: 24).unit, 4200);
-      expect(LinePrice.resolve(retail: 4200, tiers: tiers, quantity: 25).unit, 3800);
+    test('an empty string is blank too', () {
+      expect(ladder({'variant_wholesale_price': ''}), [949, 849, 749]);
+      expect(ladder({'variant_wholesale_price': '   '}), [949, 849, 749]);
+      expect(ladder({'variant_wholesale_price': '0'}), [949, 849, 749]);
     });
+
+    test('the product\'s own tier-one price resolves to the identical ladder', () {
+      // The figure the store panel used to REQUIRE on every variant. Nothing
+      // had to be re-entered when the rule changed.
+      expect(ladder({'variant_wholesale_price': '949'}), [949, 849, 749]);
+      expect(breaks({'variant_wholesale_price': '949'}), [10, 50, 150]);
+    });
+
+    test('999 is fifty more throughout - differences, not ratios', () {
+      expect(ladder({'variant_wholesale_price': '999'}), [999, 899, 799]);
+      expect(breaks({'variant_wholesale_price': '999'}), [10, 50, 150]);
+      // A ratio would have given 999 / 894.07 / 788.16.
+    });
+
+    test('899 is fifty less throughout', () {
+      expect(ladder({'variant_wholesale_price': '899'}), [899, 799, 699]);
+    });
+
+    test('the quantity breaks stay the PRODUCT\'s, at every step of a shifted ladder', () {
+      final List<WholesaleTier> tiers = WholesalePricing.customerTiers(ProductModel.fromJson(kurti({'variant_wholesale_price': '999'})), vendor, variantId: 'v-a');
+      double unit(int q) => LinePrice.resolve(retail: 1509, tiers: tiers, quantity: q).unit;
+      expect([unit(1), unit(9)], [1509, 1509]);
+      expect([unit(10), unit(49)], [999, 999]);
+      expect([unit(50), unit(149)], [899, 899]);
+      expect([unit(150), unit(600)], [799, 799]);
+    });
+
+    test('the live overcharge: 50 of the tiered kurti is 859, not 959', () {
+      // The bug, in the client's own numbers. Read as "this variant's only
+      // price" the ladder collapsed to its entry price at every quantity.
+      final List<WholesaleTier> tiers = WholesalePricing.customerTiers(ProductModel.fromJson(kurti({'variant_wholesale_price': '959'})), vendor, variantId: 'v-a');
+      expect(tiers.map((t) => t.priceValue).toList(), [959, 859, 759]);
+      expect(LinePrice.resolve(retail: 1509, tiers: tiers, quantity: 50).unit, 859);
+      expect(LinePrice.resolve(retail: 1509, tiers: tiers, quantity: 50).unit * 50, 42950);
+      // And the entry tier is still the entry tier.
+      expect(LinePrice.resolve(retail: 1509, tiers: tiers, quantity: 10).unit, 959);
+    });
+
+    test('a tier that would fall to zero or below is DROPPED, not clamped', () {
+      // 300 / 200 / 100 shifted down to 150 leaves 150 and 50; the third tier
+      // would be -50, so it goes. Inventing a price would hide the mistake.
+      final List<Map<String, String>> deep = [
+        {'minQty': '10', 'price': '300'},
+        {'minQty': '50', 'price': '200'},
+        {'minQty': '150', 'price': '100'},
+      ];
+      expect(ladder({'variant_wholesale_price': '150'}, tiers: deep), [150, 50]);
+      final List<WholesaleTier> tiers = WholesalePricing.customerTiers(ProductModel.fromJson(kurti({'variant_wholesale_price': '150'}, tiers: deep)), vendor, variantId: 'v-a');
+      expect(tiers.map((t) => t.minQtyValue).toList(), [10, 50]);
+      // 150 units pay the deepest tier that SURVIVED, never a clamped 0.
+      expect(LinePrice.resolve(retail: 1509, tiers: tiers, quantity: 150).unit, 50);
+    });
+
+    test('a shift that wipes out every tier leaves no wholesale at all', () {
+      final List<Map<String, String>> deep = [
+        {'minQty': '10', 'price': '300'},
+        {'minQty': '50', 'price': '200'},
+      ];
+      // 300 -> 100 is a shift of -200: tier one is 100, tier two would be 0.
+      expect(ladder({'variant_wholesale_price': '100'}, tiers: deep), [100]);
+      // Exactly zero is not a price either.
+      expect(ladder({'variant_wholesale_price': '0.5'}, tiers: [
+        {'minQty': '10', 'price': '200'},
+        {'minQty': '50', 'price': '199.5'},
+      ]), [0.5]);
+    });
+
+    // ---- the tri-state variant fields, unchanged: absent = the rule above ----
 
     test('a variant carrying none of the fields keeps the product ladder', () {
-      final ProductModel product = ProductModel.fromJson(productWithVariant({}));
-      final List<WholesaleTier> tiers = WholesalePricing.customerTiers(product, vendor, variantId: 'v-a');
-      expect(tiers.map((t) => t.minQtyValue).toList(), [15, 100, 500]);
-      expect(LinePrice.resolve(retail: 4200, tiers: tiers, quantity: 500).unit, 2000);
+      expect(ladder({}), [949, 849, 749]);
+      expect(breaks({}), [10, 50, 150]);
+    });
+
+    test('its own wholesaleMinQty moves TIER ONE\'s threshold only', () {
+      expect(breaks({'wholesaleMinQty': '25'}), [25, 50, 150]);
+      expect(ladder({'wholesaleMinQty': '25'}), [949, 849, 749]);
+      final List<WholesaleTier> tiers = WholesalePricing.customerTiers(ProductModel.fromJson(kurti({'wholesaleMinQty': '25'})), vendor, variantId: 'v-a');
+      expect(LinePrice.resolve(retail: 1509, tiers: tiers, quantity: 24).unit, 1509);
+      expect(LinePrice.resolve(retail: 1509, tiers: tiers, quantity: 25).unit, 949);
+      expect(LinePrice.resolve(retail: 1509, tiers: tiers, quantity: 150).unit, 749);
+    });
+
+    test('a threshold AND a shifted price: both apply, and the rest is the product\'s', () {
+      expect(breaks({'variant_wholesale_price': '999', 'wholesaleMinQty': '25'}), [25, 50, 150]);
+      expect(ladder({'variant_wholesale_price': '999', 'wholesaleMinQty': '25'}), [999, 899, 799]);
     });
 
     test('an EXPLICIT wholesaleEnabled: false makes that variant retail-only', () {
-      final ProductModel product = ProductModel.fromJson(productWithVariant({'wholesaleEnabled': false}));
+      final ProductModel product = ProductModel.fromJson(kurti({'wholesaleEnabled': false, 'variant_wholesale_price': '999'}));
       expect(WholesalePricing.customerTiers(product, vendor, variantId: 'v-a'), isEmpty);
+      expect(WholesalePricing.isRetailOnlyVariant(product, 'v-a'), isTrue);
       // The product-level line is untouched.
       expect(WholesalePricing.customerTiers(product, vendor).length, 3);
     });
 
     test('an absent wholesaleEnabled is no opinion, not a false', () {
-      final ProductModel product = ProductModel.fromJson(productWithVariant({'wholesaleEnabled': ''}));
-      expect(WholesalePricing.customerTiers(product, vendor, variantId: 'v-a').length, 3);
+      expect(ladder({'wholesaleEnabled': ''}), [949, 849, 749]);
+      expect(ladder({'wholesaleEnabled': true}), [949, 849, 749]);
+      expect(ladder({'wholesaleEnabled': 'nonsense'}), [949, 849, 749]);
+    });
+
+    test('the commission goes on every SHIFTED tier, not only on tier one', () {
+      Constant.sectionConstantModel = SectionModel(adminCommision: AdminCommission(isEnabled: true, amount: '10', commissionType: 'Percent'));
+      final List<double> withCommission = ladder({'variant_wholesale_price': '999'});
+      expect(withCommission.length, 3);
+      expect(withCommission[0], closeTo(1098.9, 0.001));
+      expect(withCommission[1], closeTo(988.9, 0.001));
+      expect(withCommission[2], closeTo(878.9, 0.001));
+    });
+  });
+
+  // ------------------------------------------------------------------------
+  // WEB spec §10, the two other 30 September product-page rules.
+  // ------------------------------------------------------------------------
+  group('a wholesale-only product shows a price a customer can pay', () {
+    setUp(() {
+      Constant.sectionConstantModel = SectionModel(adminCommision: AdminCommission(isEnabled: false, amount: '0', commissionType: 'Percent'));
+    });
+    tearDown(() => Constant.sectionConstantModel = null);
+
+    final VendorModel vendor = VendorModel(id: 'v1');
+
+    Map<String, dynamic> kurti(String saleType, {Map<String, dynamic>? variant, String stock = '-1'}) => {
+      'id': 'p10',
+      'price': '1509',
+      'quantity': -1,
+      'wholesaleEnabled': true,
+      'saleType': saleType,
+      'wholesaleTiers': [
+        {'minQty': '10', 'price': '949'},
+        {'minQty': '50', 'price': '849'},
+        {'minQty': '150', 'price': '749'},
+      ],
+      if (variant != null)
+        'item_attribute': {
+          'attributes': [],
+          'variants': [
+            {'variant_id': 'v-a', 'variant_price': '1509', 'variant_sku': 'A', 'variant_quantity': stock, ...variant},
+          ],
+        },
+    };
+
+    test('the headline is the ENTRY tier, not the retail price', () {
+      final ProductModel product = ProductModel.fromJson(kurti('wholesale'));
+      final WholesaleTier? headline = WholesalePricing.headlineTierFor(product, vendor);
+      expect(headline, isNotNull);
+      expect(headline!.priceValue, 949);
+      expect(headline.minQtyValue, 10);
+      expect(WholesalePricing.headlineMinimumLabel(headline.minQtyValue), contains('10'));
+    });
+
+    test('per selected variant: a size that costs fifty more says 999', () {
+      final ProductModel product = ProductModel.fromJson(kurti('wholesale', variant: {'variant_wholesale_price': '999'}));
+      expect(WholesalePricing.headlineTierFor(product, vendor, variantId: 'v-a')!.priceValue, 999);
+    });
+
+    test('retail and mixed products keep their retail headline - nothing here', () {
+      expect(WholesalePricing.headlineTierFor(ProductModel.fromJson(kurti('both')), vendor), isNull);
+      expect(WholesalePricing.headlineTierFor(ProductModel.fromJson(kurti('retail')), vendor), isNull);
+      // The check is on the sale type alone, whatever the tiers say.
+      expect(ProductModel.fromJson(kurti('both')).hasWholesaleTier, isTrue);
+    });
+
+    test('a retail-only VARIANT of a wholesale-only product keeps its retail headline', () {
+      final ProductModel product = ProductModel.fromJson(kurti('wholesale', variant: {'wholesaleEnabled': false}));
+      expect(WholesalePricing.headlineTierFor(product, vendor, variantId: 'v-a'), isNull);
+    });
+  });
+
+  group('a size that cannot make up a pack says so', () {
+    setUp(() {
+      Constant.sectionConstantModel = SectionModel(adminCommision: AdminCommission(isEnabled: false, amount: '0', commissionType: 'Percent'));
+    });
+    tearDown(() => Constant.sectionConstantModel = null);
+
+    final VendorModel vendor = VendorModel(id: 'v1');
+
+    ProductModel sized(String stock, {String saleType = 'wholesale'}) => ProductModel.fromJson({
+      'id': 'p11',
+      'price': '1509',
+      'quantity': -1,
+      'wholesaleEnabled': true,
+      'saleType': saleType,
+      'wholesaleTiers': [
+        {'minQty': '10', 'price': '949'},
+        {'minQty': '50', 'price': '849'},
+        {'minQty': '150', 'price': '749'},
+      ],
+      'item_attribute': {
+        'attributes': [],
+        'variants': [
+          {'variant_id': 'v-a', 'variant_price': '1509', 'variant_sku': 'A', 'variant_quantity': stock},
+        ],
+      },
+    });
+
+    test('a size with fewer units than the smallest pack names the shortfall', () {
+      final ProductModel product = sized('6');
+      expect(WholesalePricing.stockFor(product, variantId: 'v-a'), 6);
+      expect(WholesalePricing.minOrderQuantityFor(product, vendor, variantId: 'v-a'), 10);
+      expect(WholesalePricing.packShortfall(product, vendor, variantId: 'v-a'), 4);
+      expect(WholesalePricing.shortfallLabel(6, 10), contains('6'));
+      expect(WholesalePricing.shortfallLabel(6, 10), contains('10'));
+    });
+
+    test('a size that can make up the pack is workable', () {
+      expect(WholesalePricing.packShortfall(sized('10'), vendor, variantId: 'v-a'), 0);
+      expect(WholesalePricing.packShortfall(sized('999'), vendor, variantId: 'v-a'), 0);
+    });
+
+    test('unlimited stock is never short', () {
+      expect(WholesalePricing.packShortfall(sized('-1'), vendor, variantId: 'v-a'), 0);
+    });
+
+    test('a RETAIL or mixed product is never short of a pack', () {
+      expect(WholesalePricing.packShortfall(sized('6', saleType: 'both'), vendor, variantId: 'v-a'), 0);
+      expect(WholesalePricing.packShortfall(sized('6', saleType: 'retail'), vendor, variantId: 'v-a'), 0);
+    });
+
+    test('a tier the chosen size cannot reach is not advertised', () {
+      // 60 left in a size, and "749 from 150 units, add 90 more" was an
+      // invitation into a stock error.
+      final ProductModel product = sized('60');
+      final List<WholesaleTier> tiers = WholesalePricing.customerTiers(product, vendor, variantId: 'v-a');
+      final WholesaleNote note = WholesalePricing.noteFor(retail: 1509, tiers: tiers, quantity: 50, stock: 60);
+      expect(note.applied?.unit, 849);
+      expect(note.next, isNull);
+      // Without the stock the 150 tier would have been offered.
+      expect(WholesalePricing.noteFor(retail: 1509, tiers: tiers, quantity: 50).next?.minQtyValue, 150);
+    });
+
+    test('and the price bands stop at the deepest tier the size can reach', () {
+      final ProductModel product = sized('60');
+      final List<PriceBand> shown = WholesalePricing.bands(
+        retail: 1509,
+        tiers: WholesalePricing.customerTiers(product, vendor, variantId: 'v-a'),
+        wholesaleOnly: true,
+        stock: 60,
+      );
+      expect(shown.map((b) => b.from).toList(), [10, 50]);
+      expect(shown.last.to, isNull);
     });
   });
 
@@ -427,6 +699,190 @@ void main() {
       expect(order.isWholesale, isFalse);
       expect(order.wholesaleMinQty, '');
       expect(order.unitPrice, 4000);
+    });
+  });
+
+  // ------------------------------------------------------------------------
+  // WEB spec §19 - "Wholesale for approved business accounts only", the
+  // client's decision of 30 September. A blanket rule, not a per-product one:
+  //
+  //   wholesale-only  ->  hidden from every listing, refused on a direct link
+  //   mixed           ->  the product, at RETAIL: no badge, no ladder, no tier
+  //                       price however many they buy, no pack minimum
+  //   retail          ->  unchanged
+  //
+  // "Approved" is accountType == "business" AND businessProfile.status ==
+  // "approved" - the ADMIN's decision. It fails CLOSED.
+  // ------------------------------------------------------------------------
+  group('wholesale is for approved business accounts only', () {
+    setUp(() {
+      Constant.sectionConstantModel = SectionModel(adminCommision: AdminCommission(isEnabled: false, amount: '0', commissionType: 'Percent'));
+    });
+    tearDown(() => Constant.sectionConstantModel = null);
+
+    final VendorModel vendor = VendorModel(id: 'v1');
+
+    Map<String, dynamic> tiered(String saleType, {bool? businessOnly}) => {
+      'id': 'p12',
+      'price': '1509',
+      'wholesaleEnabled': true,
+      'saleType': saleType,
+      'wholesaleBusinessOnly': ?businessOnly,
+      'wholesaleTiers': [
+        {'minQty': '10', 'price': '949'},
+        {'minQty': '50', 'price': '849'},
+        {'minQty': '150', 'price': '749'},
+      ],
+    };
+
+    ProductModel mixed({bool? businessOnly}) => ProductModel.fromJson(tiered('both', businessOnly: businessOnly));
+    ProductModel wholesaleOnly({bool? businessOnly}) => ProductModel.fromJson(tiered('wholesale', businessOnly: businessOnly));
+    ProductModel retailOnly() => ProductModel.fromJson({'id': 'p13', 'price': '1509'});
+
+    test('an APPROVED business account gets the whole ladder', () {
+      Constant.userModel = approvedBusinessCustomer();
+      expect(WholesaleEntitlement.mayBuyWholesale, isTrue);
+      expect(WholesalePricing.customerTiers(mixed(), vendor).length, 3);
+      expect(mixed().hiddenForCustomer, isFalse);
+      expect(wholesaleOnly().hiddenForCustomer, isFalse);
+      expect(WholesalePricing.minOrderQuantityFor(wholesaleOnly(), vendor), 10);
+    });
+
+    test('a personal account gets no tier, no badge and no pack minimum', () {
+      Constant.userModel = customer();
+      expect(WholesaleEntitlement.mayBuyWholesale, isFalse);
+      final ProductModel product = mixed();
+      expect(product.activeWholesaleTiers, isEmpty);
+      expect(product.hasWholesaleTier, isFalse);
+      expect(WholesalePricing.customerTiers(product, vendor), isEmpty);
+      expect(WholesalePricing.listingBadgeLabel(product, vendor), '');
+      expect(WholesalePricing.minOrderQuantityFor(product, vendor), 1);
+      expect(product.minOrderQuantity, 1);
+      expect(product.effectiveSaleType, ProductModel.saleTypeRetail);
+    });
+
+    test('and no tier price however many they buy', () {
+      Constant.userModel = customer();
+      final ProductModel product = mixed();
+      final double retail = WholesalePricing.retailPrice(product, vendor);
+      for (final int qty in [1, 10, 50, 150, 5000]) {
+        final LinePrice line = LinePrice.resolve(retail: retail, tiers: WholesalePricing.customerTiers(product, vendor), quantity: qty);
+        expect(line.unit, retail, reason: '$qty units');
+        expect(line.isWholesale, isFalse, reason: '$qty units');
+      }
+    });
+
+    test('a wholesale-only product is HIDDEN, a mixed one is not', () {
+      Constant.userModel = customer();
+      expect(wholesaleOnly().hiddenForCustomer, isTrue);
+      expect(wholesaleOnly().isBusinessOnlyProduct, isTrue);
+      expect(mixed().hiddenForCustomer, isFalse);
+      expect(retailOnly().hiddenForCustomer, isFalse);
+    });
+
+    test('the hide filter reads the RAW product, not the computed price', () {
+      Constant.userModel = customer();
+      final ProductModel product = wholesaleOnly();
+      // This customer has no computed tiers at all, so isWholesaleOnly is
+      // false FOR THEM - keying the filter on it would leak every
+      // wholesale-only product to exactly the customers it hides them from.
+      expect(product.isWholesaleOnly, isFalse);
+      expect(product.isWholesaleOnlyProduct, isTrue);
+      expect(product.rawWholesaleTiers.length, 3);
+      expect(product.rawSaleType, ProductModel.saleTypeWholesale);
+    });
+
+    test('a listing is filtered BEFORE the card loop, mixed products staying', () {
+      Constant.userModel = customer();
+      final List<ProductModel> visible = WholesalePricing.visibleProducts([wholesaleOnly(), mixed(), retailOnly()]);
+      expect(visible.length, 2);
+      expect(visible.any((p) => p.isWholesaleOnlyProduct), isFalse);
+
+      Constant.userModel = approvedBusinessCustomer();
+      expect(WholesalePricing.visibleProducts([wholesaleOnly(), mixed(), retailOnly()]).length, 3);
+    });
+
+    test('an all-wholesale listing comes back EMPTY, not unfiltered', () {
+      Constant.userModel = customer();
+      expect(WholesalePricing.visibleProducts([wholesaleOnly(), wholesaleOnly()]), isEmpty);
+    });
+
+    test('pending and rejected buy nothing', () {
+      for (final String status in ['pending', 'rejected', 'PENDING', '', 'nonsense']) {
+        Constant.userModel = customer(accountType: 'business', status: status);
+        expect(WholesaleEntitlement.mayBuyWholesale, isFalse, reason: 'status $status');
+        expect(mixed().activeWholesaleTiers, isEmpty, reason: 'status $status');
+        expect(wholesaleOnly().hiddenForCustomer, isTrue, reason: 'status $status');
+      }
+    });
+
+    test('a business account with no profile at all buys nothing', () {
+      Constant.userModel = customer(accountType: 'business');
+      expect(WholesaleEntitlement.mayBuyWholesale, isFalse);
+    });
+
+    test('an approved profile on a PERSONAL account buys nothing', () {
+      // Both halves are required: the account type is not the approval.
+      Constant.userModel = customer(accountType: 'personal', status: 'approved');
+      expect(WholesaleEntitlement.mayBuyWholesale, isFalse);
+      Constant.userModel = customer(status: 'approved');
+      expect(WholesaleEntitlement.mayBuyWholesale, isFalse);
+    });
+
+    test('it fails CLOSED: signed out, or a profile that could not be read', () {
+      Constant.userModel = null;
+      expect(WholesaleEntitlement.mayBuyWholesale, isFalse);
+      expect(WholesaleEntitlement.isApprovedUser(null), isFalse);
+      expect(mixed().activeWholesaleTiers, isEmpty);
+      expect(wholesaleOnly().hiddenForCustomer, isTrue);
+      // A signed-in user with no id is no better than signed out.
+      Constant.userModel = UserModel()..accountType = 'business'..businessProfile = <String, dynamic>{'status': 'approved'};
+      expect(WholesaleEntitlement.mayBuyWholesale, isFalse);
+    });
+
+    test('a cached lookup is read straight off the users document', () {
+      expect(WholesaleEntitlement.isApprovedDocument({'accountType': 'business', 'businessProfile': {'status': 'approved'}}), isTrue);
+      expect(WholesaleEntitlement.isApprovedDocument({'accountType': 'business', 'businessProfile': {'status': 'pending'}}), isFalse);
+      expect(WholesaleEntitlement.isApprovedDocument({'accountType': 'business'}), isFalse);
+      expect(WholesaleEntitlement.isApprovedDocument({'businessProfile': {'status': 'approved'}}), isFalse);
+      expect(WholesaleEntitlement.isApprovedDocument(null), isFalse);
+    });
+
+    test('the cached answer wins for this account, and is dropped on a change', () {
+      Constant.userModel = customer(accountType: 'business', status: 'pending');
+      expect(WholesaleEntitlement.mayBuyWholesale, isFalse);
+      // The admin approves: applying the document just read takes effect
+      // without signing out.
+      WholesaleEntitlement.applyDocument('u1', {'accountType': 'business', 'businessProfile': {'status': 'approved'}});
+      expect(WholesaleEntitlement.mayBuyWholesale, isTrue);
+      expect(WholesalePricing.customerTiers(mixed(), vendor).length, 3);
+      // And a refusal afterwards is honoured just as fast.
+      WholesaleEntitlement.applyDocument('u1', {'accountType': 'business', 'businessProfile': {'status': 'rejected'}});
+      expect(WholesaleEntitlement.mayBuyWholesale, isFalse);
+      // Dropped, so the session copy answers again.
+      WholesaleEntitlement.invalidate();
+      expect(WholesaleEntitlement.mayBuyWholesale, isFalse);
+    });
+
+    test('a cached answer never survives a different account', () {
+      WholesaleEntitlement.applyDocument('u1', {'accountType': 'business', 'businessProfile': {'status': 'approved'}});
+      Constant.userModel = customer()..id = 'someone-else';
+      expect(WholesaleEntitlement.mayBuyWholesale, isFalse);
+    });
+
+    test('wholesaleBusinessOnly can only restrict further, never grant', () {
+      // An approved customer: the per-product flag changes nothing, because
+      // they satisfy it too.
+      Constant.userModel = approvedBusinessCustomer();
+      expect(mixed(businessOnly: true).activeWholesaleTiers.length, 3);
+      expect(mixed(businessOnly: false).activeWholesaleTiers.length, 3);
+
+      // An ordinary customer: false on the product does NOT open it up - the
+      // blanket rule of §19 already withheld it.
+      Constant.userModel = customer();
+      expect(mixed(businessOnly: false).activeWholesaleTiers, isEmpty);
+      expect(mixed(businessOnly: true).activeWholesaleTiers, isEmpty);
+      expect(wholesaleOnly(businessOnly: false).hiddenForCustomer, isTrue);
     });
   });
 }

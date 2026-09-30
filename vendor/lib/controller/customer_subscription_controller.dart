@@ -67,11 +67,13 @@ class CustomerSubscriptionController extends GetxController {
     isPaymentsLoading.value = false;
   }
 
-  /// Sum of the STORED vendorEarning values (never recomputed).
+  /// Sum of the STORED vendorEarning values (never recomputed); a payment
+  /// written without one counts as price minus its recorded commission, since
+  /// the commission is deducted from the price (STORE spec 4).
   double get totalEarned {
     double total = 0;
     for (final p in paymentList) {
-      total += double.tryParse(p.vendorEarning ?? '') ?? 0;
+      total += p.earningValue;
     }
     return total;
   }

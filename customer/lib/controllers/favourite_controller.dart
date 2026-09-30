@@ -67,7 +67,10 @@ class FavouriteController extends GetxController {
       for (var element in favouriteItemList) {
         await FireStoreUtils.getProductById(element.productId.toString()).then((value) async {
           log("getProductById :: ${value?.name} :: ${value?.publish}");
-          if (value != null && value.publish == true) {
+          // A wholesale-only product is hidden from a customer without an
+          // approved business account (WEB spec §19) - favourites included, so
+          // one favourited before an approval lapsed does not reappear here.
+          if (value != null && value.publish == true && !value.hiddenForCustomer) {
             await FireStoreUtils.fireStore.collection(CollectionName.vendors).doc(value.vendorID.toString()).get().then((value1) async {
               if (value1.exists) {
                 VendorModel vendorModel = VendorModel.fromJson(value1.data()!);

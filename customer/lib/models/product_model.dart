@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:customer/models/tax_model.dart';
 import 'package:get/get.dart';
 import 'package:customer/utils/business_account.dart';
+import 'package:customer/utils/wholesale_entitlement.dart';
 
 class ProductModel {
   int? fats;
@@ -181,13 +182,38 @@ class ProductModel {
     return tiers;
   }
 
-  /// Usable tiers (price > 0, minQty >= 2) when wholesale is on, else empty.
-  List<WholesaleTier> get activeWholesaleTiers => wholesaleEnabled == true ? sortedWholesaleTiers.where((t) => t.isUsable).toList() : <WholesaleTier>[];
+  /// Usable tiers (price > 0, minQty >= 2) **as the store set them**, whoever
+  /// is looking. This is the raw document, so it answers "is this a wholesale
+  /// product" even for a customer who may not buy wholesale - which is what
+  /// [isWholesaleOnlyProduct] and therefore [hiddenForCustomer] need.
+  List<WholesaleTier> get rawWholesaleTiers => wholesaleEnabled == true ? sortedWholesaleTiers.where((t) => t.isUsable).toList() : <WholesaleTier>[];
+
+  /// The ONE switch of WEB spec §19, the app's equivalent of the website's
+  /// `wholesaleEnabled = productData.wholesaleEnabled && customerMayBuyWholesale`
+  /// in `processVendorData`: wholesale applies to this product **for this
+  /// customer**. Everything wholesale hangs off it - the tiers, the badge, the
+  /// ladder, the minimum quantity and the price charged - so withholding it
+  /// here withholds wholesale on every screen at once.
+  bool get wholesaleAvailableToCustomer => wholesaleEnabled == true && !wholesaleBlockedForCustomer;
+
+  /// The tiers THIS customer may be given: empty for a customer without an
+  /// approved business account, which is how a mixed product falls back to
+  /// retail with no badge, no ladder and no pack minimum.
+  List<WholesaleTier> get activeWholesaleTiers => wholesaleAvailableToCustomer ? rawWholesaleTiers : <WholesaleTier>[];
 
   bool get hasWholesaleTier => activeWholesaleTiers.isNotEmpty;
 
-  /// Normalised sale type, see [saleType].
+  /// Normalised sale type **for this customer**, see [saleType]: a customer who
+  /// may not buy wholesale buys at retail, so nothing imposes a pack minimum
+  /// on them (WEB spec §19; the website's `enforceSaleTypeQuantity` likewise
+  /// does not raise such a customer's quantity).
   String get effectiveSaleType {
+    if (!wholesaleAvailableToCustomer) return saleTypeRetail;
+    return saleType == saleTypeWholesale ? saleTypeWholesale : saleTypeBoth;
+  }
+
+  /// Sale type as the STORE set it, whoever is looking (the raw document).
+  String get rawSaleType {
     if (wholesaleEnabled != true) return saleTypeRetail;
     return saleType == saleTypeWholesale ? saleTypeWholesale : saleTypeBoth;
   }
@@ -195,14 +221,28 @@ class ProductModel {
   /// Wholesale-only product: retail price hidden, minimum quantity = first tier.
   bool get isWholesaleOnly => effectiveSaleType == saleTypeWholesale && hasWholesaleTier;
 
-  /// Business-only wholesale: prices (and wholesale-only products) are
-  /// available only to a customer whose business profile the admin approved
-  /// (`users.businessProfile.status == "approved"`, spec 8.2).
-  bool get wholesaleBlockedForCustomer => wholesaleBusinessOnly == true && !BusinessAccount.isApproved;
+  /// Wholesale-only **as the store set it**, whoever is looking.
+  ///
+  /// The hide filter of WEB spec §19 reads THIS, not the computed price: a
+  /// customer who may not buy wholesale has no tiers, so [isWholesaleOnly] is
+  /// false for them and keying the filter on it would leak every
+  /// wholesale-only product to exactly the customers it hides them from.
+  bool get isWholesaleOnlyProduct => rawSaleType == saleTypeWholesale && rawWholesaleTiers.isNotEmpty;
 
-  /// Wholesale-only AND business-only, for a customer without an approved
-  /// business account: cannot be bought ("Business customers only").
-  bool get isBusinessOnlyProduct => isWholesaleOnly && wholesaleBlockedForCustomer;
+  /// Wholesale withheld from this customer (WEB spec §19): **blanket**, for
+  /// anyone without an approved business account, plus the per-product
+  /// `wholesaleBusinessOnly` flag the store panel and store app write (STORE
+  /// spec §3), which can only ever restrict further - never grant.
+  bool get wholesaleBlockedForCustomer => !WholesaleEntitlement.mayBuyWholesale || (wholesaleBusinessOnly == true && !BusinessAccount.isApproved);
+
+  /// A wholesale-only product a customer without an approved business account
+  /// must not see at all: **hidden** from every listing and refused on a
+  /// direct link, with a pointer to the business-account application.
+  bool get hiddenForCustomer => isWholesaleOnlyProduct && wholesaleBlockedForCustomer;
+
+  /// Kept for the screens that word the refusal: the same verdict as
+  /// [hiddenForCustomer].
+  bool get isBusinessOnlyProduct => hiddenForCustomer;
 
   /// Mirrors the Store app's `effectiveFulfilment`: the explicit [fulfilment]
   /// when set, else the legacy meaning of [takeawayOption].
@@ -326,9 +366,17 @@ class Variants {
   String? variantQuantity;
   String? variantSku;
 
-  /// Variant wholesale unit price (Store app): replaces tier 1's price for this
-  /// variant only; ""/absent = the product's tier 1 price. Round-tripped so a
-  /// write-back of item_attribute (stock update) never drops it.
+  /// This variant's **TIER-ONE** wholesale price - not its only price.
+  ///
+  /// The product's tiers own the quantity breaks and the steps between them;
+  /// this figure shifts the whole ladder to start at it, by the same
+  /// DIFFERENCE at every tier (STORE spec §3 / WEB spec §10, "A variant shifts
+  /// the ladder, it does not replace it" - 30 September). **Blank is the
+  /// normal case** and means the product's ladder applies unchanged.
+  /// See `WholesalePricing.customerTiers`.
+  ///
+  /// Round-tripped so a write-back of item_attribute (stock update) never
+  /// drops it.
   ///
   /// Read from the app's own `variant_wholesale_price` key, falling back to
   /// the Store spec's `wholesalePrice` on `item_attribute.variants[]`

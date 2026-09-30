@@ -236,13 +236,17 @@ class ProductListScreen extends StatelessWidget {
       disPrice = controller.productList[index].disPrice.toString();
     }
 
-    // Wholesale tiers badge: the displayed variant's own wholesale price
-    // replaces the FIRST tier's price; the tier quantities apply to all variants.
+    // Wholesale tiers badge: the displayed variant's own wholesale price is that
+    // variant's tier one and shifts the ladder; the quantities are the
+    // product's. Sale type is shown for every product (the panel's sale type
+    // column, STORE spec 3).
     final product = controller.productList[index];
     final displayedVariant = product.itemAttribute?.variants?.where((element) => element.variantSku == selectedVariants.join('-')).firstOrNull;
     final String? wholesaleBadge = wholesaleTiersBadge(product, variantWholesalePrice: displayedVariant?.variantWholesalePrice);
     final String? fulfilmentBadge = fulfilmentRestrictionLabel(product);
-    final bool wholesaleOnly = product.effectiveSaleType == ProductModel.saleTypeWholesale && product.hasWholesaleTier;
+    final String saleType = product.effectiveSaleType;
+    final bool wholesaleOnly = saleType == ProductModel.saleTypeWholesale;
+    final String saleBadge = saleTypeLabel(product);
 
     bool isDisplayItemAlert = false;
     if ((Constant.isSubscriptionModelApplied == true || Constant.selectedSection!.adminCommision?.isEnabled == true)) {
@@ -365,23 +369,25 @@ class ProductListScreen extends StatelessWidget {
                     : const SizedBox(),
               ],
             ),
-            if (wholesaleBadge != null || fulfilmentBadge != null) ...[
-              const DsGap(DsSpace.md),
-              Wrap(
-                spacing: DsSpace.sm,
-                runSpacing: DsSpace.sm,
-                children: [
-                  if (wholesaleBadge != null)
-                    _WholesaleTag(text: wholesaleOnly ? "${"Wholesale only".tr} · $wholesaleBadge" : wholesaleBadge, strong: wholesaleOnly),
-                  if (fulfilmentBadge != null)
-                    DsBadge(
-                      label: fulfilmentBadge,
-                      tone: DsTone.info,
-                      icon: product.effectiveFulfilment.contains(ProductModel.fulfilmentDelivery) ? Icons.delivery_dining_outlined : Icons.storefront_outlined,
-                    ),
-                ],
-              ),
-            ],
+            const DsGap(DsSpace.md),
+            Wrap(
+              spacing: DsSpace.sm,
+              runSpacing: DsSpace.sm,
+              children: [
+                DsBadge(
+                  label: saleBadge,
+                  tone: saleType == ProductModel.saleTypeRetail ? DsTone.neutral : DsTone.brand,
+                  icon: saleType == ProductModel.saleTypeRetail ? Icons.sell_outlined : Icons.inventory_2_outlined,
+                ),
+                if (wholesaleBadge != null) _WholesaleTag(text: wholesaleBadge, strong: wholesaleOnly),
+                if (fulfilmentBadge != null)
+                  DsBadge(
+                    label: fulfilmentBadge,
+                    tone: DsTone.info,
+                    icon: product.effectiveFulfilment.contains(ProductModel.fulfilmentDelivery) ? Icons.delivery_dining_outlined : Icons.storefront_outlined,
+                  ),
+              ],
+            ),
             if (isDisplayItemAlert) ...[
               const DsGap(DsSpace.md),
               Container(

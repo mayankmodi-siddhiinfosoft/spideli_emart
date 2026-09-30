@@ -1,11 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/collection_name.dart';
 import 'package:customer/constant/constant.dart';
+import 'package:customer/models/currency_model.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/models/vendor_model.dart';
 import 'package:customer/models/vendor_subscription_model.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/utils/region_service.dart';
+import 'package:get/get.dart';
 
 /// The commission split of one subscription payment.
 class SubscriptionCommission {
@@ -41,27 +43,67 @@ class StoreSubscriptionService {
 
   // ---------------------------------------------------------------- Plans
 
-  /// Enabled plans of the store with [vendorId], cheapest first.
+  /// A plan is offered when its `regionId` is unset, or the customer's region
+  /// is unresolved, or the two match (APP-SPEC-WEB.md §11 / STORE §4). The
+  /// unresolved case SHOWS the store's own offer rather than hiding it - the
+  /// same rule the rest of the app uses for an unresolved region.
+  static bool offeredInCustomerRegion(VendorSubscriptionPlanModel plan) {
+    final String? planRegion = plan.regionId;
+    if (planRegion == null || planRegion.isEmpty) return true;
+    final String? customerRegion = RegionService.customerRegionId;
+    if (customerRegion == null || customerRegion.isEmpty) return true;
+    return planRegion == customerRegion;
+  }
+
+  /// Enabled plans of the store with [vendorId] offered in the customer's
+  /// region, cheapest first.
   static Future<List<VendorSubscriptionPlanModel>> plansForStore(String vendorId) async {
     if (vendorId.isEmpty) return [];
+    await RegionService.ensureLoaded();
     final snap = await _db.collection(CollectionName.vendorSubscriptionPlans).where('vendorID', isEqualTo: vendorId).get();
     final list = <VendorSubscriptionPlanModel>[];
     for (final d in snap.docs) {
       final plan = VendorSubscriptionPlanModel.fromJson(d.data());
       plan.id ??= d.id;
       if (plan.isEnable != true) continue;
+      if (!offeredInCustomerRegion(plan)) continue;
       list.add(plan);
     }
     list.sort((a, b) => a.priceValue.compareTo(b.priceValue));
     return list;
   }
 
+  /// One plan, re-read from Firestore. Used where the money moves so a price
+  /// change or a switched-off plan is caught, never the copy the screen
+  /// loaded (APP-SPEC-WEB.md §11).
+  static Future<VendorSubscriptionPlanModel?> planById(String planId) async {
+    if (planId.isEmpty) return null;
+    try {
+      final doc = await _db.collection(CollectionName.vendorSubscriptionPlans).doc(planId).get();
+      final data = doc.data();
+      if (data == null) return null;
+      final plan = VendorSubscriptionPlanModel.fromJson(data);
+      plan.id ??= doc.id;
+      return plan;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// `expiryDay` days -> human period. `"-1"` (and anything <= 0) never
+  /// expires, per APP-SPEC-STORE.md §4.
   static String periodLabel(String? expiryDay) {
     final days = int.tryParse(expiryDay ?? '') ?? 0;
     if (days == 30) return "Monthly";
     if (days == 365) return "Annual";
-    if (days <= 0) return "-";
+    if (days <= 0) return "Never expires";
     return "$days days";
+  }
+
+  /// "15,000 / Monthly", or just the price when the plan never expires.
+  static String priceWithPeriod(VendorSubscriptionPlanModel plan, CurrencyModel? currency) {
+    final String price = Constant.amountShow(amount: plan.price ?? '0', currency: currency);
+    return plan.neverExpires ? price : "$price / ${periodLabel(plan.expiryDay).tr}";
   }
 
   // ---------------------------------------------------------------- Commission
@@ -116,6 +158,22 @@ class StoreSubscriptionService {
 
   // ---------------------------------------------------------------- Purchase
 
+  /// Plan ids the customer holds and has not used up. Entitlement is worked
+  /// out from `expiryDate` on every read - `status` is written "active" at
+  /// purchase and nothing ever changes it (APP-SPEC-STORE.md §4), so a
+  /// `status == "active"` filter would count lapsed subscriptions too.
+  static Future<Set<String>> heldPlanIds() async {
+    final subs = await mySubscriptions();
+    final held = <String>{};
+    for (final s in subs) {
+      final st = s.effectiveStatus;
+      if (st != VendorSubscriptionModel.statusActive && st != VendorSubscriptionModel.statusPaused) continue;
+      final id = s.effectivePlanId;
+      if (id.isNotEmpty) held.add(id);
+    }
+    return held;
+  }
+
   /// The customer's latest still-running subscription to [planId], if any.
   static Future<VendorSubscriptionModel?> currentFor(String planId) async {
     final subs = await mySubscriptions();
@@ -138,11 +196,21 @@ class StoreSubscriptionService {
   }) async {
     final String? regionId = RegionService.regionOfVendor(vendor) ?? plan.regionId;
     final int decimals = (RegionService.currencyForRegion(regionId) ?? RegionService.globalCurrency)?.decimal ?? 2;
-    String money(double v) => v.toStringAsFixed(decimals);
+    // The panels store these as NUMBERS (APP-SPEC-STORE.md §4: "amount":
+    // 15000), so both tabs can sum them. Rounded to the region's decimals so
+    // a percentage commission cannot leave a long tail.
+    num money(double v) => double.parse(v.toStringAsFixed(decimals));
 
     final DateTime start = DateTime(startDate.year, startDate.month, startDate.day);
-    final DateTime? expiry = plan.expiryDays > 0 ? start.add(Duration(days: plan.expiryDays)) : null;
+    // `expiryDay` "-1" (or anything <= 0) never expires -> expiryDate null.
+    final DateTime? expiry = plan.neverExpires ? null : start.add(Duration(days: plan.expiryDays));
     final Timestamp now = Timestamp.now();
+
+    // Rounded once, then the earning is the DIFFERENCE of the two rounded
+    // figures, so amount - adminCommission == vendorEarning always holds.
+    final num paidAmount = money(commission.amount);
+    final num adminCommission = money(commission.adminCommission);
+    final num vendorEarning = paidAmount - adminCommission;
 
     final subRef = _db.collection(CollectionName.vendorSubscriptions).doc();
     final payRef = _db.collection(CollectionName.vendorSubscriptionPayments).doc();
@@ -168,10 +236,13 @@ class StoreSubscriptionService {
       'planId': plan.id,
       'vendorID': vendor.id,
       'customerId': _uid,
-      'amount': money(commission.amount),
-      'adminCommission': money(commission.adminCommission),
+      'amount': paidAmount,
+      'adminCommission': adminCommission,
       'adminCommissionType': commission.adminCommissionType,
-      'vendorEarning': money(commission.vendorEarning),
+      // Deducted, not added: the customer paid `amount` and the platform's cut
+      // comes out of it (Document 1, APP-SPEC-STORE.md §4). Written here and
+      // never re-derived from the store's current rate.
+      'vendorEarning': vendorEarning,
       'payment_method': paymentMethod,
       'status': 'paid',
       'regionId': regionId,

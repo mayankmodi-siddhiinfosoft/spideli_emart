@@ -162,6 +162,13 @@ class AddEditCustomerSubscriptionPlanController extends GetxController {
         plan.deliveryDays = VendorSubscriptionPlanModel.weekdays.where(deliveryDays.contains).toList();
         plan.timeSlot = VendorSubscriptionTimeSlot(from: slotFrom.value, to: slotTo.value);
       }
+      // `plan_points` is what the panel and the customer website list as what
+      // the customer gets (STORE spec 4). Points entered in the panel are kept
+      // as they are; a plan that has none takes them from its own delivery
+      // lines, so a plan created here is not blank on the website.
+      if (plan.planPoints.isEmpty && plan.items.isNotEmpty) {
+        plan.planPoints = plan.items.map((e) => e.label).where((e) => e.isNotEmpty).toList();
+      }
 
       await CustomerSubscriptionService.savePlan(plan);
       ShowToastDialog.closeLoader();

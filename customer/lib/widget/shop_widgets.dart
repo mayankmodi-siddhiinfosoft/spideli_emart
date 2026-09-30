@@ -1,5 +1,7 @@
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/currency_model.dart';
+import 'package:customer/models/product_model.dart';
+import 'package:customer/screen_ui/subscriptions/business_account_screen.dart';
 import 'package:customer/themes/app_them_data.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/wholesale_pricing.dart';
@@ -223,4 +225,95 @@ class PriceTiersView extends StatelessWidget {
           }).toList(),
     );
   }
+}
+
+/// **A wholesale-only product shows a price a customer can pay** (WEB spec §10,
+/// 30 September): the headline is the ENTRY tier for the selected variant, with
+/// the pack minimum beneath it —
+///
+/// ```
+/// ₹959.00
+/// per piece, from 10 units
+/// ```
+///
+/// — because a single piece of such a product is not for sale at any price, so
+/// the retail figure the page used to show was a price nobody could pay.
+/// Retail and mixed products keep their retail headline and never draw this.
+class WholesaleOnlyHeadline extends StatelessWidget {
+  /// The entry tier of the selected variant, from
+  /// [WholesalePricing.headlineTierFor]. null draws nothing.
+  final WholesaleTier? tier;
+  final CurrencyModel? currency;
+
+  const WholesaleOnlyHeadline({super.key, required this.tier, required this.currency});
+
+  @override
+  Widget build(BuildContext context) {
+    final WholesaleTier? entry = tier;
+    if (entry == null) return const SizedBox.shrink();
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(Constant.amountShow(amount: entry.price, currency: currency), style: t.titleSm.tabular.withColor(c.brandStrong)),
+        Text(WholesalePricing.headlineMinimumLabel(entry.minQtyValue), style: t.caption),
+      ],
+    );
+  }
+}
+
+/// **A size that cannot make up a pack says so** (WEB spec §10, 30 September):
+/// a red note naming the shortfall, drawn beside a disabled Add to cart.
+/// An empty shortfall draws nothing.
+class PackShortfallNote extends StatelessWidget {
+  /// Units this option holds.
+  final int stock;
+
+  /// Units the smallest pack needs.
+  final int minQty;
+
+  /// 0 = this option is workable.
+  final int shortfall;
+
+  const PackShortfallNote({super.key, required this.stock, required this.minQty, required this.shortfall});
+
+  @override
+  Widget build(BuildContext context) {
+    if (shortfall <= 0) return const SizedBox.shrink();
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpace.xs),
+      child: Text(WholesalePricing.shortfallLabel(stock, minQty), style: t.labelSm.withColor(c.dangerStrong)),
+    );
+  }
+}
+
+/// Refuses a **wholesale-only** product to a customer without an approved
+/// business account (WEB spec §19) and points at the business-account
+/// application. Returns true when the product was refused, so the caller does
+/// not go on to open it.
+///
+/// The listing filter does not cover a banner, a shared link or anything else
+/// that reaches a product detail directly, which is why the refusal lives at
+/// the one place a product detail opens rather than only in the lists.
+bool refuseWholesaleOnlyProduct(ProductModel product) {
+  if (!product.hiddenForCustomer) return false;
+  DsDialog.show(
+    DsDialog(
+      title: 'For business accounts'.tr,
+      message: 'This product is sold wholesale only. Apply for a business account to see and buy wholesale products.'.tr,
+      icon: Icons.storefront_outlined,
+      primaryLabel: 'Apply now'.tr,
+      onPrimary: () {
+        Get.back();
+        Get.to(() => const BusinessAccountScreen());
+      },
+      secondaryLabel: 'Close'.tr,
+      onSecondary: () => Get.back(),
+    ),
+  );
+  return true;
 }

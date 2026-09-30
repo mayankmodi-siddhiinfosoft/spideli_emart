@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/collection_name.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/service/fire_store_utils.dart';
+import 'package:customer/utils/wholesale_entitlement.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
 
@@ -29,8 +30,14 @@ class BusinessAccount {
   static bool get isApproved => status == statusApproved;
 
   /// Refreshes the session copy from Firestore (the admin may have decided).
+  ///
+  /// This is the moment the account's business status can change, so the
+  /// session's wholesale entitlement (WEB spec §19) is recomputed from the very
+  /// document just read - an approval or a refusal takes effect without signing
+  /// out, and it costs no second read.
   static Future<Map<String, dynamic>?> refresh() async {
-    final doc = await FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).get();
+    final String uid = FireStoreUtils.getCurrentUid();
+    final doc = await FireStoreUtils.fireStore.collection(CollectionName.users).doc(uid).get();
     final data = doc.data();
     final raw = data?['businessProfile'];
     final Map<String, dynamic>? p = raw is Map ? Map<String, dynamic>.from(raw) : null;
@@ -38,6 +45,7 @@ class BusinessAccount {
       Constant.userModel!.businessProfile = p;
       Constant.userModel!.accountType = data?['accountType']?.toString();
     }
+    WholesaleEntitlement.applyDocument(uid, data);
     return p;
   }
 
@@ -64,5 +72,8 @@ class BusinessAccount {
       Constant.userModel!.accountType = 'business';
       Constant.userModel!.businessProfile = p;
     }
+    // A pending request grants nothing (WEB spec §19), and the cached verdict
+    // must not outlive the change either way.
+    WholesaleEntitlement.invalidate();
   }
 }
