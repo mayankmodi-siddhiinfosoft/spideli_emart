@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
 import 'package:vendor/app/add_restaurant_screen/widgets/form_media_widgets.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
@@ -169,13 +168,21 @@ class DineInCreateScreen extends StatelessWidget {
                                         if (pickedTime != null) {
                                           controller.endDateDateController.value.text = pickedTime.format(context);
 
-                                          DateTime startDate = DateFormat("hh:mm a").parse(controller.startDateController.value.text.toString());
-                                          DateTime endDate = DateFormat("hh:mm a").parse(controller.endDateDateController.value.text.toString());
-
-                                          if (endDate.isAfter(startDate)) {
-                                            controller.isTimeValid.value = true;
-                                          } else {
+                                          // Read with the same tolerant parser as
+                                          // the picker above. `DateFormat.parse`
+                                          // threw a FormatException when no start
+                                          // time had been picked yet, and the
+                                          // exception left the tap doing nothing
+                                          // at all - the end time looked accepted
+                                          // but was never validated.
+                                          final TimeOfDay? start = parseTimeOfDay(controller.startDateController.value.text);
+                                          if (start == null) {
                                             controller.isTimeValid.value = false;
+                                            ShowToastDialog.showToast("Please pick the start time first".tr);
+                                          } else {
+                                            final int startMinutes = start.hour * 60 + start.minute;
+                                            final int endMinutes = pickedTime.hour * 60 + pickedTime.minute;
+                                            controller.isTimeValid.value = endMinutes > startMinutes;
                                           }
                                         }
                                       },

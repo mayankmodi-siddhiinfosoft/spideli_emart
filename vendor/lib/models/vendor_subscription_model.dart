@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:vendor/models/vendor_subscription_plan_model.dart';
+import 'package:vendor/utils/address_format.dart';
 
 /// A customer's subscription to one of this store's plans.
 /// Stored in `vendor_subscriptions`; written by the customer app, read-only here.
@@ -66,12 +67,17 @@ class VendorSubscriptionModel {
   /// The customer skipped [day] (`skippedDates`).
   bool isSkipped(DateTime day) => skippedDates.contains(_dayKey(day));
 
+  /// Through [formatAddress], so a part the panel stored as the string "null"
+  /// no longer reaches the screen (report #17).
   static String? _parseAddress(dynamic value) {
     if (value == null) return null;
-    if (value is String) return value.trim().isEmpty ? null : value.trim();
+    if (value is String) {
+      final String text = formatAddress([value]);
+      return text.isEmpty ? null : text;
+    }
     if (value is Map) {
-      final parts = [value['address'], value['locality'], value['landmark']].map((e) => e?.toString().trim() ?? '').where((e) => e.isNotEmpty).toList();
-      return parts.isEmpty ? null : parts.join(', ');
+      final String text = formatAddress([value['address'], value['locality'], value['landmark']]);
+      return text.isEmpty ? null : text;
     }
     return null;
   }

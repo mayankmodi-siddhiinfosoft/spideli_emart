@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
-import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/special_discount_controller.dart';
 import 'package:vendor/themes/ds/ds.dart';
@@ -320,7 +319,7 @@ class _SpecialDiscountBodyState extends State<_SpecialDiscountBody> {
                           suffix: Padding(
                             padding: const EdgeInsetsDirectional.only(end: DsSpace.md),
                             child: Text(
-                              controller.specialDiscount[index].timeslot![indexTimeSlot].type == "percentage" ? "%" : "${Constant.currencyModel!.symbol}".tr,
+                              controller.specialDiscount[index].timeslot![indexTimeSlot].type == "percentage" ? "%" : controller.currencySymbol,
                               style: t.titleSm.withColor(c.brandStrong),
                             ),
                           ),
@@ -338,14 +337,9 @@ class _SpecialDiscountBodyState extends State<_SpecialDiscountBody> {
                         hint: Text('Select Type'.tr, style: t.body.withColor(c.textMuted)),
                         icon: Icon(Icons.keyboard_arrow_down_rounded, color: c.textMuted),
                         decoration: DsInputDecoration.of(context),
-                        initialValue: controller.specialDiscount[index].timeslot![indexTimeSlot].type == "amount" ? Constant.currencyModel!.symbol : "%",
+                        initialValue: controller.specialDiscount[index].timeslot![indexTimeSlot].type == "amount" ? controller.currencySymbol : "%",
                         onChanged: (value) {
-                          controller.changeValue(index, indexTimeSlot, value == Constant.currencyModel!.symbol! ? "amount" : "percentage");
-                          // if (value == Constant.currencyModel!.symbol!) {
-                          //   controller.specialDiscount[index].timeslot![indexTimeSlot].type = "amount";
-                          // } else {
-                          //   controller.specialDiscount[index].timeslot![indexTimeSlot].type = "percentage";
-                          // }
+                          controller.changeValue(index, indexTimeSlot, value == controller.currencySymbol ? "amount" : "percentage");
                           controller.update();
                         },
                         style: t.bodyStrong,
@@ -365,19 +359,21 @@ class _SpecialDiscountBodyState extends State<_SpecialDiscountBody> {
                   borderRadius: DsRadius.brMd,
                   icon: Icon(Icons.keyboard_arrow_down_rounded, color: c.textMuted),
                   decoration: DsInputDecoration.of(context, prefixIcon: isDineIn ? Icons.restaurant_outlined : Icons.delivery_dining_outlined),
-                  initialValue: controller.specialDiscount[index].timeslot![indexTimeSlot].discountType == "dinein" ? "Dine-In Discount" : "Delivery Discount",
+                  // The item *values* stay the untranslated keys (only the
+                  // labels are translated). They used to be `item.tr`, so in
+                  // any language with a translation for them the initial value
+                  // below was not one of the items and the dropdown asserted
+                  // instead of rendering - the same "initial value outside the
+                  // picker's own bounds" fault as report #8.
+                  initialValue: SpecialDiscountController.discountTypeOption(controller.specialDiscount[index].timeslot![indexTimeSlot].discountType),
                   onChanged: (value) {
-                    if (value == "Dine-In Discount") {
-                      controller.specialDiscount[index].timeslot![indexTimeSlot].discountType = "dinein";
-                    } else {
-                      controller.specialDiscount[index].timeslot![indexTimeSlot].discountType = "delivery";
-                    }
+                    controller.specialDiscount[index].timeslot![indexTimeSlot].discountType = SpecialDiscountController.storedDiscountType(value);
                     controller.update();
                     if (mounted) setState(() {});
                   },
                   style: t.bodyStrong,
                   items: controller.discountType.map((item) {
-                    return DropdownMenuItem<String>(value: item.tr, child: Text(item.toString().tr));
+                    return DropdownMenuItem<String>(value: item, child: Text(item.tr));
                   }).toList(),
                 ),
                 Align(

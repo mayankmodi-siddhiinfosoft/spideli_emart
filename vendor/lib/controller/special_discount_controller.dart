@@ -9,8 +9,35 @@ class SpecialDiscountController extends GetxController {
   RxBool isLoading = true.obs;
   RxList<SpecialDiscount> specialDiscount = <SpecialDiscount>[].obs;
 
-  List<String> discountType = ['Dine-In Discount', 'Delivery Discount'].obs;
-  List<String> type = [Constant.currencyModel!.symbol!, '%'];
+  /// The two kinds of discount, as the *untranslated* keys they are stored
+  /// against. They double as the dropdown's item values, so the value the
+  /// field opens on is always one of its own items whatever the app language
+  /// is: translated item values put the initial value out of range and the
+  /// dropdown then asserts instead of rendering.
+  static const String dineInDiscountOption = 'Dine-In Discount';
+  static const String deliveryDiscountOption = 'Delivery Discount';
+  static const List<String> discountTypeOptions = [dineInDiscountOption, deliveryDiscountOption];
+
+  /// What `timeslot.discountType` is stored as for [option].
+  static String storedDiscountType(String? option) => option == dineInDiscountOption ? 'dinein' : 'delivery';
+
+  /// The option a stored `timeslot.discountType` maps onto. Always a member of
+  /// [discountTypeOptions], including for a value the panel wrote that this
+  /// app does not know.
+  static String discountTypeOption(String? stored) => stored == 'dinein' ? dineInDiscountOption : deliveryDiscountOption;
+
+  List<String> discountType = discountTypeOptions;
+
+  /// The amount / percentage units. A getter, not a field: the field ran
+  /// `Constant.currencyModel!` while the controller was being constructed, and
+  /// the global currency arrives from a Firestore snapshot - so opening this
+  /// screen before the first snapshot threw and the screen never built. It also
+  /// keeps the list in step with a currency that changes later, which a cached
+  /// list did not (the unit dropdown's selected value then fell outside its own
+  /// items).
+  String get currencySymbol => Constant.currencyModel?.symbol ?? '';
+
+  List<String> get type => [currencySymbol, '%'];
 
   @override
   void onInit() {

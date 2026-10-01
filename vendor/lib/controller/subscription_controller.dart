@@ -94,11 +94,14 @@ class SubscriptionController extends GetxController {
           .where((element) => element.id == userModel.value.sectionId || RegionService.isAvailableInRegion(element.regionIds, RegionService.storeRegionId))
           .toList();
 
-      if (userModel.value.sectionId != null && userModel.value.sectionId!.isNotEmpty) {
-        selectedSectionModel.value = sectionsList.where((element) => element.id == userModel.value.sectionId).first;
-      } else {
-        selectedSectionModel.value = sectionsList.first;
-      }
+      // `.first` threw a StateError on an empty match - the account's section
+      // filtered out by region, or no section available at all. Nothing caught
+      // it, so `isLoading` was never cleared and the screen stayed on its
+      // skeleton for ever. It also handed the section dropdown a value that was
+      // not one of its items. Falling back to the first available section, or to
+      // none, leaves the dropdown on its "Select Section" hint instead.
+      final SectionModel? ownSection = sectionsList.where((element) => element.id == userModel.value.sectionId).firstOrNull;
+      selectedSectionModel.value = ownSection ?? (sectionsList.isEmpty ? SectionModel() : sectionsList.first);
     });
     await getSubscriptionPlanList();
     await getPaymentSettings();

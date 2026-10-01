@@ -6,6 +6,7 @@ import 'package:vendor/constant/constant.dart';
 import 'package:vendor/controller/my_stores_controller.dart';
 import 'package:vendor/models/vendor_model.dart';
 import 'package:vendor/themes/ds/ds.dart';
+import 'package:vendor/utils/address_format.dart';
 
 /// The store picker in the home header (app-spec-multiple-stores: "Switch
 /// store - a picker in the header. It writes the chosen id to users.vendorID
@@ -118,6 +119,9 @@ class _StorePickerSheet extends StatelessWidget {
                             builder: (context) {
                               final VendorModel store = controller.stores[i];
                               final bool isCurrent = store.id == controller.currentStoreId;
+                              // Through the formatter: a location stored as the
+                              // string "null" printed as-is here (report #17).
+                              final String storeLocation = formatAddress([store.location]);
                               return DsFadeSlideIn(
                                 index: i,
                                 child: Padding(
@@ -146,8 +150,7 @@ class _StorePickerSheet extends StatelessWidget {
                                                 overflow: TextOverflow.ellipsis,
                                                 style: t.bodyStrong,
                                               ),
-                                              if ((store.location ?? '').isNotEmpty)
-                                                Text(store.location!, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption),
+                                              if (storeLocation.isNotEmpty) Text(storeLocation, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.caption),
                                             ],
                                           ),
                                         ),

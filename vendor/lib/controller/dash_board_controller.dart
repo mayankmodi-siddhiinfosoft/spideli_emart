@@ -79,6 +79,13 @@ class DashBoardController extends GetxController {
       } else {
         sectionModel.value = SectionModel();
       }
+      // Never left null. Every `Constant.selectedSection!` across the app threw
+      // when the section could not be read - including the first line of the
+      // order card's Accept handler, which then did nothing at all when tapped
+      // (the fault behind report #5). The store's own section, read a few lines
+      // above, still wins; an empty section is only the last resort and reads as
+      // "no special behaviour", which is what the old code fell through to.
+      Constant.selectedSection ??= sectionModel.value;
     });
     setPage();
 

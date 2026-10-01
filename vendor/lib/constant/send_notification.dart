@@ -35,6 +35,14 @@ class SendNotification {
       debugPrint("accessToken=======>");
       debugPrint(accessToken);
       NotificationModel? notificationModel = await FireStoreUtils.getNotificationContent(type);
+      // `notificationModel!` threw whenever the admin had no template for this
+      // type, and the catch below turned that into a silent `false` - the
+      // customer was simply never told. Say so in the log and stop, rather than
+      // pretending to have sent something.
+      if (notificationModel == null) {
+        debugPrint("sendFcmMessage: no notification template stored for type '$type'");
+        return false;
+      }
 
       final response = await http.post(
         Uri.parse('https://fcm.googleapis.com/v1/projects/${Constant.senderId}/messages:send'),
@@ -42,7 +50,7 @@ class SendNotification {
         body: jsonEncode(<String, dynamic>{
           'message': {
             'token': token,
-            'notification': {'body': notificationModel!.message ?? '', 'title': notificationModel.subject ?? ''},
+            'notification': {'body': notificationModel.message ?? '', 'title': notificationModel.subject ?? ''},
             'data': payload,
           },
         }),

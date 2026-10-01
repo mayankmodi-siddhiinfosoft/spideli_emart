@@ -12,6 +12,7 @@ import 'package:vendor/controller/order_details_controller.dart';
 import 'package:vendor/models/cart_product_model.dart';
 import 'package:vendor/models/currency_model.dart';
 import 'package:vendor/models/order_model.dart';
+import 'package:vendor/utils/address_format.dart';
 
 /// PDF receipt of one order (spec 7.6 / 8.4), built with syncfusion_flutter_pdf
 /// like the wallet statement.
@@ -72,7 +73,10 @@ class OrderReceiptPdf {
     final double storeWidth = w.width - textLeft;
     double ty = headerTop;
     ty += w.textAt(order.vendor?.title ?? '', w.titleFont, textLeft, ty, storeWidth) + 2;
-    if ((order.vendor?.location ?? '').isNotEmpty) ty += w.textAt(order.vendor!.location!, w.smallFont, textLeft, ty, storeWidth) + 1;
+    // Through the formatter, so a store whose location was stored as "null"
+    // does not print it on the receipt (report #17).
+    final String storeLocation = formatAddress([order.vendor?.location]);
+    if (storeLocation.isNotEmpty) ty += w.textAt(storeLocation, w.smallFont, textLeft, ty, storeWidth) + 1;
     if ((order.vendor?.phonenumber ?? '').isNotEmpty) ty += w.textAt('${'Phone'.tr}: ${order.vendor!.phonenumber}', w.smallFont, textLeft, ty, storeWidth);
     w.y = (logo.isNotEmpty && textLeft > _margin) ? (ty > headerTop + 56 ? ty : headerTop + 56) : ty;
     w.gap(10);

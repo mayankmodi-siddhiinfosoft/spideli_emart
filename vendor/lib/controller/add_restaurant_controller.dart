@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
@@ -104,8 +105,13 @@ class AddRestaurantController extends GetxController {
         sectionsList.value = value.where((element) => element.serviceTypeFlag == "ecommerce-service" || element.serviceTypeFlag == "delivery-service").toList();
       });
 
-      if (userModel.value.sectionId != null || userModel.value.sectionId!.isNotEmpty) {
-        selectedSectionModel.value = sectionsList.firstWhere((element) => element.id == userModel.value.sectionId);
+      // `firstWhere` with no `orElse` threw for an account whose section is not
+      // in this list (a section the admin removed, or one of another service
+      // type). The throw landed in the catch below, so the whole form - photos,
+      // zone, categories, region, delivery charges - silently stayed empty.
+      final SectionModel? ownSection = sectionsList.where((element) => element.id == userModel.value.sectionId).firstOrNull;
+      if (ownSection != null) {
+        selectedSectionModel.value = ownSection;
         vendorCategoryList.value = await FireStoreUtils.getVendorCategoryById(selectedSectionModel.value.id.toString());
         if (vendorCategoryList.isEmpty) {
           ShowToastDialog.showToast("No category for this section".tr);
@@ -117,6 +123,8 @@ class AddRestaurantController extends GetxController {
             zoneList.value = value;
           }
         });
+      } else {
+        ShowToastDialog.showToast("Your section could not be loaded, so categories and zones are unavailable. Please contact the administrator.".tr);
       }
 
       if (!isNewStore && Constant.userModel?.vendorID != null && Constant.userModel?.vendorID?.isNotEmpty == true) {
@@ -137,8 +145,19 @@ class AddRestaurantController extends GetxController {
             if (addressController.value.text.isNotEmpty) {
               isAddressEnable.value = true;
             }
-            selectedLocation.value = LatLng(vendorModel.value.latitude!, vendorModel.value.longitude!);
-            for (var element in vendorModel.value.photos!) {
+            // A store saved without coordinates (panel-created, or saved before
+            // the map picker existed) used to throw here on `latitude!`. The
+            // throw was swallowed by the catch below, so the rest of the form -
+            // photos, zone, categories, region, delivery charges - never loaded
+            // and the screen looked half-broken for no visible reason. The
+            // location is simply "not picked yet" instead, which the location
+            // card already explains and `saveDetails` already guards.
+            final double? latitude = vendorModel.value.latitude;
+            final double? longitude = vendorModel.value.longitude;
+            if (latitude != null && longitude != null) {
+              selectedLocation.value = LatLng(latitude, longitude);
+            }
+            for (var element in vendorModel.value.photos ?? []) {
               images.add(element);
             }
 
@@ -152,7 +171,10 @@ class AddRestaurantController extends GetxController {
               selectedCategories.value = vendorCategoryList.where((category) => vendorModel.value.categoryID!.contains(category.id)).toList();
             }
 
-            vendorModel.value.filters!.toJson().forEach((key, value) {
+            // `filters` is absent on a store the panel created, and `filters!`
+            // threw into the catch below - taking the rest of the form load
+            // with it.
+            vendorModel.value.filters?.toJson().forEach((key, value) {
               if (value.contains("Yes")) {
                 selectedService.add(key);
               }
@@ -170,8 +192,11 @@ class AddRestaurantController extends GetxController {
           _applyDeliveryCharge(value);
         }
       });
-    } catch (e) {
-      print(e);
+    } catch (e, s) {
+      // Was a bare `print`: the form came up partly filled with nothing to say
+      // why. Whatever failed, the vendor is told rather than left guessing.
+      log("AddRestaurantController.getRestaurant failed: $e", stackTrace: s);
+      ShowToastDialog.showToast("Could not load all of your store details. Please check your connection and reopen this screen.".tr);
     }
 
     isLoading.value = false;

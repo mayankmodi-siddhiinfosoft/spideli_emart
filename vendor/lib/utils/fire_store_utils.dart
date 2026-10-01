@@ -878,6 +878,16 @@ class FireStoreUtils {
       log("restaurantVendorWalletSet: order ${orderModel.id} already credited, skipping");
       return;
     }
+    // The store owner the credit belongs to. `orderModel.vendor!.author` threw
+    // for an order whose embedded store snapshot is missing, and the throw
+    // aborted the rest of the caller (the customer's notification, the driver's
+    // notification) half-way through.
+    final String ownerId = (orderModel.vendor?.author ?? '').toString();
+    final String storeId = (orderModel.vendorID ?? orderModel.vendor?.id ?? '').toString();
+    if (ownerId.isEmpty) {
+      log("restaurantVendorWalletSet: order ${orderModel.id} carries no store owner, nothing credited");
+      return;
+    }
     final credit = vendorOrderCredit(orderModel);
     final double basePrice = credit.basePrice;
     final double totalTaxAmount = credit.totalTaxAmount;
@@ -914,11 +924,7 @@ class FireStoreUtils {
 
     await fireStore.collection(CollectionName.wallet).doc(taxModel.id).set(taxModel.toJson());
 
-    await adjustVendorWallet(
-      amount: basePrice + totalTaxAmount,
-      vendorId: (orderModel.vendorID ?? orderModel.vendor!.id).toString(),
-      ownerId: orderModel.vendor!.author.toString(),
-    );
+    await adjustVendorWallet(amount: basePrice + totalTaxAmount, vendorId: storeId, ownerId: ownerId);
   }
 
   static Future<RatingModel?> getOrderReviewsByID(String orderId, String productID) async {

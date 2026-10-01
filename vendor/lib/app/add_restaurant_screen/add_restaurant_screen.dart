@@ -168,9 +168,16 @@ class AddRestaurantScreen extends StatelessWidget {
                               ),
                               InkWell(
                                 borderRadius: DsRadius.brMd,
+                                // Tapping the field once an address was set used
+                                // to do nothing at all - the same dead tap
+                                // target as report #5 - even though the card
+                                // below invites the vendor to tap it. It now
+                                // opens the same map the "change" chip opens.
                                 onTap: () {
                                   if (controller.addressController.value.text.isEmpty) {
                                     _pickAddress(context, controller);
+                                  } else {
+                                    _changeAddress(context, controller);
                                   }
                                 },
                                 child: FormInput(
@@ -231,7 +238,10 @@ class AddRestaurantScreen extends StatelessWidget {
                                             isExpanded: true,
                                             icon: Icon(Icons.keyboard_arrow_down_rounded, color: c.textMuted),
                                             decoration: DsInputDecoration.of(context, prefixIcon: Icons.public_rounded),
-                                            initialValue: controller.selectedRegion.value.id == null ? null : controller.selectedRegion.value,
+                                            // Only ever one of the items, so the
+                                            // field can never be handed a value
+                                            // outside its own list.
+                                            initialValue: controller.regionList.contains(controller.selectedRegion.value) ? controller.selectedRegion.value : null,
                                             onChanged: (value) {
                                               if (value != null) controller.onRegionChanged(value);
                                             },
@@ -269,7 +279,12 @@ class AddRestaurantScreen extends StatelessWidget {
                                           isExpanded: true,
                                           icon: Icon(Icons.keyboard_arrow_down_rounded, color: c.textMuted),
                                           decoration: DsInputDecoration.of(context, prefixIcon: Icons.map_outlined),
-                                          initialValue: controller.selectedZone.value.id == null ? null : controller.selectedZone.value,
+                                          // Region filtering shortens this list
+                                          // (report #16); the selected zone is
+                                          // only offered back while it is still
+                                          // in it, otherwise the dropdown would
+                                          // assert instead of rendering.
+                                          initialValue: controller.zoneList.contains(controller.selectedZone.value) ? controller.selectedZone.value : null,
                                           onChanged: (value) {
                                             controller.selectedZone.value = value!;
                                             controller.update();
@@ -423,11 +438,21 @@ class AddRestaurantScreen extends StatelessWidget {
                                     ),
                                     const DsGap(DsSpace.sm),
                                   ],
+                                  // Read-only: whether a store may set its own
+                                  // delivery charges is `settings/DeliveryCharge
+                                  // .vendorCanModify`, decided by the admin. The
+                                  // switch used to accept taps and silently
+                                  // discard them (`onChanged: (value) {}`); a
+                                  // null handler disables it and the subtitle
+                                  // says who controls it.
                                   FormSwitchTile(
                                     title: "Delivery Settings".tr,
+                                    subtitle: controller.isEnableDeliverySettings.value
+                                        ? "The administrator lets this store set its own delivery charges.".tr
+                                        : "Delivery charges are set by the administrator and cannot be changed here.".tr,
                                     icon: Icons.tune_rounded,
                                     value: controller.isEnableDeliverySettings.value,
-                                    onChanged: (value) {},
+                                    onChanged: null,
                                   ),
                                   const DsGap(DsSpace.lg),
                                   AnimatedOpacity(

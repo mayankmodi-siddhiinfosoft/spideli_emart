@@ -5,6 +5,7 @@ import 'package:vendor/controller/my_stores_controller.dart';
 import 'package:vendor/models/vendor_model.dart';
 import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/themes/theme_controller.dart';
+import 'package:vendor/utils/address_format.dart';
 
 /// The stores this vendor account owns: switch between them, or add another.
 /// Owners only - an employee always works on the one store they belong to.
@@ -147,6 +148,9 @@ class StoreListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
+    // Through the formatter: a location stored as the string "null" (or holding
+    // a "null" part) printed as-is here (report #17).
+    final String storeLocation = formatAddress([store.location]);
     return DsCard(
       padding: const EdgeInsets.all(DsSpace.md),
       borderColor: isCurrent ? c.brand : null,
@@ -163,14 +167,14 @@ class StoreListTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(store.title?.isNotEmpty == true ? store.title! : "Unnamed store".tr, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm),
-                    if ((store.location ?? '').isNotEmpty) ...[
+                    if (storeLocation.isNotEmpty) ...[
                       const DsGap(DsSpace.xxs),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Padding(padding: const EdgeInsets.only(top: 1), child: Icon(Icons.location_on_outlined, size: 14, color: c.textMuted)),
                           const DsGap(DsSpace.xs),
-                          Expanded(child: Text(store.location!, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySm)),
+                          Expanded(child: Text(storeLocation, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySm)),
                         ],
                       ),
                     ],

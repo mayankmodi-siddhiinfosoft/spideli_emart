@@ -9,6 +9,7 @@ import 'package:vendor/models/vendor_subscription_model.dart';
 import 'package:vendor/models/vendor_subscription_payment_model.dart';
 import 'package:vendor/models/vendor_subscription_plan_model.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/address_format.dart';
 
 /// Data access for "Customer Subscriptions" (plans a store sells to its own
 /// customers). Queries filter by the current store only and are sorted
@@ -116,7 +117,9 @@ class CustomerSubscriptionService {
     final list = user?.shippingAddress;
     if (list == null || list.isEmpty) return null;
     final address = list.firstWhere((a) => a.isDefault == true, orElse: () => list.first);
-    final text = [address.address, address.locality, address.landmark].map((e) => e?.trim() ?? '').where((e) => e.isNotEmpty).join(', ');
+    // Through the shared formatter, which also drops a part stored as the
+    // string "null" - the plain isNotEmpty filter kept it (report #17).
+    final text = formatAddress([address.address, address.locality, address.landmark]);
     return text.isEmpty ? null : text;
   }
 }

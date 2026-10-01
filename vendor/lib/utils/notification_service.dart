@@ -62,6 +62,11 @@ class NotificationService {
 
   Future<void> initInfo() async {
     await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(alert: true, badge: true, sound: true);
+    // Channels first, before the permission request: `requestPermission` blocks
+    // on the system dialog, and until it returns the loud order channel would
+    // not exist - a background push arriving in that window is posted on a
+    // channel Android makes up itself, which is silent and never heads-up.
+    await createChannels();
     var request = await FirebaseMessaging.instance.requestPermission(alert: true, announcement: false, badge: true, carPlay: false, criticalAlert: false, provisional: false, sound: true);
 
     const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -77,10 +82,6 @@ class NotificationService {
         }
       },
     );
-
-    // The channels must exist before a background push arrives, so they are
-    // created on every start and not behind the permission result.
-    await createChannels();
 
     if (request.authorizationStatus == AuthorizationStatus.authorized || request.authorizationStatus == AuthorizationStatus.provisional) {
       setupInteractedMessage();

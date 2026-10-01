@@ -82,7 +82,12 @@ class SubscriptionPlanScreen extends StatelessWidget {
                                             icon: Icon(Icons.keyboard_arrow_down_rounded, color: c.textMuted),
                                             decoration: DsInputDecoration.of(context, prefixIcon: Icons.category_outlined),
                                             validator: (value) => value == null ? 'field required' : null,
-                                            initialValue: controller.selectedSectionModel.value,
+                                            // Only when it really is one of the
+                                            // items: a value outside them makes
+                                            // DropdownButtonFormField assert
+                                            // instead of rendering (the
+                                            // report #8 fault class).
+                                            initialValue: controller.sectionsList.contains(controller.selectedSectionModel.value) ? controller.selectedSectionModel.value : null,
                                             onChanged: (value) {
                                               controller.selectedSectionModel.value = value!;
                                               controller.subscriptionPlanList.clear();

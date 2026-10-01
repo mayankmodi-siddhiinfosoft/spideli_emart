@@ -838,4 +838,11 @@ const Map<String, String> enUS = {
   "Advertisement payment": "Advertisement payment",
   "Could not open your mail app. Write to": "Could not open your mail app. Write to",
   "vendor": "Store",
+  "Your section could not be loaded, so categories and zones are unavailable. Please contact the administrator.":
+      "Your section could not be loaded, so categories and zones are unavailable. Please contact the administrator.",
+  "Could not load all of your store details. Please check your connection and reopen this screen.":
+      "Could not load all of your store details. Please check your connection and reopen this screen.",
+  "The administrator lets this store set its own delivery charges.": "The administrator lets this store set its own delivery charges.",
+  "Delivery charges are set by the administrator and cannot be changed here.": "Delivery charges are set by the administrator and cannot be changed here.",
+  "Please pick the start time first": "Please pick the start time first",
 };
