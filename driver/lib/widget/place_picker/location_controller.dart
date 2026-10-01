@@ -1,3 +1,4 @@
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/widget/place_picker/selected_location_model.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -58,7 +59,14 @@ class LocationController extends GetxController {
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks.first;
         selectedPlaceAddress.value = place;
-        address.value = "${place.street}, ${place.locality}, ${place.administrativeArea}, ${place.country}";
+        // Client point 17 at its source: interpolating the placemark fields
+        // printed the literal word "null" for every part the geocoder did not
+        // return, and this string is what gets SAVED — which is how
+        // "123 Yaounde St, null, Tsinga" ends up in Firestore in the first
+        // place. AddressFormat drops the blank parts and the separator each
+        // one would have left behind.
+        final String formatted = AddressFormat.join([place.street, place.locality, place.administrativeArea, place.country]);
+        address.value = formatted.isEmpty ? "Address not found" : formatted;
       } else {
         address.value = "Address not found";
       }

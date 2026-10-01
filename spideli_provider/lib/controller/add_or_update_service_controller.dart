@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'package:geolocator/geolocator.dart';
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/constant/show_toast_dialog.dart';
+import 'package:spideliprovider/utils/args.dart';
 import 'package:spideliprovider/utils/utils.dart';
 import 'package:spideliprovider/widgets/osm_map/map_picker_page.dart';
 import 'package:spideliprovider/widgets/osm_map/place_model.dart';
@@ -143,8 +144,13 @@ class AddOrUpdateServiceController extends GetxController {
     await getData();
     dynamic argumentData = Get.arguments;
     if (argumentData != null) {
-      serviceModel.value = argumentData['providerModel'];
-      await getAttribute();
+      // Edit mode only; see [argOf]. Assigning a missing key into this
+      // non-nullable Rx threw and the form came up blank.
+      final ProviderServiceModel? passed = argOf<ProviderServiceModel>(argumentData, 'providerModel');
+      if (passed != null) {
+        serviceModel.value = passed;
+        await getAttribute();
+      }
     }
 
     isLoading.value = false;

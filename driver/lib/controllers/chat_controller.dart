@@ -7,6 +7,7 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/conversation_model.dart';
 import 'package:driver/models/inbox_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/utils/args.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -36,18 +37,9 @@ class ChatController extends GetxController {
   RxString chatType = "".obs;
   Rx<UserModel?> receiverUser = UserModel().obs;
 
-  /// Reads one argument as a plain string. Every caller builds the map from
-  /// Firestore data, so any key can be absent or null (a customer without an
-  /// `fcmToken`, an order id that was never passed): assigning that straight
-  /// into an `RxString` threw a `TypeError` inside this future, left the rest
-  /// of the arguments unset and the screen built an invalid Firestore query —
-  /// the blank chat screen.
-  static String _arg(dynamic data, String key) {
-    final dynamic value = data is Map ? data[key] : null;
-    if (value == null) return "";
-    final String text = value.toString().trim();
-    return (text.isEmpty || text == 'null') ? "" : text;
-  }
+  /// Reads one argument as a plain string — see [argString] for why every one
+  /// of them has to go through a guard.
+  static String _arg(dynamic data, String key) => argString(data, key);
 
   Future<void> getArgument() async {
     // if (scrollController.value.hasClients) {

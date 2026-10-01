@@ -65,12 +65,19 @@ class ParcelSearchScreen extends StatelessWidget {
 
                                             final place = selectedLocationModel.address;
 
-                                            // ✅ Build full readable address from Placemark fields
-                                            controller.sourceTextEditController.value.text = '${place?.name ?? ''}, ${place?.street ?? ''}, ${place?.subLocality ?? ''}, '
-                                                    '${place?.locality ?? ''}, ${place?.administrativeArea ?? ''}, ${place?.postalCode ?? ''}, ${place?.country ?? ''}'
-                                                .replaceAll(RegExp(r', ,|, , ,'), ',')
-                                                .trim()
-                                                .replaceAll(RegExp(r',+$'), '');
+                                            // Client point 17: the hand-rolled
+                                            // join left ", ," runs and a
+                                            // trailing comma behind whichever
+                                            // placemark fields were missing.
+                                            controller.sourceTextEditController.value.text = AddressFormat.join([
+                                              place?.name,
+                                              place?.street,
+                                              place?.subLocality,
+                                              place?.locality,
+                                              place?.administrativeArea,
+                                              place?.postalCode,
+                                              place?.country,
+                                            ]);
 
                                             controller.departureLatLong.value = latlong.LatLng(
                                               selectedLocationModel.latLng!.latitude,
@@ -107,11 +114,15 @@ class ParcelSearchScreen extends StatelessWidget {
                                               SelectedLocationModel selectedLocationModel = value;
                                               final place = selectedLocationModel.address;
 
-                                              controller.destinationTextEditController.value.text = '${place?.name ?? ''}, ${place?.street ?? ''}, ${place?.subLocality ?? ''}, '
-                                                      '${place?.locality ?? ''}, ${place?.administrativeArea ?? ''}, ${place?.postalCode ?? ''}, ${place?.country ?? ''}'
-                                                  .replaceAll(RegExp(r', ,|, , ,'), ',')
-                                                  .trim()
-                                                  .replaceAll(RegExp(r',+$'), '');
+                                              controller.destinationTextEditController.value.text = AddressFormat.join([
+                                                place?.name,
+                                                place?.street,
+                                                place?.subLocality,
+                                                place?.locality,
+                                                place?.administrativeArea,
+                                                place?.postalCode,
+                                                place?.country,
+                                              ]);
 
                                               controller.destinationLatLong.value = latlong.LatLng(
                                                 selectedLocationModel.latLng!.latitude,

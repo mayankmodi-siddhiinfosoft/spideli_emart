@@ -183,9 +183,16 @@ class ParcelHomeScreen extends StatelessWidget {
 
                                 ShowToastDialog.closeLoader();
 
+                                // Client point 6: a missing profile used to
+                                // throw here, so the chat button did nothing.
+                                if (customer == null || driver == null) {
+                                  ShowToastDialog.showToast("This conversation could not be opened. Open it again from the order.".tr);
+                                  return;
+                                }
+
                                 Get.to(const ChatScreen(), arguments: {
-                                  "senderName": driver!.fullName(),
-                                  "receivedName": customer!.fullName(),
+                                  "senderName": driver.fullName(),
+                                  "receivedName": customer.fullName(),
                                   "orderId": parcelBookingData.id,
                                   "senderId": driver.id,
                                   "receivedId": customer.id,

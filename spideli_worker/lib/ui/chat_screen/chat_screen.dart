@@ -5,6 +5,7 @@ import 'package:spideliworker/constant/show_toast_dialog.dart';
 import 'package:spideliworker/controller/chat_controller.dart';
 import 'package:spideliworker/model/chat_video_container.dart';
 import 'package:spideliworker/model/conversation_model.dart';
+import 'package:spideliworker/model/user.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/chat_screen/full_screen_image_viewer.dart';
@@ -48,9 +49,21 @@ class ChatScreen extends StatelessWidget {
         final c = context.dsColors;
         final t = context.dsText;
         // Read synchronously so this GetX tracks the conversation.
-        final String title = controller.receivedId.value == 'admin' ? 'Admin' : controller.receiverUser.value!.fullName();
+        // `receiverUser.value!` threw here whenever the lookup came back null
+        // (a customer whose user document is gone, a provider the worker cannot
+        // read) — the chat opened on a red / blank screen. The name the opening
+        // screen passed in is the fallback.
+        final User? receiver = controller.receiverUser.value;
+        final String passedName = controller.receivedName.value.trim();
+        final String title = controller.receivedId.value == 'admin'
+            ? 'Admin'
+            : (receiver?.fullName().trim().isNotEmpty ?? false)
+                ? receiver!.fullName()
+                : passedName.isNotEmpty
+                    ? passedName
+                    : 'Customer'.tr;
         final String reference = "${controller.sectionType.value == 'adv' ? "AvdId" : "OrderId".tr} ${orderId(orderId: controller.orderId.value.toString())}";
-        final String? avatarUrl = controller.receiverUser.value?.profilePictureURL;
+        final String? avatarUrl = receiver?.profilePictureURL ?? controller.receivedProfileUrl.value;
 
         return Scaffold(
           backgroundColor: c.background,
@@ -76,22 +89,30 @@ class ChatScreen extends StatelessWidget {
             onTap: () {
               FocusScope.of(context).unfocus();
             },
-            child: FirestorePagination(
-              reverse: true,
-              controller: controller.scrollController.value,
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.md),
-              itemBuilder: (context, documentSnapshots, index) {
-                ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+            // Without a booking id there is no thread to read: `doc("")`
+            // throws inside build and the whole screen comes up blank.
+            child: controller.orderId.value.isEmpty
+                ? DsEmptyState(
+                    icon: Icons.forum_outlined,
+                    title: "No conversion found".tr,
+                    message: "This conversation could not be opened. Open it again from the booking.".tr,
+                  )
+                : FirestorePagination(
+                  reverse: true,
+                  controller: controller.scrollController.value,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.md),
+                  itemBuilder: (context, documentSnapshots, index) {
+                    ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
 
-                return chatItemView(context, chatmodel.senderId == FireStoreUtils.getCurrentUid(), chatmodel);
-              },
-              onEmpty: DsEmptyState(icon: Icons.forum_outlined, title: "No conversion found".tr),
-              query: FireStoreUtils.firestore.collection('chat').doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
-              isLive: true,
-              viewType: ViewType.list,
-              initialLoader: const DsSkeletonList(itemCount: 5, leading: false, trailing: false),
-            ),
+                    return chatItemView(context, chatmodel.senderId == FireStoreUtils.getCurrentUid(), chatmodel);
+                  },
+                  onEmpty: DsEmptyState(icon: Icons.forum_outlined, title: "No conversion found".tr),
+                  query: FireStoreUtils.firestore.collection('chat').doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
+                  isLive: true,
+                  viewType: ViewType.list,
+                  initialLoader: const DsSkeletonList(itemCount: 5, leading: false, trailing: false),
+                ),
           ),
           bottomNavigationBar: DsStickyBar(
             child: Row(

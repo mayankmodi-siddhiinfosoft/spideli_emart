@@ -120,9 +120,16 @@ class DeliverOrderScreen extends StatelessWidget {
 
               ShowToastDialog.closeLoader();
 
+              // Client point 6: a missing profile used to throw here and the
+              // chat button did nothing at all.
+              if (customer == null || driver == null) {
+                ShowToastDialog.showToast("This conversation could not be opened. Open it again from the order.".tr);
+                return;
+              }
+
               Get.to(const ChatScreen(), arguments: {
-                "senderName": driver!.fullName(),
-                "receivedName": customer!.fullName(),
+                "senderName": driver.fullName(),
+                "receivedName": customer.fullName(),
                 "orderId": controller.orderModel.value.id,
                 "senderId": driver.id,
                 "receivedId": customer.id,

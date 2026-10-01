@@ -6,6 +6,7 @@ import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/controller/chat_controller.dart';
 import 'package:spideliprovider/model/chat_video_container.dart';
 import 'package:spideliprovider/model/conversation_model.dart';
+import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/ui/chat_screen/full_screen_image_viewer.dart';
@@ -32,7 +33,19 @@ class ChatScreen extends StatelessWidget {
       init: ChatController(),
       builder: (controller) {
         // Header values are read here so the GetX observer tracks them.
-        final String title = controller.receivedId.value == 'admin' ? 'Admin' : controller.receiverUser.value!.fullName();
+        // `receiverUser.value!` threw here whenever the lookup came back null
+        // (a customer whose user document is gone, a worker read the provider
+        // cannot make) — the chat opened on a red / blank screen. The name the
+        // opening screen passed in is the fallback.
+        final User? receiver = controller.receiverUser.value;
+        final String passedName = controller.receivedName.value.trim();
+        final String title = controller.receivedId.value == 'admin'
+            ? 'Admin'
+            : (receiver?.fullName().trim().isNotEmpty ?? false)
+                ? receiver!.fullName()
+                : passedName.isNotEmpty
+                    ? passedName
+                    : 'Customer'.tr;
         final String reference = "${controller.sectionType.value == 'adv' ? "AvdId" : "OrderId".tr} ${orderId(orderId: controller.orderId.value.toString())}";
         return Scaffold(
           backgroundColor: c.background,
@@ -40,7 +53,7 @@ class ChatScreen extends StatelessWidget {
             backgroundColor: c.surface,
             titleWidget: Row(
               children: [
-                DsAvatar(imageUrl: controller.receiverUser.value?.profilePictureURL, name: title, size: 38),
+                DsAvatar(imageUrl: receiver?.profilePictureURL ?? controller.receivedProfileUrl.value, name: title, size: 38),
                 const DsGap(DsSpace.md),
                 Expanded(
                   child: Column(
@@ -62,22 +75,31 @@ class ChatScreen extends StatelessWidget {
                   onTap: () {
                     FocusScope.of(context).unfocus();
                   },
-                  child: FirestorePagination(
-                    reverse: true,
-                    controller: controller.scrollController.value,
-                    physics: const BouncingScrollPhysics(),
-                    padding: EdgeInsets.symmetric(horizontal: context.dsLayout.gutter, vertical: DsSpace.md),
-                    itemBuilder: (context, documentSnapshots, index) {
-                      ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+                  // Without a booking id there is no thread to read:
+                  // `doc("")` throws inside build and the whole screen comes
+                  // up blank.
+                  child: controller.orderId.value.isEmpty
+                      ? DsEmptyState(
+                          icon: Icons.chat_bubble_outline_rounded,
+                          title: "No conversion found".tr,
+                          message: "This conversation could not be opened. Open it again from the booking.".tr,
+                        )
+                      : FirestorePagination(
+                        reverse: true,
+                        controller: controller.scrollController.value,
+                        physics: const BouncingScrollPhysics(),
+                        padding: EdgeInsets.symmetric(horizontal: context.dsLayout.gutter, vertical: DsSpace.md),
+                        itemBuilder: (context, documentSnapshots, index) {
+                          ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
 
-                      return chatItemView(context, chatmodel.senderId == FireStoreUtils.getCurrentUid(), chatmodel);
-                    },
-                    onEmpty: DsEmptyState(icon: Icons.chat_bubble_outline_rounded, title: "No conversion found".tr),
-                    initialLoader: const DsSkeletonList(itemCount: 5, leading: false, trailing: false),
-                    query: FireStoreUtils.firestore.collection('chat').doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
-                    isLive: true,
-                    viewType: ViewType.list,
-                  ),
+                          return chatItemView(context, chatmodel.senderId == FireStoreUtils.getCurrentUid(), chatmodel);
+                        },
+                        onEmpty: DsEmptyState(icon: Icons.chat_bubble_outline_rounded, title: "No conversion found".tr),
+                        initialLoader: const DsSkeletonList(itemCount: 5, leading: false, trailing: false),
+                        query: FireStoreUtils.firestore.collection('chat').doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
+                        isLive: true,
+                        viewType: ViewType.list,
+                      ),
                 ),
               ),
               // Composer: pill input flanked by the attach and send actions.

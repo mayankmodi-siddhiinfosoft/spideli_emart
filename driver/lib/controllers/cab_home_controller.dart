@@ -583,8 +583,13 @@ class CabHomeController extends GetxController {
   Future<void> _subscribeDriver() async {
     _driverSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen((event) => _onDriverSnapshot(event));
 
-    if (Constant.userModel!.ownerId != null && Constant.userModel!.ownerId!.isNotEmpty) {
-      FireStoreUtils.fireStore.collection(CollectionName.users).doc(Constant.userModel!.ownerId).snapshots().listen(
+    // An independent driver has no owner, and `Constant.userModel` itself
+    // can still be null on a cold start — the `!` threw here and took the
+    // whole subscribe step (including the driver listener below it in the
+    // other modules) down with it.
+    final String ownerId = Constant.userModel?.ownerId ?? '';
+    if (ownerId.isNotEmpty) {
+      FireStoreUtils.fireStore.collection(CollectionName.users).doc(ownerId).snapshots().listen(
         (event) async {
           if (event.exists) {
             ownerModel.value = UserModel.fromJson(event.data()!);

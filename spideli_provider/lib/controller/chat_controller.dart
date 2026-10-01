@@ -5,7 +5,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:spideliprovider/model/conversation_model.dart';
 import 'package:spideliprovider/model/inbox_model.dart';
 import 'package:spideliprovider/model/user.dart';
+import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
+import 'package:spideliprovider/utils/args.dart';
 import 'package:spideliprovider/services/send_notification.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -42,20 +44,25 @@ class ChatController extends GetxController {
   Future<void> getArgument() async {
     dynamic argumentData = Get.arguments;
     if (argumentData != null) {
-      sectionType.value = argumentData['sectionType'] ?? '';
-      orderId.value = argumentData['orderId'] ?? '';
-      receivedId.value = argumentData['receivedId'] ?? '';
-      receivedName.value = argumentData['receivedName'] ?? '';
-      receivedProfileUrl.value = argumentData['receivedProfileUrl'] ?? "";
-      senderId.value = argumentData['senderId'] ?? '';
-      senderName.value = argumentData['senderName'] ?? '';
-      senderProfileUrl.value = argumentData['senderProfileUrl'] ?? "";
-      token.value = argumentData['token'] ?? '';
-      chatType.value = argumentData['chatType'] ?? '';
-      if (receivedId.value != 'admin') {
+      // `?? ''` only covered an explicit null: a non-String value (a push
+      // payload field, an id that arrived as a number) still threw a TypeError
+      // here, which left every argument after it unset. See [argString].
+      sectionType.value = argString(argumentData, 'sectionType');
+      orderId.value = argString(argumentData, 'orderId');
+      receivedId.value = argString(argumentData, 'receivedId');
+      receivedName.value = argString(argumentData, 'receivedName');
+      receivedProfileUrl.value = argString(argumentData, 'receivedProfileUrl');
+      senderId.value = argString(argumentData, 'senderId');
+      senderName.value = argString(argumentData, 'senderName');
+      senderProfileUrl.value = argString(argumentData, 'senderProfileUrl');
+      token.value = argString(argumentData, 'token');
+      chatType.value = argString(argumentData, 'chatType');
+      if (senderId.value.isEmpty) senderId.value = FireStoreUtils.getCurrentUid();
+      if (receivedId.value.isNotEmpty && receivedId.value != 'admin') {
         // Side-effect free, and falls back to the workers collection, so the
-        // recipient's FCM token actually resolves.
-        receiverUser.value = await FireStoreUtils.getChatUser(receivedId.value);
+        // recipient's FCM token actually resolves. An empty id would be a
+        // `doc("")` lookup, which throws.
+        receiverUser.value = await FireStoreUtils.getChatUser(receivedId.value) ?? receiverUser.value;
       }
     }
     setSeen();
@@ -64,10 +71,19 @@ class ChatController extends GetxController {
   }
 
   Future<void> setSeen() async {
+    // `doc("")` is not a legal Firestore path and throws.
+    if (orderId.value.isEmpty) return;
     FireStoreUtils.setSeenChatForOrder(orderId: orderId.value);
   }
 
   Future<void> sendMessage(String message, Url? url, String videoThumbnail, String messageType) async {
+    // The thread document is keyed by the order id and the message is addressed
+    // to the recipient; without either there is nothing to write to (Firestore
+    // refuses an empty document path).
+    if (orderId.value.isEmpty || receivedId.value.isEmpty) {
+      ShowToastDialog.showToast("This conversation could not be opened. Open it again from the booking.".tr);
+      return;
+    }
     List<String> senderReceiverId = [receivedId.value, senderId.value];
     InboxModel inboxModel = InboxModel(
       chatType: chatType.value,

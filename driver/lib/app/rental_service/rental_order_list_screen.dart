@@ -1,3 +1,4 @@
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/rental_service/rental_order_details_screen.dart';
@@ -96,7 +97,7 @@ class _RentalOrderTile extends StatelessWidget {
                 //prevents overflow
                 child: OrderHeaderRow(
                   title: Text(
-                    order.sourceLocationName ?? "-",
+                    AddressFormat.orPlaceholder(order.sourceLocationName),
                     style: t.titleSm,
                     overflow: TextOverflow.ellipsis, //safe cutoff
                     maxLines: 2,

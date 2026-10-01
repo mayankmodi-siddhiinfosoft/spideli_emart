@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer';
 
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
@@ -8,6 +9,7 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/themes/app_them_data.dart';
+import 'package:driver/utils/args.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:flutter/foundation.dart';
@@ -86,10 +88,14 @@ class HomeController extends GetxController {
   Rx<UserModel> driverModel = UserModel().obs;
 
   void getArgument() {
-    dynamic argumentData = Get.arguments;
-    if (argumentData != null) {
-      orderModel.value = argumentData['orderModel'];
-    }
+    // This screen is BOTH a dashboard tab (opened with whatever arguments the
+    // dashboard route carries, or none) and a pushed route from the
+    // multiple-order list. `argumentData['orderModel']` therefore has to
+    // tolerate a non-map and a missing key: assigning null into this
+    // non-nullable Rx threw inside `_initController`, so `getDriver()` never
+    // ran and the screen stayed on its loading skeleton forever.
+    final OrderModel? passed = argOf<OrderModel>(Get.arguments, 'orderModel');
+    if (passed != null) orderModel.value = passed;
   }
 
   Future<void> acceptOrder() async {
@@ -274,6 +280,11 @@ class HomeController extends GetxController {
             });
           }
           changeData();
+        }, onError: (Object e) async {
+          // Same as above: report and settle, instead of silently never
+          // producing an order and never stopping the alert sound.
+          log("HomeController._listenToOrder($orderId) failed: $e");
+          await _handleOrderNotFound();
         });
   }
 
@@ -306,6 +317,13 @@ class HomeController extends GetxController {
   void getDriver() {
     FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen(
       (event) async {
+        if (!event.exists) {
+          // Nothing more is coming for a document that is not there; without
+          // this the screen sat on its loading skeleton for good.
+          isLoading.value = false;
+          update();
+          return;
+        }
         if (event.exists) {
           driverModel.value = UserModel.fromJson(event.data()!);
           _updateCurrentLocationMarkers();
@@ -324,6 +342,14 @@ class HomeController extends GetxController {
             }
           }
         }
+      },
+      // A stream error (offline, rules refused, a cancelled session) used to
+      // leave `isLoading` true for the rest of the session, because it was
+      // only ever cleared inside the data callback.
+      onError: (Object e) {
+        log("HomeController.getDriver failed: $e");
+        isLoading.value = false;
+        update();
       },
     );
   }

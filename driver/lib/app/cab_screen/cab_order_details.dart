@@ -1,3 +1,4 @@
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/cab_screen/widget/cab_ride_extras.dart';
 import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/utils/region_service.dart';
@@ -47,8 +48,11 @@ class CabOrderDetails extends StatelessWidget {
                   const DsGap(DsSpace.lg),
                   _summaryCard(context, controller),
                   const DsGap(DsSpace.xxl),
-                  if (!(controller.cabOrder.value.driver!.ownerId != null && controller.cabOrder.value.driver!.ownerId!.isNotEmpty ||
-                      controller.cabOrder.value.status == Constant.orderPlaced))
+                  // `driver!` was evaluated before the status check, so a
+                  // placed ride that has no driver on it yet (every ride an
+                  // independent driver opens from the list before accepting)
+                  // threw inside build and the whole screen came up blank.
+                  if (!((controller.cabOrder.value.driver?.ownerId?.isNotEmpty ?? false) || controller.cabOrder.value.status == Constant.orderPlaced))
                     DsInlineAlert(
                       tone: DsTone.danger,
                       icon: Icons.info_outline_rounded,
@@ -100,8 +104,8 @@ class CabOrderDetails extends StatelessWidget {
           const DsGap(DsSpace.lg),
           DsRouteStops(
             stops: [
-              DsRouteStop(kind: DsStopKind.pickup, label: "Pickup".tr, address: order.sourceLocationName.toString()),
-              DsRouteStop(kind: DsStopKind.drop, label: "Destination".tr, address: order.destinationLocationName.toString()),
+              DsRouteStop(kind: DsStopKind.pickup, label: "Pickup".tr, address: AddressFormat.orPlaceholder(order.sourceLocationName)),
+              DsRouteStop(kind: DsStopKind.drop, label: "Destination".tr, address: AddressFormat.orPlaceholder(order.destinationLocationName)),
             ],
           ),
         ],

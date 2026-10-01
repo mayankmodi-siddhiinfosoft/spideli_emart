@@ -24,6 +24,44 @@ Future<void> firebaseMessageBackgroundHandle(RemoteMessage message) async {
 class NotificationService {
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
+  /// Client point 19, the half that is not about tokens.
+  ///
+  /// This id has to match `com.google.firebase.messaging.default_notification_channel_id`
+  /// in AndroidManifest.xml. Without that pairing, a `notification` message that
+  /// arrives while the app is in the background or closed is posted by the
+  /// Firebase SDK on a fallback channel it creates itself with DEFAULT
+  /// importance — no heads-up banner and no sound. The driver then only finds
+  /// the job by pulling down the shade, which is what "I receive no
+  /// notification when an order is available" looks like in practice.
+  ///
+  /// The channel is also created explicitly at start-up: a channel that only
+  /// comes into existence when the first foreground message is shown does not
+  /// exist yet for the background case. An existing channel's importance can
+  /// never be raised afterwards, so the id is versioned — bump it if the
+  /// importance or the tone ever has to change.
+  static const String jobChannelId = 'driver_notifications_channel';
+
+  static const AndroidNotificationChannel _jobChannel = AndroidNotificationChannel(
+    jobChannelId,
+    'Driver Notifications',
+    description: 'Available jobs, order updates and chat messages',
+    importance: Importance.high,
+    playSound: true,
+    enableVibration: true,
+  );
+
+  /// Creates [_jobChannel]. Safe to call repeatedly; Android keeps the channel
+  /// the user already has (including any sound or importance they changed).
+  Future<void> _createChannel() async {
+    try {
+      final AndroidFlutterLocalNotificationsPlugin? android =
+          flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      await android?.createNotificationChannel(_jobChannel);
+    } catch (e) {
+      log("createNotificationChannel failed: $e");
+    }
+  }
+
   Future<void> initInfo() async {
     await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
       alert: true,
@@ -46,6 +84,8 @@ class NotificationService {
         android: initializationSettingsAndroid,
         iOS: iosInitializationSettings,
       );
+
+      await _createChannel();
 
       await flutterLocalNotificationsPlugin.initialize(
         settings: initializationSettings,
@@ -202,12 +242,16 @@ class NotificationService {
 
   void display(RemoteMessage message) async {
     try {
-      const AndroidNotificationDetails androidNotificationDetails = AndroidNotificationDetails(
-        'driver_notifications_channel',
-        'Driver Notifications',
-        channelDescription: 'App Notifications',
-        importance: Importance.high,
+      // Same channel the background pushes land on, so a job alert looks and
+      // sounds the same whichever state the app was in.
+      final AndroidNotificationDetails androidNotificationDetails = AndroidNotificationDetails(
+        _jobChannel.id,
+        _jobChannel.name,
+        channelDescription: _jobChannel.description,
+        importance: _jobChannel.importance,
         priority: Priority.high,
+        playSound: true,
+        enableVibration: true,
         ticker: 'ticker',
       );
 
@@ -217,7 +261,7 @@ class NotificationService {
         presentSound: true,
       );
 
-      const NotificationDetails notificationDetails = NotificationDetails(
+      final NotificationDetails notificationDetails = NotificationDetails(
         android: androidNotificationDetails,
         iOS: iosDetails,
       );

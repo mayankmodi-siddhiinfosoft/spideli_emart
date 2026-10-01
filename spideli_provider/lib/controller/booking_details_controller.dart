@@ -1,6 +1,7 @@
 import 'package:spideliprovider/model/rating_model.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
+import 'package:spideliprovider/utils/args.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -32,7 +33,11 @@ class BookingDetailsController extends GetxController {
   getArgument() async {
     dynamic argumentData = Get.arguments;
     if (argumentData != null) {
-      orderId.value = argumentData['orderId'];
+      // The wallet screen opens this for a transaction row, and a top-up row
+      // carries no `orderId` at all — assigning that null into this RxString
+      // threw and left the screen on an empty booking. The push handler can
+      // pass a missing payload field the same way. See [argString].
+      orderId.value = argString(argumentData, 'orderId');
     }
     await FireStoreUtils.getReviewByProviderServiceId(orderId.toString()).then((value) {
       ratingService.value = value;

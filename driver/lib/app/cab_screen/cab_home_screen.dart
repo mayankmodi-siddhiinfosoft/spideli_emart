@@ -1,3 +1,4 @@
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/cab_screen/widget/cab_ride_extras.dart';
 import 'package:driver/app/chat_screens/chat_screen.dart';
@@ -365,8 +366,8 @@ class CabHomeScreen extends StatelessWidget {
         section: DsSection.cab,
         sectionLabel: "Cab".tr,
         stops: [
-          DsRouteStop(kind: DsStopKind.pickup, label: order.author!.fullName(), address: "${order.sourceLocationName}"),
-          DsRouteStop(kind: DsStopKind.drop, label: "Destination".tr, address: order.destinationLocationName.toString()),
+          DsRouteStop(kind: DsStopKind.pickup, label: order.author!.fullName(), address: AddressFormat.orPlaceholder(order.sourceLocationName)),
+          DsRouteStop(kind: DsStopKind.drop, label: "Destination".tr, address: AddressFormat.orPlaceholder(order.destinationLocationName)),
         ],
         metrics: metrics,
         extra: CabRideExtras.hasContent(order)
@@ -507,7 +508,7 @@ class CabHomeScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(order.author!.fullName(), style: t.titleSm),
-                          Text("${order.sourceLocationName}", style: t.bodySm),
+                          Text(AddressFormat.orPlaceholder(order.sourceLocationName), style: t.bodySm),
                         ],
                       ),
                     ),
@@ -520,8 +521,8 @@ class CabHomeScreen extends StatelessWidget {
               else
                 DsRouteStops(
                   stops: [
-                    DsRouteStop(kind: DsStopKind.pickup, label: order.author!.fullName(), address: "${order.sourceLocationName}", trailing: callOrChatButton),
-                    DsRouteStop(kind: DsStopKind.drop, label: "Destination".tr, address: order.destinationLocationName.toString(), trailing: chatButton),
+                    DsRouteStop(kind: DsStopKind.pickup, label: order.author!.fullName(), address: AddressFormat.orPlaceholder(order.sourceLocationName), trailing: callOrChatButton),
+                    DsRouteStop(kind: DsStopKind.drop, label: "Destination".tr, address: AddressFormat.orPlaceholder(order.destinationLocationName), trailing: chatButton),
                   ],
                 ),
               if (CabRideExtras.hasContent(order)) ...[

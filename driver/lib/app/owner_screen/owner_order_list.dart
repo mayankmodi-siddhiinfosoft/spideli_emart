@@ -224,12 +224,12 @@ class OwnerOrderListScreen extends StatelessWidget {
                                 DsRouteStop(
                                   kind: DsStopKind.pickup,
                                   label: 'Pickup'.tr,
-                                  address: order.sourceLocationName.toString(),
+                                  address: AddressFormat.orPlaceholder(order.sourceLocationName),
                                 ),
                                 DsRouteStop(
                                   kind: DsStopKind.drop,
                                   label: 'Drop-off'.tr,
-                                  address: order.destinationLocationName.toString(),
+                                  address: AddressFormat.orPlaceholder(order.destinationLocationName),
                                 ),
                               ],
                             ),
@@ -451,7 +451,7 @@ class OwnerOrderListScreen extends StatelessWidget {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        order.sourceLocationName ?? "-",
+                                        AddressFormat.orPlaceholder(order.sourceLocationName),
                                         style: t.titleSm,
                                         overflow: TextOverflow.ellipsis,
                                         maxLines: 2,

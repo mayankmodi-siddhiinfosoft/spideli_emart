@@ -1,3 +1,4 @@
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/rental_service/widget/rental_proposal_card.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/chat_screens/chat_screen.dart';
@@ -103,7 +104,7 @@ class RentalOrderDetailsScreen extends StatelessWidget {
               DsRouteStop(
                 kind: DsStopKind.pickup,
                 label: controller.order.value.bookingDateTime != null ? Constant.timestampToDate(controller.order.value.bookingDateTime!) : null,
-                address: controller.order.value.sourceLocationName ?? "-",
+                address: AddressFormat.orPlaceholder(controller.order.value.sourceLocationName),
               ),
             ],
           ),
@@ -188,15 +189,22 @@ class RentalOrderDetailsScreen extends StatelessWidget {
 
                   ShowToastDialog.closeLoader();
 
+                  // Client point 6: passing nulls through only moved the dead
+                  // end into the chat screen; say why here instead.
+                  if (customer == null || driver == null) {
+                    ShowToastDialog.showToast("This conversation could not be opened. Open it again from the order.".tr);
+                    return;
+                  }
+
                   Get.to(const ChatScreen(), arguments: {
-                    "senderName": driver?.fullName(),
-                    "receivedName": customer?.fullName(),
+                    "senderName": driver.fullName(),
+                    "receivedName": customer.fullName(),
                     "orderId": controller.order.value.id,
-                    "senderId": driver?.id,
-                    "receivedId": customer?.id,
-                    "receivedProfileUrl": customer?.profilePictureURL ?? "",
-                    "senderProfileUrl": driver?.profilePictureURL ?? "",
-                    "token": customer?.fcmToken,
+                    "senderId": driver.id,
+                    "receivedId": customer.id,
+                    "receivedProfileUrl": customer.profilePictureURL ?? "",
+                    "senderProfileUrl": driver.profilePictureURL ?? "",
+                    "token": customer.fcmToken,
                     "chatType": Constant.userRoleDriver,
                   });
                 },

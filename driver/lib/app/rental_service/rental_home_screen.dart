@@ -1,3 +1,4 @@
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/rental_service/rental_booking_search_screen.dart';
@@ -251,7 +252,7 @@ class RentalHomeScreen extends StatelessWidget {
               children: [
                 DsRouteStops(
                   stops: [
-                    DsRouteStop(kind: DsStopKind.pickup, label: "Pickup".tr, address: "${rentalBookingData.sourceLocationName}"),
+                    DsRouteStop(kind: DsStopKind.pickup, label: "Pickup".tr, address: AddressFormat.orPlaceholder(rentalBookingData.sourceLocationName)),
                   ],
                 ),
                 const DsDivider(spacing: DsSpace.sm),

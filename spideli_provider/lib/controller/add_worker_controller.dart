@@ -6,6 +6,7 @@ import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/main.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
+import 'package:spideliprovider/utils/args.dart';
 import 'package:spideliprovider/utils/utils.dart';
 import 'package:spideliprovider/widgets/osm_map/map_picker_page.dart';
 import 'package:spideliprovider/widgets/osm_map/place_model.dart';
@@ -42,8 +43,13 @@ class AddOrUpdateWorkerController extends GetxController {
   void getArgument() async {
     dynamic argumentData = Get.arguments;
     if (argumentData != null) {
-      user.value = argumentData['User'];
-      await getAttribute();
+      // Edit mode only. A non-map argument, or a missing key, used to throw
+      // into this async callback and left the form half-populated.
+      final User? passed = argOf<User>(argumentData, 'User');
+      if (passed != null) {
+        user.value = passed;
+        await getAttribute();
+      }
     }
     update();
   }

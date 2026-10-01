@@ -1,3 +1,4 @@
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/widgets/order_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -136,8 +137,8 @@ class _CabOrderTile extends StatelessWidget {
           DsRouteStops(
             addressMaxLines: 1,
             stops: [
-              DsRouteStop(kind: DsStopKind.pickup, label: "Pickup".tr, address: order.sourceLocationName.toString()),
-              DsRouteStop(kind: DsStopKind.drop, label: "Destination".tr, address: order.destinationLocationName.toString()),
+              DsRouteStop(kind: DsStopKind.pickup, label: "Pickup".tr, address: AddressFormat.orPlaceholder(order.sourceLocationName)),
+              DsRouteStop(kind: DsStopKind.drop, label: "Destination".tr, address: AddressFormat.orPlaceholder(order.destinationLocationName)),
             ],
           ),
         ],

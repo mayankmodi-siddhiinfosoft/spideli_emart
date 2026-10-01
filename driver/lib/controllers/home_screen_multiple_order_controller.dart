@@ -9,7 +9,11 @@ import 'package:driver/utils/fire_store_utils.dart';
 import 'package:get/get.dart';
 
 class HomeScreenMultipleOrderController extends GetxController {
-  Rx<UserModel> driverModel = Constant.userModel!.obs;
+  /// `Constant.userModel!` threw in the field initialiser — i.e. before
+  /// `onInit`, so GetX could not even construct this controller — whenever the
+  /// global had not been populated yet (cold start straight onto the
+  /// dashboard). The live user document arrives from [getDriver] anyway.
+  Rx<UserModel> driverModel = (Constant.userModel ?? UserModel()).obs;
   RxBool isLoading = true.obs;
   RxInt selectedTabIndex = 0.obs;
 

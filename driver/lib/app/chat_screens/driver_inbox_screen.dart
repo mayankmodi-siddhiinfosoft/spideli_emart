@@ -63,7 +63,9 @@ class DriverInboxScreen extends StatelessWidget {
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.xs, DsSpace.lg, DsSpace.xs),
                         child: _InboxCard(
-                          name: "${customerData?.fullName()}",
+                          // Client point 17: this printed the literal word
+                          // "null" for a customer whose profile is gone.
+                          name: customerData?.fullName() ?? "Customer".tr,
                           imageUrl: customerData?.profilePictureURL ?? '',
                           time: Constant.timestampToDate(inboxModel.createdAt!),
                           orderLabel: "${"Order".tr} ${Constant.orderId(orderId: inboxModel.orderId.toString())}",
@@ -73,11 +75,19 @@ class DriverInboxScreen extends StatelessWidget {
 
                             ShowToastDialog.closeLoader();
 
+                            // Client point 6: an inbox row whose customer (or
+                            // the driver's own profile) could not be read threw
+                            // here, so tapping the row did nothing.
+                            if (driverData == null || customerData == null) {
+                              ShowToastDialog.showToast("This conversation could not be opened. Open it again from the order.".tr);
+                              return;
+                            }
+
                             Get.to(const ChatScreen(), arguments: {
-                              "senderName": driverData!.fullName(),
+                              "senderName": driverData.fullName(),
                               "senderId": driverData.id,
                               "senderProfileUrl": driverData.profilePictureURL,
-                              "receivedName": customerData!.fullName(),
+                              "receivedName": customerData.fullName(),
                               "receivedId": customerData.id,
                               "receivedProfileUrl": customerData.profilePictureURL,
                               "orderId": inboxModel.orderId,

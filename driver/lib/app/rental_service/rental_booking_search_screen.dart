@@ -1,3 +1,4 @@
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/rental_service/rental_order_details_screen.dart';
 import 'package:driver/app/rental_service/widget/rental_proposal_card.dart';
@@ -58,7 +59,7 @@ class RentalBookingSearchScreen extends StatelessWidget {
         fare: Constant.amountShow(currency: RegionService.currencyForRecord(rentalBookingData.regionId), amount: rentalBookingData.subTotal).tr,
         fareCaption: Constant.timestampToDateTime(rentalBookingData.bookingDateTime!).tr,
         stops: [
-          DsRouteStop(kind: DsStopKind.pickup, label: "Pickup".tr, address: "${rentalBookingData.sourceLocationName}"),
+          DsRouteStop(kind: DsStopKind.pickup, label: "Pickup".tr, address: AddressFormat.orPlaceholder(rentalBookingData.sourceLocationName)),
         ],
         metrics: [
           DsTripMetric(icon: Icons.inventory_2_outlined, value: "${rentalBookingData.rentalPackageModel!.name}".tr, label: "Package Details:".tr),

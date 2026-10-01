@@ -66,8 +66,13 @@ class RentalHomeController extends GetxController {
       }
     });
 
-    if (Constant.userModel!.ownerId != null && Constant.userModel!.ownerId!.isNotEmpty) {
-      FireStoreUtils.fireStore.collection(CollectionName.users).doc(Constant.userModel!.ownerId).snapshots().listen(
+    // An independent driver has no owner, and `Constant.userModel` itself
+    // can still be null on a cold start — the `!` threw here and took the
+    // whole subscribe step (including the driver listener below it in the
+    // other modules) down with it.
+    final String ownerId = Constant.userModel?.ownerId ?? '';
+    if (ownerId.isNotEmpty) {
+      FireStoreUtils.fireStore.collection(CollectionName.users).doc(ownerId).snapshots().listen(
             (event) async {
           if (event.exists) {
             ownerModel.value = UserModel.fromJson(event.data()!);
@@ -103,6 +108,15 @@ class RentalHomeController extends GetxController {
   RxDouble adminComm = 0.0.obs;
 
   Future<void> updateCabWalletAmount(RentalOrderModel orderModel) async {
+    // Who the money moves on: the company when this driver belongs to one, the
+    // driver themselves otherwise. `orderModel.driver!` threw for every booking
+    // whose embedded driver map is absent — which is exactly the independent
+    // driver's case (client point 10), and it threw BETWEEN the two wallet
+    // writes below, leaving the booking credited but the commission never
+    // taken.
+    final String ownerId = orderModel.driver?.ownerId ?? '';
+    final String walletUserId = ownerId.isNotEmpty ? ownerId : FireStoreUtils.getCurrentUid();
+
     subTotal.value = 0.0;
     discount.value = 0.0;
     taxAmount.value = 0.0;
@@ -158,7 +172,7 @@ class RentalHomeController extends GetxController {
           date: Timestamp.now(),
           paymentMethod: orderModel.paymentMethod!,
           transactionUser: "driver",
-          userId: orderModel.driver!.ownerId != null && orderModel.driver!.ownerId!.isNotEmpty ? orderModel.driver!.ownerId.toString() : FireStoreUtils.getCurrentUid(),
+          userId: walletUserId,
           isTopup: true,
           orderId: orderModel.id,
           note: "Booking amount credited",
@@ -168,7 +182,7 @@ class RentalHomeController extends GetxController {
         if (value == true) {
           await FireStoreUtils.updateUserWallet(
               amount: totalAmount.value.toString(),
-              userId: orderModel.driver!.ownerId != null && orderModel.driver!.ownerId!.isNotEmpty ? orderModel.driver!.ownerId.toString() : FireStoreUtils.getCurrentUid());
+              userId: walletUserId);
         }
       });
     }
@@ -179,7 +193,7 @@ class RentalHomeController extends GetxController {
         date: Timestamp.now(),
         paymentMethod: orderModel.paymentMethod!,
         transactionUser: "driver",
-        userId: orderModel.driver!.ownerId != null && orderModel.driver!.ownerId!.isNotEmpty ? orderModel.driver!.ownerId.toString() : FireStoreUtils.getCurrentUid(),
+        userId: walletUserId,
         isTopup: false,
         orderId: orderModel.id,
         note: "Admin commission deducted",
@@ -191,7 +205,7 @@ class RentalHomeController extends GetxController {
       if (value == true) {
         await FireStoreUtils.updateUserWallet(
             amount: "-${adminComm.value.toString()}",
-            userId: orderModel.driver!.ownerId != null && orderModel.driver!.ownerId!.isNotEmpty ? orderModel.driver!.ownerId.toString() : FireStoreUtils.getCurrentUid());
+            userId: walletUserId);
       }
     });
 

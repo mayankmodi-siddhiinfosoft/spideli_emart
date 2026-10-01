@@ -465,7 +465,11 @@ class HomeScreen extends StatelessWidget {
 
     final String status = controller.currentOrder.value.status.toString();
     final bool atStore = controller.currentOrder.value.status == Constant.orderShipped || controller.currentOrder.value.status == Constant.driverAccepted;
-    final bool isCod = controller.currentOrder.value.paymentMethod!.toLowerCase() == "cod";
+    // Eight lines up the same field is read with `?.`; this `!` threw for an
+    // order whose `paymentMethod` was never written (panel-created orders),
+    // and because it throws inside build the driver got a blank panel with no
+    // "Reached store" / "Order Delivered" button at all.
+    final bool isCod = (controller.currentOrder.value.paymentMethod ?? '').toLowerCase() == "cod";
     final String tip = controller.currentOrder.value.tipAmount ?? '';
     final bool hasTip = tip.isNotEmpty && double.parse(tip.toString()) > 0;
 
@@ -628,9 +632,17 @@ class HomeScreen extends StatelessWidget {
 
                   ShowToastDialog.closeLoader();
 
+                  // Client point 6: `driver!` / `customer!` threw inside this
+                  // async callback whenever either profile could not be read,
+                  // and GetX swallowed it — the tap simply did nothing.
+                  if (customer == null || driver == null) {
+                    ShowToastDialog.showToast("This conversation could not be opened. Open it again from the order.".tr);
+                    return;
+                  }
+
                   Get.to(const ChatScreen(), arguments: {
-                    "senderName": driver!.fullName(),
-                    "receivedName": customer!.fullName(),
+                    "senderName": driver.fullName(),
+                    "receivedName": customer.fullName(),
                     // The live order, not `orderModel` — that one is only set
                     // when this screen was opened with arguments, so from the
                     // dashboard tab it was null and the chat opened blank.
