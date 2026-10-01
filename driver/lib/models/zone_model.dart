@@ -8,7 +8,14 @@ class ZoneModel {
   String? id;
   double? longitude;
 
-  ZoneModel({this.area, this.publish, this.latitude, this.name, this.id, this.longitude});
+  /// Region (management zone) this delivery zone belongs to (optional).
+  String? regionId;
+
+  /// Every region the zone serves. The admin panel can attach one zone to
+  /// several regions (e.g. a "Worldwide" zone); `regionId` is only the first.
+  List<String>? regionIds;
+
+  ZoneModel({this.area, this.publish, this.latitude, this.name, this.id, this.longitude, this.regionId, this.regionIds});
 
   ZoneModel.fromJson(Map<String, dynamic> json) {
     if (json['area'] != null) {
@@ -23,6 +30,10 @@ class ZoneModel {
     name = json['name'];
     id = json['id'];
     longitude = json['longitude'];
+    final dynamic region = json['regionId'];
+    regionId = (region == null || region.toString().isEmpty) ? null : region.toString();
+    final dynamic regions = json['regionIds'];
+    regionIds = regions is List ? regions.map((e) => e.toString()).where((e) => e.isNotEmpty).toList() : null;
   }
 
   Map<String, dynamic> toJson() {
@@ -35,6 +46,21 @@ class ZoneModel {
     data['name'] = name;
     data['id'] = id;
     data['longitude'] = longitude;
+    if (regionIds != null) {
+      data['regionIds'] = regionIds;
+    }
+    if (regionId != null) {
+      data['regionId'] = regionId;
+    }
     return data;
+  }
+
+  /// Whether the zone can be chosen in [region]. A zone with no region data
+  /// serves every region (the platform rule for anything region-scoped: empty
+  /// means everywhere) — the same rule the Store app registration uses.
+  bool belongsToRegion(String region) {
+    final ids = regionIds ?? const <String>[];
+    if (ids.isEmpty && (regionId == null || regionId!.isEmpty)) return true;
+    return regionId == region || ids.contains(region);
   }
 }

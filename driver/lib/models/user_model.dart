@@ -3,6 +3,7 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/models/admin_commission.dart';
 import 'package:driver/models/cab_order_model.dart';
 import 'package:driver/models/subscription_plan_model.dart';
+import 'package:driver/utils/address_format.dart';
 
 class UserModel {
   String? id;
@@ -335,8 +336,10 @@ class ShippingAddress {
     return data;
   }
 
+  /// Client point 17: never render a missing part as the literal "null", and
+  /// never leave the separator a dropped part would have been between.
   String getFullAddress() {
-    return '${address == null || address!.isEmpty ? "" : address} $locality ${landmark == null || landmark!.isEmpty ? "" : landmark.toString()}';
+    return AddressFormat.join([address, locality, landmark]);
   }
 }
 

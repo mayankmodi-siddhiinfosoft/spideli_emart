@@ -9,6 +9,7 @@ import 'package:customer/models/product_model.dart';
 import 'package:customer/models/vendor_category_model.dart';
 import 'package:customer/models/vendor_model.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/widget/quantity_stepper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_html/flutter_html.dart';
@@ -991,8 +992,22 @@ class ProductListView extends StatelessWidget {
                                   )
                                 : Obx(
                                     () => cartItem.where((p0) => p0.id == productModel.id).isNotEmpty
-                                        ? _QuantityStepper(
-                                            quantity: cartItem.where((p0) => p0.id == productModel.id).first.quantity.toString(),
+                                        ? QuantityStepper(
+                                            quantity: cartItem.where((p0) => p0.id == productModel.id).first.quantity ?? 0,
+                                            label: productModel.name ?? "Quantity".tr,
+                                            minQuantity: minQty,
+                                            maxQuantity: stock,
+                                            // Zero still removes the line.
+                                            allowZero: true,
+                                            buttonSize: 30,
+                                            minHeight: 36,
+                                            alignment: MainAxisAlignment.spaceBetween,
+                                            expand: true,
+                                            decoration: BoxDecoration(color: context.dsColors.surface, borderRadius: DsRadius.brPill, boxShadow: DsShadows.sm(context)),
+                                            onQuantity: (value) {
+                                              final int current = cartItem.where((p0) => p0.id == productModel.id).first.quantity ?? 0;
+                                              controller.addToCart(productModel: productModel, price: price, discountPrice: disPrice, isIncrement: value > current, quantity: value);
+                                            },
                                             onRemove: () {
                                               final int next = cartItem.where((p0) => p0.id == productModel.id).first.quantity! - 1;
                                               // Below the minimum quantity the line is removed.
@@ -1200,33 +1215,6 @@ class ProductListView extends StatelessWidget {
             Text(controller.getBrandName(productModel.brandId!), style: valueStyle),
           ],
           if (canBuy) ...[const DsGap(DsSpace.md), DsButton.primary(label: "Add to cart".tr, icon: Icons.add_shopping_cart_rounded, expand: true, onPressed: onAdd)],
-        ],
-      ),
-    );
-  }
-}
-
-/// Inline +/- stepper drawn over the product photo.
-class _QuantityStepper extends StatelessWidget {
-  final String quantity;
-  final VoidCallback onRemove;
-  final VoidCallback onAdd;
-  const _QuantityStepper({required this.quantity, required this.onRemove, required this.onAdd});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    return Container(
-      constraints: const BoxConstraints(minHeight: 36),
-      decoration: BoxDecoration(color: c.surface, borderRadius: DsRadius.brPill, boxShadow: DsShadows.sm(context)),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          DsIconButton(icon: Icons.remove_rounded, semanticLabel: 'Remove'.tr, size: 30, onPressed: onRemove),
-          Text(quantity, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.label.tabular),
-          DsIconButton(icon: Icons.add_rounded, semanticLabel: 'Add item'.tr, size: 30, onPressed: onAdd),
         ],
       ),
     );
@@ -1528,55 +1516,52 @@ class ProductDetailsView extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: Container(
-                        constraints: const BoxConstraints(minHeight: 48),
+                      // Tapping the number types a quantity straight in (#21);
+                      // the minimum is this variant's pack floor and the cap is
+                      // its stock, exactly what +/- enforce below.
+                      child: QuantityStepper(
+                        quantity: controller.quantity.value,
+                        label: productModel.name ?? "Quantity".tr,
+                        minQuantity: lineMinQty,
+                        maxQuantity: stock,
+                        buttonSize: 36,
+                        minHeight: 48,
+                        expand: true,
+                        alignment: MainAxisAlignment.spaceBetween,
                         decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brPill),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            DsIconButton(
-                              icon: Icons.remove_rounded,
-                              semanticLabel: 'Remove'.tr,
-                              size: 36,
-                              onPressed: () {
-                                // Wholesale-only products can't go below their minimum quantity
-                                // (the SELECTED variant's, when it carries its own threshold).
-                                if (controller.quantity.value >
-                                    WholesalePricing.minOrderQuantityFor(productModel, controller.vendorModel.value, variantId: controller.selectedVariantId(productModel))) {
-                                  controller.quantity.value -= 1;
-                                  controller.update();
-                                }
-                              },
-                            ),
-                            Text(controller.quantity.value.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.label.tabular),
-                            DsIconButton(
-                              icon: Icons.add_rounded,
-                              semanticLabel: 'Add item'.tr,
-                              size: 36,
-                              onPressed: () {
-                                if (productModel.itemAttribute == null) {
-                                  if (controller.quantity.value < (productModel.quantity ?? 0) || (productModel.quantity ?? 0) == -1) {
-                                    controller.quantity.value += 1;
-                                    controller.update();
-                                  } else {
-                                    ShowToastDialog.showToast("Out of stock".tr);
-                                  }
-                                } else {
-                                  int totalQuantity = int.parse(
-                                    productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).first.variantQuantity.toString(),
-                                  );
-                                  if (controller.quantity.value < totalQuantity || totalQuantity == -1) {
-                                    controller.quantity.value += 1;
-                                    controller.update();
-                                  } else {
-                                    ShowToastDialog.showToast("Out of stock".tr);
-                                  }
-                                }
-                              },
-                            ),
-                          ],
-                        ),
+                        onQuantity: (value) {
+                          controller.quantity.value = value;
+                          controller.update();
+                        },
+                        onRemove: () {
+                          // Wholesale-only products can't go below their minimum quantity
+                          // (the SELECTED variant's, when it carries its own threshold).
+                          if (controller.quantity.value >
+                              WholesalePricing.minOrderQuantityFor(productModel, controller.vendorModel.value, variantId: controller.selectedVariantId(productModel))) {
+                            controller.quantity.value -= 1;
+                            controller.update();
+                          }
+                        },
+                        onAdd: () {
+                          if (productModel.itemAttribute == null) {
+                            if (controller.quantity.value < (productModel.quantity ?? 0) || (productModel.quantity ?? 0) == -1) {
+                              controller.quantity.value += 1;
+                              controller.update();
+                            } else {
+                              ShowToastDialog.showToast("Out of stock".tr);
+                            }
+                          } else {
+                            int totalQuantity = int.parse(
+                              productModel.itemAttribute!.variants!.where((element) => element.variantSku == controller.selectedVariants.join('-')).first.variantQuantity.toString(),
+                            );
+                            if (controller.quantity.value < totalQuantity || totalQuantity == -1) {
+                              controller.quantity.value += 1;
+                              controller.update();
+                            } else {
+                              ShowToastDialog.showToast("Out of stock".tr);
+                            }
+                          }
+                        },
                       ),
                     ),
                     const DsGap(DsSpace.md),

@@ -103,8 +103,8 @@ class OrderReceiptPdf {
     final String phone = '${order.author?.countryCode ?? ''} ${order.author?.phoneNumber ?? ''}'.trim();
     if (phone.isNotEmpty) w.line(phone, w.bodyFont);
     if (order.takeAway != true && order.address != null) {
-      final String address = [order.address!.address, order.address!.locality, order.address!.landmark].where((e) => (e ?? '').trim().isNotEmpty).join(', ');
-      if (address.trim().isNotEmpty) w.line('${'Delivery address'.tr}: $address', w.bodyFont);
+      final String address = order.address!.getFullAddress();
+      if (address.isNotEmpty) w.line('${'Delivery address'.tr}: $address', w.bodyFont);
     }
     w.gap(10);
 

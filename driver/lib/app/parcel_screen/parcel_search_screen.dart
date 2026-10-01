@@ -1,4 +1,5 @@
 import 'package:driver/utils/region_service.dart';
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/parcel_screen/parcel_order_details.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
@@ -253,8 +254,8 @@ class _ParcelResultCard extends StatelessWidget {
             padding: const EdgeInsets.all(DsSpace.lg),
             child: DsRouteStops(
               stops: [
-                DsRouteStop(kind: DsStopKind.pickup, label: 'Pickup'.tr, address: "${order.sender!.address}"),
-                DsRouteStop(kind: DsStopKind.drop, label: 'Delivery'.tr, address: "${order.receiver!.address}"),
+                DsRouteStop(kind: DsStopKind.pickup, label: 'Pickup'.tr, address: AddressFormat.clean(order.sender?.address)),
+                DsRouteStop(kind: DsStopKind.drop, label: 'Delivery'.tr, address: AddressFormat.clean(order.receiver?.address)),
               ],
             ),
           ),

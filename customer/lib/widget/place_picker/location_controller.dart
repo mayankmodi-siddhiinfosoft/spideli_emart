@@ -1,3 +1,4 @@
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/widget/place_picker/selected_location_model.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -53,7 +54,10 @@ class LocationController extends GetxController {
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks.first;
         selectedPlaceAddress.value = place;
-        address.value = "${place.street}, ${place.locality}, ${place.administrativeArea}, ${place.country}";
+        // Built from Placemark fields, any of which can be null — interpolating
+        // them straight in is where the raw "null" in displayed addresses came
+        // from (bug #17).
+        address.value = formatAddressLine([place.street, place.locality, place.administrativeArea, place.country]);
       } else {
         address.value = "Address not found";
       }

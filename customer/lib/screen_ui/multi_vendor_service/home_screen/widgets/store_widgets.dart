@@ -2,6 +2,7 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/models/vendor_model.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/widget/restaurant_image_view.dart';
+import 'package:customer/widget/shop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
@@ -303,7 +304,65 @@ class NoStoreInZoneView extends StatelessWidget {
   }
 }
 
-/// Floating list / map / scan control used by both food home variants.
+/// The food home's bottom block: the search field and the list / map / scan
+/// actions in **one** bar.
+///
+/// The search box used to be the Scaffold's `bottomNavigationBar` with
+/// [HomeToolFab] floating above it as a separate centred FAB. The client's
+/// screenshots (report #15, 1 October) put them together, so the same bar now
+/// carries both — every action and handler is unchanged, [HomeToolFab] is
+/// simply laid out inside the bar instead of over it.
+class HomeSearchToolBar extends StatelessWidget {
+  final String hint;
+  final VoidCallback onSearch;
+  final bool isListView;
+  final VoidCallback onList;
+  final VoidCallback onMap;
+  final VoidCallback onScan;
+
+  const HomeSearchToolBar({
+    super.key,
+    required this.hint,
+    required this.onSearch,
+    required this.isListView,
+    required this.onList,
+    required this.onMap,
+    required this.onScan,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final l = context.dsLayout;
+    return Container(
+      decoration: BoxDecoration(
+        color: c.background,
+        border: Border(top: BorderSide(color: c.divider)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.sm, l.gutter, DsSpace.sm),
+          child: Center(
+            heightFactor: 1,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: DsLayout.wideMax),
+              child: Row(
+                children: [
+                  Expanded(child: SearchPill(hint: hint, onTap: onSearch, isDark: c.isDark)),
+                  const DsGap(DsSpace.sm),
+                  HomeToolFab(isListView: isListView, onList: onList, onMap: onMap, onScan: onScan),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// List / map / scan control used by both food home variants.
 class HomeToolFab extends StatelessWidget {
   final bool isListView;
   final VoidCallback onList;

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/cab_order_model.dart';
+import 'package:customer/utils/address_format.dart';
 import 'subscription_plan_model.dart';
 import 'admin_commission_model.dart';
 
@@ -330,13 +331,11 @@ class ShippingAddress {
   //   return '${address == null || address!.isEmpty ? "" : address} $locality ${landmark == null || landmark!.isEmpty ? "" : landmark.toString()}';
   // }
 
-  String getFullAddress() {
-    return [
-      if (address != null && address!.trim().isNotEmpty) address!.trim(),
-      if (locality != null && locality!.trim().isNotEmpty) locality!.trim(),
-      if (landmark != null && landmark!.trim().isNotEmpty) landmark!.trim(),
-    ].join(', ').replaceAll(RegExp(r'\s+'), ' ').trim();
-  }
+  /// Every address shown in the app (home header, address list, order details,
+  /// tracking, receipts, parcel) goes through here, so the "null" components
+  /// that reverse geocoding bakes into the stored text are dropped once, in
+  /// one place — see [formatAddressLine]. What is stored is not changed.
+  String getFullAddress() => formatAddressLine([address, locality, landmark]);
 }
 
 class UserBankDetails {

@@ -4,10 +4,12 @@ import 'package:customer/service/localization_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/easy_loading_config.dart';
 import 'package:customer/utils/preferences.dart';
+import 'package:cupertino_ui/cupertino_ui.dart' as cupertino_ui;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:get/get.dart';
+import 'package:material_ui/material_ui.dart' as material_ui;
 import 'controllers/global_setting_controller.dart';
 import 'controllers/theme_controller.dart';
 import 'firebase_options.dart';
@@ -31,6 +33,21 @@ void main() async {
   runApp(MyApp());
 }
 
+/// Localization delegates the app adds on top of the ones `MaterialApp`
+/// installs by itself.
+///
+/// Packages built on the standalone `material_ui` / `cupertino_ui` copies of
+/// the Material and Cupertino libraries (bottom_picker 5, pin_code_fields 10+,
+/// ...) look their localizations up by **their own** `MaterialLocalizations` /
+/// `CupertinoLocalizations` types, which a `package:flutter/material.dart`
+/// `MaterialApp` never registers. Without these, `showModalBottomSheet` threw
+/// "No MaterialLocalizations found" and the schedule-time picker never
+/// appeared anywhere in the app.
+const List<LocalizationsDelegate<Object>> appLocalizationsDelegates = [
+  material_ui.DefaultMaterialLocalizations.delegate,
+  cupertino_ui.DefaultCupertinoLocalizations.delegate,
+];
+
 class MyApp extends StatelessWidget {
   MyApp({super.key});
 
@@ -48,6 +65,7 @@ class MyApp extends StatelessWidget {
         translations: LocalizationService(),
         locale: LocalizationService.locale,
         fallbackLocale: LocalizationService.locale,
+        localizationsDelegates: appLocalizationsDelegates,
         themeMode: themeController.themeMode,
         // Design-system themes (lib/themes/ds). The brand color is read from
         // AppThemeData.primary300 (app color, then the active service

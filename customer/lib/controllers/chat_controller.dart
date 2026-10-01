@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:customer/models/user_model.dart';
+import 'package:customer/utils/chat_scroll.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/conversation_model.dart';
 import '../models/inbox_model.dart';
@@ -101,13 +102,39 @@ class ChatController extends GetxController {
     }
 
     await FireStoreUtils.addChat(conversationModel);
-    print("sendChatFcmMessage ::11:: ${receivedName.value} :: ${conversationModel.message} :: ${receiverUser?.fcmToken}");
-    print("sendChatFcmMessage ::22:: ${inboxModel.type} :: ${inboxModel.chatType} :: $orderId :: ${conversationModel.senderId}");
-    await SendNotification.sendChatFcmMessage(receivedName.value, conversationModel.message.toString(), receiverUser?.fcmToken ?? '', {
-      'type': inboxModel.type,
-      'chatType': inboxModel.chatType,
-      'orderId': orderId,
-      'senderId': conversationModel.senderId,
+    scrollChatToLatest(scrollController.value);
+    await notifyReceiver(conversationModel, inboxModel);
+  }
+
+  /// Push the message to whoever is on the other side of the thread (bug #3).
+  ///
+  /// This ran on every send already but never arrived:
+  ///
+  /// * the token came from `getUserForChat`, which only reads the
+  ///   `providersWorkers` collection — a store or a driver lives in `users`,
+  ///   so the lookup returned null and FCM was called with an empty token.
+  ///   The screens already hand us the recipient's real token in the
+  ///   arguments, so that is used first and the lookup is only a fallback;
+  /// * the title was the **recipient's** own name, so a delivered
+  ///   notification would have read as if they had written it themselves.
+  ///
+  /// Missing token (the other side never registered one, or an admin thread
+  /// with no device) is not an error for the sender: the message is already
+  /// saved, so this returns quietly.
+  Future<void> notifyReceiver(ConversationModel conversationModel, InboxModel inboxModel) async {
+    final String fcmToken = token.value.trim().isNotEmpty ? token.value.trim() : (receiverUser?.fcmToken ?? '').trim();
+    if (fcmToken.isEmpty) {
+      log("chat push skipped: no fcm token for ${receivedId.value}");
+      return;
+    }
+    // Same payload shape as the app's other notifications: `type` and
+    // `chatType` are what NotificationService.handleMessageClick routes on,
+    // and FCM data values must be strings.
+    await SendNotification.sendChatFcmMessage(senderName.value, conversationModel.message.toString(), fcmToken, {
+      'type': inboxModel.type ?? 'orderChat',
+      'chatType': inboxModel.chatType ?? '',
+      'orderId': orderId.value,
+      'senderId': conversationModel.senderId ?? '',
     });
   }
 

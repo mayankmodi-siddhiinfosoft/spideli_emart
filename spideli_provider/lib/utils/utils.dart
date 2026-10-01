@@ -1,6 +1,8 @@
+import 'package:geocoding/geocoding.dart' show Placemark;
 import 'package:spideliprovider/widgets/place_picker/selected_location_model.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:location/location.dart';
+import 'package:spideliprovider/utils/address_format.dart';
 
 class Utils {
   static Future<Position?> getCurrentLocation() async {
@@ -39,22 +41,28 @@ class Utils {
     return await Geolocator.getCurrentPosition();
   }
 
+  /// Human-readable address of a picked location.
+  ///
+  /// `address` is null whenever reverse geocoding gave nothing back (no
+  /// network, no placemark for the point, or the platform threw) — the old
+  /// `selectedLocation.address!` then blew up with a null-check error inside
+  /// the picker callback and killed the calling screen. A missing placemark now
+  /// yields an empty string, and [formatAddressParts] drops the empty and
+  /// "null" pieces so nothing renders as "..., null, ...".
   static String formatAddress({required SelectedLocationModel selectedLocation}) {
-    List<String> parts = [];
-
-    if (selectedLocation.address!.name != null && selectedLocation.address!.name!.isNotEmpty) parts.add(selectedLocation.address!.name!);
-    if (selectedLocation.address!.subThoroughfare != null && selectedLocation.address!.subThoroughfare!.isNotEmpty) parts.add(selectedLocation.address!.subThoroughfare!);
-    if (selectedLocation.address!.thoroughfare != null && selectedLocation.address!.thoroughfare!.isNotEmpty) parts.add(selectedLocation.address!.thoroughfare!);
-    if (selectedLocation.address!.subLocality != null && selectedLocation.address!.subLocality!.isNotEmpty) parts.add(selectedLocation.address!.subLocality!);
-    if (selectedLocation.address!.locality != null && selectedLocation.address!.locality!.isNotEmpty) parts.add(selectedLocation.address!.locality!);
-    if (selectedLocation.address!.subAdministrativeArea != null && selectedLocation.address!.subAdministrativeArea!.isNotEmpty) {
-      parts.add(selectedLocation.address!.subAdministrativeArea!);
-    }
-    if (selectedLocation.address!.administrativeArea != null && selectedLocation.address!.administrativeArea!.isNotEmpty) parts.add(selectedLocation.address!.administrativeArea!);
-    if (selectedLocation.address!.postalCode != null && selectedLocation.address!.postalCode!.isNotEmpty) parts.add(selectedLocation.address!.postalCode!);
-    if (selectedLocation.address!.country != null && selectedLocation.address!.country!.isNotEmpty) parts.add(selectedLocation.address!.country!);
-    if (selectedLocation.address!.isoCountryCode != null && selectedLocation.address!.isoCountryCode!.isNotEmpty) parts.add(selectedLocation.address!.isoCountryCode!);
-
-    return parts.join(', ');
+    final Placemark? place = selectedLocation.address;
+    if (place == null) return '';
+    return formatAddressParts(<Object?>[
+      place.name,
+      place.subThoroughfare,
+      place.thoroughfare,
+      place.subLocality,
+      place.locality,
+      place.subAdministrativeArea,
+      place.administrativeArea,
+      place.postalCode,
+      place.country,
+      place.isoCountryCode,
+    ]);
   }
 }

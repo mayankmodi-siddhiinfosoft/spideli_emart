@@ -1,4 +1,14 @@
+import 'dart:developer';
+
+import 'package:geolocator/geolocator.dart';
 import 'package:spideliprovider/constant/constants.dart';
+import 'package:spideliprovider/constant/show_toast_dialog.dart';
+import 'package:spideliprovider/utils/utils.dart';
+import 'package:spideliprovider/widgets/osm_map/map_picker_page.dart';
+import 'package:spideliprovider/widgets/osm_map/place_model.dart';
+import 'package:spideliprovider/widgets/permission_dialog.dart';
+import 'package:spideliprovider/widgets/place_picker/location_picker_screen.dart';
+import 'package:spideliprovider/widgets/place_picker/selected_location_model.dart';
 import 'package:spideliprovider/main.dart';
 import 'package:spideliprovider/model/category_model.dart';
 import 'package:spideliprovider/model/provider_service_model.dart';
@@ -7,6 +17,7 @@ import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:spideliprovider/utils/address_format.dart';
 
 class AddOrUpdateServiceController extends GetxController {
   Rx<TextEditingController> serviceName = TextEditingController().obs;
@@ -27,7 +38,13 @@ class AddOrUpdateServiceController extends GetxController {
   Rx<CategoryModel> selectedCategory = CategoryModel().obs;
 
   RxBool isDiscountedPriceOk = false.obs;
-  RxBool publish = false.obs;
+
+  /// Customers only ever see `publish == true` services (the on-demand lists
+  /// query `where('publish', isEqualTo: true)`). This used to default to false,
+  /// so every newly added service was saved hidden and could never be booked
+  /// unless the provider happened to notice the toggle. The model's own default
+  /// is true; match it.
+  RxBool publish = true.obs;
   RxDouble latValue = 0.0.obs, longValue = 0.0.obs;
 
   RxString? startTime = ''.obs, endTime = ''.obs;
@@ -42,6 +59,84 @@ class AddOrUpdateServiceController extends GetxController {
   void onInit() {
     super.onInit();
     getArgument();
+  }
+
+  /// True while the map picker is on screen, so repeated taps cannot push a
+  /// second picker on top of the first.
+  bool _picking = false;
+
+  /// Picks the service address. Same flow as the worker form: neither picker
+  /// needs a `Get.back()` from the caller (they pop themselves), a refused
+  /// permission or an empty geocoder result reports instead of throwing, and
+  /// the old fallback that silently wrote a hard-coded Mumbai address into the
+  /// field on any error is gone.
+  Future<void> pickLocation(BuildContext context) async {
+    if (_picking) return;
+    _picking = true;
+    try {
+      final bool granted = await ensureLocationPermission(context);
+      if (!granted) return;
+
+      ShowToastDialog.showLoader("Please wait".tr);
+      try {
+        await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      } catch (e) {
+        log("Service location: current position unavailable: $e");
+      } finally {
+        ShowToastDialog.closeLoader();
+      }
+
+      if (selectedMapType == 'osm') {
+        final dynamic result = await Get.to(() => MapPickerPage());
+        if (result == null) return;
+        if (result is! PlaceModel) {
+          ShowToastDialog.showToast("Could not read the selected location".tr);
+          return;
+        }
+        _applyLocation(result.coordinates.latitude, result.coordinates.longitude, result.address);
+      } else {
+        final dynamic result = await Get.to(() => const LocationPickerScreen());
+        if (result == null) return;
+        if (result is! SelectedLocationModel || result.latLng == null) {
+          ShowToastDialog.showToast("Could not read the selected location".tr);
+          return;
+        }
+        _applyLocation(result.latLng!.latitude, result.latLng!.longitude, Utils.formatAddress(selectedLocation: result));
+      }
+    } catch (e, s) {
+      log("Service location pick failed: $e", stackTrace: s);
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("Could not set the location, please try again".tr);
+    } finally {
+      _picking = false;
+    }
+  }
+
+  void _applyLocation(double latitude, double longitude, String? label) {
+    latValue.value = latitude;
+    longValue.value = longitude;
+    final String text = formatAddressText(label);
+    address.value.text = text.isNotEmpty ? text : "${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}";
+    update();
+  }
+
+  /// Asks for the location permission and says why when it is refused.
+  Future<bool> ensureLocationPermission(BuildContext context) async {
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.deniedForever) {
+      if (context.mounted) {
+        await showDialog(context: context, builder: (_) => PermissionDialog());
+      }
+      return false;
+    }
+    if (permission == LocationPermission.denied) {
+      ShowToastDialog.showToast('You have to allow location permission to use your location'.tr);
+      return false;
+    }
+    return true;
   }
 
   void getArgument() async {
@@ -83,19 +178,29 @@ class AddOrUpdateServiceController extends GetxController {
     update();
   }
 
+  /// Strips the literal "null" an older `.toString()` on a missing field wrote
+  /// into Firestore, so it is never re-displayed or re-saved. A "null"
+  /// `priceUnit` also used to crash this screen: it matched no dropdown item
+  /// and tripped the "exactly one item" assertion.
+  String _clean(Object? value) {
+    final String s = value?.toString().trim() ?? '';
+    return (s.isEmpty || s.toLowerCase() == 'null') ? '' : s;
+  }
+
   getAttribute() async {
-    serviceName.value.text = serviceModel.value.title.toString();
-    rprice.value.text = serviceModel.value.price.toString();
-    description.value.text = serviceModel.value.description.toString();
-    disprice.value.text = serviceModel.value.disPrice.toString();
-    publish.value = serviceModel.value.publish!;
+    serviceName.value.text = _clean(serviceModel.value.title);
+    rprice.value.text = _clean(serviceModel.value.price);
+    description.value.text = _clean(serviceModel.value.description);
+    disprice.value.text = _clean(serviceModel.value.disPrice);
+    publish.value = serviceModel.value.publish ?? true;
     isDiscountedPriceOk.value = false;
-    startTime!.value = serviceModel.value.startTime.toString();
-    endTime!.value = serviceModel.value.endTime.toString();
-    address.value.text = serviceModel.value.address.toString();
-    priceUnit!.value = serviceModel.value.priceUnit.toString();
-    latValue.value = serviceModel.value.latitude!;
-    longValue.value = serviceModel.value.longitude!;
+    startTime!.value = _clean(serviceModel.value.startTime);
+    endTime!.value = _clean(serviceModel.value.endTime);
+    address.value.text = formatAddressText(serviceModel.value.address);
+    final String unit = _clean(serviceModel.value.priceUnit);
+    priceUnit!.value = priceUnitList.contains(unit) ? unit : '';
+    latValue.value = serviceModel.value.latitude ?? 0.0;
+    longValue.value = serviceModel.value.longitude ?? 0.0;
     mediaFiles.addAll(serviceModel.value.photos);
     for (var element in serviceModel.value.days) {
       selectedDays!.add(element);

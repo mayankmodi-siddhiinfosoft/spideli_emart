@@ -302,9 +302,15 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                     icon: Icons.directions_outlined,
                     size: DsButtonSize.sm,
                     onPressed: () async {
+                      // A booking whose address carries no coordinates used to
+                      // crash here on the null checks.
+                      final location = onProviderOrder.address?.location;
+                      if (location == null) {
+                        ShowToastDialog.showToast("No location on this booking".tr);
+                        return;
+                      }
                       final directions = MapLauncher.directions(
-                        LocationCoords(onProviderOrder.address!.location!.latitude, onProviderOrder.address!.location!.longitude,
-                            title: onProviderOrder.address!.locality),
+                        LocationCoords(location.latitude, location.longitude, title: onProviderOrder.address?.getFullAddress()),
                         mode: TravelMode.driving,
                       );
                       // map_launcher 6: getSupportedMaps also returns browser-only maps, so check isInstalled to keep the old "installed" check.
@@ -347,7 +353,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                             const DsGap(DsSpace.xs),
                             Expanded(
                               child: Text(
-                                onProviderOrder.address!.getFullAddress().toString(),
+                                onProviderOrder.address?.getFullAddress() ?? "",
                                 maxLines: 5,
                                 style: t.bodySecondary,
                               ),

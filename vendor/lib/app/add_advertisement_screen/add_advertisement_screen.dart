@@ -461,7 +461,22 @@ String prettyDuration(double duration) {
   return '$seconds';
 }
 
+/// Validity range sheet.
+///
+/// Report #8: `SfDateRangePicker` was given `minDate: DateTime.now()` together
+/// with an `initialSelectedRange` read straight from the campaign. Re-opening a
+/// campaign that started before today handed the picker a selection outside its
+/// own bounds and the calendar did not render. The window now always contains
+/// the range that is already stored.
 Future dateValidityPicker(BuildContext context, AddAdvertisementController controller, bool isDarkMode) {
+  final DateTime today = DateUtils.dateOnly(DateTime.now());
+  final DateTime? start = controller.advertisementModel.value.id == null ? null : DateUtils.dateOnly(controller.startValidityDate.value);
+  final DateTime? end = controller.advertisementModel.value.id == null ? null : DateUtils.dateOnly(controller.endValidityDate.value);
+  DateTime minDate = today;
+  if (start != null && start.isBefore(minDate)) minDate = start;
+  if (end != null && end.isBefore(minDate)) minDate = end;
+  DateTime maxDate = today.add(const Duration(days: 5 * 365));
+  if (end != null && end.isAfter(maxDate)) maxDate = end;
   return showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
@@ -521,9 +536,11 @@ Future dateValidityPicker(BuildContext context, AddAdvertisementController contr
               }
             },
             selectionMode: DateRangePickerSelectionMode.range,
-            minDate: DateTime.now(),
-            maxDate: DateTime.now().add(Duration(days: 5 * 365)),
-            initialSelectedRange: PickerDateRange(controller.startValidityDate.value, controller.endValidityDate.value),
+            minDate: minDate,
+            maxDate: maxDate,
+            // Null for a campaign that has not picked a range yet, so the
+            // picker opens clean instead of pre-selecting "today - today".
+            initialSelectedRange: start == null && end == null ? null : PickerDateRange(start, end),
           ),
         ),
       );

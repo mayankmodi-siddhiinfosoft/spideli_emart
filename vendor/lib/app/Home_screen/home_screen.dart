@@ -32,6 +32,7 @@ import 'package:vendor/service/audio_player_service.dart';
 import 'package:vendor/models/currency_model.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/region_service.dart';
+import 'package:vendor/widget/cancel_reason_sheet.dart';
 import 'package:vendor/widget/wholesale_tag.dart';
 
 /// Store dashboard: a brand hero (who is signed in, the current store with its
@@ -280,6 +281,15 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  /// The one line of address an order card shows. Goes through
+  /// [ShippingAddress.getFullAddress], which drops missing / "null" parts
+  /// (report #17), and says so plainly when nothing usable was stored.
+  static String _addressLine(OrderModel orderModel) {
+    if (orderModel.takeAway == true) return "Take Away".tr;
+    final String address = orderModel.address?.getFullAddress() ?? '';
+    return address.isEmpty ? "No address on this order".tr : address;
+  }
+
   Widget newOrderWidget(isDark, BuildContext context, OrderModel orderModel, HomeController controller) {
     // Amounts of an order are shown in the currency it was charged in.
     final CurrencyModel? orderCurrency = RegionService.currencyForOrder(orderModel.regionId);
@@ -377,7 +387,7 @@ class HomeScreen extends StatelessWidget {
       orderModel: orderModel,
       orderCurrency: orderCurrency,
       isDark: isDark,
-      addressText: orderModel.takeAway == true ? "Take Away".tr : orderModel.address!.getFullAddress().tr,
+      addressText: _addressLine(orderModel),
       totalAmount: totalAmount,
       adminCommission: adminCommission,
       showRatings: true,
@@ -438,7 +448,6 @@ class HomeScreen extends StatelessWidget {
 
                       ShowToastDialog.closeLoader();
                       controller.getOrder();
-                      Get.back();
                     },
                   ),
                 ),
@@ -489,27 +498,10 @@ class HomeScreen extends StatelessWidget {
                                   }
                                 }
                                 if (Constant.isSelfDeliveryFeature == true && controller.vendermodel.value.isSelfDelivery == true && orderModel.takeAway == false) {
-                                  ShowToastDialog.showLoader('Please wait...'.tr);
-                                  await controller.getAllDriverList();
-                                  ShowToastDialog.closeLoader();
-                                  Get.back();
-                                  showDialog(
-                                    // ignore: use_build_context_synchronously
-                                    context: context,
-                                    builder: (BuildContext context) {
-                                      return showListOfDeliverymenDialog(controller, isDark, orderModel);
-                                    },
-                                  );
+                                  // ignore: use_build_context_synchronously
+                                  await openAssignDriverDialog(context, controller, orderModel, isDark == true);
                                 } else {
-                                  ShowToastDialog.showLoader('Please wait...'.tr);
-                                  orderModel.status = Constant.orderAccepted;
-                                  await AudioPlayerService.playSound(false);
-                                  await FireStoreUtils.updateOrder(orderModel);
-                                  await FireStoreUtils.restaurantVendorWalletSet(orderModel);
-                                  SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author!.fcmToken.toString(), {});
-
-                                  ShowToastDialog.closeLoader();
-                                  Get.back();
+                                  await acceptOrder(controller, orderModel);
                                 }
                               }
                             }
@@ -595,27 +587,10 @@ class HomeScreen extends StatelessWidget {
                                     }
                                   }
                                   if (Constant.isSelfDeliveryFeature == true && controller.vendermodel.value.isSelfDelivery == true && orderModel.takeAway == false) {
-                                    ShowToastDialog.showLoader('Please wait...'.tr);
-                                    await controller.getAllDriverList();
-                                    ShowToastDialog.closeLoader();
-                                    Get.back();
-                                    showDialog(
-                                      // ignore: use_build_context_synchronously
-                                      context: context,
-                                      builder: (BuildContext context) {
-                                        return showListOfDeliverymenDialog(controller, isDark, orderModel);
-                                      },
-                                    );
+                                    // ignore: use_build_context_synchronously
+                                    await openAssignDriverDialog(context, controller, orderModel, isDark == true);
                                   } else {
-                                    ShowToastDialog.showLoader('Please wait...'.tr);
-                                    orderModel.status = Constant.orderAccepted;
-                                    await AudioPlayerService.playSound(false);
-                                    await FireStoreUtils.updateOrder(orderModel);
-                                    await FireStoreUtils.restaurantVendorWalletSet(orderModel);
-                                    SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author!.fcmToken.toString(), {});
-
-                                    ShowToastDialog.closeLoader();
-                                    Get.back();
+                                    await acceptOrder(controller, orderModel);
                                   }
                                 }
                               }
@@ -725,7 +700,7 @@ class HomeScreen extends StatelessWidget {
       orderModel: orderModel,
       orderCurrency: orderCurrency,
       isDark: isDark,
-      addressText: orderModel.takeAway == true ? "Take Away".tr : orderModel.address!.getFullAddress().tr,
+      addressText: _addressLine(orderModel),
       totalAmount: totalAmount,
       adminCommission: adminCommission,
       showRatings: false,
@@ -743,8 +718,17 @@ class HomeScreen extends StatelessWidget {
             child: DsButton.dangerTonal(
               label: "Cancel Order".tr,
               onPressed: () async {
+                // A reason is mandatory (report #14): the sheet returns null
+                // when the vendor backs out, and nothing about the order -
+                // including the refund below - is touched in that case.
+                final CancelReasonResult? cancellation = await CancelReasonSheet.show();
+                if (cancellation == null) return;
                 ShowToastDialog.showLoader('Please wait...'.tr);
                 orderModel.status = Constant.orderCancelled;
+                orderModel.cancelReason = cancellation.reason;
+                orderModel.cancelReasonCode = cancellation.code;
+                orderModel.cancelledBy = Constant.userRoleVendor;
+                orderModel.cancelledAt = Timestamp.now();
                 if (orderModel.driverID != null) {
                   UserModel? driverModel = await FireStoreUtils.getUserById(orderModel.driverID ?? '');
                   driverModel?.orderRequestData?.remove(orderModel.id);
@@ -787,73 +771,12 @@ class HomeScreen extends StatelessWidget {
                 // credited must not be debited at all.
                 await FireStoreUtils.reverseVendorCreditForOrder(orderModel);
                 await controller.getOrder();
-                Get.back();
                 ShowToastDialog.closeLoader();
               },
             ),
           ),
           DsGap.md,
-          Expanded(
-            child: orderModel.takeAway == true
-                ? DsButton.primary(
-                    label: "Delivered".tr,
-                    icon: Icons.task_alt_rounded,
-                    onPressed: () async {
-                      ShowToastDialog.showLoader('Please wait...'.tr);
-                      orderModel.status = Constant.orderCompleted;
-                      if (orderModel.cashback?.cashbackValue != null && orderModel.cashback?.id != null) {
-                        WalletTransactionModel transactionModel = WalletTransactionModel(
-                          id: Constant.getUuid(),
-                          amount: double.parse("${orderModel.cashback?.cashbackValue ?? 0.0}"),
-                          date: Timestamp.now(),
-                          paymentMethod: "Cashback Amount",
-                          transactionUser: "user",
-                          userId: orderModel.author?.id,
-                          isTopup: true,
-                          orderId: orderModel.id,
-                          note: "Cashback Amount",
-                          paymentStatus: "success",
-                        );
-                        await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-                          if (value == true) {
-                            await FireStoreUtils.updateUserWallet(
-                              amount: double.parse("${orderModel.cashback?.cashbackValue ?? 0.0}").toString(),
-                              userId: orderModel.author!.id.toString(),
-                            );
-                          }
-                        });
-                      }
-                      await FireStoreUtils.updateOrder(orderModel);
-                      await FireStoreUtils.restaurantVendorWalletSet(orderModel);
-                      SendNotification.sendFcmMessage(Constant.takeawayCompleted, orderModel.author!.fcmToken.toString(), {});
-
-                      ShowToastDialog.closeLoader();
-                    },
-                  )
-                : DsButton.primary(
-                    label: Constant.selectedSection!.serviceTypeFlag == 'ecommerce-service' ? "Mark Deliver".tr : orderModel.status.toString(),
-                    onPressed: () async {
-                      if (Constant.selectedSection!.serviceTypeFlag == 'ecommerce-service') {
-                        ShowToastDialog.showLoader('Please wait...'.tr);
-                        orderModel.status = Constant.orderCompleted;
-                        await AudioPlayerService.playSound(false);
-                        await FireStoreUtils.updateOrder(orderModel);
-                        // Last completion path that never credited the store
-                        // (APP-SPEC-STORE.md §2). Idempotent: an order already
-                        // credited on Accept / Shipped is skipped.
-                        await FireStoreUtils.restaurantVendorWalletSet(orderModel);
-                        SendNotification.sendOneNotification(
-                          token: orderModel.author!.fcmToken.toString(),
-                          title: "Order Delivered".tr,
-                          body: "Your order has been delivered successfully".tr,
-                          payload: {},
-                        );
-                        controller.getOrder();
-                        ShowToastDialog.closeLoader();
-                      }
-                    },
-                  ),
-          ),
+          Expanded(child: _progressAction(context, orderModel, controller, isDark == true)),
           if (controller.userModel.value.subscriptionPlan?.features?.chat != false) ...[
             DsGap.sm,
             DsIconButton(
@@ -987,7 +910,7 @@ class HomeScreen extends StatelessWidget {
       orderModel: orderModel,
       orderCurrency: orderCurrency,
       isDark: isDark,
-      addressText: orderModel.takeAway == true ? "Take Away".tr : orderModel.address?.getFullAddress() ?? '',
+      addressText: _addressLine(orderModel),
       totalAmount: totalAmount,
       adminCommission: adminCommission,
       showRatings: false,
@@ -999,7 +922,18 @@ class HomeScreen extends StatelessWidget {
           },
         );
       },
-      actions: _StatusBanner(status: orderModel.status.toString(), tone: orderModel.status == Constant.orderRejected ? DsTone.danger : DsTone.fromStatus(orderModel.status)),
+      actions: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _StatusBanner(status: orderModel.status.toString(), tone: orderModel.status == Constant.orderRejected ? DsTone.danger : DsTone.fromStatus(orderModel.status)),
+          // Why it was cancelled, by whom and when (report #14).
+          if ((orderModel.cancelReason ?? '').trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: DsSpace.sm),
+              child: _CancelReasonNote(orderModel: orderModel),
+            ),
+        ],
+      ),
     );
   }
 
@@ -1239,6 +1173,168 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  /// The right-hand action of an order that is being worked on.
+  ///
+  /// Report #5: this used to be a single `DsButton.primary` whose label fell
+  /// back to the order's own status ("In Transit", "Order Shipped"...) and
+  /// whose handler ran only for the e-commerce section. Every other order -
+  /// including a delivery order the store's own delivery man is carrying -
+  /// therefore showed a button that did nothing at all when tapped. Each case
+  /// now has an action that runs, and a case the store genuinely cannot act on
+  /// shows what it is waiting for instead of a dead button.
+  Widget _progressAction(BuildContext context, OrderModel orderModel, HomeController controller, bool isDark) {
+    final bool isEcommerce = Constant.selectedSection?.serviceTypeFlag == 'ecommerce-service';
+    final bool storeDelivers = Constant.isSelfDeliveryFeature == true && controller.vendermodel.value.isSelfDelivery == true;
+    final bool hasDriver = (orderModel.driverID ?? '').isNotEmpty;
+    final String status = orderModel.status.toString();
+
+    // Collected by the customer at the counter.
+    if (orderModel.takeAway == true) {
+      return DsButton.primary(
+        label: "Delivered".tr,
+        icon: Icons.task_alt_rounded,
+        onPressed: () => completeOrder(orderModel, controller, notificationType: Constant.takeawayCompleted),
+      );
+    }
+
+    // Shipped by a courier: the store is the only one who learns it arrived.
+    if (isEcommerce) {
+      return DsButton.primary(label: "Mark Deliver".tr, icon: Icons.task_alt_rounded, onPressed: () => completeOrder(orderModel, controller));
+    }
+
+    // Self delivery: the store's own delivery man carries the order, so the
+    // store both assigns and closes it. Never a dead button in either state.
+    if (storeDelivers) {
+      final bool handedOver = HomeController.readyStatuses.contains(status) || status == Constant.driverAccepted;
+      if (hasDriver && handedOver) {
+        return DsButton.primary(label: "Mark as Completed".tr, icon: Icons.task_alt_rounded, onPressed: () => completeOrder(orderModel, controller));
+      }
+      // Not handed over yet (or handed over with no driver on the order):
+      // assign from the card itself instead of having to open the order
+      // (report #9).
+      return DsButton.primary(
+        label: hasDriver ? "Reassign Delivery Man".tr : "Assign Delivery Man".tr,
+        icon: Icons.delivery_dining_rounded,
+        onPressed: () => openAssignDriverDialog(context, controller, orderModel, isDark),
+      );
+    }
+
+    // A platform driver is carrying it: nothing for the store to do, so say
+    // who the order is waiting for.
+    return _WaitingNote(
+      label: hasDriver ? "${"With the delivery man".tr} · ${status.tr}" : "${"Waiting for a delivery partner".tr} · ${status.tr}",
+    );
+  }
+
+  /// Marks [orderModel] delivered: credits the cashback, writes the order,
+  /// credits the store (idempotent), frees the store's delivery man and tells
+  /// the customer. Every failure is surfaced - this handler used to be the one
+  /// that silently did nothing.
+  Future<void> completeOrder(OrderModel orderModel, HomeController controller, {String? notificationType}) async {
+    ShowToastDialog.showLoader('Please wait...'.tr);
+    try {
+      orderModel.status = Constant.orderCompleted;
+      if (orderModel.cashback?.cashbackValue != null && orderModel.cashback?.id != null) {
+        WalletTransactionModel transactionModel = WalletTransactionModel(
+          id: Constant.getUuid(),
+          amount: double.parse("${orderModel.cashback?.cashbackValue ?? 0.0}"),
+          date: Timestamp.now(),
+          paymentMethod: "Cashback Amount",
+          transactionUser: "user",
+          userId: orderModel.author?.id,
+          isTopup: true,
+          orderId: orderModel.id,
+          note: "Cashback Amount",
+          paymentStatus: "success",
+        );
+        await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
+          if (value == true) {
+            await FireStoreUtils.updateUserWallet(amount: double.parse("${orderModel.cashback?.cashbackValue ?? 0.0}").toString(), userId: orderModel.author!.id.toString());
+          }
+        });
+      }
+      await AudioPlayerService.playSound(false);
+      final bool isUpdated = await FireStoreUtils.updateOrder(orderModel);
+      if (isUpdated == false) {
+        ShowToastDialog.closeLoader();
+        ShowToastDialog.showToast("Could not update this order. Please check your connection and try again.".tr);
+        return;
+      }
+      // Last completion path that never credited the store
+      // (APP-SPEC-STORE.md §2). Idempotent: an order already
+      // credited on Accept / Shipped is skipped.
+      await FireStoreUtils.restaurantVendorWalletSet(orderModel);
+
+      // The store's own delivery man is free for the next order.
+      if ((orderModel.driverID ?? '').isNotEmpty) {
+        UserModel? driverModel = await FireStoreUtils.getUserById(orderModel.driverID!);
+        if (driverModel != null) {
+          driverModel.inProgressOrderID?.remove(orderModel.id);
+          driverModel.orderRequestData?.remove(orderModel.id);
+          await FireStoreUtils.updateDriverUser(driverModel);
+        }
+      }
+
+      if (notificationType != null) {
+        SendNotification.sendFcmMessage(notificationType, orderModel.author!.fcmToken.toString(), {});
+      } else {
+        SendNotification.sendOneNotification(
+          token: orderModel.author!.fcmToken.toString(),
+          title: "Order Delivered".tr,
+          body: "Your order has been delivered successfully".tr,
+          payload: {},
+        );
+      }
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("Order marked as completed".tr);
+    } catch (e) {
+      // The old handler swallowed everything; a failure is now visible.
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("${"Could not complete this order".tr}: $e");
+    }
+  }
+
+  /// Accepts an order without a delivery man (the store, or a platform driver,
+  /// takes it from here).
+  Future<void> acceptOrder(HomeController controller, OrderModel orderModel) async {
+    ShowToastDialog.showLoader('Please wait...'.tr);
+    orderModel.status = Constant.orderAccepted;
+    await AudioPlayerService.playSound(false);
+    await FireStoreUtils.updateOrder(orderModel);
+    await FireStoreUtils.restaurantVendorWalletSet(orderModel);
+    SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author!.fcmToken.toString(), {});
+    ShowToastDialog.closeLoader();
+  }
+
+  /// Loads the store's delivery men and opens the assign dialog.
+  ///
+  /// Report #9: a stray `Get.back()` used to run here between closing the
+  /// loader and opening the dialog - a leftover from when this card lived
+  /// inside the order detail screen. On the dashboard it popped the dashboard
+  /// itself, so assigning only ever worked from an opened order. The empty
+  /// list is also explained now instead of showing a bare "no data found".
+  Future<void> openAssignDriverDialog(BuildContext context, HomeController controller, OrderModel orderModel, bool isDark) async {
+    ShowToastDialog.showLoader('Please wait...'.tr);
+    await controller.getAllDriverList();
+    ShowToastDialog.closeLoader();
+    if (!context.mounted) return;
+    if (controller.driverUserList.isEmpty) {
+      ShowToastDialog.showToastDuration(
+        controller.storeDriverCount.value == 0
+            ? "You have no delivery man yet. Add one to assign this order.".tr
+            : "None of your delivery men is available right now. They must be signed in and active before an order can be assigned.".tr,
+        duration: const Duration(seconds: 4),
+      );
+    }
+    // Opened either way: the dialog carries the "Add Delivery Man" action.
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return showListOfDeliverymenDialog(controller, isDark, orderModel);
+      },
+    );
+  }
+
   Dialog showListOfDeliverymenDialog(HomeController controller, isDark, OrderModel orderModel) {
     return Dialog(
       insetPadding: const EdgeInsets.all(DsSpace.lg),
@@ -1270,18 +1366,37 @@ class HomeScreen extends StatelessWidget {
                         ShowToastDialog.showLoader('Please wait...'.tr);
                         await AudioPlayerService.playSound(false);
 
+                        // Reassignment: the delivery man who had it is freed
+                        // first, otherwise the order stayed on their list for
+                        // ever and they counted as "Occupied".
+                        final String? previousDriverId = orderModel.driverID;
+                        if ((previousDriverId ?? '').isNotEmpty && previousDriverId != controller.selectDriverUser.value.id) {
+                          UserModel? previous = await FireStoreUtils.getUserById(previousDriverId!);
+                          if (previous != null) {
+                            previous.inProgressOrderID?.remove(orderModel.id);
+                            previous.orderRequestData?.remove(orderModel.id);
+                            await FireStoreUtils.updateDriverUser(previous);
+                          }
+                        }
+
                         orderModel.notes = "";
                         orderModel.driverID = controller.selectDriverUser.value.id;
                         orderModel.driver = controller.selectDriverUser.value;
                         orderModel.status = Constant.orderInTransit;
-                        controller.selectDriverUser.value.inProgressOrderID?.add(orderModel.id);
+                        // The list is null on a driver who has never had an
+                        // order, and `?.add` silently did nothing then.
+                        controller.selectDriverUser.value.inProgressOrderID ??= [];
+                        if (controller.selectDriverUser.value.inProgressOrderID!.contains(orderModel.id) == false) {
+                          controller.selectDriverUser.value.inProgressOrderID!.add(orderModel.id);
+                        }
 
-                        await FireStoreUtils.updateOrder(orderModel);
+                        final bool isAssigned = await FireStoreUtils.updateOrder(orderModel);
                         await FireStoreUtils.updateDriverUser(controller.selectDriverUser.value);
                         await FireStoreUtils.restaurantVendorWalletSet(orderModel);
                         SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author!.fcmToken.toString(), {});
                         SendNotification.sendFcmMessage(Constant.newDeliveryOrder, orderModel.driver?.fcmToken ?? '', {});
                         ShowToastDialog.closeLoader();
+                        ShowToastDialog.showToast(isAssigned ? "Order assigned to the delivery man".tr : "Could not assign this order. Please try again.".tr);
                       } else {
                         ShowToastDialog.showToast("Please select the delivery man".tr);
                       }
@@ -1293,6 +1408,25 @@ class HomeScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Report #9: the dropdown alone only ever said "no data found".
+                Obx(
+                  () => controller.driverUserList.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.only(bottom: DsSpace.md),
+                          child: DsCard.tinted(
+                            tone: DsTone.warning,
+                            padding: const EdgeInsets.all(DsSpace.md),
+                            radius: DsRadius.md,
+                            child: Text(
+                              controller.storeDriverCount.value == 0
+                                  ? "You have no delivery man yet. Add one below to assign this order.".tr
+                                  : "${controller.storeDriverCount.value} ${"delivery men belong to this store, but none is available right now: they must be signed in with an active status.".tr}",
+                              style: t.bodySm,
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
                 Obx(
                   () => DropdownSearch<UserModel>(
                     items: (String s, LoadProps? data) => controller.driverUserList,
@@ -1403,29 +1537,15 @@ class HomeScreen extends StatelessWidget {
                         await FireStoreUtils.updateVendor(controller.vendermodel.value);
                       }
                     }
+                    orderModel.estimatedTimeToPrepare = controller.estimatedTimeController.value.text;
+                    // Closes this dialog (and only this dialog) before the next
+                    // step runs.
+                    Get.back();
                     if (Constant.isSelfDeliveryFeature == true && controller.vendermodel.value.isSelfDelivery == true && orderModel.takeAway == false) {
-                      ShowToastDialog.showLoader('Please wait...'.tr);
-                      await controller.getAllDriverList();
-                      ShowToastDialog.closeLoader();
-                      orderModel.estimatedTimeToPrepare = controller.estimatedTimeController.value.text;
-                      Get.back();
-                      showDialog(
-                        // ignore: use_build_context_synchronously
-                        context: context,
-                        builder: (BuildContext context) {
-                          return showListOfDeliverymenDialog(controller, isDark, orderModel);
-                        },
-                      );
+                      // ignore: use_build_context_synchronously
+                      await openAssignDriverDialog(context, controller, orderModel, isDark == true);
                     } else {
-                      ShowToastDialog.showLoader('Please wait...'.tr);
-                      orderModel.estimatedTimeToPrepare = controller.estimatedTimeController.value.text;
-                      orderModel.status = Constant.orderAccepted;
-                      await AudioPlayerService.playSound(false);
-                      await FireStoreUtils.updateOrder(orderModel);
-                      await FireStoreUtils.restaurantVendorWalletSet(orderModel);
-                      await SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author!.fcmToken.toString(), {});
-                      ShowToastDialog.closeLoader();
-                      Get.back();
+                      await acceptOrder(controller, orderModel);
                     }
                   } else {
                     ShowToastDialog.showToast("Please enter estimated time".tr);
@@ -1908,6 +2028,60 @@ class _StatusTrack extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The cancellation reason recorded on an order, with who cancelled and when
+/// (report #14).
+class _CancelReasonNote extends StatelessWidget {
+  final OrderModel orderModel;
+  const _CancelReasonNote({required this.orderModel});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final String by = (orderModel.cancelledBy ?? '').trim();
+    final String when = orderModel.cancelledAt == null ? '' : Constant.timestampToDateTime(orderModel.cancelledAt!);
+    final String meta = [by.isEmpty ? '' : "${"Cancelled by".tr} ${by.tr}", when].where((e) => e.isNotEmpty).join(' · ');
+    return Container(
+      padding: const EdgeInsets.all(DsSpace.md),
+      decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brMd, border: Border.all(color: c.border)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Cancellation reason".tr, style: t.overline),
+          const DsGap(DsSpace.xxs),
+          Text(orderModel.cancelReason!.tr, style: t.bodySm),
+          if (meta.isNotEmpty) ...[const DsGap(DsSpace.xxs), Text(meta, style: t.caption.copyWith(color: c.textMuted))],
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown in place of the primary action when the store has nothing to do on
+/// this order yet (report #5: never a button that silently does nothing).
+class _WaitingNote extends StatelessWidget {
+  final String label;
+  const _WaitingNote({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    return Container(
+      constraints: const BoxConstraints(minHeight: 44),
+      padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
+      decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brMd, border: Border.all(color: c.border)),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.hourglass_bottom_rounded, size: 16, color: c.textMuted),
+          DsGap.sm,
+          Flexible(child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: DsTypography.labelSm.copyWith(color: c.textSecondary))),
+        ],
       ),
     );
   }

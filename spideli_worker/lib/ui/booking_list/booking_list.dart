@@ -413,7 +413,7 @@ class _JobCard extends StatelessWidget {
           decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brMd),
           child: Column(
             children: [
-              _row(context, Icons.location_on_outlined, "Address  ", order.address!.getFullAddress().toString(), divider: false),
+              _row(context, Icons.location_on_outlined, "Address  ", order.address?.getFullAddress() ?? "", divider: false),
               _row(
                   context,
                   Icons.event_outlined,

@@ -1,6 +1,7 @@
 import 'package:country_code_picker/country_code_picker.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:get/get.dart';
@@ -13,6 +14,7 @@ import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/themes/easy_loading_config.dart';
 import 'package:vendor/themes/theme_controller.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/notification_service.dart';
 import 'package:vendor/utils/preferences.dart';
 
 void main() async {
@@ -24,6 +26,9 @@ void main() async {
   } else {
     FireStoreUtils.instance.init(firebaseApp, databaseId: 'staging'); // pass databaseId if named DB
   }
+  // Registered here, before any UI, so a push that arrives with the app closed
+  // or in the background always reaches a handler (report #11).
+  FirebaseMessaging.onBackgroundMessage(firebaseMessageBackgroundHandle);
   await FirebaseAppCheck.instance.activate(webProvider: ReCaptchaV3Provider('recaptcha-v3-site-key'), androidProvider: AndroidProvider.playIntegrity, appleProvider: AppleProvider.appAttest);
   await Preferences.initPref();
   Get.put(ThemeController());

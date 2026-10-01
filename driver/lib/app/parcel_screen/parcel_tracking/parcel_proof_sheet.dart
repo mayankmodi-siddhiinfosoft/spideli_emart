@@ -18,20 +18,42 @@ import 'package:image_picker/image_picker.dart';
 /// Archetype D (proof): a DS sheet with the proof type, the field or photo tile
 /// and one sticky confirm action.
 Future<Map<String, dynamic>?> showParcelProofSheet(BuildContext context, ParcelOrderModel order, {required bool isDark}) {
+  return showDeliveryProofSheet(
+    context,
+    isDark: isDark,
+    receiverCode: ParcelTrackingService.receiverCode(order),
+    photoStoragePath: 'parcelDeliveryProof/${order.id}',
+  );
+}
+
+/// The same sheet for any delivery: a parcel (client point 20) and an eMart /
+/// multivendor order (client point 29) record proof in the identical
+/// `deliveryProof` shape, so they share one screen.
+///
+/// [receiverCode] is the code the customer holds; when it is non-null the code
+/// is the only accepted proof. Without one the driver takes a photo, uploaded
+/// under [photoStoragePath].
+Future<Map<String, dynamic>?> showDeliveryProofSheet(
+  BuildContext context, {
+  required bool isDark,
+  required String? receiverCode,
+  required String photoStoragePath,
+}) {
   return showModalBottomSheet<Map<String, dynamic>>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     elevation: 0,
     barrierColor: DsColors.resolve(isDark).scrim,
-    builder: (_) => _ParcelProofSheet(order: order),
+    builder: (_) => _ParcelProofSheet(receiverCode: receiverCode, photoStoragePath: photoStoragePath),
   );
 }
 
 class _ParcelProofSheet extends StatefulWidget {
-  final ParcelOrderModel order;
+  final String? receiverCode;
+  final String photoStoragePath;
 
-  const _ParcelProofSheet({required this.order});
+  const _ParcelProofSheet({required this.receiverCode, required this.photoStoragePath});
 
   @override
   State<_ParcelProofSheet> createState() => _ParcelProofSheetState();
@@ -42,11 +64,12 @@ class _ParcelProofSheetState extends State<_ParcelProofSheet> {
   late String _type;
   File? _photo;
 
-  String? get _receiverCode => ParcelTrackingService.receiverCode(widget.order);
+  String? get _receiverCode => widget.receiverCode;
 
   @override
   void initState() {
     super.initState();
+    // A delivery with a receiver code can never switch to the photo path.
     _type = _receiverCode != null ? 'otp' : 'photo';
   }
 
@@ -69,10 +92,19 @@ class _ParcelProofSheetState extends State<_ParcelProofSheet> {
     }
   }
 
+  /// Client point 20: the receipt code is the proof. When the parcel carries
+  /// one, a photo is not an alternative.
+  bool get _codeIsMandatory => _receiverCode != null;
+
   Future<void> _confirm() async {
     final by = FireStoreUtils.getCurrentUid();
-    if (_type == 'otp') {
-      if (_code.text.trim() != _receiverCode) {
+    if (_codeIsMandatory) {
+      final String entered = _code.text.trim();
+      if (entered.isEmpty) {
+        ShowToastDialog.showToast("Enter the code the receiver gives you to complete this delivery.".tr);
+        return;
+      }
+      if (entered != _receiverCode) {
         ShowToastDialog.showToast("Invalid code".tr);
         return;
       }
@@ -85,7 +117,7 @@ class _ParcelProofSheetState extends State<_ParcelProofSheet> {
     }
     ShowToastDialog.showLoader("Please wait".tr);
     try {
-      final url = await Constant.uploadUserImageToFireStorage(_photo!, 'parcelDeliveryProof/${widget.order.id}', '${DateTime.now().millisecondsSinceEpoch}.jpg');
+      final url = await Constant.uploadUserImageToFireStorage(_photo!, widget.photoStoragePath, '${DateTime.now().millisecondsSinceEpoch}.jpg');
       ShowToastDialog.closeLoader();
       if (mounted) Navigator.of(context).pop({'type': 'photo', 'photoUrl': url, 'at': Timestamp.now(), 'by': by});
     } catch (e) {
@@ -129,18 +161,29 @@ class _ParcelProofSheetState extends State<_ParcelProofSheet> {
                   icon: Icons.photo_camera_outlined,
                   label: "Photo".tr,
                   selected: _type == 'photo',
-                  enabled: true,
+                  // Client point 20: only a parcel without a receiver code may
+                  // be proved with a photo.
+                  enabled: !_codeIsMandatory,
                   onTap: () => setState(() => _type = 'photo'),
                 ),
               ),
             ],
           ),
+          if (_codeIsMandatory)
+            Padding(
+              padding: const EdgeInsets.only(top: DsSpace.md),
+              child: DsInlineAlert(
+                tone: DsTone.warning,
+                icon: Icons.lock_outline_rounded,
+                message: "This delivery has a receiver code; it is the proof of delivery and must be entered.".tr,
+              ),
+            ),
           const DsGap(DsSpace.xl),
           AnimatedSize(
             duration: DsMotion.of(context, DsMotion.base),
             curve: DsMotion.standard,
             alignment: Alignment.topCenter,
-            child: _type == 'otp'
+            child: _codeIsMandatory || _type == 'otp'
                 ? DsTextField(
                     controller: _code,
                     keyboardType: TextInputType.number,
@@ -158,7 +201,7 @@ class _ParcelProofSheetState extends State<_ParcelProofSheet> {
                           child: DsInlineAlert(
                             tone: DsTone.info,
                             icon: Icons.info_outline_rounded,
-                            message: "This parcel has no receiver code; take a photo of the delivered parcel.".tr,
+                            message: "This delivery has no receiver code; take a photo of the delivered items.".tr,
                           ),
                         ),
                       DsPressable(

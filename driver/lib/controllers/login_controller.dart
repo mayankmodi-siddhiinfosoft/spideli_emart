@@ -39,8 +39,13 @@ class LoginController extends GetxController {
       UserModel? userModel = await FireStoreUtils.getUserProfile(credential.user!.uid);
       if (userModel?.role == Constant.userRoleDriver) {
         if (userModel?.active == true) {
-          userModel?.fcmToken = await NotificationService.getToken();
+          final String token = await NotificationService.getToken();
+          if (token.isNotEmpty) userModel?.fcmToken = token;
           await FireStoreUtils.updateUser(userModel!);
+          // Client point 19: topics are per driver, so they are (re)subscribed
+          // on every sign-in.
+          NotificationService.listenForTokenRefresh();
+          await NotificationService.subscribeDriverTopics(userModel);
           if (Constant.autoApproveDriver == true) {
             _navigateByUserModel(userModel);
           }
@@ -90,8 +95,11 @@ class LoginController extends GetxController {
               UserModel? userModel = await FireStoreUtils.getUserProfile(value.user!.uid);
               if (userModel != null && userModel.role == Constant.userRoleDriver) {
                 if (userModel.active == true) {
-                  userModel.fcmToken = await NotificationService.getToken();
+                  final String token = await NotificationService.getToken();
+                  if (token.isNotEmpty) userModel.fcmToken = token;
                   await FireStoreUtils.updateUser(userModel);
+                  NotificationService.listenForTokenRefresh();
+                  await NotificationService.subscribeDriverTopics(userModel);
                   _navigateByUserModel(userModel);
                 } else {
                   await FirebaseAuth.instance.signOut();
@@ -147,8 +155,11 @@ class LoginController extends GetxController {
               UserModel? userModel = await FireStoreUtils.getUserProfile(userCredential.user!.uid);
               if (userModel != null && userModel.role == Constant.userRoleDriver) {
                 if (userModel.active == true) {
-                  userModel.fcmToken = await NotificationService.getToken();
+                  final String token = await NotificationService.getToken();
+                  if (token.isNotEmpty) userModel.fcmToken = token;
                   await FireStoreUtils.updateUser(userModel);
+                  NotificationService.listenForTokenRefresh();
+                  await NotificationService.subscribeDriverTopics(userModel);
                   _navigateByUserModel(userModel);
                 } else {
                   await FirebaseAuth.instance.signOut();

@@ -50,6 +50,14 @@ class OrderModel {
   /// app). Order amounts are shown in this region's currency.
   String? regionId;
 
+  /// Why the order was cancelled, who cancelled it and when (report #14).
+  /// [cancelReasonCode] is the list entry the reason was picked from, or
+  /// "other" for free text; [cancelledBy] is "vendor", "customer" or "driver".
+  String? cancelReason;
+  String? cancelReasonCode;
+  String? cancelledBy;
+  Timestamp? cancelledAt;
+
   OrderModel({
     this.address,
     this.status,
@@ -90,6 +98,10 @@ class OrderModel {
     this.isPosOrder,
     this.isFreeDelivery,
     this.packagingChargeEnable,
+    this.cancelReason,
+    this.cancelReasonCode,
+    this.cancelledBy,
+    this.cancelledAt,
   });
 
   OrderModel.fromJson(Map<String, dynamic> json) {
@@ -160,6 +172,10 @@ class OrderModel {
     isFreeDelivery = json['isFreeDelivery'] ?? false;
     isPosOrder = json['isPosOrder'] ?? false;
     packagingChargeEnable = json['packagingChargeEnable'] ?? false;
+    cancelReason = json['cancelReason']?.toString();
+    cancelReasonCode = json['cancelReasonCode']?.toString();
+    cancelledBy = json['cancelledBy']?.toString();
+    cancelledAt = json['cancelledAt'] is Timestamp ? json['cancelledAt'] : null;
   }
 
   Map<String, dynamic> toJson() {
@@ -225,6 +241,12 @@ class OrderModel {
     if (regionId != null) {
       data['regionId'] = regionId;
     }
+    // Only written once the order has actually been cancelled, so a normal
+    // order update never blanks a reason another actor recorded.
+    if (cancelReason != null) data['cancelReason'] = cancelReason;
+    if (cancelReasonCode != null) data['cancelReasonCode'] = cancelReasonCode;
+    if (cancelledBy != null) data['cancelledBy'] = cancelledBy;
+    if (cancelledAt != null) data['cancelledAt'] = cancelledAt;
     return data;
   }
 }

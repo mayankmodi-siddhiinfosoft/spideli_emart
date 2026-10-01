@@ -12,17 +12,11 @@ import 'package:spideliprovider/services/helper.dart';
 import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/ui/subscription_plan_screen/subscription_plan_screen.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
-import 'package:spideliprovider/utils/utils.dart';
 import 'package:spideliprovider/widgets/geoflutterfire/src/geoflutterfire.dart';
 import 'package:spideliprovider/widgets/geoflutterfire/src/models/point.dart';
-import 'package:spideliprovider/widgets/osm_map/map_picker_page.dart';
-import 'package:spideliprovider/widgets/place_picker/location_picker_screen.dart';
-import 'package:spideliprovider/widgets/place_picker/selected_location_model.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:geocoding/geocoding.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -82,6 +76,14 @@ class AddOrUpdateServiceScreen extends StatelessWidget {
       ShowToastDialog.showToast('Please Select start and end time.'.tr);
     } else if (controller.selectedDays!.isEmpty) {
       ShowToastDialog.showToast('Please Select Days.'.tr);
+    } else if (controller.priceUnit!.value.isEmpty) {
+      // The customer's booking screen branches on priceUnit ("Fixed" vs
+      // "Hourly"); saving it empty leaves the service impossible to price.
+      ShowToastDialog.showToast('Please Select price unit.'.tr);
+    } else if (controller.latValue.value == 0.0 && controller.longValue.value == 0.0) {
+      // Customers find services by geohash within the section's radius, so a
+      // service saved on (0, 0) is never returned to anyone.
+      ShowToastDialog.showToast('Please select the location'.tr);
     } else {
       if (controller.formKey.value.currentState?.validate() ?? false) {
         if (controller.mediaFiles.isEmpty) {
@@ -134,9 +136,13 @@ class AddOrUpdateServiceScreen extends StatelessWidget {
           providerModel.disPrice = controller.disprice.value.text.toString().isEmpty ? "0" : controller.disprice.value.text.toString();
           providerModel.publish = controller.publish.value;
           providerModel.photos = mediaFilesURLs;
-          providerModel.startTime = controller.startTime.toString();
-          providerModel.endTime = controller.endTime.toString();
-          providerModel.priceUnit = controller.priceUnit.toString();
+          // Read `.value`, not `.toString()` on the Rx itself: a null or unset
+          // observable used to be written to Firestore as the string "null",
+          // which then matched no dropdown item on the next edit and left the
+          // service with an unusable availability window.
+          providerModel.startTime = controller.startTime!.value;
+          providerModel.endTime = controller.endTime!.value;
+          providerModel.priceUnit = controller.priceUnit!.value;
           providerModel.days = controller.selectedDays!.toList();
 
           await FireStoreUtils.getCurrentUser(MyAppState.currentUser!.id).then((userdata) {
@@ -361,39 +367,7 @@ class _ServiceForm extends StatelessWidget {
                 label: "Change".tr,
                 icon: Icons.my_location_rounded,
                 size: DsButtonSize.sm,
-                onPressed: () async {
-                  checkPermission(() async {
-                    ShowToastDialog.showLoader("Please wait");
-                    try {
-                      await Geolocator.requestPermission();
-                      await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-                      ShowToastDialog.closeLoader();
-                      if (selectedMapType == 'osm') {
-                        final result = await Get.to(() => MapPickerPage());
-                        final firstPlace = result;
-                        if (result != null) {
-                          controller.latValue.value = firstPlace.coordinates.latitude;
-                          controller.longValue.value = firstPlace.coordinates.longitude;
-
-                          controller.address.value.text = firstPlace.address;
-                        }
-                      } else {
-                        Get.to(LocationPickerScreen())!.then((value) async {
-                          if (value != null) {
-                            SelectedLocationModel selectedLocationModel = value;
-                            controller.latValue.value = selectedLocationModel.latLng!.latitude;
-                            controller.longValue.value = selectedLocationModel.latLng!.longitude;
-
-                            controller.address.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
-                            controller.update();
-                          }
-                        });
-                      }
-                    } catch (e) {
-                      print(e.toString());
-                    }
-                  }, context);
-                },
+                onPressed: () => controller.pickLocation(context),
               ),
               children: [
                 DsTextField(
@@ -405,44 +379,7 @@ class _ServiceForm extends StatelessWidget {
                   textInputAction: TextInputAction.next,
                   prefixIcon: Icons.place_outlined,
                   bottomSpacing: DsSpace.sm,
-                  onTap: () {
-                    checkPermission(() async {
-                      try {
-                        await Geolocator.requestPermission();
-                        await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-
-                        if (selectedMapType == 'osm') {
-                          final result = await Get.to(() => MapPickerPage());
-                          final firstPlace = result;
-                          if (result != null) {
-                            controller.latValue.value = firstPlace.coordinates.latitude;
-                            controller.longValue.value = firstPlace.coordinates.longitude;
-
-                            controller.address.value.text = firstPlace.address;
-                          }
-                        } else {
-                          Get.to(LocationPickerScreen())!.then((value) async {
-                            if (value != null) {
-                              SelectedLocationModel selectedLocationModel = value;
-                              controller.latValue.value = selectedLocationModel.latLng!.latitude;
-                              controller.longValue.value = selectedLocationModel.latLng!.longitude;
-
-                              controller.address.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
-                              controller.update();
-                            }
-                          });
-                        }
-                      } catch (e) {
-                        await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) async {
-                          List<Placemark> placeMarks = await Geocoding().placemarkFromCoordinates(19.228825, 72.854118);
-
-                          controller.address.value.text =
-                              "${placeMarks.first.name.toString()},${placeMarks.first.subLocality.toString()},${placeMarks.first.locality.toString()},${placeMarks.first.administrativeArea.toString()},${placeMarks.first.country.toString()}";
-                        });
-                        controller.update();
-                      }
-                    }, context);
-                  },
+                  onTap: () => controller.pickLocation(context),
                 ),
               ],
             ),

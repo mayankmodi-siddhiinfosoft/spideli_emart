@@ -1,4 +1,3 @@
-import 'package:bottom_picker/bottom_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/cart_controller.dart';
@@ -18,6 +17,8 @@ import '../../../models/user_model.dart';
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
 import '../../../utils/wholesale_pricing.dart';
+import '../../../widget/quantity_stepper.dart';
+import '../../../widget/schedule_picker.dart';
 import '../../../widget/shop_widgets.dart';
 import '../../widgets/order_ui.dart';
 import '../restaurant_details_screen/restaurant_details_screen.dart';
@@ -216,8 +217,18 @@ class CartScreen extends StatelessWidget {
                                         ),
                                       ),
                                       const DsGap(DsSpace.sm),
-                                      _LineStepper(
-                                        quantity: cartProductModel.quantity.toString(),
+                                      QuantityStepper(
+                                        quantity: cartProductModel.quantity ?? 0,
+                                        label: cartProductModel.name ?? "Quantity".tr,
+                                        // The line's pack floor, and the stock of
+                                        // the exact variant this line holds.
+                                        minQuantity: cartProductModel.minOrderQuantity,
+                                        maxQuantity: _lineStock(productModel, cartProductModel),
+                                        // Zero still removes the line.
+                                        allowZero: true,
+                                        onQuantity: (value) {
+                                          controller.addToCart(cartProductModel: cartProductModel, isIncrement: value > (cartProductModel.quantity ?? 0), quantity: value);
+                                        },
                                         onRemove: () {
                                           // Below a wholesale-only product's minimum quantity the line is removed.
                                           final int next = cartProductModel.quantity! - 1;
@@ -343,24 +354,19 @@ class CartScreen extends StatelessWidget {
                         selected: deliveryType == "schedule",
                         onTap: () {
                           controller.deliveryType.value = "schedule";
-                          BottomPicker<DateTime>.dateTime(
-                            onSubmit: (index) {
-                              controller.scheduleDateTime.value = index!;
+                          final DateTime now = DateTime.now();
+                          showSchedulePicker(
+                            context: context,
+                            title: 'Schedule Time'.tr,
+                            // A time picked earlier in the session (now in the
+                            // past) is folded back onto the lower bound instead
+                            // of leaving the sheet empty.
+                            initialDateTime: controller.scheduleDateTime.value,
+                            minDateTime: now,
+                            onPicked: (value) {
+                              controller.scheduleDateTime.value = value;
                             },
-                            minDateTime: DateTime.now(),
-                            displaySubmitButton: true,
-                            // bottom_picker 5 dropped pickerTitle and the built-in close icon; rebuild the same header.
-                            headerBuilder: (context) => Row(
-                              children: [
-                                Expanded(child: Text('Schedule Time'.tr)),
-                                InkWell(
-                                  onTap: () => Navigator.pop(context),
-                                  child: const Icon(Icons.close, color: Colors.black, size: 20),
-                                ),
-                              ],
-                            ),
-                            buttonSingleColor: c.brand,
-                          ).show(context);
+                          );
                         },
                       ),
                       DsSectionHeader(title: "Offers & Benefits".tr, icon: Icons.redeem_outlined),
@@ -880,36 +886,17 @@ class _AmountRow extends StatelessWidget {
   }
 }
 
-/// +/- stepper for a cart line.
-class _LineStepper extends StatelessWidget {
-  final String quantity;
-  final VoidCallback onRemove;
-  final VoidCallback onAdd;
-  const _LineStepper({required this.quantity, required this.onRemove, required this.onAdd});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    return Container(
-      constraints: const BoxConstraints(minHeight: 40),
-      decoration: BoxDecoration(
-        color: c.surfaceAlt,
-        borderRadius: DsRadius.brPill,
-        border: Border.all(color: c.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          DsIconButton(icon: Icons.remove_rounded, semanticLabel: 'Remove'.tr, size: 32, onPressed: onRemove),
-          Text(quantity, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.label.tabular),
-          DsIconButton(icon: Icons.add_rounded, semanticLabel: 'Add item'.tr, size: 32, onPressed: onAdd),
-        ],
-      ),
-    );
+/// Stock available to a cart line: the SELECTED variant's when the line holds
+/// one, otherwise the product's. `-1` is unlimited, as everywhere else.
+/// Used to cap a typed quantity the same way the + button caps a tap.
+int _lineStock(ProductModel? productModel, CartProductModel cartProductModel) {
+  if (productModel == null) return -1;
+  final String? sku = cartProductModel.variantInfo?.variantSku;
+  if (productModel.itemAttribute != null && sku != null) {
+    final matches = productModel.itemAttribute!.variants!.where((element) => element.variantSku == sku);
+    if (matches.isNotEmpty) return int.tryParse(matches.first.variantQuantity.toString()) ?? -1;
   }
+  return productModel.quantity ?? -1;
 }
 
 /// Small neutral pill used for variants and add-ons.

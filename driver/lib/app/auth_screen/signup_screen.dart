@@ -282,29 +282,9 @@ class SignupScreen extends StatelessWidget {
                 ),
                 const DsGap(DsSpace.lg),
 
-                // ── Zone / management zone ────────────────────────────────
-                if (role == "Company")
-                  const SizedBox()
-                else ...[
-                  DsFormSection(
-                    title: "Zone".tr,
-                    icon: Icons.map_outlined,
-                    children: [
-                      DsDropdown<ZoneModel>(
-                        hint: 'Select zone'.tr,
-                        value: selectedZone.id == null ? null : selectedZone,
-                        onChanged: (value) {
-                          controller.selectedZone.value = value!;
-                          controller.update();
-                        },
-                        items: zones.map((item) => DropdownMenuItem<ZoneModel>(value: item, child: Text(item.name.toString()))).toList(),
-                        bottomSpacing: 0,
-                      ),
-                    ],
-                  ),
-                  const DsGap(DsSpace.lg),
-                ],
-
+                // ── Management zone, then the zones it serves ─────────────
+                // Client point 16: the region comes first and the zone list
+                // only offers that region's zones.
                 if (regions.isNotEmpty) ...[
                   DsFormSection(
                     title: "Management zone".tr,
@@ -314,12 +294,46 @@ class SignupScreen extends StatelessWidget {
                         hint: 'Select management zone'.tr,
                         value: selectedRegion,
                         onChanged: (value) {
-                          controller.selectedRegion.value = value;
-                          controller.update();
+                          controller.onRegionChanged(value);
                         },
                         items: regions.map((item) => DropdownMenuItem<RegionModel>(value: item, child: Text(item.displayName))).toList(),
                         bottomSpacing: 0,
                       ),
+                    ],
+                  ),
+                  const DsGap(DsSpace.lg),
+                ],
+
+                if (role == "Company")
+                  const SizedBox()
+                else ...[
+                  DsFormSection(
+                    title: "Zone".tr,
+                    icon: Icons.map_outlined,
+                    children: [
+                      if (regions.isNotEmpty && selectedRegion == null)
+                        DsInlineAlert(
+                          tone: DsTone.info,
+                          icon: Icons.info_outline_rounded,
+                          message: "Select your management zone first to see the zones it covers.".tr,
+                        )
+                      else if (zones.isEmpty)
+                        DsInlineAlert(
+                          tone: DsTone.warning,
+                          icon: Icons.map_outlined,
+                          message: "No zone is available in this management zone yet.".tr,
+                        )
+                      else
+                        DsDropdown<ZoneModel>(
+                          hint: 'Select zone'.tr,
+                          value: selectedZone.id == null ? null : zones.where((z) => z.id == selectedZone.id).firstOrNull,
+                          onChanged: (value) {
+                            controller.selectedZone.value = value!;
+                            controller.update();
+                          },
+                          items: zones.map((item) => DropdownMenuItem<ZoneModel>(value: item, child: Text(item.name.toString()))).toList(),
+                          bottomSpacing: 0,
+                        ),
                     ],
                   ),
                   const DsGap(DsSpace.lg),

@@ -1,5 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
+
+import 'package:firebase_auth/firebase_auth.dart' as auth;
+import 'package:spideliworker/constant/constants.dart';
+import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/ui/booking_list/booking_details_screen.dart';
 import 'package:spideliworker/ui/chat_screen/chat_screen.dart';
 import 'package:spideliworker/ui/help_support_screen/help_support_screen.dart';
@@ -83,9 +88,44 @@ class NotificationService {
     await FirebaseMessaging.instance.subscribeToTopic("worker");
   }
 
+  /// The device's FCM token, or an empty string when there is not one yet.
+  /// `token!` used to throw on iOS before the APNS token had arrived.
   static Future<String> getToken() async {
-    String? token = await FirebaseMessaging.instance.getToken();
-    return token!;
+    try {
+      return await FirebaseMessaging.instance.getToken() ?? '';
+    } catch (e) {
+      log("FCM token unavailable: $e");
+      return '';
+    }
+  }
+
+  static StreamSubscription<String>? _tokenRefreshSubscription;
+
+  /// Writes this device's FCM token to the signed-in worker's document and keeps
+  /// writing it whenever Firebase rotates it.
+  ///
+  /// Without this the token on the document goes stale the first time it is
+  /// refreshed and the worker can no longer be reached by chat or order pushes
+  /// (bug #3). Safe to call before sign-in: it simply writes nothing.
+  static Future<void> syncTokenToUserDoc() async {
+    await _writeToken(await getToken());
+    _tokenRefreshSubscription ??= FirebaseMessaging.instance.onTokenRefresh.listen(
+      _writeToken,
+      onError: (Object e) => log("FCM token refresh failed: $e"),
+    );
+  }
+
+  static Future<void> _writeToken(String token) async {
+    if (token.isEmpty) return;
+    final String? uid = auth.FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+    try {
+      // `update`, not `set`: a uid with no document yet must not get a stub
+      // record created for it. A missing document just logs and moves on.
+      await FireStoreUtils.firestore.collection(WORKERS).doc(uid).update({"fcmToken": token});
+    } catch (e) {
+      log("FCM token not stored: $e");
+    }
   }
 
   Future<void> handleMessageClick({required String type, required String role, required Map<String, dynamic> message, required bool isBgApp}) async {

@@ -70,12 +70,20 @@ class HomeController extends GetxController {
   RxList<UserModel> driverUserList = <UserModel>[].obs;
   Rx<UserModel> selectDriverUser = UserModel().obs;
 
+  /// How many delivery men the store has at all, available or not. Lets the
+  /// assign dialog say *why* the list is empty instead of only "no driver
+  /// found" (report #9).
+  RxInt storeDriverCount = 0.obs;
+
   Future<void> getAllDriverList() async {
-    await FireStoreUtils.getAvalibleDrivers().then((value) {
-      if (value.isNotEmpty == true) {
-        driverUserList.value = value;
-      }
-    });
+    final List<UserModel> all = await FireStoreUtils.getStoreDrivers();
+    storeDriverCount.value = all.length;
+    // Assigned unconditionally: the old code only wrote the list when it came
+    // back non-empty, so one failed load left a stale (or empty) list behind
+    // with nothing to explain it.
+    driverUserList.value = all.where((driver) => driver.isActive == true && driver.active == true).toList();
+    // A selection left over from a previous order must not be reused.
+    selectDriverUser.value = UserModel();
     isLoading.value = false;
   }
 

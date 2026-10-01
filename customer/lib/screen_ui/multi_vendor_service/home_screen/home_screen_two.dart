@@ -169,31 +169,28 @@ class HomeScreenTwo extends StatelessWidget {
                           ],
                         ),
                 ),
-          // Search bar at the bottom of the section home (spec 7.3).
+          // Search field and the list / map / scan actions in one bottom block
+          // (spec 7.3 + client report #15).
           bottomNavigationBar: isLoading || !hasStores
               ? null
-              : BottomSearchBar(
-                  isDark: c.isDark,
+              : HomeSearchToolBar(
                   hint: Constant.sectionConstantModel?.name?.toLowerCase().contains('restaurants') == true
                       ? 'Search the dish, food and more...'.tr
                       : 'Search the store, item and more...'.tr,
-                  onTap: () {
+                  onSearch: () {
                     Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
                   },
+                  isListView: controller.isListView.value,
+                  onList: () {
+                    controller.isListView.value = true;
+                  },
+                  onMap: () {
+                    controller.isListView.value = false;
+                  },
+                  onScan: () {
+                    Get.to(const ScanQrCodeScreen());
+                  },
                 ),
-          floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-          floatingActionButton: HomeToolFab(
-            isListView: controller.isListView.value,
-            onList: () {
-              controller.isListView.value = true;
-            },
-            onMap: () {
-              controller.isListView.value = false;
-            },
-            onScan: () {
-              Get.to(const ScanQrCodeScreen());
-            },
-          ),
         );
       },
     );

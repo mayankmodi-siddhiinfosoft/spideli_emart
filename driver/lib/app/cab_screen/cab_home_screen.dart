@@ -299,15 +299,15 @@ class CabHomeScreen extends StatelessWidget {
     Get.to(
       const ChatScreen(),
       arguments: {
-        "customerName": customer.fullName(),
-        "restaurantName": driver.fullName(),
+        "senderName": driver.fullName(),
+        "receivedName": customer.fullName(),
         "orderId": controller.currentOrder.value.id,
-        "restaurantId": driver.id,
-        "customerId": customer.id,
-        "customerProfileImage": customer.profilePictureURL ?? "",
-        "restaurantProfileImage": driver.profilePictureURL ?? "",
+        "senderId": driver.id,
+        "receivedId": customer.id,
+        "receivedProfileUrl": customer.profilePictureURL ?? "",
+        "senderProfileUrl": driver.profilePictureURL ?? "",
         "token": customer.fcmToken,
-        "chatType": "Driver",
+        "chatType": Constant.userRoleDriver,
       },
     );
   }
@@ -321,18 +321,23 @@ class CabHomeScreen extends StatelessWidget {
 
     ShowToastDialog.closeLoader();
 
+    if (customer == null || driver == null) {
+      ShowToastDialog.showToast("User not found".tr);
+      return;
+    }
+
     Get.to(
       const ChatScreen(),
       arguments: {
-        "customerName": customer!.fullName(),
-        "restaurantName": driver!.fullName(),
+        "senderName": driver.fullName(),
+        "receivedName": customer.fullName(),
         "orderId": controller.currentOrder.value.id,
-        "restaurantId": driver.id,
-        "customerId": customer.id,
-        "customerProfileImage": customer.profilePictureURL ?? "",
-        "restaurantProfileImage": driver.profilePictureURL ?? "",
+        "senderId": driver.id,
+        "receivedId": customer.id,
+        "receivedProfileUrl": customer.profilePictureURL ?? "",
+        "senderProfileUrl": driver.profilePictureURL ?? "",
         "token": customer.fcmToken,
-        "chatType": "Driver",
+        "chatType": Constant.userRoleDriver,
       },
     );
   }
@@ -389,10 +394,16 @@ class CabHomeScreen extends StatelessWidget {
               );
             }
           } else {
-            if (controller.driverModel.value.walletAmount! >= double.parse(Constant.minimumDepositToRideAccept)) {
+            // Independent driver (no company): their OWN wallet is the one that
+            // has to hold the minimum. `walletAmount!` threw here while the
+            // user snapshot was still loading, so the button did nothing.
+            final num wallet = controller.driverModel.value.walletAmount ?? 0;
+            if (wallet >= double.parse(Constant.minimumDepositToRideAccept)) {
               controller.acceptOrder();
             } else {
-              ShowToastDialog.showToast("You don't have sufficient balance in your wallet.");
+              ShowToastDialog.showToast(
+                "${'You must have at least'.tr} ${Constant.amountShow(amount: Constant.minimumDepositToRideAccept.toString())} ${'in your wallet to receive orders'.tr}",
+              );
             }
           }
         },

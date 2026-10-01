@@ -1,4 +1,5 @@
 import 'package:driver/app/widgets/order_ui.dart';
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/order_details_controller.dart';
@@ -80,11 +81,11 @@ class OrderDetailsScreen extends StatelessWidget {
           DsRouteStop(
             kind: DsStopKind.pickup,
             label: "${controller.orderModel.value.vendor!.title}",
-            address: "${controller.orderModel.value.vendor!.location}",
+            address: AddressFormat.clean(controller.orderModel.value.vendor?.location),
           ),
           DsRouteStop(
             kind: DsStopKind.drop,
-            label: "${controller.orderModel.value.address!.addressAs} · ${controller.orderModel.value.author!.fullName()}",
+            label: AddressFormat.join([controller.orderModel.value.address?.addressAs, controller.orderModel.value.author?.fullName()], separator: ' · '),
             address: controller.orderModel.value.address!.getFullAddress(),
           ),
         ],

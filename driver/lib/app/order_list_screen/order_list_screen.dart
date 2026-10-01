@@ -1,4 +1,5 @@
 import 'package:driver/app/widgets/order_ui.dart';
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/order_list_screen/order_details_screen.dart';
 import 'package:driver/constant/constant.dart';
@@ -136,7 +137,7 @@ class OrderListScreen extends StatelessWidget {
               DsRouteStop(
                 kind: DsStopKind.pickup,
                 label: "${orderModel.vendor!.title}",
-                address: "${orderModel.vendor!.location}",
+                address: AddressFormat.clean(orderModel.vendor?.location),
               ),
               DsRouteStop(
                 kind: DsStopKind.drop,

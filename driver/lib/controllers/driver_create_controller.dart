@@ -37,6 +37,11 @@ class DriverCreateController extends GetxController {
   RxBool passwordVisible = true.obs;
   RxBool conformPasswordVisible = true.obs;
 
+  /// Every published zone, before the owner's region filter.
+  RxList<ZoneModel> allZoneList = <ZoneModel>[].obs;
+
+  /// Zones offered in the picker: the ones serving the company's management
+  /// zone (client point 16). No region on the company = every zone.
   RxList<ZoneModel> zoneList = <ZoneModel>[].obs;
   Rx<ZoneModel> selectedZone = ZoneModel().obs;
 
@@ -102,7 +107,7 @@ class DriverCreateController extends GetxController {
       // Load zones, car makes, and owner sections in parallel.
       await Future.wait([
         FireStoreUtils.getZone().then((v) {
-          if (v != null) zoneList.value = v;
+          if (v != null) allZoneList.value = v;
         }),
         FireStoreUtils.getCarMakes().then((v) => carMakesList.value = v),
         FireStoreUtils.getAllActiveSections().then((v) {
@@ -110,6 +115,8 @@ class DriverCreateController extends GetxController {
           ownerSections.value = v.where((s) => s.id != null && ownerSectionIds.contains(s.id)).toList();
         }),
       ]);
+
+      _filterZones();
 
       // Edit mode: prefill from existing driver model.
       dynamic argumentData = Get.arguments;
@@ -123,9 +130,12 @@ class DriverCreateController extends GetxController {
         countryCodeEditingController.value.text = driverModel.value.countryCode ?? Constant.defaultCountryCode;
         countryISOCodeEditingController.value.text = driverModel.value.countryISOCode ?? Constant.defaultCountryCode;
 
-        for (final z in zoneList) {
+        for (final z in allZoneList) {
           if (z.id == driverModel.value.zoneId) {
             selectedZone.value = z;
+            // An existing driver keeps the zone it was saved with, even when
+            // the company's region no longer covers it.
+            if (!zoneList.any((e) => e.id == z.id)) zoneList.add(z);
             break;
           }
         }
@@ -146,10 +156,25 @@ class DriverCreateController extends GetxController {
       }
     } catch (e) {
       log("DriverCreateController.getArguments error: $e");
+      ShowToastDialog.showToast("Could not load the registration data. Please try again.".tr);
     } finally {
       ShowToastDialog.closeLoader();
       isLoading.value = false;
       update();
+    }
+  }
+
+  /// Client point 16: a fleet driver works in a zone of the company's own
+  /// management zone. A zone with no region data serves every region.
+  void _filterZones() {
+    final String regionId = (Constant.userModel?.regionId ?? '').trim();
+    if (regionId.isEmpty) {
+      zoneList.value = allZoneList.toList();
+    } else {
+      zoneList.value = allZoneList.where((zone) => zone.belongsToRegion(regionId)).toList();
+    }
+    if (selectedZone.value.id != null && !zoneList.any((zone) => zone.id == selectedZone.value.id)) {
+      selectedZone.value = ZoneModel();
     }
   }
 
@@ -259,51 +284,100 @@ class DriverCreateController extends GetxController {
 
   // ── Save ───────────────────────────────────────────────────────────────────
 
-  Future<void> signUp() async {
+  /// The owner app signs the new driver up on a SECOND Firebase app so the
+  /// owner stays signed in. `initializeApp` with the same name throws
+  /// `duplicate-app` on every create after the first one in a session, so the
+  /// existing instance is reused.
+  static Future<FirebaseAuth> _secondaryAuth() async {
+    FirebaseApp app;
     try {
-      ShowToastDialog.showLoader("Please wait".tr);
-      FirebaseApp secondaryApp = await Firebase.initializeApp(
-        name: 'SecondaryApp',
-        options: Firebase.app().options,
-      );
-      FirebaseAuth secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
+      app = Firebase.app('SecondaryApp');
+    } catch (_) {
+      app = await Firebase.initializeApp(name: 'SecondaryApp', options: Firebase.app().options);
+    }
+    return FirebaseAuth.instanceFor(app: app);
+  }
+
+  Future<void> signUp() async {
+    ShowToastDialog.showLoader("Please wait".tr);
+    try {
+      final FirebaseAuth secondaryAuth = await _secondaryAuth();
 
       final credential = await secondaryAuth.createUserWithEmailAndPassword(
         email: emailEditingController.value.text.trim(),
         password: passwordEditingController.value.text.trim(),
       );
-      if (credential.user != null) {
-        driverModel.value.id = credential.user!.uid;
-        _applyCommonFields();
-        driverModel.value.vehicleDetails = _buildVehicleDetails({});
+      if (credential.user == null) {
+        ShowToastDialog.closeLoader();
+        ShowToastDialog.showToast("The account could not be created. Please try again.".tr);
+        return;
+      }
+      driverModel.value.id = credential.user!.uid;
+      _applyCommonFields();
+      driverModel.value.vehicleDetails = _buildVehicleDetails({});
 
-        await FireStoreUtils.updateUser(driverModel.value).then((_) {
-          ShowToastDialog.showToast("Driver created successfully".tr);
-          Get.back(result: true);
-        });
+      final bool saved = await FireStoreUtils.updateUser(driverModel.value);
+      // The owner's own session must not be replaced by the new driver's.
+      try {
+        await secondaryAuth.signOut();
+      } catch (_) {}
+      ShowToastDialog.closeLoader();
+      if (!saved) {
+        ShowToastDialog.showToast("The driver account was created but its details could not be saved. Please open it and save again.".tr);
+        return;
       }
+      ShowToastDialog.showToast("Driver created successfully".tr);
+      Get.back(result: true);
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'weak-password') {
-        ShowToastDialog.showToast("The password provided is too weak.".tr);
-      } else if (e.code == 'email-already-in-use') {
-        ShowToastDialog.showToast("The account already exists for that email.".tr);
-      } else if (e.code == 'invalid-email') {
-        ShowToastDialog.showToast("Enter email is Invalid".tr);
-      }
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast(_authMessage(e));
     } catch (e) {
-      ShowToastDialog.showToast(e.toString());
+      ShowToastDialog.closeLoader();
+      log("DriverCreateController.signUp failed: $e");
+      ShowToastDialog.showToast("The driver could not be created: ${e.toString()}");
+    }
+  }
+
+  /// Every refusal says why — the three codes that were handled before left
+  /// the rest of them silent, which is the "nothing happens on submit".
+  static String _authMessage(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'weak-password':
+        return "The password provided is too weak.".tr;
+      case 'email-already-in-use':
+        return "The account already exists for that email.".tr;
+      case 'invalid-email':
+        return "Enter email is Invalid".tr;
+      case 'operation-not-allowed':
+        return "Email sign-up is disabled for this project. Please contact support.".tr;
+      case 'network-request-failed':
+        return "No connection. Please check your internet and try again.".tr;
+      case 'too-many-requests':
+        return "Too many attempts. Please try again in a few minutes.".tr;
+      default:
+        return e.message ?? "The account could not be created (${e.code}).";
     }
   }
 
   Future<void> updateDriver() async {
     ShowToastDialog.showLoader("Please wait".tr);
-    _applyCommonFields();
-    // Start fresh — drop any vehicleDetails entries for deselected sections.
-    driverModel.value.vehicleDetails = _buildVehicleDetails({});
-    await FireStoreUtils.updateUser(driverModel.value).then((_) {
+    try {
+      _applyCommonFields();
+      // Start fresh — drop any vehicleDetails entries for deselected sections.
+      driverModel.value.vehicleDetails = _buildVehicleDetails({});
+      final bool saved = await FireStoreUtils.updateUser(driverModel.value);
+      ShowToastDialog.closeLoader();
+      if (!saved) {
+        ShowToastDialog.showToast("The driver could not be saved. Please try again.".tr);
+        return;
+      }
       ShowToastDialog.showToast("Driver updated successfully".tr);
       Get.back(result: true);
-    });
+    } catch (e) {
+      ShowToastDialog.closeLoader();
+      log("DriverCreateController.updateDriver failed: $e");
+      ShowToastDialog.showToast("The driver could not be saved: ${e.toString()}");
+    }
   }
 
   void _applyCommonFields() {
@@ -323,6 +397,9 @@ class DriverCreateController extends GetxController {
     driverModel.value.provider = 'email';
     driverModel.value.isOwner = false;
     driverModel.value.ownerId = FireStoreUtils.getCurrentUid();
+    // The admin driver list filters on `driverType`; a fleet driver is an
+    // individual driver that belongs to a company.
+    driverModel.value.driverType = 'individual';
     // A company's fleet driver works in the company's management zone.
     if ((driverModel.value.regionId ?? '').isEmpty && (Constant.userModel?.regionId ?? '').isNotEmpty) {
       driverModel.value.regionId = Constant.userModel!.regionId;

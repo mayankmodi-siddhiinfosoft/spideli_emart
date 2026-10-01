@@ -121,16 +121,39 @@ class DsBackButton extends StatelessWidget {
 /// ```dart
 /// bottomBar: DsStickyBar(child: DsButton.primary(label: 'Save'.tr, expand: true, onPressed: c.save))
 /// bottomBar: DsStickyBar(child: Row(children: [Expanded(child: DsButton.dangerTonal(...)), DsGap.md, Expanded(child: DsButton.primary(...))]))
+/// bottomBar: DsStickyBar(avoidKeyboard: true, child: ChatComposer(...))
 /// ```
 class DsStickyBar extends StatelessWidget {
   final Widget child;
   final double maxWidth;
-  const DsStickyBar({super.key, required this.child, this.maxWidth = DsLayout.contentMax});
+
+  /// Lift the bar above the on-screen keyboard.
+  ///
+  /// A `Scaffold`'s `bottomNavigationBar` is laid out at the bottom of the
+  /// *screen*: `resizeToAvoidBottomInset` shrinks the body only, so the bar
+  /// itself stays underneath the keyboard. Bars that sit above a focused field
+  /// (a chat composer) must opt in; a plain submit bar keeps the old
+  /// behaviour. This is the only place the inset is applied — do not add it
+  /// again in the child.
+  final bool avoidKeyboard;
+
+  const DsStickyBar({super.key, required this.child, this.maxWidth = DsLayout.contentMax, this.avoidKeyboard = false});
 
   @override
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
     final l = DsLayout.of(context);
+    final bar = _bar(context, c, l);
+    if (!avoidKeyboard) return bar;
+    return AnimatedPadding(
+      duration: DsMotion.of(context, DsMotion.fast),
+      curve: DsMotion.standard,
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: bar,
+    );
+  }
+
+  Widget _bar(BuildContext context, DsColors c, DsLayout l) {
     return Container(
       decoration: BoxDecoration(
         color: c.surface,

@@ -2,6 +2,7 @@ import 'package:customer/utils/region_service.dart';
 import 'package:customer/models/coupon_model.dart';
 import 'package:customer/screen_ui/parcel_service/parcel_coupon_screen.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/address_format.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
@@ -498,26 +499,33 @@ class ParcelRouteBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
-    Widget party(String title, String name, String address, String phone) => Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: t.overline),
-        const DsGap(DsSpace.xxs),
-        if (name.isNotEmpty) Text(name, style: t.titleSm),
-        if (address.isNotEmpty) Text(address, style: t.bodySecondary),
-        if (phone.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: DsSpace.xxs),
-            child: Row(
-              children: [
-                Icon(Icons.call_outlined, size: 13, color: c.textMuted),
-                const DsGap(DsSpace.xs),
-                Text(phone, style: t.bodySm.tabular),
-              ],
+    Widget party(String title, String name, String rawAddress, String phone) {
+      // Parcel addresses are a single reverse-geocoded string, so the "null"
+      // components are inside it — clean it the same way every other address
+      // in the app is cleaned (bug #17).
+      final String address = formatAddressLine([rawAddress]);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: t.overline),
+          const DsGap(DsSpace.xxs),
+          if (name.isNotEmpty) Text(name, style: t.titleSm),
+          if (address.isNotEmpty) Text(address, style: t.bodySecondary),
+          if (phone.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: DsSpace.xxs),
+              child: Row(
+                children: [
+                  Icon(Icons.call_outlined, size: 13, color: c.textMuted),
+                  const DsGap(DsSpace.xs),
+                  Text(phone, style: t.bodySm.tabular),
+                ],
+              ),
             ),
-          ),
-      ],
-    );
+        ],
+      );
+    }
+
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/models/admin_commission_model.dart';
 import 'package:vendor/models/subscription_plan_model.dart';
+import 'package:vendor/utils/address_format.dart';
 
 class UserModel {
   String? id;
@@ -293,8 +294,11 @@ class ShippingAddress {
     return data;
   }
 
+  /// The address on one line. Missing parts - including the ones stored as the
+  /// string "null" - are dropped together with their separator, so an address
+  /// never renders as "123 Yaounde St, null, Tsinga" (report #17).
   String getFullAddress() {
-    return '${address == null || address!.isEmpty ? "" : address} $locality ${landmark == null || landmark!.isEmpty ? "" : landmark.toString()}';
+    return formatAddress([address, locality, landmark]);
   }
 }
 

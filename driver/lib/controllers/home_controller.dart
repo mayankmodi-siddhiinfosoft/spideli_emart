@@ -101,9 +101,14 @@ class HomeController extends GetxController {
     currentOrder.value.driverID = driverModel.value.id;
     currentOrder.value.driver = driverModel.value;
 
+    // An independent driver's user document may not carry these arrays yet;
+    // the `!` used to throw here and the Accept button did nothing at all.
     driverModel.value.inProgressOrderID ??= [];
+    driverModel.value.orderRequestData ??= [];
     driverModel.value.orderRequestData!.remove(currentOrder.value.id);
-    driverModel.value.inProgressOrderID!.add(currentOrder.value.id);
+    if (!driverModel.value.inProgressOrderID!.contains(currentOrder.value.id)) {
+      driverModel.value.inProgressOrderID!.add(currentOrder.value.id);
+    }
 
     await FireStoreUtils.updateUser(driverModel.value);
     await FireStoreUtils.setOrder(currentOrder.value);

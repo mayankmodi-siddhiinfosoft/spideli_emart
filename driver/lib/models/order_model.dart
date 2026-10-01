@@ -48,6 +48,15 @@ class OrderModel {
   bool? isFreeDelivery;
   bool? packagingChargeEnable;
 
+  /// Code the customer holds, used as the delivery OTP (client point 29).
+  /// Read tolerantly: the customer app / panel may spell it `otpCode`,
+  /// `otp`, `deliveryOtp` or `pickupCode`.
+  String? otpCode;
+
+  /// Proof the driver recorded when completing the delivery — the same shape
+  /// a parcel uses: `{type: 'otp'|'photo', photoUrl?, at, by}`.
+  Map<String, dynamic>? deliveryProof;
+
   OrderModel({
     this.address,
     this.status,
@@ -88,6 +97,8 @@ class OrderModel {
     this.isPosOrder,
     this.isFreeDelivery,
     this.packagingChargeEnable,
+    this.otpCode,
+    this.deliveryProof,
   });
 
   OrderModel.fromJson(Map<String, dynamic> json) {
@@ -158,6 +169,15 @@ class OrderModel {
     isPosOrder = json['isPosOrder'] ?? false;
     packagingChargeEnable = json['packagingChargeEnable'] ?? false;
     regionId = json['regionId']?.toString();
+    for (final key in const ['otpCode', 'otp', 'deliveryOtp', 'pickupCode']) {
+      final String? value = json[key]?.toString().trim();
+      if (value != null && value.isNotEmpty && value != 'null') {
+        otpCode = value;
+        break;
+      }
+    }
+    final dynamic proof = json['deliveryProof'];
+    deliveryProof = proof is Map ? Map<String, dynamic>.from(proof) : null;
   }
 
   Map<String, dynamic> toJson() {
@@ -221,6 +241,10 @@ class OrderModel {
     data['isPosOrder'] = isPosOrder ?? false;
     data['packagingChargeEnable'] = packagingChargeEnable ?? false;
     if (regionId != null && regionId!.isNotEmpty) data['regionId'] = regionId;
+    // Additive: only written when known, so completing an order never clears
+    // a code the customer app set.
+    if (otpCode != null && otpCode!.isNotEmpty) data['otpCode'] = otpCode;
+    if (deliveryProof != null) data['deliveryProof'] = deliveryProof;
     return data;
   }
 }

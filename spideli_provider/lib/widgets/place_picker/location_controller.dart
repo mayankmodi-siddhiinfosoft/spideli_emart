@@ -1,9 +1,13 @@
+import 'dart:developer';
+
+import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/widgets/place_picker/selected_location_model.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:flutter/material.dart';
+import 'package:spideliprovider/utils/address_format.dart';
 
 class LocationController extends GetxController {
   GoogleMapController? mapController;
@@ -47,7 +51,7 @@ class LocationController extends GetxController {
 
       await getAddressFromLatLng(selectedLocation.value!);
     } catch (e) {
-      print("Error fetching current location: $e");
+      log("Error fetching current location: $e");
     }
   }
 
@@ -58,13 +62,18 @@ class LocationController extends GetxController {
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks.first;
         selectedPlaceAddress.value = place;
-        address.value = "${place.street}, ${place.locality}, ${place.administrativeArea}, ${place.country}";
+        // Interpolating the placemark fields directly printed the word "null"
+        // for every part the geocoder did not return.
+        final String formatted = formatAddressParts(<Object?>[place.street, place.locality, place.administrativeArea, place.country]);
+        address.value = formatted.isEmpty ? "Address not found".tr : formatted;
       } else {
-        address.value = "Address not found";
+        selectedPlaceAddress.value = null;
+        address.value = "Address not found".tr;
       }
     } catch (e) {
-      print("Error getting address: $e");
-      address.value = "Error getting address";
+      log("Error getting address: $e");
+      selectedPlaceAddress.value = null;
+      address.value = "Error getting address".tr;
     }
   }
 
@@ -80,17 +89,21 @@ class LocationController extends GetxController {
             LatLng(locations.first.latitude, locations.first.longitude);
       }
     } catch (e) {
-      print("Error getting coordinates for ZIP code: $e");
+      log("Error getting coordinates for ZIP code: $e");
     }
   }
 
+  /// Pops with the picked point. Confirming before a point exists used to do
+  /// nothing at all; it now says why.
   void confirmLocation() {
-    if (selectedLocation.value != null) {
-      SelectedLocationModel selectedLocationModel = SelectedLocationModel(
-        address: selectedPlaceAddress.value,
-        latLng: selectedLocation.value,
-      );
-      Get.back(result: selectedLocationModel);
+    if (selectedLocation.value == null) {
+      ShowToastDialog.showToast("Please select a location on the map".tr);
+      return;
     }
+    SelectedLocationModel selectedLocationModel = SelectedLocationModel(
+      address: selectedPlaceAddress.value,
+      latLng: selectedLocation.value,
+    );
+    Get.back(result: selectedLocationModel);
   }
 }

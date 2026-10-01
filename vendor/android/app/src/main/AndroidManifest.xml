@@ -6,6 +6,10 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Audible order alerts with the app closed or in the background
+         (report #11). Android 13+ asks for POST_NOTIFICATIONS at runtime. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:name="${applicationName}"
@@ -42,6 +46,14 @@
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyBhZufLHi10nF6KpZtqXlmJ84QMStjBmRo" />
+
+        <!-- Channel a notification message is posted on when the app is in the
+             background or closed and the push carries no android_channel_id.
+             The app creates this channel (max importance, order_alert sound) on
+             start, so a background order alert is audible and heads-up. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="new_order" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

@@ -1,4 +1,5 @@
 import 'package:driver/app/parcel_screen/parcel_tracking/parcel_proof_sheet.dart';
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/parcel_screen/parcel_tracking/parcel_shipment_info_card.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
@@ -107,8 +108,8 @@ class _ParcelScanResultScreenState extends State<ParcelScanResultScreen> {
                   children: [
                     DsRouteStops(
                       stops: [
-                        DsRouteStop(kind: DsStopKind.pickup, label: 'Pickup'.tr, address: _order.sender?.address ?? ''),
-                        DsRouteStop(kind: DsStopKind.drop, label: 'Delivery'.tr, address: _order.receiver?.address ?? ''),
+                        DsRouteStop(kind: DsStopKind.pickup, label: 'Pickup'.tr, address: AddressFormat.clean(_order.sender?.address)),
+                        DsRouteStop(kind: DsStopKind.drop, label: 'Delivery'.tr, address: AddressFormat.clean(_order.receiver?.address)),
                       ],
                     ),
                     if (_order.receiver?.name != null) ...[

@@ -187,6 +187,12 @@ class ChatComposer extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.dsColors;
     return DsStickyBar(
+      // The composer sits in the Scaffold's bottomNavigationBar slot, which is
+      // laid out at the bottom of the SCREEN — `resizeToAvoidBottomInset`
+      // only shrinks the body, so without this the keyboard covered the text
+      // field (bug #13). DsStickyBar applies `viewInsets` once; never add it
+      // again here.
+      avoidKeyboard: true,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [

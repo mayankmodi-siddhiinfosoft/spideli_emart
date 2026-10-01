@@ -133,7 +133,7 @@ class OtpScreen extends StatelessWidget {
                         userModel.countryCode = controller.countryCode.value;
                         userModel.countryISOCode = controller.countryISOCode.value;
                         userModel.phoneNumber = controller.phoneNumber.value;
-                        userModel.fcmToken = fcmToken;
+                        if (fcmToken.isNotEmpty) userModel.fcmToken = fcmToken;
                         userModel.provider = 'phone';
 
                         ShowToastDialog.closeLoader();
@@ -148,8 +148,12 @@ class OtpScreen extends StatelessWidget {
                             UserModel? userModel = await FireStoreUtils.getUserProfile(value.user!.uid);
                             if (userModel!.role == Constant.userRoleDriver) {
                               if (userModel.active == true) {
-                                userModel.fcmToken = await NotificationService.getToken();
+                                final String token = await NotificationService.getToken();
+                                if (token.isNotEmpty) userModel.fcmToken = token;
                                 await FireStoreUtils.updateUser(userModel);
+                                // Client point 19.
+                                NotificationService.listenForTokenRefresh();
+                                await NotificationService.subscribeDriverTopics(userModel);
                                 if (userModel.isOwner == true) {
                                   Get.offAll(OwnerDashboardScreen());
                                 } else if ((userModel.serviceTypes?.length ?? 0) > 1) {
@@ -184,7 +188,7 @@ class OtpScreen extends StatelessWidget {
                             userModel.countryCode = controller.countryCode.value;
                             userModel.countryISOCode = controller.countryISOCode.value;
                             userModel.phoneNumber = controller.phoneNumber.value;
-                            userModel.fcmToken = fcmToken;
+                            if (fcmToken.isNotEmpty) userModel.fcmToken = fcmToken;
                             userModel.provider = 'phone';
 
                             Get.off(const SignupScreen(), arguments: {

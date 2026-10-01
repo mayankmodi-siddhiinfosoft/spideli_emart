@@ -1,4 +1,5 @@
 import 'package:driver/app/parcel_screen/parcel_order_details.dart';
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
@@ -160,7 +161,7 @@ class _ParcelHistoryCard extends StatelessWidget {
                   isPickup: true,
                   title: "Pickup Address (Sender):".tr,
                   name: order.sender?.name ?? '',
-                  address: order.sender?.address ?? '',
+                  address: AddressFormat.clean(order.sender?.address),
                   phone: order.sender?.phone ?? '',
                   showConnector: true,
                 ),
@@ -168,7 +169,7 @@ class _ParcelHistoryCard extends StatelessWidget {
                   isPickup: false,
                   title: "Delivery Address (Receiver):".tr,
                   name: order.receiver?.name ?? '',
-                  address: order.receiver?.address ?? '',
+                  address: AddressFormat.clean(order.receiver?.address),
                   phone: order.receiver?.phone ?? '',
                   showConnector: false,
                 ),

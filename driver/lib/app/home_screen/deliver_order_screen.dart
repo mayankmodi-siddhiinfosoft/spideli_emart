@@ -70,9 +70,15 @@ class DeliverOrderScreen extends StatelessWidget {
                       onConfirmed: () async {
                         if (controller.conformPickup.value == false) {
                           ShowToastDialog.showToast("Conform Deliver order".tr);
-                        } else {
-                          await controller.completedOrder();
+                          return;
                         }
+                        // Client point 29: proof of delivery first — the
+                        // customer's OTP when the order carries one, otherwise
+                        // a photo. Nothing is written or credited until it is
+                        // recorded.
+                        final bool proved = await controller.captureDeliveryProof(context, isDark: themeController.isDark.value);
+                        if (!proved) return;
+                        await controller.completedOrder();
                       },
                     ),
                   ),

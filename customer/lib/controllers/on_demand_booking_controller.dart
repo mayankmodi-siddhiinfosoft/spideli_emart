@@ -74,6 +74,13 @@ class OnDemandBookingController extends GetxController {
     }
   }
 
+  /// A quantity typed straight into the stepper (#21). The stepper has already
+  /// clamped it; one service is still the floor here.
+  void setQuantity(int value) {
+    quantity.value = value < 1 ? 1 : value;
+    calculatePrice();
+  }
+
   void setDateTime(DateTime dateTime) {
     selectedDateTime.value = dateTime;
     dateTimeText.value = DateFormat('dd-MM-yyyy HH:mm').format(dateTime);

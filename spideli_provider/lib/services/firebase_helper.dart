@@ -1431,6 +1431,27 @@ class FireStoreUtils {
     return userModel;
   }
 
+  /// The other party of a chat, looked up without touching
+  /// [MyAppState.currentUser].
+  ///
+  /// [getUserProfile] assigns whatever it reads to `MyAppState.currentUser`,
+  /// which is right for "load me" but wrong for "load the person I am talking
+  /// to" — the chat screen used it and replaced the signed-in provider with the
+  /// customer. It also only reads `users`, so a chat with a worker resolved to
+  /// null and no push was ever sent (bug #3); workers live in [WORKERS].
+  static Future<User?> getChatUser(String uuid) async {
+    if (uuid.isEmpty || uuid == 'admin') return null;
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> user = await firestore.collection(USERS).doc(uuid).get();
+      if (user.exists && user.data() != null) return User.fromJson(user.data()!);
+      final DocumentSnapshot<Map<String, dynamic>> worker = await firestore.collection(WORKERS).doc(uuid).get();
+      if (worker.exists && worker.data() != null) return User.fromJson(worker.data()!);
+    } catch (e) {
+      log("getChatUser failed for $uuid: $e");
+    }
+    return null;
+  }
+
   static Future addChat(ConversationModel conversationModel) async {
     return await firestore.collection(ChatWorker).doc(conversationModel.orderId).collection("thread").doc(conversationModel.id).set(conversationModel.toJson()).then((document) {
       return conversationModel;

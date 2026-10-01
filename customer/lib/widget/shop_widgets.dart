@@ -124,19 +124,21 @@ class PlusButton extends StatelessWidget {
   }
 }
 
-/// Search bar pinned at the bottom of a section home.
-class BottomSearchBar extends StatelessWidget {
+/// The search field itself, without the bar around it, so it can either fill
+/// the bottom bar on its own ([BottomSearchBar]) or sit beside the map-view /
+/// QR-scan actions in one block (HomeSearchToolBar).
+class SearchPill extends StatelessWidget {
   final String hint;
   final VoidCallback onTap;
   final bool isDark;
 
-  const BottomSearchBar({super.key, required this.hint, required this.onTap, required this.isDark});
+  const SearchPill({super.key, required this.hint, required this.onTap, required this.isDark});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+    return Semantics(
+      button: true,
+      label: hint,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
@@ -158,6 +160,24 @@ class BottomSearchBar extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Search bar pinned at the bottom of a section home.
+class BottomSearchBar extends StatelessWidget {
+  final String hint;
+  final VoidCallback onTap;
+  final bool isDark;
+
+  const BottomSearchBar({super.key, required this.hint, required this.onTap, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: SearchPill(hint: hint, onTap: onTap, isDark: isDark),
     );
   }
 }

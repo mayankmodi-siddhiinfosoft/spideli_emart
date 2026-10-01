@@ -94,6 +94,12 @@ class ParcelHomeController extends GetxController {
     }
     ShowToastDialog.closeLoader();
     Map<String, dynamic>? proof;
+    final String? receiverCode = ParcelTrackingService.receiverCode(parcelBookingData);
+    if (receiverCode != null && parcelBookingData.deliveryMethod != 'pickup_point' && (context == null || !context.mounted)) {
+      // Client point 20: never complete a coded delivery without the code.
+      ShowToastDialog.showToast("Open the parcel and complete it from there: the receiver's code is required.".tr);
+      return;
+    }
     if (parcelBookingData.deliveryMethod == 'pickup_point') {
       final ok = await Get.dialog<bool>(AlertDialog(
         title: Text("Hand over at the pickup point".tr),
@@ -104,7 +110,9 @@ class ParcelHomeController extends GetxController {
         ],
       ));
       if (ok != true) return;
-    } else if (parcelBookingData.hasTrackingContract && context != null && context.mounted) {
+    } else if ((parcelBookingData.hasTrackingContract || receiverCode != null) && context != null && context.mounted) {
+      // Client point 20: a parcel carrying a receiver code always needs the
+      // proof step, contract or not — the code IS the proof of delivery.
       proof = await showParcelProofSheet(context, parcelBookingData, isDark: isDark);
       if (proof == null) return;
     }

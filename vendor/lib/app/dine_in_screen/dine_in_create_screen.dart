@@ -8,6 +8,7 @@ import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/dine_in_create_controller.dart';
 import 'package:vendor/themes/ds/ds.dart';
+import 'package:vendor/utils/schedule_picker.dart';
 
 class DineInCreateScreen extends StatelessWidget {
   const DineInCreateScreen({super.key});
@@ -144,7 +145,9 @@ class DineInCreateScreen extends StatelessWidget {
                                       placeholder: '6:00 AM',
                                       icon: Icons.wb_twilight_rounded,
                                       onTap: () async {
-                                        TimeOfDay? pickedTime = await showTimePicker(initialTime: TimeOfDay.now(), context: context);
+                                        // Opens on whatever is already set
+                                        // instead of always on "now" (#8).
+                                        TimeOfDay? pickedTime = await pickTime(context, initial: parseTimeOfDay(controller.startDateController.value.text));
 
                                         if (pickedTime != null) {
                                           controller.startDateController.value.text = pickedTime.format(context); //set the value
@@ -162,7 +165,7 @@ class DineInCreateScreen extends StatelessWidget {
                                       placeholder: '9:00 PM',
                                       icon: Icons.nights_stay_outlined,
                                       onTap: () async {
-                                        TimeOfDay? pickedTime = await showTimePicker(initialTime: TimeOfDay.now(), context: context);
+                                        TimeOfDay? pickedTime = await pickTime(context, initial: parseTimeOfDay(controller.endDateDateController.value.text));
                                         if (pickedTime != null) {
                                           controller.endDateDateController.value.text = pickedTime.format(context);
 

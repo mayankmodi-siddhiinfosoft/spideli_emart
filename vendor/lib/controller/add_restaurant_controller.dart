@@ -16,6 +16,7 @@ import 'package:vendor/models/user_model.dart';
 import 'package:vendor/models/vendor_category_model.dart';
 import 'package:vendor/models/vendor_model.dart';
 import 'package:vendor/models/zone_model.dart';
+import 'package:vendor/utils/address_format.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/region_service.dart';
 import 'package:vendor/widget/geoflutterfire/src/geoflutterfire.dart';
@@ -39,7 +40,9 @@ class AddRestaurantController extends GetxController {
 
   Rx<TextEditingController> packagingChargeAmountController = TextEditingController().obs;
 
-  LatLng? selectedLocation;
+  /// Where the store sits, as picked on the map. Observable so the form can
+  /// show the chosen point the moment it is picked (report #2).
+  final Rxn<LatLng> selectedLocation = Rxn<LatLng>();
 
   RxList images = <dynamic>[].obs;
 
@@ -124,7 +127,9 @@ class AddRestaurantController extends GetxController {
             restaurantNameController.value.text = vendorModel.value.title.toString();
             restaurantDescriptionController.value.text = vendorModel.value.description.toString();
             mobileNumberController.value.text = vendorModel.value.phonenumber.toString();
-            addressController.value.text = vendorModel.value.location.toString();
+            // Through the formatter: `.toString()` on a null location wrote
+            // the literal text "null" into the address field (report #17).
+            addressController.value.text = formatAddress([vendorModel.value.location]);
             isSelfDelivery.value = vendorModel.value.isSelfDelivery ?? false;
 
             packagingChargeAmountController.value.text = vendorModel.value.packagingCharge != null ? vendorModel.value.packagingCharge.toString() : '0';
@@ -132,7 +137,7 @@ class AddRestaurantController extends GetxController {
             if (addressController.value.text.isNotEmpty) {
               isAddressEnable.value = true;
             }
-            selectedLocation = LatLng(vendorModel.value.latitude!, vendorModel.value.longitude!);
+            selectedLocation.value = LatLng(vendorModel.value.latitude!, vendorModel.value.longitude!);
             for (var element in vendorModel.value.photos!) {
               images.add(element);
             }
@@ -206,12 +211,21 @@ class AddRestaurantController extends GetxController {
     _filterZones();
   }
 
-  /// Zones that serve the selected region. No region selected (or no regions
-  /// at all) = every zone, as before.
+  /// True while the form must have a region before a zone can be offered:
+  /// regions exist and none is chosen yet. Drives the zone field's hint.
+  bool get isZoneBlockedByRegion => regionList.isNotEmpty && selectedRegion.value.id == null;
+
+  /// Zones that serve the selected region (report #16).
+  ///
+  /// With no regions configured at all, every zone is offered as before. With
+  /// regions configured but none chosen, the zone list is empty rather than
+  /// "every zone": offering all of them let a zone from another region be
+  /// picked before the region was, on create, on edit and on "add another
+  /// store" alike.
   void _filterZones() {
     final String? regionId = selectedRegion.value.id;
     if (regionId == null) {
-      zoneList.value = allZoneList.toList();
+      zoneList.value = regionList.isEmpty ? allZoneList.toList() : <ZoneModel>[];
     } else {
       // A zone may serve several regions (`regionIds`); zones with no region
       // data serve all of them.
@@ -221,6 +235,22 @@ class AddRestaurantController extends GetxController {
     if (selectedZone.value.id != null && !zoneList.any((zone) => zone.id == selectedZone.value.id)) {
       selectedZone.value = ZoneModel();
     }
+  }
+
+  /// Records a point picked on the map and writes its address into the form.
+  ///
+  /// Report #2: both pickers used to assign `result.formattedAddress.toString()`
+  /// straight into the field, which wrote the text "null" when the picker had
+  /// no address for the point (and left the field looking empty / wrong). The
+  /// address now goes through the shared formatter, and a point with no address
+  /// at all falls back to its coordinates so the field is never blank after a
+  /// pick.
+  void setPickedLocation(LatLng latLng, {String? address}) {
+    selectedLocation.value = latLng;
+    final String formatted = formatAddress([address]);
+    addressController.value.text = formatted.isNotEmpty ? formatted : formatLatLng(latLng.latitude, latLng.longitude);
+    isAddressEnable.value = true;
+    update();
   }
 
   void onRegionChanged(RegionModel region) {
@@ -242,14 +272,22 @@ class AddRestaurantController extends GetxController {
       ShowToastDialog.showToast("Please enter phone number".tr);
     } else if (addressController.value.text.isEmpty) {
       ShowToastDialog.showToast("Please enter address".tr);
+    } else if (selectedLocation.value == null) {
+      // Used to throw on `selectedLocation!` a few lines below, which looked
+      // like the Save button doing nothing.
+      ShowToastDialog.showToast("Please pick the store location on the map".tr);
     } else if (regionList.isNotEmpty && selectedRegion.value.id == null) {
       ShowToastDialog.showToast("Please select region".tr);
     } else if (selectedZone.value.id == null) {
       ShowToastDialog.showToast("Please select zone".tr);
+    } else if (selectedRegion.value.id != null && !selectedZone.value.belongsToRegion(selectedRegion.value.id!)) {
+      // Last line of defence for report #16: whatever the dropdowns did, a
+      // store is never saved into a zone that does not serve its region.
+      ShowToastDialog.showToast("The selected zone does not belong to the selected region.".tr);
     } else if (selectedCategories.isEmpty) {
       ShowToastDialog.showToast("Please select category".tr);
     } else {
-      if (Constant.isPointInPolygon(selectedLocation!, selectedZone.value.area!)) {
+      if (Constant.isPointInPolygon(selectedLocation.value!, selectedZone.value.area!)) {
         ShowToastDialog.showLoader("Please wait...".tr);
         filter();
         DeliveryCharge deliveryChargeModel = DeliveryCharge(
@@ -279,15 +317,15 @@ class AddRestaurantController extends GetxController {
         vendorModel.value.categoryID = selectedCategories.map((e) => e.id ?? '').toList();
         vendorModel.value.categoryTitle = selectedCategories.map((e) => e.title ?? '').toList();
         vendorModel.value.g = G(
-          geohash: Geoflutterfire().point(latitude: selectedLocation!.latitude, longitude: selectedLocation!.longitude).hash,
-          geopoint: GeoPoint(selectedLocation!.latitude, selectedLocation!.longitude),
+          geohash: Geoflutterfire().point(latitude: selectedLocation.value!.latitude, longitude: selectedLocation.value!.longitude).hash,
+          geopoint: GeoPoint(selectedLocation.value!.latitude, selectedLocation.value!.longitude),
         );
         vendorModel.value.description = restaurantDescriptionController.value.text;
         vendorModel.value.phonenumber = mobileNumberController.value.text;
         vendorModel.value.filters = Filters.fromJson(filters);
         vendorModel.value.location = addressController.value.text;
-        vendorModel.value.latitude = selectedLocation!.latitude;
-        vendorModel.value.longitude = selectedLocation!.longitude;
+        vendorModel.value.latitude = selectedLocation.value!.latitude;
+        vendorModel.value.longitude = selectedLocation.value!.longitude;
         vendorModel.value.photos = images;
         vendorModel.value.sectionId = selectedSectionModel.value.id;
         if (images.isNotEmpty) {

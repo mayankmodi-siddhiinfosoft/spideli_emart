@@ -1,4 +1,5 @@
 import 'package:driver/app/parcel_screen/parcel_tracking/parcel_run_screen.dart';
+import 'package:driver/utils/notification_service.dart';
 import 'package:driver/app/auth_screen/login_screen.dart';
 import 'package:driver/app/change_language/change_language_screen.dart';
 import 'package:driver/app/chat_screens/driver_inbox_screen.dart';
@@ -295,19 +296,18 @@ class DrawerView extends StatelessWidget {
                                     controller.drawerIndex.value = 3;
                                   },
                                 ),
-                          (((Constant.userModel?.ownerId == null || Constant.userModel!.ownerId!.isEmpty) && Constant.userModel?.isAutoVerify == false) &&
-                                  !((Constant.userModel?.ownerId != null && Constant.userModel!.ownerId!.isNotEmpty) && Constant.userModel?.isAutoVerify == false))
-                              ? DsListTile(
-                                  title: 'Document Verification'.tr,
-                                  leadingIcon: Icons.verified_user_outlined,
-                                  leadingTone: DsTone.brand,
-                                  showChevron: true,
-                                  onTap: () {
-                                    Get.back();
-                                    controller.drawerIndex.value = 4;
-                                  },
-                                )
-                              : const SizedBox.shrink(),
+                          // Always reachable (client point 25): documents can be
+                          // uploaded or re-uploaded at any time after sign-up.
+                          DsListTile(
+                            title: 'Document Verification'.tr,
+                            leadingIcon: Icons.verified_user_outlined,
+                            leadingTone: DsTone.brand,
+                            showChevron: true,
+                            onTap: () {
+                              Get.back();
+                              controller.drawerIndex.value = 4;
+                            },
+                          ),
                           DsListTile(
                             title: 'Inbox'.tr,
                             leadingIcon: Icons.chat_bubble_outline_rounded,
@@ -445,8 +445,9 @@ class DrawerView extends StatelessWidget {
                                       negativeString: "Cancel".tr,
                                       positiveClick: () async {
                                         await AudioPlayerService.playSound(false);
-                                        Constant.userModel!.fcmToken = "";
-                                        await FireStoreUtils.updateUser(Constant.userModel!);
+                                        // Client point 19: the device must stop receiving this driver's
+                                        // work, and the stored token must stop pointing at them.
+                                        await NotificationService.onSignOut();
                                         await FirebaseAuth.instance.signOut();
                                         Get.offAll(const LoginScreen());
                                       },

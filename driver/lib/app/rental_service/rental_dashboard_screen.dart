@@ -1,4 +1,5 @@
 import 'package:driver/app/auth_screen/login_screen.dart';
+import 'package:driver/utils/notification_service.dart';
 import 'package:driver/app/change_language/change_language_screen.dart';
 import 'package:driver/app/change_password_screen/change_password_screen.dart';
 import 'package:driver/app/chat_screens/driver_inbox_screen.dart';
@@ -249,8 +250,8 @@ class DrawerView extends StatelessWidget {
                               controller.drawerIndex.value = 3;
                             },
                           ),
-                        if (((Constant.userModel?.ownerId == null || Constant.userModel!.ownerId!.isEmpty) && Constant.userModel?.isAutoVerify == false) &&
-                            !((Constant.userModel?.ownerId != null && Constant.userModel!.ownerId!.isNotEmpty) && Constant.userModel?.isAutoVerify == false))
+                        // Always reachable (client point 25): documents can be uploaded or
+                        // re-uploaded at any time after sign-up.
                           DsListTile(
                             leadingIcon: Icons.assignment_outlined,
                             leadingTone: DsTone.warning,
@@ -386,8 +387,9 @@ class DrawerView extends StatelessWidget {
                                     negativeString: "Cancel".tr,
                                     positiveClick: () async {
                                       await AudioPlayerService.playSound(false);
-                                      Constant.userModel!.fcmToken = "";
-                                      await FireStoreUtils.updateUser(Constant.userModel!);
+                                      // Client point 19: the device must stop receiving this driver's
+                                      // work, and the stored token must stop pointing at them.
+                                      await NotificationService.onSignOut();
                                       await FirebaseAuth.instance.signOut();
                                       Get.offAll(const LoginScreen());
                                     },

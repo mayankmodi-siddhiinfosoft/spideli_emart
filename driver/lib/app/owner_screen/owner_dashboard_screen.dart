@@ -1,9 +1,11 @@
 import 'package:driver/app/parcel_screen/parcel_tracking/parcel_run_screen.dart';
+import 'package:driver/utils/notification_service.dart';
 import 'package:driver/app/auth_screen/login_screen.dart';
 import 'package:driver/app/change_language/change_language_screen.dart';
 import 'package:driver/app/change_password_screen/change_password_screen.dart';
 import 'package:driver/app/chat_screens/driver_inbox_screen.dart';
 import 'package:driver/app/edit_profile_screen/edit_profile_screen.dart';
+import 'package:driver/app/owner_screen/carrier_settings_screen.dart';
 import 'package:driver/app/owner_screen/driver_location_screen.dart';
 import 'package:driver/app/owner_screen/owner_home_screen.dart';
 import 'package:driver/app/terms_and_condition/terms_and_condition_screen.dart';
@@ -209,6 +211,17 @@ class DrawerView extends StatelessWidget {
                             Get.to(() => const ParcelRunScreen());
                           },
                         ),
+                        // Client point 18: a company manages its own carrier
+                        // settings (`delivery_carriers`) from the app.
+                        DsListTile(
+                          leadingIcon: Icons.local_shipping_outlined,
+                          title: 'Carrier Settings'.tr,
+                          showChevron: true,
+                          onTap: () {
+                            Get.back();
+                            Get.to(() => const CarrierSettingsScreen());
+                          },
+                        ),
                         if (Constant.userModel?.vendorID?.isEmpty == true)
                           DsListTile(
                             leadingIcon: Icons.account_balance_wallet_outlined,
@@ -229,7 +242,7 @@ class DrawerView extends StatelessWidget {
                               controller.drawerIndex.value = 3;
                             },
                           ),
-                        if (Constant.userModel?.isAutoVerify == false)
+                        // Always reachable (client point 25).
                           DsListTile(
                             leadingIcon: Icons.assignment_outlined,
                             leadingTone: DsTone.warning,
@@ -359,8 +372,9 @@ class DrawerView extends StatelessWidget {
                                     negativeString: "Cancel".tr,
                                     positiveClick: () async {
                                       await AudioPlayerService.playSound(false);
-                                      Constant.userModel!.fcmToken = "";
-                                      await FireStoreUtils.updateUser(Constant.userModel!);
+                                      // Client point 19: the device must stop receiving this driver's
+                                      // work, and the stored token must stop pointing at them.
+                                      await NotificationService.onSignOut();
                                       await FirebaseAuth.instance.signOut();
                                       Get.offAll(const LoginScreen());
                                     },

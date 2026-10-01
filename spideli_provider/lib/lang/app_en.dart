@@ -201,5 +201,16 @@ const Map<String, String> enUS = {
   "Log in to continue managing your bookings and earnings.": "Log in to continue managing your bookings and earnings.",
   "We'll be back soon!": "We'll be back soon!",
   "Sorry for the inconvenience but we're performing some maintenance at the moment. We'll be back online shortly!":
-      "Sorry for the inconvenience but we're performing some maintenance at the moment. We'll be back online shortly!"
+      "Sorry for the inconvenience but we're performing some maintenance at the moment. We'll be back online shortly!",
+  "Please select the location": "Please select the location",
+  "Please Select price unit.": "Please Select price unit.",
+  "Could not read the selected location": "Could not read the selected location",
+  "Could not set the location, please try again": "Could not set the location, please try again",
+  "Could not save the worker, please try again": "Could not save the worker, please try again",
+  "Could not create the worker account": "Could not create the worker account",
+  "The password provided is too weak.": "The password provided is too weak.",
+  "The account already exists for that email.": "The account already exists for that email.",
+  "Please select a location on the map": "Please select a location on the map",
+  "Address not found": "Address not found",
+  "Error getting address": "Error getting address",
 };

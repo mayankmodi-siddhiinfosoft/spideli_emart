@@ -2038,30 +2038,75 @@ class FireStoreUtils {
     return ratingModelList;
   }
 
-  static Future<List<UserModel>> getAvalibleDrivers() async {
+  /// Every delivery man that belongs to this store, newest first.
+  ///
+  /// Deliberately an equality-only query with no `orderBy`: the old
+  /// `vendorID + role + active + isActive + orderBy(createdAt)` query needed a
+  /// composite index and skipped any driver document without a `createdAt`
+  /// field. When the index was missing the whole query threw, the error was
+  /// swallowed, and the assign dialog opened on an empty list - the "No driver
+  /// found" the client reported (#9). Sorting and the availability flags are
+  /// applied in memory instead, where nothing can silently fail.
+  static Future<List<UserModel>> getStoreDrivers() async {
     List<UserModel> driverList = [];
     try {
-      log("getAvalibleDrivers :: 22");
-      await fireStore
+      final snapshot = await fireStore
           .collection(CollectionName.users)
           .where('vendorID', isEqualTo: Constant.userModel?.vendorID)
           .where('role', isEqualTo: Constant.userRoleDriver)
-          .where('active', isEqualTo: true)
-          .where('isActive', isEqualTo: true)
-          .orderBy('createdAt', descending: true)
-          .get()
-          .then((value) {
-            if (value.docs.isNotEmpty) {
-              for (int i = 0; i < value.docs.length; i++) {
-                driverList.add(UserModel.fromJson(value.docs[i].data()));
-              }
-            }
-          });
+          .get();
+      for (final doc in snapshot.docs) {
+        driverList.add(UserModel.fromJson(doc.data()));
+      }
+      driverList.sort((a, b) {
+        final Timestamp? aAt = a.createdAt;
+        final Timestamp? bAt = b.createdAt;
+        if (aAt == null && bAt == null) return 0;
+        if (aAt == null) return 1;
+        if (bAt == null) return -1;
+        return bAt.compareTo(aAt);
+      });
     } catch (e) {
       log("Error fetching drivers: ${e.toString()}");
     }
-
     return driverList;
+  }
+
+  /// The store's drivers that may take an order right now: the account is
+  /// enabled (`isActive`) and the driver is on duty (`active`).
+  static Future<List<UserModel>> getAvalibleDrivers() async {
+    final List<UserModel> drivers = await getStoreDrivers();
+    return drivers.where((driver) => driver.isActive == true && driver.active == true).toList();
+  }
+
+  /// Built-in store cancellation reasons, used when
+  /// `settings/cancellationReasons` carries no vendor list.
+  static const List<String> defaultVendorCancellationReasons = [
+    "Item out of stock",
+    "Store is closed right now",
+    "Too busy to prepare this order",
+    "Customer asked to cancel",
+    "Address or contact details are wrong",
+    "Other",
+  ];
+
+  /// `settings/cancellationReasons.vendor` (or `.store`), else the built-in
+  /// defaults. The list always ends with "Other", which needs free text.
+  static Future<List<String>> getVendorCancellationReasons() async {
+    List<String> reasons = [];
+    try {
+      final doc = await fireStore.collection(CollectionName.settings).doc('cancellationReasons').get();
+      final data = doc.data();
+      final dynamic raw = data?['vendor'] ?? data?['store'];
+      if (raw is Iterable) {
+        reasons = raw.map((e) => e?.toString().trim() ?? '').where((e) => e.isNotEmpty).toList();
+      }
+    } catch (e) {
+      log("getVendorCancellationReasons failed: $e");
+    }
+    if (reasons.isEmpty) reasons = List<String>.from(defaultVendorCancellationReasons);
+    if (!reasons.any((e) => e.toLowerCase() == 'other')) reasons.add("Other");
+    return reasons;
   }
 
   static Future<List<UserModel>> getAllDrivers() async {

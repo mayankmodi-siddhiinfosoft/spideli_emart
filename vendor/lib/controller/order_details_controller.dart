@@ -15,6 +15,7 @@ import 'package:vendor/models/currency_model.dart';
 import 'package:vendor/models/order_model.dart';
 import 'package:vendor/models/tax_model.dart';
 import 'package:vendor/themes/app_them_data.dart';
+import 'package:vendor/utils/address_format.dart';
 import 'package:vendor/utils/order_receipt_pdf.dart';
 import 'package:vendor/utils/region_service.dart';
 
@@ -377,7 +378,8 @@ class OrderDetailsController extends GetxController {
       styles: const PosStyles(align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2, bold: true),
       linesAfter: 1,
     );
-    bytes += generator.text(orderModel.value.vendor!.location.toString(), styles: const PosStyles(align: PosAlign.center));
+    // Formatter: a store with no stored location printed "null" on the bill.
+    bytes += generator.text(formatAddress([orderModel.value.vendor!.location]), styles: const PosStyles(align: PosAlign.center));
     bytes += generator.text('Phone: ${orderModel.value.vendor!.phonenumber}', styles: const PosStyles(align: PosAlign.center));
     bytes += generator.text('TIN/VAT No.: xxxxxxxxxxxxx', styles: const PosStyles(align: PosAlign.center));
     generator.text(' ' * spaceBetweenColumns, styles: const PosStyles());
@@ -922,7 +924,10 @@ class OrderDetailsController extends GetxController {
     ]);
     bytes += generator.row([
       PosColumn(
-        text: '${'Bill Address:'.tr} ${orderModel.value.address ?? ''}',
+        // The ShippingAddress object was interpolated straight into the line,
+        // which printed "Instance of 'ShippingAddress'"; the formatter also
+        // keeps "null" parts off the printed bill (report #17).
+        text: '${'Bill Address:'.tr} ${orderModel.value.address?.getFullAddress() ?? ''}',
         width: 5,
         styles: const PosStyles(align: PosAlign.left, height: PosTextSize.size1, width: PosTextSize.size1),
       ),

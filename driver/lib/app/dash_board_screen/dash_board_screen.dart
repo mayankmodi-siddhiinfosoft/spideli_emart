@@ -1,4 +1,5 @@
 import 'package:driver/app/auth_screen/login_screen.dart';
+import 'package:driver/utils/notification_service.dart';
 import 'package:driver/app/change_language/change_language_screen.dart';
 import 'package:driver/app/change_password_screen/change_password_screen.dart';
 import 'package:driver/app/chat_screens/driver_inbox_screen.dart';
@@ -109,29 +110,22 @@ class DashBoardScreen extends StatelessWidget {
                           )
                         : controller.drawerIndex.value == 3
                             ? const WithdrawMethodSetupScreen()
-                            : controller.userModel.value.isAutoVerify == false
-                                ? controller.drawerIndex.value == 4
-                                    ? const VerificationScreen()
-                                    : controller.drawerIndex.value == 5
-                                        ? const DriverInboxScreen()
-                                        : controller.drawerIndex.value == 6
-                                            ? const ChangeLanguageScreen()
-                                            : controller.drawerIndex.value == 7
-                                                ? HelpSupportScreen()
-                                                : controller.drawerIndex.value == 8
-                                                    ? const TermsAndConditionScreen(type: "temsandcondition")
-                                                    : controller.drawerIndex.value == 9
-                                                        ? const TermsAndConditionScreen(type: "privacy")
-                                                        : ChangePasswordScreen()
-                                : controller.drawerIndex.value == 4
+                            // Fixed indices (client point 25): the document
+                            // screen used to disappear — together with its
+                            // drawer entry — as soon as verification was
+                            // automatic, which left a driver no way to upload
+                            // a licence or an ID after signing up.
+                            : controller.drawerIndex.value == 4
+                                ? const VerificationScreen()
+                                : controller.drawerIndex.value == 5
                                     ? const DriverInboxScreen()
-                                    : controller.drawerIndex.value == 5
+                                    : controller.drawerIndex.value == 6
                                         ? const ChangeLanguageScreen()
-                                        : controller.drawerIndex.value == 6
+                                        : controller.drawerIndex.value == 7
                                             ? HelpSupportScreen()
-                                            : controller.drawerIndex.value == 7
+                                            : controller.drawerIndex.value == 8
                                                 ? const TermsAndConditionScreen(type: "temsandcondition")
-                                                : controller.drawerIndex.value == 8
+                                                : controller.drawerIndex.value == 9
                                                     ? const TermsAndConditionScreen(type: "privacy")
                                                     : ChangePasswordScreen(),
           );
@@ -274,28 +268,26 @@ class DrawerView extends StatelessWidget {
                               controller.drawerIndex.value = 3;
                             },
                           ),
-                        if (controller.userModel.value.isAutoVerify == false)
-                          DsListTile(
-                            leadingIcon: Icons.assignment_outlined,
-                            leadingTone: DsTone.warning,
-                            title: 'Document Verification'.tr,
-                            showChevron: true,
-                            onTap: () {
-                              Get.back();
-                              controller.drawerIndex.value = 4;
-                            },
-                          ),
+                        // Always reachable (client point 25): a driver must be
+                        // able to upload or re-upload documents after sign-up,
+                        // whether or not verification is automatic.
+                        DsListTile(
+                          leadingIcon: Icons.assignment_outlined,
+                          leadingTone: DsTone.warning,
+                          title: 'Document Verification'.tr,
+                          showChevron: true,
+                          onTap: () {
+                            Get.back();
+                            controller.drawerIndex.value = 4;
+                          },
+                        ),
                         DsListTile(
                           leadingIcon: Icons.forum_outlined,
                           title: 'Inbox'.tr,
                           showChevron: true,
                           onTap: () {
                             Get.back();
-                            if (controller.userModel.value.isAutoVerify == false) {
-                              controller.drawerIndex.value = 5;
-                            } else {
-                              controller.drawerIndex.value = 4;
-                            }
+                            controller.drawerIndex.value = 5;
                           },
                         ),
                       ],
@@ -309,11 +301,7 @@ class DrawerView extends StatelessWidget {
                           showChevron: true,
                           onTap: () {
                             Get.back();
-                            if (controller.userModel.value.isAutoVerify == false) {
-                              controller.drawerIndex.value = 6;
-                            } else {
-                              controller.drawerIndex.value = 5;
-                            }
+                            controller.drawerIndex.value = 6;
                           },
                         ),
                         DsListTile(
@@ -322,11 +310,7 @@ class DrawerView extends StatelessWidget {
                           showChevron: true,
                           onTap: () {
                             Get.back();
-                            if (controller.userModel.value.isAutoVerify == false) {
-                              controller.drawerIndex.value = 7;
-                            } else {
-                              controller.drawerIndex.value = 6;
-                            }
+                            controller.drawerIndex.value = 7;
                           },
                         ),
                         DsListTile(
@@ -376,11 +360,7 @@ class DrawerView extends StatelessWidget {
                           showChevron: true,
                           onTap: () {
                             Get.back();
-                            if (controller.userModel.value.isAutoVerify == false) {
-                              controller.drawerIndex.value = 8;
-                            } else {
-                              controller.drawerIndex.value = 7;
-                            }
+                            controller.drawerIndex.value = 8;
                           },
                         ),
                         DsListTile(
@@ -390,11 +370,7 @@ class DrawerView extends StatelessWidget {
                           showChevron: true,
                           onTap: () {
                             Get.back();
-                            if (controller.userModel.value.isAutoVerify == false) {
-                              controller.drawerIndex.value = 9;
-                            } else {
-                              controller.drawerIndex.value = 8;
-                            }
+                            controller.drawerIndex.value = 9;
                           },
                         ),
                         if (Constant.userModel?.provider != 'apple' && Constant.userModel?.provider != 'google')
@@ -404,11 +380,7 @@ class DrawerView extends StatelessWidget {
                             showChevron: true,
                             onTap: () {
                               Get.back();
-                              if (controller.userModel.value.isAutoVerify == false) {
-                                controller.drawerIndex.value = 10;
-                              } else {
-                                controller.drawerIndex.value = 9;
-                              }
+                              controller.drawerIndex.value = 10;
                             },
                           ),
                       ],
@@ -432,8 +404,9 @@ class DrawerView extends StatelessWidget {
                                     negativeString: "Cancel".tr,
                                     positiveClick: () async {
                                       await AudioPlayerService.playSound(false);
-                                      Constant.userModel!.fcmToken = "";
-                                      await FireStoreUtils.updateUser(Constant.userModel!);
+                                      // Client point 19: the device must stop receiving this driver's
+                                      // work, and the stored token must stop pointing at them.
+                                      await NotificationService.onSignOut();
                                       await FirebaseAuth.instance.signOut();
                                       Get.offAll(const LoginScreen());
                                     },

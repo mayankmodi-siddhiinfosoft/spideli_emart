@@ -1,9 +1,9 @@
-import 'dart:async';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/conversation_model.dart';
 import 'package:customer/models/inbox_model.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/service/fire_store_utils.dart';
+import 'package:customer/utils/chat_scroll.dart';
 import 'package:customer/utils/preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -82,6 +82,9 @@ class HelpSupportController extends GetxController {
     }
 
     await FireStoreUtils.addChat(conversationModel);
-    Timer(const Duration(milliseconds: 500), () => scrollController.value.jumpTo(scrollController.value.position.minScrollExtent));
+    // The admin side of this thread is the web panel, not a device, so there
+    // is no FCM token to push to from here (bug #3 covers the store and driver
+    // threads, which do carry one).
+    scrollChatToLatest(scrollController.value);
   }
 }

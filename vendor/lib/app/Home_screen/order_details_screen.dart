@@ -92,7 +92,14 @@ class OrderDetailsScreen extends StatelessWidget {
                             Expanded(
                               child: controller.orderModel.value.takeAway == true
                                   ? Text("Take Away".tr, style: t.bodySm)
-                                  : Text(controller.orderModel.value.address?.getFullAddress() ?? ''.tr, style: t.bodySm),
+                                  : Text(
+                                      // Formatter drops "null" / blank parts
+                                      // (report #17).
+                                      (controller.orderModel.value.address?.getFullAddress() ?? '').isEmpty
+                                          ? "No address on this order".tr
+                                          : controller.orderModel.value.address!.getFullAddress(),
+                                      style: t.bodySm,
+                                    ),
                             ),
                           ],
                         ),
@@ -266,7 +273,32 @@ class OrderDetailsScreen extends StatelessWidget {
           section(null, null, Padding(padding: const EdgeInsets.only(top: DsSpace.lg), child: customer)),
           section("Items".tr, Icons.receipt_long_outlined, items),
         ];
+        // Why a cancelled order was cancelled, by whom and when (report #14).
+        final String cancelReason = (order.cancelReason ?? '').trim();
+        final Widget? cancellation = cancelReason.isEmpty
+            ? null
+            : DsCard.tinted(
+                tone: DsTone.danger,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(cancelReason.tr, style: t.bodyStrong),
+                    if ((order.cancelledBy ?? '').isNotEmpty || order.cancelledAt != null) ...[
+                      const DsGap(DsSpace.xxs),
+                      Text(
+                        [
+                          if ((order.cancelledBy ?? '').isNotEmpty) "${"Cancelled by".tr} ${order.cancelledBy!.tr}",
+                          if (order.cancelledAt != null) Constant.timestampToDateTime(order.cancelledAt!),
+                        ].join(' · '),
+                        style: t.caption.copyWith(color: c.textMuted),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+
         final List<Widget> secondaryColumn = [
+          if (cancellation != null) section("Cancellation reason".tr, Icons.cancel_outlined, cancellation),
           section("Bill details".tr, Icons.payments_outlined, bill),
           if (driver != null) section("Delivery Man Information".tr, Icons.delivery_dining_outlined, driver),
         ];

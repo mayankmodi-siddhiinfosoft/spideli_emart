@@ -13,6 +13,26 @@ import 'package:flutter_map/flutter_map.dart' as flutterMap;
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:http/http.dart' as http;
 
+/// Live order tracking.
+///
+/// The screen used to come up empty (bug #4, 1 October). Three things had to
+/// line up before anything was ever drawn:
+///
+/// 1. markers and the camera were only ever touched from the **driver**
+///    snapshot, which is subscribed to only once `driverID` is set — before a
+///    driver is assigned the map sat at lat/lng 0,0 with no markers at all;
+/// 2. the route call came first and was unguarded, so a failing Directions /
+///    OSRM request (no network, Directions API not enabled on the key) threw
+///    and the marker + camera code after it never ran;
+/// 3. on the Google side the camera was only ever moved from `_addPolyLine`,
+///    which returns early when the route comes back empty — so the map stayed
+///    on its `initialCameraPosition` of 0,0 (open ocean, which reads as "the
+///    map does not display").
+///
+/// Markers and the camera are therefore now driven by the **order** (which is
+/// available immediately), the route is loaded afterwards and may fail without
+/// taking anything else with it, and camera moves are deferred until the map
+/// itself reports that it is ready.
 class LiveTrackingController extends GetxController {
   GoogleMapController? mapController;
   final flutterMap.MapController osmMapController = flutterMap.MapController();
@@ -34,15 +54,27 @@ class LiveTrackingController extends GetxController {
   BitmapDescriptor? dropoffIcon;
   BitmapDescriptor? driverIcon;
 
+  /// Resolved once the three marker bitmaps are decoded; awaited before the
+  /// first Google marker is built so markers are never dropped for want of an
+  /// icon that was still loading.
+  Future<void>? _iconsReady;
+
   PolylinePoints polylinePoints = PolylinePoints(apiKey: Constant.mapAPIKey);
 
   StreamSubscription? orderSub;
   StreamSubscription? driverSub;
 
+  /// The map widget is only safe to drive once it exists: `MapController.move`
+  /// throws before the first layout, and the Google controller does not exist
+  /// until `onMapCreated`.
+  bool _mapReady = false;
+
+  bool get isOsm => Constant.selectedMapType == 'osm';
+
   @override
   void onInit() {
     super.onInit();
-    addMarkerIcons();
+    _iconsReady = addMarkerIcons();
     getArguments();
   }
 
@@ -54,87 +86,160 @@ class LiveTrackingController extends GetxController {
   }
 
   Future<void> getArguments() async {
-    final args = Get.arguments;
-    if (args == null) return;
+    try {
+      final args = Get.arguments;
+      final dynamic argOrder = args is Map ? args['orderModel'] : null;
+      if (argOrder is! OrderModel) return;
 
-    orderModel.value = args['orderModel'];
+      orderModel.value = argOrder;
+      // Draw from the order we were handed straight away: waiting for the
+      // first snapshot (or for a driver to be assigned) is what left the map
+      // blank.
+      applyOrder();
 
-    orderSub = FireStoreUtils.fireStore.collection(CollectionName.vendorOrders).doc(orderModel.value.id).snapshots().listen((orderSnap) {
-      if (orderSnap.data() == null) return;
-      orderModel.value = OrderModel.fromJson(orderSnap.data()!);
+      orderSub = FireStoreUtils.fireStore.collection(CollectionName.vendorOrders).doc(orderModel.value.id).snapshots().listen((orderSnap) {
+        if (orderSnap.data() == null) return;
+        orderModel.value = OrderModel.fromJson(orderSnap.data()!);
+        applyOrder();
 
-      if (orderModel.value.driverID != null) {
-        driverSub?.cancel();
-        driverSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(orderModel.value.driverID).snapshots().listen((driverSnap) async {
-          if (driverSnap.data() == null) return;
-          driverUserModel.value = UserModel.fromJson(driverSnap.data()!);
-          await updateLiveTracking();
-        });
-      }
+        if (orderModel.value.driverID != null) {
+          driverSub?.cancel();
+          driverSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(orderModel.value.driverID).snapshots().listen((driverSnap) {
+            if (driverSnap.data() == null) return;
+            driverUserModel.value = UserModel.fromJson(driverSnap.data()!);
+            updateLiveTracking();
+          });
+        }
 
-      if (orderModel.value.status == Constant.orderCompleted) {
-        Get.back();
-      }
-    });
+        if (orderModel.value.status == Constant.orderCompleted) {
+          Get.back();
+        }
+      });
+    } finally {
+      // Never leave the screen on its spinner, whatever the arguments were.
+      isLoading.value = false;
+    }
+  }
 
-    isLoading.value = false;
+  /// The store and the delivery address come from the order, so they are known
+  /// before (and independently of) any driver.
+  void applyOrder() {
+    source.value = location.LatLng(orderModel.value.vendor?.latitude ?? 0.0, orderModel.value.vendor?.longitude ?? 0.0);
+    destination.value = location.LatLng(orderModel.value.address?.location?.latitude ?? 0.0, orderModel.value.address?.location?.longitude ?? 0.0);
+    updateLiveTracking();
   }
 
   Future<void> updateLiveTracking() async {
     driverCurrent.value = location.LatLng(driverUserModel.value.location?.latitude ?? 0.0, driverUserModel.value.location?.longitude ?? 0.0);
 
-    source.value = location.LatLng(orderModel.value.vendor?.latitude ?? 0.0, orderModel.value.vendor?.longitude ?? 0.0);
+    // Before pickup the leg that matters is driver → store; afterwards it is
+    // driver → customer. Both ends are still marked either way so the map is
+    // never empty.
+    final bool beforePickup = orderModel.value.status == Constant.orderPlaced || orderModel.value.status == Constant.orderAccepted;
+    final location.LatLng legEnd = beforePickup ? source.value : destination.value;
 
-    destination.value = location.LatLng(orderModel.value.address?.location?.latitude ?? 0.0, orderModel.value.address?.location?.longitude ?? 0.0);
+    await drawMarkers();
+    moveCamera();
 
-    if (orderModel.value.status == Constant.orderPlaced || orderModel.value.status == Constant.orderAccepted) {
-      await showDriverToRestaurantRoute();
-    } else if (orderModel.value.status == Constant.orderShipped || orderModel.value.status == Constant.orderInTransit) {
-      await showDriverToCustomerRoute();
-    }
+    // The route is a bonus on top of the markers: it must never be able to
+    // stop them being drawn, so it is loaded last and failures are swallowed.
+    await loadRoute(driverCurrent.value, legEnd);
   }
 
-  Future<void> showDriverToRestaurantRoute() async {
-    clearOldData();
-    if (Constant.selectedMapType == 'osm') {
-      await fetchRoute(driverCurrent.value, source.value);
-      addOsmMarkers(showPickup: true, showDrop: false);
-      animateToOSMLocation(driverCurrent.value);
+  /// Every point the map should be able to show, in drawing order.
+  List<location.LatLng> get trackedPoints => [
+    if (hasPoint(driverCurrent.value)) driverCurrent.value,
+    if (hasPoint(source.value)) source.value,
+    if (hasPoint(destination.value)) destination.value,
+  ];
+
+  /// 0,0 is this data model's "not set" — a real order is never in the Gulf of
+  /// Guinea, and centring there is what made the map look broken.
+  static bool hasPoint(location.LatLng point) => point.latitude != 0 || point.longitude != 0;
+
+  /// Where the map should open before anything has loaded: the driver if we
+  /// have one, else the store, else the delivery address.
+  location.LatLng get initialTarget => trackedPoints.isEmpty ? const location.LatLng(0, 0) : trackedPoints.first;
+
+  Future<void> drawMarkers() async {
+    if (isOsm) {
+      addOsmMarkers();
     } else {
-      await getPolyline(
-        sourceLatitude: driverCurrent.value.latitude,
-        sourceLongitude: driverCurrent.value.longitude,
-        destinationLatitude: source.value.latitude,
-        destinationLongitude: source.value.longitude,
-        showPickup: true,
-        showDrop: false,
-      );
+      await addGoogleMarkers();
     }
   }
 
-  Future<void> showDriverToCustomerRoute() async {
-    clearOldData();
-    if (Constant.selectedMapType == 'osm') {
-      await fetchRoute(driverCurrent.value, destination.value);
-      addOsmMarkers(showPickup: false, showDrop: true);
-      animateToOSMLocation(driverCurrent.value);
-    } else {
-      await getPolyline(
-        sourceLatitude: driverCurrent.value.latitude,
-        sourceLongitude: driverCurrent.value.longitude,
-        destinationLatitude: destination.value.latitude,
-        destinationLongitude: destination.value.longitude,
-        showPickup: false,
-        showDrop: true,
-      );
-    }
-  }
-
-  void clearOldData() {
-    markers.clear();
-    polyLines.clear();
+  Future<void> loadRoute(location.LatLng from, location.LatLng to) async {
+    if (!hasPoint(from) || !hasPoint(to)) return;
+    // The leg changes when the order moves from "heading to the store" to
+    // "heading to you", so drop the old line before drawing the new one.
     routePoints.clear();
+    polyLines.clear();
+    try {
+      if (isOsm) {
+        await fetchRoute(from, to);
+      } else {
+        await getPolyline(sourceLatitude: from.latitude, sourceLongitude: from.longitude, destinationLatitude: to.latitude, destinationLongitude: to.longitude);
+      }
+    } catch (e) {
+      // No network, Directions API not enabled on the key, OSRM down: keep the
+      // markers and the camera, just without the line.
+      debugPrint('Live tracking route unavailable: $e');
+    }
   }
+
+  // ---------------------------------------------------------------- camera
+
+  /// Called from the map widgets once they can actually be driven.
+  void onOsmMapReady() {
+    _mapReady = true;
+    moveCamera();
+  }
+
+  void onGoogleMapCreated(GoogleMapController controller) {
+    mapController = controller;
+    _mapReady = true;
+    moveCamera();
+  }
+
+  void moveCamera() {
+    if (!_mapReady) return;
+    final points = trackedPoints;
+    if (points.isEmpty) return;
+    try {
+      if (isOsm) {
+        if (points.length == 1) {
+          osmMapController.move(points.first, 15);
+        } else {
+          osmMapController.fitCamera(flutterMap.CameraFit.coordinates(coordinates: points, padding: const EdgeInsets.all(60)));
+        }
+      } else {
+        final controller = mapController;
+        if (controller == null) return;
+        if (points.length == 1) {
+          controller.animateCamera(CameraUpdate.newLatLngZoom(LatLng(points.first.latitude, points.first.longitude), 15));
+        } else {
+          controller.animateCamera(CameraUpdate.newLatLngBounds(boundsOf(points), 80));
+        }
+      }
+    } catch (e) {
+      debugPrint('Live tracking camera move failed: $e');
+    }
+  }
+
+  static LatLngBounds boundsOf(List<location.LatLng> points) {
+    double minLat = points.first.latitude, maxLat = points.first.latitude;
+    double minLng = points.first.longitude, maxLng = points.first.longitude;
+    for (final p in points) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    return LatLngBounds(southwest: LatLng(minLat, minLng), northeast: LatLng(maxLat, maxLng));
+  }
+
+  // ------------------------------------------------------------------- OSM
 
   Future<void> fetchRoute(location.LatLng source, location.LatLng destination) async {
     final url = Uri.parse(
@@ -143,114 +248,85 @@ class LiveTrackingController extends GetxController {
     final response = await http.get(url);
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
-      final coords = data['routes'][0]['geometry']['coordinates'];
-      routePoints.value = coords.map<location.LatLng>((c) => location.LatLng(c[1].toDouble(), c[0].toDouble())).toList();
+      final routes = data['routes'];
+      if (routes is List && routes.isNotEmpty) {
+        final coords = routes[0]['geometry']['coordinates'];
+        routePoints.value = (coords as List).map<location.LatLng>((c) => location.LatLng(c[1].toDouble(), c[0].toDouble())).toList();
+      }
     }
   }
 
-  void animateToOSMLocation(location.LatLng loc) {
-    osmMapController.move(loc, 15);
-  }
-
-  void addOsmMarkers({bool showPickup = false, bool showDrop = false}) {
-    final List<flutterMap.Marker> tempMarkers = [
-      // Driver Marker
-      flutterMap.Marker(point: driverCurrent.value, width: 40, height: 40, child: Image.asset('assets/images/food_delivery.png')),
+  void addOsmMarkers() {
+    osmMarkers.value = [
+      if (hasPoint(driverCurrent.value)) flutterMap.Marker(point: driverCurrent.value, width: 40, height: 40, child: Image.asset('assets/images/food_delivery.png')),
+      if (hasPoint(source.value)) flutterMap.Marker(point: source.value, width: 40, height: 40, child: Image.asset('assets/images/pickup.png')),
+      if (hasPoint(destination.value)) flutterMap.Marker(point: destination.value, width: 40, height: 40, child: Image.asset('assets/images/dropoff.png')),
     ];
-
-    if (showPickup) {
-      tempMarkers.add(flutterMap.Marker(point: source.value, width: 40, height: 40, child: Image.asset('assets/images/pickup.png')));
-    }
-
-    if (showDrop) {
-      tempMarkers.add(flutterMap.Marker(point: destination.value, width: 40, height: 40, child: Image.asset('assets/images/dropoff.png')));
-    }
-
-    osmMarkers.value = tempMarkers;
   }
+
+  // ---------------------------------------------------------------- Google
 
   Future<void> getPolyline({
     required double sourceLatitude,
     required double sourceLongitude,
     required double destinationLatitude,
     required double destinationLongitude,
-    bool showPickup = false,
-    bool showDrop = false,
   }) async {
-    List<LatLng> polylineCoordinates = [];
-
-    PolylineResult result = await polylinePoints.getRouteBetweenCoordinates(
+    final PolylineResult result = await polylinePoints.getRouteBetweenCoordinates(
       request: PolylineRequest(origin: PointLatLng(sourceLatitude, sourceLongitude), destination: PointLatLng(destinationLatitude, destinationLongitude), mode: TravelMode.driving),
     );
 
-    if (result.points.isNotEmpty) {
-      polylineCoordinates = result.points.map((e) => LatLng(e.latitude, e.longitude)).toList();
-    }
-
-    addGoogleMarkers(showPickup: showPickup, showDrop: showDrop);
-    _addPolyLine(polylineCoordinates);
+    if (result.points.isEmpty) return;
+    _addPolyLine(result.points.map((e) => LatLng(e.latitude, e.longitude)).toList());
   }
 
-  void addGoogleMarkers({bool showPickup = false, bool showDrop = false}) {
+  Future<void> addGoogleMarkers() async {
+    await _iconsReady;
     markers.clear();
 
-    // Always show driver marker
-    if (driverUserModel.value.location != null && driverIcon != null) {
+    if (hasPoint(driverCurrent.value)) {
       addMarker(
         id: "Driver",
-        latitude: driverUserModel.value.location?.latitude ?? 0.0,
-        longitude: driverUserModel.value.location?.longitude ?? 0.0,
-        descriptor: driverIcon!,
+        latitude: driverCurrent.value.latitude,
+        longitude: driverCurrent.value.longitude,
+        descriptor: driverIcon,
         rotation: (driverUserModel.value.rotation ?? 0).toDouble(),
       );
     }
-
-    if (showPickup && orderModel.value.vendor?.latitude != null && pickupIcon != null) {
-      addMarker(id: "Pickup", latitude: orderModel.value.vendor!.latitude ?? 0.0, longitude: orderModel.value.vendor!.longitude ?? 0.0, descriptor: pickupIcon!, rotation: 0.0);
-    } else if (showDrop && orderModel.value.address?.location?.latitude != null && dropoffIcon != null) {
-      addMarker(
-        id: "Drop",
-        latitude: orderModel.value.address!.location!.latitude ?? 0.0,
-        longitude: orderModel.value.address!.location!.longitude ?? 0.0,
-        descriptor: dropoffIcon!,
-        rotation: 0.0,
-      );
+    if (hasPoint(source.value)) {
+      addMarker(id: "Pickup", latitude: source.value.latitude, longitude: source.value.longitude, descriptor: pickupIcon, rotation: 0.0);
+    }
+    if (hasPoint(destination.value)) {
+      addMarker(id: "Drop", latitude: destination.value.latitude, longitude: destination.value.longitude, descriptor: dropoffIcon, rotation: 0.0);
     }
   }
 
-  void addMarker({required String id, required double latitude, required double longitude, required BitmapDescriptor descriptor, required double rotation}) {
-    MarkerId markerId = MarkerId(id);
-    markers[markerId] = Marker(markerId: markerId, icon: descriptor, position: LatLng(latitude, longitude), rotation: rotation, anchor: const Offset(0.5, 0.5));
+  void addMarker({required String id, required double latitude, required double longitude, required BitmapDescriptor? descriptor, required double rotation}) {
+    final MarkerId markerId = MarkerId(id);
+    markers[markerId] = Marker(
+      markerId: markerId,
+      // A bitmap that failed to decode must not cost us the marker.
+      icon: descriptor ?? BitmapDescriptor.defaultMarker,
+      position: LatLng(latitude, longitude),
+      rotation: rotation,
+      anchor: const Offset(0.5, 0.5),
+    );
   }
 
   Future<void> addMarkerIcons() async {
-    if (Constant.selectedMapType == 'osm') return;
-
-    pickupIcon = BitmapDescriptor.fromBytes(await Constant().getBytesFromAsset('assets/images/pickup.png', 100));
-    dropoffIcon = BitmapDescriptor.fromBytes(await Constant().getBytesFromAsset('assets/images/dropoff.png', 100));
-    driverIcon = BitmapDescriptor.fromBytes(await Constant().getBytesFromAsset('assets/images/food_delivery.png', 100));
+    if (isOsm) return;
+    try {
+      pickupIcon = BitmapDescriptor.fromBytes(await Constant().getBytesFromAsset('assets/images/pickup.png', 100));
+      dropoffIcon = BitmapDescriptor.fromBytes(await Constant().getBytesFromAsset('assets/images/dropoff.png', 100));
+      driverIcon = BitmapDescriptor.fromBytes(await Constant().getBytesFromAsset('assets/images/food_delivery.png', 100));
+    } catch (e) {
+      debugPrint('Live tracking marker icons unavailable: $e');
+    }
   }
 
-  Future<void> _addPolyLine(List<LatLng> polylineCoordinates) async {
+  void _addPolyLine(List<LatLng> polylineCoordinates) {
     if (polylineCoordinates.isEmpty) return;
-
-    PolylineId id = const PolylineId("poly");
-    Polyline polyline = Polyline(polylineId: id, color: Colors.blue, width: 5, points: polylineCoordinates);
-
-    polyLines[id] = polyline;
-    await updateCameraBounds(polylineCoordinates);
-  }
-
-  Future<void> updateCameraBounds(List<LatLng> points) async {
-    if (mapController == null || points.isEmpty) return;
-
-    double minLat = points.map((e) => e.latitude).reduce((a, b) => a < b ? a : b);
-    double maxLat = points.map((e) => e.latitude).reduce((a, b) => a > b ? a : b);
-    double minLng = points.map((e) => e.longitude).reduce((a, b) => a < b ? a : b);
-    double maxLng = points.map((e) => e.longitude).reduce((a, b) => a > b ? a : b);
-
-    LatLngBounds bounds = LatLngBounds(southwest: LatLng(minLat, minLng), northeast: LatLng(maxLat, maxLng));
-
-    await mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
+    const PolylineId id = PolylineId("poly");
+    polyLines[id] = Polyline(polylineId: id, color: Colors.blue, width: 5, points: polylineCoordinates);
   }
 }

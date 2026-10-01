@@ -107,13 +107,38 @@ class ChatController extends GetxController {
 
     FireStoreUtils.addChat(conversationModel);
     log("receiverUser.value :: ${receiverUser.value?.fullName()} :: ${conversationModel.message.toString()} :: ${receiverUser.value?.fcmToken} :: ${inboxModel.type} :: ${inboxModel.chatType}");
-    if (receiverUser.value?.fcmToken != null) {
-      SendNotification.sendChatFcmMessage(receivedName.value, conversationModel.message.toString(), receiverUser.value?.fcmToken ?? '', {
+    await notifyRecipient(conversationModel.message.toString(), inboxModel);
+  }
+
+  /// Push for a message the store just sent (report #3).
+  ///
+  /// Reached from every send path, because text, image and video all go through
+  /// [sendMessage]. Two things were wrong before: the notification was titled
+  /// with the *recipient's* own name, and an empty token - or a recipient whose
+  /// profile had not been read yet - passed the old `!= null` check and the push
+  /// went nowhere. The recipient is re-read once if their token is missing, and
+  /// a recipient with no token at all is skipped silently: a chat message must
+  /// never fail because of its notification.
+  Future<void> notifyRecipient(String message, InboxModel inboxModel) async {
+    if (receivedId.value.isEmpty || receivedId.value == 'admin') return;
+    String fcmToken = receiverUser.value?.fcmToken ?? '';
+    if (fcmToken.isEmpty) {
+      receiverUser.value = await FireStoreUtils.getUserProfile(receivedId.value);
+      fcmToken = receiverUser.value?.fcmToken ?? '';
+    }
+    if (fcmToken.isEmpty) {
+      log("chat push skipped: no fcm token stored for ${receivedId.value}");
+      return;
+    }
+    try {
+      await SendNotification.sendChatFcmMessage(senderName.value.isEmpty ? "New message".tr : senderName.value, message, fcmToken, {
         'type': inboxModel.type,
         'chatType': inboxModel.chatType,
         'orderId': orderId.value,
         'senderId': FireStoreUtils.getCurrentUid(),
       });
+    } catch (e) {
+      log("chat push failed: $e");
     }
   }
 

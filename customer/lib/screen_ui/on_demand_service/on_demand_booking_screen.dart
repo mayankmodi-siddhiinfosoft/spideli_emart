@@ -1,5 +1,4 @@
 import 'package:customer/utils/region_service.dart';
-import 'package:bottom_picker/bottom_picker.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +10,8 @@ import '../../controllers/on_demand_booking_controller.dart';
 import '../../models/user_model.dart';
 import '../../themes/show_toast_dialog.dart';
 import '../../widget/osm_map/map_picker_page.dart';
+import '../../widget/quantity_stepper.dart';
+import '../../widget/schedule_picker.dart';
 import '../../widget/place_picker/location_picker_screen.dart';
 import '../../widget/place_picker/selected_location_model.dart';
 import '../location_enable_screens/address_list_screen.dart';
@@ -54,26 +55,14 @@ class OnDemandBookingScreen extends StatelessWidget {
                             Text(controller.categoryTitle.value, style: t.bodySm),
                             if (controller.provider.value?.priceUnit == "Fixed") ...[
                               const DsGap(DsSpace.lg),
-                              Row(
-                                children: [
-                                  DsIconButton(
-                                    icon: Icons.remove_rounded,
-                                    semanticLabel: 'Remove'.tr,
-                                    variant: DsIconButtonVariant.tonal,
-                                    size: 36,
-                                    onPressed: controller.decrementQuantity,
-                                  ),
-                                  const DsGap(DsSpace.md),
-                                  Text('${controller.quantity.value}', style: t.titleSm.tabular),
-                                  const DsGap(DsSpace.md),
-                                  DsIconButton(
-                                    icon: Icons.add_rounded,
-                                    semanticLabel: 'Add'.tr,
-                                    variant: DsIconButtonVariant.brand,
-                                    size: 36,
-                                    onPressed: controller.incrementQuantity,
-                                  ),
-                                ],
+                              // Tapping the number types a quantity in (#21).
+                              QuantityStepper(
+                                quantity: controller.quantity.value,
+                                label: controller.provider.value?.title ?? "Quantity".tr,
+                                buttonSize: 36,
+                                onQuantity: controller.setQuantity,
+                                onRemove: controller.decrementQuantity,
+                                onAdd: controller.incrementQuantity,
                               ),
                             ],
                           ],
@@ -123,26 +112,15 @@ class OnDemandBookingScreen extends StatelessWidget {
                       bottomSpacing: 0,
                       suffix: Icon(Icons.calendar_month_rounded, color: c.brand, size: 20),
                       onTap: () {
-                        BottomPicker<DateTime>.dateTime(
-                          onSubmit: (date) {
-                            controller.setDateTime(date!);
-                          },
+                        showSchedulePicker(
+                          context: context,
+                          title: "Booking Date & Slot".tr,
+                          // Reopening the field starts from the slot already
+                          // chosen, folded back inside the bounds.
+                          initialDateTime: controller.dateTimeController.value.text.isEmpty ? null : controller.selectedDateTime.value,
                           minDateTime: DateTime.now(),
-                          buttonAlignment: MainAxisAlignment.center,
-                          displaySubmitButton: true,
-                          buttonSingleColor: c.brand,
-                          buttonPadding: 10,
-                          buttonWidth: 70,
-                          // bottom_picker 5 dropped pickerTitle/closeIconColor and the built-in close icon; rebuild the same header.
-                          headerBuilder: (context) => Row(
-                            children: [
-                              Expanded(child: Text("", style: t.bodyStrong)),
-                              DsIconButton(icon: Icons.close_rounded, semanticLabel: 'Close'.tr, size: 36, onPressed: () => Navigator.pop(context)),
-                            ],
-                          ),
-                          backgroundColor: c.surfaceRaised,
-                          pickerTextStyle: t.bodyStrong,
-                        ).show(context);
+                          onPicked: controller.setDateTime,
+                        );
                       },
                     ),
                   ],

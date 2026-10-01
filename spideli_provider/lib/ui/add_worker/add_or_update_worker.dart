@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/constant/show_toast_dialog.dart';
@@ -8,17 +10,12 @@ import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/services/helper.dart';
 import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
-import 'package:spideliprovider/utils/utils.dart';
 import 'package:spideliprovider/widgets/geoflutterfire/src/geoflutterfire.dart';
 import 'package:spideliprovider/widgets/geoflutterfire/src/models/point.dart';
-import 'package:spideliprovider/widgets/place_picker/location_picker_screen.dart';
-import 'package:spideliprovider/widgets/place_picker/selected_location_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
-import '../../widgets/osm_map/map_picker_page.dart';
 
 /// Add / edit worker (archetype F): a profile hero with the availability
 /// toggle, then grouped form sections and a sticky Save bar. All controllers,
@@ -134,9 +131,12 @@ class AddOrUpdateWorkerScreen extends StatelessWidget {
                           controller: controller.email.value,
                           validator: validateEmail,
                           prefixIcon: Icons.mail_outline_rounded,
-                          // Kept exactly as before: the decoration (not the
-                          // field) is disabled when editing an existing worker.
-                          decorationEnabled: Get.arguments == null ? true : false,
+                          // The decoration (not the field) is disabled when
+                          // editing an existing worker. Keyed off the loaded
+                          // worker rather than `Get.arguments`, which is the
+                          // *current* route's arguments and so reads as null
+                          // while a picker is on top of this screen.
+                          decorationEnabled: controller.user.value.id.isEmpty,
                           onSaved: (String? val) {
                             controller.email.value.text = val.toString();
                           },
@@ -166,41 +166,9 @@ class AddOrUpdateWorkerScreen extends StatelessWidget {
                           validator: validateEmptyField,
                           prefixIcon: Icons.location_on_outlined,
                           suffix: Icon(Icons.my_location_rounded, size: 20, color: c.brand),
+                          readOnly: true,
                           textInputAction: TextInputAction.next,
-                          onTap: () {
-                            checkPermission(() async {
-                              ShowToastDialog.showLoader("Please wait");
-                              try {
-                                await Geolocator.requestPermission();
-                                await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-                                ShowToastDialog.closeLoader();
-                                if (selectedMapType == 'osm') {
-                                  final result = await Get.to(() => MapPickerPage());
-                                  final firstPlace = result;
-                                  if (result != null) {
-                                    controller.latValue.value = firstPlace.coordinates.latitude;
-                                    controller.longValue.value = firstPlace.coordinates.longitude;
-
-                                    controller.address.value.text = firstPlace.address;
-                                  }
-                                } else {
-                                  Get.to(LocationPickerScreen())!.then((value) async {
-                                    if (value != null) {
-                                      SelectedLocationModel selectedLocationModel = value;
-                                      controller.latValue.value = selectedLocationModel.latLng!.latitude;
-                                      controller.longValue.value = selectedLocationModel.latLng!.longitude;
-
-                                      controller.address.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
-                                      controller.update();
-                                      Get.back();
-                                    }
-                                  });
-                                }
-                              } catch (e) {
-                                print(e.toString());
-                              }
-                            }, context);
-                          },
+                          onTap: () => controller.pickLocation(context),
                         ),
                         _FormField(
                           label: 'Salary'.tr,
@@ -265,6 +233,12 @@ class AddOrUpdateWorkerScreen extends StatelessWidget {
 
   _validate(AddOrUpdateWorkerController controller, BuildContext context) async {
     if (controller.formKey.value.currentState?.validate() ?? false) {
+      // Without a picked point the worker would be stored on the null island
+      // (0, 0) and never match a nearby booking.
+      if (controller.latValue.value == 0.0 && controller.longValue.value == 0.0) {
+        ShowToastDialog.showToast('Please select the location'.tr);
+        return;
+      }
       controller.formKey.value.currentState!.save();
       ShowToastDialog.showLoader('Saving Worker...'.tr);
 
@@ -283,13 +257,21 @@ class AddOrUpdateWorkerScreen extends StatelessWidget {
       user.longitude = controller.longValue.value;
       user.active = controller.isActive.value;
 
-      if (Get.arguments != null) {
-        await FireStoreUtils.firebaseUpdateWorker(user);
-        Get.back(result: true);
+      if (user.id.isNotEmpty) {
+        try {
+          await FireStoreUtils.firebaseUpdateWorker(user);
+          ShowToastDialog.closeLoader();
+          Get.back(result: true);
+        } catch (e) {
+          // A failed write used to leave the loader up with no explanation.
+          ShowToastDialog.closeLoader();
+          log("Worker update failed: $e");
+          ShowToastDialog.showToast("Could not save the worker, please try again".tr);
+        }
       } else {
+        // Closes its own loader on every path.
         await controller.signUpWithWorkerEmailAndPassword(user, controller.password.value.text, context);
       }
-      ShowToastDialog.closeLoader();
     } else {
       controller.validate = AutovalidateMode.onUserInteraction;
     }
@@ -314,6 +296,7 @@ class _FormField extends StatefulWidget {
   final VoidCallback? onTap;
   final bool obscurable;
   final bool decorationEnabled;
+  final bool readOnly;
   final double bottomSpacing;
 
   const _FormField({
@@ -331,6 +314,7 @@ class _FormField extends StatefulWidget {
     this.onTap,
     this.obscurable = false,
     this.decorationEnabled = true,
+    this.readOnly = false,
     this.bottomSpacing = DsSpace.lg,
   });
 
@@ -366,6 +350,7 @@ class _FormFieldState extends State<_FormField> {
             validator: widget.validator,
             onSaved: widget.onSaved,
             onTap: widget.onTap,
+            readOnly: widget.readOnly,
             obscureText: _obscured,
             obscuringCharacter: '●',
             keyboardType: widget.keyboardType,

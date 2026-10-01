@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
+import 'package:driver/app/parcel_screen/parcel_tracking/parcel_proof_sheet.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/send_notification.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
@@ -7,6 +8,7 @@ import 'package:driver/models/wallet_transaction_model.dart';
 import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/services/vendor_wallet_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 
 class DeliverOrderController extends GetxController {
@@ -35,7 +37,50 @@ class DeliverOrderController extends GetxController {
     isLoading.value = false;
   }
 
+  /// Client point 29: a multivendor / e-commerce delivery records proof the
+  /// same way a parcel does — the customer's OTP when the order carries one,
+  /// otherwise a photo — before anything is written or credited.
+  ///
+  /// Returns false when the driver backed out of the proof step.
+  Future<bool> captureDeliveryProof(BuildContext context, {required bool isDark}) async {
+    if (orderModel.value.deliveryProof != null) return true;
+    final Map<String, dynamic>? proof = await showDeliveryProofSheet(
+      context,
+      isDark: isDark,
+      receiverCode: receiverCode,
+      photoStoragePath: 'orderDeliveryProof/${orderModel.value.id}',
+    );
+    if (proof == null) return false;
+    orderModel.value.deliveryProof = proof;
+    return true;
+  }
+
+  /// The code the customer holds, or null when this order has none.
+  String? get receiverCode {
+    final String code = (orderModel.value.otpCode ?? '').trim();
+    return code.isEmpty ? null : code;
+  }
+
+  /// Guards against a second completion (a double tap on the slider): the
+  /// wallet credit must happen exactly once.
+  bool _completing = false;
+
   Future<void> completedOrder() async {
+    if (_completing || orderModel.value.status == Constant.orderCompleted) return;
+    _completing = true;
+    final String? previousStatus = orderModel.value.status;
+    try {
+      await _completeOrder();
+    } catch (e) {
+      // A failed completion must be retryable — and must not have credited.
+      orderModel.value.status = previousStatus;
+      _completing = false;
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("The delivery could not be completed: ${e.toString()}");
+    }
+  }
+
+  Future<void> _completeOrder() async {
     ShowToastDialog.showLoader("Please wait".tr);
     await AudioPlayerService.playSound(false);
     orderModel.value.status = Constant.orderCompleted;
@@ -74,7 +119,7 @@ class DeliverOrderController extends GetxController {
       }
     });
 
-    await SendNotification.sendFcmMessage(Constant.driverCompleted, orderModel.value.author!.fcmToken.toString(), {});
+    await SendNotification.sendFcmMessage(Constant.driverCompleted, orderModel.value.author?.fcmToken ?? '', {});
     ShowToastDialog.closeLoader();
     Get.back(result: true);
   }

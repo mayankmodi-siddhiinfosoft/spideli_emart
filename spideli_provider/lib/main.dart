@@ -81,6 +81,9 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     notificationService.initInfo().then((value) async {
       String token = await NotificationService.getToken();
       log(":::::::TOKEN:::::: $token");
+      // Store it on the user document at launch and on every refresh, so this
+      // app can actually be reached by chat and order pushes.
+      await NotificationService.syncTokenToUserDoc();
     });
   }
 

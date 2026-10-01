@@ -16,6 +16,7 @@ import 'package:vendor/models/region_model.dart';
 import 'package:vendor/models/vendor_category_model.dart';
 import 'package:vendor/models/zone_model.dart';
 import 'package:vendor/themes/ds/ds.dart';
+import 'package:vendor/utils/address_format.dart';
 import 'package:vendor/utils/region_service.dart';
 import 'package:vendor/widget/osm_map/map_picker_page.dart';
 
@@ -203,6 +204,11 @@ class AddRestaurantScreen extends StatelessWidget {
                                   ),
                                 ),
                               ),
+                              // What was actually picked on the map. Without
+                              // it the form only ever showed a text field that
+                              // could still look empty or wrong after a pick
+                              // (report #2).
+                              _PickedLocationCard(controller: controller),
                               DsAdaptiveGrid(
                                 minItemWidth: 260,
                                 maxColumns: 2,
@@ -251,7 +257,13 @@ class AddRestaurantScreen extends StatelessWidget {
                                           // Rebuilt when the region changes, so a cleared
                                           // zone selection is reflected.
                                           key: ValueKey("zone_${controller.selectedRegion.value.id}"),
-                                          hint: Text('Select zone'.tr, style: t.body.withColor(c.textMuted)),
+                                          // Says why the list is empty when a
+                                          // region has still to be chosen
+                                          // (report #16).
+                                          hint: Text(
+                                            controller.isZoneBlockedByRegion ? 'Select a region first'.tr : 'Select zone'.tr,
+                                            style: t.body.withColor(c.textMuted),
+                                          ),
                                           dropdownColor: c.surfaceRaised,
                                           borderRadius: DsRadius.brMd,
                                           isExpanded: true,
@@ -500,11 +512,8 @@ class AddRestaurantScreen extends StatelessWidget {
               final firstPlace = result;
               final lat = firstPlace.coordinates.latitude;
               final lng = firstPlace.coordinates.longitude;
-              final address = firstPlace.address;
 
-              controller.selectedLocation = LatLng(lat, lng);
-              controller.addressController.value.text = address.toString();
-              controller.isAddressEnable.value = true;
+              controller.setPickedLocation(LatLng(lat, lng), address: firstPlace.address);
             }
           } else {
             Navigator.push(
@@ -513,9 +522,7 @@ class AddRestaurantScreen extends StatelessWidget {
                 builder: (context) => PlacePicker(
                   apiKey: Constant.mapAPIKey,
                   onPlacePicked: (result) async {
-                    controller.selectedLocation = LatLng(result.geometry!.location.lat, result.geometry!.location.lng);
-                    controller.addressController.value.text = result.formattedAddress.toString();
-                    controller.isAddressEnable.value = true;
+                    controller.setPickedLocation(LatLng(result.geometry!.location.lat, result.geometry!.location.lng), address: result.formattedAddress);
                     Get.back();
                   },
                   initialPosition: const LatLng(-33.8567844, 151.213108),
@@ -553,11 +560,8 @@ class AddRestaurantScreen extends StatelessWidget {
               final firstPlace = result;
               final lat = firstPlace.coordinates.latitude;
               final lng = firstPlace.coordinates.longitude;
-              final address = firstPlace.address;
 
-              controller.selectedLocation = LatLng(lat, lng);
-              controller.addressController.value.text = address.toString();
-              controller.isAddressEnable.value = true;
+              controller.setPickedLocation(LatLng(lat, lng), address: firstPlace.address);
             }
           } else {
             Navigator.push(
@@ -566,9 +570,7 @@ class AddRestaurantScreen extends StatelessWidget {
                 builder: (context) => PlacePicker(
                   apiKey: Constant.mapAPIKey,
                   onPlacePicked: (result) async {
-                    controller.selectedLocation = LatLng(result.geometry!.location.lat, result.geometry!.location.lng);
-                    controller.addressController.value.text = result.formattedAddress.toString();
-                    controller.isAddressEnable.value = true;
+                    controller.setPickedLocation(LatLng(result.geometry!.location.lat, result.geometry!.location.lng), address: result.formattedAddress);
                     Get.back();
                   },
                   initialPosition: const LatLng(-33.8567844, 151.213108),
@@ -604,6 +606,70 @@ class AddRestaurantScreen extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+/// The store location as it stands: the address the picker returned and the
+/// exact coordinates it will be saved with, or a prompt to pick one.
+///
+/// Report #2: after picking on the map the form only showed a text field,
+/// which looked empty whenever the picker had no address string for the
+/// point. The chosen point is now always visible, address or not.
+class _PickedLocationCard extends StatelessWidget {
+  final AddRestaurantController controller;
+  const _PickedLocationCard({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpace.lg),
+      child: AnimatedBuilder(
+        animation: controller.addressController.value,
+        builder: (context, _) => DsObserve(
+          builder: (context) {
+            final LatLng? point = controller.selectedLocation.value;
+            final String address = formatAddress([controller.addressController.value.text]);
+            final bool picked = point != null;
+            return DsCard.tinted(
+              tone: picked ? DsTone.success : DsTone.warning,
+              padding: const EdgeInsets.all(DsSpace.md),
+              radius: DsRadius.md,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DsIconWell(icon: picked ? Icons.place_rounded : Icons.wrong_location_outlined, tone: picked ? DsTone.success : DsTone.warning, size: 36),
+                  const DsGap(DsSpace.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(picked ? "Selected store location".tr : "No store location selected yet".tr, style: t.labelSm.withColor(c.textSecondary)),
+                        const DsGap(DsSpace.xxs),
+                        Text(
+                          picked
+                              ? (address.isNotEmpty ? address : "Address not available for this point".tr)
+                              : "Tap the address field, or “change”, to pick the store on the map.".tr,
+                          style: t.bodyStrong,
+                        ),
+                        if (picked) ...[
+                          const DsGap(DsSpace.xxs),
+                          Text(
+                            "${"Coordinates".tr}: ${formatLatLng(point.latitude, point.longitude)}",
+                            style: t.caption.tabular.withColor(c.textMuted),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }

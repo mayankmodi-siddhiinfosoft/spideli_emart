@@ -53,7 +53,9 @@ class ChatController extends GetxController {
       token.value = argumentData['token'] ?? '';
       chatType.value = argumentData['chatType'] ?? '';
       if (receivedId.value != 'admin') {
-        receiverUser.value = await FireStoreUtils.getUserProfile(receivedId.value);
+        // Side-effect free, and falls back to the workers collection, so the
+        // recipient's FCM token actually resolves.
+        receiverUser.value = await FireStoreUtils.getChatUser(receivedId.value);
       }
     }
     setSeen();
@@ -105,15 +107,38 @@ class ChatController extends GetxController {
       }
     }
 
-    FireStoreUtils.addChat(conversationModel);
-    log("receiverUser.value :: ${receiverUser.value?.fullName()} :: ${conversationModel.message.toString()} :: ${receiverUser.value?.fcmToken} :: ${inboxModel.type} :: ${inboxModel.chatType}");
-    if (receiverUser.value?.fcmToken != null) {
-      SendNotification.sendChatFcmMessage(receivedName.value, conversationModel.message.toString(), receiverUser.value?.fcmToken ?? '', {
+    await FireStoreUtils.addChat(conversationModel);
+    await _notifyRecipient(conversationModel, inboxModel);
+  }
+
+  /// Pushes the message to the recipient. Every send path -- text, image,
+  /// video, camera -- goes through [sendMessage], so this covers all of them.
+  ///
+  /// The recipient is re-read when the profile was not resolved at open time
+  /// (the first message used to go out with no push at all in that case), and a
+  /// missing or empty token is a silent no-op rather than an FCM call that
+  /// fails with a 400.
+  Future<void> _notifyRecipient(ConversationModel conversationModel, InboxModel inboxModel) async {
+    try {
+      if ((receiverUser.value?.fcmToken ?? '').isEmpty && receivedId.value.isNotEmpty && receivedId.value != 'admin') {
+        receiverUser.value = await FireStoreUtils.getChatUser(receivedId.value);
+      }
+      final String token = receiverUser.value?.fcmToken ?? '';
+      log("chat push :: to=${receiverUser.value?.fullName()} :: token=${token.isEmpty ? 'none' : 'set'} :: ${inboxModel.type} :: ${inboxModel.chatType}");
+      if (token.isEmpty) return;
+
+      // Title is who sent it: the recipient used to see their own name.
+      final String title = senderName.value.trim().isNotEmpty ? senderName.value : receivedName.value;
+      await SendNotification.sendChatFcmMessage(title, conversationModel.message.toString(), token, {
         'type': inboxModel.type,
         'chatType': inboxModel.chatType,
         'orderId': orderId.value,
         'senderId': FireStoreUtils.getCurrentUid(),
+        'senderName': senderName.value,
       });
+    } catch (e) {
+      // A chat message must never fail because the push could not be sent.
+      log("Chat notification not sent: $e");
     }
   }
 

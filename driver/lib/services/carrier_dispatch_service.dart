@@ -1,6 +1,8 @@
 import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
+import 'package:driver/constant/constant.dart';
+import 'package:driver/models/delivery_carrier_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 
@@ -74,6 +76,62 @@ class CarrierDispatchService {
     final String uid = FireStoreUtils.getCurrentUid();
     if (driver.id == null || driver.id == uid) add(uid);
     return ids;
+  }
+
+  // ── The company's own carrier document (client point 18) ────────────────
+
+  /// The `delivery_carriers` row this company account is linked to, or null
+  /// when the panel has not linked one yet.
+  ///
+  /// Looked up exactly the way dispatch resolves membership:
+  ///   1. `users/{uid}.carrierId` (the explicit link),
+  ///   2. a carrier whose owner field names this account.
+  static Future<DeliveryCarrierModel?> myCarrier({UserModel? user}) async {
+    final UserModel? me = user ?? Constant.userModel;
+    final String uid = FireStoreUtils.getCurrentUid();
+    final String explicit = (me?.carrierId ?? '').trim();
+
+    try {
+      if (explicit.isNotEmpty) {
+        final snap = await FireStoreUtils.fireStore.collection(collectionName).doc(explicit).get();
+        if (snap.exists && snap.data() != null) {
+          return DeliveryCarrierModel(id: snap.id, raw: Map<String, dynamic>.from(snap.data()!));
+        }
+      }
+      final Set<String> identities = {uid, me?.id ?? '', me?.ownerId ?? ''}..removeWhere((e) => e.isEmpty);
+      if (identities.isEmpty) return null;
+      for (final field in const ['ownerId', 'userId', 'ownerUserId', 'companyId', 'driverId']) {
+        for (final identity in identities) {
+          final q = await FireStoreUtils.fireStore.collection(collectionName).where(field, isEqualTo: identity).limit(1).get();
+          if (q.docs.isNotEmpty) {
+            return DeliveryCarrierModel(id: q.docs.first.id, raw: Map<String, dynamic>.from(q.docs.first.data()));
+          }
+        }
+      }
+    } catch (e) {
+      log("CarrierDispatchService.myCarrier failed: $e");
+    }
+    return null;
+  }
+
+  /// Saves the commercial settings a carrier maintains itself. Only the fields
+  /// in [DeliveryCarrierModel.editableFields] are written \u2014 never the
+  /// verification flag, which belongs to the admin.
+  static Future<bool> saveCarrierSettings(DeliveryCarrierModel carrier, Map<String, String> values) async {
+    final Map<String, dynamic> data = {};
+    for (final field in DeliveryCarrierModel.editableFields) {
+      if (!values.containsKey(field)) continue;
+      data[carrier.writeKey(field)] = values[field]!.trim();
+    }
+    if (data.isEmpty) return true;
+    try {
+      await FireStoreUtils.fireStore.collection(collectionName).doc(carrier.id).set(data, SetOptions(merge: true));
+      _cache.remove(carrier.id);
+      return true;
+    } catch (e) {
+      log("CarrierDispatchService.saveCarrierSettings failed: $e");
+      return false;
+    }
   }
 
   static Future<_CarrierLink> _link(String carrierId) async {

@@ -42,6 +42,11 @@ class SignupController extends GetxController {
   RxString type = "".obs;
   Rx<UserModel> userModel = UserModel().obs;
 
+  /// Every published zone, before the region filter.
+  RxList<ZoneModel> allZoneList = <ZoneModel>[].obs;
+
+  /// The zones offered in the picker: only those serving the selected region
+  /// (client point 16). No region selected, or no regions at all = every zone.
   RxList<ZoneModel> zoneList = <ZoneModel>[].obs;
   Rx<ZoneModel> selectedZone = ZoneModel().obs;
 
@@ -186,12 +191,35 @@ class SignupController extends GetxController {
 
     await Future.wait([
       FireStoreUtils.getZone().then((v) {
-        if (v != null) zoneList.value = v;
+        if (v != null) allZoneList.value = v;
       }),
       FireStoreUtils.getCarMakes().then((v) => carMakesList.value = v),
       FireStoreUtils.getAllActiveSections().then((v) => allSections.value = v),
       RegionService.ensureLoaded().then((_) => regionList.value = RegionService.regions),
     ]);
+    filterZones();
+  }
+
+  /// Keeps the zone picker in step with the chosen region (client point 16,
+  /// the Store app's rule): a zone with no region data serves every region.
+  void filterZones() {
+    final String? regionId = selectedRegion.value?.id;
+    if (regionId == null || regionId.isEmpty) {
+      zoneList.value = allZoneList.toList();
+    } else {
+      zoneList.value = allZoneList.where((zone) => zone.belongsToRegion(regionId)).toList();
+    }
+    // A zone that does not serve the chosen region must not stay selected.
+    if (selectedZone.value.id != null && !zoneList.any((zone) => zone.id == selectedZone.value.id)) {
+      selectedZone.value = ZoneModel();
+    }
+  }
+
+  /// Called by the management-zone dropdown.
+  void onRegionChanged(RegionModel? region) {
+    selectedRegion.value = region;
+    filterZones();
+    update();
   }
 
   // ── Section toggle ─────────────────────────────────────────────────────────
@@ -262,42 +290,94 @@ class SignupController extends GetxController {
       return;
     }
     ShowToastDialog.showLoader("Please wait".tr);
+    await _resolveRegionId();
 
-    if (type.value == "google" || type.value == "apple" || type.value == "mobileNumber") {
-      _populateUserModel();
-      final uid = userModel.value.id ?? FirebaseAuth.instance.currentUser?.uid;
-      if (isCompany && uid != null) await _uploadCompanyFiles(uid);
-      await FireStoreUtils.updateUser(userModel.value);
-      _navigateAfterSignup(userModel.value);
-    } else {
-      try {
-        final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: emailEditingController.value.text.trim(),
-          password: passwordEditingController.value.text.trim(),
-        );
-        if (credential.user != null) {
-          userModel.value.id = credential.user!.uid;
-          _populateUserModel();
-          if (isCompany) await _uploadCompanyFiles(credential.user!.uid);
-          await FireStoreUtils.updateUser(userModel.value);
-          _navigateAfterSignup(userModel.value);
+    try {
+      if (type.value == "google" || type.value == "apple" || type.value == "mobileNumber") {
+        _populateUserModel();
+        final uid = userModel.value.id ?? FirebaseAuth.instance.currentUser?.uid;
+        if (uid == null) {
+          ShowToastDialog.closeLoader();
+          ShowToastDialog.showToast("Your session expired before the account was created. Please sign in again.".tr);
+          return;
         }
-      } on FirebaseAuthException catch (e) {
-        if (e.code == 'weak-password') {
-          ShowToastDialog.showToast("The password provided is too weak.".tr);
-        } else if (e.code == 'email-already-in-use') {
-          ShowToastDialog.showToast("The account already exists for that email.".tr);
-        } else if (e.code == 'invalid-email') {
-          ShowToastDialog.showToast("Enter email is Invalid".tr);
+        userModel.value.id = uid;
+        if (isCompany) await _uploadCompanyFiles(uid);
+        final bool saved = await FireStoreUtils.updateUser(userModel.value);
+        ShowToastDialog.closeLoader();
+        if (!saved) {
+          ShowToastDialog.showToast("Your account could not be saved. Please check your connection and try again.".tr);
+          return;
         }
-        print(e);
-      } catch (e) {
-        print(e);
-        ShowToastDialog.showToast(e.toString());
+        _navigateAfterSignup(userModel.value);
+        return;
       }
-    }
 
-    ShowToastDialog.closeLoader();
+      final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: emailEditingController.value.text.trim(),
+        password: passwordEditingController.value.text.trim(),
+      );
+      if (credential.user == null) {
+        ShowToastDialog.closeLoader();
+        ShowToastDialog.showToast("The account could not be created. Please try again.".tr);
+        return;
+      }
+      userModel.value.id = credential.user!.uid;
+      _populateUserModel();
+      if (isCompany) await _uploadCompanyFiles(credential.user!.uid);
+      final bool saved = await FireStoreUtils.updateUser(userModel.value);
+      ShowToastDialog.closeLoader();
+      if (!saved) {
+        ShowToastDialog.showToast("Your account was created but its details could not be saved. Please sign in and complete your profile.".tr);
+        return;
+      }
+      _navigateAfterSignup(userModel.value);
+    } on FirebaseAuthException catch (e) {
+      ShowToastDialog.closeLoader();
+      // Every refusal says why: only three codes were handled before, so any
+      // other failure (network, App Check, sign-up disabled) looked like
+      // "nothing happens on submit".
+      ShowToastDialog.showToast(_authMessage(e));
+    } catch (e) {
+      ShowToastDialog.closeLoader();
+      log("SignupController.signUp failed: $e");
+      ShowToastDialog.showToast("Sign up failed: ${e.toString()}");
+    }
+  }
+
+  static String _authMessage(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'weak-password':
+        return "The password provided is too weak.".tr;
+      case 'email-already-in-use':
+        return "The account already exists for that email.".tr;
+      case 'invalid-email':
+        return "Enter email is Invalid".tr;
+      case 'operation-not-allowed':
+        return "Email sign-up is disabled for this project. Please contact support.".tr;
+      case 'network-request-failed':
+        return "No connection. Please check your internet and try again.".tr;
+      case 'too-many-requests':
+        return "Too many attempts. Please try again in a few minutes.".tr;
+      default:
+        return e.message ?? "Sign up failed (${e.code}).";
+    }
+  }
+
+  /// The admin driver list filters on `users.regionId`. When the admin has no
+  /// regions the field stays absent (global); when it does, the chosen zone's
+  /// own region is used as the fallback so a record is never filed nowhere.
+  Future<void> _resolveRegionId() async {
+    if (selectedRegion.value?.id != null) return;
+    final String? zoneId = selectedZone.value.id;
+    if (zoneId == null || zoneId.isEmpty) return;
+    final ZoneModel? zone = allZoneList.where((z) => z.id == zoneId).firstOrNull;
+    final List<String> ids = zone?.regionIds ?? const <String>[];
+    String? regionId = ids.length == 1 ? ids.first : zone?.regionId;
+    regionId ??= await RegionService.regionIdForZone(zoneId);
+    if (regionId == null || regionId.isEmpty) return;
+    selectedRegion.value = regionList.where((r) => r.id == regionId).firstOrNull ?? selectedRegion.value;
+    if (selectedRegion.value?.id == null) userModel.value.regionId = regionId;
   }
 
   void _populateUserModel() {
@@ -331,7 +411,7 @@ class SignupController extends GetxController {
             : false;
 
     // ── Section IDs ──────────────────────────────────────────────────────────
-    userModel.value.sectionIds = selectedSections.map((s) => s.id!).toList();
+    userModel.value.sectionIds = selectedSections.map((s) => s.id).whereType<String>().toList();
 
     // ── Region + Individual / Company (spec 4.11) ─────────────────────────────
     if (selectedRegion.value?.id != null) userModel.value.regionId = selectedRegion.value!.id;
@@ -351,7 +431,8 @@ class SignupController extends GetxController {
 
     // ── sectionNames: simple {sectionId → sectionName} lookup ────────────────
     userModel.value.sectionNames = {
-      for (final s in selectedSections) s.id!: s.name ?? s.id!,
+      for (final s in selectedSections)
+        if (s.id != null) s.id!: s.name ?? s.id!,
     };
 
     // ── vehicleDetails: {sectionId → {vehicleId, vehicleType, carBrand, carModel, carPlateNumber}} ─

@@ -31,27 +31,36 @@ class LiveTrackingScreen extends StatelessWidget {
           body: Stack(
             children: [
               Positioned.fill(
-                child: Constant.selectedMapType == 'osm'
+                // The map opens on the first point we actually have (driver,
+                // then store, then the delivery address) instead of lat/lng
+                // 0,0, and the camera is only driven once the map says it is
+                // ready — see LiveTrackingController for bug #4.
+                child: controller.isOsm
                     ? flutterMap.FlutterMap(
                         mapController: controller.osmMapController,
-                        options: flutterMap.MapOptions(initialCenter: controller.driverCurrent.value, initialZoom: 14),
+                        options: flutterMap.MapOptions(
+                          initialCenter: controller.initialTarget,
+                          initialZoom: 14,
+                          onMapReady: controller.onOsmMapReady,
+                        ),
                         children: [
                           flutterMap.TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.spideli.customer'),
-                          if (controller.routePoints.isNotEmpty) flutterMap.PolylineLayer(polylines: [flutterMap.Polyline(points: controller.routePoints, strokeWidth: 5.0, color: Colors.blue)]),
-                          flutterMap.MarkerLayer(markers: controller.orderModel.value.id == null ? [] : controller.osmMarkers),
+                          if (controller.routePoints.isNotEmpty)
+                            flutterMap.PolylineLayer(polylines: [flutterMap.Polyline(points: controller.routePoints.toList(), strokeWidth: 5.0, color: Colors.blue)]),
+                          // Read through toList() so this GetX observer is
+                          // subscribed to the marker list itself.
+                          flutterMap.MarkerLayer(markers: controller.osmMarkers.toList()),
                         ],
                       )
                     : gmap.GoogleMap(
-                        onMapCreated: (gmap.GoogleMapController mapController) {
-                          controller.mapController = mapController;
-                        },
+                        onMapCreated: controller.onGoogleMapCreated,
                         myLocationEnabled: true,
                         zoomControlsEnabled: false,
                         polylines: Set<gmap.Polyline>.of(controller.polyLines.values),
                         markers: Set<gmap.Marker>.of(controller.markers.values),
                         initialCameraPosition: gmap.CameraPosition(
                           zoom: 14,
-                          target: gmap.LatLng(controller.driverUserModel.value.location?.latitude ?? 0.0, controller.driverUserModel.value.location?.longitude ?? 0.0),
+                          target: gmap.LatLng(controller.initialTarget.latitude, controller.initialTarget.longitude),
                         ),
                       ),
               ),

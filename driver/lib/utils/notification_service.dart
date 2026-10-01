@@ -1,12 +1,18 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'package:driver/app/chat_screens/chat_screen.dart';
 import 'package:driver/app/dash_board_screen/dash_board_screen.dart';
+import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/dash_board_controller.dart';
+import 'package:driver/controllers/signup_controller.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/carrier_dispatch_service.dart';
+import 'package:driver/services/driver_job_queue_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
@@ -88,12 +94,110 @@ class NotificationService {
       }
     });
 
-    await FirebaseMessaging.instance.subscribeToTopic("driver");
+    await _subscribe("driver");
   }
 
   static Future<String> getToken() async {
-    String? token = await FirebaseMessaging.instance.getToken();
-    return token!;
+    final String? token = await FirebaseMessaging.instance.getToken();
+    return token ?? '';
+  }
+
+  // ── Token + topics (client point 19) ──────────────────────────────────────
+
+  /// Topics the driver is currently subscribed to, so a sign-out (or a change
+  /// of section / zone / region) can take them off again.
+  static final Set<String> _topics = <String>{};
+
+  static StreamSubscription<String>? _tokenRefreshSub;
+
+  /// FCM topic names only accept `[a-zA-Z0-9-_.~%]`.
+  static String _topic(String prefix, String value) {
+    final String safe = value.trim().replaceAll(RegExp(r'[^a-zA-Z0-9\-_.~%]'), '_');
+    return safe.isEmpty ? '' : '${prefix}_$safe';
+  }
+
+  static Future<void> _subscribe(String topic) async {
+    if (topic.isEmpty || _topics.contains(topic)) return;
+    try {
+      await FirebaseMessaging.instance.subscribeToTopic(topic);
+      _topics.add(topic);
+    } catch (e) {
+      log("subscribeToTopic $topic failed: $e");
+    }
+  }
+
+  /// Writes [token] on the driver's user document. The server sends a job
+  /// notification to this token (or to one of the topics below).
+  static Future<void> saveToken(String token) async {
+    if (token.isEmpty) return;
+    final String uid = FireStoreUtils.getCurrentUid();
+    if (uid.isEmpty) return;
+    try {
+      await FireStoreUtils.fireStore.collection(CollectionName.users).doc(uid).set({'fcmToken': token}, SetOptions(merge: true));
+      Constant.userModel?.fcmToken = token;
+    } catch (e) {
+      log("saveToken failed: $e");
+    }
+  }
+
+  /// Keeps the stored token current: FCM rotates it (app reinstall, restore,
+  /// cache clear) and the old one stops delivering.
+  static void listenForTokenRefresh() {
+    _tokenRefreshSub ??= FirebaseMessaging.instance.onTokenRefresh.listen(
+      (String token) async {
+        log("FCM token refreshed");
+        await saveToken(token);
+      },
+      onError: (Object e) => log("onTokenRefresh failed: $e"),
+    );
+  }
+
+  /// Subscribes the driver to every topic the server can address them by, so a
+  /// "a job is available" push reaches them without the server having to hold
+  /// a token list (client point 19).
+  ///
+  /// Topics: `driver`, `driver_<serviceType>`, `section_<sectionId>`,
+  /// `zone_<zoneId>`, `region_<regionId>` and, for a fleet driver,
+  /// `company_<ownerId>`.
+  static Future<void> subscribeDriverTopics(UserModel? driver) async {
+    if (driver == null) return;
+    await _subscribe("driver");
+    for (final String service in driver.serviceTypes ?? const <String>[]) {
+      await _subscribe(_topic('driver', service));
+    }
+    for (final String sectionId in driver.sectionIds ?? const <String>[]) {
+      await _subscribe(_topic('section', sectionId));
+    }
+    await _subscribe(_topic('zone', driver.zoneId ?? ''));
+    await _subscribe(_topic('region', driver.regionId ?? ''));
+    await _subscribe(_topic('company', driver.ownerId ?? ''));
+    await _subscribe(_topic('carrier', driver.carrierId ?? ''));
+  }
+
+  /// Sign-out: the device must stop receiving this driver's work, and the
+  /// token must stop pointing at them.
+  static Future<void> onSignOut() async {
+    await _tokenRefreshSub?.cancel();
+    _tokenRefreshSub = null;
+    for (final String topic in _topics.toList()) {
+      try {
+        await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
+      } catch (e) {
+        log("unsubscribeFromTopic $topic failed: $e");
+      }
+    }
+    _topics.clear();
+    final String uid = FireStoreUtils.getCurrentUid();
+    if (uid.isNotEmpty) {
+      try {
+        await FireStoreUtils.fireStore.collection(CollectionName.users).doc(uid).set({'fcmToken': ''}, SetOptions(merge: true));
+      } catch (e) {
+        log("clearing fcmToken failed: $e");
+      }
+    }
+    Constant.userModel?.fcmToken = '';
+    DriverJobQueueService.reset();
+    CarrierDispatchService.clearCache();
   }
 
   void display(RemoteMessage message) async {
@@ -137,20 +241,46 @@ class NotificationService {
       UserModel? customer = await FireStoreUtils.getUserProfile(senderId.toString());
       UserModel? driver = await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid());
       ShowToastDialog.closeLoader();
+      // Without both parties (or without the order the thread is keyed by)
+      // the chat screen has nothing to open; land on the inbox instead of a
+      // blank screen.
+      if (customer == null || driver == null || (orderId ?? '').isEmpty) {
+        DashBoardController inbox = Get.put(DashBoardController());
+        inbox.drawerIndex.value = 5;
+        Get.offAll(DashBoardScreen());
+        return;
+      }
       DashBoardController dashBoardScreen = Get.put(DashBoardController());
       dashBoardScreen.drawerIndex.value = 5;
       Get.offAll(DashBoardScreen());
       Get.to(const ChatScreen(), arguments: {
-        "senderName": driver!.fullName(),
+        "senderName": driver.fullName(),
         "senderId": driver.id,
         "senderProfileUrl": driver.profilePictureURL ?? "",
-        "receivedName": customer!.fullName(),
+        "receivedName": customer.fullName(),
         "receivedId": customer.id,
         "receivedProfileUrl": customer.profilePictureURL ?? "",
         "orderId": orderId,
         "token": customer.fcmToken,
         "chatType": Constant.userRoleDriver,
       });
+    } else if (_jobTypes.contains(type) && uid.isNotEmpty) {
+      // Client point 19: tapping an "order available" push lands the driver on
+      // the home of the module the job belongs to.
+      final UserModel? me = Constant.userModel ?? await FireStoreUtils.getUserProfile(uid);
+      if (me != null) SignupController.navigateByUserModel(me);
     }
   }
+
+  /// `data.type` values the server uses for an available job.
+  static const Set<String> _jobTypes = {
+    'order',
+    'new_order',
+    'order_available',
+    'vendor_order',
+    'parcel_order',
+    'rental_order',
+    'cab_order',
+    'job_queue',
+  };
 }

@@ -27,6 +27,7 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:map_launcher/map_launcher.dart';
 import 'package:provider/provider.dart';
+import 'package:spideliprovider/utils/address_format.dart';
 
 class BookingDetailsScreen extends StatelessWidget {
   const BookingDetailsScreen({super.key});
@@ -348,7 +349,7 @@ class BookingDetailsScreen extends StatelessWidget {
                                     const DsGap(DsSpace.xs),
                                     Expanded(
                                       child: Text(
-                                        controller.worker.value.address!.toString(),
+                                        formatAddressText(controller.worker.value.address),
                                         maxLines: 5,
                                         style: t.bodySecondary,
                                       ),
@@ -437,7 +438,7 @@ class BookingDetailsScreen extends StatelessWidget {
                             const DsGap(DsSpace.xs),
                             Expanded(
                               child: Text(
-                                onProviderOrder.address!.getFullAddress().toString(),
+                                onProviderOrder.address?.getFullAddress() ?? "",
                                 maxLines: 5,
                                 style: t.bodySecondary,
                               ),

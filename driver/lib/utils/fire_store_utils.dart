@@ -914,11 +914,40 @@ class FireStoreUtils {
     return isDelete;
   }
 
-  static Future<List<DocumentModel>> getDocumentList(String type) async {
-    List<DocumentModel> documentList = [];
-    await fireStore.collection(CollectionName.documents).where('type', isEqualTo: type).where('enable', isEqualTo: true).get().then((value) {
+  static Future<List<DocumentModel>> getDocumentList(String type) => getDocumentListForTypes([type]);
+
+  /// The document types the signed-in actor has to provide: its own ("owner"
+  /// for a company, "driver" otherwise) plus the vehicle documents a cab or
+  /// rental driver needs (client point 25). A type the admin never created
+  /// returns nothing, so this is additive.
+  static List<String> documentTypesForCurrentUser() {
+    final UserModel? me = Constant.userModel;
+    final List<String> types = [me?.isOwner == true ? "owner" : "driver"];
+    final List<String> services = me?.serviceTypes ?? const <String>[];
+    if (services.contains('cab-service') || services.contains('rental-service')) {
+      types.add("vehicle");
+    }
+    return types;
+  }
+
+  /// The enabled document types an actor has to provide. Several types at once
+  /// (client point 25: a cab / rental driver also provides vehicle documents),
+  /// read tolerantly — a type the admin never created simply returns nothing.
+  static Future<List<DocumentModel>> getDocumentListForTypes(List<String> types) async {
+    final List<String> wanted = types.map((t) => t.trim()).where((t) => t.isNotEmpty).toSet().toList();
+    if (wanted.isEmpty) return [];
+    final List<DocumentModel> documentList = [];
+    final Set<String> seen = {};
+    await fireStore
+        .collection(CollectionName.documents)
+        .where('type', whereIn: wanted)
+        .where('enable', isEqualTo: true)
+        .get()
+        .then((value) {
       for (var element in value.docs) {
         DocumentModel documentModel = DocumentModel.fromJson(element.data());
+        final String id = documentModel.id ?? element.id;
+        if (!seen.add(id)) continue;
         documentList.add(documentModel);
       }
     }).catchError((error) {
@@ -948,7 +977,7 @@ class FireStoreUtils {
       // Only document types the admin currently requires (the same list the
       // verification screen shows). An old entry for a type that was since
       // disabled can't be re-uploaded, so it must not lock the driver offline.
-      final required = await getDocumentList(Constant.userModel?.isOwner == true ? "owner" : "driver");
+      final required = await getDocumentListForTypes(documentTypesForCurrentUser());
       final Set<String> requiredIds = required.map((d) => d.id ?? '').where((id) => id.isNotEmpty).toSet();
       for (final doc in driverDocs?.documents ?? <Documents>[]) {
         if (!requiredIds.contains(doc.documentId)) continue;
@@ -1771,9 +1800,14 @@ class FireStoreUtils {
     adminChatSeenSubscription.cancel();
   }
 
-  static late StreamSubscription<QuerySnapshot> orderChatSeenSubscription;
+  static StreamSubscription<QuerySnapshot>? orderChatSeenSubscription;
 
   static void setSeenChatForOrder({required String orderId}) {
+    // An empty id is not a document path: Firestore throws on `doc("")`.
+    if (orderId.trim().isEmpty) return;
+    // Opening a second conversation must not leave the previous listener
+    // running on the old thread.
+    orderChatSeenSubscription?.cancel();
     orderChatSeenSubscription = fireStore
         .collection(CollectionName.chat)
         .doc(orderId)

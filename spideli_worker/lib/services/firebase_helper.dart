@@ -93,6 +93,23 @@ class FireStoreUtils {
     }
   }
 
+  /// The other party of a chat. A worker talks to the customer and to its
+  /// provider (both in [USERS]) but may also be handed another worker's id, so
+  /// fall back to [WORKERS] rather than returning null and silently sending no
+  /// push (bug #3).
+  static Future<User?> getChatUser(String uid) async {
+    if (uid.isEmpty || uid == 'admin') return null;
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> user = await firestore.collection(USERS).doc(uid).get();
+      if (user.exists && user.data() != null) return User.fromJson(user.data()!);
+      final DocumentSnapshot<Map<String, dynamic>> worker = await firestore.collection(WORKERS).doc(uid).get();
+      if (worker.exists && worker.data() != null) return User.fromJson(worker.data()!);
+    } catch (e) {
+      log("getChatUser failed for $uid: $e");
+    }
+    return null;
+  }
+
   /// Claims the provider credit for a booking exactly once. Returns true for
   /// the first caller only (marker `providerCredited` set in a transaction), so
   /// retries, the list and detail screens, or two devices can't pay twice.

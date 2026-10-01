@@ -1,4 +1,5 @@
 import 'package:driver/app/widgets/order_ui.dart';
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -316,7 +317,7 @@ class OwnerOrderListScreen extends StatelessWidget {
                               kind: DsStopKind.pickup,
                               title: "Pickup Address (Sender):".tr,
                               name: order.sender?.name ?? '',
-                              address: order.sender?.address ?? '',
+                              address: AddressFormat.clean(order.sender?.address),
                               phone: order.sender?.phone ?? '',
                             ),
                             const DsGap(DsSpace.md),
@@ -325,7 +326,7 @@ class OwnerOrderListScreen extends StatelessWidget {
                               kind: DsStopKind.drop,
                               title: "Delivery Address (Receiver):".tr,
                               name: order.receiver?.name ?? '',
-                              address: order.receiver?.address ?? '',
+                              address: AddressFormat.clean(order.receiver?.address),
                               phone: order.receiver?.phone ?? '',
                             ),
                           ],
@@ -631,7 +632,7 @@ class OwnerOrderListScreen extends StatelessWidget {
                                   const DsGap(DsSpace.xs),
                                   Expanded(
                                     child: Text(
-                                      order.address?.address ?? '',
+                                      AddressFormat.clean(order.address?.address),
                                       style: t.bodySecondary,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,

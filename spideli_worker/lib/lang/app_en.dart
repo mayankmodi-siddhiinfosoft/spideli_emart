@@ -82,5 +82,6 @@ const Map<String, String> enUS = {
   'Add': 'Add',
   "We'll be back soon!": "We'll be back soon!",
   "Sorry for the inconvenience but we're performing some maintenance at the moment. We'll be back online shortly!":
-      "Sorry for the inconvenience but we're performing some maintenance at the moment. We'll be back online shortly!"
+      "Sorry for the inconvenience but we're performing some maintenance at the moment. We'll be back online shortly!",
+  "No location on this booking": "No location on this booking",
 };

@@ -1,4 +1,5 @@
 import 'package:spideliprovider/model/user.dart';
+import 'package:spideliprovider/utils/address_format.dart';
 
 class AddressModel {
   String? id;
@@ -35,10 +36,10 @@ class AddressModel {
     return data;
   }
 
+  /// Display form of the address. `locality` used to be interpolated without a
+  /// guard, so a booking whose locality was never set rendered the literal word
+  /// "null"; [formatAddressParts] drops that and collapses the separators.
   String getFullAddress() {
-    print(address);
-    print(locality);
-    print(landmark);
-    return '${address == null || address!.isEmpty ? "" : address} $locality ${landmark == null || landmark!.isEmpty ? "" : landmark.toString()}';
+    return formatAddressParts(<Object?>[address, locality, landmark]);
   }
 }

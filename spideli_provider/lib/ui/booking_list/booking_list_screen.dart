@@ -331,7 +331,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                   context,
                   icon: Icons.place_outlined,
                   label: "Address  ".tr,
-                  value: onProviderOrder.address!.getFullAddress().toString(),
+                  value: onProviderOrder.address?.getFullAddress() ?? "",
                 ),
                 _detailDivider(context),
                 _detailRow(

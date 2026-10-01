@@ -5,6 +5,7 @@ import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/working_hours_controller.dart';
 import 'package:vendor/models/vendor_model.dart';
 import 'package:vendor/themes/ds/ds.dart';
+import 'package:vendor/utils/schedule_picker.dart';
 
 class WorkingHoursScreen extends StatelessWidget {
   const WorkingHoursScreen({super.key});
@@ -177,10 +178,14 @@ class WorkingHoursScreen extends StatelessWidget {
                   value: slot.from!.isEmpty ? null : slot.from.toString(),
                   placeholder: 'Start Time'.tr,
                   onTap: () async {
-                    TimeOfDay? startTime = await _selectTime(context);
+                    // Opens on the slot's own time, and a cancelled picker
+                    // simply leaves the slot alone - `startTime!` used to throw
+                    // on cancel (report #8).
+                    TimeOfDay? startTime = await _selectTime(context, initial: parseTimeOfDay(slot.from));
+                    if (startTime == null) return;
                     controller.workingHours[index].timeslot![indexTimeSlot].from = DateFormat(
                       'HH:mm',
-                    ).format(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day, startTime!.hour, startTime.minute));
+                    ).format(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day, startTime.hour, startTime.minute));
                     refresh();
                   },
                 ),
@@ -195,11 +200,13 @@ class WorkingHoursScreen extends StatelessWidget {
                   value: slot.to!.isEmpty ? null : slot.to.toString(),
                   placeholder: 'End Time'.tr,
                   onTap: () async {
-                    TimeOfDay? endTimeOfDay = await _selectTime(context);
+                    TimeOfDay? endTimeOfDay = await _selectTime(context, initial: parseTimeOfDay(slot.to));
 
                     if (endTimeOfDay != null) {
                       DateTime endTime = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day, endTimeOfDay.hour, endTimeOfDay.minute);
-                      DateTime time = DateFormat("HH:mm").parse(controller.workingHours[index].timeslot![indexTimeSlot].from.toString());
+                      // Parsed defensively: an empty "from" made DateFormat
+                      // throw and the end time was silently never stored.
+                      final TimeOfDay time = parseTimeOfDay(controller.workingHours[index].timeslot![indexTimeSlot].from) ?? const TimeOfDay(hour: 0, minute: 0);
                       DateTime startTime = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day, time.hour, time.minute);
 
                       if (startTime.isAfter(endTime)) {
@@ -245,9 +252,9 @@ class WorkingHoursScreen extends StatelessWidget {
 
   static String _abbr(String day) => day.length <= 3 ? day : day.substring(0, 3);
 
-  Future<TimeOfDay?> _selectTime(BuildContext context) async {
+  Future<TimeOfDay?> _selectTime(BuildContext context, {TimeOfDay? initial}) async {
     FocusScope.of(context).requestFocus(FocusNode()); //remove focus
-    final TimeOfDay? newTime = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+    final TimeOfDay? newTime = await pickTime(context, initial: initial);
     if (newTime != null) {
       return newTime;
     }

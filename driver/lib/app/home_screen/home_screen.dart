@@ -1,4 +1,5 @@
 import 'package:driver/utils/region_service.dart';
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/chat_screens/chat_screen.dart';
 import 'package:driver/app/home_screen/deliver_order_screen.dart';
 import 'package:driver/app/home_screen/pickup_order_screen.dart';
@@ -287,7 +288,7 @@ class HomeScreen extends StatelessWidget {
               DsRouteStop(
                 kind: DsStopKind.pickup,
                 label: "${controller.currentOrder.value.vendor!.title}",
-                address: "${controller.currentOrder.value.vendor!.location}",
+                address: AddressFormat.clean(controller.currentOrder.value.vendor?.location),
               ),
               DsRouteStop(
                 kind: DsStopKind.drop,
@@ -506,7 +507,7 @@ class HomeScreen extends StatelessWidget {
               (value) async {
                 if (value == true) {
                   await AudioPlayerService.playSound(false);
-                  controller.driverModel.value.inProgressOrderID!.remove(controller.currentOrder.value.id);
+                  controller.driverModel.value.inProgressOrderID?.remove(controller.currentOrder.value.id);
                   await FireStoreUtils.updateUser(controller.driverModel.value);
                   controller.currentOrder.value = OrderModel();
                   controller.clearMap();
@@ -564,7 +565,7 @@ class HomeScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text("${controller.currentOrder.value.vendor!.title}", style: t.titleSm.w700),
-              Text("${controller.currentOrder.value.vendor!.location}", style: t.bodySm),
+              Text(AddressFormat.clean(controller.currentOrder.value.vendor?.location), style: t.bodySm),
             ],
           ),
         ),
@@ -589,7 +590,7 @@ class HomeScreen extends StatelessWidget {
           kind: DsStopKind.pickup,
           done: true,
           label: "${controller.currentOrder.value.vendor!.title}",
-          address: "${controller.currentOrder.value.vendor!.location}",
+          address: AddressFormat.clean(controller.currentOrder.value.vendor?.location),
           trailing: DsIconButton(
             icon: Icons.call_rounded,
             semanticLabel: "Call".tr,
@@ -630,7 +631,10 @@ class HomeScreen extends StatelessWidget {
                   Get.to(const ChatScreen(), arguments: {
                     "senderName": driver!.fullName(),
                     "receivedName": customer!.fullName(),
-                    "orderId": controller.orderModel.value.id,
+                    // The live order, not `orderModel` — that one is only set
+                    // when this screen was opened with arguments, so from the
+                    // dashboard tab it was null and the chat opened blank.
+                    "orderId": controller.currentOrder.value.id,
                     "senderId": driver.id,
                     "receivedId": customer.id,
                     "receivedProfileUrl": customer.profilePictureURL ?? "",

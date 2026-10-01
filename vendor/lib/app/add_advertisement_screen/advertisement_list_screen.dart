@@ -5,6 +5,7 @@ import 'package:vendor/app/add_advertisement_screen/add_advertisement_screen.dar
 import 'package:vendor/app/add_advertisement_screen/view_advertisement_screen.dart';
 import 'package:vendor/app/chat_screens/admin_inbox_screen.dart';
 import 'package:vendor/constant/constant.dart';
+import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/advertisement_list_controller.dart';
 import 'package:vendor/models/advertisement_model.dart';
 import 'package:vendor/themes/ds/ds.dart';
@@ -185,12 +186,36 @@ void showAdSuccessBottomSheet(BuildContext context) {
           final c = context.dsColors;
           final t = context.dsText;
           return DsSheet(
-            actions: DsButton.primary(
-              label: "Okay".tr,
-              expand: true,
-              onPressed: () {
-                Get.back();
-              },
+            // Report #12: there is no in-app advertisement payment - the
+            // platform has no ad price to charge and the panel sets
+            // `paymentStatus` by hand - so the one thing the app can do is make
+            // reaching the admin a single tap instead of an email address the
+            // vendor has to copy out by hand.
+            actions: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (Constant.adminEmail.trim().isNotEmpty)
+                  DsButton.primary(
+                    label: "Contact Admin".tr,
+                    icon: Icons.mail_outline_rounded,
+                    expand: true,
+                    onPressed: () async {
+                      try {
+                        await Constant().launchURL(Uri(scheme: 'mailto', path: Constant.adminEmail, queryParameters: {'subject': 'Advertisement payment'.tr}));
+                      } catch (_) {
+                        ShowToastDialog.showToast("${"Could not open your mail app. Write to".tr} ${Constant.adminEmail}");
+                      }
+                    },
+                  ),
+                if (Constant.adminEmail.trim().isNotEmpty) const DsGap(DsSpace.sm),
+                DsButton.secondary(
+                  label: "Okay".tr,
+                  expand: true,
+                  onPressed: () {
+                    Get.back();
+                  },
+                ),
+              ],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,

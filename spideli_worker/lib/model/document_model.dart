@@ -79,7 +79,7 @@ class Documents {
   Documents({this.documentId, this.frontImage, this.backImage, this.status, this.expiryDate, this.rejectionReason, this.uploadedAt, Map<String, dynamic>? extra})
       : extra = extra ?? {};
 
-  static const List<String> _known = ['documentId', 'frontImage', 'backImage', 'status', 'expiryDate', 'rejectionReason', 'uploadedAt'];
+  static const List<String> _known = ['documentId', 'frontImage', 'backImage', 'status', 'expireAt', 'expiryDate', 'rejectionReason', 'uploadedAt'];
 
   factory Documents.fromJson(Map<String, dynamic> json) {
     final dynamic reason = json['rejectionReason'] ?? json['rejectReason'] ?? json['reason'];
@@ -103,7 +103,10 @@ class Documents {
       'frontImage': frontImage ?? '',
       'backImage': backImage ?? '',
       'status': status,
-      if (expiryDate != null) 'expiryDate': expiryDate,
+      // `expireAt` is the key the Driver app and the provider app already write
+      // for the expiry date, so the admin panel only has to read one. Reading
+      // stays tolerant of the older `expiryDate`.
+      if (expiryDate != null) 'expireAt': expiryDate,
       if (rejectionReason != null) 'rejectionReason': rejectionReason,
       if (uploadedAt != null) 'uploadedAt': uploadedAt,
     };

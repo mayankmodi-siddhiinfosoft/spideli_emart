@@ -69,24 +69,32 @@ class ChatScreen extends StatelessWidget {
               onTap: () {
                 FocusScope.of(context).unfocus();
               },
-              child: FirestorePagination(
-                reverse: true,
-                controller: controller.scrollController.value,
-                physics: const BouncingScrollPhysics(),
-                itemBuilder: (context, documentSnapshots, index) {
-                  ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+              // Without an order id there is no thread to read: `doc("")`
+              // throws inside build and the whole screen would come up blank.
+              child: controller.orderId.value.isEmpty
+                  ? DsEmptyState(
+                      icon: Icons.forum_outlined,
+                      title: "No Conversion found".tr,
+                      message: "This conversation could not be opened. Open it again from the order.".tr,
+                    )
+                  : FirestorePagination(
+                      reverse: true,
+                      controller: controller.scrollController.value,
+                      physics: const BouncingScrollPhysics(),
+                      itemBuilder: (context, documentSnapshots, index) {
+                        ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
 
-                  return chatItemView(context, chatmodel.senderId == FireStoreUtils.getCurrentUid(), chatmodel);
-                },
-                onEmpty: DsEmptyState(
-                  icon: Icons.forum_outlined,
-                  compact: true,
-                  title: "No Conversion found".tr,
-                ),
-                query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
-                isLive: true,
-                viewType: ViewType.list,
-              ),
+                        return chatItemView(context, chatmodel.senderId == FireStoreUtils.getCurrentUid(), chatmodel);
+                      },
+                      onEmpty: DsEmptyState(
+                        icon: Icons.forum_outlined,
+                        compact: true,
+                        title: "No Conversion found".tr,
+                      ),
+                      query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
+                      isLive: true,
+                      viewType: ViewType.list,
+                    ),
             ),
             bottomBar: DsStickyBar(
               child: Row(

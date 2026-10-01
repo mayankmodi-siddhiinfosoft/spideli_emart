@@ -4,6 +4,7 @@ import 'package:spideliworker/constant/constants.dart';
 import 'package:spideliworker/main.dart';
 import 'package:spideliworker/model/user.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
+import 'package:spideliworker/services/notification_service.dart';
 import 'package:spideliworker/services/preferences.dart';
 import 'package:spideliworker/ui/dashboard/dashboard_screen.dart';
 import 'package:spideliworker/ui/login/login_screen.dart';
@@ -34,10 +35,10 @@ class SplashController extends GetxController {
           if (user != null) {
             if (user.active == true) {
               user.active = true;
-              FireStoreUtils.firebaseMessaging.getToken().then((value) async {
-                user.fcmToken = value!;
-                await FireStoreUtils.firestore.collection(WORKERS).doc(user.id).update({"fcmToken": user.fcmToken});
-              });
+              // `value!` threw when FCM had no token yet (iOS, before the APNS
+              // token arrives) and the throw was unhandled because nothing
+              // awaited this.
+              await NotificationService.syncTokenToUserDoc();
               MyAppState.currentUser = user;
               Get.offAll(const DashBoardScreen(), arguments: {'user': user});
             } else {

@@ -62,9 +62,14 @@ class HomeScreenMultipleOrderController extends GetxController {
   Future<void> acceptOrder(OrderModel currentOrder) async {
     await AudioPlayerService.playSound(false);
     ShowToastDialog.showLoader("Please wait".tr);
-    driverModel.value.inProgressOrderID ?? [];
+    // Same as the single-order screen: these arrays can be absent on a
+    // driver's user document, and the `!` made Accept fail silently.
+    driverModel.value.inProgressOrderID ??= [];
+    driverModel.value.orderRequestData ??= [];
     driverModel.value.orderRequestData!.remove(currentOrder.id);
-    driverModel.value.inProgressOrderID!.add(currentOrder.id);
+    if (!driverModel.value.inProgressOrderID!.contains(currentOrder.id)) {
+      driverModel.value.inProgressOrderID!.add(currentOrder.id);
+    }
 
     await FireStoreUtils.updateUser(driverModel.value);
 
@@ -74,8 +79,8 @@ class HomeScreenMultipleOrderController extends GetxController {
 
     await FireStoreUtils.setOrder(currentOrder);
     ShowToastDialog.closeLoader();
-    await SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, currentOrder.author!.fcmToken.toString(), {});
-    await SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, currentOrder.vendor!.fcmToken.toString(), {});
+    await SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, currentOrder.author?.fcmToken ?? '', {});
+    await SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, currentOrder.vendor?.fcmToken ?? '', {});
   }
 
   Future<void> rejectOrder(OrderModel currentOrder) async {
@@ -85,6 +90,7 @@ class HomeScreenMultipleOrderController extends GetxController {
     currentOrder.rejectedByDrivers!.add(driverModel.value.id);
     currentOrder.status = Constant.driverRejected;
     await FireStoreUtils.setOrder(currentOrder);
+    driverModel.value.orderRequestData ??= [];
     driverModel.value.orderRequestData!.remove(currentOrder.id);
     await FireStoreUtils.updateUser(driverModel.value);
     ShowToastDialog.closeLoader();

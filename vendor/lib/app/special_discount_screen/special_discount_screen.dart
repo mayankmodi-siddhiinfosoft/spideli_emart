@@ -5,6 +5,7 @@ import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/special_discount_controller.dart';
 import 'package:vendor/themes/ds/ds.dart';
+import 'package:vendor/utils/schedule_picker.dart';
 
 class SpecialDiscountScreen extends StatelessWidget {
   const SpecialDiscountScreen({super.key});
@@ -55,9 +56,9 @@ class SpecialDiscountScreen extends StatelessWidget {
     );
   }
 
-  Future<TimeOfDay?> _selectTime(BuildContext context) async {
+  Future<TimeOfDay?> _selectTime(BuildContext context, {TimeOfDay? initial}) async {
     FocusScope.of(context).requestFocus(FocusNode()); //remove focus
-    final TimeOfDay? newTime = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+    final TimeOfDay? newTime = await pickTime(context, initial: initial);
     if (newTime != null) {
       return newTime;
     }
@@ -69,7 +70,7 @@ class SpecialDiscountScreen extends StatelessWidget {
 /// is written into the model.
 class _SpecialDiscountBody extends StatefulWidget {
   final SpecialDiscountController controller;
-  final Future<TimeOfDay?> Function(BuildContext context) selectTime;
+  final Future<TimeOfDay?> Function(BuildContext context, {TimeOfDay? initial}) selectTime;
   const _SpecialDiscountBody({required this.controller, required this.selectTime});
 
   @override
@@ -249,9 +250,12 @@ class _SpecialDiscountBodyState extends State<_SpecialDiscountBody> {
                         value: slot.from!.isEmpty ? null : slot.from.toString(),
                         placeholder: 'Start Time'.tr,
                         onTap: () async {
-                          TimeOfDay? startTime = await widget.selectTime(context);
+                          // Opens on the slot's own time; a cancelled picker
+                          // used to throw on `startTime!` (report #8).
+                          TimeOfDay? startTime = await widget.selectTime(context, initial: parseTimeOfDay(slot.from));
+                          if (startTime == null) return;
                           controller.specialDiscount[index].timeslot![indexTimeSlot].from = DateFormat('HH:mm')
-                              .format(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day, startTime!.hour, startTime.minute));
+                              .format(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day, startTime.hour, startTime.minute));
                           if (mounted) setState(() {});
                         },
                       ),
@@ -265,11 +269,13 @@ class _SpecialDiscountBodyState extends State<_SpecialDiscountBody> {
                         value: slot.to!.isEmpty ? null : slot.to.toString(),
                         placeholder: 'End Time'.tr,
                         onTap: () async {
-                          TimeOfDay? endTimeOfDay = await widget.selectTime(context);
+                          TimeOfDay? endTimeOfDay = await widget.selectTime(context, initial: parseTimeOfDay(slot.to));
 
                           if (endTimeOfDay != null) {
                             DateTime endTime = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day, endTimeOfDay.hour, endTimeOfDay.minute);
-                            DateTime time = DateFormat("HH:mm").parse(controller.specialDiscount[index].timeslot![indexTimeSlot].from.toString());
+                            // An empty "from" made DateFormat throw, so the end
+                            // time was silently never stored.
+                            final TimeOfDay time = parseTimeOfDay(controller.specialDiscount[index].timeslot![indexTimeSlot].from) ?? const TimeOfDay(hour: 0, minute: 0);
                             DateTime startTime = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day, time.hour, time.minute);
 
                             if (startTime.isAfter(endTime)) {

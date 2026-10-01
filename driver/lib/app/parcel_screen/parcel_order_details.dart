@@ -1,4 +1,5 @@
 import 'package:driver/app/parcel_screen/parcel_tracking/parcel_shipment_info_card.dart';
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/themes/ds/ds.dart';
@@ -83,7 +84,7 @@ class ParcelOrderDetails extends StatelessWidget {
                                 kind: DsStopKind.pickup,
                                 title: "Pickup Address (Sender):".tr,
                                 name: controller.parcelOrder.value.sender?.name ?? '',
-                                address: controller.parcelOrder.value.sender?.address ?? '',
+                                address: AddressFormat.clean(controller.parcelOrder.value.sender?.address),
                                 phone: controller.parcelOrder.value.sender?.phone ?? '',
                                 showConnector: true,
                               ),
@@ -91,7 +92,7 @@ class ParcelOrderDetails extends StatelessWidget {
                                 kind: DsStopKind.drop,
                                 title: "Delivery Address (Receiver):".tr,
                                 name: controller.parcelOrder.value.receiver?.name ?? '',
-                                address: controller.parcelOrder.value.receiver?.address ?? '',
+                                address: AddressFormat.clean(controller.parcelOrder.value.receiver?.address),
                                 phone: controller.parcelOrder.value.receiver?.phone ?? '',
                                 showConnector: false,
                               ),

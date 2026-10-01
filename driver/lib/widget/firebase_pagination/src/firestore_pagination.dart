@@ -244,6 +244,15 @@ class _FirestorePaginationState extends State<FirestorePagination> {
           _loadDocuments();
         }
       });
+    }, onError: (Object error, StackTrace stack) {
+      // A failing query (a missing composite index, a rules denial) used to
+      // leave `_isInitialLoading` true forever, so the list stayed on its
+      // loader with nothing on screen. Surface it instead.
+      debugPrint('FirestorePagination query failed: $error');
+      _isInitialLoading = false;
+      _isFetching = false;
+      _isEnded = true;
+      if (mounted) setState(() {});
     });
   }
 
@@ -271,6 +280,9 @@ class _FirestorePaginationState extends State<FirestorePagination> {
 
         // Set updates listener for the newly added data.
         _loadDocuments(getMore: false);
+      },
+      onError: (Object error, StackTrace stack) {
+        debugPrint('FirestorePagination live query failed: $error');
       },
     );
   }

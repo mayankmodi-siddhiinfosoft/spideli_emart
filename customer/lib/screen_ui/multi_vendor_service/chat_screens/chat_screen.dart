@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 import 'package:customer/constant/collection_name.dart';
 import 'package:customer/constant/constant.dart';
@@ -63,17 +62,17 @@ class ChatScreen extends StatelessWidget {
             onAttach: () {
               onCameraClick(context, controller);
             },
+            // sendMessage scrolls the thread to the newest message itself
+            // (and only when the list is still attached).
             onSend: () {
               if (controller.messageController.value.text.isNotEmpty) {
                 controller.sendMessage(controller.messageController.value.text, null, '', 'text', controller);
-                Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
                 controller.messageController.value.clear();
               }
             },
             onSubmitted: (value) async {
               if (controller.messageController.value.text.isNotEmpty) {
                 controller.sendMessage(controller.messageController.value.text, null, '', 'text', controller);
-                Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
                 controller.messageController.value.clear();
               }
             },
@@ -144,7 +143,6 @@ class ChatScreen extends StatelessWidget {
               if (image != null) {
                 Url url = await FireStoreUtils.uploadChatImageToFireStorage(File(image.path), context);
                 controller.sendMessage(controller.messageController.value.text, url, '', 'image', controller);
-                Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
               }
             } catch (e) {
               ShowToastDialog.showToast("Storage permission is not enabled. Please allow it.");
@@ -175,7 +173,6 @@ class ChatScreen extends StatelessWidget {
               if (image != null) {
                 Url url = await FireStoreUtils.uploadChatImageToFireStorage(File(image.path), context);
                 controller.sendMessage(controller.messageController.value.text, url, '', 'image', controller);
-                Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
               }
             } catch (e) {
               ShowToastDialog.showToast("Camera access is not enabled. Please allow camera permission.");

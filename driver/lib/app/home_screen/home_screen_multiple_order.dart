@@ -1,4 +1,5 @@
 import 'package:driver/utils/region_service.dart';
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/home_screen/home_screen.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/dash_board_controller.dart';
@@ -275,7 +276,7 @@ class HomeScreenMultipleOrder extends StatelessWidget {
       DsRouteStop(
         kind: DsStopKind.pickup,
         label: "${orderModel.vendor!.title}",
-        address: "${orderModel.vendor!.location}",
+        address: AddressFormat.clean(orderModel.vendor?.location),
       ),
       DsRouteStop(
         kind: DsStopKind.drop,

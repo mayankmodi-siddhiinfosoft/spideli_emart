@@ -11,6 +11,7 @@ import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/wallet_controller.dart';
 import 'package:vendor/models/withdrawal_model.dart';
 import 'package:vendor/themes/ds/ds.dart';
+import 'package:vendor/utils/schedule_picker.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 
 class WalletScreen extends StatelessWidget {
@@ -114,6 +115,7 @@ class WalletScreen extends StatelessWidget {
   }
 
   Future datePicker(BuildContext context, WalletController controller) {
+    final DateTime maxDate = DateUtils.dateOnly(DateTime.now());
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -166,8 +168,13 @@ class WalletScreen extends StatelessWidget {
                 }
               },
               selectionMode: DateRangePickerSelectionMode.range,
-              maxDate: DateTime.now(),
-              initialSelectedRange: PickerDateRange(controller.startDate.value, controller.endDate.value),
+              maxDate: maxDate,
+              // Clamped: a selection outside the picker's own bounds stops it
+              // rendering at all (report #8).
+              initialSelectedRange: PickerDateRange(
+                clampPickerDate(controller.startDate.value, DateTime(2000), maxDate),
+                clampPickerDate(controller.endDate.value, DateTime(2000), maxDate),
+              ),
             ),
           ),
         );

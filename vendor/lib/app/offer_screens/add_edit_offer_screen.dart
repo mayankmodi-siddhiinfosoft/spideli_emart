@@ -1,4 +1,5 @@
 import 'package:datetime_picker_formfield_new/datetime_picker_formfield.dart';
+import 'package:vendor/utils/schedule_picker.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -159,11 +160,16 @@ class AddEditOfferScreen extends StatelessWidget {
                                   suffix: Icon(Icons.keyboard_arrow_down_rounded, color: c.textMuted),
                                 ),
                                 onShowPicker: (context, currentValue) {
-                                  return showDatePicker(
-                                    context: context,
-                                    firstDate: DateTime.now(), // ✅ only today & future
-                                    initialDate: currentValue ?? DateTime.now(), // ✅ reopen with last selected
-                                    lastDate: DateTime(2100),
+                                  // Through pickDate so re-opening a coupon
+                                  // whose expiry has already passed still
+                                  // shows the calendar: the raw call asserted
+                                  // on initialDate < firstDate and nothing
+                                  // appeared at all (report #8).
+                                  return pickDate(
+                                    context,
+                                    initial: currentValue ?? DateTime.now(),
+                                    first: DateTime.now(), // only today & future
+                                    last: DateTime(2100),
                                   );
                                 },
                               ),

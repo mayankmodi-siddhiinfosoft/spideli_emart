@@ -37,8 +37,13 @@ class SplashController extends GetxController {
               log(userModel.toJson().toString());
               if (userModel.role == Constant.userRoleDriver) {
                 if (userModel.active == true) {
-                  userModel.fcmToken = await NotificationService.getToken();
+                  final String token = await NotificationService.getToken();
+                  if (token.isNotEmpty) userModel.fcmToken = token;
                   await FireStoreUtils.updateUser(userModel);
+                  // Client point 19: a push about an available order has to be
+                  // able to reach this driver by topic as well as by token.
+                  NotificationService.listenForTokenRefresh();
+                  await NotificationService.subscribeDriverTopics(userModel);
                   if (userModel.isOwner == true) {
                     Get.offAll(OwnerDashboardScreen());
                   } else {

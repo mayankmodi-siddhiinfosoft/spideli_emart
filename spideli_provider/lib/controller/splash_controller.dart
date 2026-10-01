@@ -4,6 +4,7 @@ import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/main.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
+import 'package:spideliprovider/services/notification_service.dart';
 import 'package:spideliprovider/services/preferences.dart';
 import 'package:spideliprovider/ui/dashboard/dashboard_screen.dart';
 import 'package:spideliprovider/ui/maintenance_mode_screen/maintenance_mode_screen.dart';
@@ -37,10 +38,11 @@ class SplashController extends GetxController {
             if (user.active == true) {
               user.active = true;
               user.role = USER_ROLE_PROVIDER;
-              FireStoreUtils.firebaseMessaging.getToken().then((value) async {
-                user.fcmToken = value!;
-                await FireStoreUtils.firestore.collection(USERS).doc(user.id).update({"fcmToken": user.fcmToken});
-              });
+              // `value!` threw when FCM had no token yet (iOS, before the APNS
+              // token arrives) and the throw was unhandled because nothing
+              // awaited this. The shared helper also registers the
+              // `onTokenRefresh` write, so the stored token stays current.
+              await NotificationService.syncTokenToUserDoc();
               MyAppState.currentUser = user;
               if (MyAppState.currentUser!.sectionId.isNotEmpty) {
                 await FireStoreUtils.getSectionsById(MyAppState.currentUser!.sectionId).then(

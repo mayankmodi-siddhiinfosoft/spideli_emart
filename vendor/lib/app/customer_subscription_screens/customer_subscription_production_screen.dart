@@ -6,6 +6,7 @@ import 'package:vendor/controller/customer_subscription_production_controller.da
 import 'package:vendor/models/user_model.dart';
 import 'package:vendor/models/vendor_subscription_model.dart';
 import 'package:vendor/themes/ds/ds.dart';
+import 'package:vendor/utils/schedule_picker.dart';
 import 'package:vendor/utils/customer_subscription_service.dart';
 
 /// Daily production list for Customer Subscriptions: what to prepare and
@@ -66,12 +67,9 @@ class CustomerSubscriptionProductionScreen extends StatelessWidget {
                 child: InkWell(
                   borderRadius: DsRadius.brMd,
                   onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: date,
-                      firstDate: DateTime(date.year - 2),
-                      lastDate: DateTime(date.year + 2, 12, 31),
-                    );
+                    // pickDate clamps, so a schedule date outside the window
+                    // still opens the calendar (report #8).
+                    final picked = await pickDate(context, initial: date, first: DateTime(date.year - 2), last: DateTime(date.year + 2, 12, 31));
                     if (picked != null) controller.setDate(picked);
                   },
                   child: Padding(

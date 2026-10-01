@@ -85,11 +85,17 @@ class RentalBookingSearchScreen extends StatelessWidget {
                       .tr);
             }
           } else {
-            if (controller.driverModel.value.walletAmount! >= double.parse(Constant.minimumDepositToRideAccept)) {
+            // Independent driver (no company): their own wallet, their own
+            // minimum, and a message about THEIR wallet — this branch used to
+            // blame an owner that does not exist, and `walletAmount!` threw
+            // while the driver was still loading, so nothing happened at all.
+            final num wallet = controller.driverModel.value.walletAmount ?? 0;
+            if (wallet >= double.parse(Constant.minimumDepositToRideAccept)) {
               await controller.acceptBooking(rentalBookingData);
             } else {
-              ShowToastDialog.showToast("Your owner has to maintain minimum @amount wallet balance to accept the rental booking. Please contact your owner"
-                  .trParams({"amount": Constant.amountShow(amount: Constant.ownerMinimumDepositToRideAccept)}));
+              ShowToastDialog.showToast(
+                "${'You must have at least'.tr} ${Constant.amountShow(amount: Constant.minimumDepositToRideAccept.toString())} ${'in your wallet to receive orders'.tr}",
+              );
             }
           }
         },

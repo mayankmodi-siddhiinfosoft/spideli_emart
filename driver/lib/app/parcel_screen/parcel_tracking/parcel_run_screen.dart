@@ -1,4 +1,5 @@
 import 'package:driver/app/parcel_screen/parcel_order_details.dart';
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/parcel_screen/parcel_tracking/parcel_scan_screen.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/parcel_home_controller.dart';
@@ -54,7 +55,7 @@ class _ParcelRunScreenState extends State<ParcelRunScreen> {
     final from = o.origin?['city']?.toString();
     final to = o.destination?['city']?.toString();
     if ((from ?? '').isNotEmpty || (to ?? '').isNotEmpty) return '${from ?? ''} → ${to ?? ''}';
-    return '${o.sender?.address ?? ''} → ${o.receiver?.address ?? ''}';
+    return AddressFormat.join([o.sender?.address, o.receiver?.address], separator: ' → ');
   }
 
   @override

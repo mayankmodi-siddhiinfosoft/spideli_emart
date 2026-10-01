@@ -1,4 +1,3 @@
-import 'package:driver/constant/constant.dart';
 import 'package:driver/models/document_model.dart';
 import 'package:driver/models/driver_document_model.dart';
 import 'package:driver/utils/fire_store_utils.dart';
@@ -18,7 +17,7 @@ class VerificationController extends GetxController {
   RxList driverDocumentList = <Documents>[].obs;
 
   Future<void> getDocument() async {
-    await FireStoreUtils.getDocumentList(Constant.userModel!.isOwner == true ? "owner" : "driver").then((value) {
+    await FireStoreUtils.getDocumentListForTypes(FireStoreUtils.documentTypesForCurrentUser()).then((value) {
       documentList.value = value;
     });
     await FireStoreUtils.getDocumentOfDriver().then((value) {

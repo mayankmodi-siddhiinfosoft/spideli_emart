@@ -268,32 +268,29 @@ class HomeScreen extends StatelessWidget {
                           ),
                   ),
           ),
-          // Search bar at the bottom of the section home (spec 7.3).
+          // Search field and the list / map / scan actions in one bottom block
+          // (spec 7.3 + client report #15).
           bottomNavigationBar: isLoading || !hasStores
               ? null
-              : BottomSearchBar(
-                  isDark: c.isDark,
+              : HomeSearchToolBar(
                   hint: Constant.sectionConstantModel?.name?.toLowerCase().contains('restaurants') == true
                       ? 'Search the restaurant, food and more...'.tr
                       : 'Search the store, item and more...'.tr,
-                  onTap: () {
+                  onSearch: () {
                     Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
                   },
+                  isListView: controller.isListView.value,
+                  onList: () {
+                    controller.isListView.value = true;
+                  },
+                  onMap: () {
+                    controller.isListView.value = false;
+                    controller.update();
+                  },
+                  onScan: () {
+                    Get.to(const ScanQrCodeScreen());
+                  },
                 ),
-          floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-          floatingActionButton: HomeToolFab(
-            isListView: controller.isListView.value,
-            onList: () {
-              controller.isListView.value = true;
-            },
-            onMap: () {
-              controller.isListView.value = false;
-              controller.update();
-            },
-            onScan: () {
-              Get.to(const ScanQrCodeScreen());
-            },
-          ),
         );
       },
     );
@@ -1240,13 +1237,17 @@ class MapView extends StatelessWidget {
     return GetX(
       init: MapViewController(),
       builder: (controller) {
+        // The customer's chosen location may carry no coordinates at all
+        // (a manually typed address), so the map must not read through it.
+        final double centreLat = Constant.selectedLocation.location?.latitude ?? 45.521563;
+        final double centreLng = Constant.selectedLocation.location?.longitude ?? -122.677433;
         return Stack(
           children: [
             Constant.selectedMapType == "osm"
                 ? flutterMap.FlutterMap(
                   mapController: controller.osmMapController,
                   options: flutterMap.MapOptions(
-                    initialCenter: location.LatLng(Constant.selectedLocation.location!.latitude ?? 0.0, Constant.selectedLocation.location!.longitude ?? 0.0),
+                    initialCenter: location.LatLng(centreLat, centreLng),
                     initialZoom: 10,
                   ),
                   children: [
@@ -1268,7 +1269,7 @@ class MapView extends StatelessWidget {
                     zoom: 18,
                     target:
                         controller.homeController.allNearestRestaurant.isEmpty
-                            ? LatLng(Constant.selectedLocation.location!.latitude ?? 45.521563, Constant.selectedLocation.location!.longitude ?? -122.677433)
+                            ? LatLng(centreLat, centreLng)
                             : LatLng(controller.homeController.allNearestRestaurant.first.latitude ?? 45.521563, controller.homeController.allNearestRestaurant.first.longitude ?? -122.677433),
                   ),
                 ),
@@ -1277,7 +1278,10 @@ class MapView extends StatelessWidget {
                 : Align(
                   alignment: Alignment.bottomCenter,
                   child: Padding(
-                    padding: const EdgeInsets.only(bottom: 80),
+                    // The list / map / scan control no longer floats over the
+                    // map (it is in the bottom bar now, report #15), so the
+                    // store cards only need normal breathing room.
+                    padding: const EdgeInsets.only(bottom: DsSpace.lg),
                     child: SizedBox(
                       height: 236,
                       child: PageView.builder(
