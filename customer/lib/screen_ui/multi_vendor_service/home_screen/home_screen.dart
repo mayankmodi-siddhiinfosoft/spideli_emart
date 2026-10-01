@@ -48,6 +48,8 @@ import '../search_screen/search_screen.dart';
 import 'category_restaurant_screen.dart';
 import 'discount_restaurant_list_screen.dart';
 import 'widgets/store_widgets.dart';
+import 'package:customer/utils/address_format.dart';
+import 'package:customer/utils/utils.dart';
 
 /// Archetype A — food storefront (variant one). Address header, story rail,
 /// category rail, banners, discount rail, "New Arrivals" feature band, ads
@@ -70,9 +72,7 @@ class HomeScreen extends StatelessWidget {
         final hasNoStores = controller.allNearestRestaurant.isEmpty;
         final hasStores = !(Constant.isZoneAvailable == false || hasNoStores);
 
-        return Scaffold(
-          backgroundColor: c.background,
-          body: Container(
+        final Widget content = Container(
             decoration: BoxDecoration(gradient: DsGradients.subtle(context)),
             child: isLoading
                 ? const FoodHomeSkeleton()
@@ -259,6 +259,9 @@ class HomeScreen extends StatelessWidget {
                                           padding: EdgeInsets.symmetric(horizontal: l.gutter, vertical: DsSpace.xl),
                                           child: controller.isPopular.value ? PopularRestaurant(controller: controller) : AllRestaurant(controller: controller),
                                         ),
+                                        // Room for the floating search capsule, so it never
+                                        // covers the last stores in the list.
+                                        const SizedBox(height: HomeSearchToolBar.reservedHeight),
                                       ],
                                     ),
                                   ),
@@ -267,30 +270,40 @@ class HomeScreen extends StatelessWidget {
                             ],
                           ),
                   ),
-          ),
-          // Search field and the list / map / scan actions in one bottom block
-          // (spec 7.3 + client report #15).
-          bottomNavigationBar: isLoading || !hasStores
-              ? null
-              : HomeSearchToolBar(
-                  hint: Constant.sectionConstantModel?.name?.toLowerCase().contains('restaurants') == true
-                      ? 'Search the restaurant, food and more...'.tr
-                      : 'Search the store, item and more...'.tr,
-                  onSearch: () {
-                    Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
-                  },
-                  isListView: controller.isListView.value,
-                  onList: () {
-                    controller.isListView.value = true;
-                  },
-                  onMap: () {
-                    controller.isListView.value = false;
-                    controller.update();
-                  },
-                  onScan: () {
-                    Get.to(const ScanQrCodeScreen());
-                  },
+          );
+
+        return Scaffold(
+          backgroundColor: c.background,
+          // The search field and the list / map / scan actions float over the
+          // content as ONE capsule (client report #15, screenshot b).
+          body: Stack(
+            children: [
+              Positioned.fill(child: content),
+              if (!isLoading && hasStores)
+                HomeSearchToolBar.overlay(
+                  context,
+                  HomeSearchToolBar(
+                    hint: Constant.sectionConstantModel?.name?.toLowerCase().contains('restaurants') == true
+                        ? 'Search the restaurant, food and more...'.tr
+                        : 'Search the store, item and more...'.tr,
+                    onSearch: () {
+                      Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
+                    },
+                    isListView: controller.isListView.value,
+                    onList: () {
+                      controller.isListView.value = true;
+                    },
+                    onMap: () {
+                      controller.isListView.value = false;
+                      controller.update();
+                    },
+                    onScan: () {
+                      Get.to(const ScanQrCodeScreen());
+                    },
+                  ),
                 ),
+            ],
+          ),
         );
       },
     );
@@ -378,7 +391,11 @@ class _HomeHeaderBar extends StatelessWidget {
                                   latitude: selectedLocationModel.latLng!.latitude,
                                   longitude: selectedLocationModel.latLng!.longitude,
                                 );
-                                shippingAddress.locality = "Picked from Map"; // You can reverse-geocode
+                                // The picker already reverse-geocoded this point; show that address
+                                // (through the same formatter, so no "null" pieces) and keep the old
+                                // placeholder only when the lookup found nothing.
+                                final String pickedAddress = Utils.formatAddress(selectedLocation: selectedLocationModel);
+                                shippingAddress.locality = pickedAddress.isEmpty ? "Picked from Map" : pickedAddress;
 
                                 Constant.selectedLocation = shippingAddress;
                                 controller.getData();
@@ -389,8 +406,17 @@ class _HomeHeaderBar extends StatelessWidget {
                           await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
                             Placemark placeMark = valuePlaceMaker[0];
                             shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
-                            String currentLocation =
-                                "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
+                            // Placemark fields are nullable: interpolating one that the geocoder did
+                            // not return printed the four characters "null" into the stored address
+                            // (report #17). Same fields, same order, through formatAddressLine.
+                            String currentLocation = formatAddressLine([
+                              placeMark.name,
+                              placeMark.subLocality,
+                              placeMark.locality,
+                              placeMark.administrativeArea,
+                              placeMark.postalCode,
+                              placeMark.country,
+                            ]);
                             shippingAddress.locality = currentLocation;
                           });
 
@@ -1278,10 +1304,10 @@ class MapView extends StatelessWidget {
                 : Align(
                   alignment: Alignment.bottomCenter,
                   child: Padding(
-                    // The list / map / scan control no longer floats over the
-                    // map (it is in the bottom bar now, report #15), so the
-                    // store cards only need normal breathing room.
-                    padding: const EdgeInsets.only(bottom: DsSpace.lg),
+                    // The search capsule floats over the map too (it carries
+                    // the toggle back to the list, report #15), so the store
+                    // cards sit above it.
+                    padding: const EdgeInsets.only(bottom: HomeSearchToolBar.reservedHeight),
                     child: SizedBox(
                       height: 236,
                       child: PageView.builder(

@@ -147,6 +147,9 @@ class FireStoreUtils {
 
   static Future<UserModel?> getUserProfile(String uuid) async {
     UserModel? userModel;
+    // `doc('')` throws ArgumentError rather than returning a missing document,
+    // and this is called with ids straight out of chat/order payloads.
+    if (uuid.trim().isEmpty) return null;
     await fireStore
         .collection(CollectionName.users)
         .doc(uuid)
@@ -165,6 +168,7 @@ class FireStoreUtils {
 
   static Future<UserModel?> getUserForChat(String uuid) async {
     UserModel? userModel;
+    if (uuid.trim().isEmpty) return null;
 
     await fireStore
         .collection(CollectionName.providersWorkers)
@@ -179,6 +183,12 @@ class FireStoreUtils {
           log("Failed to update user: $error");
           userModel = null;
         });
+    // The other side of a chat is only a provider/worker for on-demand
+    // threads; a store, a driver or a customer lives in `users`. Without this
+    // the lookup returned null for them, which is why the chat push fallback
+    // had no token to send to (bug #3). providers_workers is still tried
+    // first, so an on-demand thread resolves exactly as before.
+    if (userModel == null) return getUserProfile(uuid);
     return userModel;
   }
 
@@ -456,7 +466,12 @@ class FireStoreUtils {
 
   static Future<List<TaxModel>?> getTaxList(String? sectionId) async {
     List<TaxModel> taxList = [];
-    List<Placemark> placeMarks = await Geocoding().placemarkFromCoordinates(Constant.selectedLocation.location!.latitude ?? 0.0, Constant.selectedLocation.location!.longitude ?? 0.0);
+    // The chosen location may carry no coordinates at all (an address typed by
+    // hand), and the reverse geocode may come back empty: reading through
+    // either threw here and the cart lost its taxes with it.
+    final UserLocation? centre = Constant.selectedLocation.location;
+    List<Placemark> placeMarks = await Geocoding().placemarkFromCoordinates(centre?.latitude ?? 0.0, centre?.longitude ?? 0.0);
+    if (placeMarks.isEmpty) return taxList;
     await fireStore
         .collection(CollectionName.tax)
         .where('sectionId', isEqualTo: sectionId)
@@ -739,8 +754,16 @@ class FireStoreUtils {
 
       fireStore.collection(CollectionName.settings).doc("notification_setting").snapshots().listen((event) {
         if (event.exists) {
-          Constant.senderId = event.data()?["senderId"];
-          Constant.jsonNotificationFileURL = event.data()?["serviceJson"];
+          // Both fields are non-nullable Strings and these values are
+          // `dynamic`: a notification_setting document missing either one threw
+          // a TypeError inside this listener, so NEITHER was applied and every
+          // push the app tried to send afterwards went to project "" with no
+          // access token — one reason chat notifications never arrived (#3).
+          // A field that is absent now leaves the last known value alone.
+          final String? senderId = event.data()?["senderId"]?.toString();
+          final String? serviceJson = event.data()?["serviceJson"]?.toString();
+          if (senderId != null && senderId.isNotEmpty) Constant.senderId = senderId;
+          if (serviceJson != null && serviceJson.isNotEmpty) Constant.jsonNotificationFileURL = serviceJson;
         }
       });
 
@@ -3043,10 +3066,16 @@ class FireStoreUtils {
     return providerService;
   }
 
-  static late StreamSubscription<QuerySnapshot> adminChatSeenSubscription;
+  static StreamSubscription<QuerySnapshot>? adminChatSeenSubscription;
 
   static void setSeen() {
     final currentUserId = FireStoreUtils.getCurrentUid();
+    // `collection.doc('')` throws ArgumentError ("A document path must be a
+    // non-empty string"), and this runs from a controller's onInit: the
+    // exception took the rest of that init with it and the screen never left
+    // its loader. No id, nothing to mark as seen.
+    if (currentUserId.isEmpty) return;
+    adminChatSeenSubscription?.cancel();
 
     adminChatSeenSubscription = fireStore
         .collection(CollectionName.chat)
@@ -3072,15 +3101,26 @@ class FireStoreUtils {
   }
 
   static void stopSeenListener() {
-    adminChatSeenSubscription.cancel();
+    // Nullable, not `late`: when setSeen() returned early (or threw) the old
+    // `late` field was never assigned and closing the screen threw a
+    // LateInitializationError on top of the first failure.
+    adminChatSeenSubscription?.cancel();
+    adminChatSeenSubscription = null;
   }
 
-  static late StreamSubscription<QuerySnapshot> orderChatSeenSubscription;
+  static StreamSubscription<QuerySnapshot>? orderChatSeenSubscription;
 
   static void setSeenChatForOrder({required String orderId}) {
+    // An order chat is keyed by the order id. A thread reached without one (an
+    // inbox row whose `orderId` field is missing) used to build the document
+    // path `chat/` + '' and throw ArgumentError out of the controller's
+    // getArgument(), so `isLoading` was never cleared and the chat screen
+    // stayed blank.
+    if (orderId.trim().isEmpty) return;
+    orderChatSeenSubscription?.cancel();
     orderChatSeenSubscription = fireStore
         .collection(CollectionName.chat)
-        .doc(orderId)
+        .doc(orderId.trim())
         .collection("thread")
         .where('senderId', isNotEqualTo: FireStoreUtils.getCurrentUid())
         .where('seen', isEqualTo: false)
@@ -3102,19 +3142,43 @@ class FireStoreUtils {
   }
 
   static void stopSeenForOrderListener() {
-    orderChatSeenSubscription.cancel();
+    orderChatSeenSubscription?.cancel();
+    orderChatSeenSubscription = null;
+  }
+
+  /// The document that holds a thread: the order for an order chat, the sender
+  /// for an admin one.
+  ///
+  /// `doc(null)` quietly invents an auto-id (the message would be written to a
+  /// document nobody reads) and `doc('')` throws, so a thread with neither id
+  /// is refused here rather than half-written.
+  static String? chatThreadId({required String? orderId, required String? senderId, required bool isAdmin}) {
+    final String primary = (isAdmin ? senderId : orderId)?.trim() ?? '';
+    if (primary.isNotEmpty) return primary;
+    final String fallback = (isAdmin ? orderId : senderId)?.trim() ?? '';
+    return fallback.isEmpty ? null : fallback;
   }
 
   static Future<ConversationModel> addChat(ConversationModel conversationModel) async {
     final chatCollection = fireStore.collection(CollectionName.chat);
-    final docId = (conversationModel.receiverId?.contains('admin') == false) ? conversationModel.orderId : conversationModel.senderId;
+    final docId = chatThreadId(
+      orderId: conversationModel.orderId,
+      senderId: conversationModel.senderId,
+      isAdmin: conversationModel.receiverId?.contains('admin') != false,
+    );
+    if (docId == null) throw ArgumentError('Chat message has neither an order id nor a sender id');
     await chatCollection.doc(docId).collection("thread").doc(conversationModel.id).set(conversationModel.toJson());
     return conversationModel;
   }
 
   static Future<InboxModel> addInbox(InboxModel inboxModel) async {
     final collection = fireStore.collection(CollectionName.chat);
-    final docId = (inboxModel.senderReceiverId?.contains('admin') == false) ? inboxModel.orderId : inboxModel.senderId;
+    final docId = chatThreadId(
+      orderId: inboxModel.orderId,
+      senderId: inboxModel.senderId,
+      isAdmin: inboxModel.senderReceiverId?.contains('admin') != false,
+    );
+    if (docId == null) throw ArgumentError('Chat thread has neither an order id nor a sender id');
     await collection.doc(docId).set(inboxModel.toJson());
     return inboxModel;
   }

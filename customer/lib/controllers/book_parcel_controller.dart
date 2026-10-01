@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/models/vendor_model.dart';
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/widget/geoflutterfire/src/geoflutterfire.dart';
 import 'package:dropdown_textfield/dropdown_textfield.dart';
 import 'package:flutter/cupertino.dart';
@@ -208,8 +209,12 @@ class BookParcelController extends GetxController {
       await Geolocator.requestPermission();
       final position = await Geolocator.getCurrentPosition();
       final placemarks = await Geocoding().placemarkFromCoordinates(position.latitude, position.longitude);
+      if (placemarks.isEmpty) return;
       final place = placemarks.first;
-      final address = "${place.name}, ${place.subLocality}, ${place.locality}, ${place.administrativeArea}, ${place.postalCode}, ${place.country}";
+      // Placemark fields are nullable: interpolating one that the geocoder did
+      // not return printed the four characters "null" into the sender address
+      // (report #17). Same fields, same order, through formatAddressLine.
+      final address = formatAddressLine([place.name, place.subLocality, place.locality, place.administrativeArea, place.postalCode, place.country]);
 
       final userLocation = UserLocation(latitude: position.latitude, longitude: position.longitude);
       senderLocation.value = userLocation;

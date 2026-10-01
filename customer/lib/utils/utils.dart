@@ -1,4 +1,5 @@
 import 'package:customer/constant/constant.dart';
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/widget/place_picker/selected_location_model.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get_utils/src/extensions/internacionalization.dart';
@@ -49,8 +50,10 @@ class Utils {
       List<Placemark> placemarks = await Geocoding().placemarkFromCoordinates(lat, lng);
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks.first;
-        String address = "${place.name ?? ''}, ${place.subLocality ?? ''}, ${place.locality ?? ''}, ${place.administrativeArea ?? ''}, ${place.country ?? ''}";
-        return address;
+        // Same fields, same order; built through formatAddressLine so a field
+        // the geocoder did not return leaves no gap (and never the four
+        // characters "null") in what is stored and shown — report #17.
+        return formatAddressLine([place.name, place.subLocality, place.locality, place.administrativeArea, place.country]);
       }
       return "Unknown location";
     } catch (e) {
@@ -112,22 +115,29 @@ class Utils {
     }
   }
 
+  /// The picked place as one line, in the same field order this app has always
+  /// used.
+  ///
+  /// `SelectedLocationModel.address` is the **reverse-geocoded** placemark, so
+  /// it is null whenever that lookup found nothing or could not run (no
+  /// network, a tap on open water). Every caller is a map-picker result
+  /// handler, and the old `address!` turned that into a crash on returning from
+  /// the picker; an empty line is what the callers already cope with (they all
+  /// check the field for emptiness before going on).
   static String formatAddress({required SelectedLocationModel selectedLocation}) {
-    List<String> parts = [];
-
-    if (selectedLocation.address!.name != null && selectedLocation.address!.name!.isNotEmpty) parts.add(selectedLocation.address!.name!);
-    if (selectedLocation.address!.subThoroughfare != null && selectedLocation.address!.subThoroughfare!.isNotEmpty) parts.add(selectedLocation.address!.subThoroughfare!);
-    if (selectedLocation.address!.thoroughfare != null && selectedLocation.address!.thoroughfare!.isNotEmpty) parts.add(selectedLocation.address!.thoroughfare!);
-    if (selectedLocation.address!.subLocality != null && selectedLocation.address!.subLocality!.isNotEmpty) parts.add(selectedLocation.address!.subLocality!);
-    if (selectedLocation.address!.locality != null && selectedLocation.address!.locality!.isNotEmpty) parts.add(selectedLocation.address!.locality!);
-    if (selectedLocation.address!.subAdministrativeArea != null && selectedLocation.address!.subAdministrativeArea!.isNotEmpty) {
-      parts.add(selectedLocation.address!.subAdministrativeArea!);
-    }
-    if (selectedLocation.address!.administrativeArea != null && selectedLocation.address!.administrativeArea!.isNotEmpty) parts.add(selectedLocation.address!.administrativeArea!);
-    if (selectedLocation.address!.postalCode != null && selectedLocation.address!.postalCode!.isNotEmpty) parts.add(selectedLocation.address!.postalCode!);
-    if (selectedLocation.address!.country != null && selectedLocation.address!.country!.isNotEmpty) parts.add(selectedLocation.address!.country!);
-    if (selectedLocation.address!.isoCountryCode != null && selectedLocation.address!.isoCountryCode!.isNotEmpty) parts.add(selectedLocation.address!.isoCountryCode!);
-
-    return parts.join(', ');
+    final Placemark? place = selectedLocation.address;
+    if (place == null) return '';
+    return formatAddressLine([
+      place.name,
+      place.subThoroughfare,
+      place.thoroughfare,
+      place.subLocality,
+      place.locality,
+      place.subAdministrativeArea,
+      place.administrativeArea,
+      place.postalCode,
+      place.country,
+      place.isoCountryCode,
+    ]);
   }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:customer/models/user_model.dart';
+import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/chat_scroll.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/conversation_model.dart';
@@ -37,7 +38,31 @@ class ChatController extends GetxController {
   RxString chatType = "".obs;
   UserModel? receiverUser;
 
+  /// The Firestore document that holds this thread (`chat/<id>/thread`).
+  ///
+  /// An order chat is keyed by the order id, and an inbox row written without
+  /// an `orderId` field left this empty. `collection.doc('')` throws
+  /// ArgumentError, so that empty id used to blow up both the seen-listener and
+  /// the screen's own paginated query — the chat came up blank. [hasThread]
+  /// lets the callers show the empty view instead.
+  String get threadId => orderId.value.trim();
+
+  bool get hasThread => threadId.isNotEmpty;
+
   Future<void> getArgument() async {
+    try {
+      await _readArgument();
+    } catch (e, s) {
+      // Nothing here is worth a blank screen: the thread itself still loads
+      // from the arguments we did manage to read.
+      log("chat getArgument failed: $e");
+      log(s.toString());
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> _readArgument() async {
     dynamic argumentData = Get.arguments;
     if (argumentData != null) {
       orderId.value = argumentData['orderId'] ?? '';
@@ -54,14 +79,25 @@ class ChatController extends GetxController {
     log("senderId :: ${senderId.value} :: receivedId :: ${receivedId.value}");
 
     setSeen();
-    isLoading.value = false;
   }
 
   Future<void> setSeen() async {
-    FireStoreUtils.setSeenChatForOrder(orderId: orderId.value);
+    FireStoreUtils.setSeenChatForOrder(orderId: threadId);
+  }
+
+  @override
+  void onClose() {
+    FireStoreUtils.stopSeenForOrderListener();
+    super.onClose();
   }
 
   Future<void> sendMessage(String message, Url? url, String videoThumbnail, String messageType, ChatController controller) async {
+    // Without a thread id there is no document to write to; say so instead of
+    // throwing out of the send handler.
+    if (!hasThread) {
+      ShowToastDialog.showToast("Something went wrong, please try again.".tr);
+      return;
+    }
     List<String> senderReceiverId = [controller.senderId.value, controller.receivedId.value];
     InboxModel inboxModel = InboxModel(
       chatType: controller.chatType.value,

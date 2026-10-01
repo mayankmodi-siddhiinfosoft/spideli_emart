@@ -34,7 +34,7 @@ class WorkerInboxScreen extends StatelessWidget {
           InboxModel inboxModel = InboxModel.fromJson(data!);
 
           return FutureBuilder<UserModel?>(
-            future: FireStoreUtils.getUserForChat(inboxModel.receiverId == FireStoreUtils.getCurrentUid() ? inboxModel.senderId! : inboxModel.receiverId!),
+            future: FireStoreUtils.getUserForChat(inboxModel.receiverId == FireStoreUtils.getCurrentUid() ? (inboxModel.senderId ?? '') : (inboxModel.receiverId ?? '')),
             builder: (context, snapshot) {
               if (snapshot.hasData == false || snapshot.hasError || snapshot.connectionState == ConnectionState.waiting) {
                 return const InboxRowSkeleton();

@@ -64,6 +64,10 @@ class LiveTrackingController extends GetxController {
   StreamSubscription? orderSub;
   StreamSubscription? driverSub;
 
+  /// The driver [driverSub] is currently following, so an order write that does
+  /// not change the driver does not restart that stream.
+  String? _driverSubId;
+
   /// The map widget is only safe to drive once it exists: `MapController.move`
   /// throws before the first layout, and the Google controller does not exist
   /// until `onMapCreated`.
@@ -97,14 +101,27 @@ class LiveTrackingController extends GetxController {
       // blank.
       applyOrder();
 
-      orderSub = FireStoreUtils.fireStore.collection(CollectionName.vendorOrders).doc(orderModel.value.id).snapshots().listen((orderSnap) {
+      // `doc('')` throws and `doc(null)` would silently subscribe to a brand new
+      // auto-id document: with no order id the map keeps what applyOrder() just
+      // drew instead of either.
+      final String orderId = (orderModel.value.id ?? '').trim();
+      if (orderId.isEmpty) return;
+
+      orderSub = FireStoreUtils.fireStore.collection(CollectionName.vendorOrders).doc(orderId).snapshots().listen((orderSnap) {
         if (orderSnap.data() == null) return;
         orderModel.value = OrderModel.fromJson(orderSnap.data()!);
         applyOrder();
 
-        if (orderModel.value.driverID != null) {
+        // An assigned-but-empty driverID is not an assignment, and `doc('')`
+        // throws from inside this listener (which would stop the rest of the
+        // callback, completion included). Resubscribe only when the driver
+        // actually changes, so an ordinary order write no longer restarts the
+        // driver stream.
+        final String driverId = (orderModel.value.driverID ?? '').trim();
+        if (driverId.isNotEmpty && driverId != _driverSubId) {
+          _driverSubId = driverId;
           driverSub?.cancel();
-          driverSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(orderModel.value.driverID).snapshots().listen((driverSnap) {
+          driverSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(driverId).snapshots().listen((driverSnap) {
             if (driverSnap.data() == null) return;
             driverUserModel.value = UserModel.fromJson(driverSnap.data()!);
             updateLiveTracking();

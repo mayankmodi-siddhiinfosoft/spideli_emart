@@ -168,14 +168,20 @@ class CabBookingController extends GetxController with CabRideOptions {
               driverId: currentOrder.value.driverId,
               currentRegionId: currentOrder.value.regionId,
             );
-            FireStoreUtils.fireStore.collection(CollectionName.users).doc(currentOrder.value.driverId).snapshots().listen((event) async {
-              if (event.exists && event.data() != null) {
-                UserModel driverModel0 = UserModel.fromJson(event.data()!);
-                driverModel.value = driverModel0;
-                await refreshPaymentRegion();
-                await updateDriverRoute(driverModel0);
-              }
-            });
+            // An assigned-but-empty driverId is not an assignment: `doc('')`
+            // throws ArgumentError from inside this ride listener, and
+            // `doc(null)` would quietly follow a brand new auto-id document.
+            final String rideDriverId = (currentOrder.value.driverId ?? '').trim();
+            if (rideDriverId.isNotEmpty) {
+              FireStoreUtils.fireStore.collection(CollectionName.users).doc(rideDriverId).snapshots().listen((event) async {
+                if (event.exists && event.data() != null) {
+                  UserModel driverModel0 = UserModel.fromJson(event.data()!);
+                  driverModel.value = driverModel0;
+                  await refreshPaymentRegion();
+                  await updateDriverRoute(driverModel0);
+                }
+              });
+            }
           }
 
           print("Current Ride Status: $status");

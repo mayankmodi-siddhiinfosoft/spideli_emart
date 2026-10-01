@@ -81,20 +81,25 @@ class ChatScreen extends StatelessWidget {
             onTap: () {
               FocusScope.of(context).unfocus();
             },
-            child: FirestorePagination(
-              reverse: true,
-              controller: controller.scrollController.value,
-              physics: const BouncingScrollPhysics(),
-              itemBuilder: (context, documentSnapshots, index) {
-                ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
-                return chatItemView(context, inboxModel.senderId == FireStoreUtils.getCurrentUid(), inboxModel);
-              },
-              onEmpty: Constant.showEmptyView(message: "No Conversion found".tr),
-              // orderBy is compulsory to enable pagination
-              query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
-              isLive: true,
-              viewType: ViewType.list,
-            ),
+            // A thread is keyed by its order id: without one there is no
+            // `chat/<id>/thread` collection to page through, and building the
+            // query anyway threw ArgumentError out of build().
+            child: !controller.hasThread
+                ? Constant.showEmptyView(message: "No Conversion found".tr)
+                : FirestorePagination(
+                    reverse: true,
+                    controller: controller.scrollController.value,
+                    physics: const BouncingScrollPhysics(),
+                    itemBuilder: (context, documentSnapshots, index) {
+                      ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+                      return chatItemView(context, inboxModel.senderId == FireStoreUtils.getCurrentUid(), inboxModel);
+                    },
+                    onEmpty: Constant.showEmptyView(message: "No Conversion found".tr),
+                    // orderBy is compulsory to enable pagination
+                    query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.threadId).collection("thread").orderBy('createdAt', descending: true),
+                    isLive: true,
+                    viewType: ViewType.list,
+                  ),
           ),
         );
       },

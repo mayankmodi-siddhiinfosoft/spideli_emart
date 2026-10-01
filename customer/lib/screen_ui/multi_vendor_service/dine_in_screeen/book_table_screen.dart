@@ -1,6 +1,7 @@
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/dine_in_restaurant_details_controller.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/widget/quantity_stepper.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
@@ -64,9 +65,31 @@ class BookTableScreen extends StatelessWidget {
                                 }
                               },
                             ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: DsSpace.xs),
-                              child: Text("$guests", maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm.tabular),
+                            // Tapping the number types a party size in, so a
+                            // table for forty is not forty taps on "+" (the
+                            // same entry sheet the product steppers use, #21).
+                            Semantics(
+                              button: true,
+                              label: "Numbers of Guests".tr,
+                              child: InkWell(
+                                borderRadius: DsRadius.brSm,
+                                onTap: () => showQuantityInputSheet(
+                                  context: context,
+                                  current: guests,
+                                  minQuantity: 1,
+                                  maxQuantity: -1,
+                                  allowZero: false,
+                                  label: "Numbers of Guests".tr,
+                                  onSubmit: (value) => controller.noOfQuantity.value = value,
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: DsSpace.xs, vertical: DsSpace.xxs),
+                                  child: Container(
+                                    decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.borderStrong))),
+                                    child: Text("$guests", maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm.tabular),
+                                  ),
+                                ),
+                              ),
                             ),
                             DsIconButton(
                               icon: Icons.add,

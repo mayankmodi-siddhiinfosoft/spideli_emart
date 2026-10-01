@@ -2,7 +2,6 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/models/vendor_model.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/widget/restaurant_image_view.dart';
-import 'package:customer/widget/shop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
@@ -304,14 +303,19 @@ class NoStoreInZoneView extends StatelessWidget {
   }
 }
 
-/// The food home's bottom block: the search field and the list / map / scan
-/// actions in **one** bar.
+/// The food home's search + tools block (client report #15, screenshot b):
+/// ONE floating rounded capsule near the bottom of the screen, over the
+/// content, holding — left to right — the list / map toggle as a small
+/// segmented pair (the active side filled with the brand colour), the search
+/// field taking the remaining width, and the QR scan action at the right end.
 ///
-/// The search box used to be the Scaffold's `bottomNavigationBar` with
-/// [HomeToolFab] floating above it as a separate centred FAB. The client's
-/// screenshots (report #15, 1 October) put them together, so the same bar now
-/// carries both — every action and handler is unchanged, [HomeToolFab] is
-/// simply laid out inside the bar instead of over it.
+/// It replaces the old arrangement where a list / map / scan pill floated
+/// ABOVE a separate full-width search bar. Every handler is the screen's own
+/// and is passed through untouched.
+///
+/// Place it with [HomeSearchToolBar.overlay] in a `Stack` over the home body,
+/// and end scrollable content with [HomeSearchToolBar.reservedHeight] of
+/// space so the capsule never covers the last items.
 class HomeSearchToolBar extends StatelessWidget {
   final String hint;
   final VoidCallback onSearch;
@@ -330,52 +334,51 @@ class HomeSearchToolBar extends StatelessWidget {
     required this.onScan,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    final c = context.dsColors;
+  /// Inner padding of the capsule.
+  static const double _pad = DsSpace.xs;
+
+  /// Height of every control inside (the toggle track, search field, scan).
+  static const double _control = 48;
+
+  /// The capsule's own height. Fixed: the hint is a single ellipsised line,
+  /// so a larger text scale never grows it.
+  static const double height = _control + _pad * 2;
+
+  /// Gap between the capsule and the bottom of the home (above the app's
+  /// bottom navigation bar, which the home's Scaffold already sits above).
+  static const double bottomMargin = DsSpace.md;
+
+  /// Space scrollable content must leave at its end so the floating capsule
+  /// never covers the last items.
+  static const double reservedHeight = height + bottomMargin + DsSpace.md;
+
+  /// The capsule positioned for a `Stack` over the home body: full width
+  /// minus the page gutter (capped at the wide-content width), [bottomMargin]
+  /// above the bottom edge and clear of any bottom safe-area inset.
+  static Widget overlay(BuildContext context, HomeSearchToolBar bar) {
     final l = context.dsLayout;
-    return Container(
-      decoration: BoxDecoration(
-        color: c.background,
-        border: Border(top: BorderSide(color: c.divider)),
-      ),
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
       child: SafeArea(
         top: false,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.sm, l.gutter, DsSpace.sm),
-          child: Center(
-            heightFactor: 1,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: DsLayout.wideMax),
-              child: Row(
-                children: [
-                  Expanded(child: SearchPill(hint: hint, onTap: onSearch, isDark: c.isDark)),
-                  const DsGap(DsSpace.sm),
-                  HomeToolFab(isListView: isListView, onList: onList, onMap: onMap, onScan: onScan),
-                ],
-              ),
-            ),
-          ),
+        minimum: EdgeInsets.fromLTRB(l.gutter, 0, l.gutter, bottomMargin),
+        child: Center(
+          heightFactor: 1,
+          child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: DsLayout.wideMax), child: bar),
         ),
       ),
     );
   }
-}
-
-/// List / map / scan control used by both food home variants.
-class HomeToolFab extends StatelessWidget {
-  final bool isListView;
-  final VoidCallback onList;
-  final VoidCallback onMap;
-  final VoidCallback onScan;
-
-  const HomeToolFab({super.key, required this.isListView, required this.onList, required this.onMap, required this.onScan});
 
   @override
   Widget build(BuildContext context) {
     final c = context.dsColors;
+    final t = context.dsText;
     return Container(
-      padding: const EdgeInsets.all(DsSpace.xs),
+      height: height,
+      padding: const EdgeInsets.all(_pad),
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius: DsRadius.brPill,
@@ -383,16 +386,46 @@ class HomeToolFab extends StatelessWidget {
         boxShadow: DsShadows.md(context),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          _ToolButton(asset: "assets/icons/ic_view_grid_list.svg", label: "List view".tr, active: isListView, onTap: onList),
-          const DsGap(DsSpace.xxs),
-          _ToolButton(asset: "assets/icons/ic_map_draw.svg", label: "Map view".tr, active: !isListView, onTap: onMap),
+          // List / map: a small segmented pair, active side brand-filled.
+          Container(
+            height: _control,
+            padding: const EdgeInsets.all(DsSpace.xxs),
+            decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brPill),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _ToolButton(asset: "assets/icons/ic_view_grid_list.svg", label: "List view".tr, active: isListView, onTap: onList),
+                _ToolButton(asset: "assets/icons/ic_map_draw.svg", label: "Map view".tr, active: !isListView, onTap: onMap),
+              ],
+            ),
+          ),
           const DsGap(DsSpace.sm),
-          Container(width: 1, height: 24, color: c.divider),
+          // Search: takes the remaining width.
+          Expanded(
+            child: Semantics(
+              button: true,
+              label: hint,
+              excludeSemantics: true,
+              child: InkWell(
+                onTap: onSearch,
+                borderRadius: DsRadius.brPill,
+                child: SizedBox(
+                  height: _control,
+                  child: Row(
+                    children: [
+                      SvgPicture.asset("assets/icons/ic_search.svg", width: 20, height: 20, colorFilter: ColorFilter.mode(c.textMuted, BlendMode.srcIn)),
+                      const DsGap(DsSpace.sm),
+                      Expanded(child: Text(hint, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.body.withColor(c.textMuted))),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
           const DsGap(DsSpace.sm),
+          // QR scan at the right end.
           _ToolButton(asset: "assets/icons/ic_scan_code.svg", label: "Scan QR Code".tr, active: false, onTap: onScan),
-          const DsGap(DsSpace.xxs),
         ],
       ),
     );

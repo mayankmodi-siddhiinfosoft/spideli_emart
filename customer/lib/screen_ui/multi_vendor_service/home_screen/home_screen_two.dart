@@ -41,6 +41,8 @@ import 'category_restaurant_screen.dart';
 import 'discount_restaurant_list_screen.dart';
 import 'home_screen.dart';
 import 'widgets/store_widgets.dart';
+import 'package:customer/utils/address_format.dart';
+import 'package:customer/utils/utils.dart';
 
 /// Archetype A — food storefront (variant two, `SectionModel.theme ==
 /// "theme_2"`). Same archetype as [HomeScreen] but a different hero rhythm:
@@ -63,9 +65,7 @@ class HomeScreenTwo extends StatelessWidget {
         final hasNoStores = controller.allNearestRestaurant.isEmpty;
         final hasStores = !(Constant.isZoneAvailable == false || hasNoStores);
 
-        return Scaffold(
-          backgroundColor: c.background,
-          body: isLoading
+        final Widget content = isLoading
               ? const FoodHomeSkeleton(bannerFirst: true)
               : !hasStores
               ? NoStoreInZoneView(
@@ -161,6 +161,9 @@ class HomeScreenTwo extends StatelessWidget {
                                               ),
                                       ),
                                       controller.allNearestRestaurant.isEmpty ? const SizedBox() : Column(children: [const DsGap(DsSpace.xl), RestaurantView(controller: controller)]),
+                                      // Room for the floating search capsule, so it never
+                                      // covers the last stores in the list.
+                                      const SizedBox(height: HomeSearchToolBar.reservedHeight),
                                     ],
                                   ),
                                 ),
@@ -168,29 +171,39 @@ class HomeScreenTwo extends StatelessWidget {
                             ),
                           ],
                         ),
+                );
+
+        return Scaffold(
+          backgroundColor: c.background,
+          // The search field and the list / map / scan actions float over the
+          // content as ONE capsule (client report #15, screenshot b).
+          body: Stack(
+            children: [
+              Positioned.fill(child: content),
+              if (!isLoading && hasStores)
+                HomeSearchToolBar.overlay(
+                  context,
+                  HomeSearchToolBar(
+                    hint: Constant.sectionConstantModel?.name?.toLowerCase().contains('restaurants') == true
+                        ? 'Search the dish, food and more...'.tr
+                        : 'Search the store, item and more...'.tr,
+                    onSearch: () {
+                      Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
+                    },
+                    isListView: controller.isListView.value,
+                    onList: () {
+                      controller.isListView.value = true;
+                    },
+                    onMap: () {
+                      controller.isListView.value = false;
+                    },
+                    onScan: () {
+                      Get.to(const ScanQrCodeScreen());
+                    },
+                  ),
                 ),
-          // Search field and the list / map / scan actions in one bottom block
-          // (spec 7.3 + client report #15).
-          bottomNavigationBar: isLoading || !hasStores
-              ? null
-              : HomeSearchToolBar(
-                  hint: Constant.sectionConstantModel?.name?.toLowerCase().contains('restaurants') == true
-                      ? 'Search the dish, food and more...'.tr
-                      : 'Search the store, item and more...'.tr,
-                  onSearch: () {
-                    Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
-                  },
-                  isListView: controller.isListView.value,
-                  onList: () {
-                    controller.isListView.value = true;
-                  },
-                  onMap: () {
-                    controller.isListView.value = false;
-                  },
-                  onScan: () {
-                    Get.to(const ScanQrCodeScreen());
-                  },
-                ),
+            ],
+          ),
         );
       },
     );
@@ -277,7 +290,11 @@ class _HomeTwoHeaderBar extends StatelessWidget {
                                   latitude: selectedLocationModel.latLng!.latitude,
                                   longitude: selectedLocationModel.latLng!.longitude,
                                 );
-                                shippingAddress.locality = "Picked from Map"; // You can reverse-geocode
+                                // The picker already reverse-geocoded this point; show that address
+                                // (through the same formatter, so no "null" pieces) and keep the old
+                                // placeholder only when the lookup found nothing.
+                                final String pickedAddress = Utils.formatAddress(selectedLocation: selectedLocationModel);
+                                shippingAddress.locality = pickedAddress.isEmpty ? "Picked from Map" : pickedAddress;
 
                                 Constant.selectedLocation = shippingAddress;
                                 controller.getData();
@@ -289,8 +306,17 @@ class _HomeTwoHeaderBar extends StatelessWidget {
                             Placemark placeMark = valuePlaceMaker[0];
                             shippingAddress.addressAs = "Home";
                             shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
-                            String currentLocation =
-                                "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
+                            // Placemark fields are nullable: interpolating one that the geocoder did
+                            // not return printed the four characters "null" into the stored address
+                            // (report #17). Same fields, same order, through formatAddressLine.
+                            String currentLocation = formatAddressLine([
+                              placeMark.name,
+                              placeMark.subLocality,
+                              placeMark.locality,
+                              placeMark.administrativeArea,
+                              placeMark.postalCode,
+                              placeMark.country,
+                            ]);
                             shippingAddress.locality = currentLocation;
                           });
 

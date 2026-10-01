@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../models/user_model.dart';
+import 'package:customer/utils/address_format.dart';
 
 class EnterManuallyLocationController extends GetxController {
   Rx<UserModel> userModel = UserModel().obs;
@@ -48,10 +49,15 @@ class EnterManuallyLocationController extends GetxController {
 
   void setData(ShippingAddress shippingAddress) {
     shippingModel.value = shippingAddress;
-    houseBuildingTextEditingController.value.text = shippingAddress.address.toString();
-    localityEditingController.value.text = shippingAddress.locality.toString();
-    landmarkEditingController.value.text = shippingAddress.landmark.toString();
-    selectedSaveAs.value = shippingAddress.addressAs.toString();
+    // `null.toString()` is the four characters "null": editing an address that
+    // was saved without a landmark (or house number) put "null" in the field,
+    // and saving it wrote that text back into the address (report #17). The
+    // same formatter also cleans a legacy "18, null, Yaoundé" locality before
+    // the customer sees it, so re-saving the address repairs it.
+    houseBuildingTextEditingController.value.text = formatAddressLine([shippingAddress.address]);
+    localityEditingController.value.text = formatAddressLine([shippingAddress.locality]);
+    landmarkEditingController.value.text = formatAddressLine([shippingAddress.landmark]);
+    selectedSaveAs.value = shippingAddress.addressAs ?? selectedSaveAs.value;
     location.value = shippingAddress.location!;
   }
 

@@ -35,6 +35,8 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:customer/utils/address_format.dart';
+import 'package:customer/utils/utils.dart';
 
 /// Archetype A – e-commerce storefront. Gradient hero (account + address +
 /// cart) with the Delivery/TakeAway toggle in the overlap card, then category
@@ -488,7 +490,11 @@ class HomeECommerceScreen extends StatelessWidget {
 
                   shippingAddress.addressAs = "Home";
                   shippingAddress.location = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
-                  shippingAddress.locality = "Picked from Map"; // You can reverse-geocode
+                  // The picker already reverse-geocoded this point; show that address
+                  // (through the same formatter, so no "null" pieces) and keep the old
+                  // placeholder only when the lookup found nothing.
+                  final String pickedAddress = Utils.formatAddress(selectedLocation: selectedLocationModel);
+                  shippingAddress.locality = pickedAddress.isEmpty ? "Picked from Map" : pickedAddress;
 
                   Constant.selectedLocation = shippingAddress;
                   controller.getData();
@@ -499,8 +505,17 @@ class HomeECommerceScreen extends StatelessWidget {
             await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
               Placemark placeMark = valuePlaceMaker[0];
               shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
-              String currentLocation =
-                  "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
+              // Placemark fields are nullable: interpolating one that the geocoder did
+              // not return printed the four characters "null" into the stored address
+              // (report #17). Same fields, same order, through formatAddressLine.
+              String currentLocation = formatAddressLine([
+                placeMark.name,
+                placeMark.subLocality,
+                placeMark.locality,
+                placeMark.administrativeArea,
+                placeMark.postalCode,
+                placeMark.country,
+              ]);
               shippingAddress.locality = currentLocation;
             });
 

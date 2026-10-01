@@ -124,9 +124,9 @@ class PlusButton extends StatelessWidget {
   }
 }
 
-/// The search field itself, without the bar around it, so it can either fill
-/// the bottom bar on its own ([BottomSearchBar]) or sit beside the map-view /
-/// QR-scan actions in one block (HomeSearchToolBar).
+/// The search field itself, without the bar around it ([BottomSearchBar]
+/// wraps it). The food homes use their own floating capsule instead
+/// (HomeSearchToolBar), which carries the list / map and QR actions too.
 class SearchPill extends StatelessWidget {
   final String hint;
   final VoidCallback onTap;

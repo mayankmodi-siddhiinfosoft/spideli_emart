@@ -14,6 +14,7 @@ import 'package:get/get.dart';
 
 import '../../constant/assets.dart';
 import '../../utils/utils.dart';
+import 'package:customer/utils/address_format.dart';
 
 class LocationPermissionScreen extends StatelessWidget {
   const LocationPermissionScreen({super.key});
@@ -71,8 +72,17 @@ class LocationPermissionScreen extends StatelessWidget {
                               Placemark placeMark = valuePlaceMaker[0];
                               addressModel.addressAs = "Home";
                               addressModel.location = UserLocation(latitude: newLocalData.latitude, longitude: newLocalData.longitude);
-                              String currentLocation =
-                                  "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
+                              // Placemark fields are nullable: interpolating one that the geocoder did
+                              // not return printed the four characters "null" into the stored address
+                              // (report #17). Same fields, same order, through formatAddressLine.
+                              String currentLocation = formatAddressLine([
+                                placeMark.name,
+                                placeMark.subLocality,
+                                placeMark.locality,
+                                placeMark.administrativeArea,
+                                placeMark.postalCode,
+                                placeMark.country,
+                              ]);
                               addressModel.locality = currentLocation;
                             });
 
@@ -87,8 +97,17 @@ class LocationPermissionScreen extends StatelessWidget {
                               Placemark placeMark = valuePlaceMaker[0];
                               addressModel.addressAs = "Home";
                               addressModel.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
-                              String currentLocation =
-                                  "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
+                              // Placemark fields are nullable: interpolating one that the geocoder did
+                              // not return printed the four characters "null" into the stored address
+                              // (report #17). Same fields, same order, through formatAddressLine.
+                              String currentLocation = formatAddressLine([
+                                placeMark.name,
+                                placeMark.subLocality,
+                                placeMark.locality,
+                                placeMark.administrativeArea,
+                                placeMark.postalCode,
+                                placeMark.country,
+                              ]);
                               addressModel.locality = currentLocation;
                             });
 
@@ -152,8 +171,17 @@ class LocationPermissionScreen extends StatelessWidget {
                               Placemark placeMark = valuePlaceMaker[0];
                               addressModel.addressAs = "Home";
                               addressModel.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
-                              String currentLocation =
-                                  "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
+                              // Placemark fields are nullable: interpolating one that the geocoder did
+                              // not return printed the four characters "null" into the stored address
+                              // (report #17). Same fields, same order, through formatAddressLine.
+                              String currentLocation = formatAddressLine([
+                                placeMark.name,
+                                placeMark.subLocality,
+                                placeMark.locality,
+                                placeMark.administrativeArea,
+                                placeMark.postalCode,
+                                placeMark.country,
+                              ]);
                               addressModel.locality = currentLocation;
                             });
 

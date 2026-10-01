@@ -90,7 +90,7 @@ class OnDemandOrderDetailsScreen extends StatelessWidget {
                                   const DsGap(DsSpace.sm),
                                   Expanded(
                                     child: Text(
-                                      "${'Booking Address :'.tr}  ${controller.onProviderOrder.value?.address?.getFullAddress()}",
+                                      "${'Booking Address :'.tr}  ${controller.onProviderOrder.value?.address?.getFullAddress() ?? ''}",
                                       style: t.body,
                                     ),
                                   ),

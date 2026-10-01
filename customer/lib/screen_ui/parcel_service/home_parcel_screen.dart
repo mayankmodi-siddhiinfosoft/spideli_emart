@@ -17,6 +17,8 @@ import '../auth_screens/login_screen.dart';
 import '../location_enable_screens/address_list_screen.dart';
 import 'book_parcel_screen.dart';
 import 'parcel_tracking_screen.dart';
+import 'package:customer/utils/address_format.dart';
+import 'package:customer/utils/utils.dart';
 
 /// Parcel home (archetype A — service home): a green gradient hero carrying the
 /// greeting and the pickup address, an overlapping "Track a parcel" scan card,
@@ -139,7 +141,11 @@ class _ParcelHero extends StatelessWidget {
 
                           shippingAddress.addressAs = "Home";
                           shippingAddress.location = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
-                          shippingAddress.locality = "Picked from Map";
+                          // The picker already reverse-geocoded this point; show that address
+                          // (through the same formatter, so no "null" pieces) and keep the old
+                          // placeholder only when the lookup found nothing.
+                          final String pickedAddress = Utils.formatAddress(selectedLocation: selectedLocationModel);
+                          shippingAddress.locality = pickedAddress.isEmpty ? "Picked from Map" : pickedAddress;
 
                           Constant.selectedLocation = shippingAddress;
                         }
@@ -149,8 +155,17 @@ class _ParcelHero extends StatelessWidget {
                     await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
                       Placemark placeMark = valuePlaceMaker[0];
                       shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
-                      String currentLocation =
-                          "${placeMark.name}, ${placeMark.subLocality}, ${placeMark.locality}, ${placeMark.administrativeArea}, ${placeMark.postalCode}, ${placeMark.country}";
+                      // Placemark fields are nullable: interpolating one that the geocoder did
+                      // not return printed the four characters "null" into the stored address
+                      // (report #17). Same fields, same order, through formatAddressLine.
+                      String currentLocation = formatAddressLine([
+                        placeMark.name,
+                        placeMark.subLocality,
+                        placeMark.locality,
+                        placeMark.administrativeArea,
+                        placeMark.postalCode,
+                        placeMark.country,
+                      ]);
                       shippingAddress.locality = currentLocation;
                     });
 

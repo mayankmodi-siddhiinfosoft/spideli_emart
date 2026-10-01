@@ -9,6 +9,7 @@ import 'package:customer/screen_ui/cab_service_screens/cab_coupon_code_screen.da
 import 'package:customer/screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/utils/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:customer/controllers/cab_ride_options.dart';
@@ -254,15 +255,23 @@ class IntercityHomeScreen extends StatelessWidget {
                                     controller.popularDestination[index].latitude ?? 0.0,
                                     controller.popularDestination[index].longitude ?? 0.0,
                                   );
+                                  if (placeMarks.isEmpty) return;
+                                  final get_cord_address.Placemark place = placeMarks.first;
 
-                                  final address =
-                                      (placeMarks.first.subLocality!.isEmpty ? '' : "${placeMarks.first.subLocality}, ") +
-                                      (placeMarks.first.street!.isEmpty ? '' : "${placeMarks.first.street}, ") +
-                                      (placeMarks.first.name!.isEmpty ? '' : "${placeMarks.first.name}, ") +
-                                      (placeMarks.first.subAdministrativeArea!.isEmpty ? '' : "${placeMarks.first.subAdministrativeArea}, ") +
-                                      (placeMarks.first.administrativeArea!.isEmpty ? '' : "${placeMarks.first.administrativeArea}, ") +
-                                      (placeMarks.first.country!.isEmpty ? '' : "${placeMarks.first.country}, ") +
-                                      (placeMarks.first.postalCode!.isEmpty ? '' : "${placeMarks.first.postalCode}, ");
+                                  // Every Placemark field here is nullable, and the old
+                                  // `subLocality!.isEmpty` threw on the first one the
+                                  // geocoder did not return — the field then stayed empty
+                                  // and "Continue" refused the ride. Same fields, same
+                                  // order, through formatAddressLine (report #17).
+                                  final address = formatAddressLine([
+                                    place.subLocality,
+                                    place.street,
+                                    place.name,
+                                    place.subAdministrativeArea,
+                                    place.administrativeArea,
+                                    place.country,
+                                    place.postalCode,
+                                  ]);
                                   controller.destinationTextEditController.value.text = address;
                                   controller.setDestinationMarker(controller.popularDestination[index].latitude ?? 0.0, controller.popularDestination[index].longitude ?? 0.0);
                                 }

@@ -39,7 +39,7 @@ class DriverInboxScreen extends StatelessWidget {
           InboxModel inboxModel = InboxModel.fromJson(data!);
           log("inboxModel :: ${inboxModel.toJson()}");
           return FutureBuilder<UserModel?>(
-            future: FireStoreUtils.getUserProfile(inboxModel.receiverId == FireStoreUtils.getCurrentUid() ? inboxModel.senderId! : inboxModel.receiverId!),
+            future: FireStoreUtils.getUserProfile(inboxModel.receiverId == FireStoreUtils.getCurrentUid() ? (inboxModel.senderId ?? '') : (inboxModel.receiverId ?? '')),
             builder: (context, snapshot) {
               if (!snapshot.hasData || snapshot.hasError || snapshot.connectionState == ConnectionState.waiting) {
                 return const _InboxRowSkeleton();

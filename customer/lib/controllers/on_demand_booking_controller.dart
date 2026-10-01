@@ -157,7 +157,15 @@ class OnDemandBookingController extends GetxController {
     } else if (dateTimeController.value.text.isEmpty) {
       ShowToastDialog.showToast("Please select time slot.".tr);
     } else {
-      UserModel? providerUser = await FireStoreUtils.getUserProfile(provider.value!.author!);
+      // The service comes in through Get.arguments, so `provider.value!` was a
+      // crash on Confirm whenever this screen was reached without one — the
+      // same guard fetchCoupons() already applies to the author id.
+      final String providerAuthorId = (provider.value?.author ?? '').trim();
+      if (providerAuthorId.isEmpty) {
+        ShowToastDialog.showToast("Something went wrong, please try again.".tr);
+        return;
+      }
+      UserModel? providerUser = await FireStoreUtils.getUserProfile(providerAuthorId);
 
       if (provider.value?.priceUnit == "Fixed") {
         OnProviderOrderModel onDemandOrderModel = OnProviderOrderModel(
