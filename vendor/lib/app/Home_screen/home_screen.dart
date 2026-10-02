@@ -38,6 +38,7 @@ import 'package:vendor/widget/cancellation_block.dart';
 import 'package:vendor/widget/delivery_otp_sheet.dart';
 import 'package:vendor/widget/pod_block.dart';
 import 'package:vendor/utils/pod_otp.dart';
+import 'package:vendor/utils/wallet_once.dart';
 import 'package:vendor/widget/wholesale_tag.dart';
 
 /// Store dashboard: a brand hero (who is signed in, the current store with its
@@ -1248,9 +1249,17 @@ class HomeScreen extends StatelessWidget {
       );
     }
 
-    // Shipped by a courier: the store is the only one who learns it arrived.
-    if (isEcommerce) {
+    // Shipped by a courier (no delivery man on the order): the store is the
+    // only one who learns it arrived. Exempt from the delivery code
+    // (POD-OTP-CONTRACT).
+    if (isEcommerce && !hasDriver) {
       return DsButton.primary(label: "Mark Deliver".tr, icon: Icons.task_alt_rounded, onPressed: () => completeOrder(orderModel, controller));
+    }
+
+    // An e-commerce order a delivery man carries is a delivery order: the
+    // customer's code is required, as for any other delivery.
+    if (isEcommerce && hasDriver) {
+      return DsButton.primary(label: "Mark as Completed".tr, icon: Icons.task_alt_rounded, onPressed: () => completeSelfDelivery(orderModel, controller));
     }
 
     // Self delivery: the store's own delivery man carries the order, so the
@@ -1295,19 +1304,35 @@ class HomeScreen extends StatelessWidget {
   /// credits the store (idempotent), frees the store's delivery man and tells
   /// the customer. Every failure is surfaced - this handler used to be the one
   /// that silently did nothing.
+  /// Orders whose completion is running, so a double tap (or the code flow
+  /// and a second tap) cannot run it twice at once.
+  static final Set<String> _completing = {};
+
   Future<void> completeOrder(OrderModel orderModel, HomeController controller, {String? notificationType}) async {
+    final String key = orderModel.id ?? '';
+    if (_completing.contains(key)) return;
+    _completing.add(key);
+    try {
+      await _completeOrder(orderModel, controller, notificationType: notificationType);
+    } finally {
+      _completing.remove(key);
+    }
+  }
+
+  Future<void> _completeOrder(OrderModel orderModel, HomeController controller, {String? notificationType}) async {
     ShowToastDialog.showLoader('Please wait...'.tr);
+    final String? previousStatus = orderModel.status;
     try {
       orderModel.status = Constant.orderCompleted;
-      // One cashback row per order, keyed by the order: a retried completion
-      // (e.g. after the order write below failed) must not pay it twice.
-      final String cashbackRowId = 'cashback_${orderModel.id}';
-      final bool cashbackAlreadyPaid =
-          orderModel.id != null && (await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(cashbackRowId).get()).exists;
-      if (!cashbackAlreadyPaid && orderModel.cashback?.cashbackValue != null && orderModel.cashback?.id != null) {
+      // One cashback row per order (`cashback_<orderId>`, shared with the
+      // Driver app), written together with the wallet balance in one
+      // transaction that first checks the row: a retried completion, or both
+      // apps completing at once, cannot pay it twice.
+      if (orderModel.cashback?.cashbackValue != null && orderModel.cashback?.id != null) {
+        final double cashback = double.parse("${orderModel.cashback?.cashbackValue ?? 0.0}");
         WalletTransactionModel transactionModel = WalletTransactionModel(
-          id: orderModel.id != null ? cashbackRowId : Constant.getUuid(),
-          amount: double.parse("${orderModel.cashback?.cashbackValue ?? 0.0}"),
+          id: orderModel.id != null ? WalletOnce.cashbackRowId(orderModel.id!) : Constant.getUuid(),
+          amount: cashback,
           date: Timestamp.now(),
           paymentMethod: "Cashback Amount",
           transactionUser: "user",
@@ -1317,15 +1342,12 @@ class HomeScreen extends StatelessWidget {
           note: "Cashback Amount",
           paymentStatus: "success",
         );
-        await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-          if (value == true) {
-            await FireStoreUtils.updateUserWallet(amount: double.parse("${orderModel.cashback?.cashbackValue ?? 0.0}").toString(), userId: orderModel.author!.id.toString());
-          }
-        });
+        await WalletOnce.pay(rowId: transactionModel.id!, row: transactionModel.toJson(), userId: orderModel.author?.id, amount: cashback);
       }
       await AudioPlayerService.playSound(false);
       final bool isUpdated = await FireStoreUtils.updateOrder(orderModel);
       if (isUpdated == false) {
+        orderModel.status = previousStatus;
         ShowToastDialog.closeLoader();
         ShowToastDialog.showToast("Could not update this order. Please check your connection and try again.".tr);
         return;
@@ -1359,6 +1381,8 @@ class HomeScreen extends StatelessWidget {
       ShowToastDialog.showToast("Order marked as completed".tr);
     } catch (e) {
       // The old handler swallowed everything; a failure is now visible.
+      // Retryable: the cashback and the store credit are once per order.
+      if (orderModel.status == Constant.orderCompleted && previousStatus != Constant.orderCompleted) orderModel.status = previousStatus;
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast("${"Could not complete this order".tr}: $e");
     }

@@ -23,7 +23,16 @@ class PodOfflineException implements Exception {
 class PodState {
   /// `pending` | `verified` | `expired`, or null when the order has no code.
   final String? status;
+
+  /// `order_pod.expiresAt`, from the generating device's clock.
   final DateTime? expiresAt;
+
+  /// `order_pod.generatedAt`, the server's time (null until resolved).
+  final DateTime? generatedAt;
+
+  /// True when this device generated the code, so [expiresAt] is on this
+  /// device's clock.
+  final bool sameClock;
   final int attempts;
   final int regenerations;
 
@@ -34,15 +43,46 @@ class PodState {
   final PodNewCodeDecision? refused;
   final Timestamp? verifiedAt;
 
-  const PodState({this.status, this.expiresAt, this.attempts = 0, this.regenerations = 0, this.created = false, this.refused, this.verifiedAt});
+  /// The order is cancelled / rejected (or completed without a code): no
+  /// code can be created or verified for it.
+  final bool orderClosed;
+
+  const PodState({
+    this.status,
+    this.expiresAt,
+    this.generatedAt,
+    this.sameClock = false,
+    this.attempts = 0,
+    this.regenerations = 0,
+    this.created = false,
+    this.refused,
+    this.verifiedAt,
+    this.orderClosed = false,
+  });
 
   bool get isVerified => status == DeliveryPodRules.statusVerified;
 
-  /// The last code's issue time on the device clock (the same clock that set
-  /// `expiresAt`), which starts the 60-second cooldown.
-  DateTime? get lastGeneratedAt => expiresAt?.subtract(DeliveryPodRules.validity);
+  /// When the code stops working, on this device's clock (clock-skew safe,
+  /// see [DeliveryPodRules.deadline]).
+  DateTime? get deadline => DeliveryPodRules.deadline(expiresAt: expiresAt, generatedAt: generatedAt, sameClock: sameClock);
 
-  bool isLive(DateTime now) => DeliveryPodRules.canReuse(status: status, now: now, expiresAt: expiresAt, attempts: attempts);
+  /// When the last code was issued, on this device's clock: starts the
+  /// 60-second cooldown.
+  DateTime? get lastGeneratedAt => DeliveryPodRules.issuedAt(expiresAt: expiresAt, generatedAt: generatedAt, sameClock: sameClock);
+
+  bool isLive(DateTime now) => !orderClosed && DeliveryPodRules.canReuse(status: status, now: now, expiresAt: deadline, attempts: attempts);
+
+  PodState copyWith({String? status, int? attempts, bool? orderClosed, PodNewCodeDecision? refused}) => PodState(
+        status: status ?? this.status,
+        expiresAt: expiresAt,
+        generatedAt: generatedAt,
+        sameClock: sameClock,
+        attempts: attempts ?? this.attempts,
+        regenerations: regenerations,
+        refused: refused ?? this.refused,
+        verifiedAt: verifiedAt,
+        orderClosed: orderClosed ?? this.orderClosed,
+      );
 }
 
 class PodVerifyOutcome {
@@ -72,13 +112,30 @@ abstract final class DeliveryPodService {
   /// (a retry after a failed completion).
   static Future<PodState> requestCode(OrderModel order, {bool forceNew = false}) async {
     final String orderId = order.id!;
+    final String me = FireStoreUtils.getCurrentUid();
     final Map<String, dynamic> deliveredBy = deliveredByMap();
     final PodState state = await _guard(() => FireStoreUtils.fireStore.runTransaction<PodState>((tx) async {
+          // All reads first, as Firestore requires.
           final DocumentSnapshot<Map<String, dynamic>> snap = await tx.get(_podRef(orderId));
+          final DocumentSnapshot<Map<String, dynamic>> orderSnap = await tx.get(_orderRef(orderId));
           final Map<String, dynamic> data = snap.data() ?? const {};
-          final PodState current = _stateOf(data);
+          final Map<String, dynamic> orderData = orderSnap.data() ?? const {};
+          final PodState current = _stateOf(data, me);
+          final DeliveryPod? orderPod = DeliveryPod.fromJson(orderData['pod']);
+          final String? orderStatus = orderData['status']?.toString();
           final DateTime now = DateTime.now();
+
+          // Cancelled / rejected: no code, and a pending one stops working.
+          if (!orderSnap.exists || DeliveryPodRules.isCancelledStatus(orderStatus)) {
+            if (current.status == DeliveryPodRules.statusPending) tx.update(_podRef(orderId), {'status': DeliveryPodRules.statusExpired});
+            return current.copyWith(orderClosed: true);
+          }
+          // Proved already (a retry after a failed completion): no new code.
           if (current.isVerified) return current;
+          if (orderPod?.isVerified == true) {
+            return PodState(status: DeliveryPodRules.statusVerified, verifiedAt: orderPod!.verifiedAt, regenerations: current.regenerations);
+          }
+          if (DeliveryPodRules.isCompletedStatus(orderStatus)) return current.copyWith(orderClosed: true);
           if (!forceNew && current.isLive(now)) return current;
 
           final PodNewCodeDecision decision = DeliveryPodRules.newCodeDecision(
@@ -86,9 +143,7 @@ abstract final class DeliveryPodService {
             now: now,
             lastGeneratedAt: current.status == null ? null : current.lastGeneratedAt,
           );
-          if (!decision.allowed) {
-            return PodState(status: current.status, expiresAt: current.expiresAt, attempts: current.attempts, regenerations: current.regenerations, refused: decision);
-          }
+          if (!decision.allowed) return current.copyWith(refused: decision);
 
           final String code = DeliveryPodRules.generateCode(previous: data['code']?.toString());
           final Timestamp requestedAt = Timestamp.fromDate(now);
@@ -97,12 +152,15 @@ abstract final class DeliveryPodService {
           tx.set(_podRef(orderId), {
             'orderId': orderId,
             'customerId': order.authorID ?? order.author?.id ?? '',
-            'driverId': FireStoreUtils.getCurrentUid(),
+            'driverId': me,
             'vendorId': order.vendorID ?? order.vendor?.id ?? '',
             'code': code,
             'status': DeliveryPodRules.statusPending,
             'generatedAt': FieldValue.serverTimestamp(),
             'expiresAt': expiresAt,
+            // Whose clock set `expiresAt` (see DeliveryPodRules.deadline).
+            'generatedBy': me,
+            'generatedByRole': 'driver',
             'attempts': 0,
             'regenerations': regenerations,
           });
@@ -113,7 +171,7 @@ abstract final class DeliveryPodService {
             'pod.expiresAt': expiresAt,
             if (deliveredBy.isNotEmpty) 'pod.deliveredBy': deliveredBy,
           });
-          return PodState(status: DeliveryPodRules.statusPending, expiresAt: expiresAt.toDate(), regenerations: regenerations, created: true);
+          return PodState(status: DeliveryPodRules.statusPending, expiresAt: expiresAt.toDate(), sameClock: true, regenerations: regenerations, created: true);
         }, timeout: _timeout));
     if (state.created) unawaited(notifyCustomer(order));
     return state;
@@ -129,15 +187,22 @@ abstract final class DeliveryPodService {
     final String uid = FireStoreUtils.getCurrentUid();
     return _guard(() => FireStoreUtils.fireStore.runTransaction<PodVerifyOutcome>((tx) async {
           final DocumentReference<Map<String, dynamic>> podRef = _podRef(orderId);
+          // All reads first, as Firestore requires.
           final DocumentSnapshot<Map<String, dynamic>> snap = await tx.get(podRef);
+          final DocumentSnapshot<Map<String, dynamic>> orderSnap = await tx.get(_orderRef(orderId));
           final Map<String, dynamic> data = snap.data() ?? const {};
-          final PodState current = _stateOf(data);
+          final Map<String, dynamic> orderData = orderSnap.data() ?? const {};
+          final PodState current = _stateOf(data, uid);
+          final DeliveryPod? orderPod = DeliveryPod.fromJson(orderData['pod']);
           final DateTime now = DateTime.now();
           final PodCheck check = DeliveryPodRules.check(
-            status: current.status,
+            orderStatus: orderSnap.exists ? orderData['status']?.toString() : 'Order Cancelled',
+            // The order's `pod` counts as proof too (written in the same
+            // transaction as the code's `verified`).
+            status: orderPod?.isVerified == true ? DeliveryPodRules.statusVerified : current.status,
             code: data['code']?.toString(),
             now: now,
-            expiresAt: current.expiresAt,
+            expiresAt: current.deadline,
             attempts: current.attempts,
             entered: entered,
           );
@@ -157,15 +222,20 @@ abstract final class DeliveryPodService {
               final DeliveryPod pod = DeliveryPod(
                 method: 'otp',
                 status: DeliveryPodRules.statusVerified,
+                requestedAt: orderPod?.requestedAt,
                 expiresAt: current.expiresAt == null ? null : Timestamp.fromDate(current.expiresAt!),
                 verifiedAt: verifiedAt,
                 verifiedBy: uid,
                 verifiedByRole: 'driver',
-                deliveredBy: deliveredBy.isEmpty ? null : PodDeliveredBy.fromJson(deliveredBy),
+                deliveredBy: deliveredBy.isEmpty ? orderPod?.deliveredBy : PodDeliveredBy.fromJson(deliveredBy),
               );
-              return PodVerifyOutcome(check, PodState(status: DeliveryPodRules.statusVerified, expiresAt: current.expiresAt, attempts: current.attempts, regenerations: current.regenerations, verifiedAt: verifiedAt), pod: pod);
+              return PodVerifyOutcome(check, current.copyWith(status: DeliveryPodRules.statusVerified), pod: pod);
             case PodCheckResult.alreadyVerified:
-              return PodVerifyOutcome(check, current, pod: DeliveryPod(method: 'otp', status: DeliveryPodRules.statusVerified, verifiedAt: current.verifiedAt));
+              return PodVerifyOutcome(
+                check,
+                current.copyWith(status: DeliveryPodRules.statusVerified),
+                pod: orderPod?.isVerified == true ? orderPod : DeliveryPod(method: 'otp', status: DeliveryPodRules.statusVerified, verifiedAt: current.verifiedAt),
+              );
             case PodCheckResult.wrong:
             case PodCheckResult.tooManyAttempts:
               if (check.countsAttempt) {
@@ -176,17 +246,19 @@ abstract final class DeliveryPodService {
               }
               return PodVerifyOutcome(
                 check,
-                PodState(
+                current.copyWith(
                   status: check.invalidates ? DeliveryPodRules.statusExpired : current.status,
-                  expiresAt: current.expiresAt,
                   attempts: check.attemptsAfter ?? current.attempts,
-                  regenerations: current.regenerations,
                 ),
               );
             case PodCheckResult.expired:
               // Past its 10 minutes: record it, so every app agrees.
               if (current.status == DeliveryPodRules.statusPending) tx.update(podRef, {'status': DeliveryPodRules.statusExpired});
-              return PodVerifyOutcome(check, PodState(status: DeliveryPodRules.statusExpired, expiresAt: current.expiresAt, attempts: current.attempts, regenerations: current.regenerations));
+              return PodVerifyOutcome(check, current.copyWith(status: DeliveryPodRules.statusExpired));
+            case PodCheckResult.orderClosed:
+              // Cancelled while the code was out: it stops working for good.
+              if (current.status == DeliveryPodRules.statusPending) tx.update(podRef, {'status': DeliveryPodRules.statusExpired});
+              return PodVerifyOutcome(check, current.copyWith(orderClosed: true));
             case PodCheckResult.noCode:
               return PodVerifyOutcome(check, current);
           }
@@ -238,11 +310,14 @@ abstract final class DeliveryPodService {
     ).toJson();
   }
 
-  static PodState _stateOf(Map<String, dynamic> data) {
+  static PodState _stateOf(Map<String, dynamic> data, String me) {
     final dynamic status = data['status'];
+    final String generatedBy = (data['generatedBy'] ?? '').toString();
     return PodState(
       status: status is String && status.isNotEmpty ? status : null,
       expiresAt: _date(data['expiresAt']),
+      generatedAt: _date(data['generatedAt']),
+      sameClock: generatedBy.isNotEmpty && generatedBy == me,
       attempts: (data['attempts'] as num?)?.toInt() ?? 0,
       regenerations: (data['regenerations'] as num?)?.toInt() ?? 0,
       verifiedAt: data['verifiedAt'] is Timestamp ? data['verifiedAt'] as Timestamp : null,

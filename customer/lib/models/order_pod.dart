@@ -63,18 +63,42 @@ class OrderPodCode {
 
   bool get isVerified => status == statusVerified;
 
-  /// A code the customer can still read out: `pending`, has 6 digits and an
-  /// expiry, and [now] is before it.
-  bool isLive(DateTime now) => status == statusPending && (code ?? '').isNotEmpty && expiresAt != null && now.isBefore(expiresAt!.toDate());
+  /// A code lasts 10 minutes from generation (POD-OTP-CONTRACT).
+  static const Duration validity = Duration(minutes: 10);
 
-  /// `expired`, or `pending` past its expiry.
-  bool isExpired(DateTime now) => status == statusExpired || (status == statusPending && expiresAt != null && !now.isBefore(expiresAt!.toDate()));
+  /// Clock skew tolerated between the customer's phone and the phone that
+  /// checks the code: the digits stay up this long past the deadline, while
+  /// the countdown reads 00:00. Small next to the 10 minutes.
+  static const Duration skewTolerance = Duration(seconds: 30);
 
-  /// Time left before expiry (never negative).
+  /// When the code stops working. `generatedAt` is the server's time, so it
+  /// is preferred: `expiresAt` comes from the generating phone's clock, which
+  /// may be minutes off. Falls back to `expiresAt` until the server time is
+  /// known.
+  DateTime? get deadline => generatedAt != null ? generatedAt!.toDate().add(validity) : expiresAt?.toDate();
+
+  /// A code the customer can still read out: `pending`, has digits, and
+  /// [now] is before its [deadline] (+ [skewTolerance]).
+  bool isLive(DateTime now) {
+    final DateTime? end = deadline;
+    return status == statusPending && (code ?? '').isNotEmpty && end != null && now.isBefore(end.add(skewTolerance));
+  }
+
+  /// `expired`, or `pending` past its deadline (+ [skewTolerance]).
+  bool isExpired(DateTime now) {
+    if (status == statusExpired) return true;
+    final DateTime? end = deadline;
+    return status == statusPending && end != null && !now.isBefore(end.add(skewTolerance));
+  }
+
+  /// Time left before expiry: never negative, and never more than the
+  /// 10 minutes (a phone clock running behind would show more).
   Duration remaining(DateTime now) {
-    if (expiresAt == null) return Duration.zero;
-    final left = expiresAt!.toDate().difference(now);
-    return left.isNegative ? Duration.zero : left;
+    final DateTime? end = deadline;
+    if (end == null) return Duration.zero;
+    final Duration left = end.difference(now);
+    if (left.isNegative) return Duration.zero;
+    return left > validity ? validity : left;
   }
 
   /// Whether this document may be shown to [uid] for [orderId]: it must name

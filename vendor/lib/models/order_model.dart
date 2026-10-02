@@ -311,12 +311,11 @@ class OrderModel {
     } else if (cancelledAt != null) {
       data['cancelledAt'] = cancelledAt;
     }
-    // Proof of delivery: written only once verified (a verified record is
-    // final, so echoing it can never undo anything). A pending record is
-    // written only by PodOtpService's transaction, and a missing one is left
-    // out, so a later save of this order never clears or rolls back a `pod`
-    // another app wrote.
-    if (pod != null && pod!.isVerified) data['pod'] = pod!.toJson();
+    // Proof of delivery: never written from here, only by PodOtpService's
+    // (and the Driver app's) transactions. updateOrder() replaces each field
+    // it writes whole, so echoing an in-memory `pod` - pending when it was
+    // read, or a partial verified copy - would roll back or strip what the
+    // verification wrote. Leaving it out keeps whatever is stored.
     return data;
   }
 }

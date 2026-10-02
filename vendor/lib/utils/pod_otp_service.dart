@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:get/get.dart';
 import 'package:vendor/constant/collection_name.dart';
+import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/send_notification.dart';
 import 'package:vendor/models/order_model.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
@@ -24,7 +25,10 @@ class PodStart {
 
   final bool offline;
 
-  const PodStart({this.code, this.alreadyVerified = false, this.pod, this.offline = false});
+  /// The order is cancelled / rejected (or completed without a code).
+  final bool orderClosed;
+
+  const PodStart({this.code, this.alreadyVerified = false, this.pod, this.offline = false, this.orderClosed = false});
 }
 
 /// A code that was entered: the outcome, the code's state afterwards (no
@@ -64,6 +68,14 @@ abstract final class PodOtpService {
     return false;
   }
 
+  static String _me() {
+    try {
+      return FireStoreUtils.getCurrentUid();
+    } catch (_) {
+      return '';
+    }
+  }
+
   /// A new code for [orderId], with the order's pending `pod`.
   static Map<String, dynamic> _newCode({required OrderModel order, required String code, required DateTime now, required int regenerations}) => {
     'orderId': order.id,
@@ -74,6 +86,9 @@ abstract final class PodOtpService {
     'status': PodStatus.pending,
     'generatedAt': FieldValue.serverTimestamp(),
     'expiresAt': Timestamp.fromDate(PodOtp.expiryFor(now)),
+    // Whose clock set `expiresAt` (see PodCode.deadline).
+    'generatedBy': _me(),
+    'generatedByRole': PodRole.vendor,
     'attempts': 0,
     'regenerations': regenerations,
   };
@@ -101,7 +116,13 @@ abstract final class PodOtpService {
             final DocumentSnapshot<Map<String, dynamic>> orderSnap = await tx.get(_orderRef(orderId));
             final DocumentSnapshot<Map<String, dynamic>> codeSnap = await tx.get(_codeRef(orderId));
             final OrderPod? pod = OrderPod.fromJson(orderSnap.data()?['pod']);
-            final PodCode? existing = PodCode.fromJson(orderId, codeSnap.data());
+            final PodCode? existing = PodCode.fromJson(orderId, codeSnap.data(), me: _me());
+            final String? orderStatus = orderSnap.data()?['status']?.toString();
+            // Cancelled / rejected: no code, and a pending one stops working.
+            if (!orderSnap.exists || PodRules.isCancelledStatus(orderStatus)) {
+              if (existing?.status == PodStatus.pending) tx.update(_codeRef(orderId), {'status': PodStatus.expired});
+              return const PodStart(orderClosed: true);
+            }
             if (pod?.isVerified == true) return PodStart(alreadyVerified: true, pod: pod);
             if (existing?.isVerified == true) {
               // Verified, but the order never got its `pod`: record it now
@@ -110,6 +131,7 @@ abstract final class PodOtpService {
               tx.update(_orderRef(orderId), {'pod': verified.toJson()});
               return PodStart(alreadyVerified: true, pod: verified);
             }
+            if (PodRules.isCompletedStatus(orderStatus)) return const PodStart(orderClosed: true);
             if (existing != null) return PodStart(code: existing.redacted());
 
             final DateTime now = DateTime.now();
@@ -118,11 +140,11 @@ abstract final class PodOtpService {
             tx.update(_orderRef(orderId), _pendingPod(now));
             created = true;
             return PodStart(
-              code: PodCode(orderId: orderId, code: '', status: PodStatus.pending, expiresAt: fresh['expiresAt'] as Timestamp, regenerations: 1),
+              code: PodCode(orderId: orderId, code: '', status: PodStatus.pending, expiresAt: fresh['expiresAt'] as Timestamp, regenerations: 1, sameClock: true),
             );
           })
           .timeout(_timeout);
-      if (created) _pushCustomer(order);
+      if (created) unawaited(_pushCustomer(order));
       return start;
     } catch (e) {
       log('POD start failed for $orderId: $e');
@@ -138,8 +160,19 @@ abstract final class PodOtpService {
     try {
       final PodRegeneration result = await FireStoreUtils.fireStore
           .runTransaction<PodRegeneration>((tx) async {
+            // All reads first, as Firestore requires.
+            final DocumentSnapshot<Map<String, dynamic>> orderSnap = await tx.get(_orderRef(orderId));
             final DocumentSnapshot<Map<String, dynamic>> codeSnap = await tx.get(_codeRef(orderId));
-            final PodCode? existing = PodCode.fromJson(orderId, codeSnap.data());
+            final PodCode? existing = PodCode.fromJson(orderId, codeSnap.data(), me: _me());
+            final String? orderStatus = orderSnap.data()?['status']?.toString();
+            if (!orderSnap.exists || PodRules.isCancelledStatus(orderStatus) || PodRules.isCompletedStatus(orderStatus)) {
+              if (existing?.status == PodStatus.pending) tx.update(_codeRef(orderId), {'status': PodStatus.expired});
+              return PodRegeneration(PodResend.orderClosed, code: existing?.redacted());
+            }
+            // Proved already (by the Driver app, say): never a new code.
+            if (OrderPod.fromJson(orderSnap.data()?['pod'])?.isVerified == true) {
+              return PodRegeneration(PodResend.alreadyVerified, code: existing?.redacted());
+            }
             final DateTime now = DateTime.now();
             final PodResend allowed = PodOtp.canResend(existing, now);
             if (allowed != PodResend.allowed) {
@@ -151,11 +184,11 @@ abstract final class PodOtpService {
             tx.update(_orderRef(orderId), _pendingPod(now));
             return PodRegeneration(
               PodResend.allowed,
-              code: PodCode(orderId: orderId, code: '', status: PodStatus.pending, expiresAt: fresh['expiresAt'] as Timestamp, regenerations: regenerations),
+              code: PodCode(orderId: orderId, code: '', status: PodStatus.pending, expiresAt: fresh['expiresAt'] as Timestamp, regenerations: regenerations, sameClock: true),
             );
           })
           .timeout(_timeout);
-      if (result.result == PodResend.allowed) _pushCustomer(order);
+      if (result.result == PodResend.allowed) unawaited(_pushCustomer(order));
       return result;
     } catch (e) {
       log('POD regenerate failed for $orderId: $e');
@@ -177,13 +210,18 @@ abstract final class PodOtpService {
             final DocumentSnapshot<Map<String, dynamic>> orderSnap = await tx.get(_orderRef(orderId));
             final DocumentSnapshot<Map<String, dynamic>> codeSnap = await tx.get(_codeRef(orderId));
             final OrderPod? current = OrderPod.fromJson(orderSnap.data()?['pod']);
-            final PodCode? code = PodCode.fromJson(orderId, codeSnap.data());
-            if (current?.isVerified == true) {
+            final PodCode? code = PodCode.fromJson(orderId, codeSnap.data(), me: _me());
+            final String? orderStatus = orderSnap.exists ? (orderSnap.data()?['status'])?.toString() : Constant.orderCancelled;
+            if (current?.isVerified == true && !PodRules.isCancelledStatus(orderStatus)) {
               return PodVerification(const PodCheckResult(PodCheck.alreadyVerified), code: code?.redacted(), pod: current);
             }
             final DateTime now = DateTime.now();
-            final PodCheckResult result = PodOtp.check(code: code, entered: entered, now: now);
+            final PodCheckResult result = PodOtp.check(code: code, entered: entered, now: now, orderStatus: orderStatus);
             switch (result.outcome) {
+              case PodCheck.orderClosed:
+                // Cancelled while the code was out: it stops working for good.
+                if (code?.status == PodStatus.pending) tx.update(_codeRef(orderId), {'status': PodStatus.expired});
+                return PodVerification(result, code: code?.redacted());
               case PodCheck.verified:
                 final Timestamp at = Timestamp.fromDate(now);
                 tx.update(_codeRef(orderId), {'status': PodStatus.verified, 'verifiedAt': at});
@@ -242,14 +280,23 @@ abstract final class PodOtpService {
 
   /// Tells the customer their code is in the app. The push never carries the
   /// code: the customer app reads it from `order_pod/{orderId}`.
-  static void _pushCustomer(OrderModel order) {
-    final String token = order.author?.fcmToken ?? '';
-    if (token.isEmpty || token == 'null') return;
-    SendNotification.sendOneNotification(
-      token: token,
-      title: "Your order has arrived".tr,
-      body: "Open the app for your delivery code.".tr,
-      payload: {'type': PodRules.notificationType, 'orderId': order.id ?? ''},
-    );
+  static Future<void> _pushCustomer(OrderModel order) async {
+    try {
+      String token = '';
+      final String customerId = order.authorID ?? order.author?.id ?? '';
+      // The token on the order is a copy from checkout; the customer's
+      // current one is on their user record.
+      if (customerId.isNotEmpty) token = (await FireStoreUtils.getUserById(customerId))?.fcmToken ?? '';
+      if (token.isEmpty || token == 'null') token = order.author?.fcmToken ?? '';
+      if (token.isEmpty || token == 'null') return;
+      await SendNotification.sendOneNotification(
+        token: token,
+        title: "Your order has arrived".tr,
+        body: "Open the app for your delivery code.".tr,
+        payload: {'type': PodRules.notificationType, 'orderId': order.id ?? ''},
+      );
+    } catch (e) {
+      log('POD push failed for ${order.id}: $e');
+    }
   }
 }

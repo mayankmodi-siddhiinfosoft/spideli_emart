@@ -896,6 +896,8 @@ const Map<String, String> enUS = {
   "Delivery code": "Delivery code",
   "6-digit code": "6-digit code",
   "Code expires in @time": "Code expires in @time",
+  "New codes left: @n / @max": "New codes left: @n / @max",
+  "This order was cancelled or closed. It can no longer be completed.": "This order was cancelled or closed. It can no longer be completed.",
   "Delivery status": "Delivery status",
   "POD status": "POD status",
   "OTP Verified": "OTP Verified",

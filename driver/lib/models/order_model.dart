@@ -52,8 +52,8 @@ class OrderModel {
 
   /// Proof of delivery by customer OTP (`.claude/POD-OTP-CONTRACT.md`):
   /// `pod.status`, `verifiedAt`, `deliveredBy`, ... Never contains the code.
-  /// Written only when set, as a known-fields map, so a later save never
-  /// clears it.
+  /// Read-only here: [toJson] leaves it out, so no order save can clear it or
+  /// roll it back.
   DeliveryPod? pod;
 
   /// Cancel-reason contract fields (`cancelReason`, `cancelledBy`, ...) and
@@ -236,9 +236,11 @@ class OrderModel {
     data['isPosOrder'] = isPosOrder ?? false;
     data['packagingChargeEnable'] = packagingChargeEnable ?? false;
     if (regionId != null && regionId!.isNotEmpty) data['regionId'] = regionId;
-    // Additive: only written when set (and only its known fields), so a
-    // later save never clears the proof of delivery.
-    if (pod != null && pod!.toJson().isNotEmpty) data['pod'] = pod!.toJson();
+    // `pod` is never written from here: only DeliveryPodService's
+    // transactions write it. setOrder() is a deep merge, so an in-memory copy
+    // read while the code was still `pending` would otherwise roll a verified
+    // record back to `pending` (POD-OTP-CONTRACT: "never cleared by a later
+    // save"). Leaving it out keeps whatever is stored.
     data.addAll(cancellation.toJson());
     return data;
   }

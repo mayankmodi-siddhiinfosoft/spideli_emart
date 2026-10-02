@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/chat_screens/chat_video_container.dart';
 import 'package:driver/constant/collection_name.dart';
+import 'package:driver/services/wallet_once.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/firebase_options.dart';
@@ -848,7 +849,7 @@ class FireStoreUtils {
         paymentStatus: "success",
       );
 
-      await FireStoreUtils.setWalletTransaction(codTxn);
+      await _payDriverOnce(orderModel, codTxn, driverAmount);
     } else {
       driverAmount = deliveryCharges + deliveryTips + driverDeliveryTaxAmount;
 
@@ -865,12 +866,20 @@ class FireStoreUtils {
         paymentStatus: "success",
       );
 
-      await FireStoreUtils.setWalletTransaction(onlineTxn);
+      await _payDriverOnce(orderModel, onlineTxn, driverAmount);
     }
-    await FireStoreUtils.updateUserWallet(
-      userId: orderModel.driverID!,
-      amount: driverAmount.toString(),
-    );
+  }
+
+  /// The driver's row and balance move together, once per order: a retried
+  /// completion (POD-OTP-CONTRACT, "a retry must not pay twice") is a no-op.
+  static Future<void> _payDriverOnce(OrderModel orderModel, WalletTransactionModel txn, double driverAmount) async {
+    final String? orderId = orderModel.id;
+    if (orderId == null || orderId.isEmpty) {
+      await FireStoreUtils.setWalletTransaction(txn);
+      await FireStoreUtils.updateUserWallet(userId: orderModel.driverID!, amount: driverAmount.toString());
+      return;
+    }
+    await WalletOnce.pay(rowId: WalletOnce.driverRowId(orderId), row: txn.toJson(), userId: orderModel.driverID, amount: driverAmount);
   }
 
   static Future<void> sendTopUpMail({required String amount, required String paymentMethod, required String tractionId}) async {
@@ -1229,7 +1238,7 @@ class FireStoreUtils {
     if (referralModel != null) {
       if (referralModel!.referralBy != null && referralModel!.referralBy!.isNotEmpty) {
         WalletTransactionModel transactionModel = WalletTransactionModel(
-            id: Constant.getUuid(),
+            id: orderModel.id == null ? Constant.getUuid() : WalletOnce.referralRowId(orderModel.id!),
             amount: double.parse(Constant.referralAmount.toString()),
             date: Timestamp.now(),
             paymentMethod: "Referral Amount",
@@ -1239,11 +1248,13 @@ class FireStoreUtils {
             note: "You referral user has complete his this order #${orderModel.id}",
             paymentStatus: "success");
 
-        await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-          if (value == true) {
-            await FireStoreUtils.updateUserWallet(amount: Constant.referralAmount.toString(), userId: referralModel!.referralBy.toString()).then((value) {});
-          }
-        });
+        // Once per order: a retried completion does not pay the referrer again.
+        await WalletOnce.pay(
+          rowId: transactionModel.id!,
+          row: transactionModel.toJson(),
+          userId: referralModel!.referralBy,
+          amount: double.parse(Constant.referralAmount.toString()),
+        );
       } else {
         return;
       }

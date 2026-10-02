@@ -44,6 +44,10 @@ abstract final class DeliveryOtpFlow {
         ShowToastDialog.showToast(const PodCheckResult(PodCheck.offline).message);
         return false;
       }
+      if (start.orderClosed) {
+        ShowToastDialog.showToast(const PodCheckResult(PodCheck.orderClosed).message);
+        return false;
+      }
       if (start.alreadyVerified) {
         if (start.pod != null) order.pod = start.pod;
         return true;
@@ -110,6 +114,9 @@ class _DeliveryOtpSheetState extends State<DeliveryOtpSheet> {
   String? _error;
   String? _info;
 
+  /// The order was cancelled meanwhile: nothing can be verified any more.
+  bool _closed = false;
+
   @override
   void initState() {
     super.initState();
@@ -150,6 +157,7 @@ class _DeliveryOtpSheetState extends State<DeliveryOtpSheet> {
       setState(() {
         _verifying = false;
         if (v.code != null) _code = v.code;
+        if (v.result.outcome == PodCheck.orderClosed) _closed = true;
         _error = v.result.message;
         if (v.result.outcome == PodCheck.wrongCode) _entry.clear();
       });
@@ -172,10 +180,21 @@ class _DeliveryOtpSheetState extends State<DeliveryOtpSheet> {
     try {
       final PodRegeneration r = await PodOtpService.regenerate(widget.order);
       if (!mounted) return;
+      if (r.result == PodResend.alreadyVerified) {
+        // Verified meanwhile (e.g. by the delivery man in the Driver app):
+        // pick up the recorded proof and finish, no new code.
+        final PodStart start = await PodOtpService.start(widget.order, verifiedBy: widget.verifiedBy, deliveredBy: widget.deliveredBy);
+        if (!mounted) return;
+        if (start.alreadyVerified && start.pod != null) {
+          Navigator.of(context).pop(start.pod);
+          return;
+        }
+      }
       setState(() {
         _resending = false;
         if (r.code != null) _code = r.code;
         _now = DateTime.now();
+        if (r.result == PodResend.orderClosed) _closed = true;
         if (r.result == PodResend.allowed) {
           _entry.clear();
           _info = PodOtp.resendMessage(r.result);
@@ -192,8 +211,11 @@ class _DeliveryOtpSheetState extends State<DeliveryOtpSheet> {
     }
   }
 
+  /// Whole seconds, rounded up: a disabled button never reads "0s".
+  static int _ceilSeconds(Duration d) => d.isNegative ? 0 : (d.inMilliseconds + 999) ~/ 1000;
+
   static String _mmss(Duration d) {
-    final int s = d.inSeconds < 0 ? 0 : d.inSeconds;
+    final int s = _ceilSeconds(d);
     return '${(s ~/ 60).toString().padLeft(2, '0')}:${(s % 60).toString().padLeft(2, '0')}';
   }
 
@@ -202,18 +224,20 @@ class _DeliveryOtpSheetState extends State<DeliveryOtpSheet> {
     final c = context.dsColors;
     final t = context.dsText;
     final PodCode? code = _code;
-    final bool spent = code == null || code.isExpiredAt(_now);
-    final PodResend resend = PodOtp.canResend(code, _now);
+    final bool spent = _closed || code == null || code.isExpiredAt(_now);
+    final PodResend resend = _closed ? PodResend.orderClosed : PodOtp.canResend(code, _now);
     final Duration wait = PodOtp.cooldownLeft(code, _now);
 
     final String resendLabel = switch (resend) {
-      PodResend.coolingDown => "${"Get a new code".tr} (${wait.inSeconds + 1}s)",
+      PodResend.coolingDown => "${"Get a new code".tr} (${_ceilSeconds(wait)}s)",
       PodResend.limitReached => "No new codes left".tr,
       _ => "Get a new code".tr,
     };
 
     // Why the current code cannot be used, when it cannot.
-    final String? spentMessage = code == null
+    final String? spentMessage = _closed
+        ? const PodCheckResult(PodCheck.orderClosed).message
+        : code == null
         ? const PodCheckResult(PodCheck.noCode).message
         : !spent
         ? null
@@ -261,21 +285,31 @@ class _DeliveryOtpSheetState extends State<DeliveryOtpSheet> {
           ),
           if (spentMessage != null)
             DsInlineAlert(tone: DsTone.warning, message: spentMessage)
-          else if (code?.expiresAt != null)
+          else if (code?.deadline != null)
             Row(
               children: [
                 Icon(Icons.timer_outlined, size: 16, color: c.textMuted),
                 DsGap.xs,
                 Expanded(
                   child: Text(
-                    "Code expires in @time".trParams({'time': _mmss(code!.expiresAt!.toDate().difference(_now))}),
+                    "Code expires in @time".trParams({'time': _mmss((code!.deadline ?? _now).difference(_now))}),
                     style: t.bodySm,
                   ),
                 ),
               ],
             ),
           if (_info != null) ...[DsGap.sm, DsInlineAlert(tone: DsTone.success, message: _info!)],
-          if (resend == PodResend.limitReached) ...[DsGap.sm, Text(PodOtp.resendMessage(PodResend.limitReached), style: t.caption)],
+          if (resend == PodResend.limitReached)
+            ...[DsGap.sm, Text(PodOtp.resendMessage(PodResend.limitReached), style: t.caption)]
+          else if (code != null && !_closed)
+            ...[
+              DsGap.sm,
+              Text(
+                "New codes left: @n / @max".trParams({'n': '${code.regenerationsLeft}', 'max': '${PodRules.maxRegenerations}'}),
+                textAlign: TextAlign.center,
+                style: t.caption,
+              ),
+            ],
         ],
       ),
     );

@@ -53,8 +53,8 @@ class OrderModel with CancellationFields {
   bool? packagingChargeEnable;
 
   /// Proof of delivery (POD-OTP-CONTRACT), written by the Driver / Store app.
-  /// Null on orders from before POD. Read-only here: written back only when
-  /// set, so no customer save clears it.
+  /// Null on orders from before POD. Read-only here: [toJson] leaves it out,
+  /// so no customer save can clear it or roll it back.
   OrderPod? pod;
 
   OrderModel({
@@ -233,7 +233,10 @@ class OrderModel with CancellationFields {
     data['isPosOrder'] = isPosOrder ?? false;
     data['packagingChargeEnable'] = packagingChargeEnable ?? false;
     if (regionId != null) data['regionId'] = regionId;
-    if (pod != null) data['pod'] = pod!.toJson();
+    // `pod` is never written by the customer app (POD-OTP-CONTRACT: only the
+    // Driver / Store transactions write it). setOrder() replaces each field it
+    // writes whole, so echoing a copy read while the code was `pending` would
+    // roll a verified record back. Leaving it out keeps whatever is stored.
     writeCancellation(data);
     return data;
   }

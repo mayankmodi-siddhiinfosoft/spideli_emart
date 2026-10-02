@@ -41,6 +41,40 @@ abstract final class DeliveryPodRules {
   /// When the code issued at [generatedAt] stops working.
   static DateTime expiryFor(DateTime generatedAt) => generatedAt.add(validity);
 
+  /// Clock skew tolerated between two devices (a code generated on one phone
+  /// and checked on another). Small next to the 10 minutes.
+  static const Duration skewTolerance = Duration(seconds: 30);
+
+  /// When the code stops working, on THIS device's clock.
+  ///
+  /// `expiresAt` is written from the generating device's clock and
+  /// `generatedAt` by the server. On the device that generated the code
+  /// ([sameClock]) `expiresAt` is exact. Any other device compares against
+  /// the server's `generatedAt` + 10 minutes (+ [skewTolerance]), so a
+  /// generating phone whose clock is minutes off can neither stretch nor
+  /// shorten the code's life elsewhere.
+  static DateTime? deadline({required DateTime? expiresAt, required DateTime? generatedAt, required bool sameClock}) {
+    if (sameClock && expiresAt != null) return expiresAt;
+    if (generatedAt != null) return generatedAt.add(validity).add(skewTolerance);
+    return expiresAt;
+  }
+
+  /// When the code was issued, on THIS device's clock (starts the cooldown).
+  static DateTime? issuedAt({required DateTime? expiresAt, required DateTime? generatedAt, required bool sameClock}) {
+    if (sameClock && expiresAt != null) return expiresAt.subtract(validity);
+    if (generatedAt != null) return generatedAt;
+    return expiresAt?.subtract(validity);
+  }
+
+  /// Cancelled or rejected: such an order is never completed, and its code
+  /// can neither be created nor verified.
+  static bool isCancelledStatus(String? orderStatus) {
+    final String s = (orderStatus ?? '').trim().toLowerCase();
+    return s == 'order cancelled' || s == 'order rejected' || s == 'cancelled' || s == 'canceled' || s == 'rejected';
+  }
+
+  static bool isCompletedStatus(String? orderStatus) => (orderStatus ?? '').trim().toLowerCase() == 'order completed';
+
   /// True once [now] reached [expiresAt] (or when there is no expiry).
   static bool isExpired({required DateTime now, required DateTime? expiresAt}) => expiresAt == null || !now.isBefore(expiresAt);
 
@@ -78,6 +112,7 @@ abstract final class DeliveryPodRules {
   /// `expiresAt`, `attempts < 5`, entered == `code`. [code] null means the
   /// order has no code yet.
   static PodCheck check({
+    String? orderStatus,
     required String? status,
     required String? code,
     required DateTime now,
@@ -85,7 +120,12 @@ abstract final class DeliveryPodRules {
     required int attempts,
     required String entered,
   }) {
+    // A cancelled / rejected order is never completed, verified code or not.
+    if (isCancelledStatus(orderStatus)) return const PodCheck(PodCheckResult.orderClosed);
     if (status == statusVerified) return const PodCheck(PodCheckResult.alreadyVerified);
+    // Completed without a verified code (an order from before POD): nothing
+    // to verify.
+    if (isCompletedStatus(orderStatus)) return const PodCheck(PodCheckResult.orderClosed);
     if (code == null || code.isEmpty || status == null) return const PodCheck(PodCheckResult.noCode);
     if (attempts >= maxAttempts) return const PodCheck(PodCheckResult.tooManyAttempts);
     if (status != statusPending || isExpired(now: now, expiresAt: expiresAt)) return const PodCheck(PodCheckResult.expired);
@@ -109,6 +149,8 @@ abstract final class DeliveryPodRules {
         return tooManyAttemptsMessage;
       case PodCheckResult.noCode:
         return noCodeMessage;
+      case PodCheckResult.orderClosed:
+        return orderClosedMessage;
     }
   }
 
@@ -116,10 +158,11 @@ abstract final class DeliveryPodRules {
   static const String tooManyAttemptsMessage = 'Too many incorrect attempts. Generate a new code.';
   static const String noCodeMessage = 'No code yet. Tap "Get a new code" to send one to the customer.';
   static const String offlineMessage = 'You are offline. Connect to the internet and try again.';
+  static const String orderClosedMessage = 'This order was cancelled or closed. It can no longer be completed.';
   static const String capReachedMessage = 'No new codes left for this order. Contact support.';
 }
 
-enum PodCheckResult { verified, alreadyVerified, wrong, expired, tooManyAttempts, noCode }
+enum PodCheckResult { verified, alreadyVerified, wrong, expired, tooManyAttempts, noCode, orderClosed }
 
 class PodCheck {
   final PodCheckResult result;

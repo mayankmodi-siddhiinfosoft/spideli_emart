@@ -35,6 +35,19 @@ abstract final class PodRules {
   static const String notificationType = 'delivery_otp';
 
   static const String methodOtp = 'otp';
+
+  /// Clock skew tolerated between two devices (a code generated on one phone
+  /// and checked on another). Small next to the 10 minutes.
+  static const Duration skewTolerance = Duration(seconds: 30);
+
+  /// Cancelled or rejected: such an order is never completed, and its code
+  /// can neither be created nor verified.
+  static bool isCancelledStatus(String? orderStatus) {
+    final String s = (orderStatus ?? '').trim().toLowerCase();
+    return s == Constant.orderCancelled.toLowerCase() || s == Constant.orderRejected.toLowerCase() || s == 'cancelled' || s == 'canceled' || s == 'rejected';
+  }
+
+  static bool isCompletedStatus(String? orderStatus) => (orderStatus ?? '').trim().toLowerCase() == Constant.orderCompleted.toLowerCase();
 }
 
 /// `status` of `order_pod/{orderId}` and of an order's `pod`.
@@ -176,6 +189,10 @@ class PodCode {
   final int regenerations;
   final Timestamp? verifiedAt;
 
+  /// True when this device generated the code, so [expiresAt] is on this
+  /// device's clock (see [deadline]).
+  final bool sameClock;
+
   const PodCode({
     required this.orderId,
     required this.code,
@@ -185,9 +202,12 @@ class PodCode {
     this.attempts = 0,
     this.regenerations = 1,
     this.verifiedAt,
+    this.sameClock = false,
   });
 
-  static PodCode? fromJson(String orderId, Map<String, dynamic>? json) {
+  /// [me] is the signed-in user: a code whose `generatedBy` is [me] was
+  /// timed by this device's clock.
+  static PodCode? fromJson(String orderId, Map<String, dynamic>? json, {String? me}) {
     if (json == null) return null;
     int asInt(Object? v, int fallback) => v is num ? v.toInt() : int.tryParse('${v ?? ''}') ?? fallback;
     return PodCode(
@@ -199,6 +219,7 @@ class PodCode {
       attempts: asInt(json['attempts'], 0),
       regenerations: asInt(json['regenerations'], 1),
       verifiedAt: parseTimestamp(json['verifiedAt']),
+      sameClock: me != null && me.isNotEmpty && firstText(json, const ['generatedBy']) == me,
     );
   }
 
@@ -212,15 +233,31 @@ class PodCode {
     attempts: attempts,
     regenerations: regenerations,
     verifiedAt: verifiedAt,
+    sameClock: sameClock,
   );
 
   bool get isVerified => status == PodStatus.verified;
 
-  /// Spent: marked expired, out of attempts, or past [expiresAt].
+  /// When the code stops working, on THIS device's clock.
+  ///
+  /// `expiresAt` is written from the generating device's clock, `generatedAt`
+  /// by the server. On the device that generated the code ([sameClock])
+  /// `expiresAt` is exact; any other device goes by the server's
+  /// `generatedAt` + 10 minutes (+ [PodRules.skewTolerance]), so a phone
+  /// whose clock is minutes off can neither stretch nor shorten the code's
+  /// life elsewhere.
+  DateTime? get deadline {
+    if (sameClock && expiresAt != null) return expiresAt!.toDate();
+    if (generatedAt != null) return generatedAt!.toDate().add(PodRules.codeLifetime).add(PodRules.skewTolerance);
+    return expiresAt?.toDate();
+  }
+
+  /// Spent: marked expired, out of attempts, or past its [deadline].
   bool isExpiredAt(DateTime now) {
     if (status == PodStatus.expired || attempts >= PodRules.maxAttempts) return true;
-    if (expiresAt == null) return true;
-    return !now.isBefore(expiresAt!.toDate());
+    final DateTime? end = deadline;
+    if (end == null) return true;
+    return !now.isBefore(end);
   }
 
   /// Can still be entered: tapping "Mark as Completed" again reuses it.
@@ -229,13 +266,20 @@ class PodCode {
   /// Ran out of wrong entries (as opposed to running out of time).
   bool get isLockedByAttempts => attempts >= PodRules.maxAttempts;
 
-  /// When this code was generated, on the clock that set [expiresAt] (so a
-  /// cooldown is measured on one clock); the server time otherwise.
-  DateTime? get issuedAt => expiresAt?.toDate().subtract(PodRules.codeLifetime) ?? generatedAt?.toDate();
+  /// When this code was generated, on THIS device's clock (starts the
+  /// cooldown): from [expiresAt] when this device set it, else the server's
+  /// `generatedAt`.
+  DateTime? get issuedAt {
+    if (sameClock && expiresAt != null) return expiresAt!.toDate().subtract(PodRules.codeLifetime);
+    return generatedAt?.toDate() ?? expiresAt?.toDate().subtract(PodRules.codeLifetime);
+  }
+
+  /// "Get a new code" uses left (the first code is not one).
+  int get regenerationsLeft => max(0, 1 + PodRules.maxRegenerations - regenerations);
 }
 
 /// What an entered code came to.
-enum PodCheck { verified, wrongCode, expired, tooManyAttempts, noCode, alreadyVerified, invalidFormat, offline }
+enum PodCheck { verified, wrongCode, expired, tooManyAttempts, noCode, alreadyVerified, invalidFormat, offline, orderClosed }
 
 class PodCheckResult {
   final PodCheck outcome;
@@ -256,11 +300,12 @@ class PodCheckResult {
     PodCheck.noCode => "No delivery code yet. Generate a code first.".tr,
     PodCheck.invalidFormat => "Enter the 6-digit code from the customer's app.".tr,
     PodCheck.offline => "You are offline. Check your connection and try again.".tr,
+    PodCheck.orderClosed => "This order was cancelled or closed. It can no longer be completed.".tr,
   };
 }
 
 /// Why a new code can or cannot be generated now.
-enum PodResend { allowed, coolingDown, limitReached, alreadyVerified, offline }
+enum PodResend { allowed, coolingDown, limitReached, alreadyVerified, offline, orderClosed }
 
 /// The rules, as pure functions.
 abstract final class PodOtp {
@@ -286,8 +331,12 @@ abstract final class PodOtp {
   /// [PodCheck.verified] verifies the code, [PodCheck.wrongCode] adds one to
   /// `attempts` (and expires the code when [PodCheckResult.attemptsLeft] is
   /// 0). Nothing else is written.
-  static PodCheckResult check({required PodCode? code, required String entered, required DateTime now}) {
+  static PodCheckResult check({required PodCode? code, required String entered, required DateTime now, String? orderStatus}) {
+    // A cancelled / rejected order is never completed, verified code or not.
+    if (PodRules.isCancelledStatus(orderStatus)) return const PodCheckResult(PodCheck.orderClosed);
     if (code != null && code.isVerified) return const PodCheckResult(PodCheck.alreadyVerified);
+    // Completed without a verified code (an order from before POD).
+    if (PodRules.isCompletedStatus(orderStatus)) return const PodCheckResult(PodCheck.orderClosed);
     if (!isWellFormed(entered)) return const PodCheckResult(PodCheck.invalidFormat);
     if (code == null || code.code.isEmpty) return const PodCheckResult(PodCheck.noCode);
     if (code.isLockedByAttempts) return const PodCheckResult(PodCheck.tooManyAttempts);
@@ -324,5 +373,6 @@ abstract final class PodOtp {
     PodResend.limitReached => "No more new codes can be generated for this order.".tr,
     PodResend.alreadyVerified => "Delivery code verified".tr,
     PodResend.offline => "You are offline. Check your connection and try again.".tr,
+    PodResend.orderClosed => "This order was cancelled or closed. It can no longer be completed.".tr,
   };
 }

@@ -10,7 +10,7 @@ import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/services/delivery_pod_rules.dart';
 import 'package:driver/services/delivery_pod_service.dart';
 import 'package:driver/services/vendor_wallet_service.dart';
-import 'package:driver/constant/collection_name.dart';
+import 'package:driver/services/wallet_once.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
@@ -52,35 +52,48 @@ class DeliverOrderController extends GetxController {
   /// driver backed out or the code could not be created; nothing is written
   /// or credited then.
   Future<bool> verifyDeliveryOtp(BuildContext context, {required bool isDark}) async {
+    // One flow at a time: a second swipe while the sheet is up does nothing.
+    if (_otpFlowOpen) return false;
     if (orderModel.value.pod?.isVerified == true) return true;
-    ShowToastDialog.showLoader("Please wait".tr);
-    final PodState state;
+    _otpFlowOpen = true;
     try {
-      state = await DeliveryPodService.requestCode(orderModel.value);
-    } on PodOfflineException {
+      ShowToastDialog.showLoader("Please wait".tr);
+      final PodState state;
+      try {
+        state = await DeliveryPodService.requestCode(orderModel.value);
+      } on PodOfflineException {
+        ShowToastDialog.closeLoader();
+        ShowToastDialog.showToast(DeliveryPodRules.offlineMessage.tr);
+        return false;
+      } catch (e) {
+        ShowToastDialog.closeLoader();
+        ShowToastDialog.showToast("The delivery code could not be created. Please try again.".tr);
+        return false;
+      }
       ShowToastDialog.closeLoader();
-      ShowToastDialog.showToast(DeliveryPodRules.offlineMessage.tr);
-      return false;
-    } catch (e) {
-      ShowToastDialog.closeLoader();
-      ShowToastDialog.showToast("The delivery code could not be created. Please try again.".tr);
-      return false;
-    }
-    ShowToastDialog.closeLoader();
-    if (state.isVerified) {
-      _markVerified(DeliveryPod(method: 'otp', status: DeliveryPodRules.statusVerified, verifiedAt: state.verifiedAt));
+      if (state.orderClosed) {
+        ShowToastDialog.showToast(DeliveryPodRules.orderClosedMessage.tr);
+        return false;
+      }
+      if (state.isVerified) {
+        _markVerified(DeliveryPod(method: 'otp', status: DeliveryPodRules.statusVerified, verifiedAt: state.verifiedAt));
+        return true;
+      }
+      if (!context.mounted) return false;
+      final DeliveryPod? pod = await showDeliveryOtpSheet(context, isDark: isDark, order: orderModel.value, initial: state);
+      if (pod == null || !pod.isVerified) return false;
+      _markVerified(pod);
       return true;
+    } finally {
+      _otpFlowOpen = false;
     }
-    if (!context.mounted) return false;
-    final DeliveryPod? pod = await showDeliveryOtpSheet(context, isDark: isDark, order: orderModel.value, initial: state);
-    if (pod == null || !pod.isVerified) return false;
-    _markVerified(pod);
-    return true;
   }
 
-  /// Keeps the in-memory order in step with Firestore, so the completion's
-  /// `setOrder` (a deep merge) writes `pod.status: verified`, never an older
-  /// value, and a retry skips the code.
+  bool _otpFlowOpen = false;
+
+  /// Keeps the in-memory order in step with Firestore, so a retry skips the
+  /// code. Display only: `OrderModel.toJson` never writes `pod` (only the
+  /// POD transactions do), so no save can roll it back.
   void _markVerified(DeliveryPod pod) {
     orderModel.value.pod = pod;
   }
@@ -96,7 +109,9 @@ class DeliverOrderController extends GetxController {
     try {
       await _completeOrder();
     } catch (e) {
-      // A failed completion must be retryable — and must not have credited.
+      // A failed completion must be retryable: every payment above is
+      // once-per-order (WalletOnce, vendorCredited), so the retry pays nothing
+      // twice, and the verified `pod` means it asks for no new code.
       orderModel.value.status = previousStatus;
       _completing = false;
       ShowToastDialog.closeLoader();
@@ -113,16 +128,16 @@ class DeliverOrderController extends GetxController {
     // credit the STORE. updateWallateAmount() only moves the driver's balance.
     // Idempotent, and a no-op when the Store app already credited this order.
     await VendorWalletService.creditStoreForCompletedOrder(orderModel.value);
-    // One cashback row per order, keyed by the order and shared with the Store
-    // app: a retried completion, or both apps completing, cannot pay it twice.
+    // One cashback row per order (`cashback_<orderId>`, shared with the Store
+    // app), written together with the wallet balance in one transaction that
+    // first checks the row: a retried completion, or both apps completing at
+    // once, cannot pay it twice.
     final String? orderId = orderModel.value.id;
-    final String cashbackRowId = 'cashback_$orderId';
-    final bool cashbackAlreadyPaid =
-        orderId != null && (await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(cashbackRowId).get()).exists;
-    if (!cashbackAlreadyPaid && orderModel.value.cashback?.cashbackValue != null && orderModel.value.cashback?.id != null) {
+    if (orderModel.value.cashback?.cashbackValue != null && orderModel.value.cashback?.id != null) {
+      final double cashback = double.parse("${orderModel.value.cashback?.cashbackValue ?? 0.0}");
       WalletTransactionModel transactionModel = WalletTransactionModel(
-          id: orderId != null ? cashbackRowId : Constant.getUuid(),
-          amount: double.parse("${orderModel.value.cashback?.cashbackValue ?? 0.0}"),
+          id: orderId != null ? WalletOnce.cashbackRowId(orderId) : Constant.getUuid(),
+          amount: cashback,
           date: Timestamp.now(),
           paymentMethod: "Cashback Amount",
           transactionUser: "user",
@@ -131,11 +146,7 @@ class DeliverOrderController extends GetxController {
           orderId: orderModel.value.id,
           note: "Cashback Amount",
           paymentStatus: "success");
-      await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-        if (value == true) {
-          await FireStoreUtils.updateUserWallet(amount: double.parse("${orderModel.value.cashback?.cashbackValue ?? 0.0}").toString(), userId: orderModel.value.author!.id.toString());
-        }
-      });
+      await WalletOnce.pay(rowId: transactionModel.id!, row: transactionModel.toJson(), userId: orderModel.value.author?.id, amount: cashback);
     }
     await FireStoreUtils.setOrder(orderModel.value);
     if (Constant.userModel?.vendorID != null) {

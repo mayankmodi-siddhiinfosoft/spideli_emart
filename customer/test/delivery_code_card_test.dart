@@ -17,14 +17,14 @@ void main() {
   final DateTime t0 = DateTime(2026, 10, 3, 14, 0, 0);
   late DateTime clock;
 
-  OrderPodCode code({String status = 'pending', String digits = '482913', Duration ttl = const Duration(minutes: 10)}) => OrderPodCode.fromJson({
+  OrderPodCode code({String status = 'pending', String digits = '482913', Duration ttl = const Duration(minutes: 10), bool serverTime = true}) => OrderPodCode.fromJson({
     'orderId': 'order-1',
     'customerId': 'cust-1',
     'driverId': 'drv-1',
     'vendorId': 'ven-1',
     'code': digits,
     'status': status,
-    'generatedAt': Timestamp.fromDate(t0),
+    if (serverTime) 'generatedAt': Timestamp.fromDate(t0),
     'expiresAt': Timestamp.fromDate(t0.add(ttl)),
     'attempts': 0,
     'regenerations': 1,
@@ -63,14 +63,48 @@ void main() {
     }
   });
 
-  testWidgets('a pending code past expiresAt turns into "Code expired"', (tester) async {
-    await tester.pumpWidget(host(card(code(ttl: const Duration(seconds: 2)))));
+  testWidgets('a pending code past its 10 minutes turns into "Code expired" (after the skew grace)', (tester) async {
+    await tester.pumpWidget(host(card(code())));
     expect(find.text('4'), findsOneWidget);
 
-    clock = t0.add(const Duration(seconds: 3));
+    // 10 minutes on: the countdown reads 00:00 but the digits stay for the
+    // 30-second clock-skew grace (the checking phone may be a little behind).
+    clock = t0.add(const Duration(minutes: 10, seconds: 20));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('4'), findsOneWidget);
+    expect(find.text('Expires in 00:00'), findsOneWidget);
+
+    clock = t0.add(const Duration(minutes: 10, seconds: 31));
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('4'), findsNothing);
     expect(find.text('Code expired — ask your delivery partner for a new one'), findsOneWidget);
+  });
+
+  testWidgets('without the server time yet, expiresAt is used', (tester) async {
+    await tester.pumpWidget(host(card(code(ttl: const Duration(seconds: 2), serverTime: false))));
+    expect(find.text('4'), findsOneWidget);
+
+    clock = t0.add(const Duration(seconds: 33));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('4'), findsNothing);
+    expect(find.text('Code expired — ask your delivery partner for a new one'), findsOneWidget);
+  });
+
+  group('clock skew', () {
+    test('the countdown follows the server generatedAt, not the generating phone', () {
+      // Driver phone 5 minutes fast: expiresAt says t0+15m.
+      final fast = code(ttl: const Duration(minutes: 15));
+      expect(fast.remaining(t0), const Duration(minutes: 10));
+      expect(fast.isLive(t0.add(const Duration(minutes: 11))), isFalse);
+      // Driver phone 5 minutes slow: expiresAt says t0+5m.
+      final slow = code(ttl: const Duration(minutes: 5));
+      expect(slow.isLive(t0.add(const Duration(minutes: 6))), isTrue);
+      expect(slow.remaining(t0.add(const Duration(minutes: 6))), const Duration(minutes: 4));
+    });
+
+    test('a customer phone running behind never shows more than 10 minutes', () {
+      expect(code().remaining(t0.subtract(const Duration(minutes: 3))), const Duration(minutes: 10));
+    });
   });
 
   testWidgets('status expired (too many attempts) shows the expired message', (tester) async {
@@ -144,10 +178,15 @@ void main() {
       expect(find.textContaining('null'), findsNothing);
     });
 
-    test('OrderModel round-trips pod as written and never writes it when absent', () {
+    test('OrderModel reads pod but never writes it back (no save can roll it back)', () {
       final Map<String, dynamic> raw = {'id': 'order-1', 'deliveryCharge': '0', 'tip_amount': '0', 'pod': verifiedPod!.toJson()..['extra'] = 'kept'};
-      final json = OrderModel.fromJson(raw).toJson();
-      expect(json['pod'], raw['pod']);
+      final OrderModel read = OrderModel.fromJson(raw);
+      expect(read.pod!.isVerified, isTrue);
+      expect(read.pod!.toJson()['extra'], 'kept');
+      expect(read.toJson().containsKey('pod'), isFalse);
+
+      final pending = OrderModel.fromJson({'id': 'order-3', 'deliveryCharge': '0', 'tip_amount': '0', 'pod': {'method': 'otp', 'status': 'pending'}});
+      expect(pending.toJson().containsKey('pod'), isFalse, reason: 'a stale pending copy must never overwrite a verified pod');
 
       final older = OrderModel.fromJson({'id': 'order-2', 'deliveryCharge': '0', 'tip_amount': '0'});
       expect(older.pod, isNull);

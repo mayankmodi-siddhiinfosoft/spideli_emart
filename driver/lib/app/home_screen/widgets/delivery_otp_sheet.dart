@@ -66,6 +66,7 @@ class _DeliveryOtpSheetState extends State<_DeliveryOtpSheet> {
   /// Why there is no live code to type, or null when there is one.
   String? _messageForState(PodState s) {
     final DateTime now = DateTime.now();
+    if (s.orderClosed) return DeliveryPodRules.orderClosedMessage.tr;
     if (s.refused?.kind == PodNewCodeKind.capReached) return DeliveryPodRules.capReachedMessage.tr;
     if (s.status == null) return DeliveryPodRules.noCodeMessage.tr;
     if (s.attempts >= DeliveryPodRules.maxAttempts) return DeliveryPodRules.tooManyAttemptsMessage.tr;
@@ -74,6 +75,8 @@ class _DeliveryOtpSheetState extends State<_DeliveryOtpSheet> {
   }
 
   Future<void> _verify() async {
+    // One check at a time: a second tap while one runs does nothing.
+    if (_verifying || _requesting) return;
     final String entered = _pin.text.trim();
     if (entered.length != DeliveryPodRules.codeLength) {
       setState(() => _error = "Enter the 6-digit code from the customer's app.".tr);
@@ -108,6 +111,7 @@ class _DeliveryOtpSheetState extends State<_DeliveryOtpSheet> {
   }
 
   Future<void> _newCode() async {
+    if (_verifying || _requesting) return;
     setState(() {
       _requesting = true;
       _error = null;
@@ -122,7 +126,11 @@ class _DeliveryOtpSheetState extends State<_DeliveryOtpSheet> {
       _pin.clear();
       setState(() {
         _state = s;
-        _error = s.refused?.kind == PodNewCodeKind.capReached ? DeliveryPodRules.capReachedMessage.tr : null;
+        _error = s.orderClosed
+            ? DeliveryPodRules.orderClosedMessage.tr
+            : s.refused?.kind == PodNewCodeKind.capReached
+                ? DeliveryPodRules.capReachedMessage.tr
+                : null;
       });
       if (s.created) ShowToastDialog.showToast("A new code was sent to the customer's app.".tr);
     } on PodOfflineException {
@@ -134,8 +142,9 @@ class _DeliveryOtpSheetState extends State<_DeliveryOtpSheet> {
     }
   }
 
+  /// Rounded up, so a button never reads 0:00 while it is still disabled.
   static String _mmss(Duration d) {
-    final int s = d.inSeconds < 0 ? 0 : d.inSeconds;
+    final int s = d.isNegative ? 0 : (d.inMilliseconds + 999) ~/ 1000;
     return '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
   }
 
@@ -148,8 +157,8 @@ class _DeliveryOtpSheetState extends State<_DeliveryOtpSheet> {
     final Duration cooldown = _state.status == null ? Duration.zero : DeliveryPodRules.cooldownRemaining(now: now, lastGeneratedAt: _state.lastGeneratedAt);
     final int codesLeft = _state.status == null ? DeliveryPodRules.maxRegenerations : DeliveryPodRules.regenerationsLeft(_state.regenerations);
     final bool capReached = _state.status != null && codesLeft <= 0;
-    final bool canRequest = !_requesting && !_verifying && !capReached && cooldown == Duration.zero;
-    final Duration expiresIn = _state.expiresAt == null ? Duration.zero : _state.expiresAt!.difference(now);
+    final bool canRequest = !_requesting && !_verifying && !capReached && !_state.orderClosed && cooldown == Duration.zero;
+    final Duration expiresIn = _state.deadline == null ? Duration.zero : _state.deadline!.difference(now);
 
     return DsSheet(
       title: "Enter delivery code".tr,
@@ -161,7 +170,7 @@ class _DeliveryOtpSheetState extends State<_DeliveryOtpSheet> {
         size: DsButtonSize.xl,
         expand: true,
         loading: _verifying,
-        onPressed: _verifying || _requesting ? null : _verify,
+        onPressed: _verifying || _requesting || _state.orderClosed ? null : _verify,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
