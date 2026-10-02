@@ -34,12 +34,12 @@ class DashBoardController extends GetxController {
 
   void setPage() {
     final baseItems = <NavigationItem>[
-      const NavigationItem(label: "Home", iconPath: "assets/icons/ic_home_cab.svg", page: HomeScreen()),
+      const NavigationItem(label: homeTab, iconPath: "assets/icons/ic_home_cab.svg", page: HomeScreen()),
       if (sectionModel.value.dineInActive != null && sectionModel.value.dineInActive == true)
-        NavigationItem(label: "Dine in", iconPath: "assets/icons/ic_dinein.svg", page: const DineInOrderScreen(), permissionModule: "Dine in Request"),
-      NavigationItem(label: "Products", iconPath: "assets/icons/ic_menu.svg", page: const ProductListScreen(), permissionModule: "Manage Products"),
-      NavigationItem(label: "Wallet", iconPath: "assets/icons/ic_wallet.svg", page: const WalletScreen(), permissionModule: "Wallet"),
-      const NavigationItem(label: "Profile", iconPath: "assets/icons/ic_profile.svg", page: ProfileScreen()),
+        NavigationItem(label: dineInTab, iconPath: "assets/icons/ic_dinein.svg", page: const DineInOrderScreen(), permissionModule: "Dine in Request"),
+      NavigationItem(label: productsTab, iconPath: "assets/icons/ic_menu.svg", page: const ProductListScreen(), permissionModule: "Manage Products"),
+      NavigationItem(label: walletTab, iconPath: "assets/icons/ic_wallet.svg", page: const WalletScreen(), permissionModule: "Wallet"),
+      const NavigationItem(label: profileTab, iconPath: "assets/icons/ic_profile.svg", page: ProfileScreen()),
     ];
     // filter by permission
     navigationItems.value = baseItems.where((item) {
@@ -91,6 +91,38 @@ class DashBoardController extends GetxController {
 
     isLoading.value = false;
   }
+
+  /// Labels of the bottom tabs, used to open one by what it is rather than by
+  /// where it happens to sit. Kept equal to the `label` given in [setPage].
+  static const String homeTab = "Home";
+  static const String dineInTab = "Dine in";
+  static const String productsTab = "Products";
+  static const String walletTab = "Wallet";
+  static const String profileTab = "Profile";
+
+  /// Position of the tab labelled [label] in the bar the signed-in user
+  /// actually has, or -1 when that tab is not there for them.
+  int indexOfTab(String label) => tabIndexIn(navigationItems, label);
+
+  /// Opens the tab labelled [label]. Does nothing when the user does not have
+  /// that tab, which an employee whose role leaves it out does not.
+  ///
+  /// Report 02#7: the photo in the home header (and the "Manage Products" /
+  /// "Dine in Requests" rows in the profile) used to set a fixed position such
+  /// as 3 or 4. Those positions only exist for an owner; an employee's bar is
+  /// filtered by role and is shorter, so the dashboard then read past the end
+  /// of its own tab list while building and the whole screen came up blank.
+  void openTab(String label) {
+    final int index = indexOfTab(label);
+    if (index >= 0) selectedIndex.value = index;
+  }
+
+  /// [indexOfTab] over any list, so it can be tested without Firebase.
+  static int tabIndexIn(List<NavigationItem> items, String label) => items.indexWhere((item) => item.label == label);
+
+  /// The tab position that is safe to show for [selected] among [count] tabs:
+  /// [selected] itself when it exists, otherwise the first tab.
+  static int safeTabIndex(int selected, int count) => (selected >= 0 && selected < count) ? selected : 0;
 
   DateTime? currentBackPressTime;
   RxBool canPopNow = false.obs;

@@ -165,19 +165,21 @@ class ChatScreen extends StatelessWidget {
         ),
       );
     } else if (data.messageType == "image") {
+      final String imageUrl = data.url?.url ?? '';
+      // Tagged per message, not per URL: the same photo sent twice would
+      // otherwise put two heroes with one tag on this screen.
+      final Object? heroTag = data.id == null ? null : 'chat-image-${data.id}';
+      final Widget thumb = NetworkImageWidget(imageUrl: imageUrl, height: 200, width: 200, fit: BoxFit.cover);
       bubble = ClipRRect(
         borderRadius: radius,
         child: GestureDetector(
           onTap: () {
-            Get.to(FullScreenImageViewer(imageUrl: data.url!.url));
+            FullScreenImageViewer.open(imageUrl, heroTag: heroTag);
           },
           child: Semantics(
             button: true,
             label: 'Image'.tr,
-            child: Hero(
-              tag: data.url!.url,
-              child: NetworkImageWidget(imageUrl: data.url!.url, height: 200, width: 200, fit: BoxFit.cover),
-            ),
+            child: heroTag == null ? thumb : Hero(tag: heroTag, child: thumb),
           ),
         ),
       );
@@ -195,7 +197,10 @@ class ChatScreen extends StatelessWidget {
         label: 'Play video'.tr,
         child: DsPressable(
           onTap: () {
-            Get.to(FullScreenVideoViewer(heroTag: data.id.toString(), videoUrl: data.url!.url));
+            final String videoUrl = data.url?.url ?? '';
+            if (FullScreenVideoViewer.canPlay(videoUrl)) {
+              Get.to(FullScreenVideoViewer(heroTag: data.id.toString(), videoUrl: videoUrl));
+            }
           },
           child: ClipRRect(
             borderRadius: radius,

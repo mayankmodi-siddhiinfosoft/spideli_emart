@@ -150,13 +150,7 @@ class ProfileScreen extends StatelessWidget {
                           tone: DsTone.brand,
                           title: "Manage Products",
                           onPress: () {
-                            DashBoardController dashBoardController = Get.find<DashBoardController>();
-                            if (controller.userModel.value.role == Constant.userRoleVendor) {
-                              dashBoardController.selectedIndex.value = Constant.selectedSection!.dineInActive == true ? 2 : 1;
-                            } else {
-                              dashBoardController.selectedIndex.value =
-                                  Constant.getEmployeeRolePermission(module: "Dine in Request") == true && Constant.selectedSection?.dineInActive == true ? 2 : 1;
-                            }
+                            Get.find<DashBoardController>().openTab(DashBoardController.productsTab);
                           },
                         )
                       : null,
@@ -260,8 +254,7 @@ class ProfileScreen extends StatelessWidget {
                       tone: DsTone.warning,
                       title: "Dine in Requests",
                       onPress: () {
-                        DashBoardController dashBoardController = Get.find<DashBoardController>();
-                        dashBoardController.selectedIndex.value = 1;
+                        Get.find<DashBoardController>().openTab(DashBoardController.dineInTab);
                       },
                     ),
                 ])

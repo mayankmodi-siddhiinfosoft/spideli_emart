@@ -216,6 +216,10 @@ class HelpSupportScreen extends StatelessWidget {
 
     Widget media() {
       final placeholder = DsShimmer(child: DsSkeleton.box(width: 200, height: 160, radius: 0));
+      final String mediaUrl = data.url?.url ?? '';
+      // Tagged per message, not per URL: the same file sent twice would
+      // otherwise put two heroes with one tag on this screen.
+      final Object mediaTag = 'support-media-${data.id ?? identityHashCode(data)}';
       if (data.messageType == "image") {
         return ConstrainedBox(
           constraints: const BoxConstraints(minWidth: 50, maxWidth: 200),
@@ -226,11 +230,11 @@ class HelpSupportScreen extends StatelessWidget {
               children: [
                 GestureDetector(
                   onTap: () {
-                    Get.to(FullScreenImageViewer(imageUrl: data.url!.url));
+                    FullScreenImageViewer.open(mediaUrl, heroTag: mediaTag);
                   },
                   child: Hero(
-                    tag: data.url!.url,
-                    child: CachedNetworkImage(imageUrl: data.url!.url, placeholder: (context, url) => placeholder, errorWidget: (context, url, error) => const Icon(Icons.error)),
+                    tag: mediaTag,
+                    child: CachedNetworkImage(imageUrl: mediaUrl, placeholder: (context, url) => placeholder, errorWidget: (context, url, error) => const Icon(Icons.error)),
                   ),
                 ),
               ],
@@ -242,7 +246,9 @@ class HelpSupportScreen extends StatelessWidget {
         constraints: const BoxConstraints(minWidth: 50, maxWidth: 200),
         child: InkWell(
           onTap: () {
-            Get.to(FullScreenVideoViewer(heroTag: data.id.toString(), videoUrl: data.url!.url));
+            if (FullScreenVideoViewer.canPlay(mediaUrl)) {
+              Get.to(FullScreenVideoViewer(heroTag: data.id.toString(), videoUrl: mediaUrl, mediaHeroTag: mediaTag));
+            }
           },
           child: ClipRRect(
             borderRadius: bubbleRadius,
@@ -250,7 +256,7 @@ class HelpSupportScreen extends StatelessWidget {
               alignment: Alignment.center,
               children: [
                 Hero(
-                  tag: data.url!.url,
+                  tag: mediaTag,
                   child: CachedNetworkImage(
                     imageUrl: data.videoThumbnail ?? '',
                     placeholder: (context, url) => placeholder,

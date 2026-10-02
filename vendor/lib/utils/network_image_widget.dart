@@ -35,7 +35,15 @@ class NetworkImageWidget extends StatelessWidget {
               child: Container(height: h, width: w, color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0)),
             )
           : SizedBox(height: h, width: w),
-      errorWidget: (context, url, error) => errorWidget ?? Image.network(Constant.placeholderImage, fit: fit ?? BoxFit.cover, height: h, width: w),
+      errorWidget: (context, url, error) {
+        if (errorWidget != null) return errorWidget!;
+        // A neutral box when there is no placeholder to show either: the
+        // placeholder address is empty until the settings load, and
+        // `Image.network('')` fails with nothing on screen.
+        final Widget blank = Container(height: h, width: w, color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0));
+        if (!Constant().hasValidUrl(Constant.placeholderImage)) return blank;
+        return Image.network(Constant.placeholderImage, fit: fit ?? BoxFit.cover, height: h, width: w, errorBuilder: (_, _, _) => blank);
+      },
     );
   }
 }

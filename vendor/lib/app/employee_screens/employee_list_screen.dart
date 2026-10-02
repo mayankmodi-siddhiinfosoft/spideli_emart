@@ -141,7 +141,11 @@ class EmployeeListScreen extends StatelessWidget {
                               });
                             },
                             role: FutureBuilder<EmployeeRoleModel?>(
-                              future: FireStoreUtils.getEmployeeRoleById(controller.employeeUserList[index].employeePermissionId!),
+                              // An employee saved without a role used to throw here
+                              // (`!` on null) and blank the whole list.
+                              future: (controller.employeeUserList[index].employeePermissionId ?? '').isEmpty
+                                  ? Future<EmployeeRoleModel?>.value(null)
+                                  : FireStoreUtils.getEmployeeRoleById(controller.employeeUserList[index].employeePermissionId!),
                               builder: (context, snapshot) {
                                 if (snapshot.connectionState == ConnectionState.waiting || snapshot.hasError) {
                                   return const SizedBox(height: 18, width: 18, child: DsSpinner(size: 16));
@@ -209,7 +213,7 @@ class EmployeeListScreen extends StatelessWidget {
   }
 
   Widget showListOfRoleDialog(BuildContext context, EmployeeRoleModel model) {
-    final active = model.permissions!.where((e) => e.title != null && e.title!.isNotEmpty && e.isActive == true).map((e) => e.title!).toList();
+    final active = (model.permissions ?? const []).where((e) => e.title != null && e.title!.isNotEmpty && e.isActive == true).map((e) => e.title!).toList();
     return DsDialog(
       title: "Permissions".tr,
       message: model.title,

@@ -845,4 +845,6 @@ const Map<String, String> enUS = {
   "The administrator lets this store set its own delivery charges.": "The administrator lets this store set its own delivery charges.",
   "Delivery charges are set by the administrator and cannot be changed here.": "Delivery charges are set by the administrator and cannot be changed here.",
   "Please pick the start time first": "Please pick the start time first",
+  "Photo not available": "Photo not available",
+  "Video not available": "Video not available",
 };

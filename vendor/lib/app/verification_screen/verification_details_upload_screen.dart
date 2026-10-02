@@ -226,6 +226,12 @@ class _DocumentSlot extends StatelessWidget {
                                   ),
                                   errorWidget: (context, url, error) => Image.network(
                                     'https://firebasestorage.googleapis.com/v0/b/goride-1a752.appspot.com/o/placeholderImages%2Fuser-placeholder.jpeg?alt=media&token=34a73d67-ba1d-4fe4-a29f-271d3e3ca115',
+                                    // The placeholder lives in another project's bucket; if it
+                                    // cannot be read either, show an empty slot, not nothing.
+                                    errorBuilder: (_, _, _) => ColoredBox(
+                                      color: c.surfaceAlt,
+                                      child: Center(child: Icon(Icons.broken_image_outlined, color: c.textMuted, size: 32)),
+                                    ),
                                   ),
                                 ),
                         ),

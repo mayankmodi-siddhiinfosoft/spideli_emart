@@ -44,8 +44,12 @@ class AddEmployeeController extends GetxController {
 
   Future<void> getArgument() async {
     dynamic argumentData = Get.arguments;
-    if (argumentData != null) {
-      employeeModel.value = argumentData['employeemodel'];
+    // Only a real employee opens the form in edit mode; anything else (no
+    // arguments, or a map without the employee) opens it empty to add one
+    // instead of assigning null into a non-nullable Rx.
+    final dynamic employee = argumentData is Map ? argumentData['employeemodel'] : null;
+    if (employee is UserModel) {
+      employeeModel.value = employee;
       if (employeeModel.value.id != null) {
         firstNameEditingController.value.text = employeeModel.value.firstName ?? '';
         lastNameEditingController.value.text = employeeModel.value.lastName ?? '';

@@ -18,6 +18,11 @@ class DashBoardScreen extends StatelessWidget {
       return GetX(
         init: DashBoardController(),
         builder: (controller) {
+          // Read synchronously so the builder stays subscribed to both. A
+          // position the user's tab bar does not have (report 02#7) falls back
+          // to the first tab instead of throwing and blanking the screen.
+          final int tabCount = controller.navigationItems.length;
+          final int currentTab = DashBoardController.safeTabIndex(controller.selectedIndex.value, tabCount);
           return PopScope(
             canPop: controller.canPopNow.value,
             onPopInvoked: (didPop) {
@@ -33,22 +38,22 @@ class DashBoardScreen extends StatelessWidget {
             },
             child: Scaffold(
               backgroundColor: context.dsColors.background,
-              body: controller.isLoading.value
+              body: controller.isLoading.value || tabCount == 0
                   ? Constant.loader()
                   // The new tab's page fades in; the previous one is removed at
                   // once, exactly as before (no overlap of the two pages).
                   : KeyedSubtree(
-                      key: ValueKey<int>(controller.selectedIndex.value),
+                      key: ValueKey<int>(currentTab),
                       child: DsFadeSlideIn(
                         offset: const Offset(0, 8),
                         duration: DsMotion.base,
-                        child: controller.navigationItems[controller.selectedIndex.value].page,
+                        child: controller.navigationItems[currentTab].page,
                       ),
                     ),
-              bottomNavigationBar: controller.isLoading.value
+              bottomNavigationBar: controller.isLoading.value || tabCount == 0
                   ? null
                   : _DsNavBar(
-                      currentIndex: controller.selectedIndex.value,
+                      currentIndex: currentTab,
                       onTap: (int index) {
                         controller.selectedIndex.value = index;
                       },

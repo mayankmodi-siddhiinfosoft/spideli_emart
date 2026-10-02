@@ -1666,8 +1666,11 @@ class HomeScreen extends StatelessWidget {
                   name: controller.userModel.value.fullName(),
                   size: 48,
                   onTap: () {
-                    DashBoardController dashBoardController = Get.find<DashBoardController>();
-                    dashBoardController.selectedIndex.value = Constant.selectedSection!.dineInActive == true ? 4 : 3;
+                    // By name, not position: an employee's tab bar is shorter
+                    // than an owner's (report 02#7).
+                    if (Get.isRegistered<DashBoardController>()) {
+                      Get.find<DashBoardController>().openTab(DashBoardController.profileTab);
+                    }
                   },
                 ),
               ),

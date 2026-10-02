@@ -168,7 +168,8 @@ class ProductRatingViewScreen extends StatelessWidget {
                         return DsPressable(
                           semanticLabel: "Photos".tr,
                           onTap: () {
-                            Get.to(FullScreenImageViewer(imageUrl: controller.ratingModel.value.photos?[index]));
+                            final dynamic photo = controller.ratingModel.value.photos?[index];
+                            FullScreenImageViewer.open(photo is String ? photo : null);
                           },
                           child: DsImage(url: controller.ratingModel.value.photos?[index], width: 96, height: 96, radius: DsRadius.md),
                         );
