@@ -1,3 +1,4 @@
+import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
@@ -123,6 +124,8 @@ class _BookingCard extends StatelessWidget {
                         Expanded(child: Align(alignment: AlignmentDirectional.centerEnd, child: buildPriceText(context, order))),
                       ],
                     ),
+                    // "Cancelled by Customer · <reason>" on cancelled / rejected bookings.
+                    CancellationInfoLine(status: order.status, fields: order, fallbackReason: order.reason, padding: const EdgeInsets.only(top: DsSpace.xs)),
                   ],
                 ),
               ),

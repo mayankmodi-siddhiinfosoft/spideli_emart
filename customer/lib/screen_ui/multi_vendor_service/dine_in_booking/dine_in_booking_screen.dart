@@ -1,3 +1,4 @@
+import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/dine_in_booking_controller.dart';
 import 'package:customer/models/dine_in_booking_model.dart';
@@ -116,6 +117,8 @@ class _BookingCard extends StatelessWidget {
                           OrderIdLine(id: bookingModel.id.toString(), compact: true, copyable: false),
                         ],
                       ),
+                      // "Rejected by Restaurant · <reason>" on cancelled / rejected bookings.
+                      CancellationInfoLine(status: bookingModel.status, fields: bookingModel, vendorWord: 'Restaurant', padding: const EdgeInsets.only(top: DsSpace.xs)),
                     ],
                   ),
                 ),

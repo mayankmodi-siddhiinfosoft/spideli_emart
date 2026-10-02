@@ -2,7 +2,9 @@ import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/collection_name.dart';
+import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/theme_controller.dart';
+import 'package:customer/models/cancellation_fields.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/themes/app_them_data.dart';
 import 'package:customer/themes/round_button_fill.dart';
@@ -19,8 +21,37 @@ class CancelReasonResult {
 
   const CancelReasonResult({required this.reason, required this.code});
 
-  /// Contract fields for a customer cancellation (APP-CONTRACT, CabCar).
-  Map<String, dynamic> toFields() => {'cancelReason': reason, 'cancelReasonCode': code, 'cancelledBy': 'customer', 'cancelledAt': Timestamp.now()};
+  /// The customer's display name for `cancelledByName`, or null.
+  static String? get customerName {
+    final name = Constant.userModel?.fullName().trim() ?? '';
+    return name.isEmpty ? null : name;
+  }
+
+  /// Contract fields for a customer cancellation (CANCEL-REASON-CONTRACT),
+  /// written in the same update as the status change.
+  Map<String, dynamic> toFields() {
+    final name = customerName;
+    return {
+      'cancelReason': reason,
+      'cancelReasonCode': code,
+      'cancelledBy': 'customer',
+      'cancelledByName': ?name,
+      'cancelledAt': FieldValue.serverTimestamp(),
+      'cancelAction': 'cancelled',
+    };
+  }
+
+  /// Mirrors [toFields] on a local model so the screen shows the result
+  /// before the listener catches up (local clock for the time).
+  void applyTo(CancellationFields model) {
+    model
+      ..cancelReason = reason
+      ..cancelReasonCode = code
+      ..cancelledBy = 'customer'
+      ..cancelledByName = customerName
+      ..cancelledAt = Timestamp.now()
+      ..cancelAction = 'cancelled';
+  }
 }
 
 /// Mandatory cancellation reason (spec 7.10 / 4.8). Reasons come from
@@ -49,13 +80,15 @@ class CancelReasonSheet {
     return reasons;
   }
 
-  static Future<CancelReasonResult?> show({String? title}) async {
+  /// [message] is an optional note under the title (e.g. what happens to
+  /// payments). Backing out returns null and must change nothing.
+  static Future<CancelReasonResult?> show({String? title, String? message}) async {
     ShowToastDialog.showLoader("Please wait".tr);
     final reasons = await customerReasons();
     ShowToastDialog.closeLoader();
     final isDark = Get.find<ThemeController>().isDark.value;
     return Get.bottomSheet<CancelReasonResult>(
-      _CancelReasonBody(reasons: reasons, title: title ?? "Why are you cancelling?".tr),
+      _CancelReasonBody(reasons: reasons, title: title ?? "Why are you cancelling?".tr, message: message),
       isScrollControlled: true,
       backgroundColor: isDark ? AppThemeData.grey900 : AppThemeData.grey50,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
@@ -66,8 +99,9 @@ class CancelReasonSheet {
 class _CancelReasonBody extends StatefulWidget {
   final List<String> reasons;
   final String title;
+  final String? message;
 
-  const _CancelReasonBody({required this.reasons, required this.title});
+  const _CancelReasonBody({required this.reasons, required this.title, this.message});
 
   @override
   State<_CancelReasonBody> createState() => _CancelReasonBodyState();
@@ -92,8 +126,9 @@ class _CancelReasonBodyState extends State<_CancelReasonBody> {
     }
     if (_isOther(_selected)) {
       final text = _other.text.trim();
-      if (text.isEmpty) {
-        ShowToastDialog.showToast("Please describe the reason".tr);
+      // Contract: "Other" needs at least 3 characters of free text.
+      if (text.length < 3) {
+        ShowToastDialog.showToast(text.isEmpty ? "Please describe the reason".tr : "Please describe the reason in at least 3 characters".tr);
         return;
       }
       Get.back(result: CancelReasonResult(reason: text, code: 'other'));
@@ -116,6 +151,10 @@ class _CancelReasonBodyState extends State<_CancelReasonBody> {
               Text(widget.title, style: AppThemeData.semiBoldTextStyle(fontSize: 18, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
               const SizedBox(height: 4),
               Text("A reason is required.".tr, style: AppThemeData.regularTextStyle(fontSize: 13, color: isDark ? AppThemeData.grey400 : AppThemeData.grey600)),
+              if (widget.message != null) ...[
+                const SizedBox(height: 4),
+                Text(widget.message!, style: AppThemeData.regularTextStyle(fontSize: 13, color: isDark ? AppThemeData.grey400 : AppThemeData.grey600)),
+              ],
               const SizedBox(height: 8),
               RadioGroup<String>(
                 groupValue: _selected,

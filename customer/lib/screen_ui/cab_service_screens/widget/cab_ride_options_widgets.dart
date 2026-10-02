@@ -617,15 +617,12 @@ class DriverCancelledBanner extends StatelessWidget {
 }
 
 /// Read-only CabCar extras of a ride: stops progress (from `stops[i].reached`),
-/// passengers, instructions, written-only, rider and, for history, the
-/// cancellation reason. Hidden when the ride has none of them.
+/// passengers, instructions, written-only and rider. Hidden when the ride has
+/// none of them. (Who cancelled and why is `CancellationInfoBlock`.)
 class CabRideExtrasView extends StatelessWidget {
   final CabOrderModel order;
-  final bool showCancellation;
 
-  const CabRideExtrasView({super.key, required this.order, this.showCancellation = false});
-
-  bool get _hasCancellation => (order.cancelReason?.isNotEmpty ?? false) && [Constant.orderCancelled, Constant.orderRejected].contains(order.status);
+  const CabRideExtrasView({super.key, required this.order});
 
   @override
   Widget build(BuildContext context) {
@@ -701,15 +698,6 @@ class CabRideExtrasView extends StatelessWidget {
         _ExtraSection(
           title: "Rider (booked for someone else)".tr,
           body: Text([order.riderName, order.riderPhone, order.riderEmail].whereType<String>().join(' · '), style: t.bodyStrong),
-        ),
-      );
-    }
-    if (showCancellation && _hasCancellation) {
-      final by = order.cancelledBy == 'driver' ? "by driver".tr : (order.cancelledBy == 'customer' ? "by you".tr : '');
-      children.add(
-        _ExtraSection(
-          title: "${'Cancellation reason'.tr} $by".trim(),
-          body: DsInlineAlert(tone: DsTone.danger, message: order.cancelReason!),
         ),
       );
     }

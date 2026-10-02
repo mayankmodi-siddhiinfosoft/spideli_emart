@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:customer/models/cancellation_fields.dart';
 import 'package:customer/models/tax_model.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/models/vendor_model.dart';
@@ -6,7 +7,7 @@ import 'package:customer/models/vendor_model.dart';
 import 'cart_product_model.dart';
 import 'cashback_model.dart';
 
-class OrderModel {
+class OrderModel with CancellationFields {
   /// Region the record belongs to (spec 18.12). History amounts use its
   /// currency; see `RegionService.currencyForRecord`.
   String? regionId;
@@ -160,6 +161,7 @@ class OrderModel {
     isFreeDelivery = json['isFreeDelivery'] ?? false;
     isPosOrder = json['isPosOrder'] ?? false;
     packagingChargeEnable = json['packagingChargeEnable'] ?? false;
+    readCancellation(json);
   }
 
   Map<String, dynamic> toJson() {
@@ -223,6 +225,7 @@ class OrderModel {
     data['isPosOrder'] = isPosOrder ?? false;
     data['packagingChargeEnable'] = packagingChargeEnable ?? false;
     if (regionId != null) data['regionId'] = regionId;
+    writeCancellation(data);
     return data;
   }
 }

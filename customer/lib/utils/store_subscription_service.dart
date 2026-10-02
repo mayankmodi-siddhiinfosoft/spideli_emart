@@ -308,8 +308,9 @@ class StoreSubscriptionService {
   }
 
   /// Cancels the subscription and its renewal: `status: "cancelled"`,
-  /// `cancelledAt`, `autoRenew: false`. Nothing is refunded.
-  static Future<void> cancel(String id) {
-    return _ref(id).update({'status': VendorSubscriptionModel.statusCancelled, 'cancelledAt': Timestamp.now(), 'autoRenew': false});
+  /// `cancelledAt`, `autoRenew: false`, plus the mandatory reason fields
+  /// (CANCEL-REASON-CONTRACT) in the same update. Nothing is refunded.
+  static Future<void> cancel(String id, Map<String, dynamic> reasonFields) {
+    return _ref(id).update({'status': VendorSubscriptionModel.statusCancelled, 'cancelledAt': Timestamp.now(), 'autoRenew': false, ...reasonFields});
   }
 }

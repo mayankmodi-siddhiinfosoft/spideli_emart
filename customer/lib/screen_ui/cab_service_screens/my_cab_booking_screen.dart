@@ -1,3 +1,4 @@
+import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/models/cab_order_model.dart';
 import 'package:customer/payment/create_razor_pay_order_model.dart';
@@ -361,6 +362,8 @@ class _RideHistoryCard extends StatelessWidget {
             ],
           ),
           OrderIdLine(id: order.id.toString(), compact: true, copyable: false),
+          // "Cancelled by Customer · <reason>" on cancelled / rejected rides.
+          CancellationInfoLine(status: order.status, fields: order, padding: const EdgeInsets.only(top: DsSpace.xs)),
           const DsGap(DsSpace.sm),
           CabRouteRail(source: order.sourceLocationName.toString(), destination: order.destinationLocationName.toString()),
           if (Constant.isEnableOTPTripStart == true) ...[

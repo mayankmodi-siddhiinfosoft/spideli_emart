@@ -1,8 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:customer/models/cancellation_fields.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/models/vendor_model.dart';
 
-class DineInBookingModel {
+class DineInBookingModel with CancellationFields {
   String? discount;
   String? id;
   String? guestPhone;
@@ -62,6 +63,7 @@ class DineInBookingModel {
     createdAt = json['createdAt'];
     guestLastName = json['guestLastName'];
     discountType = json['discountType'];
+    readCancellation(json);
   }
 
   Map<String, dynamic> toJson() {
@@ -88,6 +90,7 @@ class DineInBookingModel {
     data['createdAt'] = createdAt;
     data['guestLastName'] = guestLastName;
     data['discountType'] = discountType;
+    writeCancellation(data);
     return data;
   }
 }

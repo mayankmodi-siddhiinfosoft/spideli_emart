@@ -1,3 +1,4 @@
+import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/dine_in_booking_details_controller.dart';
 import 'package:customer/models/dine_in_booking_model.dart';
@@ -45,6 +46,9 @@ class DineInBookingDetails extends StatelessWidget {
                           status: booking.status,
                         ),
                       ),
+
+                      // ---------- who cancelled / rejected and why ----------
+                      CancellationInfoBlock(status: booking.status, fields: booking, vendorWord: 'Restaurant', padding: const EdgeInsets.only(top: DsSpace.md)),
 
                       // ---------- venue ----------
                       const DsGap(DsSpace.lg),

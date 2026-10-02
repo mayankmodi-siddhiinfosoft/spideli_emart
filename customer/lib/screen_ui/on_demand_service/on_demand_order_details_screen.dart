@@ -10,6 +10,8 @@ import '../../constant/constant.dart';
 import '../../themes/show_toast_dialog.dart';
 import '../multi_vendor_service/chat_screens/chat_screen.dart';
 import '../widgets/order_ui.dart';
+import '../../widget/cancel_reason_sheet.dart';
+import '../../widget/cancellation_info_view.dart';
 import 'on_demand_payment_screen.dart';
 import 'on_demand_review_screen.dart';
 import 'package:customer/utils/order_receipt_pdf.dart';
@@ -53,9 +55,15 @@ class OnDemandOrderDetailsScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: DsFadeSlideIn.stagger([
-                        if (status == Constant.orderCancelled)
-                          DsInlineAlert(tone: DsTone.danger, title: 'Cancel Reason'.tr, message: controller.onProviderOrder.value?.reason ?? ''),
-                        if (status == Constant.orderCancelled) const DsGap(DsSpace.md),
+                        // Who cancelled / rejected and why (CANCEL-REASON-CONTRACT);
+                        // `reason` is the pre-contract field.
+                        if (controller.onProviderOrder.value != null)
+                          CancellationInfoBlock(
+                            status: status,
+                            fields: controller.onProviderOrder.value!,
+                            fallbackReason: controller.onProviderOrder.value!.reason,
+                            padding: const EdgeInsets.only(bottom: DsSpace.md),
+                          ),
 
                         // Status + booking id + address hero.
                         DsCard.tinted(
@@ -725,33 +733,12 @@ class OnDemandOrderDetailsScreen extends StatelessWidget {
     return OrderMoneyRow(label: title, value: value, underline: underline == true, padding: padding);
   }
 
-  Future<void> showCancelBookingDialog(BuildContext context, OnDemandOrderDetailsController controller) {
-    return Get.dialog(
-      DsDialog(
-        title: 'Please give reason for canceling this Booking'.tr,
-        icon: Icons.cancel_outlined,
-        tone: DsTone.danger,
-        destructive: true,
-        content: DsTextField(
-          controller: controller.cancelBookingController.value,
-          hint: "Specify your reason here".tr,
-          maxLines: 5,
-          minLines: 3,
-          bottomSpacing: 0,
-        ),
-        secondaryLabel: 'Cancel'.tr,
-        onSecondary: () => Get.back(),
-        primaryLabel: 'Continue'.tr,
-        onPrimary: () async {
-          if (controller.cancelBookingController.value.text.trim().isEmpty) {
-            ShowToastDialog.showToast("Please enter reason".tr);
-          } else {
-            await controller.cancelBooking();
-          }
-        },
-      ),
-      barrierDismissible: false,
-    );
+  /// Mandatory reason (CANCEL-REASON-CONTRACT): backing out of the sheet
+  /// changes nothing — no status, refund or wallet movement.
+  Future<void> showCancelBookingDialog(BuildContext context, OnDemandOrderDetailsController controller) async {
+    final reason = await CancelReasonSheet.show(title: "Why are you cancelling this booking?".tr);
+    if (reason == null) return;
+    await controller.cancelBooking(reason);
   }
 
   void showBillBifurcationDialog(BuildContext context, OnDemandOrderDetailsController controller) {

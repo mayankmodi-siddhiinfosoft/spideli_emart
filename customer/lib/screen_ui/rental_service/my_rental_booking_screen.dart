@@ -1,3 +1,4 @@
+import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/models/rental_order_model.dart';
 import 'package:customer/screen_ui/auth_screens/login_screen.dart';
@@ -162,6 +163,8 @@ class _RentalBookingCard extends StatelessWidget {
                           ],
                         ),
                       ),
+                    // "Cancelled by Customer · <reason>" on cancelled / rejected bookings.
+                    CancellationInfoLine(status: order.status, fields: order, padding: const EdgeInsets.only(top: DsSpace.xs)),
                   ],
                 ),
               ),

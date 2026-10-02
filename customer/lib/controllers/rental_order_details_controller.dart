@@ -295,9 +295,7 @@ class RentalOrderDetailsController extends GetxController {
         return;
       }
       order.status = Constant.orderCancelled;
-      order.cancelReason = reason.reason;
-      order.cancelReasonCode = reason.code;
-      order.cancelledBy = 'customer';
+      reason.applyTo(order);
 
       // Refund only what was actually paid (bookings are paid during the
       // trip, so a cancellable booking is normally unpaid).

@@ -1,3 +1,4 @@
+import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/utils/order_receipt_pdf.dart';
 import 'package:customer/utils/ride_receipt_pdf.dart';
 import 'package:customer/utils/region_service.dart';
@@ -60,10 +61,12 @@ class CabOrderDetails extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: DsFadeSlideIn.stagger([
                       _RideHero(controller: controller),
+                      // Who cancelled / rejected and why (CANCEL-REASON-CONTRACT).
+                      CancellationInfoBlock(status: order.status, fields: order, padding: const EdgeInsets.only(top: DsSpace.md)),
                       const DsGap(DsSpace.lg),
                       _RouteMap(controller: controller),
-                      // Stops, passengers, instructions, rider, cancellation reason (spec 4.8).
-                      CabRideExtrasView(order: order, showCancellation: true),
+                      // Stops, passengers, instructions, rider (spec 4.8).
+                      CabRideExtrasView(order: order),
                       if (order.driver != null) ...[const DsGap(DsSpace.lg), _DriverCard(controller: controller)],
                       const DsGap(DsSpace.lg),
                       _TripMetrics(controller: controller),

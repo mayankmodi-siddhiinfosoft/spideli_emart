@@ -8,6 +8,7 @@ import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/utils/store_subscription_service.dart';
+import 'package:customer/widget/cancel_reason_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -136,21 +137,14 @@ class _MyStoreSubscriptionsScreenState extends State<MyStoreSubscriptionsScreen>
     await _run(() => StoreSubscriptionService.skipDay(s.id!, day), "Delivery day skipped".tr);
   }
 
+  /// Mandatory reason (CANCEL-REASON-CONTRACT); backing out changes nothing.
   Future<void> _cancel(VendorSubscriptionModel s) async {
-    final ok = await Get.dialog<bool>(
-      DsDialog(
-        title: "Cancel subscription".tr,
-        message: "Deliveries stop and the subscription will not be renewed. Payments already made are not refunded.".tr,
-        icon: Icons.cancel_outlined,
-        tone: DsTone.danger,
-        destructive: true,
-        primaryLabel: "Cancel subscription".tr,
-        onPrimary: () => Get.back(result: true),
-        secondaryLabel: "Keep".tr,
-        onSecondary: () => Get.back(result: false),
-      ),
+    final reason = await CancelReasonSheet.show(
+      title: "Why are you cancelling this subscription?".tr,
+      message: "Deliveries stop and the subscription will not be renewed. Payments already made are not refunded.".tr,
     );
-    if (ok == true) await _run(() => StoreSubscriptionService.cancel(s.id!), "Subscription cancelled".tr);
+    if (reason == null) return;
+    await _run(() => StoreSubscriptionService.cancel(s.id!, reason.toFields()), "Subscription cancelled".tr);
   }
 
   @override

@@ -3,6 +3,7 @@ import 'package:customer/models/rating_model.dart';
 import 'package:customer/models/wallet_transaction_model.dart';
 import 'package:customer/screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
+import 'package:customer/widget/cancel_reason_sheet.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
@@ -107,6 +108,9 @@ class ParcelOrderDetailsController extends GetxController {
       (order.status == Constant.orderPlaced || order.status == ParcelShipping.quoteRequestedStatus) && ParcelShipping.beforeHandOver(order.parcelStatus);
 
   Future<void> cancelParcelOrder() async {
+    // Mandatory reason (CANCEL-REASON-CONTRACT): backing out changes nothing.
+    final reason = await CancelReasonSheet.show(title: "Why are you cancelling this parcel?".tr);
+    if (reason == null) return;
     ShowToastDialog.showLoader("Cancelling order...".tr);
     // Re-read: the parcel may have been collected / dropped off since this screen opened.
     final ParcelOrderModel? fresh = parcelOrder.value.id == null ? null : await ParcelShippingService.findOrder(parcelOrder.value.id!);
@@ -123,6 +127,7 @@ class ParcelOrderDetailsController extends GetxController {
     // An unpaid quote request has nothing to refund.
     final bool wasPaid = parcelOrder.value.status != ParcelShipping.quoteRequestedStatus && (parcelOrder.value.paymentMethod ?? '').isNotEmpty;
     parcelOrder.value.status = Constant.orderCancelled;
+    reason.applyTo(parcelOrder.value);
     if (wasPaid && parcelOrder.value.paymentMethod?.toLowerCase() != "cod") {
       WalletTransactionModel walletTransaction = WalletTransactionModel(
         id: Constant.getUuid(),
@@ -146,7 +151,8 @@ class ParcelOrderDetailsController extends GetxController {
       await FireStoreUtils.updateUserWallet(amount: totalAmount.value.toString(), userId: FireStoreUtils.getCurrentUid());
     }
 
-    await FireStoreUtils.parcelOrderPlace(parcelOrder.value);
+    // Status and the reason fields in the same write.
+    await FireStoreUtils.parcelOrderPlace(parcelOrder.value, extra: reason.toFields());
     if (parcelOrder.value.isTrackable) {
       try {
         await ParcelShippingService.append(parcelOrder.value.id!, ParcelShippingService.event(ParcelShipping.cancelled), order: parcelOrder.value);

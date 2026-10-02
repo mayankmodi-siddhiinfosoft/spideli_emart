@@ -762,9 +762,7 @@ class IntercityHomeScreen extends StatelessWidget {
                             controller.currentOrder.update((order) {
                               if (order != null) {
                                 order.status = Constant.orderRejected;
-                                order.cancelReason = reason.reason;
-                                order.cancelReasonCode = reason.code;
-                                order.cancelledBy = 'customer';
+                                reason.applyTo(order);
                               }
                             });
                             controller.resetRideOptions();

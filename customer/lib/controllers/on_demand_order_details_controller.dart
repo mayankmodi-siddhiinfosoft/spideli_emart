@@ -11,6 +11,7 @@ import '../models/worker_model.dart';
 import '../service/fire_store_utils.dart';
 import '../service/send_notification.dart';
 import '../themes/show_toast_dialog.dart';
+import '../widget/cancel_reason_sheet.dart';
 
 class OnDemandOrderDetailsController extends GetxController {
   Rx<UserModel?> providerUser = Rx<UserModel?>(null);
@@ -18,7 +19,6 @@ class OnDemandOrderDetailsController extends GetxController {
   Rxn<WorkerModel> worker = Rxn<WorkerModel>();
 
   Rx<TextEditingController> couponTextController = TextEditingController().obs;
-  Rx<TextEditingController> cancelBookingController = TextEditingController().obs;
 
   RxDouble subTotal = 0.0.obs;
   RxDouble price = 0.0.obs;
@@ -154,7 +154,10 @@ class OnDemandOrderDetailsController extends GetxController {
     }
   }
 
-  Future<void> cancelBooking() async {
+  /// Cancels with the reason chosen in [CancelReasonSheet] (mandatory, see
+  /// CANCEL-REASON-CONTRACT); the caller shows the sheet and does nothing
+  /// when the customer backs out.
+  Future<void> cancelBooking(CancelReasonResult reason) async {
     final order = onProviderOrder.value;
     if (order == null) return;
 
@@ -266,9 +269,12 @@ class OnDemandOrderDetailsController extends GetxController {
 
       // Update order status & reason
       order.status = Constant.orderCancelled;
-      order.reason = cancelBookingController.value.text;
+      // `reason` is the pre-contract field the Provider / Worker apps read;
+      // the contract fields go out in the same write.
+      order.reason = reason.reason;
+      reason.applyTo(order);
 
-      await FireStoreUtils.updateOnDemandOrder(order); // Ensure this completes
+      await FireStoreUtils.updateOnDemandOrder(order, extra: reason.toFields()); // Ensure this completes
 
       // Notify provider
 
@@ -278,7 +284,8 @@ class OnDemandOrderDetailsController extends GetxController {
       }
 
       ShowToastDialog.closeLoader();
-      Get.back();
+      // Stay on the details screen, now showing who cancelled and why.
+      onProviderOrder.refresh();
       ShowToastDialog.showToast("Booking cancelled successfully".tr);
     } catch (e, st) {
       log("Cancel error: $e\n$st");

@@ -1,3 +1,4 @@
+import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/order_details_controller.dart';
 import 'package:customer/models/cart_product_model.dart';
@@ -105,6 +106,14 @@ class OrderDetailsScreen extends StatelessWidget {
                           status: status,
                           pulse: status == Constant.orderShipped || status == Constant.orderInTransit,
                         ),
+                      ),
+
+                      // ---------- who cancelled / rejected and why ----------
+                      CancellationInfoBlock(
+                        status: status,
+                        fields: order,
+                        vendorWord: isEcommerce ? 'Store' : 'Restaurant',
+                        padding: const EdgeInsets.only(top: DsSpace.md),
                       ),
 
                       // ---------- courier (e-commerce shipments) ----------

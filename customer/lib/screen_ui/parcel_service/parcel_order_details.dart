@@ -1,3 +1,4 @@
+import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/screen_ui/parcel_service/parcel_review_screen.dart';
 import 'package:customer/themes/ds/ds.dart';
@@ -104,6 +105,8 @@ class ParcelOrderDetails extends StatelessWidget {
                         status: controller.parcelOrder.value.parcelStatus ?? controller.parcelOrder.value.status ?? '',
                       ),
                     ),
+                    // Who cancelled / rejected and why (CANCEL-REASON-CONTRACT).
+                    CancellationInfoBlock(status: controller.parcelOrder.value.status, fields: controller.parcelOrder.value, padding: const EdgeInsets.only(top: DsSpace.lg)),
                     const DsGap(DsSpace.lg),
                     ParcelCard(
                       child: Column(

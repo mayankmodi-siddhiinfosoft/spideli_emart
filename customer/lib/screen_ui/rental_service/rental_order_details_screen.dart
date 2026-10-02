@@ -1,3 +1,4 @@
+import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/utils/order_receipt_pdf.dart';
 import 'package:customer/utils/ride_receipt_pdf.dart';
 import 'package:customer/utils/region_service.dart';
@@ -110,6 +111,8 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                         ],
                       ),
                     ),
+                    // Who cancelled / rejected and why (CANCEL-REASON-CONTRACT).
+                    CancellationInfoBlock(status: controller.order.value.status, fields: controller.order.value, padding: const EdgeInsets.only(top: DsSpace.lg)),
                     const DsGap(DsSpace.lg),
                     if (controller.order.value.rentalPackageModel != null)
                       RentalInfoCard(

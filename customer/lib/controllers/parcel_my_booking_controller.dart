@@ -9,6 +9,7 @@ import '../screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import '../service/fire_store_utils.dart';
 import '../service/parcel_shipping_service.dart';
 import '../themes/show_toast_dialog.dart';
+import '../widget/cancel_reason_sheet.dart';
 
 class ParcelMyBookingController extends GetxController {
   RxBool isLoading = true.obs;
@@ -79,6 +80,9 @@ class ParcelMyBookingController extends GetxController {
   }
 
   Future<void> cancelParcelOrder(ParcelOrderModel order) async {
+    // Mandatory reason (CANCEL-REASON-CONTRACT): backing out changes nothing.
+    final reason = await CancelReasonSheet.show(title: "Why are you cancelling this parcel?".tr);
+    if (reason == null) return;
     try {
       isLoading.value = true;
 
@@ -94,7 +98,9 @@ class ParcelMyBookingController extends GetxController {
       }
 
       order.status = Constant.orderCancelled;
-      await FireStoreUtils.parcelOrderPlace(order);
+      reason.applyTo(order);
+      // Status and the reason fields in the same write.
+      await FireStoreUtils.parcelOrderPlace(order, extra: reason.toFields());
       if (order.isTrackable) {
         await ParcelShippingService.append(order.id!, ParcelShippingService.event(ParcelShipping.cancelled), order: order).catchError((_) {});
       }

@@ -1,10 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:customer/models/cancellation_fields.dart';
 import 'package:customer/models/tax_model.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/models/vendor_model.dart';
 import 'package:customer/utils/parcel_pricing.dart';
 
-class ParcelOrderModel {
+class ParcelOrderModel with CancellationFields {
   /// Region the record belongs to (spec 18.12). History amounts use its
   /// currency; see `RegionService.currencyForRecord`.
   String? regionId;
@@ -233,6 +234,7 @@ class ParcelOrderModel {
       }
     }
     deliveryProof = json['deliveryProof'] is Map ? Map<String, dynamic>.from(json['deliveryProof']) : null;
+    readCancellation(json);
   }
 
   static String? _str(dynamic v) => (v == null || v.toString().isEmpty) ? null : v.toString();
@@ -336,6 +338,7 @@ class ParcelOrderModel {
 
     if (regionId != null) data['regionId'] = regionId;
     data.addAll(shippingJson());
+    writeCancellation(data);
     return data;
   }
 }

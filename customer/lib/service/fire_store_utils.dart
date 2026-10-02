@@ -2163,8 +2163,10 @@ class FireStoreUtils {
     await fireStore.collection(CollectionName.rides).doc(orderModel.id).setKnownFields(orderModel.toJson());
   }
 
-  static Future parcelOrderPlace(ParcelOrderModel orderModel) async {
-    await fireStore.collection(CollectionName.parcelOrders).doc(orderModel.id).setKnownFields(orderModel.toJson());
+  /// [extra] fields go out in the same write (e.g. the cancellation contract
+  /// fields with a server timestamp alongside the status change).
+  static Future parcelOrderPlace(ParcelOrderModel orderModel, {Map<String, dynamic>? extra}) async {
+    await fireStore.collection(CollectionName.parcelOrders).doc(orderModel.id).setKnownFields({...orderModel.toJson(), ...?extra});
   }
 
   static Future rentalOrderPlace(RentalOrderModel orderModel) async {
@@ -2584,14 +2586,16 @@ class FireStoreUtils {
     }
   }
 
-  static Future<void> updateOnDemandOrder(OnProviderOrderModel orderModel) async {
+  /// [extra] fields go out in the same write (e.g. the cancellation contract
+  /// fields with a server timestamp alongside the status change).
+  static Future<void> updateOnDemandOrder(OnProviderOrderModel orderModel, {Map<String, dynamic>? extra}) async {
     if (orderModel.id.isEmpty) {
       throw Exception("Order ID cannot be empty");
     }
 
     try {
       final docRef = fireStore.collection(CollectionName.providerOrders).doc(orderModel.id);
-      await docRef.set(orderModel.toJson(), SetOptions(merge: true));
+      await docRef.set({...orderModel.toJson(), ...?extra}, SetOptions(merge: true));
     } catch (e) {
       print("Error updating OnDemand order: $e");
       rethrow;

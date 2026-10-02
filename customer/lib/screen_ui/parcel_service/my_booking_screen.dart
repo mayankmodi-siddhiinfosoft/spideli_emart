@@ -1,3 +1,4 @@
+import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/screen_ui/auth_screens/login_screen.dart';
 import 'package:customer/screen_ui/parcel_service/parcel_order_details.dart';
 import 'package:customer/screen_ui/widgets/order_ui.dart';
@@ -132,6 +133,8 @@ class _BookingCard extends StatelessWidget {
             ],
           ),
           OrderIdLine(id: order.id.toString(), compact: true, copyable: false),
+          // "Cancelled by Customer · <reason>" on cancelled / rejected parcels.
+          CancellationInfoLine(status: order.status, fields: order, padding: const EdgeInsets.only(top: DsSpace.xs)),
           const DsGap(DsSpace.sm),
           _RouteBlock(order: order),
         ],

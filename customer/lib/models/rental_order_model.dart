@@ -1,11 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:customer/models/cancellation_fields.dart';
 import 'package:customer/models/rental_package_model.dart';
 import 'package:customer/models/rental_vehicle_type.dart';
 import 'package:customer/models/tax_model.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/models/vendor_model.dart';
 
-class RentalOrderModel {
+class RentalOrderModel with CancellationFields {
   /// Region the record belongs to (spec 18.12). History amounts use its
   /// currency; see `RegionService.currencyForRecord`.
   String? regionId;
@@ -53,11 +54,9 @@ class RentalOrderModel {
   /// The listed price kept when a proposal changes `subTotal`. Not in [toJson].
   String? listedPrice;
 
-  // Cancellation (contract). Written by dedicated field updates only.
-  String? cancelReason;
-  String? cancelReasonCode;
-  String? cancelledBy;
-  Timestamp? cancelledAt;
+  // Cancellation (contract): fields from [CancellationFields], written by
+  // `RentalBookingCancellation` with the status; [toJson] writes back only
+  // the ones present, so no later save clears them.
 
   RentalOrderModel({
     this.status,
@@ -144,10 +143,7 @@ class RentalOrderModel {
     }
     priceProposal = json['priceProposal'] is Map ? Map<String, dynamic>.from(json['priceProposal']) : null;
     listedPrice = json['listedPrice']?.toString();
-    cancelReason = json['cancelReason']?.toString();
-    cancelReasonCode = json['cancelReasonCode']?.toString();
-    cancelledBy = json['cancelledBy']?.toString();
-    cancelledAt = json['cancelledAt'] is Timestamp ? json['cancelledAt'] : null;
+    readCancellation(json);
   }
 
   /// "pending" | "accepted" | "rejected" | "countered", or null (no proposal).
@@ -223,6 +219,7 @@ class RentalOrderModel {
       data['platformTax'] = platformTax!.map((v) => v.toJson()).toList();
     }
     if (regionId != null) data['regionId'] = regionId;
+    writeCancellation(data);
     return data;
   }
 }

@@ -1,9 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:customer/models/cancellation_fields.dart';
 import 'package:customer/models/provider_serivce_model.dart';
 import 'package:customer/models/tax_model.dart';
 import 'package:customer/models/user_model.dart';
 
-class OnProviderOrderModel {
+class OnProviderOrderModel with CancellationFields {
   String authorID, payment_method;
   UserModel author;
   Timestamp createdAt;
@@ -91,7 +92,7 @@ class OnProviderOrderModel {
         platformTax!.add(TaxModel.fromJson(v));
       });
     }
-    return OnProviderOrderModel(
+    final model = OnProviderOrderModel(
       author: parsedJson.containsKey('author') ? UserModel.fromJson(parsedJson['author']) : UserModel(),
       authorID: parsedJson['authorID'] ?? '',
       address: parsedJson.containsKey('address') ? ShippingAddress.fromJson(parsedJson['address']) : ShippingAddress(),
@@ -125,10 +126,12 @@ class OnProviderOrderModel {
       platformTax: platformTax,
       regionId: (parsedJson['regionId'] == null || parsedJson['regionId'].toString().isEmpty) ? null : parsedJson['regionId'].toString(),
     );
+    model.readCancellation(parsedJson);
+    return model;
   }
 
   Map<String, dynamic> toJson() {
-    return {
+    final data = <String, dynamic>{
       'address': address?.toJson(),
       'author': author.toJson(),
       'authorID': authorID,
@@ -162,5 +165,7 @@ class OnProviderOrderModel {
       'platformTax': platformTax?.map((v) => v.toJson()).toList(),
       if (regionId != null) 'regionId': regionId,
     };
+    writeCancellation(data);
+    return data;
   }
 }

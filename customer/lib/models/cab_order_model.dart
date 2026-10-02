@@ -1,9 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:customer/models/cancellation_fields.dart';
 import 'package:customer/models/tax_model.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/models/vehicle_type.dart';
 
-class CabOrderModel {
+class CabOrderModel with CancellationFields {
   /// Region the record belongs to (spec 18.12). History amounts use its
   /// currency; see `RegionService.currencyForRecord`.
   String? regionId;
@@ -69,12 +70,10 @@ class CabOrderModel {
   /// review"): `[{driverId, reason, code, at, afterAccept}]`. Read only.
   List<Map<String, dynamic>>? driverRejections;
 
-  // Final cancellation (by the customer). Written by a dedicated field
-  // update, never by [toJson].
-  String? cancelReason;
-  String? cancelReasonCode;
-  String? cancelledBy;
-  Timestamp? cancelledAt;
+  // Final cancellation / rejection: the contract fields come from
+  // [CancellationFields]. Written in the same update as the status change
+  // (see `CabRideCancellation`); [toJson] writes back only the ones present,
+  // so no later save clears them.
 
   CabOrderModel({
     this.status,
@@ -171,10 +170,7 @@ class CabOrderModel {
     if (json['driverRejections'] is List) {
       driverRejections = (json['driverRejections'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
     }
-    cancelReason = json['cancelReason']?.toString();
-    cancelReasonCode = json['cancelReasonCode']?.toString();
-    cancelledBy = json['cancelledBy']?.toString();
-    cancelledAt = json['cancelledAt'] is Timestamp ? json['cancelledAt'] : null;
+    readCancellation(json);
   }
 
   /// Stops sorted by their `order` key (falls back to list position).
@@ -266,12 +262,13 @@ class CabOrderModel {
     }
     if (regionId != null) data['regionId'] = regionId;
     // Customer-owned booking extras never change after creation, so rewriting
-    // them is harmless. `stops` and the cancellation fields are deliberately
-    // left out (see their docs).
+    // them is harmless. `stops` is deliberately left out (see its docs); the
+    // cancellation fields are written only when present (never cleared).
     if (passengers != null) data['passengers'] = passengers;
     if (instructions != null) data['instructions'] = instructions;
     if (writtenCommunicationOnly != null) data['writtenCommunicationOnly'] = writtenCommunicationOnly;
     if (rideFor != null) data['rideFor'] = rideFor;
+    writeCancellation(data);
     return data;
   }
 }
