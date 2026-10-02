@@ -10,6 +10,7 @@ import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/controllers/signup_controller.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/carrier_dispatch_service.dart';
+import 'package:driver/services/driver_assignment_watcher.dart';
 import 'package:driver/services/driver_job_queue_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
@@ -237,6 +238,7 @@ class NotificationService {
     }
     Constant.userModel?.fcmToken = '';
     DriverJobQueueService.reset();
+    DriverAssignmentWatcher.stop();
     CarrierDispatchService.clearCache();
   }
 
@@ -326,5 +328,6 @@ class NotificationService {
     'rental_order',
     'cab_order',
     'job_queue',
+    'job_assigned',
   };
 }

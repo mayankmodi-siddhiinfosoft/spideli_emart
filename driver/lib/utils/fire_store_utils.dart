@@ -404,6 +404,28 @@ class FireStoreUtils {
     return parcelOrderList;
   }
 
+  /// Live form of [getOnGoingParcelList] — same query, same parsing. A parcel
+  /// assigned to this driver (by hand from a panel, possibly with no push)
+  /// appears on the parcel home while it is open, not only on the next visit.
+  static Stream<List<ParcelOrderModel>> listenOnGoingParcelList() {
+    return fireStore
+        .collection(CollectionName.parcelOrders)
+        .where("driverId", isEqualTo: FireStoreUtils.getCurrentUid())
+        .where("status", whereIn: [Constant.driverAccepted, Constant.orderInTransit, Constant.orderShipped])
+        .snapshots()
+        .map((snapshot) {
+      final List<ParcelOrderModel> parcelOrderList = [];
+      for (final document in snapshot.docs) {
+        try {
+          parcelOrderList.add(ParcelOrderModel.fromJson(document.data()));
+        } catch (e) {
+          debugPrint('FireStoreUtils.listenOnGoingParcelList parse error $e');
+        }
+      }
+      return parcelOrderList;
+    });
+  }
+
   static Future<List<RentalOrderModel>> getRentalOnGoingParcelList() async {
     List<RentalOrderModel> parcelOrderList = [];
     QuerySnapshot<Map<String, dynamic>> currencyQuery = await fireStore

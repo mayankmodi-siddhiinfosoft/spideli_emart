@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:developer';
+
 import 'package:driver/app/parcel_screen/parcel_tracking/parcel_proof_sheet.dart';
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
@@ -13,11 +16,35 @@ class ParcelHomeController extends GetxController {
   RxList<ParcelOrderModel> parcelOrdersList = <ParcelOrderModel>[].obs;
   RxBool isLoading = true.obs;
 
+  /// Live list of the parcels assigned to this driver (panel report 01 §4).
+  StreamSubscription<List<ParcelOrderModel>>? _ongoingSub;
+
   @override
   void onInit() {
     // TODO: implement onInit
     getParcelList();
+    _listenOnGoingParcels();
     super.onInit();
+  }
+
+  @override
+  void onClose() {
+    _ongoingSub?.cancel();
+    super.onClose();
+  }
+
+  /// The list was read once on open (and after a pickup / delivery), so a
+  /// parcel assigned while the screen was open only showed on the next visit.
+  /// Same query, kept live; [getParcelList] still refreshes it after actions.
+  void _listenOnGoingParcels() {
+    _ongoingSub?.cancel();
+    _ongoingSub = FireStoreUtils.listenOnGoingParcelList().listen(
+      (value) {
+        parcelOrdersList.value = value;
+        update();
+      },
+      onError: (Object e) => log("ParcelHomeController ongoing parcels failed: $e"),
+    );
   }
 
   Rx<UserModel> userModel = UserModel().obs;

@@ -4,6 +4,7 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/driver_assignment_watcher.dart';
 import 'package:driver/services/driver_job_queue_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/region_service.dart';
@@ -42,6 +43,9 @@ class DashBoardController extends GetxController {
           // Automatic driver-notification queue (admin spec §14): re-offer the
           // orders placed while this driver was away, once per going-online.
           DriverJobQueueService.onDriverSnapshot(userModel.value);
+          // Jobs ASSIGNED to this driver, picked up from the records alone (panel
+          // report 01 §4: a hand assignment may now come without any push).
+          DriverAssignmentWatcher.onDriverSnapshot(userModel.value);
         }
       },
     );

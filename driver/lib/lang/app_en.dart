@@ -419,4 +419,7 @@ const Map<String, String> enUS = {
   'Your parcel {tracking} is on its way back to the sender.': 'Your parcel {tracking} is on its way back to the sender.',
   'Your parcel {tracking} has been cancelled.': 'Your parcel {tracking} has been cancelled.',
   'Pickup code {code}.': 'Pickup code {code}.',
+  'New assignment': 'New assignment',
+  'A job has been assigned to you.': 'A job has been assigned to you.',
+  'jobs have been assigned to you.': 'jobs have been assigned to you.',
 };
