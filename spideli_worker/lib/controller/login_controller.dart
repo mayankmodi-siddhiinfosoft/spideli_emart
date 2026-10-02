@@ -26,7 +26,6 @@ class LoginController extends GetxController {
     if (result != null && result is User) {
       if (result.active == true) {
         await FireStoreUtils.updateCurrentUser(result);
-        log("result ans:${result.fcmToken}");
         MyAppState.currentUser = result;
         Get.offAll(const DashBoardScreen(), arguments: {'user': result});
       } else {

@@ -832,7 +832,6 @@ class FireStoreUtils {
       DocumentSnapshot<Map<String, dynamic>> userDocument = value;
       if (userDocument.data() != null && userDocument.exists) {
         try {
-          print(userDocument.data());
           User user = User.fromJson(userDocument.data()!);
           user.walletAmount = user.walletAmount + amount;
           await firestore.collection(USERS).doc(user.id).update({'wallet_amount': user.walletAmount}).then((value) => print("north"));
@@ -1090,7 +1089,6 @@ class FireStoreUtils {
             DocumentSnapshot<Map<String, dynamic>> userDocument = value;
             if (userDocument.data() != null && userDocument.exists) {
               try {
-                print(userDocument.data());
                 User user = User.fromJson(userDocument.data()!);
                 await firestore.collection(USERS).doc(user.id).update({"wallet_amount": user.walletAmount + double.parse(valueSection.referralAmount.toString())}).then((value) => print("north"));
 
@@ -1263,7 +1261,6 @@ class FireStoreUtils {
   static Future<PayFastModel?> getPayFastSettingData() async {
     PayFastModel? payFastSettingData;
     await firestore.collection(Setting).doc("payFastSettings").get().then((payFastData) {
-      debugPrint(payFastData.data().toString());
       try {
         payFastSettingData = PayFastModel.fromJson(payFastData.data()!);
       } catch (error) {
@@ -1399,7 +1396,6 @@ class FireStoreUtils {
   static Future<RazorPayModel?> getRazorPayDemo() async {
     RazorPayModel? userModel;
     await firestore.collection(Setting).doc("razorpaySettings").get().then((user) {
-      debugPrint(user.data().toString());
       try {
         userModel = RazorPayModel.fromJson(user.data()!);
       } catch (e) {

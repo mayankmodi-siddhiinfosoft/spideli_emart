@@ -15,7 +15,7 @@ class PayStackURLGen {
     }, headers: {
       "Authorization": "Bearer $secretKey",
     });
-    debugPrint(response.body);
+    // Not logged: the body carries the transaction access_code.
     final data = jsonDecode(response.body);
     if (!data["status"]) {
       return null;
@@ -37,7 +37,7 @@ class PayStackURLGen {
       "Authorization": "Bearer $secretKey",
     });
 
-    debugPrint(response.body);
+    // Not logged: the body carries the reusable card authorization_code.
     final data = jsonDecode(response.body);
     if (data["status"] == true) {
       if (data["message"] == "Verification successful") {}

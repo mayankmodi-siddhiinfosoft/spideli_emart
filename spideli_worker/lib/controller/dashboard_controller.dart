@@ -53,17 +53,10 @@ class DashBoardController extends GetxController {
 
     isLoading.value = false;
     FireStoreUtils.getPlaceHolderImage();
-
-    /// On iOS, we request notification permissions, Does nothing and returns null on Android
-    FireStoreUtils.firebaseMessaging.requestPermission(
-      alert: true,
-      announcement: false,
-      badge: true,
-      carPlay: false,
-      criticalAlert: false,
-      provisional: false,
-      sound: true,
-    );
+    // No notification-permission request here: it is asked once per launch
+    // by NotificationService.initInfo (MyAppState.notificationInit). A second
+    // request here (it is NOT a no-op on Android 13+) raised a second dialog
+    // and "A request for permissions is already running".
   }
 }
 

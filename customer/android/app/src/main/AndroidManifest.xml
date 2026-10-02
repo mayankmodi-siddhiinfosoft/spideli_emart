@@ -46,7 +46,7 @@
     <application
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:label="customer"
+        android:label="Spideli Customer"
         android:requestLegacyExternalStorage="true"
         android:roundIcon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">

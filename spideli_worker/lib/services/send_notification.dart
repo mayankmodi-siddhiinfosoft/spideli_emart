@@ -32,9 +32,8 @@ class SendNotification {
   static Future<bool> sendFcmMessage(String type, String token, Map<String, dynamic>? payload) async {
     print(type);
     try {
+      // The OAuth access token is a live credential: never log it.
       final String accessToken = await getAccessToken();
-      debugPrint("accessToken=======>");
-      debugPrint(accessToken);
       NotificationModel? notificationModel = await FireStoreUtils.getNotificationContent(type);
 
       final response = await http.post(

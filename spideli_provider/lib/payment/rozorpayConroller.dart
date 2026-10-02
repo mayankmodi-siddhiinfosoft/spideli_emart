@@ -8,7 +8,6 @@ class RazorPayController {
   Future<CreateRazorPayOrderModel?> createOrderRazorPay({required int amount, required RazorPayModel? razorpayModel}) async {
     final String orderId = DateTime.now().millisecondsSinceEpoch.toString();
     RazorPayModel razorPayData = razorpayModel!;
-    print(razorPayData.razorpayKey);
     print("we Enter In");
     const url = "${globalUrl}payments/razorpay/createorder";
     print(orderId);

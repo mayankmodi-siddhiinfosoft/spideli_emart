@@ -199,7 +199,6 @@ class FireStoreUtils {
       DocumentSnapshot<Map<String, dynamic>> userDocument = value;
       if (userDocument.data() != null && userDocument.exists) {
         try {
-          print(userDocument.data());
           // Only the wallet field: a full set(user.toJson()) with the worker's
           // User model erased every provider field it does not know
           // (regionId, subscription and panel fields).
@@ -493,7 +492,6 @@ class FireStoreUtils {
             DocumentSnapshot<Map<String, dynamic>> userDocument = value;
             if (userDocument.data() != null && userDocument.exists) {
               try {
-                print(userDocument.data());
                 User user = User.fromJson(userDocument.data()!);
                 await firestore.collection(USERS).doc(user.id).update({"wallet_amount": user.walletAmount + double.parse(valueSection.referralAmount.toString())}).then((value) => print("north"));
 

@@ -57,7 +57,6 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
       isLoading = true;
     });
     await FireStoreUtils.firestore.collection(Setting).doc("razorpaySettings").get().then((user) {
-      debugPrint(user.data().toString());
       try {
         razorPayModel = RazorPayModel.fromJson(user.data() ?? {});
       } catch (e) {

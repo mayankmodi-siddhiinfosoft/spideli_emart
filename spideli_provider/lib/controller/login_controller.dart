@@ -36,7 +36,6 @@ class LoginController extends GetxController {
         result.active = true;
         Preferences.setString(Preferences.passwordKey, password);
         await FireStoreUtils.updateCurrentUser(result);
-        print("result ans:" + result.fcmToken);
         MyAppState.currentUser = result;
         if (MyAppState.currentUser!.sectionId.isNotEmpty) {
           await FireStoreUtils.getSectionsById(MyAppState.currentUser!.sectionId).then(

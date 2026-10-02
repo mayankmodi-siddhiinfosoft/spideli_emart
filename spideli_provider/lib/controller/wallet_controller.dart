@@ -78,7 +78,6 @@ class WalletController extends GetxController {
 
   getPaymentSettings() async {
     await FireStoreUtils.firestore.collection(Setting).doc("razorpaySettings").get().then((user) {
-      debugPrint(user.data().toString());
       try {
         razorPayModel.value = RazorPayModel.fromJson(user.data() ?? {});
       } catch (e) {

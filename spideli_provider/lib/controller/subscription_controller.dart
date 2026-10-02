@@ -789,8 +789,8 @@ class SubscriptionController extends GetxController {
 
     // Handle the response
 
+    // Status only: the body is the Orange Money OAuth access token.
     print("Response Status Code: ${response.statusCode}");
-    print("Response Body: ${response.body}");
     if (response.statusCode == 200) {
       Map<String, dynamic> responseData = jsonDecode(response.body);
 
@@ -825,9 +825,9 @@ class SubscriptionController extends GetxController {
       body: json.encode(requestBody),
     );
 
+    // Status only: the request carries the merchant key and the response the
+    // pay/notif tokens.
     print("Webpayment Response Status Code: ${response.statusCode}");
-    print("Webpayment Response Body: ${response.body}");
-    print("Webpayment Request Body: ${json.encode(requestBody)}");
 
     // Handle the response
     if (response.statusCode == 201) {

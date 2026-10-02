@@ -53,16 +53,10 @@ void main() async {
     sound: true,
   );
 
-  await FirebaseMessaging.instance.requestPermission(
-    alert: true,
-    announcement: false,
-    badge: true,
-    carPlay: false,
-    criticalAlert: false,
-    provisional: false,
-    sound: true,
-  );
-
+  // The notification permission is NOT requested here: awaiting it before
+  // runApp left the first screen blank behind the system dialog. It is asked
+  // once, after the first frame, by NotificationService.initInfo (see
+  // MyAppState.initState).
   runApp(MyApp());
 }
 
@@ -77,19 +71,23 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   static GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   NotificationService notificationService = NotificationService();
 
-  notificationInit() {
-    notificationService.initInfo().then((value) async {
-      String token = await NotificationService.getToken();
-      log(":::::::TOKEN:::::: $token");
-      // Store it on the user document at launch and on every refresh, so this
-      // app can actually be reached by chat and order pushes.
+  Future<void> notificationInit() async {
+    try {
+      // The single notification-permission request of this launch.
+      await notificationService.initInfo();
+      // Store the FCM token on the user document at launch and on every
+      // refresh, so this app can actually be reached by chat and order pushes.
       await NotificationService.syncTokenToUserDoc();
-    });
+    } catch (e) {
+      log("Notification init failed: $e");
+    }
   }
 
   @override
   void initState() {
-    notificationInit();
+    // After the first frame, so the system permission dialog never sits on
+    // top of a blank, not-yet-drawn first screen.
+    WidgetsBinding.instance.addPostFrameCallback((_) => notificationInit());
     initializeFlutterFire();
     getCurrentAppTheme();
     WidgetsBinding.instance.addObserver(this);
@@ -115,7 +113,8 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       });
 
       await FireStoreUtils.firestore.collection(Setting).doc("notification_setting").get().then((value) {
-        print(value.data());
+        // Never log this document: `serviceJson` is a tokenised download URL
+        // of a service-account key file.
         senderId = value.data()!['senderId'].toString();
         jsonNotificationFileURL = value.data()!['serviceJson'].toString();
       });

@@ -21,37 +21,53 @@ class NotificationService {
   FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-  Future<void> initInfo() async {
-    await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-    var request = await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      announcement: false,
-      badge: true,
-      carPlay: false,
-      criticalAlert: false,
-      provisional: false,
-      sound: true,
-    );
+  /// The one setup of this launch, shared by every caller.
+  static Future<void>? _initInfoFuture;
 
-    if (request.authorizationStatus == AuthorizationStatus.authorized || request.authorizationStatus == AuthorizationStatus.provisional) {
-      const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
-      var iosInitializationSettings = const DarwinInitializationSettings();
-      final InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid, iOS: iosInitializationSettings);
-      await flutterLocalNotificationsPlugin.initialize(
-          settings: initializationSettings,
-          onDidReceiveNotificationResponse: (payload) {
-            if (payload.payload != null) {
-              final data = jsonDecode(payload.payload!);
-              final String type = data['type'] ?? '';
-              final String role = data['chatType'] ?? '';
-              handleMessageClick(type: type, role: role, message: payload.data, isBgApp: false);
-            }
-          });
-      setupInteractedMessage();
+  /// Requests the notification permission and wires the notification
+  /// listeners -- once per launch, however many callers ask.
+  ///
+  /// This is the app's only `requestPermission` call. Overlapping requests
+  /// made firebase_messaging throw "A request for permissions is already
+  /// running" and showed the system dialog twice; a second setup also added a
+  /// second onMessage listener. Never throws: a failure is logged.
+  Future<void> initInfo() => _initInfoFuture ??= _initInfo();
+
+  Future<void> _initInfo() async {
+    try {
+      await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      var request = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        announcement: false,
+        badge: true,
+        carPlay: false,
+        criticalAlert: false,
+        provisional: false,
+        sound: true,
+      );
+
+      if (request.authorizationStatus == AuthorizationStatus.authorized || request.authorizationStatus == AuthorizationStatus.provisional) {
+        const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+        var iosInitializationSettings = const DarwinInitializationSettings();
+        final InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid, iOS: iosInitializationSettings);
+        await flutterLocalNotificationsPlugin.initialize(
+            settings: initializationSettings,
+            onDidReceiveNotificationResponse: (payload) {
+              if (payload.payload != null) {
+                final data = jsonDecode(payload.payload!);
+                final String type = data['type'] ?? '';
+                final String role = data['chatType'] ?? '';
+                handleMessageClick(type: type, role: role, message: payload.data, isBgApp: false);
+              }
+            });
+        setupInteractedMessage().catchError((Object e) => log("Notification listeners not set up: $e"));
+      }
+    } catch (e) {
+      log("Notification permission/setup failed: $e");
     }
   }
 

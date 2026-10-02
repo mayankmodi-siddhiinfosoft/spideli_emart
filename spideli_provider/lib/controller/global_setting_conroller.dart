@@ -1,16 +1,15 @@
-import 'dart:developer';
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/model/currency_model.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
-import 'package:spideliprovider/services/notification_service.dart';
 import 'package:spideliprovider/services/region_service.dart';
 import 'package:get/get.dart';
 
 class GlobalSettingController extends GetxController {
   @override
   void onInit() {
-    // TODO: implement onInit
-    notificationInit();
+    // Notifications are set up once, after the first frame, by
+    // MyAppState.notificationInit (main.dart). A second NotificationService
+    // .initInfo() here asked for the permission a second time at startup.
     getCurrentCurrency();
     super.onInit();
   }
@@ -31,15 +30,6 @@ class GlobalSettingController extends GetxController {
       defaultCountryCode = value.data()?['defaultCountryCode'] ?? '';
       defaultCountry = value.data()?['defaultCountry'] ?? '';
       update();
-    });
-  }
-
-  NotificationService notificationService = NotificationService();
-
-  notificationInit() {
-    notificationService.initInfo().then((value) async {
-      String token = await NotificationService.getToken();
-      log(":::::::TOKEN:::::: $token");
     });
   }
 }
