@@ -1,3 +1,4 @@
+import 'package:country_code_picker/country_code_picker.dart';
 import 'package:driver/controllers/carrier_settings_controller.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
@@ -79,38 +80,41 @@ class CarrierSettingsScreen extends StatelessWidget {
                                   hint: 'Enter carrier name'.tr,
                                   requiredMark: true,
                                   controller: controller.controllerFor('name'),
+                                  errorText: controller.errors['name'],
                                   textInputAction: TextInputAction.next,
                                 ),
-                                DsTextField(
-                                  label: 'Contact Person'.tr,
-                                  hint: 'Enter the contact person'.tr,
-                                  controller: controller.controllerFor('contactName'),
-                                  textInputAction: TextInputAction.next,
-                                  bottomSpacing: 0,
-                                ),
-                              ],
-                            ),
-                            const DsGap(DsSpace.lg),
-                            DsFormSection(
-                              title: "Contact".tr,
-                              icon: Icons.contact_phone_outlined,
-                              children: [
                                 DsTextField(
                                   label: 'Phone Number'.tr,
                                   hint: 'Enter phone number'.tr,
                                   controller: controller.controllerFor('phone'),
                                   keyboardType: TextInputType.phone,
-                                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9+\- ]'))],
-                                  textInputAction: TextInputAction.next,
-                                ),
-                                DsTextField(
-                                  label: 'Email'.tr,
-                                  hint: 'Enter email address'.tr,
-                                  controller: controller.controllerFor('email'),
-                                  keyboardType: TextInputType.emailAddress,
+                                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9 ]'))],
                                   textInputAction: TextInputAction.next,
                                   bottomSpacing: 0,
+                                  prefix: CountryCodePicker(
+                                    // Start-up selection: recorded, never counted as a change.
+                                    onInit: (value) => controller.onPickerShown(value?.dialCode),
+                                    onChanged: (value) => controller.setCountryCode(value.dialCode),
+                                    initialSelection: controller.pickerInitialSelection.isEmpty ? null : controller.pickerInitialSelection,
+                                    dialogTextStyle: context.dsText.bodyStrong,
+                                    dialogBackgroundColor: context.dsColors.surfaceRaised,
+                                    comparator: (a, b) => b.name!.compareTo(a.name.toString()),
+                                    textStyle: context.dsText.bodyStrong,
+                                    searchDecoration: InputDecoration(iconColor: context.dsColors.iconDefault),
+                                    searchStyle: context.dsText.bodyStrong,
+                                  ),
                                 ),
+                              ],
+                            ),
+                            const DsGap(DsSpace.lg),
+                            DsFormSection(
+                              title: "Pricing".tr,
+                              icon: Icons.payments_outlined,
+                              children: [
+                                _numberField(controller, 'baseCharge', 'Base Charge'.tr, 'e.g. 500'),
+                                _numberField(controller, 'perKmCharge', 'Charge per km'.tr, 'e.g. 75'),
+                                _numberField(controller, 'perKgCharge', 'Charge per kg'.tr, 'e.g. 200'),
+                                _numberField(controller, 'minimumCharge', 'Minimum Charge'.tr, 'e.g. 1000', last: true),
                               ],
                             ),
                             const DsGap(DsSpace.lg),
@@ -118,23 +122,23 @@ class CarrierSettingsScreen extends StatelessWidget {
                               title: "Service".tr,
                               icon: Icons.tune_rounded,
                               children: [
-                                DsTextField(
-                                  label: 'Rates'.tr,
-                                  hint: 'e.g. 1500 per kg'.tr,
-                                  controller: controller.controllerFor('rates'),
-                                  textInputAction: TextInputAction.next,
+                                _numberField(controller, 'maxWeight', 'Maximum Weight (kg)'.tr, 'e.g. 30'),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(child: _numberField(controller, 'minDeliveryTime', 'Minimum Delivery Time'.tr, 'e.g. 1')),
+                                    const DsGap(DsSpace.md),
+                                    Expanded(child: _numberField(controller, 'maxDeliveryTime', 'Maximum Delivery Time'.tr, 'e.g. 3')),
+                                  ],
                                 ),
-                                DsTextField(
-                                  label: 'Maximum Weight'.tr,
-                                  hint: 'e.g. 30 kg'.tr,
-                                  controller: controller.controllerFor('maxWeight'),
-                                  textInputAction: TextInputAction.next,
-                                ),
-                                DsTextField(
-                                  label: 'Delivery Times'.tr,
-                                  hint: 'e.g. 24 - 48 hours'.tr,
-                                  controller: controller.controllerFor('deliveryTimes'),
-                                  textInputAction: TextInputAction.next,
+                                DsDropdown<String>(
+                                  label: 'Delivery Time Unit'.tr,
+                                  hint: 'Select'.tr,
+                                  value: controller.deliveryTimeUnit.value.isEmpty ? null : controller.deliveryTimeUnit.value,
+                                  items: controller.deliveryTimeUnitOptions
+                                      .map((unit) => DropdownMenuItem<String>(value: unit, child: Text(_unitLabel(unit))))
+                                      .toList(),
+                                  onChanged: controller.setDeliveryTimeUnit,
                                 ),
                                 DsTextField(
                                   label: 'Conditions'.tr,
@@ -145,6 +149,23 @@ class CarrierSettingsScreen extends StatelessWidget {
                                   textInputAction: TextInputAction.newline,
                                   bottomSpacing: 0,
                                 ),
+                              ],
+                            ),
+                            const DsGap(DsSpace.lg),
+                            DsFormSection(
+                              title: "Registration".tr,
+                              subtitle: "Verified by the administrator. Contact them to change these.".tr,
+                              icon: Icons.badge_outlined,
+                              children: [
+                                DsInfoRow(label: 'Carrier Code'.tr, value: _orDash(controller.code.value), divider: true),
+                                DsInfoRow(
+                                  label: 'Regions'.tr,
+                                  value: controller.regionNames.isEmpty ? '—' : controller.regionNames.join(', '),
+                                  divider: true,
+                                ),
+                                DsInfoRow(label: 'Operating Licence'.tr, value: _withFile(controller, 'operatingLicence'), divider: true),
+                                DsInfoRow(label: 'Commercial Register'.tr, value: _withFile(controller, 'commercialRegister'), divider: true),
+                                DsInfoRow(label: 'Unique ID Number'.tr, value: _withFile(controller, 'uniqueIdNumber')),
                               ],
                             ),
                             const DsGap(DsSpace.lg),
@@ -172,5 +193,38 @@ class CarrierSettingsScreen extends StatelessWidget {
         );
       },
     );
+  }
+
+  static Widget _numberField(CarrierSettingsController controller, String field, String label, String hint, {bool last = false}) {
+    return DsTextField(
+      label: label,
+      hint: hint,
+      controller: controller.controllerFor(field),
+      errorText: controller.errors[field],
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+      textInputAction: TextInputAction.next,
+      bottomSpacing: last ? 0 : DsSpace.lg,
+    );
+  }
+
+  static String _unitLabel(String unit) {
+    switch (unit) {
+      case 'hours':
+        return 'Hours'.tr;
+      case 'days':
+        return 'Days'.tr;
+      default:
+        return unit; // a value the panel stored that is not ours, shown as is
+    }
+  }
+
+  static String _orDash(String value) => value.isEmpty ? '—' : value;
+
+  static String _withFile(CarrierSettingsController controller, String field) {
+    final String number = controller.identification[field] ?? '';
+    final bool hasFile = controller.identificationFiles['${field}File'] ?? false;
+    final String file = hasFile ? 'Document on file'.tr : 'No document'.tr;
+    return number.isEmpty ? file : '$number · $file';
   }
 }

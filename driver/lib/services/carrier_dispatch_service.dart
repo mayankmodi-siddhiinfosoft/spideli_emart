@@ -114,18 +114,22 @@ class CarrierDispatchService {
     return null;
   }
 
-  /// Saves the commercial settings a carrier maintains itself. Only the fields
-  /// in [DeliveryCarrierModel.editableFields] are written \u2014 never the
-  /// verification flag, which belongs to the admin.
-  static Future<bool> saveCarrierSettings(DeliveryCarrierModel carrier, Map<String, String> values) async {
-    final Map<String, dynamic> data = {};
-    for (final field in DeliveryCarrierModel.editableFields) {
-      if (!values.containsKey(field)) continue;
-      data[carrier.writeKey(field)] = values[field]!.trim();
-    }
+  /// Saves the commercial settings a carrier maintains itself.
+  ///
+  /// [changes] holds only the fields the company actually changed, already
+  /// typed (numbers as `num`, an emptied number as `null`). Anything outside
+  /// [DeliveryCarrierModel.editableFields] is dropped, so the verification
+  /// flag, the code, the regions and the identification documents — all the
+  /// admin's — can never be written from here. Known-fields merge: every other
+  /// field of the document is left exactly as the panel stored it.
+  static Future<bool> saveCarrierSettings(DeliveryCarrierModel carrier, Map<String, dynamic> changes) async {
+    final Map<String, dynamic> data = {
+      for (final entry in changes.entries)
+        if (DeliveryCarrierModel.editableFields.contains(entry.key)) entry.key: entry.value,
+    };
     if (data.isEmpty) return true;
     try {
-      await FireStoreUtils.fireStore.collection(collectionName).doc(carrier.id).set(data, SetOptions(merge: true));
+      await FireStoreUtils.fireStore.collection(collectionName).doc(carrier.id).setKnownFields(data);
       _cache.remove(carrier.id);
       return true;
     } catch (e) {
