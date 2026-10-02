@@ -1,5 +1,6 @@
 import 'package:driver/app/widgets/cancellation_block.dart';
 import 'package:driver/app/widgets/order_ui.dart';
+import 'package:driver/app/widgets/pod_block.dart';
 import 'package:driver/utils/address_format.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/constant/constant.dart';
@@ -37,6 +38,9 @@ class OrderDetailsScreen extends StatelessWidget {
                   Padding(padding: const EdgeInsets.only(bottom: DsSpace.lg), child: _summaryCard(context, controller)),
                   if (_cancellation(controller) != null)
                     Padding(padding: const EdgeInsets.only(bottom: DsSpace.lg), child: CancellationBlock(summary: _cancellation(controller))),
+                  // Proof of delivery by customer OTP: only once verified.
+                  if (controller.orderModel.value.pod?.isVerified == true)
+                    Padding(padding: const EdgeInsets.only(bottom: DsSpace.lg), child: PodVerifiedBlock(pod: controller.orderModel.value.pod)),
                   Padding(padding: const EdgeInsets.only(bottom: DsSpace.xl), child: _routeCard(context, controller)),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,

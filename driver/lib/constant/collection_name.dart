@@ -21,6 +21,8 @@ class CollectionName {
   static const String payouts = "payouts";
   static const String referral = "referral";
   static const String vendorOrders = "vendor_orders";
+  /// Proof-of-delivery OTP per order (`.claude/POD-OTP-CONTRACT.md`).
+  static const String orderPod = "order_pod";
   static const String ridesBooking = "rides";
   static const String reviewAttributes = "review_attributes";
   static const String settings = "settings";

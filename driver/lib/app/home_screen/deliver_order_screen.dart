@@ -72,11 +72,11 @@ class DeliverOrderScreen extends StatelessWidget {
                           ShowToastDialog.showToast("Conform Deliver order".tr);
                           return;
                         }
-                        // Client point 29: proof of delivery first — the
-                        // customer's OTP when the order carries one, otherwise
-                        // a photo. Nothing is written or credited until it is
-                        // recorded.
-                        final bool proved = await controller.captureDeliveryProof(context, isDark: themeController.isDark.value);
+                        // "Drop Delivery": proof of delivery by the
+                        // customer's OTP first (POD-OTP-CONTRACT). Only a
+                        // verified code lets the existing completion run;
+                        // backing out completes nothing.
+                        final bool proved = await controller.verifyDeliveryOtp(context, isDark: themeController.isDark.value);
                         if (!proved) return;
                         await controller.completedOrder();
                       },

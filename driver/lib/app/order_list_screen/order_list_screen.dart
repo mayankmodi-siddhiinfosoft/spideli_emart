@@ -1,5 +1,6 @@
 import 'package:driver/app/widgets/cancellation_block.dart';
 import 'package:driver/app/widgets/order_ui.dart';
+import 'package:driver/app/widgets/pod_block.dart';
 import 'package:driver/utils/address_format.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/order_list_screen/order_details_screen.dart';
@@ -152,6 +153,10 @@ class OrderListScreen extends StatelessWidget {
           if (cancellation != null) ...[
             const DsGap(DsSpace.md),
             CancellationLine(summary: cancellation),
+          ],
+          if (orderModel.pod?.isVerified == true) ...[
+            const DsGap(DsSpace.md),
+            PodVerifiedLine(pod: orderModel.pod),
           ],
           if (showEarnings || hasTip) ...[
             const DsGap(DsSpace.md),

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:driver/models/cancellation_info.dart';
 import 'package:driver/models/cart_product_model.dart';
 import 'package:driver/models/cashback_model.dart';
+import 'package:driver/models/delivery_pod.dart';
 import 'package:driver/models/tax_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/models/vendor_model.dart';
@@ -49,14 +50,11 @@ class OrderModel {
   bool? isFreeDelivery;
   bool? packagingChargeEnable;
 
-  /// Code the customer holds, used as the delivery OTP (client point 29).
-  /// Read tolerantly: the customer app / panel may spell it `otpCode`,
-  /// `otp`, `deliveryOtp` or `pickupCode`.
-  String? otpCode;
-
-  /// Proof the driver recorded when completing the delivery — the same shape
-  /// a parcel uses: `{type: 'otp'|'photo', photoUrl?, at, by}`.
-  Map<String, dynamic>? deliveryProof;
+  /// Proof of delivery by customer OTP (`.claude/POD-OTP-CONTRACT.md`):
+  /// `pod.status`, `verifiedAt`, `deliveredBy`, ... Never contains the code.
+  /// Written only when set, as a known-fields map, so a later save never
+  /// clears it.
+  DeliveryPod? pod;
 
   /// Cancel-reason contract fields (`cancelReason`, `cancelledBy`, ...) and
   /// the drivers' `driverRejections`; written back only when known.
@@ -102,8 +100,7 @@ class OrderModel {
     this.isPosOrder,
     this.isFreeDelivery,
     this.packagingChargeEnable,
-    this.otpCode,
-    this.deliveryProof,
+    this.pod,
   });
 
   OrderModel.fromJson(Map<String, dynamic> json) {
@@ -174,15 +171,7 @@ class OrderModel {
     isPosOrder = json['isPosOrder'] ?? false;
     packagingChargeEnable = json['packagingChargeEnable'] ?? false;
     regionId = json['regionId']?.toString();
-    for (final key in const ['otpCode', 'otp', 'deliveryOtp', 'pickupCode']) {
-      final String? value = json[key]?.toString().trim();
-      if (value != null && value.isNotEmpty && value != 'null') {
-        otpCode = value;
-        break;
-      }
-    }
-    final dynamic proof = json['deliveryProof'];
-    deliveryProof = proof is Map ? Map<String, dynamic>.from(proof) : null;
+    pod = DeliveryPod.fromJson(json['pod']);
     cancellation = CancellationInfo.fromJson(json);
   }
 
@@ -247,10 +236,9 @@ class OrderModel {
     data['isPosOrder'] = isPosOrder ?? false;
     data['packagingChargeEnable'] = packagingChargeEnable ?? false;
     if (regionId != null && regionId!.isNotEmpty) data['regionId'] = regionId;
-    // Additive: only written when known, so completing an order never clears
-    // a code the customer app set.
-    if (otpCode != null && otpCode!.isNotEmpty) data['otpCode'] = otpCode;
-    if (deliveryProof != null) data['deliveryProof'] = deliveryProof;
+    // Additive: only written when set (and only its known fields), so a
+    // later save never clears the proof of delivery.
+    if (pod != null && pod!.toJson().isNotEmpty) data['pod'] = pod!.toJson();
     data.addAll(cancellation.toJson());
     return data;
   }

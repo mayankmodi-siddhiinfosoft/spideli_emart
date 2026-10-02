@@ -1,11 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
-import 'package:driver/app/parcel_screen/parcel_tracking/parcel_proof_sheet.dart';
+import 'package:driver/app/home_screen/widgets/delivery_otp_sheet.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/send_notification.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
+import 'package:driver/models/delivery_pod.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:driver/models/wallet_transaction_model.dart';
 import 'package:driver/services/audio_player_service.dart';
+import 'package:driver/services/delivery_pod_rules.dart';
+import 'package:driver/services/delivery_pod_service.dart';
 import 'package:driver/services/vendor_wallet_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/widgets.dart';
@@ -37,28 +40,48 @@ class DeliverOrderController extends GetxController {
     isLoading.value = false;
   }
 
-  /// Client point 29: a multivendor / e-commerce delivery records proof the
-  /// same way a parcel does — the customer's OTP when the order carries one,
-  /// otherwise a photo — before anything is written or credited.
+  /// Proof of delivery by customer OTP (`.claude/POD-OTP-CONTRACT.md`) for
+  /// a multivendor / e-commerce delivery order. "Drop Delivery" reuses the
+  /// order's pending, unexpired code or creates one (and notifies the
+  /// customer); the driver types the code the customer reads from their app.
+  /// No OTP, no completion: there is no photo or skip path for these orders.
   ///
-  /// Returns false when the driver backed out of the proof step.
-  Future<bool> captureDeliveryProof(BuildContext context, {required bool isDark}) async {
-    if (orderModel.value.deliveryProof != null) return true;
-    final Map<String, dynamic>? proof = await showDeliveryProofSheet(
-      context,
-      isDark: isDark,
-      receiverCode: receiverCode,
-      photoStoragePath: 'orderDeliveryProof/${orderModel.value.id}',
-    );
-    if (proof == null) return false;
-    orderModel.value.deliveryProof = proof;
+  /// Returns true once `pod.status` is `verified` — immediately on a retry
+  /// after a completion that failed past verification. Returns false when the
+  /// driver backed out or the code could not be created; nothing is written
+  /// or credited then.
+  Future<bool> verifyDeliveryOtp(BuildContext context, {required bool isDark}) async {
+    if (orderModel.value.pod?.isVerified == true) return true;
+    ShowToastDialog.showLoader("Please wait".tr);
+    final PodState state;
+    try {
+      state = await DeliveryPodService.requestCode(orderModel.value);
+    } on PodOfflineException {
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast(DeliveryPodRules.offlineMessage.tr);
+      return false;
+    } catch (e) {
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("The delivery code could not be created. Please try again.".tr);
+      return false;
+    }
+    ShowToastDialog.closeLoader();
+    if (state.isVerified) {
+      _markVerified(DeliveryPod(method: 'otp', status: DeliveryPodRules.statusVerified, verifiedAt: state.verifiedAt));
+      return true;
+    }
+    if (!context.mounted) return false;
+    final DeliveryPod? pod = await showDeliveryOtpSheet(context, isDark: isDark, order: orderModel.value, initial: state);
+    if (pod == null || !pod.isVerified) return false;
+    _markVerified(pod);
     return true;
   }
 
-  /// The code the customer holds, or null when this order has none.
-  String? get receiverCode {
-    final String code = (orderModel.value.otpCode ?? '').trim();
-    return code.isEmpty ? null : code;
+  /// Keeps the in-memory order in step with Firestore, so the completion's
+  /// `setOrder` (a deep merge) writes `pod.status: verified`, never an older
+  /// value, and a retry skips the code.
+  void _markVerified(DeliveryPod pod) {
+    orderModel.value.pod = pod;
   }
 
   /// Guards against a second completion (a double tap on the slider): the
