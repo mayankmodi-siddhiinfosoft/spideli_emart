@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
@@ -25,6 +26,12 @@ class RentalHomeController extends GetxController {
   Rx<UserModel> ownerModel = UserModel().obs;
 
 
+  // One subscription each. Pull-to-refresh calls [getBookingData] again, and
+  // every call used to add another set of listeners on top of the last.
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _bookingSub;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userSub;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _ownerSub;
+
   @override
   void onInit() {
     getBookingData();
@@ -32,13 +39,28 @@ class RentalHomeController extends GetxController {
     super.onInit();
   }
 
+  @override
+  void onClose() {
+    _cancelSubscriptions();
+    super.onClose();
+  }
+
+  void _cancelSubscriptions() {
+    _bookingSub?.cancel();
+    _userSub?.cancel();
+    _ownerSub?.cancel();
+    _bookingSub = null;
+    _userSub = null;
+    _ownerSub = null;
+  }
 
   Future<void> getBookingData() async {
+    _cancelSubscriptions();
     isLoading.value = true;
     rentalBookingData.clear();
 
     // Driver’s active rental bookings
-    FireStoreUtils.fireStore
+    _bookingSub = FireStoreUtils.fireStore
         .collection(CollectionName.rentalOrders)
         .where("driverId", isEqualTo: FireStoreUtils.getCurrentUid())
         .where("status", whereIn: [
@@ -70,7 +92,7 @@ class RentalHomeController extends GetxController {
         });
 
     // Driver user data listener
-    FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen((event) {
+    _userSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen((event) {
       if (event.exists) {
         userModel.value = UserModel.fromJson(event.data()!);
       }
@@ -82,7 +104,7 @@ class RentalHomeController extends GetxController {
     // other modules) down with it.
     final String ownerId = Constant.userModel?.ownerId ?? '';
     if (ownerId.isNotEmpty) {
-      FireStoreUtils.fireStore.collection(CollectionName.users).doc(ownerId).snapshots().listen(
+      _ownerSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(ownerId).snapshots().listen(
             (event) async {
           if (event.exists) {
             ownerModel.value = UserModel.fromJson(event.data()!);

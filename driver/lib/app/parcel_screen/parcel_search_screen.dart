@@ -55,7 +55,7 @@ class ParcelSearchScreen extends StatelessWidget {
                                           final lat = firstPlace.coordinates.latitude;
                                           final lng = firstPlace.coordinates.longitude;
 
-                                          controller.sourceTextEditController.value.text = result.address.toString();
+                                          controller.sourceTextEditController.value.text = AddressFormat.clean(result.address);
                                           controller.departureLatLongOsm.value = latlong.LatLng(lat, lng);
                                         }
                                       } else {
@@ -104,7 +104,7 @@ class ParcelSearchScreen extends StatelessWidget {
                                           final lng = firstPlace.coordinates.longitude;
                                           // ignore: unused_local_variable
                                           final address = firstPlace.address;
-                                          controller.destinationTextEditController.value.text = result.address.toString();
+                                          controller.destinationTextEditController.value.text = AddressFormat.clean(result.address);
                                           controller.destinationLatLongOsm.value = latlong.LatLng(lat, lng);
                                         }
                                       } else {
@@ -201,8 +201,10 @@ class ParcelSearchScreen extends StatelessWidget {
                                             if (ownerWallet >= minOwnerDeposit) {
                                               controller.acceptParcelBooking(parcelBookingData);
                                             } else {
+                                              // `{amount}` in the key: trParams only replaces `@amount`.
                                               ShowToastDialog.showToast("Your owner has to maintain minimum {amount} wallet balance to accept the parcel booking. Please contact your owner"
-                                                  .trParams({"amount": Constant.amountShow(amount: Constant.ownerMinimumDepositToRideAccept)}).tr);
+                                                  .tr
+                                                  .replaceAll('{amount}', Constant.amountShow(amount: Constant.ownerMinimumDepositToRideAccept)));
                                             }
                                           } else {
                                             final driverWallet = controller.driverModel.value.walletAmount ?? 0.0;

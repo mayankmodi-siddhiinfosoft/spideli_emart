@@ -132,7 +132,7 @@ class OrderDetailsScreen extends StatelessWidget {
           DsRouteStop(
             kind: DsStopKind.drop,
             label: AddressFormat.join([controller.orderModel.value.address?.addressAs, controller.orderModel.value.author?.fullName()], separator: ' · '),
-            address: controller.orderModel.value.address!.getFullAddress(),
+            address: controller.orderModel.value.address?.getFullAddress() ?? '',
           ),
         ],
       ),

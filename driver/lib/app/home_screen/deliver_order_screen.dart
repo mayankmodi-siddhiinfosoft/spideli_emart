@@ -103,7 +103,7 @@ class DeliverOrderScreen extends StatelessWidget {
                 Text("Deliver to the".tr, style: t.caption),
                 Text(controller.orderModel.value.author!.fullName(), style: t.titleSm.w700),
                 const DsGap(DsSpace.xs),
-                Text(controller.orderModel.value.address!.getFullAddress(), style: t.bodySm),
+                Text(controller.orderModel.value.address?.getFullAddress() ?? '', style: t.bodySm),
               ],
             ),
           ),

@@ -62,6 +62,9 @@ class CabHomeScreen extends StatelessWidget {
                           final String? ownerId = user.ownerId;
 
                           final num minDeposit = double.parse(Constant.minimumDepositToRideAccept);
+                          // A company's driver works on the company's wallet, held to the owner
+                          // minimum — the threshold the owner's home screen and Accept use.
+                          final num ownerMinDeposit = double.tryParse(Constant.ownerMinimumDepositToRideAccept) ?? 0;
 
                           // 🧠 Logic:
                           // If individual driver → check driver's own wallet
@@ -77,7 +80,7 @@ class CabHomeScreen extends StatelessWidget {
                                     "${'You must have at least'.tr} ${Constant.amountShow(amount: Constant.minimumDepositToRideAccept.toString())} ${'in your wallet to receive orders'.tr}",
                               ),
                             );
-                          } else if (ownerId != null && ownerId.isNotEmpty && ownerWallet < minDeposit) {
+                          } else if (ownerId != null && ownerId.isNotEmpty && ownerWallet < ownerMinDeposit) {
                             // Owner-driver case
                             return Padding(
                               padding: const EdgeInsets.all(DsSpace.md),
@@ -262,24 +265,30 @@ class CabHomeScreen extends StatelessWidget {
                 onPressed: () async {
                   if (controller.currentOrder.value.id != null) {
                     if (controller.currentOrder.value.status != Constant.driverPending) {
+                      // The maps title is the cleaned address (`.toString()`
+                      // of a missing one was the word "null"), and a point
+                      // without a position searches that address instead.
                       if (controller.currentOrder.value.status == Constant.orderShipped) {
                         Utils.redirectMap(
-                          name: controller.currentOrder.value.sourceLocationName.toString(),
-                          latitude: controller.currentOrder.value.sourceLocation!.latitude ?? 0.0,
-                          longLatitude: controller.currentOrder.value.sourceLocation!.longitude ?? 0.0,
+                          name: AddressFormat.clean(controller.currentOrder.value.sourceLocationName),
+                          latitude: controller.currentOrder.value.sourceLocation?.latitude ?? 0.0,
+                          longLatitude: controller.currentOrder.value.sourceLocation?.longitude ?? 0.0,
+                          address: controller.currentOrder.value.sourceLocationName,
                         );
                       } else if (controller.currentOrder.value.status == Constant.orderInTransit) {
                         Utils.redirectMap(
-                          name: controller.currentOrder.value.destinationLocationName.toString(),
-                          latitude: controller.currentOrder.value.destinationLocation!.latitude ?? 0.0,
-                          longLatitude: controller.currentOrder.value.destinationLocation!.longitude ?? 0.0,
+                          name: AddressFormat.clean(controller.currentOrder.value.destinationLocationName),
+                          latitude: controller.currentOrder.value.destinationLocation?.latitude ?? 0.0,
+                          longLatitude: controller.currentOrder.value.destinationLocation?.longitude ?? 0.0,
+                          address: controller.currentOrder.value.destinationLocationName,
                         );
                       }
                     } else {
                       Utils.redirectMap(
-                        name: controller.currentOrder.value.sourceLocationName.toString(),
-                        latitude: controller.currentOrder.value.sourceLocation!.latitude ?? 0.0,
-                        longLatitude: controller.currentOrder.value.sourceLocation!.longitude ?? 0.0,
+                        name: AddressFormat.clean(controller.currentOrder.value.sourceLocationName),
+                        latitude: controller.currentOrder.value.sourceLocation?.latitude ?? 0.0,
+                        longLatitude: controller.currentOrder.value.sourceLocation?.longitude ?? 0.0,
+                        address: controller.currentOrder.value.sourceLocationName,
                       );
                     }
                   }
@@ -387,13 +396,22 @@ class CabHomeScreen extends StatelessWidget {
         acceptLabel: "Accept".tr,
         onAccept: () {
           if (controller.driverModel.value.ownerId != null && controller.driverModel.value.ownerId!.isNotEmpty) {
-            if (controller.ownerModel.value.walletAmount != null && controller.ownerModel.value.walletAmount! >= double.parse(Constant.minimumDepositToRideAccept)) {
+            // A company's driver accepts on the OWNER's wallet, held to the
+            // owner minimum (`ownerMinimumDepositToRideAccept`): the threshold
+            // the owner's home screen warns about, the parcel module's Accept
+            // checks, and this message quotes. The check used the independent
+            // driver's minimum instead, so the two disagreed.
+            final num? ownerWallet = controller.ownerModel.value.walletAmount;
+            if (ownerWallet != null && ownerWallet >= (double.tryParse(Constant.ownerMinimumDepositToRideAccept) ?? 0)) {
               controller.acceptOrder();
             } else {
+              // The key (and every translation) holds `{amount}`; GetX's
+              // trParams only replaces `@amount`, so the toast used to show
+              // the placeholder instead of the minimum.
               ShowToastDialog.showToast(
-                "Your owner has to maintain minimum {amount} wallet balance to accept the cab booking. Please contact your owner".trParams({
-                  "amount": Constant.ownerMinimumDepositToRideAccept.toString(),
-                }).tr,
+                "Your owner has to maintain minimum {amount} wallet balance to accept the cab booking. Please contact your owner"
+                    .tr
+                    .replaceAll('{amount}', Constant.amountShow(amount: Constant.ownerMinimumDepositToRideAccept)),
               );
             }
           } else {

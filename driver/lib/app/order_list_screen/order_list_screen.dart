@@ -146,7 +146,7 @@ class OrderListScreen extends StatelessWidget {
               DsRouteStop(
                 kind: DsStopKind.drop,
                 label: "Deliver to the".tr,
-                address: orderModel.address!.getFullAddress(),
+                address: orderModel.address?.getFullAddress() ?? '',
               ),
             ],
           ),

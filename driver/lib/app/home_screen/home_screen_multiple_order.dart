@@ -9,8 +9,8 @@ import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/utils.dart';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 
 /// Archetype B + J — the multi-order queue. "New" is a stack of full
@@ -226,7 +226,7 @@ class HomeScreenMultipleOrder extends StatelessWidget {
     required BuildContext context,
     required HomeScreenMultipleOrderController controller,
     required dynamic orderId,
-    required Widget Function(OrderModel orderModel, double kilometer) builder,
+    required Widget Function(OrderModel orderModel, double? kilometer) builder,
   }) {
     final OrderModel? orderModel = controller.orders[orderId.toString()];
     if (orderModel == null) {
@@ -243,12 +243,13 @@ class HomeScreenMultipleOrder extends StatelessWidget {
     }
     // `vendor!` / `address!.location!` threw here for a record without them,
     // and the card (with its buttons) became an error box.
-    final double distanceInMeters = Geolocator.distanceBetween(orderModel.vendor?.latitude ?? 0.0, orderModel.vendor?.longitude ?? 0.0,
-        orderModel.address?.location?.latitude ?? 0.0, orderModel.address?.location?.longitude ?? 0.0);
-    return builder(orderModel, distanceInMeters / 1000);
+    // Null when the store (or the drop) has no position (report 02#2): the
+    // card shows no distance instead of one to 0,0.
+    final double? kilometer = Utils.distanceKm(orderModel.vendor?.latitude, orderModel.vendor?.longitude, orderModel.address?.location?.latitude, orderModel.address?.location?.longitude);
+    return builder(orderModel, kilometer);
   }
 
-  Widget _activeOrderCard(BuildContext context, OrderModel orderModel, double kilometer, bool isFreelanceDriver) {
+  Widget _activeOrderCard(BuildContext context, OrderModel orderModel, double? kilometer, bool isFreelanceDriver) {
     final t = context.dsText;
     return DsCard.outlined(
       padding: const EdgeInsets.all(DsSpace.lg),
@@ -301,13 +302,13 @@ class HomeScreenMultipleOrder extends StatelessWidget {
     ];
   }
 
-  List<DsTripMetric> _metricsFor(OrderModel orderModel, double kilometer, {bool isFreelanceDriver = false}) {
+  List<DsTripMetric> _metricsFor(OrderModel orderModel, double? kilometer, {bool isFreelanceDriver = false}) {
     final String tip = orderModel.tipAmount ?? '';
     final bool hasTip = (double.tryParse(tip) ?? 0) > 0;
     return [
       DsTripMetric(
         icon: Icons.route_rounded,
-        value: "${double.parse(kilometer.toString()).toStringAsFixed(2)} ${Constant.distanceType}",
+        value: kilometer == null ? '—' : "${kilometer.toStringAsFixed(2)} ${Constant.distanceType}",
         label: "Trip Distance".tr,
       ),
       if (isFreelanceDriver)

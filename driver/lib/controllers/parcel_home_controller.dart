@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer';
 
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/parcel_screen/parcel_tracking/parcel_proof_sheet.dart';
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
@@ -19,6 +20,12 @@ class ParcelHomeController extends GetxController {
   /// Live list of the parcels assigned to this driver (panel report 01 §4).
   StreamSubscription<List<ParcelOrderModel>>? _ongoingSub;
 
+  // One subscription each: [getParcelList] runs again after every pickup,
+  // delivery, scan and pull-to-refresh, and each run used to add another
+  // pair of user / owner listeners on top of the last.
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userSub;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _ownerSub;
+
   @override
   void onInit() {
     // TODO: implement onInit
@@ -30,6 +37,8 @@ class ParcelHomeController extends GetxController {
   @override
   void onClose() {
     _ongoingSub?.cancel();
+    _userSub?.cancel();
+    _ownerSub?.cancel();
     super.onClose();
   }
 
@@ -52,7 +61,8 @@ class ParcelHomeController extends GetxController {
 
   Future<void> getParcelList() async {
     print("==>${userModel.value.isActive}");
-    FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen(
+    _userSub?.cancel();
+    _userSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen(
           (event) {
         if (event.exists) {
           userModel.value = UserModel.fromJson(event.data()!);
@@ -76,8 +86,10 @@ class ParcelHomeController extends GetxController {
     // whole subscribe step (including the driver listener below it in the
     // other modules) down with it.
     final String ownerId = Constant.userModel?.ownerId ?? '';
+    _ownerSub?.cancel();
+    _ownerSub = null;
     if (ownerId.isNotEmpty) {
-      FireStoreUtils.fireStore.collection(CollectionName.users).doc(ownerId).snapshots().listen(
+      _ownerSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(ownerId).snapshots().listen(
             (event) async {
           if (event.exists) {
             ownerModel.value = UserModel.fromJson(event.data()!);

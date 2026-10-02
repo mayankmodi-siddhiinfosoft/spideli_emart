@@ -4,17 +4,26 @@ import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/themes/round_button_fill.dart';
 import 'package:driver/themes/text_field_widget.dart';
 import 'package:driver/themes/theme_controller.dart';
+import 'package:driver/utils/cancel_reason_list.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-/// A reason chosen in [CancelReasonSheet]: [code] is the list entry (or
-/// "other"), [reason] the text shown to people (the free text for "Other").
+/// A reason chosen in [CancelReasonSheet]: [code] is the list entry's code
+/// (a stored `{code, label}` entry's own code, a plain string entry's text, or
+/// "other" for typed text), [reason] the text shown to people (the entry's
+/// label, or the free text for "Other").
 class CancelReasonResult {
   final String reason;
   final String code;
 
   const CancelReasonResult({required this.reason, required this.code});
+
+  /// The result for a chosen list entry; [otherText] is the typed text when
+  /// [option] is "Other".
+  factory CancelReasonResult.fromOption(CancelReasonOption option, {String otherText = ''}) => option.isOther
+      ? CancelReasonResult(reason: otherText.trim(), code: CancelReasonOption.otherCode)
+      : CancelReasonResult(reason: option.label, code: option.code);
 
   /// Fields for a driver passing on / handing back a ride or rental.
   ///
@@ -38,8 +47,9 @@ class CancelReasonResult {
 }
 
 /// Mandatory cancellation reason (spec 9.1 / 4.8 step 6). Reasons come from
-/// `settings/cancellationReasons.driver`, else the contract defaults; "Other"
-/// requires free text. Returns null when the driver backs out.
+/// `settings/cancellationReasons` (`driver`, then `reasons`, then `list`),
+/// else the contract defaults; "Other" requires free text. Returns null when
+/// the driver backs out.
 class CancelReasonSheet {
   CancelReasonSheet._();
 
@@ -58,7 +68,7 @@ class CancelReasonSheet {
 }
 
 class _CancelReasonBody extends StatefulWidget {
-  final List<String> reasons;
+  final List<CancelReasonOption> reasons;
   final String title;
 
   const _CancelReasonBody({required this.reasons, required this.title});
@@ -68,10 +78,8 @@ class _CancelReasonBody extends StatefulWidget {
 }
 
 class _CancelReasonBodyState extends State<_CancelReasonBody> {
-  String? _selected;
+  CancelReasonOption? _selected;
   final TextEditingController _other = TextEditingController();
-
-  bool _isOther(String? value) => value != null && value.toLowerCase() == 'other';
 
   @override
   void dispose() {
@@ -84,16 +92,11 @@ class _CancelReasonBodyState extends State<_CancelReasonBody> {
       ShowToastDialog.showToast("Please select a reason".tr);
       return;
     }
-    if (_isOther(_selected)) {
-      final text = _other.text.trim();
-      if (text.length < 3) {
-        ShowToastDialog.showToast("Please describe the reason (at least 3 characters)".tr);
-        return;
-      }
-      Get.back(result: CancelReasonResult(reason: text, code: 'other'));
+    if (_selected!.isOther && _other.text.trim().length < 3) {
+      ShowToastDialog.showToast("Please describe the reason (at least 3 characters)".tr);
       return;
     }
-    Get.back(result: CancelReasonResult(reason: _selected!, code: _selected!));
+    Get.back(result: CancelReasonResult.fromOption(_selected!, otherText: _other.text));
   }
 
   @override
@@ -111,22 +114,22 @@ class _CancelReasonBodyState extends State<_CancelReasonBody> {
               const SizedBox(height: 4),
               Text("A reason is required.".tr, style: TextStyle(fontFamily: AppThemeData.regular, fontSize: 13, color: isDark ? AppThemeData.grey400 : AppThemeData.grey600)),
               const SizedBox(height: 8),
-              RadioGroup<String>(
+              RadioGroup<CancelReasonOption>(
                 groupValue: _selected,
                 onChanged: (value) => setState(() => _selected = value),
                 child: Column(
                   children: widget.reasons
-                      .map((reason) => RadioListTile<String>(
+                      .map((reason) => RadioListTile<CancelReasonOption>(
                             dense: true,
                             contentPadding: EdgeInsets.zero,
                             value: reason,
                             activeColor: AppThemeData.primary300,
-                            title: Text(reason.tr, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
+                            title: Text(reason.label.tr, style: TextStyle(fontFamily: AppThemeData.medium, fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
                           ))
                       .toList(),
                 ),
               ),
-              if (_isOther(_selected))
+              if (_selected?.isOther == true)
                 TextFieldWidget(
                   title: 'Reason'.tr,
                   controller: _other,

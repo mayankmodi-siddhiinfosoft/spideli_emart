@@ -1,8 +1,12 @@
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
+import 'package:driver/utils/address_format.dart';
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:get/get.dart';
 import 'package:location/location.dart';
 import 'package:map_launcher/map_launcher.dart' hide Location;
+import 'package:url_launcher/url_launcher.dart';
 
 class Utils {
   static Future<Position?> getCurrentLocation() async {
@@ -41,7 +45,33 @@ class Utils {
     return await Geolocator.getCurrentPosition();
   }
 
-  static Future<void> redirectMap({required String name, required double latitude, required double longLatitude}) async {
+  /// True for a point that can be routed to: both values present, finite, in
+  /// range, and not 0,0 — which is what a missing position defaulted to (a
+  /// store saved with "" for both coordinates, report 02#2).
+  static bool isRoutable(double? latitude, double? longitude) {
+    if (latitude == null || longitude == null) return false;
+    if (!latitude.isFinite || !longitude.isFinite) return false;
+    if (latitude.abs() > 90 || longitude.abs() > 180) return false;
+    return !(latitude == 0 && longitude == 0);
+  }
+
+  /// Straight-line distance in km between two points, or null when either is
+  /// not [isRoutable] — so a store without a position shows no distance
+  /// rather than the distance to the Gulf of Guinea.
+  static double? distanceKm(double? lat1, double? lng1, double? lat2, double? lng2) {
+    if (!isRoutable(lat1, lng1) || !isRoutable(lat2, lng2)) return null;
+    return Geolocator.distanceBetween(lat1!, lng1!, lat2!, lng2!) / 1000;
+  }
+
+  /// Opens directions in the driver's chosen maps app. A point that is not
+  /// [isRoutable] is never routed to: the maps app searches [address]
+  /// instead, and with no address either the driver is told so
+  /// ([noLocationMessage]) instead of being sent to 0,0.
+  static Future<void> redirectMap({required String name, required double latitude, required double longLatitude, String? address, String? noLocationMessage}) async {
+    if (!isRoutable(latitude, longLatitude)) {
+      await _searchAddress(address, noLocationMessage: noLocationMessage);
+      return;
+    }
     if (Constant.mapType == "google") {
       await _openDirectionsIfInstalled(MapApp.google, name, latitude, longLatitude, "Google map is not installed");
     } else if (Constant.mapType == "googleGo") {
@@ -54,6 +84,31 @@ class Utils {
       await _openDirectionsIfInstalled(MapApp.yandexNavi, name, latitude, longLatitude, "YandexNavi is not installed");
     } else if (Constant.mapType == "yandexMaps") {
       await _openDirectionsIfInstalled(MapApp.yandexMaps, name, latitude, longLatitude, "yandexMaps map is not installed");
+    }
+  }
+
+  /// The maps search URL for [address] ('' when there is nothing to search):
+  /// Waze for a Waze driver, Google Maps (app or browser) for everyone else.
+  @visibleForTesting
+  static Uri? addressSearchUri(String? address, {String? mapType}) {
+    final String query = AddressFormat.clean(address);
+    if (query.isEmpty) return null;
+    if ((mapType ?? Constant.mapType) == 'waze') return Uri.https('waze.com', '/ul', {'q': query, 'navigate': 'yes'});
+    return Uri.https('www.google.com', '/maps/search/', {'api': '1', 'query': query});
+  }
+
+  static Future<void> _searchAddress(String? address, {String? noLocationMessage}) async {
+    final Uri? uri = addressSearchUri(address);
+    bool opened = false;
+    if (uri != null) {
+      try {
+        opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        opened = false;
+      }
+    }
+    if (!opened) {
+      ShowToastDialog.showToast(noLocationMessage ?? "This location is not on the map. Please contact them for directions.".tr);
     }
   }
 

@@ -14,6 +14,7 @@ import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/utils/args.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/region_service.dart';
+import 'package:driver/utils/utils.dart';
 import 'package:driver/widget/cancel_reason_sheet.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -477,15 +478,12 @@ class HomeController extends GetxController {
         return;
     }
 
-    if (origin == null || destination == null) {
-      debugPrint("⚠️ getDirections: Missing origin or destination");
-      return;
-    }
-
-    // 3️⃣ Fetch polyline route
-    final polylineCoordinates = await _fetchPolyline(origin, destination);
+    // 3️⃣ Fetch polyline route. None when an end has no position (a store
+    // saved with "" coordinates, report 02#2): the pins that do exist are
+    // still drawn, and nothing is routed or pinned at 0,0.
+    final List<LatLng> polylineCoordinates = (origin == null || destination == null) ? <LatLng>[] : await _fetchPolyline(origin, destination);
     if (polylineCoordinates.isEmpty) {
-      debugPrint("⚠️ getDirections: No route found between origin and destination");
+      debugPrint("⚠️ getDirections: No route (missing origin / destination, or none found)");
     }
 
     // 4️⃣ Update markers safely
@@ -493,24 +491,22 @@ class HomeController extends GetxController {
     markers.remove("Destination");
     markers.remove("Driver");
 
-    if (order.status == Constant.orderShipped || order.status == Constant.driverAccepted || order.status == Constant.driverPending) {
+    final LatLng? storePoint = _toLatLng(order.vendor?.latitude, order.vendor?.longitude);
+    if (storePoint != null && (order.status == Constant.orderShipped || order.status == Constant.driverAccepted || order.status == Constant.driverPending)) {
       markers['Departure'] = Marker(
         markerId: const MarkerId('Departure'),
         infoWindow: const InfoWindow(title: "Departure"),
-        position: _toLatLng(order.vendor?.latitude, order.vendor?.longitude) ?? const LatLng(0, 0),
+        position: storePoint,
         icon: departureIcon!,
       );
     }
 
-    if (order.status == Constant.orderInTransit || order.status == Constant.driverPending) {
+    final LatLng? dropPoint = _toLatLng(order.address?.location?.latitude, order.address?.location?.longitude);
+    if (dropPoint != null && (order.status == Constant.orderInTransit || order.status == Constant.driverPending)) {
       markers['Destination'] = Marker(
         markerId: const MarkerId('Destination'),
         infoWindow: const InfoWindow(title: "Destination"),
-        position: _toLatLng(
-              order.address?.location?.latitude,
-              order.address?.location?.longitude,
-            ) ??
-            const LatLng(0, 0),
+        position: dropPoint,
         icon: destinationIcon!,
       );
     }
@@ -530,10 +526,11 @@ class HomeController extends GetxController {
     addPolyLine(polylineCoordinates);
   }
 
-  /// Helper: safely convert to LatLng if valid
+  /// Helper: a LatLng only for a real position — null for a missing, NaN or
+  /// 0,0 one (a store saved without a position, report 02#2).
   LatLng? _toLatLng(double? lat, double? lng) {
-    if (lat == null || lng == null) return null;
-    return LatLng(lat, lng);
+    if (!Utils.isRoutable(lat, lng)) return null;
+    return LatLng(lat!, lng!);
   }
 
   /// Helper: fetch polyline safely
@@ -671,6 +668,27 @@ class HomeController extends GetxController {
   Rx<location.LatLng> current = location.LatLng(21.1800, 72.8400).obs; // Moving marker
   Rx<location.LatLng> destination = location.LatLng(21.2000, 72.8600).obs; // Destination
 
+  /// False while the OSM target has no position (a store saved without one):
+  /// no destination pin, and no route, rather than both at 0,0.
+  bool _osmHasDestination = true;
+
+  /// Routes the OSM map from [from] to [to], or draws no route and no
+  /// destination pin when [to] is null.
+  void _osmRouteTo(location.LatLng from, location.LatLng? to) {
+    _osmHasDestination = to != null;
+    if (to == null) {
+      routePoints.clear();
+      setOsmMapMarker();
+      return;
+    }
+    destination.value = to;
+    fetchRoute(from, to).then((value) {
+      setOsmMapMarker();
+    });
+  }
+
+  location.LatLng? _osmPoint(double? lat, double? lng) => Utils.isRoutable(lat, lng) ? location.LatLng(lat!, lng!) : null;
+
   void setOsmMapMarker() {
     osmMarkers.value = [
       flutterMap.Marker(
@@ -686,12 +704,13 @@ class HomeController extends GetxController {
         height: 40,
         child: Image.asset('assets/images/location_black3x.png'),
       ),
-      flutterMap.Marker(
-        point: destination.value,
-        width: 40,
-        height: 40,
-        child: Image.asset('assets/images/location_orange3x.png'),
-      )
+      if (_osmHasDestination)
+        flutterMap.Marker(
+          point: destination.value,
+          width: 40,
+          height: 40,
+          child: Image.asset('assets/images/location_orange3x.png'),
+        )
     ];
   }
 
@@ -702,25 +721,19 @@ class HomeController extends GetxController {
           print("Order Status :: ${currentOrder.value.status} :: OrderId :: ${currentOrder.value.id}} ::");
           if (currentOrder.value.status == Constant.orderShipped || currentOrder.value.status == Constant.driverAccepted) {
             current.value = location.LatLng(driverModel.value.location!.latitude ?? 0.0, driverModel.value.location!.longitude ?? 0.0);
-            destination.value = location.LatLng(
-              currentOrder.value.vendor!.latitude ?? 0.0,
-              currentOrder.value.vendor!.longitude ?? 0.0,
-            );
+            final store = _osmPoint(currentOrder.value.vendor?.latitude, currentOrder.value.vendor?.longitude);
+            if (store != null) destination.value = store;
+            _osmHasDestination = store != null;
             animateToSource();
-            fetchRoute(current.value, destination.value).then((value) {
-              setOsmMapMarker();
-            });
+            _osmRouteTo(current.value, store);
           } else if (currentOrder.value.status == Constant.orderInTransit) {
             print(":::::::::::::${currentOrder.value.status}::::::::::::::::::44");
             current.value = location.LatLng(driverModel.value.location!.latitude ?? 0.0, driverModel.value.location!.longitude ?? 0.0);
-            destination.value = location.LatLng(
-              currentOrder.value.address!.location!.latitude ?? 0.0,
-              currentOrder.value.address!.location!.longitude ?? 0.0,
-            );
+            final drop = _osmPoint(currentOrder.value.address?.location?.latitude, currentOrder.value.address?.location?.longitude);
+            if (drop != null) destination.value = drop;
+            _osmHasDestination = drop != null;
             setOsmMapMarker();
-            fetchRoute(current.value, destination.value).then((value) {
-              setOsmMapMarker();
-            });
+            _osmRouteTo(current.value, drop);
             animateToSource();
           }
         } else {
@@ -728,11 +741,11 @@ class HomeController extends GetxController {
           current.value =
               location.LatLng(currentOrder.value.author!.location!.latitude ?? 0.0, currentOrder.value.author!.location!.longitude ?? 0.0);
 
-          destination.value = location.LatLng(currentOrder.value.vendor!.latitude ?? 0.0, currentOrder.value.vendor!.longitude ?? 0.0);
+          final store = _osmPoint(currentOrder.value.vendor?.latitude, currentOrder.value.vendor?.longitude);
+          if (store != null) destination.value = store;
+          _osmHasDestination = store != null;
           animateToSource();
-          fetchRoute(current.value, destination.value).then((value) {
-            setOsmMapMarker();
-          });
+          _osmRouteTo(current.value, store);
           animateToSource();
         }
       }

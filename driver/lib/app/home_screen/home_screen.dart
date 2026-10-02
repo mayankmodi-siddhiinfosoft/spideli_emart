@@ -17,7 +17,6 @@ import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart' as flutterMap;
-import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -250,13 +249,22 @@ class HomeScreen extends StatelessWidget {
                   if (order.id != null) {
                     // `!` on vendor / author / address threw inside this async
                     // handler for a record without them, and the tap did nothing.
+                    // A point that is missing (a store saved without a
+                    // position, report 02#2) searches the address instead of
+                    // routing to 0,0.
                     if (order.status == Constant.orderInTransit) {
                       Utils.redirectMap(
                           name: order.author?.firstName ?? '',
                           latitude: order.address?.location?.latitude ?? 0.0,
-                          longLatitude: order.address?.location?.longitude ?? 0.0);
+                          longLatitude: order.address?.location?.longitude ?? 0.0,
+                          address: order.address?.getFullAddress());
                     } else if (order.status == Constant.orderShipped || order.status == Constant.driverAccepted || order.status == Constant.driverPending) {
-                      Utils.redirectMap(name: order.vendor?.title ?? '', latitude: order.vendor?.latitude ?? 0.0, longLatitude: order.vendor?.longitude ?? 0.0);
+                      Utils.redirectMap(
+                          name: order.vendor?.title ?? '',
+                          latitude: order.vendor?.latitude ?? 0.0,
+                          longLatitude: order.vendor?.longitude ?? 0.0,
+                          address: order.vendor?.location,
+                          noLocationMessage: "This store has no map location yet. Please call the store for directions.".tr);
                     }
                   }
                 },
@@ -270,9 +278,9 @@ class HomeScreen extends StatelessWidget {
 
   /// Archetype B — the incoming request, docked under the map.
   Widget showDriverBottomSheet(BuildContext context, HomeController controller) {
-    double distanceInMeters = Geolocator.distanceBetween(controller.currentOrder.value.vendor?.latitude ?? 0.0, controller.currentOrder.value.vendor?.longitude ?? 0.0,
-        controller.currentOrder.value.address?.location?.latitude ?? 0.0, controller.currentOrder.value.address?.location?.longitude ?? 0.0);
-    double kilometer = distanceInMeters / 1000;
+    // Null when the store (or the drop) has no position: no distance to 0,0.
+    final double? kilometer = Utils.distanceKm(controller.currentOrder.value.vendor?.latitude, controller.currentOrder.value.vendor?.longitude,
+        controller.currentOrder.value.address?.location?.latitude, controller.currentOrder.value.address?.location?.longitude);
 
     final bool isFreelanceDriver = controller.driverModel.value.vendorID?.isEmpty == true;
     final String tip = controller.currentOrder.value.tipAmount ?? '';
@@ -308,7 +316,7 @@ class HomeScreen extends StatelessWidget {
             metrics: [
               DsTripMetric(
                 icon: Icons.route_rounded,
-                value: "${double.parse(kilometer.toString()).toStringAsFixed(2)} ${Constant.distanceType}",
+                value: kilometer == null ? '—' : "${kilometer.toStringAsFixed(2)} ${Constant.distanceType}",
                 label: "Trip Distance".tr,
               ),
               if (hasTip)

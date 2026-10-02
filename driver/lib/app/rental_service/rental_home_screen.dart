@@ -146,6 +146,9 @@ class RentalHomeScreen extends StatelessWidget {
       final String? ownerId = user.ownerId;
 
       final num minDeposit = double.parse(Constant.minimumDepositToRideAccept);
+      // A company's driver works on the company's wallet, held to the owner
+      // minimum — the threshold the owner's home screen and Accept use.
+      final num ownerMinDeposit = double.tryParse(Constant.ownerMinimumDepositToRideAccept) ?? 0;
 
       // 🧠 Logic:
       // If individual driver → check driver's own wallet
@@ -160,7 +163,7 @@ class RentalHomeScreen extends StatelessWidget {
             message: "${'You must have at least'.tr} ${Constant.amountShow(amount: Constant.minimumDepositToRideAccept.toString())} ${'in your wallet to receive orders'.tr}",
           ),
         );
-      } else if (ownerId != null && ownerId.isNotEmpty && ownerWallet < minDeposit) {
+      } else if (ownerId != null && ownerId.isNotEmpty && ownerWallet < ownerMinDeposit) {
         // Owner-driver case
         return Padding(
           padding: const EdgeInsets.all(DsSpace.lg),

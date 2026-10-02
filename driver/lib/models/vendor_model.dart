@@ -90,7 +90,8 @@ class VendorModel {
       this.subscriptionPlan,
       this.subscriptionTotalOrders,
       this.isSelfDelivery,
-      this.packagingCharge});
+      this.packagingCharge})
+      : _positionFromLatLngFields = latitude != null && longitude != null;
 
   VendorModel.fromJson(Map<String, dynamic> json) {
     author = json['author'];
@@ -121,7 +122,6 @@ class VendorModel {
     closeDineTime = json['closeDineTime'];
     zoneId = json['zoneId'];
     createdAt = json['createdAt'];
-    longitude = double.parse(json['longitude'].toString());
     enabledDiveInFuture = json['enabledDiveInFuture'];
     restaurantCost = json['restaurantCost']?.toString();
     deliveryCharge = json['DeliveryCharge'] != null ? DeliveryCharge.fromJson(json['DeliveryCharge']) : null;
@@ -136,20 +136,68 @@ class VendorModel {
       });
     }
     specialDiscountEnable = json['specialDiscountEnable'];
-    coordinates = json['coordinates'];
+    coordinates = json['coordinates'] is GeoPoint ? json['coordinates'] : null;
     reviewsSum = json['reviewsSum'] ?? 0.0;
     photos = json['photos'] ?? [];
     title = json['title'];
     if (json['categoryTitle'].runtimeType != String) {
       categoryTitle = json['categoryTitle'] ?? [];
     }
-    latitude = double.parse(json['latitude'].toString());
+    // Report 02#2: `latitude` / `longitude` are strings, and three live
+    // stores hold "" for both. `double.parse("")` threw here, which took the
+    // order holding the store (and the listener reading it) down with it.
+    // Such a store now simply has no position: no pin, no route, no distance.
+    _positionFromLatLngFields = _point(json['latitude'], json['longitude']) != null;
+    final position = parsePosition(json);
+    latitude = position?.lat;
+    longitude = position?.lng;
     subscriptionPlanId = json['subscriptionPlanId'];
     subscriptionExpiryDate = json['subscriptionExpiryDate'];
     subscriptionPlan = json['subscription_plan'] != null ? SubscriptionPlanModel.fromJson(json['subscription_plan']) : null;
     subscriptionTotalOrders = json['subscriptionTotalOrders'];
     isSelfDelivery = json['isSelfDelivery'];
     packagingCharge = json['packagingCharge'] ?? "0";
+  }
+
+  /// True when [latitude] / [longitude] were read from the stored
+  /// `latitude` / `longitude` themselves. Only then does [toJson] write them,
+  /// so an order's store snapshot holding "" is never rewritten with null or
+  /// with a position derived from `coordinates`.
+  bool _positionFromLatLngFields = false;
+
+  /// False for a store saved without a usable position (report 02#2). Such a
+  /// store gets no map pin, no route, no distance and no directions to 0,0.
+  bool get hasPosition => latitude != null && longitude != null;
+
+  /// The store's position from `latitude` / `longitude` (strings or numbers),
+  /// else `coordinates`, else `g.geopoint`; null when none of them is a real
+  /// point. Never throws. Same rule as the customer app's
+  /// `VendorModel.parsePosition` and the Store app's `parseCoordinate`.
+  static ({double lat, double lng})? parsePosition(Map<String, dynamic> json) {
+    final Object? coordinates = json['coordinates'];
+    final Object? g = json['g'];
+    final Object? geopoint = g is Map ? g['geopoint'] : null;
+    return _point(json['latitude'], json['longitude']) ??
+        (coordinates is GeoPoint ? _point(coordinates.latitude, coordinates.longitude) : null) ??
+        (geopoint is GeoPoint ? _point(geopoint.latitude, geopoint.longitude) : null);
+  }
+
+  static ({double lat, double lng})? _point(Object? lat, Object? lng) {
+    final double? a = parseCoordinate(lat);
+    final double? b = parseCoordinate(lng);
+    if (a == null || b == null) return null;
+    if (a.abs() > 90 || b.abs() > 180) return null;
+    // 0,0 is this data model's "not set": no store is in the Gulf of Guinea.
+    if (a == 0 && b == 0) return null;
+    return (lat: a, lng: b);
+  }
+
+  /// A latitude / longitude as stored by the apps (numbers) or the panels
+  /// (strings). Blank, "null", non-numeric, NaN or infinite values are null.
+  static double? parseCoordinate(Object? value) {
+    if (value == null) return null;
+    final double? parsed = value is num ? value.toDouble() : double.tryParse(value.toString().trim());
+    return parsed != null && parsed.isFinite ? parsed : null;
   }
 
   Map<String, dynamic> toJson() {
@@ -184,7 +232,7 @@ class VendorModel {
     data['closeDineTime'] = closeDineTime;
     data['zoneId'] = zoneId;
     data['createdAt'] = createdAt;
-    data['longitude'] = longitude;
+    if (_positionFromLatLngFields) data['longitude'] = longitude;
     data['enabledDiveInFuture'] = enabledDiveInFuture;
     data['restaurantCost'] = restaurantCost;
     if (deliveryCharge != null) {
@@ -200,12 +248,12 @@ class VendorModel {
       data['specialDiscount'] = specialDiscount!.map((v) => v.toJson()).toList();
     }
     data['specialDiscountEnable'] = specialDiscountEnable;
-    data['coordinates'] = coordinates;
+    if (coordinates != null) data['coordinates'] = coordinates;
     data['reviewsSum'] = reviewsSum;
     data['photos'] = photos;
     data['title'] = title;
     data['categoryTitle'] = categoryTitle;
-    data['latitude'] = latitude;
+    if (_positionFromLatLngFields) data['latitude'] = latitude;
     data['subscriptionTotalOrders'] = subscriptionTotalOrders;
     data['isSelfDelivery'] = isSelfDelivery;
     data['packagingCharge'] = packagingCharge;
@@ -266,13 +314,13 @@ class G {
 
   G.fromJson(Map<String, dynamic> json) {
     geohash = json['geohash'];
-    geopoint = json['geopoint'];
+    geopoint = json['geopoint'] is GeoPoint ? json['geopoint'] : null;
   }
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
     data['geohash'] = geohash;
-    data['geopoint'] = geopoint;
+    if (geopoint != null) data['geopoint'] = geopoint;
     return data;
   }
 }

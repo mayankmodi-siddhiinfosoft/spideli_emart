@@ -78,7 +78,10 @@ class RentalBookingSearchScreen extends StatelessWidget {
         acceptLabel: "Accept".tr,
         onAccept: () async {
           if (controller.driverModel.value.ownerId != null && controller.driverModel.value.ownerId!.isNotEmpty) {
-            if (controller.ownerModel.value.walletAmount != null && controller.ownerModel.value.walletAmount! >= double.parse(Constant.minimumDepositToRideAccept)) {
+            // Owner's wallet against the owner minimum — the amount the
+            // message below quotes (it checked the driver minimum instead).
+            final num? ownerWallet = controller.ownerModel.value.walletAmount;
+            if (ownerWallet != null && ownerWallet >= (double.tryParse(Constant.ownerMinimumDepositToRideAccept) ?? 0)) {
               await controller.acceptBooking(rentalBookingData);
             } else {
               ShowToastDialog.showToast(

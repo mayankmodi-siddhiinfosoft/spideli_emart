@@ -2,6 +2,7 @@
 import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/themes/round_button_fill.dart';
 import 'package:driver/themes/theme_controller.dart';
+import 'package:driver/utils/address_format.dart';
 import 'package:driver/widget/osm_map/map_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -124,7 +125,7 @@ class MapPickerPage extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2.0),
                   child: Text(
-                    "${controller.pickedPlace.value!.address}\n(${controller.pickedPlace.value!.coordinates.latitude.toStringAsFixed(5)}, ${controller.pickedPlace.value!.coordinates.longitude.toStringAsFixed(5)})",
+                    "${AddressFormat.orPlaceholder(controller.pickedPlace.value!.address)}\n(${controller.pickedPlace.value!.coordinates.latitude.toStringAsFixed(5)}, ${controller.pickedPlace.value!.coordinates.longitude.toStringAsFixed(5)})",
                     style: const TextStyle(fontSize: 13),
                   ),
                 ),

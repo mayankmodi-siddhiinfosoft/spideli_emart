@@ -48,6 +48,7 @@ import 'package:driver/models/withdrawal_model.dart';
 import 'package:driver/models/zone_model.dart';
 import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/themes/app_them_data.dart';
+import 'package:driver/utils/cancel_reason_list.dart';
 import 'package:driver/utils/preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -1584,22 +1585,19 @@ class FireStoreUtils {
     "Other",
   ];
 
-  /// `settings/cancellationReasons.driver`, else the built-in defaults. The
-  /// list always ends with "Other" (free text).
-  static Future<List<String>> getDriverCancellationReasons() async {
-    List<String> reasons = [];
+  /// `settings/cancellationReasons`: the `driver` key, then `reasons`, then
+  /// `list` (strings or `{code, label}` maps, as the web panels read it), else
+  /// the built-in defaults. Always ends with exactly one "Other" (free text).
+  /// See [parseCancelReasonList].
+  static Future<List<CancelReasonOption>> getDriverCancellationReasons() async {
+    Map<String, dynamic>? data;
     try {
       final doc = await fireStore.collection(CollectionName.settings).doc('cancellationReasons').get();
-      final raw = doc.data()?['driver'];
-      if (raw is Iterable) {
-        reasons = raw.map((e) => e?.toString().trim() ?? '').where((e) => e.isNotEmpty).toList();
-      }
+      data = doc.data();
     } catch (e) {
       log("getDriverCancellationReasons failed: $e");
     }
-    if (reasons.isEmpty) reasons = List<String>.from(defaultDriverCancellationReasons);
-    if (!reasons.any((e) => e.toLowerCase() == 'other')) reasons.add("Other");
-    return reasons;
+    return parseCancelReasonList(data, roleKeys: const ['driver'], defaults: defaultDriverCancellationReasons);
   }
 
   static Future<RentalOrderModel?> getRentalOrderById(String orderId) async {
