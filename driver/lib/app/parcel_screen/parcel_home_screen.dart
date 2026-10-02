@@ -39,6 +39,10 @@ class ParcelHomeScreen extends StatelessWidget {
             final bool isLoading = controller.isLoading.value;
             final bool docsPending = Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false;
             final bool isOffline = controller.userModel.value.isActive == false;
+            // New work (the queue banner, the parcel search and its Accept) is
+            // for a verified driver who is online. Parcels already assigned are
+            // listed and workable whatever this says.
+            final bool canTakeNewWork = isVerified && controller.userModel.value.isActive == true;
             final List<ParcelOrderModel> orders = controller.parcelOrdersList.toList();
 
             Widget body;
@@ -113,21 +117,23 @@ class ParcelHomeScreen extends StatelessWidget {
                       return const SizedBox();
                     }
                   }),
-                  const _NewParcelJobsBanner(),
+                  if (canTakeNewWork) const _NewParcelJobsBanner(),
                   Expanded(
                     child: DsEmptyState(
                       icon: Icons.inventory_2_outlined,
                       title: 'No parcel requests available in your selected zone.'.tr,
                       message: 'Try changing the location or date.'.tr,
-                      actionLabel: "Search Parcel".tr,
+                      actionLabel: canTakeNewWork ? "Search Parcel".tr : null,
                       actionIcon: Icons.search_rounded,
-                      onAction: () {
-                        Get.to(ParcelSearchScreen())!.then((value) {
-                          if (value != null && value is bool && value) {
-                            controller.getParcelList();
-                          }
-                        });
-                      },
+                      onAction: canTakeNewWork
+                          ? () {
+                              Get.to(ParcelSearchScreen())!.then((value) {
+                                if (value != null && value is bool && value) {
+                                  controller.getParcelList();
+                                }
+                              });
+                            }
+                          : null,
                     ),
                   ),
                 ],
@@ -140,9 +146,12 @@ class ParcelHomeScreen extends StatelessWidget {
                 },
                 child: CustomScrollView(
                   slivers: [
-                    const DsSliverResponsive(
-                      sliver: SliverToBoxAdapter(child: _NewParcelJobsBanner(gutter: false)),
-                    ),
+                    // Unverified or offline: the assigned parcels only, no way
+                    // to new requests (the banner opened the parcel search).
+                    if (canTakeNewWork)
+                      const DsSliverResponsive(
+                        sliver: SliverToBoxAdapter(child: _NewParcelJobsBanner(gutter: false)),
+                      ),
                     DsSliverResponsive(
                       top: DsSpace.lg,
                       sliver: SliverToBoxAdapter(

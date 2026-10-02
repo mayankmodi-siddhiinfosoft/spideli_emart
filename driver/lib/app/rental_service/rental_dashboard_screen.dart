@@ -14,6 +14,7 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/app/rental_service/rental_home_screen.dart';
 import 'package:driver/app/rental_service/rental_order_list_screen.dart';
 import 'package:driver/controllers/rental_dashboard_controller.dart';
+import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/themes/custom_dialog_box.dart';
 import 'package:driver/themes/ds/ds.dart';
@@ -181,20 +182,14 @@ class DrawerView extends StatelessWidget {
                                 return;
                               }
                             }
-                            controller.userModel.value.isActive = value;
-                            if (controller.userModel.value.isActive == true) {
-                              controller.updateCurrentLocation();
-                            }
-                            await FireStoreUtils.updateUser(controller.userModel.value);
+                            // `isActive` alone (field-level), never the whole user document.
+                            await controller.setOnline(value);
                           } else {
                             ShowToastDialog.showToast("Document verification is pending. Please proceed to set up your document verification.".tr);
                           }
                         } else {
-                          controller.userModel.value.isActive = value;
-                          if (controller.userModel.value.isActive == true) {
-                            controller.updateCurrentLocation();
-                          }
-                          await FireStoreUtils.updateUser(controller.userModel.value);
+                          // `isActive` alone (field-level), never the whole user document.
+                          await controller.setOnline(value);
                         }
                       },
                     ),
@@ -387,6 +382,10 @@ class DrawerView extends StatelessWidget {
                                     negativeString: "Cancel".tr,
                                     positiveClick: () async {
                                       await AudioPlayerService.playSound(false);
+                                      // Every dashboard's location stream and users listener stops before
+                                      // the auth user goes away (no tick with a null user, none left over
+                                      // to double up after the next login).
+                                      await DriverSessions.stopAll();
                                       // Client point 19: the device must stop receiving this driver's
                                       // work, and the stored token must stop pointing at them.
                                       await NotificationService.onSignOut();
@@ -420,12 +419,16 @@ class DrawerView extends StatelessWidget {
                                     negativeString: "Cancel".tr,
                                     positiveClick: () async {
                                       ShowToastDialog.showLoader("Please wait".tr);
+                                      // Stopped first: a location tick after the users document is
+                                      // gone must not run (or write) with a deleted account.
+                                      await DriverSessions.stopAll();
                                       await FireStoreUtils.deleteUser().then((value) {
                                         ShowToastDialog.closeLoader();
                                         if (value == true) {
                                           ShowToastDialog.showToast("Account deleted successfully".tr);
                                           Get.offAll(const LoginScreen());
                                         } else {
+                                          DriverSessions.resumeAll();
                                           ShowToastDialog.showToast("Contact Administrator".tr);
                                         }
                                       });

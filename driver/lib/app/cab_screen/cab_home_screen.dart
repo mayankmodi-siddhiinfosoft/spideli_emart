@@ -36,8 +36,9 @@ class CabHomeScreen extends StatelessWidget {
           body: controller.isLoading.value
               ? const _CabHomeSkeleton()
               // The verification gate never hides a ride already being worked
-              // (assigned or accepted earlier): it replaced the whole screen.
-              : !controller.shouldShowOrderSheet && Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false
+              // (assigned or accepted earlier), nor a pending ride assigned to
+              // this driver: it replaced the whole screen.
+              : !controller.shouldShowOrderSheet && !controller.showRequestSheet && Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false
               ? Obx(() {
                   // The isDark read is what re-runs this branch on theme change.
                   themeController.isDark.value;
@@ -105,13 +106,9 @@ class CabHomeScreen extends StatelessWidget {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Obx(
-                                () =>
-                                    controller.currentOrder.value.id != null &&
-                                        (controller.currentOrder.value.status == Constant.driverPending || controller.currentOrder.value.status == Constant.orderPlaced)
-                                    ? showDriverBottomSheet(context, controller)
-                                    : Container(),
-                              ),
+                              // A pending ride assigned to this driver, or a new
+                              // request for a verified driver who is online.
+                              Obx(() => controller.showRequestSheet ? showDriverBottomSheet(context, controller) : Container()),
                               Obx(() => controller.shouldShowOrderSheet ? buildOrderActionsCard(context, controller) : const SizedBox()),
                               // Obx(
                               //   () => controller.currentOrder.value.id != null && controller.currentOrder.value.status != Constant.driverPending

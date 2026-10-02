@@ -73,6 +73,20 @@ class ParcelSearchController extends GetxController {
   }
 
   Future<void> acceptParcelBooking(ParcelOrderModel parcelBookingData) async {
+    // A new parcel ('Order Placed' from the search) is only for a verified
+    // driver who is online; the home screen hides the way here otherwise, and
+    // this is the same rule where the write happens. Parcels already assigned
+    // never come through here.
+    final UserModel? me = Constant.userModel;
+    final bool verified = !(me?.isDocumentVerify == false && me?.isAutoVerify == false);
+    if (me == null || !verified) {
+      ShowToastDialog.showToast("Document verification is pending. Please proceed to set up your document verification.".tr);
+      return;
+    }
+    if (me.isActive != true) {
+      ShowToastDialog.showToast("Switch to online mode to accept and deliver parcel orders.".tr);
+      return;
+    }
     try {
       ShowToastDialog.showLoader("Accepting order...".tr);
 

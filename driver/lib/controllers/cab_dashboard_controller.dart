@@ -1,14 +1,18 @@
 import 'dart:async';
+import 'dart:developer';
 
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
+import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/driver_assignment_watcher.dart';
 import 'package:driver/services/driver_job_queue_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/utils/preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get/get.dart';
 import 'package:location/location.dart';
 
@@ -29,9 +33,14 @@ class CabDashBoardController extends GetxController {
   DateTime? currentBackPressTime;
   RxBool canPopNow = false.obs;
 
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userSub;
+
   Future<void> getUser() async {
     await updateCurrentLocation();
-    FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen(
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await _userSub?.cancel();
+    _userSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(uid).snapshots().listen(
       (event) async {
         if (event.exists) {
           userModel.value = UserModel.fromJson(event.data()!);
@@ -53,7 +62,51 @@ class CabDashBoardController extends GetxController {
           }
         }
       },
+      onError: (Object e) => log("CabDashBoardController users listener: $e"),
     );
+  }
+
+  /// Stops this dashboard's location stream and `users/{uid}` listener
+  /// (`DriverSessions.stopAll`; also on close).
+  Future<void> stopSession() async {
+    await _locationSub?.cancel();
+    _locationSub = null;
+    await _userSub?.cancel();
+    _userSub = null;
+  }
+
+  @override
+  void onClose() {
+    _locationSub?.cancel();
+    _locationSub = null;
+    _userSub?.cancel();
+    _userSub = null;
+    super.onClose();
+  }
+
+  /// Online / offline. Writes `isActive` and nothing else: the toggle wrote
+  /// the whole user document from this controller's copy, which rolled back
+  /// any assignment, offer or wallet change made since the last snapshot.
+  Future<void> setOnline(bool value) async {
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final bool? previous = userModel.value.isActive;
+    userModel.value.isActive = value;
+    Constant.userModel?.isActive = value;
+    userModel.refresh();
+    if (value) updateCurrentLocation();
+    // `update`, never a merge set: a toggle after the account was deleted
+    // must not re-create users/{uid} as an {isActive} stub.
+    final UserWrite result = await FireStoreUtils.updateExistingUserFields(uid, {'isActive': value});
+    if (result == UserWrite.done) return;
+    userModel.value.isActive = previous;
+    Constant.userModel?.isActive = previous;
+    userModel.refresh();
+    if (result == UserWrite.missing) {
+      await DriverSessions.endDeletedAccount();
+      return;
+    }
+    ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
   }
 
   RxString isDarkMode = "Light".obs;
@@ -79,6 +132,17 @@ class CabDashBoardController extends GetxController {
   Location location = Location();
   StreamSubscription<LocationData>? _locationSub;
 
+  /// One location tick while online: only `location` / `rotation`
+  /// ([FireStoreUtils.updateUserLocation]), and nothing once signed out
+  /// (`getCurrentUid()` threw on the null user).
+  Future<void> _writeLocation(LocationData locationData) async {
+    Constant.locationDataFinal = locationData;
+    if (userModel.value.isActive != true) return;
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await FireStoreUtils.updateUserLocation(uid, latitude: locationData.latitude, longitude: locationData.longitude, heading: locationData.heading);
+  }
+
   Future<void> updateCurrentLocation() async {
     try {
       PermissionStatus permissionStatus = await location.hasPermission();
@@ -89,13 +153,7 @@ class CabDashBoardController extends GetxController {
         // One listener, however many times the driver goes online; only
         // `location` / `rotation` are written (FireStoreUtils.updateUserLocation).
         _locationSub?.cancel();
-        _locationSub = location.onLocationChanged.listen((locationData) async {
-          Constant.locationDataFinal = locationData;
-          if (userModel.value.isActive == true) {
-            await FireStoreUtils.updateUserLocation(FireStoreUtils.getCurrentUid(),
-                latitude: locationData.latitude, longitude: locationData.longitude, heading: locationData.heading);
-          }
-        });
+        _locationSub = location.onLocationChanged.listen(_writeLocation);
       } else {
         location.requestPermission().then((permissionStatus) async {
           if (permissionStatus == PermissionStatus.granted) {
@@ -105,11 +163,7 @@ class CabDashBoardController extends GetxController {
             // `location` / `rotation` are written (FireStoreUtils.updateUserLocation).
             _locationSub?.cancel();
             _locationSub = location.onLocationChanged.listen((locationData) async {
-              Constant.locationDataFinal = locationData;
-              if (userModel.value.isActive == true) {
-                await FireStoreUtils.updateUserLocation(FireStoreUtils.getCurrentUid(),
-                    latitude: locationData.latitude, longitude: locationData.longitude, heading: locationData.heading);
-              }
+              await _writeLocation(locationData);
               ShowToastDialog.closeLoader();
             });
           } else {

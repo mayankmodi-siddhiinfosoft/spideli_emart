@@ -68,6 +68,20 @@ class RentalBookingSearchController extends GetxController {
   /// proposal is still open must be answered first (spec 4.9).
   Future<void> acceptBooking(RentalOrderModel order) async {
     if (order.id == null) return;
+    // A new booking ('Order Placed' from the search) is only for a verified
+    // driver who is online; the home screen hides the search otherwise, and
+    // this is the same rule where the write happens. Bookings already
+    // assigned never come through here.
+    final UserModel? me = Constant.userModel;
+    final bool verified = !(me?.isDocumentVerify == false && me?.isAutoVerify == false);
+    if (me == null || !verified) {
+      ShowToastDialog.showToast("Document verification is pending. Please proceed to set up your document verification.".tr);
+      return;
+    }
+    if (me.isActive != true) {
+      ShowToastDialog.showToast("Switch to online mode to accept and deliver rental orders.".tr);
+      return;
+    }
     final proposalStatus = order.proposalStatus;
     if (proposalStatus == 'pending') {
       ShowToastDialog.showToast("Please answer the customer's price proposal first".tr);

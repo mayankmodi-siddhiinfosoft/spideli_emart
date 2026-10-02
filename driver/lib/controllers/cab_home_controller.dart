@@ -87,6 +87,37 @@ class CabHomeController extends GetxController {
     return driverId.isEmpty || driverId == driverModel.value.id;
   }
 
+  /// Verified documents (or auto-verify) and online: the only state in which
+  /// a NEW ride request is surfaced, rung or accepted. A ride assigned to
+  /// this driver is never gated by it.
+  bool get canTakeNewWork {
+    final UserModel me = driverModel.value;
+    final bool verified = !(me.isDocumentVerify == false && me.isAutoVerify == false);
+    return verified && me.isActive == true;
+  }
+
+  /// A ride that names this driver, or that `inProgressOrderID` holds:
+  /// assigned work, not an offer.
+  bool isAssignedToMe(CabOrderModel ride) {
+    final String? uid = driverModel.value.id;
+    final String driverId = (ride.driverId ?? '').toString().trim();
+    if (uid != null && driverId.isNotEmpty && driverId == uid) return true;
+    return ride.id != null && (driverModel.value.inProgressOrderID ?? const []).contains(ride.id);
+  }
+
+  bool _isPending(CabOrderModel ride) => ride.status == Constant.driverPending || ride.status == Constant.orderPlaced;
+
+  /// A pending ride this driver may be shown with Accept / Reject: one
+  /// assigned to them, or a new request while [canTakeNewWork].
+  bool _offerable(CabOrderModel ride) => isAssignedToMe(ride) || canTakeNewWork;
+
+  /// The accept / reject card. Reads [currentOrder] and [driverModel]
+  /// synchronously, so it can drive an Obx.
+  bool get showRequestSheet {
+    final CabOrderModel order = currentOrder.value;
+    return order.id != null && _isPending(order) && _offerable(order);
+  }
+
   void _listenToRide(String id) {
     if (_listeningRideId == id && _orderDocSub != null) return;
     _orderDocSub?.cancel();
@@ -221,27 +252,50 @@ class CabHomeController extends GetxController {
   Rx<UserModel> ownerModel = UserModel().obs;
 
   Future<void> acceptOrder() async {
+    final CabOrderModel accepted = currentOrder.value;
+    final String? id = accepted.id;
+    final String? uid = driverModel.value.id;
+    if (id == null || uid == null) return;
+    // A new request needs a verified driver who is online; a ride already
+    // assigned to this driver is always accepted.
+    if (!_offerable(accepted)) {
+      final bool verified = !(driverModel.value.isDocumentVerify == false && driverModel.value.isAutoVerify == false);
+      ShowToastDialog.showToast(verified
+          ? "Go online to get requests".tr
+          : "Document verification is pending. Please proceed to set up your document verification.".tr);
+      return;
+    }
     try {
       await AudioPlayerService.playSound(false);
       ShowToastDialog.showLoader("Please wait".tr);
 
+      // Field-level: this ride joins `inProgressOrderID` and the request is
+      // cleared. The whole user document was written from this controller's
+      // copy, which rolled back any assignment or offer (a delivery order in
+      // the same array included) that landed since the last snapshot.
       driverModel.value.inProgressOrderID ??= [];
-      driverModel.value.inProgressOrderID!.add(currentOrder.value.id);
+      if (!driverModel.value.inProgressOrderID!.contains(id)) driverModel.value.inProgressOrderID!.add(id);
       driverModel.value.orderCabRequestData = null;
-      await FireStoreUtils.updateUser(driverModel.value);
+      await FireStoreUtils.updateUserFields(uid, {
+        'inProgressOrderID': FieldValue.arrayUnion([id]),
+        'ordercabRequestData': FieldValue.delete(),
+      });
 
-      currentOrder.value.status = Constant.driverAccepted;
-      currentOrder.value.driverId = driverModel.value.id;
-      currentOrder.value.driver = driverModel.value;
+      // The ride's own snapshot may have replaced [currentOrder] with a fresher
+      // copy of the same ride meanwhile; that one is written. Never another ride.
+      final CabOrderModel order = currentOrder.value.id == id ? currentOrder.value : accepted;
+      order.status = Constant.driverAccepted;
+      order.driverId = uid;
+      order.driver = driverModel.value;
       // Spec 18.12: a ride carries the assigned driver's region.
-      if (currentOrder.value.regionId == null || currentOrder.value.regionId!.isEmpty) {
-        currentOrder.value.regionId = await RegionService.regionIdToStamp(driverModel.value);
+      if (order.regionId == null || order.regionId!.isEmpty) {
+        order.regionId = await RegionService.regionIdToStamp(driverModel.value);
       }
-      await FireStoreUtils.setCabOrder(currentOrder.value);
+      await FireStoreUtils.setCabOrder(order);
 
       ShowToastDialog.closeLoader();
 
-      await SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, currentOrder.value.author?.fcmToken ?? "", {});
+      await SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, order.author?.fcmToken ?? "", {});
     } catch (e, s) {
       ShowToastDialog.closeLoader();
       debugPrint("Error in acceptOrder: $e");
@@ -251,26 +305,40 @@ class CabHomeController extends GetxController {
   }
 
   /// Driver rejects a pending ride request. A reason is mandatory (spec 9.1);
-  /// [reason] is null only for the automatic out-of-region decline.
-  Future<void> rejectOrder({CancelReasonResult? reason, bool silent = false}) async {
+  /// [reason] is null only for the automatic out-of-region decline, which
+  /// passes the declined request as [ride] and is [silent].
+  ///
+  /// The user document gets field-level writes only: the request cleared and
+  /// this ride id dropped from `inProgressOrderID` ([_releaseRide]). It used
+  /// to write the whole user with `inProgressOrderID = []`, which also wiped
+  /// a delivery order held in the same array (a delivery + cab driver keeps
+  /// both modules alive) and rolled back any write since the last snapshot.
+  Future<void> rejectOrder({CancelReasonResult? reason, bool silent = false, CabOrderModel? ride}) async {
+    final CabOrderModel order = ride ?? currentOrder.value;
+    final String? rideId = order.id;
+    if (rideId == null) return;
+    final String? uid = driverModel.value.id;
+    // Only a request on screen touches the screen, the map and the shared
+    // alert sound. An automatic decline of a request never shown leaves them
+    // alone: on the Delivery tab that sound may be a delivery offer ringing.
+    final bool onScreen = currentOrder.value.id == rideId;
     try {
-      await AudioPlayerService.playSound(false);
+      if (onScreen) {
+        await AudioPlayerService.playSound(false);
 
-      // 1️⃣ Immediately update local state (UI)
-      currentOrder.value.status = Constant.driverRejected;
-      currentOrder.value.rejectedByDrivers ??= [];
-      if (!currentOrder.value.rejectedByDrivers!.contains(driverModel.value.id)) {
-        currentOrder.value.rejectedByDrivers!.add(driverModel.value.id);
+        // 1️⃣ Immediately update local state (UI)
+        currentOrder.value.status = Constant.driverRejected;
+        currentOrder.value.rejectedByDrivers ??= [];
+        if (uid != null && !currentOrder.value.rejectedByDrivers!.contains(uid)) {
+          currentOrder.value.rejectedByDrivers!.add(uid);
+        }
+
+        // Immediately update UI so bottom sheet hides right away
+        currentOrder.refresh();
       }
-      final String? rideId = currentOrder.value.id;
 
-      // Immediately update UI so bottom sheet hides right away
-      currentOrder.refresh();
-
-      // 2️⃣ Update driver local state right away
-      driverModel.value.orderCabRequestData = null;
-      driverModel.value.inProgressOrderID = [];
-      await FireStoreUtils.updateUser(driverModel.value);
+      // 2️⃣ This request and this ride id only.
+      await _releaseRide(rideId, clearRequest: true);
 
       // 3️⃣ Close bottom sheet immediately (don’t wait for Firestore)
       if (!silent) {
@@ -282,24 +350,25 @@ class CabHomeController extends GetxController {
       }
 
       // 4️⃣ Clear map immediately
-      await clearMap();
+      if (onScreen) await clearMap();
 
       // 5️⃣ Update Firestore in background (no UI wait)
       // Only the fields this rejection changes. Writing the cached ride back
       // (the pending-request copy can be stale) overwrote rejectedByDrivers and
       // lost other drivers' rejections, so they were offered the ride again.
-      if (rideId != null) {
-        unawaited(FireStoreUtils.updateRideFields(rideId, {
-          'status': Constant.driverRejected,
-          if (driverModel.value.id != null) 'rejectedByDrivers': FieldValue.arrayUnion([driverModel.value.id]),
-          if (reason != null) ...reason.toFields(driverModel.value.id),
-        }));
-      }
+      unawaited(FireStoreUtils.updateRideFields(rideId, {
+        'status': Constant.driverRejected,
+        if (uid != null) 'rejectedByDrivers': FieldValue.arrayUnion([uid]),
+        if (reason != null) ...reason.toFields(uid),
+      }));
 
-      // 6️⃣ Reset local current order after short delay
-      Future.delayed(const Duration(milliseconds: 300), () {
-        currentOrder.value = CabOrderModel();
-      });
+      // 6️⃣ Reset local current order after short delay (unless another ride
+      // has taken the screen meanwhile).
+      if (onScreen) {
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (currentOrder.value.id == rideId) currentOrder.value = CabOrderModel();
+        });
+      }
     } catch (e, s) {
       print("rejectOrder() error: $e\n$s");
     }
@@ -333,9 +402,9 @@ class CabHomeController extends GetxController {
         'driver': FieldValue.delete(),
         ...reason.toFields(uid, afterAccept: true),
       });
-      driverModel.value.inProgressOrderID?.remove(order.id);
-      driverModel.value.orderCabRequestData = null;
-      await FireStoreUtils.updateUser(driverModel.value);
+      // This ride id (and its request) only, field-level: the whole user
+      // document rolled back concurrent assignments and offers.
+      await _releaseRide(order.id!, clearRequest: true);
       currentOrder.value = CabOrderModel();
       await clearMap();
       ShowToastDialog.closeLoader();
@@ -386,17 +455,21 @@ class CabHomeController extends GetxController {
   /// automatically so dispatch moves on to a driver of that region.
   final Set<String> _declinedOutOfRegion = {};
 
+  /// An offer from another region. A ride assigned to this driver (named, or
+  /// held in `inProgressOrderID`) is not an offer and is never declined.
   bool _isOutOfRegionRequest(CabOrderModel order) {
-    final pending = order.status == Constant.orderPlaced || order.status == Constant.driverPending;
-    return pending && RegionService.isOutOfDriverRegion(order.regionId, driver: driverModel.value);
+    return _isPending(order) && !isAssignedToMe(order) && RegionService.isOutOfDriverRegion(order.regionId, driver: driverModel.value);
   }
 
+  /// Declines that request with field-level writes only (the request, this
+  /// ride id, the ride's rejection fields). It is not put on screen first, so
+  /// whatever else the driver is doing — a delivery held in the same
+  /// `inProgressOrderID`, its ringing offer — is left untouched.
   Future<void> _declineOutOfRegion(CabOrderModel order) async {
     final id = order.id;
     if (id == null || !_declinedOutOfRegion.add(id)) return;
     log("Declining ride $id: region ${order.regionId} is not the driver's region");
-    currentOrder.value = order;
-    await rejectOrder(silent: true);
+    await rejectOrder(silent: true, ride: order);
   }
 
   bool get shouldShowOrderSheet {
@@ -434,21 +507,28 @@ class CabHomeController extends GetxController {
   }
 
   Future<void> completeRide() async {
+    final CabOrderModel completed = currentOrder.value;
+    final String? id = completed.id;
+    if (id == null) return;
     try {
       ShowToastDialog.showLoader("Please wait".tr);
-      await updateCabWalletAmount(currentOrder.value);
+      await updateCabWalletAmount(completed);
 
-      await FireStoreUtils.getFirestOrderOrNOtCabService(currentOrder.value).then((value) async {
+      await FireStoreUtils.getFirestOrderOrNOtCabService(completed).then((value) async {
         if (value == true) {
-          await FireStoreUtils.updateReferralAmountCabService(currentOrder.value);
+          await FireStoreUtils.updateReferralAmountCabService(completed);
         }
       });
 
-      currentOrder.value.status = Constant.orderCompleted;
-      driverModel.value.inProgressOrderID = [];
-      driverModel.value.orderCabRequestData = null;
-      await FireStoreUtils.setCabOrder(currentOrder.value);
-      await FireStoreUtils.updateUser(driverModel.value);
+      // The ride's snapshot may have replaced [currentOrder] with a fresher
+      // copy of the same ride meanwhile; that one is written. Never another ride.
+      final CabOrderModel order = currentOrder.value.id == id ? currentOrder.value : completed;
+      order.status = Constant.orderCompleted;
+      await FireStoreUtils.setCabOrder(order);
+      // This ride id (and its request) only, field-level. `inProgressOrderID
+      // = []` with the whole user document also wiped a delivery order held
+      // in the same array, and rolled back concurrent assignments and offers.
+      await _releaseRide(id, clearRequest: true);
 
       ShowToastDialog.closeLoader();
     } catch (e) {
@@ -555,20 +635,23 @@ class CabHomeController extends GetxController {
       if (pendingRequest != null) {
         final id = pendingRequest.id?.toString();
         if (id != null && id.isNotEmpty) {
-          // Immediately show the order from cached data so the accept/reject
-          // sheet appears without waiting for the Firestore snapshot.
           if (_isOutOfRegionRequest(pendingRequest)) {
+            // Declined without being shown; then on as if there were none.
             await _declineOutOfRegion(pendingRequest);
+          } else if (_offerable(pendingRequest)) {
+            // Immediately show the order from cached data so the accept/reject
+            // sheet appears without waiting for the Firestore snapshot.
+            final bool show = currentOrder.value.id == null;
+            _listenToRide(id);
+            if (show) {
+              currentOrder.value = pendingRequest;
+              await changeData();
+              update();
+            }
             return;
           }
-          final bool show = currentOrder.value.id == null;
-          _listenToRide(id);
-          if (show) {
-            currentOrder.value = pendingRequest;
-            await changeData();
-            update();
-          }
-          return;
+          // Not offerable (unverified or offline): a new request is not
+          // surfaced at all — no card, no route, no alert sound.
         }
       }
 
@@ -591,7 +674,19 @@ class CabHomeController extends GetxController {
           final incoming = CabOrderModel.fromJson(data);
           if (_listeningRideId != id) return; // a listener being replaced
           if (_isOutOfRegionRequest(incoming)) {
+            _stopRide();
             await _declineOutOfRegion(incoming);
+            return;
+          }
+          // A new request this driver may not take (unverified, or gone
+          // offline) is taken off the screen; an assigned ride never is.
+          if (_isPending(incoming) && !_offerable(incoming)) {
+            _stopRide();
+            if (currentOrder.value.id == id) {
+              currentOrder.value = CabOrderModel();
+              await clearMap();
+            }
+            update();
             return;
           }
           // Handed to another driver, or sent back to dispatch: not this
@@ -643,7 +738,18 @@ class CabHomeController extends GetxController {
       if (qSnap.docs.isNotEmpty) {
         final doc = qSnap.docs.first;
         final data = doc.data();
-        currentOrder.value = CabOrderModel.fromJson(data);
+        final CabOrderModel incoming = CabOrderModel.fromJson(data);
+        // Same rule as the doc listener: a new request this driver may not
+        // take is not shown.
+        if (_isPending(incoming) && !_offerable(incoming)) {
+          if (currentOrder.value.id == incoming.id) {
+            currentOrder.value = CabOrderModel();
+            await clearMap();
+          }
+          update();
+          return;
+        }
+        currentOrder.value = incoming;
         await changeData();
         if (currentOrder.value.status == Constant.orderCompleted) {
           final String? id = currentOrder.value.id;
@@ -677,8 +783,9 @@ class CabHomeController extends GetxController {
         await getGooglePolyline();
       }
     }
-    // Play alert sound for both "Order Placed" and "Driver Pending" — both need accept/reject
-    if (currentOrder.value.status == Constant.driverPending || currentOrder.value.status == Constant.orderPlaced) {
+    // Play alert sound for both "Order Placed" and "Driver Pending" — both need
+    // accept/reject — when the card is actually shown (see [showRequestSheet]).
+    if (showRequestSheet) {
       await AudioPlayerService.playSound(true);
     } else {
       await AudioPlayerService.playSound(false);

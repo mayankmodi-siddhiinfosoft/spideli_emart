@@ -99,87 +99,158 @@ class HomeController extends GetxController {
     // non-nullable Rx threw inside `_initController`, so `getDriver()` never
     // ran and the screen stayed on its loading skeleton forever.
     final OrderModel? passed = argOf<OrderModel>(Get.arguments, 'orderModel');
-    if (passed != null) orderModel.value = passed;
+    if (passed != null) {
+      orderModel.value = passed;
+    } else {
+      _pinnedId = _pendingContinueId;
+      _pendingContinueId = null;
+    }
   }
 
-  Future<void> acceptOrder() async {
-    ShowToastDialog.showLoader("Please wait".tr);
+  /// "Continue delivery" pressed on the order details (single-order mode).
+  /// The home tab is the job screen there, and it used to show whatever it
+  /// selected itself — another job, or nothing for an order that names the
+  /// driver but is missing from `inProgressOrderID`. The order is now pinned:
+  /// watched even when the driver's arrays lack it, and shown first while it
+  /// is still the driver's to work.
+  static String? _pendingContinueId;
 
-    await AudioPlayerService.playSound(false);
-
-    currentOrder.value.status = Constant.driverAccepted;
-    currentOrder.value.driverID = driverModel.value.id;
-    currentOrder.value.driver = driverModel.value;
-
-    // An independent driver's user document may not carry these arrays yet;
-    // the `!` used to throw here and the Accept button did nothing at all.
-    driverModel.value.inProgressOrderID ??= [];
-    driverModel.value.orderRequestData ??= [];
-    driverModel.value.orderRequestData!.remove(currentOrder.value.id);
-    if (!driverModel.value.inProgressOrderID!.contains(currentOrder.value.id)) {
-      driverModel.value.inProgressOrderID!.add(currentOrder.value.id);
+  static void continueDelivery(String orderId) {
+    if (orderId.isEmpty) return;
+    if (Get.isRegistered<HomeController>()) {
+      Get.find<HomeController>()._pin(orderId);
+    } else {
+      // The home tab builds its controller when it is shown.
+      _pendingContinueId = orderId;
     }
+  }
 
-    await FireStoreUtils.updateUser(driverModel.value);
-    await FireStoreUtils.setOrder(currentOrder.value);
-    print("SendNotification ===========>");
-    SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, currentOrder.value.author?.fcmToken ?? '', {});
-    SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, currentOrder.value.vendor?.fcmToken ?? '', {});
-    ShowToastDialog.closeLoader();
+  String? _pinnedId;
+
+  void _pin(String orderId) {
+    if (orderModel.value.id != null) return; // a screen opened for another order
+    _pinnedId = orderId;
+    getCurrentOrder();
+  }
+
+  /// The offer whose accept is being written. Until it is done that order
+  /// stays on screen, whatever the snapshots in between say about it.
+  String? _acceptingId;
+
+  Future<void> acceptOrder() async {
+    // Captured before any await: `currentOrder` follows the live snapshots
+    // and can be reset or replaced while the writes are in flight. Writing
+    // `currentOrder.value` afterwards saved an EMPTY order (`doc(null)`
+    // created a junk vendor_orders record) and lost the accepted one.
+    final OrderModel order = currentOrder.value;
+    final String? orderId = order.id;
+    final UserModel driver = driverModel.value;
+    if (orderId == null || driver.id == null || _acceptingId != null) return;
+    _acceptingId = orderId;
+    ShowToastDialog.showLoader("Please wait".tr);
+    try {
+      await AudioPlayerService.playSound(false);
+      // Re-checked against the live order, then the order and the driver's
+      // arrays are written field by field (never the whole user document).
+      final result = await AssignedDeliveryOrders.acceptOffer(orderId, driver);
+      ShowToastDialog.closeLoader();
+      switch (result.answer) {
+        case OfferAnswer.done:
+          final OrderModel notified = result.order ?? order;
+          SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, notified.author?.fcmToken ?? '', {});
+          SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, notified.vendor?.fcmToken ?? '', {});
+        case OfferAnswer.held:
+          break;
+        case OfferAnswer.gone:
+          ShowToastDialog.showToast("This order is no longer available.".tr);
+        case OfferAnswer.failed:
+          ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+      }
+    } finally {
+      _acceptingId = null;
+      await _selectOrder();
+    }
   }
 
   /// Driver passes on the delivery offer on screen. A reason is mandatory
   /// and nothing changes until one is given. The order goes back to dispatch
   /// (status "Driver Rejected", this driver in `rejectedByDrivers`) and the
-  /// reason is appended to `driverRejections`, in one known-fields write.
+  /// reason is appended to `driverRejections`, after a re-check of the live
+  /// order. The driver's arrays are changed field by field: the whole user
+  /// document used to be written back from a copy taken BEFORE the reason
+  /// sheet opened, undoing every offer and assignment that arrived meanwhile.
   Future<void> rejectOrder() async {
-    final driver = driverModel.value;
-    final order = currentOrder.value;
-    final String? orderId = order.id;
-    if (orderId == null || driver.id == null) {
+    final String? uid = driverModel.value.id;
+    final String? orderId = currentOrder.value.id;
+    if (orderId == null || uid == null) {
       debugPrint("⚠️ No valid order or driver found for rejection.");
       return;
     }
 
     final reason = await CancelReasonSheet.show(title: "Why are you rejecting this order?".tr);
     if (reason == null) return;
-    // The offer may have been withdrawn or replaced while the sheet was open.
-    if (currentOrder.value.id != orderId) return;
+    // The driver's record as it is NOW, after the sheet. The screen may have
+    // moved on to a job assigned meanwhile: the offer is still rejected while
+    // the driver holds it, and rejectOffer re-checks the live order.
+    final UserModel driverNow = driverModel.value;
+    if (!(driverNow.orderRequestData ?? const []).contains(orderId) && !(driverNow.inProgressOrderID ?? const []).contains(orderId)) {
+      ShowToastDialog.showToast("This order is no longer available.".tr);
+      return;
+    }
 
     ShowToastDialog.showLoader("Please wait".tr);
     // 🔊 Stop any ongoing alert sound (if playing)
     await AudioPlayerService.playSound(false);
 
-    final ok = await FireStoreUtils.updateVendorOrderFields(orderId, {
-      'status': Constant.driverRejected,
-      'rejectedByDrivers': FieldValue.arrayUnion([driver.id]),
-      ...reason.toFields(driver.id),
-    });
-    if (!ok) {
+    final OfferAnswer answer = await AssignedDeliveryOrders.rejectOffer(orderId, uid, reason.toFields(uid));
+    if (answer == OfferAnswer.failed) {
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
       return;
     }
 
-    // Clean up driver's order tracking data safely
-    driver.orderRequestData?.remove(orderId);
-    driver.inProgressOrderID?.remove(orderId);
-    await FireStoreUtils.updateUser(driver);
-
-    // Reset order states
-    currentOrder.value = OrderModel();
+    // Reset order states — only if the screen still shows the rejected order;
+    // the snapshots may already have moved it on to the next one.
     orderModel.value = OrderModel();
-
-    // Clear map visuals and UI
-    await clearMap();
+    if (currentOrder.value.id == orderId) {
+      currentOrder.value = OrderModel();
+      // Clear map visuals and UI
+      await clearMap();
+    }
     update();
 
     // If multiple orders allowed, close dialog/screen
     ShowToastDialog.closeLoader();
+    // After closeLoader: EasyLoading shows one overlay, so dismissing the
+    // loader would also remove a toast shown while it was up.
+    if (answer == OfferAnswer.gone) {
+      ShowToastDialog.showToast("This order is no longer available.".tr);
+    }
     if (Constant.singleOrderReceive == false) {
       Get.back();
+    } else {
+      await _selectOrder();
     }
-    debugPrint("✅ Order $orderId rejected by driver ${driver.id}");
+    debugPrint("✅ Order $orderId rejected by driver $uid");
+  }
+
+  /// [DeliverOrderScreen] completed [deliveredId]. Only that id leaves
+  /// `inProgressOrderID` (field-level). `currentOrder` may already show the
+  /// NEXT job by then: removing `currentOrder.value.id` here deleted that job
+  /// from the driver's record, and the screen went blank.
+  Future<void> onDelivered(String deliveredId) async {
+    final String? uid = driverModel.value.id;
+    if (uid != null) {
+      await FireStoreUtils.updateUserFields(uid, {
+        'inProgressOrderID': FieldValue.arrayRemove([deliveredId])
+      });
+    }
+    if (_pinnedId == deliveredId) _pinnedId = null;
+    if (currentOrder.value.id == deliveredId) {
+      currentOrder.value = OrderModel();
+      await clearMap();
+    }
+    await _selectOrder();
   }
 
   Future<void> clearMap() async {
@@ -225,7 +296,7 @@ class HomeController extends GetxController {
       // Opened for one order (the multiple-order list, the order details).
       _ordersWatch.watch([explicitId]);
     } else if (Constant.singleOrderReceive == true) {
-      _ordersWatch.watch([...?driver.inProgressOrderID, ...?driver.orderRequestData]);
+      _ordersWatch.watch([...?driver.inProgressOrderID, ...?driver.orderRequestData, if (_pinnedId != null) _pinnedId]);
     } else {
       _ordersWatch.watch(const []);
     }
@@ -254,9 +325,12 @@ class HomeController extends GetxController {
       return AssignedDeliveryOrders.isNamedFor(order, uid) || inProgress.contains(order.id);
     }
     if (AssignedDeliveryOrders.isOfferFor(order, uid)) {
+      // The offer being accepted right now stays on screen until its writes
+      // are done, whichever array the snapshots show it in meanwhile.
+      if (order.id != null && order.id == _acceptingId) return true;
       // A dispatched offer, or a hand assignment left at `Driver Pending`.
-      // An unnamed pending order already in progress is this device's own
-      // accept still in flight — not shown again as a request.
+      // An unnamed pending order in progress with no accept running here is
+      // not shown again as a request.
       return requests.contains(order.id) || (inProgress.contains(order.id) && AssignedDeliveryOrders.isNamedFor(order, uid));
     }
     return false;
@@ -283,13 +357,28 @@ class HomeController extends GetxController {
       final OrderModel? order = _orders[explicitId];
       if (order != null && _canShow(order, driver) && !_outOfRegion(order, driver)) next = order;
     } else if (Constant.singleOrderReceive == true) {
-      // Keep the order already on screen while it is still valid, so a second
-      // assignment does not swap the screen under the driver's thumb.
-      final OrderModel? current = currentOrder.value.id == null ? null : _orders[currentOrder.value.id];
-      if (current != null && _canShow(current, driver) && !_outOfRegion(current, driver)) {
-        next = current;
+      // The order "Continue delivery" was pressed for, while it is still this
+      // driver's to work.
+      final String? pinnedId = _pinnedId;
+      if (pinnedId != null && uid != null) {
+        final OrderModel? pinned = _orders[pinnedId];
+        if (pinned != null && AssignedDeliveryOrders.isWorkableFor(pinned, uid) && _canShow(pinned, driver)) {
+          next = pinned;
+        } else {
+          _pinnedId = null; // finished, reassigned or gone: the usual choice
+        }
       }
-      // Then the first order actually being worked, in the driver's order...
+      // Keep the job already on screen while it is still valid, so a second
+      // assignment does not swap the screen under the driver's thumb. Only a
+      // JOB is kept ahead of the assignments: an offer on screen used to hide
+      // an order assigned to this driver until the offer was dealt with.
+      final OrderModel? current = currentOrder.value.id == null ? null : _orders[currentOrder.value.id];
+      final OrderModel? onScreen = current != null && _canShow(current, driver) && !_outOfRegion(current, driver) ? current : null;
+      if (next == null && onScreen != null && (AssignedDeliveryOrders.isWorkableFor(onScreen, uid) || onScreen.id == _acceptingId)) {
+        next = onScreen;
+      }
+      // Then the first order actually being worked, in the driver's order —
+      // it replaces an offer on screen (changeData stops the offer's sound)...
       if (next == null) {
         for (final dynamic id in driver.inProgressOrderID ?? const []) {
           final OrderModel? order = _orders[id.toString()];
@@ -299,6 +388,8 @@ class HomeController extends GetxController {
           }
         }
       }
+      // ...then the offer already on screen...
+      next ??= onScreen;
       // ...then a request: a named hand assignment, then dispatched offers.
       if (next == null) {
         for (final dynamic id in [...?driver.inProgressOrderID, ...?driver.orderRequestData]) {

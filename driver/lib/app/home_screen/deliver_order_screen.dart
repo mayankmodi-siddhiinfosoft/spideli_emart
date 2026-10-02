@@ -94,14 +94,16 @@ class DeliverOrderScreen extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          DsAvatar(name: controller.orderModel.value.author!.fullName(), size: 48),
+          // `author!` broke the build for a record without one, and with it the
+          // confirm check and the completion slider.
+          DsAvatar(name: controller.orderModel.value.author?.fullName() ?? '', size: 48),
           const DsGap(DsSpace.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text("Deliver to the".tr, style: t.caption),
-                Text(controller.orderModel.value.author!.fullName(), style: t.titleSm.w700),
+                Text(controller.orderModel.value.author?.fullName() ?? '', style: t.titleSm.w700),
                 const DsGap(DsSpace.xs),
                 Text(controller.orderModel.value.address?.getFullAddress() ?? '', style: t.bodySm),
               ],

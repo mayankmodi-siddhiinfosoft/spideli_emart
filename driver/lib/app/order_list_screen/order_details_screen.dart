@@ -1,4 +1,7 @@
 import 'package:driver/app/home_screen/home_screen.dart';
+import 'package:driver/constant/show_toast_dialog.dart';
+import 'package:driver/controllers/home_controller.dart';
+import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/app/widgets/cancellation_block.dart';
 import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/models/order_model.dart';
@@ -36,8 +39,11 @@ class OrderDetailsScreen extends StatelessWidget {
             title: "Order Details".tr,
             // This screen is a receipt; an order still assigned to the driver
             // gets a way back to the screen where it can be picked up and
-            // delivered, instead of a dead end with no action at all.
-            bottomBar: !isLoading && _canContinue(order) ? DsStickyBar(child: _continueButton(order)) : null,
+            // delivered, instead of a dead end with no action at all. Decided
+            // on the LIVE order: this one is the Orders list's one-time read.
+            bottomBar: !isLoading && order.id != null && !AssignedDeliveryOrders.terminalStatuses.contains(order.status)
+                ? _ContinueDeliveryBar(key: ValueKey(order.id), order: order)
+                : null,
             body: DsAsync(
               isLoading: isLoading,
               skeleton: const DsSkeletonDetail(mediaHeight: 120),
@@ -73,31 +79,6 @@ class OrderDetailsScreen extends StatelessWidget {
             ),
           );
         });
-  }
-
-  static bool _canContinue(OrderModel order) {
-    final String? uid = Constant.userModel?.id;
-    if (!AssignedDeliveryOrders.isWorkableFor(order, uid)) return false;
-    return AssignedDeliveryOrders.isNamedFor(order, uid) || (Constant.userModel?.inProgressOrderID ?? const []).contains(order.id);
-  }
-
-  Widget _continueButton(OrderModel order) {
-    return DsButton.primary(
-      label: "Continue delivery".tr,
-      icon: Icons.delivery_dining_rounded,
-      expand: true,
-      onPressed: () {
-        if (Constant.singleOrderReceive == true) {
-          // Single-order mode: the dashboard's home tab is the job screen.
-          Get.back();
-          if (Get.isRegistered<DashBoardController>()) {
-            Get.find<DashBoardController>().drawerIndex.value = 0;
-          }
-        } else {
-          Get.to(const HomeScreen(isAppBarShow: true), arguments: {"orderModel": order});
-        }
-      },
-    );
   }
 
   CancellationSummary? _cancellation(OrderDetailsController controller) {
@@ -477,4 +458,83 @@ void showBillBifurcationDialog(BuildContext context, OrderDetailsController cont
       );
     },
   );
+}
+
+/// "Continue delivery": shown only once the order, re-read now, is still
+/// this driver's to work, and re-read again when pressed. The Orders list
+/// reads its orders once, so the button could appear for an order already
+/// completed or handed to someone else.
+class _ContinueDeliveryBar extends StatefulWidget {
+  final OrderModel order;
+
+  const _ContinueDeliveryBar({super.key, required this.order});
+
+  @override
+  State<_ContinueDeliveryBar> createState() => _ContinueDeliveryBarState();
+}
+
+class _ContinueDeliveryBarState extends State<_ContinueDeliveryBar> {
+  OrderModel? _live;
+  bool _busy = false;
+
+  static bool _canContinue(OrderModel order) {
+    final String? uid = Constant.userModel?.id;
+    if (!AssignedDeliveryOrders.isWorkableFor(order, uid)) return false;
+    return AssignedDeliveryOrders.isNamedFor(order, uid) || (Constant.userModel?.inProgressOrderID ?? const []).contains(order.id);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _read().then((live) {
+      if (mounted) setState(() => _live = live);
+    });
+  }
+
+  Future<OrderModel?> _read() async {
+    final String? id = widget.order.id;
+    return id == null ? null : FireStoreUtils.getOrderById(id);
+  }
+
+  Future<void> _continue() async {
+    if (_busy) return;
+    _busy = true;
+    ShowToastDialog.showLoader("Please wait".tr);
+    final OrderModel? live = await _read();
+    ShowToastDialog.closeLoader();
+    _busy = false;
+    if (!mounted) return;
+    if (live == null || live.id == null || !_canContinue(live)) {
+      setState(() => _live = live);
+      ShowToastDialog.showToast("This order is no longer assigned to you.".tr);
+      return;
+    }
+    if (Constant.singleOrderReceive == true) {
+      // Single-order mode: the dashboard's home tab is the job screen. It is
+      // told which order to show; on its own it showed whatever it selected
+      // (another job, or nothing for an order missing from the driver's
+      // `inProgressOrderID`).
+      HomeController.continueDelivery(live.id!);
+      Get.back();
+      if (Get.isRegistered<DashBoardController>()) {
+        Get.find<DashBoardController>().drawerIndex.value = 0;
+      }
+    } else {
+      Get.to(const HomeScreen(isAppBarShow: true), arguments: {"orderModel": live});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final OrderModel? live = _live;
+    if (live == null || !_canContinue(live)) return const SizedBox.shrink();
+    return DsStickyBar(
+      child: DsButton.primary(
+        label: "Continue delivery".tr,
+        icon: Icons.delivery_dining_rounded,
+        expand: true,
+        onPressed: _continue,
+      ),
+    );
+  }
 }

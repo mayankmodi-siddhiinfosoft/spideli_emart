@@ -37,6 +37,12 @@ class RentalHomeScreen extends StatelessWidget {
       return GetX(
           init: RentalHomeController(),
           builder: (controller) {
+            final bool verified = !(Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false);
+            // New bookings (the queue banner, 'Search new ride' and the
+            // empty-state search, whose Accept takes a booking) are for a
+            // verified driver who is online. Assigned bookings are listed and
+            // workable whatever this says.
+            final bool canTakeNewWork = verified && controller.userModel.value.isActive == true;
             return DsScaffold(
               body: controller.isLoading.value
                   ? const DsSkeletonList(itemCount: 3, leading: false, trailing: false)
@@ -72,18 +78,20 @@ class RentalHomeScreen extends StatelessWidget {
                               ? Column(
                                   children: [
                                     _walletAlert(context, controller),
-                                    const _NewRentalJobsBanner(),
+                                    if (canTakeNewWork) const _NewRentalJobsBanner(),
                                     Expanded(
                                       child: _centered(
                                         DsEmptyState(
                                           tone: DsTone.brand,
                                           illustration: SvgPicture.asset("assets/images/empty_parcel.svg"),
                                           title: 'No rental requests available in your selected zone.'.tr,
-                                          actionLabel: "Search Rental Booking".tr,
+                                          actionLabel: canTakeNewWork ? "Search Rental Booking".tr : null,
                                           actionIcon: Icons.search_rounded,
-                                          onAction: () {
-                                            Get.to(RentalBookingSearchScreen());
-                                          },
+                                          onAction: canTakeNewWork
+                                              ? () {
+                                                  Get.to(RentalBookingSearchScreen());
+                                                }
+                                              : null,
                                         ),
                                       ),
                                     ),
@@ -93,17 +101,22 @@ class RentalHomeScreen extends StatelessWidget {
                                   padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
                                   child: Column(
                                     children: [
-                                      const _NewRentalJobsBanner(gutter: false),
-                                      const DsGap(DsSpace.sm),
-                                      DsTextField(
-                                        hint: 'Search new ride'.tr,
-                                        readOnly: true,
-                                        prefixIcon: Icons.search_rounded,
-                                        bottomSpacing: DsSpace.md,
-                                        onTap: () {
-                                          Get.to(RentalBookingSearchScreen());
-                                        },
-                                      ),
+                                      // Unverified or offline: the assigned
+                                      // bookings only, no way to new ones.
+                                      if (canTakeNewWork) ...[
+                                        const _NewRentalJobsBanner(gutter: false),
+                                        const DsGap(DsSpace.sm),
+                                        DsTextField(
+                                          hint: 'Search new ride'.tr,
+                                          readOnly: true,
+                                          prefixIcon: Icons.search_rounded,
+                                          bottomSpacing: DsSpace.md,
+                                          onTap: () {
+                                            Get.to(RentalBookingSearchScreen());
+                                          },
+                                        ),
+                                      ] else
+                                        const DsGap(DsSpace.md),
                                       Expanded(
                                         child: RefreshIndicator(
                                           onRefresh: () async {

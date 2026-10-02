@@ -3,6 +3,7 @@ import 'package:driver/app/home_screen/widgets/delivery_otp_sheet.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/send_notification.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
+import 'package:driver/models/cart_product_model.dart';
 import 'package:driver/models/delivery_pod.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:driver/models/wallet_transaction_model.dart';
@@ -34,7 +35,9 @@ class DeliverOrderController extends GetxController {
     dynamic argumentData = Get.arguments;
     if (argumentData != null) {
       orderModel.value = argumentData['orderModel'];
-      for (var element in orderModel.value.products!) {
+      // A record without `products` (panel / Store hand assignments) threw
+      // here, in onInit, and the job could never be completed.
+      for (final CartProductModel element in orderModel.value.products ?? const <CartProductModel>[]) {
         totalQuantity.value += (element.quantity ?? 0);
       }
     }
@@ -152,7 +155,16 @@ class DeliverOrderController extends GetxController {
     if (Constant.userModel?.vendorID != null) {
       Constant.userModel?.orderRequestData?.remove(orderModel.value.id);
       Constant.userModel?.inProgressOrderID?.remove(orderModel.value.id);
-      await FireStoreUtils.updateUser(Constant.userModel!);
+      // Only the delivered id leaves the driver's arrays (field-level): the
+      // whole user document written back from the global copy undid every
+      // assignment, offer and wallet change made since that copy was read.
+      final String? uid = Constant.userModel?.id;
+      if (uid != null && orderId != null) {
+        await FireStoreUtils.updateUserFields(uid, {
+          'orderRequestData': FieldValue.arrayRemove([orderId]),
+          'inProgressOrderID': FieldValue.arrayRemove([orderId]),
+        });
+      }
     }
     await FireStoreUtils.getFirestOrderOrNOt(orderModel.value).then((value) async {
       if (value == true) {

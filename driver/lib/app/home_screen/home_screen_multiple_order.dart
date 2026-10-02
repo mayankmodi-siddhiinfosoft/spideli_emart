@@ -5,10 +5,10 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/controllers/home_screen_multiple_order_controller.dart';
 import 'package:driver/models/order_model.dart';
+import 'package:driver/models/user_model.dart';
 import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
-import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -38,7 +38,14 @@ class HomeScreenMultipleOrder extends StatelessWidget {
           final String? uid = controller.driverModel.value.id;
           final Map<String, OrderModel> orders = Map<String, OrderModel>.from(controller.orders);
           final bool ordersLoaded = controller.ordersLoaded.value;
-          final List<dynamic> newOrders = controller.newOrder.toList();
+          final UserModel driver = controller.driverModel.value;
+          // Only offers this driver may still answer: an id left in
+          // `orderRequestData` after the order was cancelled or handed to
+          // another driver is not a new order (Accept brought a cancelled
+          // order back, or took the other driver's job). The badge counts
+          // the same list.
+          final List<dynamic> newOrders =
+              HomeScreenMultipleOrderController.offersToShow(requests: controller.newOrder.toList(), orders: orders, ordersLoaded: ordersLoaded, driver: driver);
           // Only what the driver can still act on: a finished, cancelled or
           // reassigned id left in `inProgressOrderID` is not an active order.
           final List<dynamic> activeOrders = controller.activeOrder.where((id) {
@@ -48,12 +55,11 @@ class HomeScreenMultipleOrder extends StatelessWidget {
                 (AssignedDeliveryOrders.isOfferFor(order, uid) && AssignedDeliveryOrders.isNamedFor(order, uid));
           }).toList();
           // The verification gate is about receiving offers; it never hides an
-          // order that is already assigned to this driver.
-          final bool documentsPending = activeOrders.isEmpty &&
-              Constant.userModel?.vendorID?.isEmpty == true &&
-              Constant.userModel?.isDocumentVerify == false &&
-              controller.driverModel.value.isAutoVerify == false;
-          final bool hasNewTab = Constant.userModel?.vendorID?.isEmpty == true;
+          // order that is already assigned to this driver. With an assigned
+          // order on hand an unverified driver keeps the Active tab only:
+          // the "New" tab (and its Accept) is for drivers who may take offers.
+          final bool documentsPending = activeOrders.isEmpty && HomeScreenMultipleOrderController.documentsPending(driver);
+          final bool hasNewTab = HomeScreenMultipleOrderController.canTakeOffers(driver);
 
           return DsScaffold(
             body: isLoading
@@ -232,13 +238,11 @@ class HomeScreenMultipleOrder extends StatelessWidget {
     if (orderModel == null) {
       return controller.ordersLoaded.value ? const SizedBox() : const DsSkeletonCard(height: 180);
     }
-    if (orderModel.status == Constant.driverPending &&
-        orderModel.id != null &&
-        controller.driverModel.value.id != null &&
+    if (AssignedDeliveryOrders.isOfferFor(orderModel, controller.driverModel.value.id) &&
         !AssignedDeliveryOrders.isNamedFor(orderModel, controller.driverModel.value.id) &&
         RegionService.isOutOfDriverRegion(orderModel.regionId, driver: controller.driverModel.value)) {
-      // Zone-bound (spec 9.1): not offered; declined so dispatch moves on.
-      FireStoreUtils.declineOutOfRegionVendorOrder(orderModel.id!, controller.driverModel.value.id!);
+      // Zone-bound (spec 9.1): not offered. The controller declines it so
+      // dispatch moves on (only an offer to this driver, from server data).
       return const SizedBox();
     }
     // `vendor!` / `address!.location!` threw here for a record without them,

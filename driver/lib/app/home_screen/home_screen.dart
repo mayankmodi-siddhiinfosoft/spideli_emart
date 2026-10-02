@@ -9,7 +9,6 @@ import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/controllers/home_controller.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
-import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
@@ -515,11 +514,15 @@ class HomeScreen extends StatelessWidget {
         size: DsButtonSize.xl,
         expand: true,
         onPressed: () async {
+          // Captured before the next screen opens: `currentOrder` follows the
+          // live selection and may show another order when it returns.
+          final String? orderId = controller.currentOrder.value.id;
+          if (orderId == null) return;
           if (controller.currentOrder.value.status == Constant.orderShipped || controller.currentOrder.value.status == Constant.driverAccepted) {
             Get.to(const PickupOrderScreen(), arguments: {"orderModel": controller.currentOrder.value})?.then((v) async {
               if (v == true) {
-                OrderModel? ordermodel = await FireStoreUtils.getOrderById(controller.currentOrder.value.id!);
-                if (ordermodel?.id != null) {
+                OrderModel? ordermodel = await FireStoreUtils.getOrderById(orderId);
+                if (ordermodel?.id != null && controller.currentOrder.value.id == orderId) {
                   controller.currentOrder.value = ordermodel!;
                 }
                 controller.update();
@@ -529,11 +532,10 @@ class HomeScreen extends StatelessWidget {
             Get.to(const DeliverOrderScreen(), arguments: {"orderModel": controller.currentOrder.value})!.then(
               (value) async {
                 if (value == true) {
-                  await AudioPlayerService.playSound(false);
-                  controller.driverModel.value.inProgressOrderID?.remove(controller.currentOrder.value.id);
-                  await FireStoreUtils.updateUser(controller.driverModel.value);
-                  controller.currentOrder.value = OrderModel();
-                  controller.clearMap();
+                  // Only the delivered order leaves the driver's record
+                  // (field-level), and the screen is cleared only if it still
+                  // shows it; otherwise the next job stays where it is.
+                  await controller.onDelivered(orderId);
                   if (Constant.singleOrderReceive == false) {
                     Get.back();
                   }

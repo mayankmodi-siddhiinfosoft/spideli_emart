@@ -75,6 +75,9 @@ extension SetKnownFields on DocumentReference<Map<String, dynamic>> {
   }
 }
 
+/// Outcome of [FireStoreUtils.updateExistingUserFields].
+enum UserWrite { done, missing, failed }
+
 class FireStoreUtils {
   FireStoreUtils._privateConstructor();
 
@@ -1557,11 +1560,26 @@ class FireStoreUtils {
   /// — the Store app adding an order to `inProgressOrderID`, dispatch adding
   /// an offer to `orderRequestData` / `ordercabRequestData`, the assignment
   /// watcher's `arrayUnion` — was rolled back by that stale copy.
-  static Future<bool> updateUserLocation(String userId, {double? latitude, double? longitude, double? heading}) {
-    return updateUserFields(userId, {
-      'location': UserLocation(latitude: latitude, longitude: longitude).toJson(),
-      if (heading != null) 'rotation': heading,
-    });
+  ///
+  /// An `update`, never a merge `set`: a tick must not create a missing
+  /// `users/{uid}`. After an account deletion (or an admin deleting the
+  /// driver) a merge set re-created the document as a `{location, rotation}`
+  /// stub, and that stub locked the phone number out of login and sign-up.
+  /// The missing document fails with `not-found`, which is ignored.
+  static Future<bool> updateUserLocation(String userId, {double? latitude, double? longitude, double? heading}) async {
+    try {
+      await fireStore.collection(CollectionName.users).doc(userId).update({
+        'location': UserLocation(latitude: latitude, longitude: longitude).toJson(),
+        if (heading != null) 'rotation': heading,
+      });
+      return true;
+    } on FirebaseException catch (e) {
+      if (e.code != 'not-found') log("updateUserLocation failed: $e");
+      return false;
+    } catch (e) {
+      log("updateUserLocation failed: $e");
+      return false;
+    }
   }
 
   /// Known-fields update of a `users` document.
@@ -1572,6 +1590,26 @@ class FireStoreUtils {
     } catch (e) {
       log("updateUserFields failed: $e");
       return false;
+    }
+  }
+
+  /// Field-level write of an EXISTING `users/{uid}`, by `update`: unlike
+  /// [updateUserFields] (a merge `set`) it never creates a missing document.
+  /// For writes a still-signed-in driver can make after the account was
+  /// deleted (the online/offline toggle): a merge set re-created the document
+  /// as a stub with no role, and that stub locked the phone number out of
+  /// login and sign-up. [UserWrite.missing] when the document is gone.
+  static Future<UserWrite> updateExistingUserFields(String userId, Map<String, dynamic> data) async {
+    try {
+      await fireStore.collection(CollectionName.users).doc(userId).update(data);
+      return UserWrite.done;
+    } on FirebaseException catch (e) {
+      if (e.code == 'not-found') return UserWrite.missing;
+      log("updateExistingUserFields failed: $e");
+      return UserWrite.failed;
+    } catch (e) {
+      log("updateExistingUserFields failed: $e");
+      return UserWrite.failed;
     }
   }
 
