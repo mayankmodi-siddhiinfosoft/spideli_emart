@@ -324,6 +324,9 @@ class FireStoreUtils {
     return isUpdate;
   }
 
+  /// Writes the whole profile of a user other than the signed-in one (a new
+  /// delivery man or employee). Unlike [updateUser] it leaves the session's
+  /// own user alone. For an existing user use [updateUserFields].
   static Future<bool> updateDriverUser(UserModel userModel) async {
     bool isUpdate = false;
     await fireStore
@@ -338,6 +341,23 @@ class FireStoreUtils {
           isUpdate = false;
         });
     return isUpdate;
+  }
+
+  /// Writes only [fields] on an existing user (one of the store's delivery
+  /// men or employees). The store's copy of that user comes from a list
+  /// loaded once, so writing the whole profile back undid what the Driver
+  /// app or the panel had changed since: orders in progress, offers, online
+  /// status, FCM token, location. `update` also fails on a deleted user
+  /// instead of re-creating a stub of it.
+  static Future<bool> updateUserFields(String? userId, Map<String, dynamic> fields) async {
+    if ((userId ?? '').isEmpty || fields.isEmpty) return false;
+    try {
+      await fireStore.collection(CollectionName.users).doc(userId).update(fields);
+      return true;
+    } catch (e) {
+      log("updateUserFields failed: $e");
+      return false;
+    }
   }
 
   /// Puts [orderId] on a delivery man's list of orders in progress. Only that

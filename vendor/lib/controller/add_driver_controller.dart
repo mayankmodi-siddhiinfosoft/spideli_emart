@@ -116,10 +116,8 @@ class AddDriverController extends GetxController {
     ShowToastDialog.showLoader("Please wait".tr);
 
     try {
-      if (driverModel.value.id != null && driverModel.value.id != '') {
-        // ── Edit mode ──
-        _applyCommonFields();
-      } else {
+      final bool isEdit = driverModel.value.id != null && driverModel.value.id != '';
+      if (!isEdit) {
         // ── Create mode ──
         FirebaseApp secondaryApp = await Firebase.initializeApp(name: 'SecondaryApp', options: Firebase.app().options);
         FirebaseAuth secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
@@ -141,14 +139,17 @@ class AddDriverController extends GetxController {
         await secondaryApp.delete();
       }
 
-      await FireStoreUtils.updateDriverUser(driverModel.value).then((value) async {
-        if (value == true) {
-          Get.back(result: true);
-          ShowToastDialog.showToast("Delivery man details saved successfully!".tr);
-        } else {
-          ShowToastDialog.showToast("Something went to wrong".tr);
-        }
-      });
+      // Create writes the whole new profile. Edit writes only the fields this
+      // form edits: the model came from a list loaded once, and writing all of
+      // it back undid what the Driver app or the panel had changed since
+      // (orders in progress, offers, online status, FCM token, location).
+      final bool saved = isEdit ? await FireStoreUtils.updateUserFields(driverModel.value.id, _editedFields()) : await FireStoreUtils.updateDriverUser(driverModel.value);
+      if (saved) {
+        Get.back(result: true);
+        ShowToastDialog.showToast("Delivery man details saved successfully!".tr);
+      } else {
+        ShowToastDialog.showToast("Something went to wrong".tr);
+      }
     } on FirebaseAuthException catch (e) {
       if (e.code == 'weak-password') {
         ShowToastDialog.showToast("The password provided is too weak.".tr);
@@ -164,6 +165,18 @@ class AddDriverController extends GetxController {
     ShowToastDialog.closeLoader();
   }
 
+  /// What the edit form changes, and nothing else. The email is locked once
+  /// the account exists, and sections, zone, store and status are not edited
+  /// here (the Driver app can change its own section and zone).
+  Map<String, dynamic> _editedFields() => {
+    'firstName': firstNameEditingController.value.text.trim(),
+    'lastName': lastNameEditingController.value.text.trim(),
+    'phoneNumber': phoneNUmberEditingController.value.text.trim(),
+    'countryCode': countryCodeEditingController.value.text.trim(),
+    'countryISOCode': countryISOCodeEditingController.value.text.trim(),
+  };
+
+  /// A new delivery man's whole profile (create mode only).
   void _applyCommonFields() {
     driverModel.value.firstName = firstNameEditingController.value.text.trim();
     driverModel.value.lastName = lastNameEditingController.value.text.trim();

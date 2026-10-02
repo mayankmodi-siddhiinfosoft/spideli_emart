@@ -764,17 +764,33 @@ class HomeScreen extends StatelessWidget {
                 orderModel.status = Constant.orderCancelled;
                 // Written in the same updateOrder as the status change.
                 orderModel.markEndedByVendor(action: CancelAction.cancelled, reason: cancellation.reason, code: cancellation.code, byName: _storeName(orderModel, controller));
-                if (orderModel.driverID != null) {
-                  UserModel? driverModel = await FireStoreUtils.getUserById(orderModel.driverID ?? '');
-                  await FireStoreUtils.releaseDriverOrder(orderModel.driverID, orderModel.id);
+                final bool isCancelled = await FireStoreUtils.updateOrder(orderModel);
+                if (!isCancelled) {
+                  // Nothing else - no cashback release, driver release, refund
+                  // or reversal - for an order that is still live.
+                  ShowToastDialog.closeLoader();
+                  ShowToastDialog.showToast("Could not update this order. Please check your connection and try again.".tr);
+                  await controller.getOrder();
+                  return;
+                }
+                // The redemption is given back only once the order is cancelled.
+                if (orderModel.cashback?.id != null && orderModel.cashback?.cashbackValue != null) {
+                  await FireStoreUtils.deleteCashbackRedeem(orderModel);
+                }
+                // The delivery man is freed only now that the order is
+                // cancelled: freed earlier, the order still named him and was
+                // still active, so his app's assignment watcher put it straight
+                // back on his list and he stayed "Occupied".
+                final String? driverId = orderModel.driverID;
+                if ((driverId ?? '').isNotEmpty) {
+                  await FireStoreUtils.releaseDriverOrder(driverId, orderModel.id);
+                  // Only for the notification: a failed read must not stop
+                  // the refund below now that the order is cancelled.
+                  final UserModel? driverModel = await FireStoreUtils.getUserById(driverId!).catchError((_) => null);
                   if ((driverModel?.fcmToken ?? '').isNotEmpty) {
                     SendNotification.sendFcmMessage(Constant.driverCancelled, driverModel!.fcmToken.toString(), {'title': 'Cancelled Order'});
                   }
                 }
-                if (orderModel.cashback?.id != null && orderModel.cashback?.cashbackValue != null) {
-                  await FireStoreUtils.deleteCashbackRedeem(orderModel);
-                }
-                await FireStoreUtils.updateOrder(orderModel);
                 SendNotification.sendFcmMessage(Constant.restaurantCancelled, orderModel.author!.fcmToken.toString(), {});
 
                 if (orderModel.paymentMethod!.toLowerCase() != 'cod') {
@@ -1455,14 +1471,7 @@ class HomeScreen extends StatelessWidget {
                         ShowToastDialog.showLoader('Please wait...'.tr);
                         await AudioPlayerService.playSound(false);
 
-                        // Reassignment: the delivery man who had it is freed
-                        // first, otherwise the order stayed on their list for
-                        // ever and they counted as "Occupied".
                         final String? previousDriverId = orderModel.driverID;
-                        if ((previousDriverId ?? '').isNotEmpty && previousDriverId != controller.selectDriverUser.value.id) {
-                          await FireStoreUtils.releaseDriverOrder(previousDriverId, orderModel.id);
-                        }
-
                         orderModel.notes = "";
                         orderModel.driverID = controller.selectDriverUser.value.id;
                         orderModel.driver = controller.selectDriverUser.value;
@@ -1475,12 +1484,26 @@ class HomeScreen extends StatelessWidget {
                         }
 
                         final bool isAssigned = await FireStoreUtils.updateOrder(orderModel);
-                        // Only the driver's order list: the store's copy of
-                        // the rest of their profile may be out of date.
-                        if (isAssigned) await FireStoreUtils.addDriverOrder(controller.selectDriverUser.value.id, orderModel.id);
-                        await FireStoreUtils.restaurantVendorWalletSet(orderModel);
-                        SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author!.fcmToken.toString(), {});
-                        SendNotification.sendFcmMessage(Constant.newDeliveryOrder, orderModel.driver?.fcmToken ?? '', {});
+                        if (isAssigned) {
+                          // Only the driver's order list: the store's copy of
+                          // the rest of their profile may be out of date.
+                          await FireStoreUtils.addDriverOrder(controller.selectDriverUser.value.id, orderModel.id);
+                          // Reassignment: the delivery man who had it is freed,
+                          // otherwise the order stayed on their list for ever
+                          // and they counted as "Occupied". Only now that the
+                          // order names the new one: freed earlier, it still
+                          // named him, so his app's assignment watcher put it
+                          // straight back on his list.
+                          if ((previousDriverId ?? '').isNotEmpty && previousDriverId != controller.selectDriverUser.value.id) {
+                            await FireStoreUtils.releaseDriverOrder(previousDriverId, orderModel.id);
+                          }
+                          await FireStoreUtils.restaurantVendorWalletSet(orderModel);
+                          SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author!.fcmToken.toString(), {});
+                          SendNotification.sendFcmMessage(Constant.newDeliveryOrder, orderModel.driver?.fcmToken ?? '', {});
+                        } else {
+                          // Drops the unsaved delivery man and status from the card.
+                          await controller.getOrder();
+                        }
                         ShowToastDialog.closeLoader();
                         ShowToastDialog.showToast(isAssigned ? "Order assigned to the delivery man".tr : "Could not assign this order. Please try again.".tr);
                       } else {

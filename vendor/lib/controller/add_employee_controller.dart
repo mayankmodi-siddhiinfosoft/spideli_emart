@@ -72,16 +72,8 @@ class AddEmployeeController extends GetxController {
     ShowToastDialog.showLoader("Please wait".tr);
 
     try {
-      if (employeeModel.value.id != null && employeeModel.value.id != '') {
-        employeeModel.value.firstName = firstNameEditingController.value.text.trim();
-        employeeModel.value.lastName = lastNameEditingController.value.text.trim();
-        employeeModel.value.employeePermissionId = selectEmployeeRole.value.id;
-        employeeModel.value.email = emailEditingController.value.text.trim();
-        employeeModel.value.phoneNumber = phoneNUmberEditingController.value.text.trim();
-        employeeModel.value.countryCode = countryCodeEditingController.value.text.trim();
-        employeeModel.value.countryISOCode = countryISOCodeEditingController.value.text.trim();
-        employeeModel.value.sectionId = Constant.userModel?.sectionId;
-      } else {
+      final bool isEdit = employeeModel.value.id != null && employeeModel.value.id != '';
+      if (!isEdit) {
         FirebaseApp secondaryApp = await Firebase.initializeApp(name: 'SecondaryApp', options: Firebase.app().options);
 
         FirebaseAuth secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
@@ -112,18 +104,24 @@ class AddEmployeeController extends GetxController {
           employeeModel.value.sectionId = Constant.userModel?.sectionId;
         } else {
           ShowToastDialog.showToast("Something went to wrong".tr);
+          ShowToastDialog.closeLoader();
           return null;
         }
         await secondaryApp.delete();
       }
-      await FireStoreUtils.updateUser(employeeModel.value).then((value) async {
-        if (value == true) {
-          Get.back(result: true);
-          ShowToastDialog.showToast("Employee details saved successfully!".tr);
-        } else {
-          ShowToastDialog.showToast("Something went to wrong".tr);
-        }
-      });
+      // Never FireStoreUtils.updateUser here: it also makes the saved user
+      // the session's user, so the store owner carried on as this employee
+      // (their role and permissions) after saving. Create writes the whole
+      // new profile. Edit writes only the fields this form edits: the model
+      // came from a list loaded once, and writing all of it back undid what
+      // changed since (FCM token, on/off switch).
+      final bool saved = isEdit ? await FireStoreUtils.updateUserFields(employeeModel.value.id, _editedFields()) : await FireStoreUtils.updateDriverUser(employeeModel.value);
+      if (saved) {
+        Get.back(result: true);
+        ShowToastDialog.showToast("Employee details saved successfully!".tr);
+      } else {
+        ShowToastDialog.showToast("Something went to wrong".tr);
+      }
     } on FirebaseAuthException catch (e) {
       if (e.code == 'weak-password') {
         ShowToastDialog.showToast("The password provided is too weak.".tr);
@@ -138,4 +136,15 @@ class AddEmployeeController extends GetxController {
 
     ShowToastDialog.closeLoader();
   }
+
+  /// What the edit form changes, and nothing else. The email is locked once
+  /// the account exists; the role is required by the form.
+  Map<String, dynamic> _editedFields() => {
+    'firstName': firstNameEditingController.value.text.trim(),
+    'lastName': lastNameEditingController.value.text.trim(),
+    if ((selectEmployeeRole.value.id ?? '').isNotEmpty) 'employeePermissionId': selectEmployeeRole.value.id,
+    'phoneNumber': phoneNUmberEditingController.value.text.trim(),
+    'countryCode': countryCodeEditingController.value.text.trim(),
+    'countryISOCode': countryISOCodeEditingController.value.text.trim(),
+  };
 }
