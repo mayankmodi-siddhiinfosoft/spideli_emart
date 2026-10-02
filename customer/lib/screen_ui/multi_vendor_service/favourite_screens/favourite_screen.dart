@@ -249,7 +249,7 @@ class _FavouriteStoreCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(vendorModel.title.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.title),
-                Text(vendorModel.location.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySm),
+                Text(vendorModel.locationText, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySm),
               ],
             ),
           ),
@@ -280,14 +280,15 @@ class _StoreChips extends StatelessWidget {
           icon: Icons.star_rounded,
           small: true,
         ),
-        DsBadge(
-          label:
-              "${Constant.getDistance(lat1: vendorModel.latitude.toString(), lng1: vendorModel.longitude.toString(), lat2: Constant.selectedLocation.location!.latitude.toString(), lng2: Constant.selectedLocation.location!.longitude.toString())} ${Constant.distanceType}",
-          tone: DsTone.info,
-          style: DsBadgeStyle.solid,
-          icon: Icons.place_outlined,
-          small: true,
-        ),
+        // No distance for a store saved without a position (report 02#2).
+        if (Constant.vendorDistanceLabel(vendorModel) != null)
+          DsBadge(
+            label: Constant.vendorDistanceLabel(vendorModel)!,
+            tone: DsTone.info,
+            style: DsBadgeStyle.solid,
+            icon: Icons.place_outlined,
+            small: true,
+          ),
       ],
     );
   }

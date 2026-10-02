@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:customer/models/subscription_plan_model.dart';
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/utils/region_service.dart';
 
 import 'admin_commission_model.dart';
@@ -129,7 +130,6 @@ class VendorModel {
     zoneId = json['zoneId'];
     regionId = (json['regionId'] == null || json['regionId'].toString().isEmpty) ? null : json['regionId'].toString();
     // createdAt = json['createdAt'];
-    longitude = double.parse(json['longitude'].toString());
     enabledDiveInFuture = json['enabledDiveInFuture'];
     restaurantCost = json['restaurantCost']?.toString();
     deliveryCharge = json['DeliveryCharge'] != null ? DeliveryCharge.fromJson(json['DeliveryCharge']) : null;
@@ -144,12 +144,11 @@ class VendorModel {
       });
     }
     specialDiscountEnable = json['specialDiscountEnable'];
-    coordinates = json['coordinates'];
+    coordinates = json['coordinates'] is GeoPoint ? json['coordinates'] : null;
     reviewsSum = num.parse('${json['reviewsSum'] ?? 0.0}');
     photos = json['photos'] ?? [];
     title = json['title'];
     categoryTitle = json['categoryTitle'] is String ? [] : json['categoryTitle'] ?? [];
-    latitude = double.parse(json['latitude'].toString());
     subscriptionPlanId = json['subscriptionPlanId'];
     // subscriptionExpiryDate = json['subscriptionExpiryDate'];
     subscriptionPlan = json['subscription_plan'] != null ? SubscriptionPlanModel.fromJson(json['subscription_plan']) : null;
@@ -169,7 +168,49 @@ class VendorModel {
             ? Timestamp.fromMillisecondsSinceEpoch((json['subscriptionExpiryDate']['_seconds'] ?? 0) * 1000)
             : null;
     packagingCharge = json['packagingCharge'] ?? "0";
+    final position = parsePosition(json);
+    latitude = position?.lat;
+    longitude = position?.lng;
     RegionService.rememberVendor(id, regionId, zoneId);
+  }
+
+  /// False for a store saved without a usable position (report 02#2: three
+  /// live stores hold "" for both coordinates). Such a store stays listed but
+  /// gets no map pin, no distance and no directions to 0,0.
+  bool get hasPosition => latitude != null && longitude != null;
+
+  /// The store's address for display. The stored field is `location` (no
+  /// store has an `address` field, report 02#2); a missing one is '' rather
+  /// than the word "null", and baked-in "null" pieces are dropped (02#18).
+  String get locationText => formatAddressLine([location]);
+
+  /// The store's position from `latitude` / `longitude` (strings or numbers,
+  /// as the panels write them), else `coordinates`, else `g.geopoint`; null
+  /// when none of them is a real point. Never throws: `double.parse("")` used
+  /// to, which took the whole list (or the order holding the store) with it.
+  static ({double lat, double lng})? parsePosition(Map<String, dynamic> json) {
+    ({double lat, double lng})? point(Object? lat, Object? lng) {
+      final double? a = _coordinate(lat);
+      final double? b = _coordinate(lng);
+      if (a == null || b == null) return null;
+      if (a.abs() > 90 || b.abs() > 180) return null;
+      // 0,0 is this data model's "not set" — no store is in the Gulf of Guinea.
+      if (a == 0 && b == 0) return null;
+      return (lat: a, lng: b);
+    }
+
+    final Object? coordinates = json['coordinates'];
+    final Object? g = json['g'];
+    final Object? geopoint = g is Map ? g['geopoint'] : null;
+    return point(json['latitude'], json['longitude']) ??
+        (coordinates is GeoPoint ? point(coordinates.latitude, coordinates.longitude) : null) ??
+        (geopoint is GeoPoint ? point(geopoint.latitude, geopoint.longitude) : null);
+  }
+
+  static double? _coordinate(Object? value) {
+    if (value == null) return null;
+    final double? parsed = value is num ? value.toDouble() : double.tryParse(value.toString().trim());
+    return parsed != null && parsed.isFinite ? parsed : null;
   }
 
   Map<String, dynamic> toJson() {
@@ -288,7 +329,7 @@ class G {
 
   G.fromJson(Map<String, dynamic> json) {
     geohash = json['geohash'];
-    geopoint = json['geopoint'];
+    geopoint = json['geopoint'] is GeoPoint ? json['geopoint'] : null;
   }
 
   Map<String, dynamic> toJson() {

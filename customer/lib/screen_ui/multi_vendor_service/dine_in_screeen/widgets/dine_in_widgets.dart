@@ -50,6 +50,9 @@ class DineInDistanceChip extends StatelessWidget {
     final c = context.dsColors;
     final t = context.dsText;
     final tone = c.tone(DsTone.info);
+    // A store saved without a position shows no distance (report 02#2).
+    final String? label = Constant.vendorDistanceLabel(vendorModel);
+    if (label == null) return const SizedBox.shrink();
     return _Pill(
       background: tone.soft,
       child: Row(
@@ -58,7 +61,7 @@ class DineInDistanceChip extends StatelessWidget {
           SvgPicture.asset("assets/icons/ic_map_distance.svg", width: 14, height: 14, colorFilter: ColorFilter.mode(tone.strong, BlendMode.srcIn)),
           const DsGap(DsSpace.xs),
           Text(
-            "${Constant.getDistance(lat1: vendorModel.latitude.toString(), lng1: vendorModel.longitude.toString(), lat2: Constant.selectedLocation.location!.latitude.toString(), lng2: Constant.selectedLocation.location!.longitude.toString())} ${Constant.distanceType}",
+            label,
             style: t.labelSm.tabular.withColor(tone.strong),
           ),
         ],
@@ -175,7 +178,7 @@ class DineInStoreCard extends StatelessWidget {
               children: [
                 Text(vendorModel.title.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.title),
                 const DsGap(DsSpace.xxs),
-                Text(vendorModel.location.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySm),
+                Text(vendorModel.locationText, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySm),
               ],
             ),
           ),

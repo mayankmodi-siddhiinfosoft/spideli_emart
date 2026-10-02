@@ -10,22 +10,31 @@
 /// [formatAddressParts] therefore splits every part on its own separators as
 /// well, drops the pieces that carry no information -- empty, whitespace-only,
 /// or the literal `null` / `nil` / `undefined` -- and rejoins what is left, so
-/// the separators collapse instead of leaving ", ," or a trailing comma.
-/// Storage is untouched: this is display only.
+/// the separators collapse instead of leaving ", ," or a trailing comma. A
+/// part repeating an earlier part's text is dropped. Returns '' when nothing
+/// is left, so the caller can hide the row. Storage is untouched.
 ///
 /// ```dart
 /// formatAddressParts(['123 Yaounde St', 'null, Tsinga', '  ']); // 123 Yaounde St, Tsinga
 /// ```
 String formatAddressParts(List<Object?> parts, {String separator = ', '}) {
   final List<String> clean = <String>[];
+  // Panel rule (spideliFormatAddress): the same text is often stored in two
+  // fields, so a part whose cleaned text (case-insensitive) was already used
+  // is skipped whole. Individual segments are never de-duplicated.
+  final Set<String> seen = <String>{};
   for (final Object? part in parts) {
     if (part == null) continue;
+    final List<String> pieces = <String>[];
     for (final String piece in part.toString().split(',')) {
       final String value = piece.replaceAll(RegExp(r'\s+'), ' ').trim();
       if (value.isEmpty) continue;
       if (_isPlaceholder(value)) continue;
-      clean.add(value);
+      pieces.add(value);
     }
+    if (pieces.isEmpty) continue;
+    if (!seen.add(pieces.join(', ').toLowerCase())) continue;
+    clean.addAll(pieces);
   }
   return clean.join(separator);
 }

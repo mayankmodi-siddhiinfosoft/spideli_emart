@@ -49,8 +49,9 @@ class StoreDistanceChip extends StatelessWidget {
     final c = context.dsColors;
     final t = context.dsText;
     final info = c.tone(DsTone.info);
-    final label =
-        "${Constant.getDistance(lat1: vendorModel.latitude.toString(), lng1: vendorModel.longitude.toString(), lat2: Constant.selectedLocation.location!.latitude.toString(), lng2: Constant.selectedLocation.location!.longitude.toString())} ${Constant.distanceType}";
+    // A store saved without a position shows no distance (report 02#2).
+    final String? label = Constant.vendorDistanceLabel(vendorModel);
+    if (label == null) return const SizedBox.shrink();
     return _Pill(
       background: info.soft,
       small: small,
@@ -198,7 +199,7 @@ class StoreTitleBlock extends StatelessWidget {
             Icon(Icons.location_on_outlined, size: 15, color: c.textMuted),
             const DsGap(DsSpace.xs),
             Expanded(
-              child: Text(vendorModel.location.toString(), textAlign: TextAlign.start, maxLines: compact ? 2 : 1, overflow: TextOverflow.ellipsis, style: t.bodySm),
+              child: Text(vendorModel.locationText, textAlign: TextAlign.start, maxLines: compact ? 2 : 1, overflow: TextOverflow.ellipsis, style: t.bodySm),
             ),
           ],
         ),

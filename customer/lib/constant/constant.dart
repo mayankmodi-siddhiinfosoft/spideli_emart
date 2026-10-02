@@ -438,15 +438,40 @@ class Constant {
     }
   }
 
+  /// Distance in [distanceType] units with two decimals, or '' when either
+  /// point is missing or unparseable ("null", "" — a store saved without a
+  /// position, report 02#2). Never throws.
   static String getDistance({required String lat1, required String lng1, required String lat2, required String lng2}) {
-    double distance;
-    double distanceInMeters = Geolocator.distanceBetween(double.parse(lat1), double.parse(lng1), double.parse(lat2), double.parse(lng2));
-    if (distanceType == "miles") {
-      distance = distanceInMeters / 1609;
-    } else {
-      distance = distanceInMeters / 1000;
+    final double? distance = distanceOrNull(lat1: lat1, lng1: lng1, lat2: lat2, lng2: lng2);
+    return distance == null ? '' : distance.toStringAsFixed(2);
+  }
+
+  /// [getDistance] as a number, or null when it cannot be worked out.
+  static double? distanceOrNull({required Object? lat1, required Object? lng1, required Object? lat2, required Object? lng2}) {
+    double? parse(Object? v) {
+      if (v == null) return null;
+      final double? d = v is num ? v.toDouble() : double.tryParse(v.toString().trim());
+      return d != null && d.isFinite ? d : null;
     }
-    return distance.toStringAsFixed(2);
+
+    final double? a1 = parse(lat1), b1 = parse(lng1), a2 = parse(lat2), b2 = parse(lng2);
+    if (a1 == null || b1 == null || a2 == null || b2 == null) return null;
+    final double distanceInMeters = Geolocator.distanceBetween(a1, b1, a2, b2);
+    return distanceType == "miles" ? distanceInMeters / 1609 : distanceInMeters / 1000;
+  }
+
+  /// "1.25 km" from the customer's chosen location to [vendor], or null when
+  /// the store has no position (or no location is chosen) — callers hide the
+  /// distance then rather than showing " km" or crashing.
+  static String? vendorDistanceLabel(VendorModel vendor) {
+    if (!vendor.hasPosition) return null;
+    final String distance = getDistance(
+      lat1: vendor.latitude.toString(),
+      lng1: vendor.longitude.toString(),
+      lat2: selectedLocation.location?.latitude.toString() ?? '',
+      lng2: selectedLocation.location?.longitude.toString() ?? '',
+    );
+    return distance.isEmpty ? null : "$distance $distanceType";
   }
 
   bool hasValidUrl(String? value) {
@@ -643,6 +668,22 @@ class Constant {
     }
 
     return uri;
+  }
+
+  /// Opens the store in the maps app: at its coordinates, else a search for
+  /// its address text, else a message — never directions to 0,0 for a store
+  /// saved without a position (report 02#2).
+  static Future<void> openVendorInMaps(VendorModel vendor) async {
+    final Uri uri;
+    if (vendor.hasPosition) {
+      uri = createCoordinatesUrl(vendor.latitude!, vendor.longitude!, vendor.title);
+    } else if (vendor.locationText.isNotEmpty) {
+      uri = Uri.https('www.google.com', '/maps/search/', {'api': '1', 'query': vendor.locationText});
+    } else {
+      ShowToastDialog.showToast("This store has not set its location yet".tr);
+      return;
+    }
+    await launchUrl(uri);
   }
 
   static Future<void> sendOrderEmail({required OrderModel orderModel}) async {

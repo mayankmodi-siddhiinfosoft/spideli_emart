@@ -193,14 +193,18 @@ class CartController extends GetxController {
     /// ---------------- DELIVERY CHARGES ----------------
     if (cartItem.isNotEmpty) {
       if (selectedFoodType.value == "Delivery") {
-        totalDistance.value = double.parse(
-          Constant.getDistance(
-            lat1: selectedAddress.value.location!.latitude.toString(),
-            lng1: selectedAddress.value.location!.longitude.toString(),
-            lat2: vendorModel.value.latitude.toString(),
-            lng2: vendorModel.value.longitude.toString(),
-          ),
-        );
+        // A store saved without a position (report 02#2) has no distance:
+        // charge the minimum instead of failing the whole cart calculation.
+        totalDistance.value =
+            double.tryParse(
+              Constant.getDistance(
+                lat1: selectedAddress.value.location!.latitude.toString(),
+                lng1: selectedAddress.value.location!.longitude.toString(),
+                lat2: vendorModel.value.latitude.toString(),
+                lng2: vendorModel.value.longitude.toString(),
+              ),
+            ) ??
+            0.0;
         if (Constant.sectionConstantModel?.serviceType == 'Ecommerce Service') {
           deliveryCharges.value = double.parse(Constant.sectionConstantModel?.deliveryCharge ?? '0.0');
         } else if (vendorModel.value.isSelfDelivery == true && Constant.isSelfDeliveryFeature == true) {

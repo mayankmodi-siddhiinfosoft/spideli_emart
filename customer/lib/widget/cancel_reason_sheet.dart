@@ -10,6 +10,7 @@ import 'package:customer/themes/app_them_data.dart';
 import 'package:customer/themes/round_button_fill.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/themes/text_field_widget.dart';
+import 'package:customer/utils/cancel_reason_list.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -55,29 +56,25 @@ class CancelReasonResult {
 }
 
 /// Mandatory cancellation reason (spec 7.10 / 4.8). Reasons come from
-/// `settings/cancellationReasons.customer`, else the contract defaults; "Other"
-/// requires free text. Returns null when the customer backs out.
+/// `settings/cancellationReasons` (`customer`, else `reasons` / `list`, strings
+/// or `{code, label}`), else the contract defaults; "Other" requires free
+/// text. Returns null when the customer backs out.
 class CancelReasonSheet {
   CancelReasonSheet._();
 
   static const List<String> defaultCustomerReasons = ["Driver is taking too long", "Changed my plans", "Booked by mistake", "Price too high", "Other"];
 
-  /// `settings/cancellationReasons.customer`, else the defaults. Always ends
-  /// with "Other".
-  static Future<List<String>> customerReasons() async {
-    List<String> reasons = [];
+  /// `settings/cancellationReasons` read by [parseCancelReasonList], else the
+  /// defaults. Always ends with "Other" exactly once.
+  static Future<List<CancelReasonOption>> customerReasons() async {
+    Map<String, dynamic>? data;
     try {
       final doc = await FireStoreUtils.fireStore.collection(CollectionName.settings).doc('cancellationReasons').get();
-      final raw = doc.data()?['customer'];
-      if (raw is Iterable) {
-        reasons = raw.map((e) => e?.toString().trim() ?? '').where((e) => e.isNotEmpty).toList();
-      }
+      data = doc.data();
     } catch (e) {
       log("customerReasons failed: $e");
     }
-    if (reasons.isEmpty) reasons = List<String>.from(defaultCustomerReasons);
-    if (!reasons.any((e) => e.toLowerCase() == 'other')) reasons.add("Other");
-    return reasons;
+    return parseCancelReasonList(data, roleKeys: const ['customer'], defaults: defaultCustomerReasons);
   }
 
   /// [message] is an optional note under the title (e.g. what happens to
@@ -97,7 +94,7 @@ class CancelReasonSheet {
 }
 
 class _CancelReasonBody extends StatefulWidget {
-  final List<String> reasons;
+  final List<CancelReasonOption> reasons;
   final String title;
   final String? message;
 
@@ -108,10 +105,10 @@ class _CancelReasonBody extends StatefulWidget {
 }
 
 class _CancelReasonBodyState extends State<_CancelReasonBody> {
-  String? _selected;
+  CancelReasonOption? _selected;
   final TextEditingController _other = TextEditingController();
 
-  bool _isOther(String? value) => value != null && value.toLowerCase() == 'other';
+  bool _isOther(CancelReasonOption? value) => value?.isOther ?? false;
 
   @override
   void dispose() {
@@ -134,7 +131,7 @@ class _CancelReasonBodyState extends State<_CancelReasonBody> {
       Get.back(result: CancelReasonResult(reason: text, code: 'other'));
       return;
     }
-    Get.back(result: CancelReasonResult(reason: _selected!, code: _selected!));
+    Get.back(result: CancelReasonResult(reason: _selected!.label, code: _selected!.code));
   }
 
   @override
@@ -156,19 +153,19 @@ class _CancelReasonBodyState extends State<_CancelReasonBody> {
                 Text(widget.message!, style: AppThemeData.regularTextStyle(fontSize: 13, color: isDark ? AppThemeData.grey400 : AppThemeData.grey600)),
               ],
               const SizedBox(height: 8),
-              RadioGroup<String>(
+              RadioGroup<CancelReasonOption>(
                 groupValue: _selected,
                 onChanged: (value) => setState(() => _selected = value),
                 child: Column(
                   children:
                       widget.reasons
                           .map(
-                            (reason) => RadioListTile<String>(
+                            (reason) => RadioListTile<CancelReasonOption>(
                               dense: true,
                               contentPadding: EdgeInsets.zero,
                               value: reason,
                               activeColor: AppThemeData.primary300,
-                              title: Text(reason.tr, style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
+                              title: Text(reason.label.tr, style: AppThemeData.mediumTextStyle(fontSize: 14, color: isDark ? AppThemeData.grey50 : AppThemeData.grey900)),
                             ),
                           )
                           .toList(),

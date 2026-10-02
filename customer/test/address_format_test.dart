@@ -31,6 +31,23 @@ void main() {
     test('is empty when nothing survives', () {
       expect(formatAddressLine(['null', ' ', null]), '');
     });
+
+    test('the panel example: baked-in nulls in several fields', () {
+      expect(formatAddressLine(['null', '18, null, Yaoundé, Région du Centre, null, Cameroun', 'null']), '18, Yaoundé, Région du Centre, Cameroun');
+    });
+
+    test('drops a field repeating an earlier field (case-insensitive, whole field)', () {
+      expect(formatAddressLine(['Tsinga, Yaoundé', 'tsinga,  YAOUNDÉ', 'Near the market']), 'Tsinga, Yaoundé, Near the market');
+      expect(formatAddressLine(['Tsinga', 'null, Tsinga']), 'Tsinga');
+    });
+
+    test('never de-duplicates single segments inside different fields', () {
+      expect(formatAddressLine(['Tsinga', '18, Tsinga, Yaoundé']), 'Tsinga, 18, Tsinga, Yaoundé');
+    });
+
+    test('keeps Annullata Street', () {
+      expect(formatAddressLine(['Annullata Street', 'nil']), 'Annullata Street');
+    });
   });
 
   group('ShippingAddress.getFullAddress', () {

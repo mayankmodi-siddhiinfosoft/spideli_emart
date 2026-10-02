@@ -130,7 +130,7 @@ class _OfferVoucherCard extends StatelessWidget {
                           Icon(Icons.location_on_outlined, size: 15, color: c.textMuted),
                           const DsGap(DsSpace.xs),
                           Expanded(
-                            child: Text(vendorModel.location.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySm),
+                            child: Text(vendorModel.locationText, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySm),
                           ),
                         ],
                       ),

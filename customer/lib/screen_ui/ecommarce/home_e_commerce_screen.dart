@@ -561,7 +561,7 @@ class _StoreRow extends StatelessWidget {
                   children: [
                     Icon(Icons.location_on_outlined, size: 14, color: c.textMuted),
                     const DsGap(DsSpace.xs),
-                    Expanded(child: Text(item.location.toString(), maxLines: 1, style: t.bodySm, overflow: TextOverflow.ellipsis)),
+                    Expanded(child: Text(item.locationText, maxLines: 1, style: t.bodySm, overflow: TextOverflow.ellipsis)),
                   ],
                 ),
                 const DsGap(DsSpace.sm),
@@ -618,7 +618,7 @@ class NewArrivalCard extends StatelessWidget {
                   children: [
                     Icon(Icons.location_on_outlined, size: 13, color: c.textMuted),
                     const DsGap(DsSpace.xxs),
-                    Expanded(child: Text(item.location.toString(), maxLines: 1, style: t.caption, overflow: TextOverflow.ellipsis)),
+                    Expanded(child: Text(item.locationText, maxLines: 1, style: t.caption, overflow: TextOverflow.ellipsis)),
                   ],
                 ),
                 const DsGap(DsSpace.xs),

@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/themes/ds/ds.dart';
+import 'package:spideliprovider/utils/cancel_reason_list.dart';
 
 /// A reason chosen in [CancelReasonSheet]: [code] is the list entry (or
 /// "other"), [reason] the text shown to people (the typed text for "Other").
@@ -27,8 +28,8 @@ class CancelReasonResult {
 }
 
 /// Mandatory cancellation / rejection reason (CANCEL-REASON-CONTRACT).
-/// Reasons come from `settings/cancellationReasons.provider`, else the
-/// built-in defaults; the list always ends with "Other", which needs at least
+/// Reasons come from `settings/cancellationReasons` (`provider`, else
+/// `reasons` / `list`, strings or `{code, label}`), else the built-in defaults; the list always ends with "Other", which needs at least
 /// 3 characters of text. Returns null when the provider backs out, and the
 /// caller then changes nothing.
 class CancelReasonSheet {
@@ -42,20 +43,14 @@ class CancelReasonSheet {
     "Other",
   ];
 
-  static Future<List<String>> _reasons() async {
-    List<String> reasons = [];
+  static Future<List<CancelReasonOption>> _reasons() async {
+    Map<String, dynamic>? data;
     try {
       final doc = await FireStoreUtils.firestore.collection('settings').doc('cancellationReasons').get();
-      final raw = doc.data()?['provider'];
-      if (raw is Iterable) {
-        reasons = raw.map((e) => e?.toString().trim() ?? '').where((e) => e.isNotEmpty).toList();
-      }
+      data = doc.data();
     } catch (_) {}
-    if (reasons.isEmpty) reasons = List<String>.from(defaultReasons);
-    // "Other" always last.
-    reasons.removeWhere((e) => e.toLowerCase() == 'other');
-    reasons.add("Other");
-    return reasons;
+    // "Other" always last, exactly once.
+    return parseCancelReasonList(data, roleKeys: const ['provider'], defaults: defaultReasons);
   }
 
   static Future<CancelReasonResult?> show({required String title}) async {
@@ -71,7 +66,7 @@ class CancelReasonSheet {
 }
 
 class _CancelReasonBody extends StatefulWidget {
-  final List<String> reasons;
+  final List<CancelReasonOption> reasons;
 
   const _CancelReasonBody({required this.reasons});
 
@@ -80,11 +75,11 @@ class _CancelReasonBody extends StatefulWidget {
 }
 
 class _CancelReasonBodyState extends State<_CancelReasonBody> {
-  String? _selected;
+  CancelReasonOption? _selected;
   String? _error;
   final TextEditingController _other = TextEditingController();
 
-  bool get _isOther => _selected?.toLowerCase() == 'other';
+  bool get _isOther => _selected?.isOther ?? false;
 
   @override
   void dispose() {
@@ -106,7 +101,7 @@ class _CancelReasonBodyState extends State<_CancelReasonBody> {
       Get.back(result: CancelReasonResult(reason: text, code: 'other'));
       return;
     }
-    Get.back(result: CancelReasonResult(reason: _selected!, code: _selected!));
+    Get.back(result: CancelReasonResult(reason: _selected!.label, code: _selected!.code));
   }
 
   @override
@@ -123,7 +118,7 @@ class _CancelReasonBodyState extends State<_CancelReasonBody> {
             child: DsCard.outlined(
               padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.md),
               borderColor: _selected == reason ? c.brand : null,
-              semanticLabel: reason.tr,
+              semanticLabel: reason.label.tr,
               onTap: () => setState(() {
                 _selected = reason;
                 _error = null;
@@ -136,7 +131,7 @@ class _CancelReasonBodyState extends State<_CancelReasonBody> {
                     size: 22,
                   ),
                   const DsGap(DsSpace.md),
-                  Expanded(child: Text(reason.tr, style: t.bodyStrong)),
+                  Expanded(child: Text(reason.label.tr, style: t.bodyStrong)),
                 ],
               ),
             ),

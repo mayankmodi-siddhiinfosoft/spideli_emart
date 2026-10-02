@@ -346,7 +346,7 @@ class _NewArrivalRail extends StatelessWidget {
                         ),
                         const DsGap(DsSpace.xs),
                         Text(
-                          vendorModel.location.toString(),
+                          vendorModel.locationText,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: t.bodySm.withColor(Colors.white.withValues(alpha: 0.85)),

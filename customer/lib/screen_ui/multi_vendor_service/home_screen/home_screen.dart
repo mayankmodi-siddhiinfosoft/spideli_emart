@@ -647,7 +647,7 @@ class NewArrival extends StatelessWidget {
                       const DsGap(DsSpace.sm),
                       Text(vendorModel.title.toString(), textAlign: TextAlign.start, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm.withColor(Colors.white).w600),
                       Text(
-                        vendorModel.location.toString(),
+                        vendorModel.locationText,
                         textAlign: TextAlign.start,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -1296,7 +1296,7 @@ class MapView extends StatelessWidget {
                     target:
                         controller.homeController.allNearestRestaurant.isEmpty
                             ? LatLng(centreLat, centreLng)
-                            : LatLng(controller.homeController.allNearestRestaurant.first.latitude ?? 45.521563, controller.homeController.allNearestRestaurant.first.longitude ?? -122.677433),
+                            : LatLng(controller.homeController.allNearestRestaurant.first.latitude ?? centreLat, controller.homeController.allNearestRestaurant.first.longitude ?? centreLng),
                   ),
                 ),
             controller.homeController.allNearestRestaurant.isEmpty
@@ -1314,6 +1314,8 @@ class MapView extends StatelessWidget {
                         pageSnapping: true,
                         controller: PageController(viewportFraction: 0.88),
                         onPageChanged: (value) async {
+                          // A store saved without a position has no pin to move to (report 02#2).
+                          if (!controller.homeController.allNearestRestaurant[value].hasPosition) return;
                           if (Constant.selectedMapType == "osm") {
                             controller.osmMapController.move(
                               location.LatLng(controller.homeController.allNearestRestaurant[value].latitude!, controller.homeController.allNearestRestaurant[value].longitude!),

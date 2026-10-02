@@ -2,6 +2,7 @@ import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/screen_ui/on_demand_service/provider_screen.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/address_format.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:get/get.dart';
@@ -159,7 +160,7 @@ class OnDemandDetailsScreen extends StatelessWidget {
                       children: [
                         Icon(Icons.location_on_outlined, color: context.dsColors.iconDefault, size: 20),
                         const DsGap(DsSpace.sm),
-                        Expanded(child: Text(provider.address.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySecondary)),
+                        Expanded(child: Text(formatAddressLine([provider.address]), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodySecondary)),
                       ],
                     ),
                     const DsGap(DsSpace.lg),

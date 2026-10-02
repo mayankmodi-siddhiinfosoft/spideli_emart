@@ -401,7 +401,7 @@ class BookingDetailsScreen extends StatelessWidget {
           onAction: onProviderOrder.status == ORDER_STATUS_ACCEPTED
               ? () async {
                   final directions = MapLauncher.directions(
-                    LocationCoords(onProviderOrder.address!.location!.latitude, onProviderOrder.address!.location!.longitude, title: onProviderOrder.address!.locality),
+                    LocationCoords(onProviderOrder.address!.location!.latitude, onProviderOrder.address!.location!.longitude, title: onProviderOrder.address!.getFullAddress()),
                     mode: TravelMode.driving,
                   );
                   // map_launcher 6: isMapAvailable() replaced by getSupportedMaps(); isInstalled keeps the old "app installed" check.

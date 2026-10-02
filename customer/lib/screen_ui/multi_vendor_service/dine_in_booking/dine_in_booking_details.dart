@@ -66,7 +66,7 @@ class DineInBookingDetails extends StatelessWidget {
                                     children: [
                                       Text(booking.vendor!.title.toString(), style: t.title),
                                       const DsGap(DsSpace.xxs),
-                                      Text(booking.vendor!.location.toString(), style: t.bodySecondary),
+                                      Text(booking.vendor!.locationText, style: t.bodySecondary),
                                     ],
                                   ),
                                 ),
@@ -81,13 +81,7 @@ class DineInBookingDetails extends StatelessWidget {
                                     icon: Icons.map_outlined,
                                     expand: true,
                                     onPressed: () {
-                                      launchUrl(
-                                        Constant.createCoordinatesUrl(
-                                          booking.vendor!.latitude ?? 0.0,
-                                          booking.vendor!.longitude ?? 0.0,
-                                          booking.vendor!.title,
-                                        ),
-                                      );
+                                      Constant.openVendorInMaps(booking.vendor!);
                                     },
                                   ),
                                 ),

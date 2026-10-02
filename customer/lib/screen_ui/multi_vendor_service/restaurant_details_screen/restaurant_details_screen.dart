@@ -431,7 +431,7 @@ class _StoreIdentityCard extends StatelessWidget {
                   children: [
                     Text(vendor.title.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.headline),
                     const DsGap(DsSpace.xxs),
-                    Text(vendor.location.toString(), style: t.bodySm),
+                    Text(vendor.locationText, style: t.bodySm),
                   ],
                 ),
               ),
@@ -1179,7 +1179,7 @@ class ProductListView extends StatelessWidget {
           ),
           heading("Store".tr),
           Text(controller.vendorModel.value.title ?? '', style: valueStyle),
-          if ((controller.vendorModel.value.location ?? '').isNotEmpty) Text(controller.vendorModel.value.location!, style: labelStyle),
+          if (controller.vendorModel.value.locationText.isNotEmpty) Text(controller.vendorModel.value.locationText, style: labelStyle),
           if ((productModel.description ?? '').isNotEmpty) ...[heading("Description".tr), Text(productModel.description!, style: labelStyle)],
           // Wholesale terms typed in the store panel (HTML): rendered under the
           // description when the product has a tier, and SANITISED first - a

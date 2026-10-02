@@ -10,6 +10,7 @@ import 'package:customer/models/onprovider_order_model.dart';
 import 'package:customer/models/order_model.dart';
 import 'package:customer/themes/app_them_data.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -190,7 +191,7 @@ class OrderReceiptPdf {
       date: order.createdAt?.toDate(),
       partyTitle: 'Store'.tr,
       partyName: order.vendor?.title ?? '',
-      partyAddress: order.vendor?.location ?? '',
+      partyAddress: order.vendor?.locationText ?? '',
       partyPhone: order.vendor?.phonenumber ?? '',
       logoUrl: order.vendor?.photo,
       customerName: order.author?.fullName() ?? '',
@@ -232,7 +233,7 @@ class OrderReceiptPdf {
       date: date,
       partyTitle: 'Provider'.tr,
       partyName: c.providerUser.value?.fullName() ?? order.provider.title ?? '',
-      partyAddress: order.provider.address ?? '',
+      partyAddress: formatAddressLine([order.provider.address]),
       partyPhone: '',
       logoUrl: null,
       customerName: order.author.fullName(),

@@ -35,6 +35,8 @@ class MapViewController extends GetxController {
       ); //OSM
 
       for (var element in homeController.allNearestRestaurant) {
+        // No pin at 0,0 for a store saved without a position (report 02#2).
+        if (!element.hasPosition) continue;
         osmMarker.add(
           flutterMap.Marker(
             point: location.LatLng(
@@ -62,6 +64,7 @@ class MapViewController extends GetxController {
       );
       parkingMarker = BitmapDescriptor.bytes(parking);
       for (var element in homeController.allNearestRestaurant) {
+        if (!element.hasPosition) continue;
         addMarker(
           latitude: element.latitude,
           longitude: element.longitude,

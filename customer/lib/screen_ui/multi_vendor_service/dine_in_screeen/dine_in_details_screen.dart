@@ -7,7 +7,6 @@ import 'package:customer/utils/region_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
@@ -147,7 +146,7 @@ class DineInDetailsScreen extends StatelessWidget {
                                   children: [
                                     Text(vendor.title.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.headline),
                                     const DsGap(DsSpace.xxs),
-                                    Text(vendor.location.toString(), style: t.bodySm),
+                                    Text(vendor.locationText, style: t.bodySm),
                                   ],
                                 ),
                               ),
@@ -258,10 +257,10 @@ class DineInDetailsScreen extends StatelessWidget {
                               children: [
                                 _FactRow(
                                   leading: SvgPicture.asset("assets/icons/ic_location.svg", width: 20, height: 20),
-                                  label: vendor.location.toString(),
+                                  label: vendor.locationText,
                                   value: "View on Map".tr,
                                   onTap: () {
-                                    launchUrl(Constant.createCoordinatesUrl(vendor.latitude ?? 0.0, vendor.longitude ?? 0.0, vendor.title));
+                                    Constant.openVendorInMaps(vendor);
                                   },
                                 ),
                                 const DsDivider(spacing: DsSpace.md),

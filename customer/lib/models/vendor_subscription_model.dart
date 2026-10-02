@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:intl/intl.dart';
+import 'package:customer/utils/address_format.dart';
 
 /// Store-sold subscriptions (spec 4.7 / 7.9, APP-DEV-BRIEF Part B): a customer
 /// pays a store for e.g. a daily bread delivery. Three collections, none of
@@ -237,9 +238,11 @@ class VendorSubscriptionModel {
 
   String get deliveryAddressText {
     final value = deliveryAddress;
-    if (value is String) return value;
+    // Through the shared rule (report 02#18): drops "null" pieces and a
+    // field repeating another.
+    if (value is String) return formatAddressLine([value]);
     if (value is Map) {
-      return [value['address'], value['locality'], value['landmark']].map((e) => e?.toString().trim() ?? '').where((e) => e.isNotEmpty).join(', ');
+      return formatAddressLine([value['address'], value['locality'], value['landmark']].map((e) => e?.toString()));
     }
     return '';
   }

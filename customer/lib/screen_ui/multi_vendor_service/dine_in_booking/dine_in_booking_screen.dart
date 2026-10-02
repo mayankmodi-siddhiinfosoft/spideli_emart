@@ -142,7 +142,7 @@ class _BookingCard extends StatelessWidget {
               children: [
                 SvgPicture.asset("assets/icons/ic_location.svg", width: 18, height: 18),
                 const DsGap(DsSpace.sm),
-                Expanded(child: Text(bookingModel.vendor!.location.toString(), style: t.bodySm.withColor(c.textPrimary))),
+                Expanded(child: Text(bookingModel.vendor!.locationText, style: t.bodySm.withColor(c.textPrimary))),
               ],
             ),
           ),
