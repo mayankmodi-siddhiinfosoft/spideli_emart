@@ -134,7 +134,7 @@ class VendorModel {
     closeDineTime = json['closeDineTime'];
     zoneId = json['zoneId'];
     createdAt = json['createdAt'];
-    longitude = double.parse(json['longitude'].toString());
+    longitude = parseCoordinate(json['longitude']);
     enabledDiveInFuture = json['enabledDiveInFuture'];
     restaurantCost = json['restaurantCost']?.toString();
     deliveryCharge = json['DeliveryCharge'] != null ? DeliveryCharge.fromJson(json['DeliveryCharge']) : null;
@@ -149,12 +149,19 @@ class VendorModel {
       });
     }
     specialDiscountEnable = json['specialDiscountEnable'];
-    coordinates = json['coordinates'];
+    coordinates = json['coordinates'] is GeoPoint ? json['coordinates'] : null;
     reviewsSum = json['reviewsSum'] ?? 0.0;
     photos = json['photos'] ?? [];
     title = json['title'];
     categoryTitle = json['categoryTitle'] is String ? [] : json['categoryTitle'] ?? [];
-    latitude = double.parse(json['latitude'].toString());
+    latitude = parseCoordinate(json['latitude']);
+    // Half a position, or exactly 0,0, is no position: the store shows
+    // "Location not set" instead of a pin in the Gulf of Guinea. The stored
+    // value is left as it is (toJson skips nulls).
+    if (latitude == null || longitude == null || (latitude == 0 && longitude == 0)) {
+      latitude = null;
+      longitude = null;
+    }
     subscriptionPlanId = json['subscriptionPlanId'];
     subscriptionExpiryDate = json['subscriptionExpiryDate'];
     subscriptionPlan = json['subscription_plan'] != null ? SubscriptionPlanModel.fromJson(json['subscription_plan']) : null;
@@ -166,6 +173,20 @@ class VendorModel {
     // Older panel writes stored this as a string (toFixed()), so parse.
     storeWalletAmount = num.tryParse(json['wallet_amount']?.toString() ?? '') ?? 0;
   }
+
+  /// A latitude / longitude as stored by the apps (numbers) or the panels
+  /// (strings). Blank, `"null"`, non-numeric or non-finite values are null:
+  /// `double.parse("")` used to throw here, so a store with `""` coordinates
+  /// (3 live stores) failed to load at all, as did any order snapshotting it.
+  static double? parseCoordinate(Object? value) {
+    if (value == null) return null;
+    final double? parsed = value is num ? value.toDouble() : double.tryParse(value.toString().trim());
+    if (parsed == null || parsed.isNaN || parsed.isInfinite) return null;
+    return parsed;
+  }
+
+  /// True when the store has a usable map position.
+  bool get hasLocation => latitude != null && longitude != null;
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
@@ -201,7 +222,9 @@ class VendorModel {
     data['closeDineTime'] = closeDineTime;
     data['zoneId'] = zoneId;
     data['createdAt'] = createdAt;
-    data['longitude'] = longitude;
+    // Only a known position is written: a store saved with `""` keeps it on
+    // unrelated saves (merge-fields), instead of being rewritten as null.
+    if (longitude != null) data['longitude'] = longitude;
     data['enabledDiveInFuture'] = enabledDiveInFuture;
     data['restaurantCost'] = restaurantCost;
     if (deliveryCharge != null) {
@@ -217,12 +240,12 @@ class VendorModel {
       data['specialDiscount'] = specialDiscount!.map((v) => v.toJson()).toList();
     }
     data['specialDiscountEnable'] = specialDiscountEnable;
-    data['coordinates'] = coordinates;
+    if (coordinates != null) data['coordinates'] = coordinates;
     data['reviewsSum'] = reviewsSum;
     data['photos'] = photos;
     data['title'] = title;
     data['categoryTitle'] = categoryTitle;
-    data['latitude'] = latitude;
+    if (latitude != null) data['latitude'] = latitude;
     data['isSelfDelivery'] = isSelfDelivery ?? false;
     data['packagingCharge'] = packagingCharge;
     if (regionId != null) {

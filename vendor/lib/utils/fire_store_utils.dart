@@ -63,6 +63,7 @@ import 'package:vendor/models/withdrawal_model.dart';
 import 'package:vendor/models/zone_model.dart';
 import 'package:vendor/service/audio_player_service.dart';
 import 'package:vendor/themes/app_them_data.dart';
+import 'package:vendor/utils/cancel_reasons.dart';
 import 'package:vendor/utils/preferences.dart';
 import 'package:video_compress/video_compress.dart';
 
@@ -337,6 +338,55 @@ class FireStoreUtils {
           isUpdate = false;
         });
     return isUpdate;
+  }
+
+  /// Puts [orderId] on a delivery man's list of orders in progress. Only that
+  /// list is touched: writing the whole user back from the store's copy
+  /// overwrote what the Driver app had changed since (online status, location,
+  /// FCM token, other orders), which could leave an assigned driver unable to
+  /// act on the order.
+  static Future<bool> addDriverOrder(String? driverId, String? orderId) async {
+    if ((driverId ?? '').isEmpty || (orderId ?? '').isEmpty) return false;
+    try {
+      await fireStore.collection(CollectionName.users).doc(driverId).set({
+        'inProgressOrderID': FieldValue.arrayUnion([orderId]),
+      }, SetOptions(merge: true));
+      return true;
+    } catch (e) {
+      log("addDriverOrder failed: $e");
+      return false;
+    }
+  }
+
+  /// Writes only the store's on/off switch for one of its delivery men or
+  /// employees. The list it comes from is loaded once, so writing the whole
+  /// user back would undo anything changed since (an order assigned, the
+  /// driver going online, a new FCM token).
+  static Future<bool> setUserActive(String? userId, bool active) async {
+    if ((userId ?? '').isEmpty) return false;
+    try {
+      await fireStore.collection(CollectionName.users).doc(userId).set({'active': active}, SetOptions(merge: true));
+      return true;
+    } catch (e) {
+      log("setUserActive failed: $e");
+      return false;
+    }
+  }
+
+  /// Takes [orderId] off a delivery man's lists (in progress and offered),
+  /// touching nothing else on the user — see [addDriverOrder].
+  static Future<bool> releaseDriverOrder(String? driverId, String? orderId) async {
+    if ((driverId ?? '').isEmpty || (orderId ?? '').isEmpty) return false;
+    try {
+      await fireStore.collection(CollectionName.users).doc(driverId).set({
+        'inProgressOrderID': FieldValue.arrayRemove([orderId]),
+        'orderRequestData': FieldValue.arrayRemove([orderId]),
+      }, SetOptions(merge: true));
+      return true;
+    } catch (e) {
+      log("releaseDriverOrder failed: $e");
+      return false;
+    }
   }
 
   static Future<bool> withdrawWalletAmount(WithdrawalModel userModel) async {
@@ -2129,29 +2179,20 @@ class FireStoreUtils {
     "Other",
   ];
 
-  /// `settings/cancellationReasons.vendor` (or `.store`), else [defaults]
-  /// (the cancellation list unless a caller passes the rejection one). The
-  /// list always ends with "Other", which needs free text.
-  static Future<List<String>> getVendorCancellationReasons({List<String> defaults = defaultVendorCancellationReasons}) async {
-    List<String> reasons = [];
+  /// The reason list from `settings/cancellationReasons` — `.vendor`, then
+  /// `.store`, then the panels' top-level `reasons` / `list`, each as strings
+  /// or `{code, label}` maps — else [defaults] (the cancellation list unless
+  /// a caller passes a rejection one). The list always ends with "Other"
+  /// (code `other`), which needs free text. See [parseCancelReasons].
+  static Future<List<CancelReasonOption>> getVendorCancellationReasons({List<String> defaults = defaultVendorCancellationReasons}) async {
+    Map<String, dynamic>? data;
     try {
       final doc = await fireStore.collection(CollectionName.settings).doc('cancellationReasons').get();
-      final data = doc.data();
-      for (final String key in const ['vendor', 'store']) {
-        final dynamic raw = data?[key];
-        if (raw is Iterable) {
-          reasons = raw.map((e) => e?.toString().trim() ?? '').where((e) => e.isNotEmpty && e.toLowerCase() != 'null').toList();
-        }
-        if (reasons.isNotEmpty) break;
-      }
+      data = doc.data();
     } catch (e) {
       log("getVendorCancellationReasons failed: $e");
     }
-    if (reasons.isEmpty) reasons = List<String>.from(defaults);
-    // "Other" always last, exactly once.
-    reasons.removeWhere((e) => e.toLowerCase() == 'other');
-    reasons.add("Other");
-    return reasons;
+    return parseCancelReasons(data, defaults: defaults);
   }
 
   static Future<List<UserModel>> getAllDrivers() async {

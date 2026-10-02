@@ -348,9 +348,14 @@ class AddRestaurantController extends GetxController {
         vendorModel.value.description = restaurantDescriptionController.value.text;
         vendorModel.value.phonenumber = mobileNumberController.value.text;
         vendorModel.value.filters = Filters.fromJson(filters);
+        // Address, latitude/longitude, `coordinates` and `g` all come from the
+        // one place pick (report 02#2), so they can never disagree. The
+        // `coordinates` GeoPoint used to be written back as loaded, keeping a
+        // moved store's old position there.
         vendorModel.value.location = addressController.value.text;
         vendorModel.value.latitude = selectedLocation.value!.latitude;
         vendorModel.value.longitude = selectedLocation.value!.longitude;
+        vendorModel.value.coordinates = GeoPoint(selectedLocation.value!.latitude, selectedLocation.value!.longitude);
         vendorModel.value.photos = images;
         vendorModel.value.sectionId = selectedSectionModel.value.id;
         if (images.isNotEmpty) {

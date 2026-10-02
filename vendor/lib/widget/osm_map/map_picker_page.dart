@@ -125,7 +125,7 @@ class MapPickerPage extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2.0),
                   child: Text(
-                    "${controller.pickedPlace.value!.address}\n(${controller.pickedPlace.value!.coordinates.latitude.toStringAsFixed(5)}, ${controller.pickedPlace.value!.coordinates.longitude.toStringAsFixed(5)})",
+                    "${controller.pickedPlace.value!.address.isEmpty ? "Address not available for this point".tr : controller.pickedPlace.value!.address}\n(${controller.pickedPlace.value!.coordinates.latitude.toStringAsFixed(5)}, ${controller.pickedPlace.value!.coordinates.longitude.toStringAsFixed(5)})",
                     style: const TextStyle(fontSize: 13),
                   ),
                 ),

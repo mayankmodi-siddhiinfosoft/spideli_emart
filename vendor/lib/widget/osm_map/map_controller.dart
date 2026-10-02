@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import 'package:vendor/utils/address_format.dart';
 import 'package:vendor/utils/utils.dart';
 import 'package:vendor/widget/osm_map/place_model.dart';
 
@@ -46,17 +47,20 @@ class OSMMapController extends GetxController {
     pickedPlace.value = PlaceModel(coordinates: coords, address: address);
   }
 
+  /// The address of [coords], or `''` when there is none. It used to return
+  /// the words "Unknown location", which the store form then saved as the
+  /// store's address (`vendors.location`); an empty result lets the form fall
+  /// back to the coordinates instead. A network failure no longer throws.
   Future<String> _getAddressFromLatLng(LatLng coords) async {
-    final url = Uri.parse('https://nominatim.openstreetmap.org/reverse?lat=${coords.latitude}&lon=${coords.longitude}&format=json');
-
-    final response = await http.get(url, headers: {'User-Agent': 'FlutterMapApp/1.0 (menil.siddhiinfosoft@gmail.com)'});
-
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return data['display_name'] ?? 'Unknown location';
-    } else {
-      return 'Unknown location';
-    }
+    try {
+      final url = Uri.parse('https://nominatim.openstreetmap.org/reverse?lat=${coords.latitude}&lon=${coords.longitude}&format=json');
+      final response = await http.get(url, headers: {'User-Agent': 'FlutterMapApp/1.0 (menil.siddhiinfosoft@gmail.com)'});
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return formatAddress([data['display_name']]);
+      }
+    } catch (_) {}
+    return '';
   }
 
   void clearAll() {
@@ -72,8 +76,11 @@ class OSMMapController extends GetxController {
 
   Future<void> getCurrentLocation() async {
     Position? location = await Utils.getCurrentLocation();
-    LatLng latlng = LatLng(location?.latitude ?? 0.0, location?.longitude ?? 0.0);
-    addLatLngOnly(LatLng(location?.latitude ?? 0.0, location?.longitude ?? 0.0));
+    // No fix: leave nothing picked rather than pre-picking 0,0 (a pin in the
+    // Gulf of Guinea the vendor could confirm as the store's position).
+    if (location == null) return;
+    LatLng latlng = LatLng(location.latitude, location.longitude);
+    addLatLngOnly(latlng);
     mapController.move(latlng, mapController.camera.zoom);
   }
 }

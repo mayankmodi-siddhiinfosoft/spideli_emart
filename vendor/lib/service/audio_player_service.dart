@@ -23,16 +23,19 @@ class AudioPlayerService {
     _player;
   }
 
+  /// Bundled copy of the push channel's tone (`res/raw/order_alert.wav`),
+  /// played when no `order_ringtone_url` is configured.
+  static const String fallbackAsset = 'sounds/order_alert.wav';
+
   static Future<void> playSound(bool isPlay) async {
     try {
       final String ringtone = Preferences.getString(Preferences.orderRingtone);
       if (isPlay) {
-        // Nothing to play: an install with no ringtone configured stays silent
-        // rather than throwing on an empty URL.
-        if (ringtone.isEmpty) return;
         if (_player.state != PlayerState.playing) {
           log("PlaySound :: 11 :: $isPlay :: $ringtone");
-          await _player.setSource(UrlSource(ringtone));
+          // An install with no ringtone configured used to stay silent here;
+          // it now plays the same tone as the `new_order` push channel.
+          await _player.setSource(ringtone.isEmpty ? AssetSource(fallbackAsset) : UrlSource(ringtone));
           await _player.setReleaseMode(ReleaseMode.loop);
           await _player.resume();
         }

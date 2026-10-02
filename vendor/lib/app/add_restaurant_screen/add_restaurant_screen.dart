@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:multi_select_flutter/multi_select_flutter.dart';
 import 'package:vendor/app/add_restaurant_screen/qr_code_screen.dart';
 import 'package:vendor/app/add_restaurant_screen/widgets/form_media_widgets.dart';
+import 'package:vendor/app/add_restaurant_screen/widgets/store_location_preview.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/add_restaurant_controller.dart';
@@ -180,11 +181,22 @@ class AddRestaurantScreen extends StatelessWidget {
                                     _changeAddress(context, controller);
                                   }
                                 },
+                                // Read-only: the address, latitude/longitude,
+                                // `coordinates` and `g` are all filled from one
+                                // place pick (report 02#2). Typing the address
+                                // by hand let it disagree with the saved point.
                                 child: FormInput(
                                   label: 'Address'.tr,
                                   controller: controller.addressController.value,
-                                  hint: 'Enter address'.tr,
-                                  enabled: controller.isAddressEnable.value,
+                                  hint: 'Please pick the store location on the map'.tr,
+                                  readOnly: true,
+                                  onTap: () {
+                                    if (controller.addressController.value.text.isEmpty) {
+                                      _pickAddress(context, controller);
+                                    } else {
+                                      _changeAddress(context, controller);
+                                    }
+                                  },
                                   prefixIcon: Icons.location_on_outlined,
                                   suffix: Padding(
                                     padding: const EdgeInsetsDirectional.only(end: DsSpace.xs),
@@ -658,37 +670,64 @@ class _PickedLocationCard extends StatelessWidget {
             final LatLng? point = controller.selectedLocation.value;
             final String address = formatAddress([controller.addressController.value.text]);
             final bool picked = point != null;
+            // A store saved with `""` coordinates (3 live stores, panel-made)
+            // has an address but no position: say so plainly rather than
+            // showing the address as if it were placed, or a pin at 0,0.
+            final bool addressWithoutPosition = !picked && address.isNotEmpty;
             return DsCard.tinted(
               tone: picked ? DsTone.success : DsTone.warning,
               padding: const EdgeInsets.all(DsSpace.md),
               radius: DsRadius.md,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  DsIconWell(icon: picked ? Icons.place_rounded : Icons.wrong_location_outlined, tone: picked ? DsTone.success : DsTone.warning, size: 36),
-                  const DsGap(DsSpace.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(picked ? "Selected store location".tr : "No store location selected yet".tr, style: t.labelSm.withColor(c.textSecondary)),
-                        const DsGap(DsSpace.xxs),
-                        Text(
-                          picked
-                              ? (address.isNotEmpty ? address : "Address not available for this point".tr)
-                              : "Tap the address field, or “change”, to pick the store on the map.".tr,
-                          style: t.bodyStrong,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      DsIconWell(icon: picked ? Icons.place_rounded : Icons.wrong_location_outlined, tone: picked ? DsTone.success : DsTone.warning, size: 36),
+                      const DsGap(DsSpace.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              picked
+                                  ? "Selected store location".tr
+                                  : addressWithoutPosition
+                                  ? "Location not set".tr
+                                  : "No store location selected yet".tr,
+                              style: t.labelSm.withColor(c.textSecondary),
+                            ),
+                            const DsGap(DsSpace.xxs),
+                            Text(
+                              picked
+                                  ? (address.isNotEmpty ? address : "Address not available for this point".tr)
+                                  : addressWithoutPosition
+                                  ? address
+                                  : "Tap the address field, or “change”, to pick the store on the map.".tr,
+                              style: t.bodyStrong,
+                            ),
+                            if (picked) ...[
+                              const DsGap(DsSpace.xxs),
+                              Text(
+                                "${"Coordinates".tr}: ${formatLatLng(point.latitude, point.longitude)}",
+                                style: t.caption.tabular.withColor(c.textMuted),
+                              ),
+                            ],
+                            if (addressWithoutPosition) ...[
+                              const DsGap(DsSpace.xxs),
+                              Text("Tap the address field, or “change”, to pick the store on the map.".tr, style: t.caption.withColor(c.textMuted)),
+                            ],
+                          ],
                         ),
-                        if (picked) ...[
-                          const DsGap(DsSpace.xxs),
-                          Text(
-                            "${"Coordinates".tr}: ${formatLatLng(point.latitude, point.longitude)}",
-                            style: t.caption.tabular.withColor(c.textMuted),
-                          ),
-                        ],
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
+                  if (picked) ...[
+                    const DsGap(DsSpace.md),
+                    StoreLocationPreview(latitude: point.latitude, longitude: point.longitude),
+                  ],
                 ],
               ),
             );

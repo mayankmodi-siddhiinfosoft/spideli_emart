@@ -28,11 +28,11 @@ import 'package:vendor/app/verification_screen/verification_screen.dart';
 import 'package:vendor/app/withdraw_method_setup_screens/withdraw_method_setup_screen.dart';
 import 'package:vendor/app/working_hours_screen/working_hours_screen.dart';
 import 'package:vendor/constant/constant.dart';
+import 'package:vendor/controller/home_controller.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/dash_board_controller.dart';
 import 'package:vendor/controller/profile_controller.dart';
 import 'package:vendor/models/user_model.dart';
-import 'package:vendor/service/audio_player_service.dart';
 import 'package:vendor/themes/custom_dialog_box.dart';
 import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
@@ -456,7 +456,9 @@ class ProfileScreen extends StatelessWidget {
                       negativeString: "Cancel".tr,
                       positiveClick: () async {
                         ShowToastDialog.showLoader("Please wait".tr);
-                        await AudioPlayerService.playSound(false);
+                        // Also ends the new-order listener, which outlives the
+                        // home tab and would otherwise ring after sign-out.
+                        await HomeController.stopOrderAlerts();
                         Constant.userModel!.fcmToken = "";
                         await FireStoreUtils.updateUser(Constant.userModel!);
                         Constant.userModel = null;

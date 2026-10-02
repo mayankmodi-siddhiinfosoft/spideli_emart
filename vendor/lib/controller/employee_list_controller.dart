@@ -24,6 +24,6 @@ class EmployeeListController extends GetxController {
   }
 
   Future<void> updateEmployee(UserModel user) async {
-    await FireStoreUtils.updateDriverUser(user);
+    await FireStoreUtils.setUserActive(user.id, user.active ?? false);
   }
 }

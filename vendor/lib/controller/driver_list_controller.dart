@@ -23,6 +23,6 @@ class DriverListController extends GetxController {
   }
 
   Future<void> updateDriver(UserModel user) async {
-    await FireStoreUtils.updateDriverUser(user);
+    await FireStoreUtils.setUserActive(user.id, user.active ?? false);
   }
 }

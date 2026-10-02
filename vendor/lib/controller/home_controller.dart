@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:vendor/constant/collection_name.dart';
@@ -18,10 +21,41 @@ class HomeController extends GetxController {
 
   RxInt selectedTabIndex = 0.obs;
 
+  /// The live `vendor_orders` listener. New orders reach the store from this
+  /// listener, not from the push, so an order placed or assigned without a
+  /// push still appears and still rings (report 02#12).
+  ///
+  /// Static on purpose: the home tab's controller is disposed when the vendor
+  /// opens another tab, and the listener must keep ringing meanwhile (as it
+  /// always did). Each [getOrder] replaces the previous listener instead of
+  /// stacking another one - they used to accumulate per visit to the home
+  /// tab, and the previous store's kept ringing after switching stores.
+  static StreamSubscription? _orderSubscription;
+
+  /// True while the last snapshot had an order waiting for the store.
+  static bool _ordersWaiting = false;
+
+  /// Brought back to the foreground with an order still waiting: ring again
+  /// (the OS may have stopped the in-app player while it was in the
+  /// background) without waiting for the next Firestore change.
+  static AppLifecycleListener? _lifecycle;
+
+  /// Stops the order listener and the alert, e.g. on sign-out.
+  static Future<void> stopOrderAlerts() async {
+    await _orderSubscription?.cancel();
+    _orderSubscription = null;
+    _ordersWaiting = false;
+    await AudioPlayerService.playSound(false);
+  }
+
   @override
   void onInit() {
-    // TODO: implement onInit
     getUserProfile();
+    _lifecycle ??= AppLifecycleListener(
+      onResume: () {
+        if (_ordersWaiting) AudioPlayerService.playSound(true);
+      },
+    );
     super.onInit();
   }
 
@@ -88,12 +122,19 @@ class HomeController extends GetxController {
   }
 
   Future<void> getOrder() async {
-    FireStoreUtils.fireStore.collection(CollectionName.vendorOrders).where('vendorID', isEqualTo: Constant.userModel!.vendorID).orderBy('createdAt', descending: true).snapshots().listen((
+    await _orderSubscription?.cancel();
+    _orderSubscription = FireStoreUtils.fireStore.collection(CollectionName.vendorOrders).where('vendorID', isEqualTo: Constant.userModel!.vendorID).orderBy('createdAt', descending: true).snapshots().listen((
       event,
     ) async {
       allOrderList.clear();
       for (var element in event.docs) {
-        allOrderList.add(OrderModel.fromJson(element.data()));
+        // One unreadable order used to throw out of the whole listener, so
+        // the lists stopped updating and a new order never rang.
+        try {
+          allOrderList.add(OrderModel.fromJson(element.data()));
+        } catch (e) {
+          log("Skipping unreadable order ${element.id}: $e");
+        }
       }
       // Tabs (spec: New | Preparing | Ready | Completed, then Rejected and
       // Cancelled), mapped onto the existing statuses.
@@ -104,6 +145,7 @@ class HomeController extends GetxController {
       rejectedOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderRejected).toList();
       cancelledOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderCancelled).toList();
       update();
+      _ordersWaiting = newOrderList.isNotEmpty;
       if (newOrderList.isNotEmpty == true) {
         await AudioPlayerService.playSound(true);
       }

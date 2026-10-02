@@ -766,10 +766,10 @@ class HomeScreen extends StatelessWidget {
                 orderModel.markEndedByVendor(action: CancelAction.cancelled, reason: cancellation.reason, code: cancellation.code, byName: _storeName(orderModel, controller));
                 if (orderModel.driverID != null) {
                   UserModel? driverModel = await FireStoreUtils.getUserById(orderModel.driverID ?? '');
-                  driverModel?.orderRequestData?.remove(orderModel.id);
-                  driverModel?.inProgressOrderID?.remove(orderModel.id);
-                  await FireStoreUtils.updateDriverUser(driverModel!);
-                  SendNotification.sendFcmMessage(Constant.driverCancelled, driverModel.fcmToken.toString(), {'title': 'Cancelled Order'});
+                  await FireStoreUtils.releaseDriverOrder(orderModel.driverID, orderModel.id);
+                  if ((driverModel?.fcmToken ?? '').isNotEmpty) {
+                    SendNotification.sendFcmMessage(Constant.driverCancelled, driverModel!.fcmToken.toString(), {'title': 'Cancelled Order'});
+                  }
                 }
                 if (orderModel.cashback?.id != null && orderModel.cashback?.cashbackValue != null) {
                   await FireStoreUtils.deleteCashbackRedeem(orderModel);
@@ -1359,12 +1359,7 @@ class HomeScreen extends StatelessWidget {
 
       // The store's own delivery man is free for the next order.
       if ((orderModel.driverID ?? '').isNotEmpty) {
-        UserModel? driverModel = await FireStoreUtils.getUserById(orderModel.driverID!);
-        if (driverModel != null) {
-          driverModel.inProgressOrderID?.remove(orderModel.id);
-          driverModel.orderRequestData?.remove(orderModel.id);
-          await FireStoreUtils.updateDriverUser(driverModel);
-        }
+        await FireStoreUtils.releaseDriverOrder(orderModel.driverID, orderModel.id);
       }
 
       if (notificationType != null) {
@@ -1465,12 +1460,7 @@ class HomeScreen extends StatelessWidget {
                         // ever and they counted as "Occupied".
                         final String? previousDriverId = orderModel.driverID;
                         if ((previousDriverId ?? '').isNotEmpty && previousDriverId != controller.selectDriverUser.value.id) {
-                          UserModel? previous = await FireStoreUtils.getUserById(previousDriverId!);
-                          if (previous != null) {
-                            previous.inProgressOrderID?.remove(orderModel.id);
-                            previous.orderRequestData?.remove(orderModel.id);
-                            await FireStoreUtils.updateDriverUser(previous);
-                          }
+                          await FireStoreUtils.releaseDriverOrder(previousDriverId, orderModel.id);
                         }
 
                         orderModel.notes = "";
@@ -1485,7 +1475,9 @@ class HomeScreen extends StatelessWidget {
                         }
 
                         final bool isAssigned = await FireStoreUtils.updateOrder(orderModel);
-                        await FireStoreUtils.updateDriverUser(controller.selectDriverUser.value);
+                        // Only the driver's order list: the store's copy of
+                        // the rest of their profile may be out of date.
+                        if (isAssigned) await FireStoreUtils.addDriverOrder(controller.selectDriverUser.value.id, orderModel.id);
                         await FireStoreUtils.restaurantVendorWalletSet(orderModel);
                         SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author!.fcmToken.toString(), {});
                         SendNotification.sendFcmMessage(Constant.newDeliveryOrder, orderModel.driver?.fcmToken ?? '', {});
