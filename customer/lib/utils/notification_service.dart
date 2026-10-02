@@ -7,8 +7,10 @@ import 'package:customer/screen_ui/multi_vendor_service/chat_screens/driver_inbo
 import 'package:customer/screen_ui/multi_vendor_service/chat_screens/restaurant_inbox_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/dash_board_screens/dash_board_screen.dart';
 import 'package:customer/service/fire_store_utils.dart';
+import 'package:customer/utils/delivery_code_push.dart';
 import 'package:customer/utils/preferences.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
 import 'package:get/get_core/src/get_main.dart';
@@ -36,7 +38,7 @@ class NotificationService {
             final data = jsonDecode(response.payload!);
             final String type = data['type'] ?? '';
             final String role = data['chatType'] ?? '';
-            handleMessageClick(type: type, role: role, isBgApp: false);
+            handleMessageClick(type: type, role: role, isBgApp: false, data: data is Map ? Map<String, dynamic>.from(data) : const {});
           }
         },
       );
@@ -49,7 +51,7 @@ class NotificationService {
     if (initialMessage != null) {
       final String type = initialMessage.data['type'] ?? '';
       final String role = initialMessage.data['chatType'] ?? '';
-      handleMessageClick(type: type, role: role, isBgApp: true);
+      handleMessageClick(type: type, role: role, isBgApp: true, data: initialMessage.data, coldStart: true);
     }
     if (initialMessage != null) {
       FirebaseMessaging.onBackgroundMessage((message) => firebaseMessageBackgroundHandle(message));
@@ -61,13 +63,20 @@ class NotificationService {
         log(message.notification.toString());
         // display(message);
       }
+      // "Your order has arrived — open the app for your delivery code"
+      // (POD-OTP-CONTRACT) is shown in the foreground too. iOS already
+      // presents it (setForegroundNotificationPresentationOptions); Android
+      // does not, so it is shown locally there.
+      if (message.data['type'] == DeliveryCodePush.type && defaultTargetPlatform == TargetPlatform.android) {
+        display(message);
+      }
     });
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage? message) async {
       log("::::::::::::onMessageOpenedApp:::::::::::::::::");
       if (message != null) {
         final String type = message.data['type'] ?? '';
         final String role = message.data['chatType'] ?? '';
-        handleMessageClick(type: type, role: role, isBgApp: true);
+        handleMessageClick(type: type, role: role, isBgApp: true, data: message.data);
       }
     });
     log("::::::::::::Permission authorized:::::::::::::::::");
@@ -129,7 +138,12 @@ class NotificationService {
   //   }
   // }
 
-  Future<void> handleMessageClick({required String type, required String role, required bool isBgApp}) async {
+  Future<void> handleMessageClick({required String type, required String role, required bool isBgApp, Map<String, dynamic> data = const {}, bool coldStart = false}) async {
+    // Opens that order's details with the code card; the payload has no code.
+    if (type == DeliveryCodePush.type) {
+      await DeliveryCodePush.handleTap(data, coldStart: coldStart);
+      return;
+    }
     final String uid = FireStoreUtils.getCurrentUid();
     if (type == 'admin_chat' && uid.isNotEmpty) {
       await Preferences.setBoolean(Preferences.isClickOnNotification, true);
@@ -150,7 +164,7 @@ class NotificationService {
 
   void display(RemoteMessage message) async {
     log('Got a message whilst in the foreground!');
-    log('Message data: ${message.notification!.body.toString()}');
+    log('Message data: ${message.notification?.body.toString()}');
     try {
       AndroidNotificationChannel channel = const AndroidNotificationChannel('0', 'spideli customer', description: 'Show spideli Notification', importance: Importance.max);
       AndroidNotificationDetails notificationDetails = AndroidNotificationDetails(
@@ -165,8 +179,8 @@ class NotificationService {
       NotificationDetails notificationDetailsBoth = NotificationDetails(android: notificationDetails, iOS: darwinNotificationDetails);
       await FlutterLocalNotificationsPlugin().show(
         id: 0,
-        title: message.notification!.title,
-        body: message.notification!.body,
+        title: message.notification?.title ?? (message.data['type'] == DeliveryCodePush.type ? 'Your order has arrived'.tr : null),
+        body: message.notification?.body ?? (message.data['type'] == DeliveryCodePush.type ? 'Open the app for your delivery code'.tr : null),
         notificationDetails: notificationDetailsBoth,
         payload: jsonEncode(message.data),
       );

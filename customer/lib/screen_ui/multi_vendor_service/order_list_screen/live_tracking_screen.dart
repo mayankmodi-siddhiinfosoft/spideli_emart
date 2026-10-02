@@ -1,6 +1,7 @@
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/live_tracking_controller.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/widget/delivery_code_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart' as flutterMap;
 import 'package:get/get.dart';
@@ -97,6 +98,23 @@ class LiveTrackingScreen extends StatelessWidget {
                         ),
                       ),
                     ],
+                  ),
+                ),
+              ),
+              // The delivery code (POD-OTP-CONTRACT) floats over the map while
+              // the delivery partner waits for it; nothing is drawn otherwise.
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: SafeArea(
+                  top: false,
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 520),
+                      child: DeliveryCodeWatcher(order: controller.orderModel.value, padding: const EdgeInsets.all(DsSpace.md)),
+                    ),
                   ),
                 ),
               ),

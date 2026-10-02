@@ -1,4 +1,6 @@
 import 'package:customer/widget/cancellation_info_view.dart';
+import 'package:customer/widget/delivery_code_card.dart';
+import 'package:customer/widget/pod_info_view.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/order_details_controller.dart';
 import 'package:customer/models/cart_product_model.dart';
@@ -107,6 +109,14 @@ class OrderDetailsScreen extends StatelessWidget {
                           pulse: status == Constant.orderShipped || status == Constant.orderInTransit,
                         ),
                       ),
+
+                      // ---------- delivery code (POD-OTP-CONTRACT) ----------
+                      // Live while the driver / store waits for it; gone once
+                      // verified, expired → "ask for a new one".
+                      DeliveryCodeWatcher(order: order, padding: const EdgeInsets.only(top: DsSpace.md)),
+
+                      // ---------- proof of delivery, once verified ----------
+                      PodInfoBlock(pod: order.pod, padding: const EdgeInsets.only(top: DsSpace.md)),
 
                       // ---------- who cancelled / rejected and why ----------
                       CancellationInfoBlock(

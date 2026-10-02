@@ -1,4 +1,5 @@
 import 'package:customer/widget/cancellation_info_view.dart';
+import 'package:customer/widget/pod_info_view.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/order_controller.dart';
 import 'package:customer/models/cart_product_model.dart';
@@ -253,6 +254,8 @@ class _OrderCard extends StatelessWidget {
                       ),
                       // "Cancelled by Restaurant · <reason>" on cancelled / rejected orders.
                       CancellationInfoLine(status: status, fields: orderModel, vendorWord: hideTrack ? 'Store' : 'Restaurant', padding: const EdgeInsets.only(top: DsSpace.xs)),
+                      // "Delivered · OTP Verified · <time> · <delivery man>" once the delivery code was verified.
+                      PodInfoLine(pod: orderModel.pod),
                     ],
                   ),
                 ),

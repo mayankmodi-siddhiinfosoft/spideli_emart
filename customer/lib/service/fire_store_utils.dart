@@ -1125,10 +1125,12 @@ class FireStoreUtils {
     bool isAdded = false;
     // vendor_orders.regionId = the store's region (spec 18.12).
     orderModel.regionId ??= RegionService.regionOfVendor(orderModel.vendor) ?? await RegionService.resolveVendorRegion(orderModel.vendorID);
+    // Known fields only, so a save never clears what the Driver / Store app
+    // wrote meanwhile (e.g. the proof-of-delivery `pod`, POD-OTP-CONTRACT).
     await fireStore
         .collection(CollectionName.vendorOrders)
         .doc(orderModel.id)
-        .set(orderModel.toJson())
+        .setKnownFields(orderModel.toJson())
         .then((value) {
           isAdded = true;
         })

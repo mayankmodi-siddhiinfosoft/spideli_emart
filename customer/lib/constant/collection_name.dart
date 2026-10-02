@@ -23,6 +23,9 @@ class CollectionName {
   static const String notifications = "notifications";
   static const String payouts = "payouts";
   static const String vendorOrders = "vendor_orders";
+
+  /// Delivery code per order (POD-OTP-CONTRACT). Read-only for the customer.
+  static const String orderPod = "order_pod";
   static const String reviewAttributes = "review_attributes";
   static const String settings = "settings";
   static const String story = "story";

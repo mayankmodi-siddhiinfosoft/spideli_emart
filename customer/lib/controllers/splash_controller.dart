@@ -7,6 +7,7 @@ import 'package:customer/models/user_model.dart';
 import 'package:customer/screen_ui/maintenance_mode_screen/maintenance_mode_screen.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
 import 'package:customer/service/localization_service.dart';
+import 'package:customer/utils/delivery_code_push.dart';
 import 'package:customer/utils/notification_service.dart';
 import 'package:customer/utils/preferences.dart';
 import 'package:customer/utils/wholesale_entitlement.dart';
@@ -65,6 +66,9 @@ class SplashController extends GetxController {
                       Constant.selectedLocation = userModel.shippingAddress!.first;
                     }
                     Get.offAll(const ServiceListScreen());
+                    // A delivery-code push that launched the app opens its
+                    // order now that the customer is in.
+                    DeliveryCodePush.markAppReady();
                   } else {
                     Get.offAll(const LocationPermissionScreen());
                   }

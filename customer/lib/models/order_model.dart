@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:customer/models/cancellation_fields.dart';
+import 'package:customer/models/order_pod.dart';
 import 'package:customer/models/tax_model.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/models/vendor_model.dart';
@@ -51,6 +52,11 @@ class OrderModel with CancellationFields {
   bool? isFreeDelivery;
   bool? packagingChargeEnable;
 
+  /// Proof of delivery (POD-OTP-CONTRACT), written by the Driver / Store app.
+  /// Null on orders from before POD. Read-only here: written back only when
+  /// set, so no customer save clears it.
+  OrderPod? pod;
+
   OrderModel({
     this.address,
     this.status,
@@ -91,6 +97,7 @@ class OrderModel with CancellationFields {
     this.isPosOrder,
     this.isFreeDelivery,
     this.packagingChargeEnable,
+    this.pod,
   });
 
   OrderModel.fromJson(Map<String, dynamic> json) {
@@ -161,6 +168,7 @@ class OrderModel with CancellationFields {
     isFreeDelivery = json['isFreeDelivery'] ?? false;
     isPosOrder = json['isPosOrder'] ?? false;
     packagingChargeEnable = json['packagingChargeEnable'] ?? false;
+    pod = OrderPod.tryParse(json['pod']);
     readCancellation(json);
   }
 
@@ -225,6 +233,7 @@ class OrderModel with CancellationFields {
     data['isPosOrder'] = isPosOrder ?? false;
     data['packagingChargeEnable'] = packagingChargeEnable ?? false;
     if (regionId != null) data['regionId'] = regionId;
+    if (pod != null) data['pod'] = pod!.toJson();
     writeCancellation(data);
     return data;
   }

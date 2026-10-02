@@ -1,7 +1,13 @@
+import 'dart:async';
+
+import 'package:customer/constant/collection_name.dart';
+import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/cart_product_model.dart';
 import 'package:customer/models/order_model.dart';
+import 'package:customer/widget/delivery_code_card.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get/get.dart';
 
 import '../service/cart_provider.dart';
@@ -19,13 +25,50 @@ class OrderDetailsController extends GetxController {
 
   Rx<OrderModel> orderModel = OrderModel().obs;
 
+  /// Follows the order while a delivery code may be in play, so the proof of
+  /// delivery (`pod`) and the status show as soon as the driver / store
+  /// verifies the code (POD-OTP-CONTRACT). Read-only.
+  StreamSubscription? _podOrderSub;
+
+  @override
+  void onClose() {
+    _podOrderSub?.cancel();
+    super.onClose();
+  }
+
   Future<void> getArgument() async {
     dynamic argumentData = Get.arguments;
     if (argumentData != null) {
       orderModel.value = argumentData['orderModel'];
     }
     calculatePrice();
+    _followPod();
     update();
+  }
+
+  void _followPod() {
+    String? uid;
+    try {
+      uid = FirebaseAuth.instance.currentUser?.uid;
+    } catch (_) {
+      uid = null;
+    }
+    if (!DeliveryCodeWatcher.shouldWatch(orderModel.value, uid)) return;
+    final String orderId = orderModel.value.id!.trim();
+    _podOrderSub = FireStoreUtils.fireStore.collection(CollectionName.vendorOrders).doc(orderId).snapshots().listen((snap) {
+      final data = snap.data();
+      if (data == null) return;
+      final OrderModel fresh = OrderModel.fromJson(data);
+      final OrderModel current = orderModel.value;
+      final bool podChanged = fresh.pod != null && fresh.pod!.status != current.pod?.status;
+      final bool statusChanged = fresh.status != null && fresh.status != current.status;
+      if (!podChanged && !statusChanged) return;
+      // Only the delivery outcome is taken over; prices, items and everything
+      // else on screen stay as they were opened.
+      if (fresh.pod != null) current.pod = fresh.pod;
+      if (fresh.status != null) current.status = fresh.status;
+      orderModel.refresh();
+    }, onError: (_) {});
   }
 
   RxDouble totalDistance = 0.0.obs;
