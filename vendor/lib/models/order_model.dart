@@ -5,6 +5,7 @@ import 'package:vendor/models/tax_model.dart';
 import 'package:vendor/models/user_model.dart';
 import 'package:vendor/models/vendor_model.dart';
 import 'package:vendor/utils/cancellation.dart';
+import 'package:vendor/utils/pod_otp.dart';
 
 class OrderModel {
   ShippingAddress? address;
@@ -74,6 +75,11 @@ class OrderModel {
   /// server's clock instead of this device's. Cleared once that write lands.
   bool stampCancelledAtOnServer = false;
 
+  /// Proof of delivery by customer OTP (`.claude/POD-OTP-CONTRACT.md`): who
+  /// verified the delivery code, who delivered and when. Null on every order
+  /// from before the contract. Never holds the code itself.
+  OrderPod? pod;
+
   OrderModel({
     this.address,
     this.status,
@@ -120,6 +126,7 @@ class OrderModel {
     this.cancelledByName,
     this.cancelledAt,
     this.cancelAction,
+    this.pod,
   });
 
   OrderModel.fromJson(Map<String, dynamic> json) {
@@ -199,6 +206,7 @@ class OrderModel {
     cancelledAt = parseTimestamp(json['cancelledAt'] ?? json['canceledAt']);
     cancelAction = firstText(json, const ['cancelAction']);
     driverRejections = DriverRejection.listFrom(json['driverRejections']);
+    pod = OrderPod.fromJson(json['pod']);
   }
 
   /// Records that the store [action]ed this order ("cancelled" / "rejected")
@@ -303,6 +311,12 @@ class OrderModel {
     } else if (cancelledAt != null) {
       data['cancelledAt'] = cancelledAt;
     }
+    // Proof of delivery: written only once verified (a verified record is
+    // final, so echoing it can never undo anything). A pending record is
+    // written only by PodOtpService's transaction, and a missing one is left
+    // out, so a later save of this order never clears or rolls back a `pod`
+    // another app wrote.
+    if (pod != null && pod!.isVerified) data['pod'] = pod!.toJson();
     return data;
   }
 }

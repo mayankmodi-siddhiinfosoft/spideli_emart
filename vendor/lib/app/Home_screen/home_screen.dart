@@ -35,6 +35,9 @@ import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/region_service.dart';
 import 'package:vendor/widget/cancel_reason_sheet.dart';
 import 'package:vendor/widget/cancellation_block.dart';
+import 'package:vendor/widget/delivery_otp_sheet.dart';
+import 'package:vendor/widget/pod_block.dart';
+import 'package:vendor/utils/pod_otp.dart';
 import 'package:vendor/widget/wholesale_tag.dart';
 
 /// Store dashboard: a brand hero (who is signed in, the current store with its
@@ -964,6 +967,13 @@ class HomeScreen extends StatelessWidget {
               padding: const EdgeInsets.only(top: DsSpace.sm),
               child: CancellationLine(details: orderModel.cancellation),
             ),
+          // Proof of delivery: "Delivered · OTP Verified", when and by whom.
+          // Nothing for an order from before the contract.
+          if (OrderPod.showsVerified(orderModel.pod))
+            Padding(
+              padding: const EdgeInsets.only(top: DsSpace.sm),
+              child: PodVerifiedLine(pod: orderModel.pod!),
+            ),
         ],
       ),
     );
@@ -1114,6 +1124,12 @@ class HomeScreen extends StatelessWidget {
                 child: DsButton.ghost(label: "View Remarks".tr, icon: Icons.sticky_note_2_outlined, size: DsButtonSize.sm, onPressed: onViewRemarks),
               ),
             ),
+          // A delivery code is out and the order is still on its way.
+          if (OrderPod.showsWaiting(orderModel.pod, orderModel.status))
+            const Padding(
+              padding: EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, 0),
+              child: PodWaitingNote(),
+            ),
           Padding(
             padding: EdgeInsets.fromLTRB(DsSpace.lg, actions == null ? 0 : DsSpace.md, DsSpace.lg, DsSpace.lg),
             child: actions ?? const SizedBox.shrink(),
@@ -1242,7 +1258,10 @@ class HomeScreen extends StatelessWidget {
     if (storeDelivers) {
       final bool handedOver = HomeController.readyStatuses.contains(status) || status == Constant.driverAccepted;
       if (hasDriver && handedOver) {
-        return DsButton.primary(label: "Mark as Completed".tr, icon: Icons.task_alt_rounded, onPressed: () => completeOrder(orderModel, controller));
+        // Proof of delivery (3 Oct 2026 contract): only the customer's
+        // delivery code completes it. The existing completion then runs
+        // unchanged, once.
+        return DsButton.primary(label: "Mark as Completed".tr, icon: Icons.task_alt_rounded, onPressed: () => completeSelfDelivery(orderModel, controller));
       }
       // Not handed over yet (or handed over with no driver on the order):
       // assign from the card itself instead of having to open the order
@@ -1261,6 +1280,17 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  /// "Mark as Completed" on an order the store delivers itself: the
+  /// customer's delivery code is verified first ([DeliveryOtpFlow]), then the
+  /// existing [completeOrder] runs. Backing out of the code leaves the order
+  /// untouched; an order verified before (its completion failed) skips the
+  /// code and completes.
+  Future<void> completeSelfDelivery(OrderModel orderModel, HomeController controller) async {
+    final bool verified = await DeliveryOtpFlow.run(orderModel);
+    if (!verified) return;
+    await completeOrder(orderModel, controller);
+  }
+
   /// Marks [orderModel] delivered: credits the cashback, writes the order,
   /// credits the store (idempotent), frees the store's delivery man and tells
   /// the customer. Every failure is surfaced - this handler used to be the one
@@ -1269,9 +1299,14 @@ class HomeScreen extends StatelessWidget {
     ShowToastDialog.showLoader('Please wait...'.tr);
     try {
       orderModel.status = Constant.orderCompleted;
-      if (orderModel.cashback?.cashbackValue != null && orderModel.cashback?.id != null) {
+      // One cashback row per order, keyed by the order: a retried completion
+      // (e.g. after the order write below failed) must not pay it twice.
+      final String cashbackRowId = 'cashback_${orderModel.id}';
+      final bool cashbackAlreadyPaid =
+          orderModel.id != null && (await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(cashbackRowId).get()).exists;
+      if (!cashbackAlreadyPaid && orderModel.cashback?.cashbackValue != null && orderModel.cashback?.id != null) {
         WalletTransactionModel transactionModel = WalletTransactionModel(
-          id: Constant.getUuid(),
+          id: orderModel.id != null ? cashbackRowId : Constant.getUuid(),
           amount: double.parse("${orderModel.cashback?.cashbackValue ?? 0.0}"),
           date: Timestamp.now(),
           paymentMethod: "Cashback Amount",

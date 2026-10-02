@@ -10,7 +10,9 @@ import 'package:vendor/controller/order_details_controller.dart';
 import 'package:vendor/models/cart_product_model.dart';
 import 'package:vendor/models/order_model.dart';
 import 'package:vendor/utils/cancellation.dart';
+import 'package:vendor/utils/pod_otp.dart';
 import 'package:vendor/widget/cancellation_block.dart';
+import 'package:vendor/widget/pod_block.dart';
 import 'package:vendor/widget/wholesale_tag.dart';
 
 /// Order detail: a status hero, customer / items / bill / driver sections
@@ -283,7 +285,17 @@ class OrderDetailsScreen extends StatelessWidget {
         // A live order a driver passed on still lists who passed and why.
         final Widget? driverPasses = !ended && order.driverRejections.isNotEmpty ? DsCard(child: DriverPassesList(passes: order.driverRejections)) : null;
 
+        // Proof of delivery (3 Oct 2026 contract): who delivered and when
+        // the customer's code was verified, or that a code is awaited. An
+        // order from before the contract has no `pod` and shows neither.
+        final Widget? proofOfDelivery = OrderPod.showsVerified(order.pod)
+            ? PodVerifiedBlock(pod: order.pod!)
+            : OrderPod.showsWaiting(order.pod, order.status)
+            ? const PodWaitingNote()
+            : null;
+
         final List<Widget> secondaryColumn = [
+          if (proofOfDelivery != null) section("Proof of delivery".tr, Icons.verified_outlined, proofOfDelivery),
           if (cancellation != null) section(order.cancellation.isRejected ? "Rejection".tr : "Cancellation".tr, Icons.cancel_outlined, cancellation),
           if (driverPasses != null) section("Passed by drivers".tr, Icons.delivery_dining_outlined, driverPasses),
           section("Bill details".tr, Icons.payments_outlined, bill),

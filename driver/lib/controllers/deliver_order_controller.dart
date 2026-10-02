@@ -10,6 +10,7 @@ import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/services/delivery_pod_rules.dart';
 import 'package:driver/services/delivery_pod_service.dart';
 import 'package:driver/services/vendor_wallet_service.dart';
+import 'package:driver/constant/collection_name.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
@@ -112,9 +113,15 @@ class DeliverOrderController extends GetxController {
     // credit the STORE. updateWallateAmount() only moves the driver's balance.
     // Idempotent, and a no-op when the Store app already credited this order.
     await VendorWalletService.creditStoreForCompletedOrder(orderModel.value);
-    if (orderModel.value.cashback?.cashbackValue != null && orderModel.value.cashback?.id != null) {
+    // One cashback row per order, keyed by the order and shared with the Store
+    // app: a retried completion, or both apps completing, cannot pay it twice.
+    final String? orderId = orderModel.value.id;
+    final String cashbackRowId = 'cashback_$orderId';
+    final bool cashbackAlreadyPaid =
+        orderId != null && (await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(cashbackRowId).get()).exists;
+    if (!cashbackAlreadyPaid && orderModel.value.cashback?.cashbackValue != null && orderModel.value.cashback?.id != null) {
       WalletTransactionModel transactionModel = WalletTransactionModel(
-          id: Constant.getUuid(),
+          id: orderId != null ? cashbackRowId : Constant.getUuid(),
           amount: double.parse("${orderModel.value.cashback?.cashbackValue ?? 0.0}"),
           date: Timestamp.now(),
           paymentMethod: "Cashback Amount",
