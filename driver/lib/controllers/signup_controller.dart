@@ -215,6 +215,16 @@ class SignupController extends GetxController {
     }
   }
 
+  /// Save-time guard: the chosen zone must serve the chosen region. The picker
+  /// already enforces this; this stops a stale selection slipping through.
+  bool get zoneServesSelectedRegion {
+    final String? regionId = selectedRegion.value?.id;
+    final String? zoneId = selectedZone.value.id;
+    if (regionId == null || regionId.isEmpty || zoneId == null) return true;
+    final ZoneModel? zone = allZoneList.where((z) => z.id == zoneId).firstOrNull;
+    return zone == null || zone.belongsToRegion(regionId);
+  }
+
   /// Called by the management-zone dropdown.
   void onRegionChanged(RegionModel? region) {
     selectedRegion.value = region;

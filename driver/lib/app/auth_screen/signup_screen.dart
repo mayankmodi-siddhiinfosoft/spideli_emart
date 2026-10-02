@@ -465,10 +465,13 @@ class SignupScreen extends StatelessWidget {
                         ShowToastDialog.showToast("Please enter Confirm password".tr);
                       } else if (controller.type.value != "google" && controller.type.value != "apple" && controller.type.value != "mobileNumber" && controller.passwordEditingController.value.text != controller.conformPasswordEditingController.value.text) {
                         ShowToastDialog.showToast("Password and Confirm password doesn't match".tr);
+                      } else if (controller.regionRequired && controller.selectedRegion.value == null) {
+                        // Region first: the zone list is built from it.
+                        ShowToastDialog.showToast("Please select your management zone".tr);
                       } else if (controller.selectedValue.value == "Individual" && controller.selectedZone.value.id == null) {
                         ShowToastDialog.showToast("Please select zone".tr);
-                      } else if (controller.regionRequired && controller.selectedRegion.value == null) {
-                        ShowToastDialog.showToast("Please select your management zone".tr);
+                      } else if (controller.selectedValue.value == "Individual" && !controller.zoneServesSelectedRegion) {
+                        ShowToastDialog.showToast("The selected zone does not belong to the selected management zone.".tr);
                       } else if (controller.isCompany && controller.companyNameController.value.text.trim().isEmpty) {
                         ShowToastDialog.showToast("Please enter company name".tr);
                       } else if (controller.isCompany &&
