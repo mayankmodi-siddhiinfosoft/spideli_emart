@@ -176,9 +176,10 @@ class DriverAssignmentWatcher {
 
     for (final doc in snap.docs) {
       final Map<String, dynamic> data = doc.data();
-      final List<dynamic> rejectedBy = data['rejectedByDrivers'] is List ? data['rejectedByDrivers'] as List : const [];
-      // Same rule as the home screens: a driver never sees an order they rejected.
-      if (rejectedBy.contains(uid)) continue;
+      // No `rejectedByDrivers` filter here: every record this query returns
+      // NAMES this driver in an accepted state, i.e. it was handed to them
+      // after any earlier rejection (cancelling an accepted job clears the
+      // driver field). Skipping it left such a hand assignment invisible.
       final String id = (data['id'] ?? doc.id).toString();
       held[id] = _Assigned(id, _latest([data['createdAt'], data['scheduleTime'], data['scheduleDateTime']]));
 

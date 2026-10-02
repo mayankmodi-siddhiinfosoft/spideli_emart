@@ -1550,6 +1550,19 @@ class FireStoreUtils {
     }
   }
 
+  /// The driver's position, and nothing else: `location` and `rotation`,
+  /// field-level. The location listeners used to read the whole user document
+  /// and write it all back on every update; any write that landed in between
+  /// — the Store app adding an order to `inProgressOrderID`, dispatch adding
+  /// an offer to `orderRequestData` / `ordercabRequestData`, the assignment
+  /// watcher's `arrayUnion` — was rolled back by that stale copy.
+  static Future<bool> updateUserLocation(String userId, {double? latitude, double? longitude, double? heading}) {
+    return updateUserFields(userId, {
+      'location': UserLocation(latitude: latitude, longitude: longitude).toJson(),
+      if (heading != null) 'rotation': heading,
+    });
+  }
+
   /// Known-fields update of a `users` document.
   static Future<bool> updateUserFields(String userId, Map<String, dynamic> data) async {
     try {

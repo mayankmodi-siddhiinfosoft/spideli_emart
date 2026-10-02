@@ -5,6 +5,7 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/controllers/home_screen_multiple_order_controller.dart';
 import 'package:driver/models/order_model.dart';
+import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:driver/utils/fire_store_utils.dart';
@@ -30,12 +31,29 @@ class HomeScreenMultipleOrder extends StatelessWidget {
         builder: (controller) {
           final bool isLoading = controller.isLoading.value;
           final bool isFreelanceDriver = controller.driverModel.value.vendorID?.isEmpty == true;
+          // tryParse: `double.parse` threw in build on a missing balance or an
+          // empty setting, and the whole screen (both tabs) was an error.
           final bool walletTooLow = Constant.userModel?.vendorID?.isEmpty == true &&
-              double.parse(controller.driverModel.value.walletAmount.toString()) < double.parse(Constant.minimumDepositToRideAccept);
+              (double.tryParse('${controller.driverModel.value.walletAmount ?? 0}') ?? 0) < (double.tryParse(Constant.minimumDepositToRideAccept) ?? 0);
+          final String? uid = controller.driverModel.value.id;
+          final Map<String, OrderModel> orders = Map<String, OrderModel>.from(controller.orders);
+          final bool ordersLoaded = controller.ordersLoaded.value;
           final List<dynamic> newOrders = controller.newOrder.toList();
-          final List<dynamic> activeOrders = controller.activeOrder.toList();
-          final bool documentsPending =
-              Constant.userModel?.vendorID?.isEmpty == true && Constant.userModel?.isDocumentVerify == false && controller.driverModel.value.isAutoVerify == false;
+          // Only what the driver can still act on: a finished, cancelled or
+          // reassigned id left in `inProgressOrderID` is not an active order.
+          final List<dynamic> activeOrders = controller.activeOrder.where((id) {
+            final OrderModel? order = orders[id.toString()];
+            if (order == null) return !ordersLoaded;
+            return AssignedDeliveryOrders.isWorkableFor(order, uid) ||
+                (AssignedDeliveryOrders.isOfferFor(order, uid) && AssignedDeliveryOrders.isNamedFor(order, uid));
+          }).toList();
+          // The verification gate is about receiving offers; it never hides an
+          // order that is already assigned to this driver.
+          final bool documentsPending = activeOrders.isEmpty &&
+              Constant.userModel?.vendorID?.isEmpty == true &&
+              Constant.userModel?.isDocumentVerify == false &&
+              controller.driverModel.value.isAutoVerify == false;
+          final bool hasNewTab = Constant.userModel?.vendorID?.isEmpty == true;
 
           return DsScaffold(
             body: isLoading
@@ -56,7 +74,11 @@ class HomeScreenMultipleOrder extends StatelessWidget {
                             ),
                           Expanded(
                             child: DefaultTabController(
-                              length: Constant.userModel?.vendorID?.isEmpty == true ? 2 : 1,
+                              length: hasNewTab ? 2 : 1,
+                              // An assigned order with no new request waiting
+                              // opens on "Active" — on "New" it read as "no
+                              // order", and nothing on that tab can be acted on.
+                              initialIndex: hasNewTab && newOrders.isEmpty && activeOrders.isNotEmpty ? 1 : 0,
                               child: Column(
                                 children: [
                                   DsTabBar(
@@ -64,13 +86,13 @@ class HomeScreenMultipleOrder extends StatelessWidget {
                                       controller.selectedTabIndex.value = value;
                                     },
                                     tabs: [
-                                      if (Constant.userModel?.vendorID?.isEmpty == true) "New".tr,
-                                      "Active".tr,
+                                      if (hasNewTab) newOrders.isEmpty ? "New".tr : "${"New".tr} (${newOrders.length})",
+                                      activeOrders.isEmpty ? "Active".tr : "${"Active".tr} (${activeOrders.length})",
                                     ],
                                   ),
                                   Expanded(
                                     child: TabBarView(
-                                      children: Constant.userModel?.vendorID?.isEmpty == true
+                                      children: hasNewTab
                                           ? [
                                               _newOrderTab(context, controller, newOrders, isFreelanceDriver),
                                               _activeOrderTab(context, controller, activeOrders, isFreelanceDriver),
@@ -197,40 +219,33 @@ class HomeScreenMultipleOrder extends StatelessWidget {
     );
   }
 
-  /// Loads one order and applies the zone / region rules exactly as before;
-  /// only the placeholder while it loads changed (skeleton instead of a gap).
+  /// One order from the controller's live map, with the zone / region rule
+  /// applied exactly as before. No per-build read any more (see
+  /// [HomeScreenMultipleOrderController.orders]).
   Widget _orderFuture({
     required BuildContext context,
     required HomeScreenMultipleOrderController controller,
     required dynamic orderId,
     required Widget Function(OrderModel orderModel, double kilometer) builder,
   }) {
-    return FutureBuilder(
-        future: FireStoreUtils.getOrderById(orderId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const DsSkeletonCard(height: 180);
-          } else {
-            if (snapshot.hasError) {
-              return DsErrorState(message: 'Error: ${snapshot.error}', compact: true);
-            } else if (snapshot.data == null) {
-              return const SizedBox();
-            } else if (snapshot.data!.status == Constant.driverPending &&
-                snapshot.data!.id != null &&
-                controller.driverModel.value.id != null &&
-                RegionService.isOutOfDriverRegion(snapshot.data!.regionId, driver: controller.driverModel.value)) {
-              // Zone-bound (spec 9.1): not offered; declined so dispatch moves on.
-              FireStoreUtils.declineOutOfRegionVendorOrder(snapshot.data!.id!, controller.driverModel.value.id!);
-              return const SizedBox();
-            } else {
-              OrderModel orderModel = snapshot.data!;
-              double distanceInMeters = Geolocator.distanceBetween(orderModel.vendor!.latitude ?? 0.0, orderModel.vendor!.longitude ?? 0.0,
-                  orderModel.address!.location!.latitude ?? 0.0, orderModel.address!.location!.longitude ?? 0.0);
-              double kilometer = distanceInMeters / 1000;
-              return builder(orderModel, kilometer);
-            }
-          }
-        });
+    final OrderModel? orderModel = controller.orders[orderId.toString()];
+    if (orderModel == null) {
+      return controller.ordersLoaded.value ? const SizedBox() : const DsSkeletonCard(height: 180);
+    }
+    if (orderModel.status == Constant.driverPending &&
+        orderModel.id != null &&
+        controller.driverModel.value.id != null &&
+        !AssignedDeliveryOrders.isNamedFor(orderModel, controller.driverModel.value.id) &&
+        RegionService.isOutOfDriverRegion(orderModel.regionId, driver: controller.driverModel.value)) {
+      // Zone-bound (spec 9.1): not offered; declined so dispatch moves on.
+      FireStoreUtils.declineOutOfRegionVendorOrder(orderModel.id!, controller.driverModel.value.id!);
+      return const SizedBox();
+    }
+    // `vendor!` / `address!.location!` threw here for a record without them,
+    // and the card (with its buttons) became an error box.
+    final double distanceInMeters = Geolocator.distanceBetween(orderModel.vendor?.latitude ?? 0.0, orderModel.vendor?.longitude ?? 0.0,
+        orderModel.address?.location?.latitude ?? 0.0, orderModel.address?.location?.longitude ?? 0.0);
+    return builder(orderModel, distanceInMeters / 1000);
   }
 
   Widget _activeOrderCard(BuildContext context, OrderModel orderModel, double kilometer, bool isFreelanceDriver) {
@@ -275,20 +290,20 @@ class HomeScreenMultipleOrder extends StatelessWidget {
     return [
       DsRouteStop(
         kind: DsStopKind.pickup,
-        label: "${orderModel.vendor!.title}",
+        label: orderModel.vendor?.title ?? '',
         address: AddressFormat.clean(orderModel.vendor?.location),
       ),
       DsRouteStop(
         kind: DsStopKind.drop,
         label: "Deliver to the".tr,
-        address: orderModel.address!.getFullAddress(),
+        address: orderModel.address?.getFullAddress() ?? '',
       ),
     ];
   }
 
   List<DsTripMetric> _metricsFor(OrderModel orderModel, double kilometer, {bool isFreelanceDriver = false}) {
     final String tip = orderModel.tipAmount ?? '';
-    final bool hasTip = tip.isNotEmpty && double.parse(tip.toString()) > 0;
+    final bool hasTip = (double.tryParse(tip) ?? 0) > 0;
     return [
       DsTripMetric(
         icon: Icons.route_rounded,

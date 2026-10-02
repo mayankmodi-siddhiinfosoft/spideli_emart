@@ -13,6 +13,7 @@ import 'package:driver/models/cab_order_model.dart';
 import 'package:driver/models/section_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/models/wallet_transaction_model.dart';
+import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/utils/fire_store_utils.dart';
@@ -50,11 +51,80 @@ class CabHomeController extends GetxController {
     super.onInit();
   }
 
+  /// Live statuses of every id in `inProgressOrderID`, so the ride on screen
+  /// is the first one this driver can actually work — not simply
+  /// `inProgressOrderID.first`. That array is shared with delivery (the
+  /// assignment watcher adopts both into it) and can hold a finished,
+  /// reassigned or `Driver Rejected` ride; any of those in first place hid
+  /// the ride that was really assigned.
+  late final OrdersByIdWatch<CabOrderModel> _ridesWatch = OrdersByIdWatch<CabOrderModel>(
+    collection: CollectionName.ridesBooking,
+    parse: CabOrderModel.fromJson,
+    idOf: (ride) => ride.id,
+    onChange: (rides, fromServer) {
+      _rides = rides;
+      getCurrentOrder();
+    },
+  );
+  Map<String, CabOrderModel> _rides = const {};
+
+  /// The ride id [_orderDocSub] is listening to; re-subscribed only when it
+  /// changes (it used to be cancelled and re-opened on every user snapshot,
+  /// with awaits in between, so two snapshots could leave an old listener
+  /// running that kept writing an earlier ride into [currentOrder]).
+  String? _listeningRideId;
+
+  static const List<String> _finishedRideStatuses = [
+    Constant.orderCompleted,
+    Constant.orderCancelled,
+    Constant.orderRejected,
+    Constant.driverRejected,
+  ];
+
+  bool _rideIsMine(CabOrderModel ride) {
+    if (_finishedRideStatuses.contains(ride.status)) return false;
+    final String driverId = (ride.driverId ?? '').toString().trim();
+    return driverId.isEmpty || driverId == driverModel.value.id;
+  }
+
+  void _listenToRide(String id) {
+    if (_listeningRideId == id && _orderDocSub != null) return;
+    _orderDocSub?.cancel();
+    _orderQuerySub?.cancel();
+    _orderQuerySub = null;
+    _listeningRideId = id;
+    _orderDocSub = FireStoreUtils.fireStore.collection(CollectionName.ridesBooking).doc(id).snapshots().listen((docSnap) => _handleOrderDoc(docSnap, id));
+  }
+
+  void _stopRide() {
+    _orderDocSub?.cancel();
+    _orderQuerySub?.cancel();
+    _orderDocSub = null;
+    _orderQuerySub = null;
+    _listeningRideId = null;
+  }
+
+  /// Drops one finished / reassigned ride from `inProgressOrderID` — and
+  /// nothing else. This used to write `inProgressOrderID = []` with the whole
+  /// user document, which also wiped delivery orders held in the same array.
+  Future<void> _releaseRide(String id, {bool clearRequest = false}) async {
+    final String? uid = driverModel.value.id;
+    driverModel.value.inProgressOrderID?.remove(id);
+    if (uid == null) return;
+    final bool request = clearRequest && driverModel.value.orderCabRequestData?.id == id;
+    if (request) driverModel.value.orderCabRequestData = null;
+    await FireStoreUtils.updateUserFields(uid, {
+      'inProgressOrderID': FieldValue.arrayRemove([id]),
+      if (request) 'ordercabRequestData': FieldValue.delete(),
+    });
+  }
+
   @override
   void onClose() {
     _driverSub?.cancel();
     _orderDocSub?.cancel();
     _orderQuerySub?.cancel();
+    _ridesWatch.cancel();
     super.onClose();
   }
 
@@ -455,14 +525,30 @@ class CabHomeController extends GetxController {
 
   Future<void> getCurrentOrder() async {
     try {
-      await _orderDocSub?.cancel();
-      await _orderQuerySub?.cancel();
-
-      final inProgress = driverModel.value.inProgressOrderID;
-      if (inProgress != null && inProgress.isNotEmpty) {
-        final String id = inProgress.first.toString();
-        _orderDocSub = FireStoreUtils.fireStore.collection(CollectionName.ridesBooking).doc(id).snapshots().listen((docSnap) => _handleOrderDoc(docSnap, id));
-        return;
+      final List<dynamic> inProgress = driverModel.value.inProgressOrderID ?? const [];
+      _ridesWatch.watch(inProgress);
+      if (inProgress.isNotEmpty) {
+        // Until the statuses are known, keep whatever is on screen.
+        if (!_ridesWatch.loaded) return;
+        String? id;
+        final CabOrderModel? current = _listeningRideId == null ? null : _rides[_listeningRideId];
+        if (current != null && inProgress.contains(_listeningRideId) && _rideIsMine(current)) {
+          id = _listeningRideId;
+        } else {
+          for (final dynamic raw in inProgress) {
+            final CabOrderModel? ride = _rides[raw.toString()];
+            if (ride != null && _rideIsMine(ride)) {
+              id = raw.toString();
+              break;
+            }
+          }
+        }
+        if (id != null) {
+          _listenToRide(id);
+          return;
+        }
+        // No ride in progress (the ids are delivery orders, or finished):
+        // fall through to a pending request, as when the array is empty.
       }
 
       final pendingRequest = driverModel.value.orderCabRequestData;
@@ -475,16 +561,19 @@ class CabHomeController extends GetxController {
             await _declineOutOfRegion(pendingRequest);
             return;
           }
-          if (currentOrder.value.id == null) {
+          final bool show = currentOrder.value.id == null;
+          _listenToRide(id);
+          if (show) {
             currentOrder.value = pendingRequest;
             await changeData();
             update();
           }
-          _orderDocSub = FireStoreUtils.fireStore.collection(CollectionName.ridesBooking).doc(id).snapshots().listen((docSnap) => _handleOrderDoc(docSnap, id));
           return;
         }
       }
 
+      _stopRide();
+      if (currentOrder.value.id == null) return;
       currentOrder.value = CabOrderModel();
       await clearMap();
       await AudioPlayerService.playSound(false);
@@ -500,24 +589,37 @@ class CabHomeController extends GetxController {
         final data = docSnap.data();
         if (data != null) {
           final incoming = CabOrderModel.fromJson(data);
+          if (_listeningRideId != id) return; // a listener being replaced
           if (_isOutOfRegionRequest(incoming)) {
             await _declineOutOfRegion(incoming);
+            return;
+          }
+          // Handed to another driver, or sent back to dispatch: not this
+          // driver's ride any more, and never shown with live actions.
+          final String otherDriver = (incoming.driverId ?? '').toString().trim();
+          final bool reassigned = otherDriver.isNotEmpty && otherDriver != driverModel.value.id;
+          if (reassigned || (incoming.status == Constant.driverRejected && (driverModel.value.inProgressOrderID ?? const []).contains(id))) {
+            _stopRide();
+            await _releaseRide(id);
+            currentOrder.value = CabOrderModel();
+            await clearMap();
+            await AudioPlayerService.playSound(false);
+            update();
             return;
           }
           currentOrder.value = incoming;
           await changeData();
           if (currentOrder.value.status == Constant.orderCompleted) {
-            driverModel.value.inProgressOrderID = [];
-            await FireStoreUtils.updateUser(driverModel.value);
+            _stopRide();
+            await _releaseRide(id);
             currentOrder.value = CabOrderModel();
             await clearMap();
             await AudioPlayerService.playSound(false);
             update();
             return;
           } else if (currentOrder.value.status == Constant.orderRejected || currentOrder.value.status == Constant.orderCancelled) {
-            driverModel.value.inProgressOrderID = [];
-            driverModel.value.orderCabRequestData = null;
-            await FireStoreUtils.updateUser(driverModel.value);
+            _stopRide();
+            await _releaseRide(id, clearRequest: true);
             currentOrder.value = CabOrderModel();
             await clearMap();
             await AudioPlayerService.playSound(false);
@@ -528,6 +630,8 @@ class CabHomeController extends GetxController {
           return;
         }
       }
+      if (_listeningRideId != id) return;
+      _orderQuerySub?.cancel();
       _orderQuerySub = FireStoreUtils.fireStore.collection(CollectionName.ridesBooking).where('id', isEqualTo: id).limit(1).snapshots().listen((qSnap) => _handleOrderQuery(qSnap));
     } catch (e) {
       log("Error listening to order doc: $e");
@@ -542,8 +646,9 @@ class CabHomeController extends GetxController {
         currentOrder.value = CabOrderModel.fromJson(data);
         await changeData();
         if (currentOrder.value.status == Constant.orderCompleted) {
-          driverModel.value.inProgressOrderID = [];
-          await FireStoreUtils.updateUser(driverModel.value);
+          final String? id = currentOrder.value.id;
+          _stopRide();
+          if (id != null) await _releaseRide(id);
           currentOrder.value = CabOrderModel();
           await clearMap();
           await AudioPlayerService.playSound(false);

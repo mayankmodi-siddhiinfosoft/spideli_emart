@@ -1,4 +1,8 @@
+import 'package:driver/app/home_screen/home_screen.dart';
 import 'package:driver/app/widgets/cancellation_block.dart';
+import 'package:driver/controllers/dash_board_controller.dart';
+import 'package:driver/models/order_model.dart';
+import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/app/widgets/pod_block.dart';
 import 'package:driver/utils/address_format.dart';
@@ -27,8 +31,13 @@ class OrderDetailsScreen extends StatelessWidget {
         init: OrderDetailsController(),
         builder: (controller) {
           final bool isLoading = controller.isLoading.value;
+          final OrderModel order = controller.orderModel.value;
           return DsScaffold(
             title: "Order Details".tr,
+            // This screen is a receipt; an order still assigned to the driver
+            // gets a way back to the screen where it can be picked up and
+            // delivered, instead of a dead end with no action at all.
+            bottomBar: !isLoading && _canContinue(order) ? DsStickyBar(child: _continueButton(order)) : null,
             body: DsAsync(
               isLoading: isLoading,
               skeleton: const DsSkeletonDetail(mediaHeight: 120),
@@ -64,6 +73,31 @@ class OrderDetailsScreen extends StatelessWidget {
             ),
           );
         });
+  }
+
+  static bool _canContinue(OrderModel order) {
+    final String? uid = Constant.userModel?.id;
+    if (!AssignedDeliveryOrders.isWorkableFor(order, uid)) return false;
+    return AssignedDeliveryOrders.isNamedFor(order, uid) || (Constant.userModel?.inProgressOrderID ?? const []).contains(order.id);
+  }
+
+  Widget _continueButton(OrderModel order) {
+    return DsButton.primary(
+      label: "Continue delivery".tr,
+      icon: Icons.delivery_dining_rounded,
+      expand: true,
+      onPressed: () {
+        if (Constant.singleOrderReceive == true) {
+          // Single-order mode: the dashboard's home tab is the job screen.
+          Get.back();
+          if (Get.isRegistered<DashBoardController>()) {
+            Get.find<DashBoardController>().drawerIndex.value = 0;
+          }
+        } else {
+          Get.to(const HomeScreen(isAppBarShow: true), arguments: {"orderModel": order});
+        }
+      },
+    );
   }
 
   CancellationSummary? _cancellation(OrderDetailsController controller) {

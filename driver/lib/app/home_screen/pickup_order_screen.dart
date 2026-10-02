@@ -64,8 +64,11 @@ class PickupOrderScreen extends StatelessWidget {
                       stops: [
                         DsRouteStop(
                           kind: DsStopKind.drop,
-                          label: "${'Deliver to the'.tr} · ${controller.orderModel.value.author!.fullName()}",
-                          address: controller.orderModel.value.address!.getFullAddress(),
+                          // `!` threw in build for an order written without
+                          // `author` / `address` (a hand assignment), and the
+                          // screen never showed its "Picked Order" slider.
+                          label: "${'Deliver to the'.tr} · ${controller.orderModel.value.author?.fullName() ?? ''}",
+                          address: controller.orderModel.value.address?.getFullAddress() ?? '',
                         ),
                       ],
                     ),
@@ -85,9 +88,17 @@ class PickupOrderScreen extends StatelessWidget {
                           ShowToastDialog.showToast("Conform pickup order".tr);
                         } else {
                           ShowToastDialog.showLoader("Please wait".tr);
+                          final String? previousStatus = controller.orderModel.value.status;
                           controller.orderModel.value.status = Constant.orderInTransit;
-                          await FireStoreUtils.setOrder(controller.orderModel.value);
+                          final bool? saved = await FireStoreUtils.setOrder(controller.orderModel.value);
                           ShowToastDialog.closeLoader();
+                          // A refused write used to close this screen as if it
+                          // had worked, and the order stayed where it was.
+                          if (saved != true) {
+                            controller.orderModel.value.status = previousStatus;
+                            ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+                            return;
+                          }
                           Get.back(result: true);
                         }
                       },

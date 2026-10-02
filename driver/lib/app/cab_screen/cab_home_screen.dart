@@ -35,7 +35,9 @@ class CabHomeScreen extends StatelessWidget {
           backgroundColor: c.background,
           body: controller.isLoading.value
               ? const _CabHomeSkeleton()
-              : Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false
+              // The verification gate never hides a ride already being worked
+              // (assigned or accepted earlier): it replaced the whole screen.
+              : !controller.shouldShowOrderSheet && Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false
               ? Obx(() {
                   // The isDark read is what re-runs this branch on theme change.
                   themeController.isDark.value;
@@ -347,8 +349,8 @@ class CabHomeScreen extends StatelessWidget {
   Widget showDriverBottomSheet(BuildContext context, CabHomeController controller) {
     final order = controller.currentOrder.value;
     final metrics = <DsTripMetric>[
-      DsTripMetric(icon: Icons.route_rounded, value: "${double.parse(order.distance.toString()).toStringAsFixed(2)} ${Constant.distanceType}", label: "Trip Distance".tr),
-      if (!(order.tipAmount == null || order.tipAmount!.isEmpty || double.parse(order.tipAmount.toString()) <= 0))
+      DsTripMetric(icon: Icons.route_rounded, value: "${(double.tryParse('${order.distance ?? ''}') ?? 0).toStringAsFixed(2)} ${Constant.distanceType}", label: "Trip Distance".tr),
+      if (!(order.tipAmount == null || order.tipAmount!.isEmpty || (double.tryParse(order.tipAmount.toString()) ?? 0) <= 0))
         DsTripMetric(
           icon: Icons.volunteer_activism_outlined,
           value: Constant.amountShow(currency: RegionService.currencyForRecord(order.regionId), amount: order.tipAmount),
@@ -366,7 +368,7 @@ class CabHomeScreen extends StatelessWidget {
         section: DsSection.cab,
         sectionLabel: "Cab".tr,
         stops: [
-          DsRouteStop(kind: DsStopKind.pickup, label: order.author!.fullName(), address: AddressFormat.orPlaceholder(order.sourceLocationName)),
+          DsRouteStop(kind: DsStopKind.pickup, label: order.author?.fullName() ?? '', address: AddressFormat.orPlaceholder(order.sourceLocationName)),
           DsRouteStop(kind: DsStopKind.drop, label: "Destination".tr, address: AddressFormat.orPlaceholder(order.destinationLocationName)),
         ],
         metrics: metrics,
@@ -422,8 +424,10 @@ class CabHomeScreen extends StatelessWidget {
     double discount = 0.0;
     double subTotal = 0.0;
     double taxAmount = 0.0;
-    subTotal = double.parse(controller.currentOrder.value.subTotal.toString());
-    discount = double.parse(controller.currentOrder.value.discount ?? '0.0');
+    // tryParse: a ride written by the panel without `subTotal` / `discount`
+    // threw here, in build, and the live-trip panel never appeared.
+    subTotal = double.tryParse('${controller.currentOrder.value.subTotal ?? ''}') ?? 0.0;
+    discount = double.tryParse(controller.currentOrder.value.discount ?? '') ?? 0.0;
 
     if (controller.currentOrder.value.taxSetting != null) {
       for (var element in controller.currentOrder.value.taxSetting!) {
@@ -443,7 +447,7 @@ class CabHomeScreen extends StatelessWidget {
         if (controller.currentOrder.value.writtenCommunicationOnly == true) {
           openCustomerChat(controller);
         } else {
-          Constant.makePhoneCall(controller.currentOrder.value.author!.phoneNumber.toString());
+          Constant.makePhoneCall(controller.currentOrder.value.author?.phoneNumber ?? '');
         }
       },
     );
@@ -476,7 +480,7 @@ class CabHomeScreen extends StatelessWidget {
           if (controller.currentOrder.value.status == Constant.orderShipped || controller.currentOrder.value.status == Constant.driverAccepted) {
             showVerifyPassengerDialog(Get.context!, controller);
           } else {
-            if (controller.currentOrder.value.paymentMethod!.toLowerCase() == "cod") {
+            if ((controller.currentOrder.value.paymentMethod ?? '').toLowerCase() == "cod") {
               showConfirmCashPaymentDialog(
                 Get.context!,
                 onConfirm: () {
@@ -507,7 +511,7 @@ class CabHomeScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(order.author!.fullName(), style: t.titleSm),
+                          Text(order.author?.fullName() ?? '', style: t.titleSm),
                           Text(AddressFormat.orPlaceholder(order.sourceLocationName), style: t.bodySm),
                         ],
                       ),
@@ -521,7 +525,7 @@ class CabHomeScreen extends StatelessWidget {
               else
                 DsRouteStops(
                   stops: [
-                    DsRouteStop(kind: DsStopKind.pickup, label: order.author!.fullName(), address: AddressFormat.orPlaceholder(order.sourceLocationName), trailing: callOrChatButton),
+                    DsRouteStop(kind: DsStopKind.pickup, label: order.author?.fullName() ?? '', address: AddressFormat.orPlaceholder(order.sourceLocationName), trailing: callOrChatButton),
                     DsRouteStop(kind: DsStopKind.drop, label: "Destination".tr, address: AddressFormat.orPlaceholder(order.destinationLocationName), trailing: chatButton),
                   ],
                 ),
@@ -541,15 +545,15 @@ class CabHomeScreen extends StatelessWidget {
               ],
               const DsGap(DsSpace.md),
               const DsDivider(spacing: DsSpace.xs),
-              DsInfoRow(label: "Payment Type".tr, value: order.paymentMethod!.toLowerCase() == "cod" ? "Cash on delivery".tr : "Online".tr),
+              DsInfoRow(label: "Payment Type".tr, value: (order.paymentMethod ?? '').toLowerCase() == "cod" ? "Cash on delivery".tr : "Online".tr),
               DsInfoRow(label: "Ride Type".tr, value: order.rideType ?? ''),
-              if (order.paymentMethod!.toLowerCase() == "cod")
+              if ((order.paymentMethod ?? '').toLowerCase() == "cod")
                 DsInfoRow(
                   label: "Collect Payment from customer".tr,
                   value: Constant.amountShow(currency: RegionService.currencyForRecord(order.regionId), amount: totalAmount.toString()),
                   emphasize: true,
                 ),
-              if (!(order.tipAmount == null || order.tipAmount!.isEmpty || double.parse(order.tipAmount.toString()) <= 0))
+              if (!(order.tipAmount == null || order.tipAmount!.isEmpty || (double.tryParse(order.tipAmount.toString()) ?? 0) <= 0))
                 DsInfoRow(
                   label: "Tips".tr,
                   value: Constant.amountShow(currency: RegionService.currencyForRecord(order.regionId), amount: order.tipAmount),

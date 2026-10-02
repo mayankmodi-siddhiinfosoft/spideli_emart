@@ -51,10 +51,20 @@ class RentalHomeController extends GetxController {
           rentalBookingData.clear();
 
           for (var element in event.docs) {
-            rentalBookingData.add(RentalOrderModel.fromJson(element.data()));
+            // One unreadable booking must not take the list (and the loader)
+            // down with it: a throw here left the skeleton up for good.
+            try {
+              rentalBookingData.add(RentalOrderModel.fromJson(element.data()));
+            } catch (e) {
+              log("RentalHomeController: ${element.id} could not be read: $e");
+            }
           }
 
           // ✅ Turn off loader *after first snapshot*
+          isLoading.value = false;
+          update();
+        }, onError: (Object e) {
+          log("RentalHomeController.getBookingData failed: $e");
           isLoading.value = false;
           update();
         });
@@ -84,12 +94,22 @@ class RentalHomeController extends GetxController {
 
   Future<void> completeParcel(RentalOrderModel parcelBookingData) async {
     ShowToastDialog.showLoader("Please wait".tr);
+    final String? previousStatus = parcelBookingData.status;
     parcelBookingData.status = Constant.orderCompleted;
 
-    await updateCabWalletAmount(parcelBookingData);
-    await FireStoreUtils.rentalOrderPlace(parcelBookingData);
+    // A throw here used to leave the full-screen loader up for good.
+    try {
+      await updateCabWalletAmount(parcelBookingData);
+      await FireStoreUtils.rentalOrderPlace(parcelBookingData);
+    } catch (e) {
+      log("RentalHomeController.completeParcel failed: $e");
+      parcelBookingData.status = previousStatus;
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+      return;
+    }
     Map<String, dynamic> payLoad = <String, dynamic>{"type": "rental_order", "orderId": parcelBookingData.id};
-    SendNotification.sendFcmMessage(Constant.rentalCompleted, parcelBookingData.author!.fcmToken.toString(), payLoad);
+    SendNotification.sendFcmMessage(Constant.rentalCompleted, parcelBookingData.author?.fcmToken ?? '', payLoad);
     FireStoreUtils.getRentalFirstOrderOrNOt(parcelBookingData).then((value) async {
       if (value == true) {
         await FireStoreUtils.updateRentalReferralAmount(parcelBookingData);
@@ -127,12 +147,15 @@ class RentalHomeController extends GetxController {
     subTotal.value = double.tryParse(orderModel.subTotal?.toString() ?? "0") ?? 0.0;
     discount.value = double.tryParse(orderModel.discount?.toString() ?? "0") ?? 0.0;
 
-    if (orderModel.endTime != null) {
+    // Null-safe: a booking set straight to "In Transit" by hand has no
+    // `startTime`, and one without a package has no included hours / km.
+    final int? includedHours = int.tryParse('${orderModel.rentalPackageModel?.includedHours ?? ''}');
+    if (orderModel.endTime != null && orderModel.startTime != null && includedHours != null) {
       DateTime start = orderModel.startTime!.toDate();
       DateTime end = orderModel.endTime!.toDate();
       int hours = end.difference(start).inHours;
-      if (hours >= int.parse(orderModel.rentalPackageModel!.includedHours.toString())) {
-        hours = hours - int.parse(orderModel.rentalPackageModel!.includedHours.toString());
+      if (hours >= includedHours) {
+        hours = hours - includedHours;
         double hourlyRate = double.tryParse(orderModel.rentalPackageModel?.extraMinuteFare?.toString() ?? "0") ?? 0.0;
         extraMinutesCharge.value = (hours * 60) * hourlyRate;
       }
@@ -143,8 +166,9 @@ class RentalHomeController extends GetxController {
       double endKm = double.tryParse(orderModel.endKitoMetersReading?.toString() ?? "0") ?? 0.0;
       if (endKm > startKm) {
         double totalKm = endKm - startKm;
-        if (totalKm > double.parse(orderModel.rentalPackageModel!.includedDistance!)) {
-          totalKm = totalKm - double.parse(orderModel.rentalPackageModel!.includedDistance!);
+        final double? includedDistance = double.tryParse('${orderModel.rentalPackageModel?.includedDistance ?? ''}');
+        if (includedDistance != null && totalKm > includedDistance) {
+          totalKm = totalKm - includedDistance;
           double extraKmRate = double.tryParse(orderModel.rentalPackageModel?.extraKmFare?.toString() ?? "0") ?? 0.0;
           extraKilometerCharge.value = totalKm * extraKmRate;
         }
@@ -160,7 +184,7 @@ class RentalHomeController extends GetxController {
 
     totalAmount.value = (subTotal.value - discount.value) + taxAmount.value;
 
-    if (orderModel.adminCommission!.isNotEmpty) {
+    if ((orderModel.adminCommission ?? '').isNotEmpty) {
       adminComm.value = Constant.calculateAdminCommission(
           amount: (subTotal.value - discount.value).toString(), adminCommissionType: orderModel.adminCommissionType.toString(), adminCommission: orderModel.adminCommission ?? '0');
     }
@@ -170,7 +194,7 @@ class RentalHomeController extends GetxController {
           id: Constant.getUuid(),
           amount: totalAmount.value,
           date: Timestamp.now(),
-          paymentMethod: orderModel.paymentMethod!,
+          paymentMethod: orderModel.paymentMethod ?? '',
           transactionUser: "driver",
           userId: walletUserId,
           isTopup: true,
@@ -191,7 +215,7 @@ class RentalHomeController extends GetxController {
         id: Constant.getUuid(),
         amount: adminComm.value,
         date: Timestamp.now(),
-        paymentMethod: orderModel.paymentMethod!,
+        paymentMethod: orderModel.paymentMethod ?? '',
         transactionUser: "driver",
         userId: walletUserId,
         isTopup: false,

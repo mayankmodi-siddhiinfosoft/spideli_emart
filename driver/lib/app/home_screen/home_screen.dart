@@ -48,7 +48,12 @@ class HomeScreen extends StatelessWidget {
             appBar: isAppBarShow == true ? DsAppBar(title: "Order".tr) : null,
             body: controller.isLoading.value
                 ? Constant.loader()
-                : controller.driverModel.value.vendorID?.isEmpty == true &&
+                // The verification gate is about receiving OFFERS. An order
+                // already assigned to this driver (store, panel, or accepted
+                // earlier) is shown with its actions either way: the gate used
+                // to replace the whole screen, assigned order included.
+                : !_hasAssignedOrder(controller) &&
+                        controller.driverModel.value.vendorID?.isEmpty == true &&
                         controller.driverModel.value.isDocumentVerify == false &&
                         controller.driverModel.value.isAutoVerify == false
                     ? Center(
@@ -69,7 +74,7 @@ class HomeScreen extends StatelessWidget {
                         children: [
                           Obx(() {
                             num wallet = dashController.userModel.value.walletAmount ?? 0.0;
-                            return Constant.userModel?.vendorID?.isEmpty == true && wallet < double.parse(Constant.minimumDepositToRideAccept)
+                            return Constant.userModel?.vendorID?.isEmpty == true && wallet < (double.tryParse(Constant.minimumDepositToRideAccept) ?? 0)
                                 ? Padding(
                                     padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.sm),
                                     child: DsInlineAlert(
@@ -182,6 +187,17 @@ class HomeScreen extends StatelessWidget {
     });
   }
 
+  /// An order the driver is working (not a pending request) is on screen.
+  static bool _hasAssignedOrder(HomeController controller) {
+    final order = controller.currentOrder.value;
+    return order.id != null && order.status != Constant.driverPending;
+  }
+
+  /// A number from a record field that may be null, empty, a string or a num.
+  /// `double.parse('${field}')` threw on "null" / "" inside build, and the
+  /// whole job panel — every button on it — was replaced by an error.
+  static double _num(dynamic value) => double.tryParse('${value ?? ''}'.trim()) ?? 0.0;
+
   /// Name of the external navigation app the driver chose in settings.
   String _mapName() {
     return Constant.mapType == "google"
@@ -230,24 +246,17 @@ class HomeScreen extends StatelessWidget {
                 size: DsButtonSize.xl,
                 expand: true,
                 onPressed: () async {
-                  if (controller.currentOrder.value.id != null) {
-                    if (controller.currentOrder.value.status != Constant.driverPending) {
-                      if (controller.currentOrder.value.status == Constant.orderShipped) {
-                        Utils.redirectMap(
-                            name: controller.currentOrder.value.vendor!.title.toString(),
-                            latitude: controller.currentOrder.value.vendor!.latitude ?? 0.0,
-                            longLatitude: controller.currentOrder.value.vendor!.longitude ?? 0.0);
-                      } else if (controller.currentOrder.value.status == Constant.orderInTransit) {
-                        Utils.redirectMap(
-                            name: controller.currentOrder.value.author!.firstName.toString(),
-                            latitude: controller.currentOrder.value.address!.location!.latitude ?? 0.0,
-                            longLatitude: controller.currentOrder.value.address!.location!.longitude ?? 0.0);
-                      }
-                    } else {
+                  final order = controller.currentOrder.value;
+                  if (order.id != null) {
+                    // `!` on vendor / author / address threw inside this async
+                    // handler for a record without them, and the tap did nothing.
+                    if (order.status == Constant.orderInTransit) {
                       Utils.redirectMap(
-                          name: controller.currentOrder.value.author!.firstName.toString(),
-                          latitude: controller.currentOrder.value.vendor!.latitude ?? 0.0,
-                          longLatitude: controller.currentOrder.value.vendor!.longitude ?? 0.0);
+                          name: order.author?.firstName ?? '',
+                          latitude: order.address?.location?.latitude ?? 0.0,
+                          longLatitude: order.address?.location?.longitude ?? 0.0);
+                    } else if (order.status == Constant.orderShipped || order.status == Constant.driverAccepted || order.status == Constant.driverPending) {
+                      Utils.redirectMap(name: order.vendor?.title ?? '', latitude: order.vendor?.latitude ?? 0.0, longLatitude: order.vendor?.longitude ?? 0.0);
                     }
                   }
                 },
@@ -261,13 +270,13 @@ class HomeScreen extends StatelessWidget {
 
   /// Archetype B — the incoming request, docked under the map.
   Widget showDriverBottomSheet(BuildContext context, HomeController controller) {
-    double distanceInMeters = Geolocator.distanceBetween(controller.currentOrder.value.vendor!.latitude ?? 0.0, controller.currentOrder.value.vendor!.longitude ?? 0.0,
-        controller.currentOrder.value.address!.location!.latitude ?? 0.0, controller.currentOrder.value.address!.location!.longitude ?? 0.0);
+    double distanceInMeters = Geolocator.distanceBetween(controller.currentOrder.value.vendor?.latitude ?? 0.0, controller.currentOrder.value.vendor?.longitude ?? 0.0,
+        controller.currentOrder.value.address?.location?.latitude ?? 0.0, controller.currentOrder.value.address?.location?.longitude ?? 0.0);
     double kilometer = distanceInMeters / 1000;
 
     final bool isFreelanceDriver = controller.driverModel.value.vendorID?.isEmpty == true;
     final String tip = controller.currentOrder.value.tipAmount ?? '';
-    final bool hasTip = tip.isNotEmpty && double.parse(tip.toString()) > 0;
+    final bool hasTip = _num(tip) > 0;
 
     return SafeArea(
       top: false,
@@ -287,13 +296,13 @@ class HomeScreen extends StatelessWidget {
             stops: [
               DsRouteStop(
                 kind: DsStopKind.pickup,
-                label: "${controller.currentOrder.value.vendor!.title}",
+                label: controller.currentOrder.value.vendor?.title ?? '',
                 address: AddressFormat.clean(controller.currentOrder.value.vendor?.location),
               ),
               DsRouteStop(
                 kind: DsStopKind.drop,
-                label: "${'Deliver to the'.tr} · ${controller.currentOrder.value.author!.fullName()}",
-                address: controller.currentOrder.value.address!.getFullAddress(),
+                label: "${'Deliver to the'.tr} · ${controller.currentOrder.value.author?.fullName() ?? ''}",
+                address: controller.currentOrder.value.address?.getFullAddress() ?? '',
               ),
             ],
             metrics: [
@@ -345,22 +354,24 @@ class HomeScreen extends StatelessWidget {
     double deliveryCharges = 0.0;
 
     /// ---------------- SUBTOTAL ----------------
-    for (var element in controller.currentOrder.value.products!) {
-      final double price = (double.parse(element.discountPrice.toString()) > 0) ? double.parse(element.discountPrice.toString()) : double.parse(element.price.toString());
+    // Every figure below is read with `_num`: a record written by the panel
+    // or the Store app may lack `discount`, `extras_price`, `packagingCharge`
+    // (or the products / vendor themselves), and one `double.parse("null")`
+    // here took the whole panel, and its buttons, down with it.
+    for (var element in controller.currentOrder.value.products ?? const []) {
+      final double price = (_num(element.discountPrice) > 0) ? _num(element.discountPrice) : _num(element.price);
 
-      final double qty = double.parse(element.quantity.toString());
-      final double extras = double.parse(element.extrasPrice.toString());
+      final double qty = _num(element.quantity);
+      final double extras = _num(element.extrasPrice);
 
       subTotal += (price * qty) + (extras * qty);
     }
 
     /// ---------------- DISCOUNTS ----------------
-    couponAmount = double.parse(controller.currentOrder.value.discount.toString());
+    couponAmount = _num(controller.currentOrder.value.discount);
 
     if (controller.currentOrder.value.specialDiscount != null && controller.currentOrder.value.specialDiscount!['special_discount'] != null) {
-      specialDiscountAmount = double.parse(
-        controller.currentOrder.value.specialDiscount!['special_discount'].toString(),
-      );
+      specialDiscountAmount = _num(controller.currentOrder.value.specialDiscount!['special_discount']);
     }
 
     final double totalDiscount = couponAmount + specialDiscountAmount;
@@ -373,17 +384,17 @@ class HomeScreen extends StatelessWidget {
 
     /// ---------------- PRODUCT TAX (AFTER DISCOUNT) ----------------
     if (controller.currentOrder.value.taxScope == "product") {
-      for (var element in controller.currentOrder.value.products!) {
-        final double price = (double.parse(element.discountPrice.toString()) > 0) ? double.parse(element.discountPrice.toString()) : double.parse(element.price.toString());
+      for (var element in controller.currentOrder.value.products ?? const []) {
+        final double price = (_num(element.discountPrice) > 0) ? _num(element.discountPrice) : _num(element.price);
 
-        final double qty = double.parse(element.quantity.toString());
-        final double extras = double.parse(element.extrasPrice.toString());
+        final double qty = _num(element.quantity);
+        final double extras = _num(element.extrasPrice);
 
         final double itemAmount = (price * qty) + (extras * qty);
 
         final double discountedItemAmount = itemAmount - (itemAmount * discountRatio);
 
-        for (var taxElement in element.taxSetting!) {
+        for (var taxElement in element.taxSetting ?? const []) {
           if (taxElement.type == "fix") {
             productTaxAmount += Constant.calculateTax(
                   amount: discountedItemAmount.toString(),
@@ -411,13 +422,13 @@ class HomeScreen extends StatelessWidget {
     }
 
     /// ---------------- CHARGES ----------------
-    packagingCharge = double.parse(controller.currentOrder.value.vendor!.packagingCharge.toString());
+    packagingCharge = _num(controller.currentOrder.value.vendor?.packagingCharge);
 
-    deliveryCharge = double.parse(controller.currentOrder.value.deliveryCharge ?? '0.0');
+    deliveryCharge = _num(controller.currentOrder.value.deliveryCharge);
 
-    deliveryTips = double.parse(controller.currentOrder.value.tipAmount ?? '0.0');
+    deliveryTips = _num(controller.currentOrder.value.tipAmount);
 
-    platformFee = double.parse(controller.currentOrder.value.platformFee ?? '0.0');
+    platformFee = _num(controller.currentOrder.value.platformFee);
 
     deliveryCharges = deliveryCharge;
 
@@ -471,7 +482,7 @@ class HomeScreen extends StatelessWidget {
     // "Reached store" / "Order Delivered" button at all.
     final bool isCod = (controller.currentOrder.value.paymentMethod ?? '').toLowerCase() == "cod";
     final String tip = controller.currentOrder.value.tipAmount ?? '';
-    final bool hasTip = tip.isNotEmpty && double.parse(tip.toString()) > 0;
+    final bool hasTip = _num(tip) > 0;
 
     return DsMapPanel(
       header: Row(
@@ -568,7 +579,7 @@ class HomeScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("${controller.currentOrder.value.vendor!.title}", style: t.titleSm.w700),
+              Text(controller.currentOrder.value.vendor?.title ?? '', style: t.titleSm.w700),
               Text(AddressFormat.clean(controller.currentOrder.value.vendor?.location), style: t.bodySm),
             ],
           ),
@@ -579,7 +590,7 @@ class HomeScreen extends StatelessWidget {
           semanticLabel: "Call".tr,
           variant: DsIconButtonVariant.brand,
           onPressed: () {
-            Constant.makePhoneCall(controller.currentOrder.value.vendor!.phonenumber.toString());
+            Constant.makePhoneCall(controller.currentOrder.value.vendor?.phonenumber ?? '');
           },
         ),
       ],
@@ -593,21 +604,21 @@ class HomeScreen extends StatelessWidget {
         DsRouteStop(
           kind: DsStopKind.pickup,
           done: true,
-          label: "${controller.currentOrder.value.vendor!.title}",
+          label: controller.currentOrder.value.vendor?.title ?? '',
           address: AddressFormat.clean(controller.currentOrder.value.vendor?.location),
           trailing: DsIconButton(
             icon: Icons.call_rounded,
             semanticLabel: "Call".tr,
             variant: DsIconButtonVariant.outlined,
             onPressed: () {
-              Constant.makePhoneCall(controller.currentOrder.value.vendor!.phonenumber.toString());
+              Constant.makePhoneCall(controller.currentOrder.value.vendor?.phonenumber ?? '');
             },
           ),
         ),
         DsRouteStop(
           kind: DsStopKind.drop,
           label: "${'Deliver to the'.tr} · ${controller.currentOrder.value.author?.fullName() ?? ''}",
-          address: controller.currentOrder.value.address!.getFullAddress(),
+          address: controller.currentOrder.value.address?.getFullAddress() ?? '',
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -616,7 +627,7 @@ class HomeScreen extends StatelessWidget {
                 semanticLabel: "Call".tr,
                 variant: DsIconButtonVariant.outlined,
                 onPressed: () {
-                  Constant.makePhoneCall(controller.currentOrder.value.author!.phoneNumber.toString());
+                  Constant.makePhoneCall(controller.currentOrder.value.author?.phoneNumber ?? '');
                 },
               ),
               const DsGap(DsSpace.xs),

@@ -8,6 +8,7 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/send_notification.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/utils/args.dart';
@@ -192,111 +193,148 @@ class HomeController extends GetxController {
     update();
   }
 
+  /// The order on screen comes from ONE live query over the ids this driver
+  /// holds ([VendorOrdersWatch]), re-opened only when those ids change, and is
+  /// chosen by what each order says ([AssignedDeliveryOrders]) — not by being
+  /// `inProgressOrderID.first`.
+  ///
+  /// Before, every `users/{me}` snapshot (one per location update) opened a
+  /// new listener that was never cancelled, and the screen showed whatever
+  /// `inProgressOrderID.first` was. A finished or reassigned id in first place
+  /// (the Store app writes the driver's whole user document from an older
+  /// copy; the admin panel can cancel without touching the driver) hid the
+  /// order that was really assigned, and a leftover listener for an earlier
+  /// order could replace the live order with a finished one — no buttons.
+  late final VendorOrdersWatch _ordersWatch = VendorOrdersWatch(_onOrdersChanged);
+  Map<String, OrderModel> _orders = const {};
+  final Set<String> _declinedOutOfRegion = {};
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _driverSub;
+
+  @override
+  void onClose() {
+    _driverSub?.cancel();
+    _ordersWatch.cancel();
+    super.onClose();
+  }
+
   Future<void> getCurrentOrder() async {
     final driver = driverModel.value;
-    final currentId = currentOrder.value.id;
+    final String? explicitId = orderModel.value.id;
+    if (explicitId != null) {
+      // Opened for one order (the multiple-order list, the order details).
+      _ordersWatch.watch([explicitId]);
+    } else if (Constant.singleOrderReceive == true) {
+      _ordersWatch.watch([...?driver.inProgressOrderID, ...?driver.orderRequestData]);
+    } else {
+      _ordersWatch.watch(const []);
+    }
+    await _selectOrder();
+  }
 
-    // 1️⃣ Reset if current order is invalid
-    if (currentId != null &&
-        !(driver.orderRequestData?.contains(currentId) ?? false) &&
-        !(driver.inProgressOrderID?.contains(currentId) ?? false)) {
-      await _resetCurrentOrder();
+  void _onOrdersChanged(Map<String, OrderModel> orders, bool fromServer) {
+    _orders = orders;
+    final String? uid = driverModel.value.id;
+    // Finished / reassigned ids are dropped from the driver's record, so the
+    // Store app and the panel stop counting this driver as busy with them.
+    if (fromServer && uid != null) {
+      AssignedDeliveryOrders.pruneStale(uid, driverModel.value.inProgressOrderID, orders);
+    }
+    _selectOrder();
+  }
+
+  /// Whether [order] may be on this driver's screen at all.
+  bool _canShow(OrderModel order, UserModel driver) {
+    final String? uid = driver.id;
+    final List<dynamic> inProgress = driver.inProgressOrderID ?? const [];
+    final List<dynamic> requests = driver.orderRequestData ?? const [];
+    if (AssignedDeliveryOrders.isWorkableFor(order, uid)) {
+      // Assigned by name (`driverID`), or held in progress by an older writer
+      // that never set `driverID`.
+      return AssignedDeliveryOrders.isNamedFor(order, uid) || inProgress.contains(order.id);
+    }
+    if (AssignedDeliveryOrders.isOfferFor(order, uid)) {
+      // A dispatched offer, or a hand assignment left at `Driver Pending`.
+      // An unnamed pending order already in progress is this device's own
+      // accept still in flight — not shown again as a request.
+      return requests.contains(order.id) || (inProgress.contains(order.id) && AssignedDeliveryOrders.isNamedFor(order, uid));
+    }
+    return false;
+  }
+
+  bool _outOfRegion(OrderModel order, UserModel driver) {
+    // Zone-bound (spec 9.1): never offer a request from another region. A
+    // hand assignment that names this driver is not an offer and is kept.
+    return order.status == Constant.driverPending &&
+        order.id != null &&
+        driver.id != null &&
+        !AssignedDeliveryOrders.isNamedFor(order, driver.id) &&
+        RegionService.isOutOfDriverRegion(order.regionId, driver: driver);
+  }
+
+  Future<void> _selectOrder() async {
+    if (!_ordersWatch.loaded) return;
+    final UserModel driver = driverModel.value;
+    final String? uid = driver.id;
+    OrderModel? next;
+
+    final String? explicitId = orderModel.value.id;
+    if (explicitId != null) {
+      final OrderModel? order = _orders[explicitId];
+      if (order != null && _canShow(order, driver) && !_outOfRegion(order, driver)) next = order;
+    } else if (Constant.singleOrderReceive == true) {
+      // Keep the order already on screen while it is still valid, so a second
+      // assignment does not swap the screen under the driver's thumb.
+      final OrderModel? current = currentOrder.value.id == null ? null : _orders[currentOrder.value.id];
+      if (current != null && _canShow(current, driver) && !_outOfRegion(current, driver)) {
+        next = current;
+      }
+      // Then the first order actually being worked, in the driver's order...
+      if (next == null) {
+        for (final dynamic id in driver.inProgressOrderID ?? const []) {
+          final OrderModel? order = _orders[id.toString()];
+          if (order != null && AssignedDeliveryOrders.isWorkableFor(order, uid) && _canShow(order, driver)) {
+            next = order;
+            break;
+          }
+        }
+      }
+      // ...then a request: a named hand assignment, then dispatched offers.
+      if (next == null) {
+        for (final dynamic id in [...?driver.inProgressOrderID, ...?driver.orderRequestData]) {
+          final OrderModel? order = _orders[id.toString()];
+          if (order == null || !AssignedDeliveryOrders.isOfferFor(order, uid) || !_canShow(order, driver)) continue;
+          if (_outOfRegion(order, driver)) {
+            if (_declinedOutOfRegion.add(order.id!)) {
+              FireStoreUtils.declineOutOfRegionVendorOrder(order.id!, uid!);
+            }
+            continue;
+          }
+          next = order;
+          break;
+        }
+      }
+    }
+
+    if (next == null) {
+      if (currentOrder.value.id != null) await _resetCurrentOrder();
       return;
     }
+    if (identical(currentOrder.value, next)) return;
 
-    // 2️⃣ Handle single-order mode
-    if (Constant.singleOrderReceive == true) {
-      final inProgress = driver.inProgressOrderID;
-      final requests = driver.orderRequestData;
-
-      if (inProgress != null && inProgress.isNotEmpty) {
-        _listenToOrder(inProgress.first);
-        return;
-      }
-
-      if (requests != null && requests.isNotEmpty) {
-        _listenToOrder(requests.first, checkInRequestData: true);
-        return;
-      }
+    currentOrder.value = next;
+    // Update section model to match this order's section (multi-section support)
+    final sid = next.sectionId;
+    if (sid != null && sid.isNotEmpty) {
+      FireStoreUtils.getSectionBySectionId(sid).then((s) {
+        if (s != null) Constant.sectionModels[sid] = s;
+      });
     }
-
-    // 3️⃣ Handle fallback (when orderModel has ID)
-    final fallbackId = orderModel.value.id;
-    if (fallbackId != null) {
-      _listenToOrder(fallbackId);
-    }
+    changeData();
   }
 
   Future<void> _resetCurrentOrder() async {
     currentOrder.value = OrderModel();
     await clearMap();
-    await AudioPlayerService.playSound(false);
-    update();
-  }
-
-  /// 🔹 Listen to Firestore order updates for a specific orderId
-  void _listenToOrder(String orderId, {bool checkInRequestData = false}) {
-    FireStoreUtils.fireStore
-        .collection(CollectionName.vendorOrders)
-        .where('status', whereNotIn: [
-          Constant.orderCancelled,
-          Constant.driverRejected,
-        ])
-        .where('id', isEqualTo: orderId)
-        .snapshots()
-        .listen((event) async {
-          if (event.docs.isEmpty) {
-            await _handleOrderNotFound();
-            return;
-          }
-
-          final data = event.docs.first.data();
-          final newOrder = OrderModel.fromJson(data);
-
-          if (checkInRequestData && !(driverModel.value.orderRequestData?.contains(newOrder.id) ?? false)) {
-            await _handleOrderNotFound();
-            return;
-          }
-
-          if (newOrder.rejectedByDrivers!.contains(driverModel.value.id)) {
-            await _handleOrderNotFound();
-            return;
-          }
-
-          // Zone-bound (spec 9.1): never offer a request from another region.
-          if (newOrder.status == Constant.driverPending &&
-              newOrder.id != null &&
-              driverModel.value.id != null &&
-              RegionService.isOutOfDriverRegion(newOrder.regionId, driver: driverModel.value)) {
-            await _handleOrderNotFound();
-            await FireStoreUtils.declineOutOfRegionVendorOrder(newOrder.id!, driverModel.value.id!);
-            return;
-          }
-
-          // Guard: skip stale driverPending update if driver already accepted this order
-          if (newOrder.status == Constant.driverPending && (driverModel.value.inProgressOrderID?.contains(newOrder.id) ?? false)) {
-            return;
-          }
-
-          currentOrder.value = newOrder;
-          // Update section model to match this order's section (multi-section support)
-          final sid = newOrder.sectionId;
-          if (sid != null && sid.isNotEmpty) {
-            FireStoreUtils.getSectionBySectionId(sid).then((s) {
-              if (s != null) Constant.sectionModels[sid] = s;
-            });
-          }
-          changeData();
-        }, onError: (Object e) async {
-          // Same as above: report and settle, instead of silently never
-          // producing an order and never stopping the alert sound.
-          log("HomeController._listenToOrder($orderId) failed: $e");
-          await _handleOrderNotFound();
-        });
-  }
-
-  Future<void> _handleOrderNotFound() async {
-    currentOrder.value = OrderModel();
     await AudioPlayerService.playSound(false);
     update();
   }
@@ -322,7 +360,8 @@ class HomeController extends GetxController {
   }
 
   void getDriver() {
-    FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen(
+    _driverSub?.cancel();
+    _driverSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen(
       (event) async {
         if (!event.exists) {
           // Nothing more is coming for a document that is not there; without
@@ -410,6 +449,8 @@ class HomeController extends GetxController {
     LatLng? destination;
 
     switch (order.status) {
+      // Driver Accepted is also on the way to the store (it had no route).
+      case Constant.driverAccepted:
       case Constant.orderShipped:
         origin = LatLng(driverLoc.latitude ?? 0.0, driverLoc.longitude ?? 0.0);
         destination = _toLatLng(order.vendor?.latitude, order.vendor?.longitude);
@@ -452,7 +493,7 @@ class HomeController extends GetxController {
     markers.remove("Destination");
     markers.remove("Driver");
 
-    if (order.status == Constant.orderShipped || order.status == Constant.driverPending) {
+    if (order.status == Constant.orderShipped || order.status == Constant.driverAccepted || order.status == Constant.driverPending) {
       markers['Departure'] = Marker(
         markerId: const MarkerId('Departure'),
         infoWindow: const InfoWindow(title: "Departure"),
@@ -526,6 +567,8 @@ class HomeController extends GetxController {
     );
     polyLines[id] = polyline;
     update();
+    // No route (or no map yet): `.first` / `mapController!` threw here.
+    if (polylineCoordinates.isEmpty || mapController == null) return;
     updateCameraLocation(polylineCoordinates.first, mapController);
   }
 
@@ -657,7 +700,7 @@ class HomeController extends GetxController {
       if (currentOrder.value.id != null) {
         if (currentOrder.value.status != Constant.driverPending) {
           print("Order Status :: ${currentOrder.value.status} :: OrderId :: ${currentOrder.value.id}} ::");
-          if (currentOrder.value.status == Constant.orderShipped) {
+          if (currentOrder.value.status == Constant.orderShipped || currentOrder.value.status == Constant.driverAccepted) {
             current.value = location.LatLng(driverModel.value.location!.latitude ?? 0.0, driverModel.value.location!.longitude ?? 0.0);
             destination.value = location.LatLng(
               currentOrder.value.vendor!.latitude ?? 0.0,

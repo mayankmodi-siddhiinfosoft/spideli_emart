@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
@@ -102,6 +104,7 @@ class DashBoardController extends GetxController {
   }
 
   Location location = Location();
+  StreamSubscription<LocationData>? _locationSub;
 
   Future<void> updateCurrentLocation() async {
     try {
@@ -112,18 +115,15 @@ class DashBoardController extends GetxController {
         } catch (_) {}
         location.changeSettings(accuracy: LocationAccuracy.high, distanceFilter: double.parse(Constant.driverLocationUpdate));
 
-        location.onLocationChanged.listen((locationData) async {
+        // One listener, however many times the driver goes online.
+        _locationSub?.cancel();
+        _locationSub = location.onLocationChanged.listen((locationData) async {
           Constant.locationDataFinal = locationData;
-          await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid()).then((value) async {
-            if (value != null) {
-              userModel.value = value;
-              // Always update location in Firestore so home/cab maps stay centred,
-              // regardless of isActive status.
-              userModel.value.location = UserLocation(latitude: locationData.latitude, longitude: locationData.longitude);
-              userModel.value.rotation = locationData.heading;
-              await FireStoreUtils.updateUser(userModel.value);
-            }
-          });
+          // Always update location in Firestore so home/cab maps stay centred,
+          // regardless of isActive status. Only `location` / `rotation` are
+          // written ([FireStoreUtils.updateUserLocation]).
+          await FireStoreUtils.updateUserLocation(FireStoreUtils.getCurrentUid(),
+              latitude: locationData.latitude, longitude: locationData.longitude, heading: locationData.heading);
         });
       } else {
         location.requestPermission().then((permissionStatus) async {
@@ -132,17 +132,12 @@ class DashBoardController extends GetxController {
               await location.enableBackgroundMode(enable: true);
             } catch (_) {}
             location.changeSettings(accuracy: LocationAccuracy.high, distanceFilter: double.parse(Constant.driverLocationUpdate));
-            location.onLocationChanged.listen((locationData) async {
+            _locationSub?.cancel();
+            _locationSub = location.onLocationChanged.listen((locationData) async {
               Constant.locationDataFinal = locationData;
-              await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid()).then((value) async {
-                if (value != null) {
-                  userModel.value = value;
-                  userModel.value.location = UserLocation(latitude: locationData.latitude, longitude: locationData.longitude);
-                  userModel.value.rotation = locationData.heading;
-                  await FireStoreUtils.updateUser(userModel.value);
-                  ShowToastDialog.closeLoader();
-                }
-              });
+              await FireStoreUtils.updateUserLocation(FireStoreUtils.getCurrentUid(),
+                  latitude: locationData.latitude, longitude: locationData.longitude, heading: locationData.heading);
+              ShowToastDialog.closeLoader();
             });
           } else {
             ShowToastDialog.closeLoader();

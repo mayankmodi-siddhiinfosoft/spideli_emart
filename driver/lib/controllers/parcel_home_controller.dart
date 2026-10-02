@@ -163,17 +163,18 @@ class ParcelHomeController extends GetxController {
   }
 
   String calculateParcelTotalAmountBooking(ParcelOrderModel parcelBookingData) {
-    String subTotal = parcelBookingData.subTotal.toString();
-    String discount = parcelBookingData.discount ?? "0.0";
-    String taxAmount = "0.0";
-    for (var element in parcelBookingData.taxSetting!) {
-      taxAmount = (double.parse(taxAmount) +
-              Constant.calculateTax(amount: (double.parse(subTotal) - double.parse(discount)).toString(), taxModel: element))
-          .toStringAsFixed(int.tryParse(Constant.currencyModel!.decimalDigits.toString()) ?? 2);
+    // Read with tryParse / `?? []`: this runs while the job card is built, and
+    // a parcel without `subTotal` / `taxSetting` (or with an empty discount)
+    // threw there, replacing the card and its Pickup / Deliver buttons.
+    final int digits = int.tryParse('${Constant.currencyModel?.decimalDigits}') ?? 2;
+    final double subTotal = double.tryParse('${parcelBookingData.subTotal ?? ''}') ?? 0.0;
+    final double discount = double.tryParse(parcelBookingData.discount ?? '') ?? 0.0;
+    double taxAmount = 0.0;
+    for (var element in parcelBookingData.taxSetting ?? const []) {
+      taxAmount = double.parse((taxAmount + Constant.calculateTax(amount: (subTotal - discount).toString(), taxModel: element)).toStringAsFixed(digits));
     }
 
     // Fixed intercity/intercountry tax is added on top of the taxed amount.
-    return ((double.parse(subTotal) - (double.parse(discount))) + double.parse(taxAmount) + (parcelBookingData.parcelScopeTax ?? 0).toDouble())
-        .toStringAsFixed(int.tryParse(Constant.currencyModel!.decimalDigits.toString()) ?? 2);
+    return ((subTotal - discount) + taxAmount + (parcelBookingData.parcelScopeTax ?? 0).toDouble()).toStringAsFixed(digits);
   }
 }

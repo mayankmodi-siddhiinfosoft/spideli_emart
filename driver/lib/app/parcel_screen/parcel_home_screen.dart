@@ -44,7 +44,12 @@ class ParcelHomeScreen extends StatelessWidget {
             Widget body;
             if (isLoading) {
               body = const DsSkeletonList(itemCount: 4);
-            } else if (docsPending) {
+            // The verification gate and the offline notice are about receiving
+            // new work. Parcels already assigned to this driver are listed
+            // either way — those two states replaced the list, and with it
+            // every Pickup / Deliver button (an owner-created driver starts
+            // offline).
+            } else if (docsPending && orders.isEmpty) {
               body = DsEmptyState(
                 icon: Icons.assignment_outlined,
                 tone: DsTone.warning,
@@ -57,7 +62,7 @@ class ParcelHomeScreen extends StatelessWidget {
                   dashBoardController.drawerIndex.value = 4;
                 },
               );
-            } else if (isOffline) {
+            } else if (isOffline && orders.isEmpty) {
               body = DsEmptyState(
                 icon: Icons.wifi_tethering_off_rounded,
                 tone: DsTone.neutral,
@@ -299,7 +304,9 @@ class _ParcelJobCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
-    final bool isAccepted = order.status == Constant.driverAccepted;
+    // `Order Shipped` (a hand assignment can write it) is still before pickup:
+    // it showed "Deliver Parcel", which refuses an un-collected parcel.
+    final bool isAccepted = order.status == Constant.driverAccepted || order.status == Constant.orderShipped;
     final bool showTrack = order.status == Constant.driverAccepted || order.status == Constant.orderInTransit;
     return DsCard.outlined(
       onTap: onOpen,
@@ -337,11 +344,11 @@ class _ParcelJobCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    DsAvatar(imageUrl: order.author!.profilePictureURL.toString(), name: order.author!.fullName(), size: 48),
+                    DsAvatar(imageUrl: order.author?.profilePictureURL ?? '', name: order.author?.fullName() ?? '', size: 48),
                     const DsGap(DsSpace.md),
                     Expanded(
                       child: Text(
-                        order.author!.fullName().tr,
+                        (order.author?.fullName() ?? '').tr,
                         textAlign: TextAlign.start,
                         style: t.titleSm.w700,
                       ),
@@ -359,7 +366,7 @@ class _ParcelJobCard extends StatelessWidget {
                 DsTripMetrics(
                   items: [
                     DsTripMetric(icon: Icons.payments_outlined, value: amount, label: 'Amount'.tr),
-                    DsTripMetric(icon: Icons.event_outlined, value: '${Constant.timestampToDate(order.senderPickupDateTime!)}  '.tr, label: 'Date'.tr),
+                    DsTripMetric(icon: Icons.event_outlined, value: order.senderPickupDateTime == null ? '-' : '${Constant.timestampToDate(order.senderPickupDateTime!)}  '.tr, label: 'Date'.tr),
                     DsTripMetric(icon: Icons.scale_outlined, value: '${order.parcelWeight}'.tr, label: 'Weight'.tr),
                   ],
                 ),

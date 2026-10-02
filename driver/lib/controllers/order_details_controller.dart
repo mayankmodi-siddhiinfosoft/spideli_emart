@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:driver/constant/constant.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:get/get.dart';
@@ -19,7 +21,15 @@ class OrderDetailsController extends GetxController {
     if (argumentData != null) {
       orderModel.value = argumentData['orderModel'];
     }
-    calculatePrice();
+    // The bill is arithmetic over fields a record may lack; a throw in it left
+    // `isLoading` true and the screen on its skeleton for good.
+    try {
+      await calculatePrice();
+    } catch (e) {
+      log("OrderDetailsController.calculatePrice failed: $e");
+    } finally {
+      isLoading.value = false;
+    }
     update();
   }
 

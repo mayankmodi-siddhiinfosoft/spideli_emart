@@ -40,7 +40,11 @@ class RentalHomeScreen extends StatelessWidget {
             return DsScaffold(
               body: controller.isLoading.value
                   ? const DsSkeletonList(itemCount: 3, leading: false, trailing: false)
-                  : Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false
+                  // The verification gate and the offline notice are about
+                  // receiving new bookings; bookings already assigned to this
+                  // driver are listed either way (both used to replace the
+                  // list and every action on it).
+                  : controller.rentalBookingData.isEmpty && Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false
                       ? _centered(
                           DsEmptyState(
                             tone: DsTone.warning,
@@ -55,7 +59,7 @@ class RentalHomeScreen extends StatelessWidget {
                             },
                           ),
                         )
-                      : controller.userModel.value.isActive == false
+                      : controller.rentalBookingData.isEmpty && controller.userModel.value.isActive == false
                           ? _centered(
                               DsEmptyState(
                                 tone: DsTone.neutral,
@@ -258,17 +262,17 @@ class RentalHomeScreen extends StatelessWidget {
                 const DsDivider(spacing: DsSpace.sm),
                 DsInfoRow(
                   label: "Package Details:".tr,
-                  value: "${rentalBookingData.rentalPackageModel!.name}".tr,
+                  value: (rentalBookingData.rentalPackageModel?.name ?? '-').tr,
                   valueTone: DsTone.brand,
                 ),
                 DsInfoRow(
                   label: "Including Distance:".tr,
-                  value: "${rentalBookingData.rentalPackageModel!.includedDistance} ${Constant.distanceType}".tr,
+                  value: "${rentalBookingData.rentalPackageModel?.includedDistance ?? '-'} ${Constant.distanceType}".tr,
                   valueTone: DsTone.brand,
                 ),
                 DsInfoRow(
                   label: "Including Duration:".tr,
-                  value: "${rentalBookingData.rentalPackageModel!.includedHours} Hr".tr,
+                  value: "${rentalBookingData.rentalPackageModel?.includedHours ?? '-'} Hr".tr,
                   valueTone: DsTone.brand,
                 ),
               ],
@@ -284,7 +288,7 @@ class RentalHomeScreen extends StatelessWidget {
               ),
               DsTripMetric(
                 icon: Icons.event_outlined,
-                value: Constant.timestampToDateTime(rentalBookingData.bookingDateTime!).tr,
+                value: rentalBookingData.bookingDateTime == null ? '-' : Constant.timestampToDateTime(rentalBookingData.bookingDateTime!).tr,
                 label: "Booking".tr,
               ),
             ],
@@ -305,7 +309,7 @@ class RentalHomeScreen extends StatelessWidget {
         size: DsButtonSize.lg,
         expand: true,
         onPressed: () async {
-          if (rentalBookingData.bookingDateTime!.toDate().isAfter(DateTime.now())) {
+          if (rentalBookingData.bookingDateTime != null && rentalBookingData.bookingDateTime!.toDate().isAfter(DateTime.now())) {
             showDialog(
                 context: context,
                 builder: (BuildContext context) {
@@ -325,7 +329,7 @@ class RentalHomeScreen extends StatelessWidget {
       );
     }
     if (rentalBookingData.status == Constant.orderInTransit &&
-        double.parse(rentalBookingData.endKitoMetersReading.toString()) < double.parse(rentalBookingData.startKitoMetersReading.toString())) {
+        (double.tryParse('${rentalBookingData.endKitoMetersReading ?? ''}') ?? 0) < (double.tryParse('${rentalBookingData.startKitoMetersReading ?? ''}') ?? 0)) {
       return DsButton.primary(
         label: "Set Final kilometers".tr,
         icon: Icons.speed_rounded,
@@ -442,13 +446,19 @@ class RentalHomeScreen extends StatelessWidget {
           rentalBookingData.status = Constant.orderInTransit;
 
           ShowToastDialog.showLoader("Updating...".tr);
-          await FireStoreUtils.rentalOrderPlace(rentalBookingData).then((value) {
+          // A failed write used to leave the full-screen loader up for good.
+          try {
+            await FireStoreUtils.rentalOrderPlace(rentalBookingData);
+          } catch (e) {
             ShowToastDialog.closeLoader();
-            ShowToastDialog.showToast("Ride started successfully".tr);
-            controller.currentKilometerController.value.clear();
-            otpController.value.clear();
-            Get.back();
-          });
+            ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+            return;
+          }
+          ShowToastDialog.closeLoader();
+          ShowToastDialog.showToast("Ride started successfully".tr);
+          controller.currentKilometerController.value.clear();
+          otpController.value.clear();
+          Get.back();
         },
       ),
       barrierDismissible: true,
@@ -478,19 +488,25 @@ class RentalHomeScreen extends StatelessWidget {
           if (controller.completeKilometerController.value.text.isEmpty) {
             ShowToastDialog.showToast("Please enter current kilometer reading".tr);
             return;
-          } else if (double.parse(controller.completeKilometerController.value.text.toString().trim()) < double.parse(rentalBookingData.startKitoMetersReading.toString())) {
+          } else if ((double.tryParse(controller.completeKilometerController.value.text.toString().trim()) ?? 0) <
+              (double.tryParse('${rentalBookingData.startKitoMetersReading ?? ''}') ?? 0)) {
             ShowToastDialog.showToast("Final kilometer reading cannot be less than starting kilometer reading".tr);
             return;
           } else {
             rentalBookingData.endKitoMetersReading = controller.completeKilometerController.value.text.toString().trim();
             rentalBookingData.endTime = Timestamp.now();
             ShowToastDialog.showLoader("Updating...".tr);
-            await FireStoreUtils.rentalOrderPlace(rentalBookingData).then((value) {
+            try {
+              await FireStoreUtils.rentalOrderPlace(rentalBookingData);
+            } catch (e) {
               ShowToastDialog.closeLoader();
-              ShowToastDialog.showToast("Kilometer updated successfully".tr);
-              controller.completeKilometerController.value.clear();
-              Get.back();
-            });
+              ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+              return;
+            }
+            ShowToastDialog.closeLoader();
+            ShowToastDialog.showToast("Kilometer updated successfully".tr);
+            controller.completeKilometerController.value.clear();
+            Get.back();
           }
         },
       ),
@@ -512,16 +528,27 @@ class RentalHomeScreen extends StatelessWidget {
         primaryLabel: "Ride Completed".tr,
         onPrimary: () async {
           ShowToastDialog.showLoader("Updating...".tr);
+          final String? previousStatus = rentalBookingData.status;
+          final bool? previousPaid = rentalBookingData.paymentStatus;
           rentalBookingData.status = Constant.orderCompleted;
           rentalBookingData.paymentStatus = true;
-          await controller.updateCabWalletAmount(rentalBookingData);
-          await FireStoreUtils.rentalOrderPlace(rentalBookingData).then((value) {
-            Map<String, dynamic> payLoad = <String, dynamic>{"type": "rental_order", "orderId": rentalBookingData.id};
-            SendNotification.sendFcmMessage(Constant.rentalCompleted, rentalBookingData.author!.fcmToken.toString(), payLoad);
+          // A throw anywhere here (an `author!`, a failed write) used to leave
+          // the full-screen loader up and the whole app unresponsive.
+          try {
+            await controller.updateCabWalletAmount(rentalBookingData);
+            await FireStoreUtils.rentalOrderPlace(rentalBookingData);
+          } catch (e) {
+            rentalBookingData.status = previousStatus;
+            rentalBookingData.paymentStatus = previousPaid;
             ShowToastDialog.closeLoader();
-            ShowToastDialog.showToast("Ride completed successfully".tr);
-            Get.back();
-          });
+            ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+            return;
+          }
+          Map<String, dynamic> payLoad = <String, dynamic>{"type": "rental_order", "orderId": rentalBookingData.id};
+          SendNotification.sendFcmMessage(Constant.rentalCompleted, rentalBookingData.author?.fcmToken ?? '', payLoad);
+          ShowToastDialog.closeLoader();
+          ShowToastDialog.showToast("Ride completed successfully".tr);
+          Get.back();
         },
       ),
       barrierDismissible: true,

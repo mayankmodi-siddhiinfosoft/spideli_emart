@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:developer';
+
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
@@ -5,6 +8,7 @@ import 'package:driver/constant/send_notification.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/widget/cancel_reason_sheet.dart';
@@ -22,6 +26,17 @@ class HomeScreenMultipleOrderController extends GetxController {
   RxList<dynamic> newOrder = [].obs;
   RxList<dynamic> activeOrder = [].obs;
 
+  /// The orders behind [newOrder] and [activeOrder], live. The cards used to
+  /// be `FutureBuilder(getOrderById)` created inside build: every
+  /// `users/{me}` snapshot (one per location update) cleared both lists and
+  /// rebuilt them, every card dropped back to a skeleton while it re-read its
+  /// order, and a tap on Accept / Reject or on an active order mostly landed on
+  /// a skeleton that does nothing.
+  final RxMap<String, OrderModel> orders = <String, OrderModel>{}.obs;
+  final RxBool ordersLoaded = false.obs;
+  late final VendorOrdersWatch _ordersWatch = VendorOrdersWatch(_onOrdersChanged);
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _driverSub;
+
   @override
   void onInit() {
     // TODO: implement onInt
@@ -29,25 +44,43 @@ class HomeScreenMultipleOrderController extends GetxController {
     super.onInit();
   }
 
+  @override
+  void onClose() {
+    _driverSub?.cancel();
+    _ordersWatch.cancel();
+    super.onClose();
+  }
+
+  void _onOrdersChanged(Map<String, OrderModel> found, bool fromServer) {
+    orders.assignAll(found);
+    ordersLoaded.value = true;
+    final String? uid = driverModel.value.id;
+    if (fromServer && uid != null) {
+      AssignedDeliveryOrders.pruneStale(uid, driverModel.value.inProgressOrderID, found);
+    }
+  }
+
+  static bool _sameIds(List<dynamic> a, List<dynamic> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].toString() != b[i].toString()) return false;
+    }
+    return true;
+  }
+
   Future<void> getDriver() async {
-    FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen(
+    _driverSub?.cancel();
+    _driverSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen(
       (event) async {
         if (event.exists) {
           driverModel.value = UserModel.fromJson(event.data()!);
           Constant.userModel = driverModel.value;
-          newOrder.clear();
-          activeOrder.clear();
-          if (driverModel.value.orderRequestData != null) {
-            for (var element in driverModel.value.orderRequestData!) {
-              newOrder.add(element);
-            }
-          }
-
-          if (driverModel.value.inProgressOrderID != null) {
-            for (var element in driverModel.value.inProgressOrderID!) {
-              activeOrder.add(element);
-            }
-          }
+          final List<dynamic> requests = List<dynamic>.from(driverModel.value.orderRequestData ?? const []);
+          final List<dynamic> inProgress = List<dynamic>.from(driverModel.value.inProgressOrderID ?? const []);
+          // Only touched when the ids really changed (see [orders]).
+          if (!_sameIds(newOrder, requests)) newOrder.assignAll(requests);
+          if (!_sameIds(activeOrder, inProgress)) activeOrder.assignAll(inProgress);
+          _ordersWatch.watch([...inProgress, ...requests]);
 
           if (newOrder.isEmpty == true) {
             await AudioPlayerService.playSound(false);
@@ -59,10 +92,13 @@ class HomeScreenMultipleOrderController extends GetxController {
             }
           }
         }
+        isLoading.value = false;
+      },
+      onError: (Object e) {
+        log("HomeScreenMultipleOrderController.getDriver failed: $e");
+        isLoading.value = false;
       },
     );
-    isLoading.value = false;
-    update();
   }
 
   Future<void> acceptOrder(OrderModel currentOrder) async {
