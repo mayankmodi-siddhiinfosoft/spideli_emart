@@ -15,6 +15,14 @@ void main() {
       expect(formatAddress(['123 Yaounde St, null, Tsinga']), '123 Yaounde St, Tsinga');
     });
 
+    test("cleans the client's cancelled-order card address (2 Oct 2026)", () {
+      expect(formatAddress(['18, null, Yaoundé, Région du Centre, null, Cameroun', null, 'null']), '18, Yaoundé, Région du Centre, Cameroun');
+    });
+
+    test('does not repeat a locality already inside the address line', () {
+      expect(formatAddress(['18, Yaoundé, null', 'Yaoundé', 'null']), '18, Yaoundé');
+    });
+
     test('returns empty when nothing usable was stored', () {
       expect(formatAddress([null, '', '  ', 'null']), '');
     });

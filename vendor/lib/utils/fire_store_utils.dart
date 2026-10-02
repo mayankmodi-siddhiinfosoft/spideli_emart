@@ -669,6 +669,8 @@ class FireStoreUtils {
         .setKnownFields(orderModel.toJson())
         .then((value) {
           isUpdate = true;
+          // cancelledAt now carries the server's time; later saves keep it.
+          orderModel.stampCancelledAtOnServer = false;
         })
         .catchError((error) {
           log("Failed to update user: $error");
@@ -1903,6 +1905,18 @@ class FireStoreUtils {
     return notificationModel;
   }
 
+  /// A booking's current status straight from Firestore, or null when it
+  /// cannot be read (the caller then goes ahead as before).
+  static Future<String?> getDineInBookingStatus(String bookingId) async {
+    try {
+      final doc = await fireStore.collection(CollectionName.bookedTable).doc(bookingId).get();
+      return doc.data()?['status']?.toString();
+    } catch (e) {
+      log("getDineInBookingStatus failed: $e");
+      return null;
+    }
+  }
+
   static Future<bool?> setBookedOrder(DineInBookingModel orderModel) async {
     bool isAdded = false;
     await fireStore
@@ -1911,6 +1925,7 @@ class FireStoreUtils {
         .setKnownFields(orderModel.toJson())
         .then((value) {
           isAdded = true;
+          orderModel.stampCancelledAtOnServer = false;
         })
         .catchError((error) {
           log("Failed to update user: $error");
@@ -2096,22 +2111,46 @@ class FireStoreUtils {
     "Other",
   ];
 
-  /// `settings/cancellationReasons.vendor` (or `.store`), else the built-in
-  /// defaults. The list always ends with "Other", which needs free text.
-  static Future<List<String>> getVendorCancellationReasons() async {
+  /// Built-in reasons for rejecting a new order.
+  static const List<String> defaultVendorRejectionReasons = [
+    "Item out of stock",
+    "Store closing soon",
+    "Too busy",
+    "Cannot deliver to this address",
+    "Other",
+  ];
+
+  /// Built-in reasons for rejecting a dine-in table booking.
+  static const List<String> defaultDineInRejectionReasons = [
+    "No table available at that time",
+    "Store closed at that time",
+    "Too busy",
+    "Party too large",
+    "Other",
+  ];
+
+  /// `settings/cancellationReasons.vendor` (or `.store`), else [defaults]
+  /// (the cancellation list unless a caller passes the rejection one). The
+  /// list always ends with "Other", which needs free text.
+  static Future<List<String>> getVendorCancellationReasons({List<String> defaults = defaultVendorCancellationReasons}) async {
     List<String> reasons = [];
     try {
       final doc = await fireStore.collection(CollectionName.settings).doc('cancellationReasons').get();
       final data = doc.data();
-      final dynamic raw = data?['vendor'] ?? data?['store'];
-      if (raw is Iterable) {
-        reasons = raw.map((e) => e?.toString().trim() ?? '').where((e) => e.isNotEmpty).toList();
+      for (final String key in const ['vendor', 'store']) {
+        final dynamic raw = data?[key];
+        if (raw is Iterable) {
+          reasons = raw.map((e) => e?.toString().trim() ?? '').where((e) => e.isNotEmpty && e.toLowerCase() != 'null').toList();
+        }
+        if (reasons.isNotEmpty) break;
       }
     } catch (e) {
       log("getVendorCancellationReasons failed: $e");
     }
-    if (reasons.isEmpty) reasons = List<String>.from(defaultVendorCancellationReasons);
-    if (!reasons.any((e) => e.toLowerCase() == 'other')) reasons.add("Other");
+    if (reasons.isEmpty) reasons = List<String>.from(defaults);
+    // "Other" always last, exactly once.
+    reasons.removeWhere((e) => e.toLowerCase() == 'other');
+    reasons.add("Other");
     return reasons;
   }
 

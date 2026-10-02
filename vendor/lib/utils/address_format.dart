@@ -37,9 +37,12 @@ String formatAddress(Iterable<Object?> parts, {String separator = ', '}) {
     final String text = _collapse(part.toString());
     if (text.isEmpty) continue;
     // The same line twice (address == locality happens on panel-created rows)
-    // reads as a mistake, so keep only the first.
-    if (kept.any((e) => e.toLowerCase() == text.toLowerCase())) continue;
-    kept.add(text);
+    // reads as a mistake, so keep only the first. Compared per comma-separated
+    // piece, so "18, Yaoundé" + locality "Yaoundé" does not repeat the town.
+    final List<String> pieces = text.split(',').map((e) => e.trim()).where((e) => !isBlankAddressPart(e)).toList();
+    final List<String> fresh = pieces.where((p) => !kept.any((k) => k.split(',').any((s) => s.trim().toLowerCase() == p.toLowerCase()))).toList();
+    if (fresh.isEmpty) continue;
+    kept.add(fresh.join(', '));
   }
   return kept.join(separator);
 }

@@ -9,6 +9,8 @@ import 'package:vendor/constant/constant.dart';
 import 'package:vendor/controller/order_details_controller.dart';
 import 'package:vendor/models/cart_product_model.dart';
 import 'package:vendor/models/order_model.dart';
+import 'package:vendor/utils/cancellation.dart';
+import 'package:vendor/widget/cancellation_block.dart';
 import 'package:vendor/widget/wholesale_tag.dart';
 
 /// Order detail: a status hero, customer / items / bill / driver sections
@@ -273,32 +275,17 @@ class OrderDetailsScreen extends StatelessWidget {
           section(null, null, Padding(padding: const EdgeInsets.only(top: DsSpace.lg), child: customer)),
           section("Items".tr, Icons.receipt_long_outlined, items),
         ];
-        // Why a cancelled order was cancelled, by whom and when (report #14).
-        final String cancelReason = (order.cancelReason ?? '').trim();
-        final Widget? cancellation = cancelReason.isEmpty
-            ? null
-            : DsCard.tinted(
-                tone: DsTone.danger,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(cancelReason.tr, style: t.bodyStrong),
-                    if ((order.cancelledBy ?? '').isNotEmpty || order.cancelledAt != null) ...[
-                      const DsGap(DsSpace.xxs),
-                      Text(
-                        [
-                          if ((order.cancelledBy ?? '').isNotEmpty) "${"Cancelled by".tr} ${order.cancelledBy!.tr}",
-                          if (order.cancelledAt != null) Constant.timestampToDateTime(order.cancelledAt!),
-                        ].join(' · '),
-                        style: t.caption.copyWith(color: c.textMuted),
-                      ),
-                    ],
-                  ],
-                ),
-              );
+        // Who cancelled / rejected the order, why and when, with the drivers
+        // who passed on it (2 Oct 2026 contract). Every ended order shows it,
+        // "No reason recorded" for one from before reasons were required.
+        final bool ended = CancellationDetails.isEndedStatus(order.status);
+        final Widget? cancellation = ended ? CancellationBlock(details: order.cancellation, showDriverRejections: true) : null;
+        // A live order a driver passed on still lists who passed and why.
+        final Widget? driverPasses = !ended && order.driverRejections.isNotEmpty ? DsCard(child: DriverPassesList(passes: order.driverRejections)) : null;
 
         final List<Widget> secondaryColumn = [
-          if (cancellation != null) section("Cancellation reason".tr, Icons.cancel_outlined, cancellation),
+          if (cancellation != null) section(order.cancellation.isRejected ? "Rejection".tr : "Cancellation".tr, Icons.cancel_outlined, cancellation),
+          if (driverPasses != null) section("Passed by drivers".tr, Icons.delivery_dining_outlined, driverPasses),
           section("Bill details".tr, Icons.payments_outlined, bill),
           if (driver != null) section("Delivery Man Information".tr, Icons.delivery_dining_outlined, driver),
         ];

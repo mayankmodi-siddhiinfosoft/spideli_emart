@@ -30,9 +30,11 @@ import 'package:vendor/models/user_model.dart';
 import 'package:vendor/models/wallet_transaction_model.dart';
 import 'package:vendor/service/audio_player_service.dart';
 import 'package:vendor/models/currency_model.dart';
+import 'package:vendor/utils/cancellation.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/region_service.dart';
 import 'package:vendor/widget/cancel_reason_sheet.dart';
+import 'package:vendor/widget/cancellation_block.dart';
 import 'package:vendor/widget/wholesale_tag.dart';
 
 /// Store dashboard: a brand hero (who is signed in, the current store with its
@@ -290,6 +292,28 @@ class HomeScreen extends StatelessWidget {
     return address.isEmpty ? "No address on this order".tr : address;
   }
 
+  /// Who acted, for `cancelledByName`: the store's name, else the signed-in
+  /// user's.
+  static String? _storeName(OrderModel orderModel, HomeController controller) {
+    for (final String? candidate in [orderModel.vendor?.title, controller.vendermodel.value.title, Constant.userModel?.fullName()]) {
+      if (!isBlankText(candidate)) return candidate!.trim();
+    }
+    return null;
+  }
+
+  /// The reason sheet keeps the order open for a while: if someone else
+  /// (customer, driver, admin) changed its status meanwhile, the store's
+  /// action - and its refund - must not run on top of theirs. Closes the
+  /// loader and says so when that happened. A failed read does not block.
+  static Future<bool> _unchangedSinceShown(OrderModel orderModel, HomeController controller) async {
+    final OrderModel? fresh = await FireStoreUtils.getOrderByOrderId(orderModel.id.toString());
+    if (fresh == null || fresh.status == orderModel.status) return true;
+    ShowToastDialog.closeLoader();
+    ShowToastDialog.showToast("This order was updated meanwhile and is now: @status".trParams({'status': fresh.status.toString().tr}));
+    await controller.getOrder();
+    return false;
+  }
+
   Widget newOrderWidget(isDark, BuildContext context, OrderModel orderModel, HomeController controller) {
     // Amounts of an order are shown in the currency it was charged in.
     final CurrencyModel? orderCurrency = RegionService.currencyForOrder(orderModel.regionId);
@@ -407,9 +431,17 @@ class HomeScreen extends StatelessWidget {
                     label: "Reject".tr,
                     icon: Icons.close_rounded,
                     onPressed: () async {
+                      // A reason is mandatory (2 Oct 2026 contract): backing out
+                      // of the sheet leaves the order exactly as it was - no
+                      // status, refund, wallet reversal or notification.
+                      final CancelReasonResult? rejection = await CancelReasonSheet.showForRejection();
+                      if (rejection == null) return;
                       ShowToastDialog.showLoader('Please wait...'.tr);
+                      if (!await _unchangedSinceShown(orderModel, controller)) return;
                       await AudioPlayerService.playSound(false);
                       orderModel.status = Constant.orderRejected;
+                      // Written in the same updateOrder as the status change.
+                      orderModel.markEndedByVendor(action: CancelAction.rejected, reason: rejection.reason, code: rejection.code, byName: _storeName(orderModel, controller));
                       if (orderModel.cashback?.id != null && orderModel.cashback?.cashbackValue != null) {
                         await FireStoreUtils.deleteCashbackRedeem(orderModel);
                       }
@@ -724,11 +756,10 @@ class HomeScreen extends StatelessWidget {
                 final CancelReasonResult? cancellation = await CancelReasonSheet.show();
                 if (cancellation == null) return;
                 ShowToastDialog.showLoader('Please wait...'.tr);
+                if (!await _unchangedSinceShown(orderModel, controller)) return;
                 orderModel.status = Constant.orderCancelled;
-                orderModel.cancelReason = cancellation.reason;
-                orderModel.cancelReasonCode = cancellation.code;
-                orderModel.cancelledBy = Constant.userRoleVendor;
-                orderModel.cancelledAt = Timestamp.now();
+                // Written in the same updateOrder as the status change.
+                orderModel.markEndedByVendor(action: CancelAction.cancelled, reason: cancellation.reason, code: cancellation.code, byName: _storeName(orderModel, controller));
                 if (orderModel.driverID != null) {
                   UserModel? driverModel = await FireStoreUtils.getUserById(orderModel.driverID ?? '');
                   driverModel?.orderRequestData?.remove(orderModel.id);
@@ -926,11 +957,12 @@ class HomeScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _StatusBanner(status: orderModel.status.toString(), tone: orderModel.status == Constant.orderRejected ? DsTone.danger : DsTone.fromStatus(orderModel.status)),
-          // Why it was cancelled, by whom and when (report #14).
-          if ((orderModel.cancelReason ?? '').trim().isNotEmpty)
+          // Who cancelled / rejected it, why and when - on every ended order,
+          // "No reason recorded" for one from before reasons were required.
+          if (CancellationDetails.isEndedStatus(orderModel.status))
             Padding(
               padding: const EdgeInsets.only(top: DsSpace.sm),
-              child: _CancelReasonNote(orderModel: orderModel),
+              child: CancellationLine(details: orderModel.cancellation),
             ),
         ],
       ),
@@ -1048,7 +1080,10 @@ class HomeScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 OrderMoneyRow(label: "Order Date".tr, value: Constant.timestampToDateTime(orderModel.createdAt!), padding: const EdgeInsets.symmetric(vertical: DsSpace.xs)),
-                if (Constant.vendorAdminCommission?.isEnabled == true)
+                // A cancelled / rejected order keeps nothing: whatever it had
+                // credited the store is reversed in full, commission included,
+                // so no commission line suggests money was taken on it.
+                if (Constant.vendorAdminCommission?.isEnabled == true && !CancellationDetails.isEndedStatus(orderModel.status))
                   OrderMoneyRow(
                     label: "Admin Commissions".tr,
                     value: "-${Constant.amountShow(currency: orderCurrency, amount: adminCommission.toString())}".tr,
@@ -2031,35 +2066,6 @@ class _StatusTrack extends StatelessWidget {
               ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// The cancellation reason recorded on an order, with who cancelled and when
-/// (report #14).
-class _CancelReasonNote extends StatelessWidget {
-  final OrderModel orderModel;
-  const _CancelReasonNote({required this.orderModel});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    final String by = (orderModel.cancelledBy ?? '').trim();
-    final String when = orderModel.cancelledAt == null ? '' : Constant.timestampToDateTime(orderModel.cancelledAt!);
-    final String meta = [by.isEmpty ? '' : "${"Cancelled by".tr} ${by.tr}", when].where((e) => e.isNotEmpty).join(' · ');
-    return Container(
-      padding: const EdgeInsets.all(DsSpace.md),
-      decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brMd, border: Border.all(color: c.border)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text("Cancellation reason".tr, style: t.overline),
-          const DsGap(DsSpace.xxs),
-          Text(orderModel.cancelReason!.tr, style: t.bodySm),
-          if (meta.isNotEmpty) ...[const DsGap(DsSpace.xxs), Text(meta, style: t.caption.copyWith(color: c.textMuted))],
-        ],
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'package:vendor/models/cashback_model.dart';
 import 'package:vendor/models/tax_model.dart';
 import 'package:vendor/models/user_model.dart';
 import 'package:vendor/models/vendor_model.dart';
+import 'package:vendor/utils/cancellation.dart';
 
 class OrderModel {
   ShippingAddress? address;
@@ -50,13 +51,28 @@ class OrderModel {
   /// app). Order amounts are shown in this region's currency.
   String? regionId;
 
-  /// Why the order was cancelled, who cancelled it and when (report #14).
-  /// [cancelReasonCode] is the list entry the reason was picked from, or
-  /// "other" for free text; [cancelledBy] is "vendor", "customer" or "driver".
+  /// Why the order was cancelled or rejected, who did it and when — the
+  /// shared contract (`.claude/CANCEL-REASON-CONTRACT.md`). [cancelReasonCode]
+  /// is the list entry the reason was picked from, or "other" for free text;
+  /// [cancelledBy] is "customer" | "vendor" | "driver" | "admin" (older store
+  /// records may say "store" / "restaurant"); [cancelAction] is "cancelled" or
+  /// "rejected". Read tolerantly, written only when set, so a later save of
+  /// this order never clears what another actor recorded.
   String? cancelReason;
   String? cancelReasonCode;
   String? cancelledBy;
+  String? cancelledByName;
   Timestamp? cancelledAt;
+  String? cancelAction;
+
+  /// Drivers who passed on this order's offer (`driverRejections`, written
+  /// with arrayUnion by the driver app). Read only: the store never writes it
+  /// back, so a stale copy can never overwrite a driver's newer entry.
+  List<DriverRejection> driverRejections = const [];
+
+  /// Set by [markEndedByVendor]: the next write stamps `cancelledAt` with the
+  /// server's clock instead of this device's. Cleared once that write lands.
+  bool stampCancelledAtOnServer = false;
 
   OrderModel({
     this.address,
@@ -101,7 +117,9 @@ class OrderModel {
     this.cancelReason,
     this.cancelReasonCode,
     this.cancelledBy,
+    this.cancelledByName,
     this.cancelledAt,
+    this.cancelAction,
   });
 
   OrderModel.fromJson(Map<String, dynamic> json) {
@@ -172,11 +190,41 @@ class OrderModel {
     isFreeDelivery = json['isFreeDelivery'] ?? false;
     isPosOrder = json['isPosOrder'] ?? false;
     packagingChargeEnable = json['packagingChargeEnable'] ?? false;
-    cancelReason = json['cancelReason']?.toString();
-    cancelReasonCode = json['cancelReasonCode']?.toString();
-    cancelledBy = json['cancelledBy']?.toString();
-    cancelledAt = json['cancelledAt'] is Timestamp ? json['cancelledAt'] : null;
+    // Tolerant: older panels named the reason differently, and "null" written
+    // as a string is no reason at all.
+    cancelReason = firstText(json, const ['cancelReason', 'cancellationReason', 'cancel_reason', 'rejectReason', 'rejectionReason']);
+    cancelReasonCode = firstText(json, const ['cancelReasonCode', 'cancel_reason_code']);
+    cancelledBy = firstText(json, const ['cancelledBy', 'canceledBy', 'cancelled_by']);
+    cancelledByName = firstText(json, const ['cancelledByName', 'canceledByName']);
+    cancelledAt = parseTimestamp(json['cancelledAt'] ?? json['canceledAt']);
+    cancelAction = firstText(json, const ['cancelAction']);
+    driverRejections = DriverRejection.listFrom(json['driverRejections']);
   }
+
+  /// Records that the store [action]ed this order ("cancelled" / "rejected")
+  /// for [reason]. Only sets the fields; the caller writes them together with
+  /// the status change in one [FireStoreUtils.updateOrder].
+  void markEndedByVendor({required String action, required String reason, required String code, String? byName}) {
+    cancelReason = reason;
+    cancelReasonCode = code;
+    cancelledBy = 'vendor';
+    cancelledByName = isBlankText(byName) ? null : byName!.trim();
+    cancelAction = action;
+    // Shown at once; the stored value is the server's time.
+    cancelledAt = Timestamp.now();
+    stampCancelledAtOnServer = true;
+  }
+
+  /// The contract's block for this order, for the cards and details screen.
+  CancellationDetails get cancellation => CancellationDetails.of(
+    status: status,
+    cancelAction: cancelAction,
+    reason: cancelReason,
+    cancelledBy: cancelledBy,
+    cancelledByName: cancelledByName,
+    cancelledAt: cancelledAt,
+    driverRejections: driverRejections,
+  );
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
@@ -219,7 +267,9 @@ class OrderModel {
       data['driver'] = driver!.toJson();
     }
     data['takeAway'] = takeAway;
-    data['rejectedByDrivers'] = rejectedByDrivers;
+    // rejectedByDrivers / driverRejections are not written back: drivers add
+    // to them with arrayUnion, and the store never changes them, so echoing a
+    // copy read earlier could only drop a driver's newer entry.
     data['cashback'] = cashback?.toJson();
     if (taxSetting != null) {
       data['taxSetting'] = taxSetting!.map((v) => v.toJson()).toList();
@@ -246,7 +296,13 @@ class OrderModel {
     if (cancelReason != null) data['cancelReason'] = cancelReason;
     if (cancelReasonCode != null) data['cancelReasonCode'] = cancelReasonCode;
     if (cancelledBy != null) data['cancelledBy'] = cancelledBy;
-    if (cancelledAt != null) data['cancelledAt'] = cancelledAt;
+    if (cancelledByName != null) data['cancelledByName'] = cancelledByName;
+    if (cancelAction != null) data['cancelAction'] = cancelAction;
+    if (stampCancelledAtOnServer) {
+      data['cancelledAt'] = FieldValue.serverTimestamp();
+    } else if (cancelledAt != null) {
+      data['cancelledAt'] = cancelledAt;
+    }
     return data;
   }
 }

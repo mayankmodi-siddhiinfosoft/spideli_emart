@@ -11,7 +11,10 @@ import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/dine_in_order_controller.dart';
 import 'package:vendor/models/dine_in_booking_model.dart';
 import 'package:vendor/themes/ds/ds.dart';
+import 'package:vendor/utils/cancellation.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/widget/cancel_reason_sheet.dart';
+import 'package:vendor/widget/cancellation_block.dart';
 
 class DineInOrderScreen extends StatelessWidget {
   const DineInOrderScreen({super.key});
@@ -179,7 +182,9 @@ class DineInOrderScreen extends StatelessWidget {
     final bookingDate = orderModel.date?.toDate();
     final status = orderModel.status.toString();
     final tone = DsTone.fromStatus(status);
-    final showActions = !(isNew == false || (orderModel.status == Constant.orderAccepted || orderModel.status == Constant.orderRejected));
+    // A booking the guest (or admin) already cancelled is over: no accept /
+    // reject on it.
+    final showActions = !(isNew == false || (orderModel.status == Constant.orderAccepted || orderModel.status == Constant.orderRejected) || orderModel.isEnded);
     return Padding(
       padding: const EdgeInsets.only(bottom: DsSpace.md),
       child: DsCard(
@@ -278,6 +283,13 @@ class DineInOrderScreen extends StatelessWidget {
                 value: Constant.timestampToDateTime(orderModel.date!),
               ),
             ),
+            // Who cancelled / rejected the booking, why and when. The card is
+            // the store's only view of a booking, so it carries the full block.
+            if (orderModel.isEnded)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(DsSpace.lg, 0, DsSpace.lg, DsSpace.lg),
+                child: CancellationBlock(details: orderModel.cancellation),
+              ),
             if (showActions)
               Padding(
                 padding: const EdgeInsets.fromLTRB(DsSpace.lg, 0, DsSpace.lg, DsSpace.lg),
@@ -289,8 +301,28 @@ class DineInOrderScreen extends StatelessWidget {
                         icon: Icons.close_rounded,
                         expand: true,
                         onPressed: () async {
+                          // A reason is mandatory (2 Oct 2026 contract): backing
+                          // out leaves the booking untouched and the guest is
+                          // not notified.
+                          final CancelReasonResult? rejection = await CancelReasonSheet.showForBookingRejection();
+                          if (rejection == null) return;
                           ShowToastDialog.showLoader("Please wait.".tr);
+                          // The guest may have cancelled while the sheet was open.
+                          final String? currentStatus = await FireStoreUtils.getDineInBookingStatus(orderModel.id.toString());
+                          if (currentStatus != null && currentStatus != orderModel.status) {
+                            ShowToastDialog.closeLoader();
+                            ShowToastDialog.showToast("This booking was updated meanwhile and is now: @status".trParams({'status': currentStatus.tr}));
+                            await controller.getDineBooking();
+                            return;
+                          }
                           orderModel.status = Constant.orderRejected;
+                          // Same write as the status change.
+                          orderModel.markEndedByVendor(
+                            action: CancelAction.rejected,
+                            reason: rejection.reason,
+                            code: rejection.code,
+                            byName: isBlankText(controller.vendorModel.value.title) ? orderModel.vendor?.title : controller.vendorModel.value.title,
+                          );
                           await FireStoreUtils.setBookedOrder(orderModel);
                           SendNotification.sendFcmMessage(Constant.dineInCanceled, orderModel.author!.fcmToken.toString(), {});
                           controller.getDineBooking();

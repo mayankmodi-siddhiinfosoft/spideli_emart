@@ -13,32 +13,56 @@ class CancelReasonResult {
   const CancelReasonResult({required this.reason, required this.code});
 }
 
-/// Mandatory cancellation reason for a store cancelling an order (report #14).
+/// Mandatory reason for anything the store cancels or rejects (report #14 and
+/// the 2 Oct 2026 contract, `.claude/CANCEL-REASON-CONTRACT.md`).
 ///
 /// Reasons come from `settings/cancellationReasons.vendor` (`.store` is read
 /// as well, for panels that named the list that way), else the built-in
-/// defaults; "Other" requires free text. Returns null when the vendor backs
-/// out of the sheet, and the caller must then leave the order alone.
+/// defaults for what is being done ([defaults]); "Other" requires free text of
+/// at least 3 characters. Returns null when the vendor backs out of the sheet,
+/// and the caller must then leave the order alone: no status, refund, wallet
+/// reversal or notification.
 class CancelReasonSheet {
   CancelReasonSheet._();
 
-  static Future<CancelReasonResult?> show({String? title}) async {
+  static Future<CancelReasonResult?> show({String? title, String? subtitle, String? confirmLabel, List<String> defaults = FireStoreUtils.defaultVendorCancellationReasons}) async {
     ShowToastDialog.showLoader("Please wait".tr);
-    final List<String> reasons = await FireStoreUtils.getVendorCancellationReasons();
+    final List<String> reasons = await FireStoreUtils.getVendorCancellationReasons(defaults: defaults);
     ShowToastDialog.closeLoader();
     return Get.bottomSheet<CancelReasonResult>(
-      _CancelReasonBody(reasons: reasons, title: title ?? "Why are you cancelling?".tr),
+      _CancelReasonBody(
+        reasons: reasons,
+        title: title ?? "Why are you cancelling?".tr,
+        subtitle: subtitle ?? "A reason is required and is shown to the customer.".tr,
+        confirmLabel: confirmLabel ?? "Confirm".tr,
+      ),
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
     );
   }
+
+  /// Rejecting a new order.
+  static Future<CancelReasonResult?> showForRejection() => show(
+    title: "Why are you rejecting this order?".tr,
+    confirmLabel: "Reject order".tr,
+    defaults: FireStoreUtils.defaultVendorRejectionReasons,
+  );
+
+  /// Rejecting a dine-in table booking.
+  static Future<CancelReasonResult?> showForBookingRejection() => show(
+    title: "Why are you rejecting this booking?".tr,
+    confirmLabel: "Reject booking".tr,
+    defaults: FireStoreUtils.defaultDineInRejectionReasons,
+  );
 }
 
 class _CancelReasonBody extends StatefulWidget {
   final List<String> reasons;
   final String title;
+  final String subtitle;
+  final String confirmLabel;
 
-  const _CancelReasonBody({required this.reasons, required this.title});
+  const _CancelReasonBody({required this.reasons, required this.title, required this.subtitle, required this.confirmLabel});
 
   @override
   State<_CancelReasonBody> createState() => _CancelReasonBodyState();
@@ -63,8 +87,8 @@ class _CancelReasonBodyState extends State<_CancelReasonBody> {
     }
     if (_isOther(_selected)) {
       final String text = _other.text.trim();
-      if (text.isEmpty) {
-        ShowToastDialog.showToast("Please describe the reason".tr);
+      if (text.length < 3) {
+        ShowToastDialog.showToast("Please describe the reason (at least 3 characters)".tr);
         return;
       }
       Get.back(result: CancelReasonResult(reason: text, code: 'other'));
@@ -78,12 +102,12 @@ class _CancelReasonBodyState extends State<_CancelReasonBody> {
     final c = context.dsColors;
     return DsSheet(
       title: widget.title,
-      subtitle: "A reason is required and is shown to the customer.".tr,
+      subtitle: widget.subtitle,
       actions: Row(
         children: [
           Expanded(child: DsButton.secondary(label: "Back".tr, expand: true, onPressed: () => Get.back())),
           DsGap.md,
-          Expanded(child: DsButton.danger(label: "Confirm".tr, icon: Icons.cancel_outlined, expand: true, onPressed: _confirm)),
+          Expanded(child: DsButton.danger(label: widget.confirmLabel, icon: Icons.cancel_outlined, expand: true, onPressed: _confirm)),
         ],
       ),
       child: Column(
