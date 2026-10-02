@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
@@ -10,12 +9,14 @@ import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/app/chat_screens/chat_video_container.dart';
 import 'package:vendor/app/chat_screens/full_screen_image_viewer.dart';
 import 'package:vendor/app/chat_screens/full_screen_video_viewer.dart';
+import 'package:vendor/app/chat_screens/widgets/chat_widgets.dart';
 import 'package:vendor/constant/collection_name.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/controller/chat_controller.dart';
 import 'package:vendor/models/conversation_model.dart';
 import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/chat_scroll.dart';
 import 'package:vendor/utils/network_image_widget.dart';
 import 'package:vendor/widget/firebase_pagination/firebase_pagination.dart';
 
@@ -33,6 +34,9 @@ class ChatScreen extends StatelessWidget {
         final title = controller.receivedId.value == 'admin' ? 'Admin' : controller.receiverUser.value!.fullName();
         return Scaffold(
           backgroundColor: c.background,
+          // The composer is in the body (ChatThreadLayout), which the
+          // Scaffold lays out above the keyboard, so it rides up with it.
+          resizeToAvoidBottomInset: true,
           appBar: DsAppBar(
             backgroundColor: c.surface,
             titleWidget: Row(
@@ -62,60 +66,73 @@ class ChatScreen extends StatelessWidget {
               ],
             ),
           ),
-          body: Column(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () {
-                    FocusScope.of(context).unfocus();
+          body: ChatThreadLayout(
+            // The list below centres itself (DsResponsive inside the tap
+            // target), exactly as before.
+            maxContentWidth: null,
+            scrollController: controller.scrollController.value,
+            textController: controller.messageController.value,
+            messages: GestureDetector(
+              onTap: () {
+                FocusScope.of(context).unfocus();
+              },
+              child: DsResponsive(
+                maxWidth: DsLayout.contentMax,
+                child: FirestorePagination(
+                  reverse: true,
+                  controller: controller.scrollController.value,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+                  itemBuilder: (context, documentSnapshots, index) {
+                    ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+                    log("chatmodel :: ${chatmodel.id}");
+                    // Neighbours: list is reversed, so index + 1 is the message shown above.
+                    final ConversationModel? older = index + 1 < documentSnapshots.length
+                        ? ConversationModel.fromJson(documentSnapshots[index + 1].data() as Map<String, dynamic>)
+                        : null;
+                    final ConversationModel? newer = index - 1 >= 0 ? ConversationModel.fromJson(documentSnapshots[index - 1].data() as Map<String, dynamic>) : null;
+                    return chatItemView(
+                      context,
+                      chatmodel.senderId == FireStoreUtils.getCurrentUid(),
+                      chatmodel,
+                      groupedWithOlder: _isGrouped(chatmodel, older),
+                      groupedWithNewer: _isGrouped(chatmodel, newer),
+                      showDateHeader: older == null || !_sameDay(older.createdAt?.toDate(), chatmodel.createdAt?.toDate()),
+                    );
                   },
-                  child: DsResponsive(
-                    maxWidth: DsLayout.contentMax,
-                    child: FirestorePagination(
-                      reverse: true,
-                      controller: controller.scrollController.value,
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
-                      itemBuilder: (context, documentSnapshots, index) {
-                        ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
-                        log("chatmodel :: ${chatmodel.id}");
-                        // Neighbours: list is reversed, so index + 1 is the message shown above.
-                        final ConversationModel? older = index + 1 < documentSnapshots.length
-                            ? ConversationModel.fromJson(documentSnapshots[index + 1].data() as Map<String, dynamic>)
-                            : null;
-                        final ConversationModel? newer = index - 1 >= 0 ? ConversationModel.fromJson(documentSnapshots[index - 1].data() as Map<String, dynamic>) : null;
-                        return chatItemView(
-                          context,
-                          chatmodel.senderId == FireStoreUtils.getCurrentUid(),
-                          chatmodel,
-                          groupedWithOlder: _isGrouped(chatmodel, older),
-                          groupedWithNewer: _isGrouped(chatmodel, newer),
-                          showDateHeader: older == null || !_sameDay(older.createdAt?.toDate(), chatmodel.createdAt?.toDate()),
-                        );
-                      },
-                      onEmpty: DsEmptyState(
-                        icon: Icons.forum_outlined,
-                        title: "No conversion found".tr,
-                        compact: true,
-                      ),
-                      initialLoader: const _ChatSkeleton(),
-                      bottomLoader: const Padding(
-                        padding: EdgeInsets.all(DsSpace.lg),
-                        child: Center(child: DsSpinner()),
-                      ),
-                      query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
-                      isLive: true,
-                      viewType: ViewType.list,
-                    ),
+                  onEmpty: DsEmptyState(
+                    icon: Icons.forum_outlined,
+                    title: "No conversion found".tr,
+                    compact: true,
                   ),
+                  initialLoader: const _ChatSkeleton(),
+                  bottomLoader: const Padding(
+                    padding: EdgeInsets.all(DsSpace.lg),
+                    child: Center(child: DsSpinner()),
+                  ),
+                  query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
+                  isLive: true,
+                  viewType: ViewType.list,
                 ),
               ),
-              _Composer(controller: controller, onAttach: () => onCameraClick(context, controller)),
-            ],
+            ),
+            composer: ChatComposer(
+              controller: controller.messageController.value,
+              onAttach: () => onCameraClick(context, controller),
+              onSend: () => _send(controller),
+            ),
           ),
         );
       },
     );
+  }
+
+  void _send(ChatController controller) {
+    if (controller.messageController.value.text.isNotEmpty) {
+      controller.sendMessage(controller.messageController.value.text, null, '', 'text');
+      scrollChatToLatest(controller.scrollController.value, delay: const Duration(milliseconds: 500));
+      controller.messageController.value.clear();
+    }
   }
 
   static bool _sameDay(DateTime? a, DateTime? b) {
@@ -275,7 +292,7 @@ class ChatScreen extends StatelessWidget {
               if (image != null) {
                 Url url = await FireStoreUtils.uploadChatImageToFireStorage(File(image.path), context);
                 controller.sendMessage(controller.messageController.value.text, url, '', 'image');
-                Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
+                scrollChatToLatest(controller.scrollController.value, delay: const Duration(milliseconds: 500));
               }
             } catch (e) {
               ShowToastDialog.showToast("Storage permission is not enabled. Please allow it.");
@@ -292,7 +309,7 @@ class ChatScreen extends StatelessWidget {
               ChatVideoContainer? videoContainer = await FireStoreUtils.uploadChatVideoToFireStorage(context, File(galleryVideo.path));
               if (videoContainer != null) {
                 controller.sendMessage(controller.messageController.value.text, videoContainer.videoUrl, videoContainer.thumbnailUrl, 'video');
-                Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
+                scrollChatToLatest(controller.scrollController.value, delay: const Duration(milliseconds: 500));
               }
             }
           },
@@ -307,7 +324,7 @@ class ChatScreen extends StatelessWidget {
               if (image != null) {
                 Url url = await FireStoreUtils.uploadChatImageToFireStorage(File(image.path), context);
                 controller.sendMessage(controller.messageController.value.text, url, '', 'image');
-                Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
+                scrollChatToLatest(controller.scrollController.value, delay: const Duration(milliseconds: 500));
               }
             } catch (e) {
               ShowToastDialog.showToast("Camera access is not enabled. Please allow camera permission.");
@@ -336,84 +353,6 @@ class ChatScreen extends StatelessWidget {
       ),
     );
     showCupertinoModalPopup(context: context, builder: (context) => action);
-  }
-}
-
-/// Sticky message composer: attach button, pill text field and send button.
-class _Composer extends StatelessWidget {
-  final ChatController controller;
-  final VoidCallback onAttach;
-  const _Composer({required this.controller, required this.onAttach});
-
-  void _send() {
-    if (controller.messageController.value.text.isNotEmpty) {
-      controller.sendMessage(controller.messageController.value.text, null, '', 'text');
-      Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
-      controller.messageController.value.clear();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    final pill = OutlineInputBorder(borderRadius: DsRadius.brPill, borderSide: BorderSide(color: c.isDark ? c.border : c.surfaceAlt));
-    return DsStickyBar(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          DsIconButton(
-            icon: Icons.add_photo_alternate_outlined,
-            semanticLabel: 'Send Media'.tr,
-            variant: DsIconButtonVariant.tonal,
-            size: 44,
-            onPressed: onAttach,
-          ),
-          const DsGap(DsSpace.sm),
-          Expanded(
-            child: TextField(
-              textInputAction: TextInputAction.send,
-              keyboardType: TextInputType.text,
-              textCapitalization: TextCapitalization.sentences,
-              controller: controller.messageController.value,
-              cursorColor: c.brand,
-              style: t.bodyStrong.withColor(c.textPrimary),
-              decoration: DsInputDecoration.of(
-                context,
-                hint: 'Type message here....'.tr,
-                contentPadding: const EdgeInsets.symmetric(horizontal: DsSpace.xl, vertical: DsSpace.md),
-              ).copyWith(
-                border: pill,
-                enabledBorder: pill,
-                focusedBorder: OutlineInputBorder(borderRadius: DsRadius.brPill, borderSide: BorderSide(color: c.brand, width: 1.6)),
-              ),
-              onSubmitted: (value) async {
-                _send();
-              },
-            ),
-          ),
-          const DsGap(DsSpace.sm),
-          ValueListenableBuilder<TextEditingValue>(
-            valueListenable: controller.messageController.value,
-            builder: (context, value, _) {
-              final hasText = value.text.isNotEmpty;
-              return AnimatedSwitcher(
-                duration: DsMotion.of(context, DsMotion.fast),
-                transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
-                child: DsIconButton(
-                  key: ValueKey(hasText),
-                  icon: Icons.send_rounded,
-                  semanticLabel: 'Send'.tr,
-                  size: 44,
-                  variant: hasText ? DsIconButtonVariant.filled : DsIconButtonVariant.tonal,
-                  onPressed: _send,
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
   }
 }
 

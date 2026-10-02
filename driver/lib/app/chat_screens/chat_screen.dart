@@ -77,26 +77,37 @@ class ChatScreen extends StatelessWidget {
                       title: "No Conversion found".tr,
                       message: "This conversation could not be opened. Open it again from the order.".tr,
                     )
-                  : FirestorePagination(
-                      reverse: true,
+                  // Newest message stays in view when the keyboard opens
+                  // and while typing.
+                  : DsChatAutoScroll(
                       controller: controller.scrollController.value,
-                      physics: const BouncingScrollPhysics(),
-                      itemBuilder: (context, documentSnapshots, index) {
-                        ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+                      textController: controller.messageController.value,
+                      child: FirestorePagination(
+                        reverse: true,
+                        controller: controller.scrollController.value,
+                        physics: const BouncingScrollPhysics(),
+                        itemBuilder: (context, documentSnapshots, index) {
+                          ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
 
-                        return chatItemView(context, chatmodel.senderId == FireStoreUtils.getCurrentUid(), chatmodel);
-                      },
-                      onEmpty: DsEmptyState(
-                        icon: Icons.forum_outlined,
-                        compact: true,
-                        title: "No Conversion found".tr,
+                          return chatItemView(context, chatmodel.senderId == FireStoreUtils.getCurrentUid(), chatmodel);
+                        },
+                        onEmpty: DsEmptyState(
+                          icon: Icons.forum_outlined,
+                          compact: true,
+                          title: "No Conversion found".tr,
+                        ),
+                        query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
+                        isLive: true,
+                        viewType: ViewType.list,
                       ),
-                      query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
-                      isLive: true,
-                      viewType: ViewType.list,
                     ),
             ),
+            // The composer is the Scaffold's bottom bar, which the keyboard
+            // would cover (resizeToAvoidBottomInset only shrinks the body):
+            // avoidKeyboard lifts it above the keyboard, applying the inset
+            // once.
             bottomBar: DsStickyBar(
+              avoidKeyboard: true,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -123,7 +134,7 @@ class ChatScreen extends StatelessWidget {
                       onSubmitted: (value) async {
                         if (controller.messageController.value.text.isNotEmpty) {
                           controller.sendMessage(controller.messageController.value.text, null, '', 'text');
-                          Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
+                          Timer(const Duration(milliseconds: 500), () => _scrollToNewest(controller.scrollController.value));
                           controller.messageController.value.clear();
                         }
                       },
@@ -138,7 +149,7 @@ class ChatScreen extends StatelessWidget {
                     onPressed: () {
                       if (controller.messageController.value.text.isNotEmpty) {
                         controller.sendMessage(controller.messageController.value.text, null, '', 'text');
-                        Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
+                        Timer(const Duration(milliseconds: 500), () => _scrollToNewest(controller.scrollController.value));
                         controller.messageController.value.clear();
                       }
                     },
@@ -148,6 +159,13 @@ class ChatScreen extends StatelessWidget {
             ),
           );
         });
+  }
+
+  /// Jumps a reversed chat list to its newest message (guarded: the list may
+  /// have been disposed or not built yet when the timer fires).
+  static void _scrollToNewest(ScrollController scroll) {
+    if (!scroll.hasClients) return;
+    scroll.jumpTo(scroll.position.minScrollExtent);
   }
 
   Widget chatItemView(BuildContext context, bool isMe, ConversationModel data) {

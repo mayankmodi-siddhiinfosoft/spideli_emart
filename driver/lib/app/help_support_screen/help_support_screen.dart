@@ -69,27 +69,38 @@ class HelpSupportScreen extends StatelessWidget {
               onTap: () {
                 FocusScope.of(context).unfocus();
               },
-              child: FirestorePagination(
+              // Newest message stays in view when the keyboard opens and
+              // while typing.
+              child: DsChatAutoScroll(
                 controller: controller.scrollController.value,
-                physics: const BouncingScrollPhysics(),
-                query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(FireStoreUtils.getCurrentUid()).collection('thread').orderBy('createdAt', descending: true),
-                isLive: true,
-                shrinkWrap: true,
-                reverse: true,
-                onEmpty: DsEmptyState(
-                  icon: Icons.support_agent_rounded,
-                  compact: true,
-                  title: "No conversion found".tr,
+                textController: controller.messageController.value,
+                child: FirestorePagination(
+                  controller: controller.scrollController.value,
+                  physics: const BouncingScrollPhysics(),
+                  query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(FireStoreUtils.getCurrentUid()).collection('thread').orderBy('createdAt', descending: true),
+                  isLive: true,
+                  shrinkWrap: true,
+                  reverse: true,
+                  onEmpty: DsEmptyState(
+                    icon: Icons.support_agent_rounded,
+                    compact: true,
+                    title: "No conversion found".tr,
+                  ),
+                  viewType: ViewType.list,
+                  // to fetch real-time data
+                  itemBuilder: (context, documentSnapshots, index) {
+                    ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+                    return chatItemView(isMe: inboxModel.senderId == FireStoreUtils.getCurrentUid(), data: inboxModel, context: context, controller: controller);
+                  },
                 ),
-                viewType: ViewType.list,
-                // to fetch real-time data
-                itemBuilder: (context, documentSnapshots, index) {
-                  ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
-                  return chatItemView(isMe: inboxModel.senderId == FireStoreUtils.getCurrentUid(), data: inboxModel, context: context, controller: controller);
-                },
               ),
             ),
+            // The composer is the Scaffold's bottom bar, which the keyboard
+            // would cover (resizeToAvoidBottomInset only shrinks the body):
+            // avoidKeyboard lifts it above the keyboard, applying the inset
+            // once.
             bottomBar: DsStickyBar(
+              avoidKeyboard: true,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [

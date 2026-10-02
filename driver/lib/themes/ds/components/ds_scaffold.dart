@@ -121,14 +121,45 @@ class DsBackButton extends StatelessWidget {
 /// ```dart
 /// bottomBar: DsStickyBar(child: DsButton.primary(label: 'Save'.tr, expand: true, onPressed: c.save))
 /// bottomBar: DsStickyBar(child: Row(children: [Expanded(child: DsButton.dangerTonal(...)), DsGap.md, Expanded(child: DsButton.primary(...))]))
+/// bottomBar: DsStickyBar(avoidKeyboard: true, child: /* chat composer */)
 /// ```
 class DsStickyBar extends StatelessWidget {
   final Widget child;
   final double maxWidth;
-  const DsStickyBar({super.key, required this.child, this.maxWidth = DsLayout.contentMax});
+
+  /// Lift the bar above the on-screen keyboard.
+  ///
+  /// A `Scaffold`'s `bottomNavigationBar` is laid out at the bottom of the
+  /// *screen*: `resizeToAvoidBottomInset` shrinks the body only, so the bar
+  /// itself stays underneath the keyboard. Bars that sit under a focused field
+  /// (a chat composer) must opt in; a plain submit bar keeps the old
+  /// behaviour.
+  ///
+  /// This is the only place the keyboard inset is applied — never add it
+  /// again in the child. It reads the inset from the ambient [MediaQuery], so
+  /// it is applied exactly once: a Scaffold that already resized for the
+  /// keyboard (an outer dashboard Scaffold, or a bar placed in a resized body)
+  /// strips the inset for everything inside it, and this adds nothing. The
+  /// bottom safe area ([SafeArea] below) only counts while the keyboard is
+  /// closed: Flutter reports `padding.bottom` as 0 while the keyboard covers
+  /// it. The padding follows the keyboard's own per-frame inset (no extra
+  /// animation that would lag behind it), so the bar moves up and back down
+  /// together with the keyboard and the resized body.
+  final bool avoidKeyboard;
+
+  const DsStickyBar({super.key, required this.child, this.maxWidth = DsLayout.contentMax, this.avoidKeyboard = false});
 
   @override
   Widget build(BuildContext context) {
+    final bar = _bar(context);
+    if (!avoidKeyboard) return bar;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: bar,
+    );
+  }
+
+  Widget _bar(BuildContext context) {
     final c = DsColors.of(context);
     final l = DsLayout.of(context);
     return Container(

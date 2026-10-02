@@ -82,6 +82,10 @@ class HelpSupportController extends GetxController {
     }
 
     FireStoreUtils.addChat(conversationModel);
-    Timer(const Duration(milliseconds: 500), () => scrollController.value.jumpTo(scrollController.value.position.minScrollExtent));
+    // Guarded: the page may have been closed, or the list not built yet,
+    // by the time the timer fires.
+    Timer(const Duration(milliseconds: 500), () {
+      if (scrollController.value.hasClients) scrollController.value.jumpTo(scrollController.value.position.minScrollExtent);
+    });
   }
 }

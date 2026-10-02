@@ -122,15 +122,39 @@ class DsBackButton extends StatelessWidget {
 /// bottomBar: DsStickyBar(child: DsButton.primary(label: 'Save'.tr, expand: true, onPressed: c.save))
 /// bottomBar: DsStickyBar(child: Row(children: [Expanded(child: DsButton.dangerTonal(...)), DsGap.md, Expanded(child: DsButton.primary(...))]))
 /// ```
+///
+/// A chat composer does not go here: it belongs in the body, under the
+/// message list (`ChatThreadLayout`), where the Scaffold itself keeps it above
+/// the keyboard.
 class DsStickyBar extends StatelessWidget {
   final Widget child;
   final double maxWidth;
-  const DsStickyBar({super.key, required this.child, this.maxWidth = DsLayout.contentMax});
+
+  /// Lift the bar above the on-screen keyboard.
+  ///
+  /// A `Scaffold`'s `bottomNavigationBar` is laid out at the bottom of the
+  /// *screen*: `resizeToAvoidBottomInset` shrinks the body only, so the bar
+  /// itself stays underneath the keyboard. A bar in that slot that sits above
+  /// a focused field must opt in; a plain submit bar keeps the old behaviour.
+  /// This is the only place the inset is applied — do not add it again in the
+  /// child. A bar placed in the *body* does not need it: the Scaffold already
+  /// lays the body out above the keyboard.
+  final bool avoidKeyboard;
+
+  const DsStickyBar({super.key, required this.child, this.maxWidth = DsLayout.contentMax, this.avoidKeyboard = false});
 
   @override
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
     final l = DsLayout.of(context);
+    final bar = _bar(context, c, l);
+    if (!avoidKeyboard) return bar;
+    // A plain Padding: the platform already reports the inset frame by frame
+    // as the keyboard slides, so the bar moves with it.
+    return Padding(padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom), child: bar);
+  }
+
+  Widget _bar(BuildContext context, DsColors c, DsLayout l) {
     return Container(
       decoration: BoxDecoration(
         color: c.surface,

@@ -1,4 +1,5 @@
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/chat_scroll.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -158,7 +159,146 @@ class ChatMediaBubble extends StatelessWidget {
   }
 }
 
+/// Body of a chat screen: the message list fills the space, the composer sits
+/// directly under it.
+///
+/// Put this in the Scaffold's **body** (never the composer in
+/// `bottomNavigationBar`): the Scaffold then lays the body out above the
+/// keyboard (`resizeToAvoidBottomInset`), so the composer rides up with the
+/// keyboard and the inset is applied exactly once, by the Scaffold. With the
+/// keyboard closed the composer's own `SafeArea` keeps it clear of the home
+/// indicator / gesture bar; with it open that padding is already zero.
+///
+/// It also keeps the newest message in view: when the keyboard opens and when
+/// the user types, the thread is moved to its newest message (every scroll is
+/// guarded with `hasClients`).
+class ChatThreadLayout extends StatefulWidget {
+  /// The message list (usually a reversed `FirestorePagination`).
+  final Widget messages;
+
+  /// The input row, usually a [ChatComposer].
+  final Widget composer;
+
+  /// The message list's controller, used to bring the newest message back
+  /// into view.
+  final ScrollController? scrollController;
+
+  /// The composer's text controller: typing scrolls to the newest message.
+  final TextEditingController? textController;
+
+  /// Whether the message list is reversed (newest at `minScrollExtent`).
+  final bool reverse;
+
+  /// Constrain & center the message list on wide screens; the composer bar
+  /// stays full width and centers its own content.
+  final double? maxContentWidth;
+
+  const ChatThreadLayout({super.key, required this.messages, required this.composer, this.scrollController, this.textController, this.reverse = true, this.maxContentWidth = DsLayout.contentMax});
+
+  @override
+  State<ChatThreadLayout> createState() => _ChatThreadLayoutState();
+}
+
+class _ChatThreadLayoutState extends State<ChatThreadLayout> with WidgetsBindingObserver {
+  double _keyboard = 0;
+  String _text = '';
+  bool _pending = false;
+  bool _scrolling = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _text = widget.textController?.text ?? '';
+    widget.textController?.addListener(_onText);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _keyboard = _keyboardInset();
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatThreadLayout oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.textController != widget.textController) {
+      oldWidget.textController?.removeListener(_onText);
+      _text = widget.textController?.text ?? '';
+      widget.textController?.addListener(_onText);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.textController?.removeListener(_onText);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// The keyboard height, read from the view: inside a Scaffold body the
+  /// inset has already been consumed (it reads 0 there).
+  double _keyboardInset() {
+    final view = View.maybeOf(context);
+    if (view == null) return 0;
+    return view.viewInsets.bottom / view.devicePixelRatio;
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (!mounted) return;
+    final double inset = _keyboardInset();
+    final bool opening = inset > _keyboard;
+    _keyboard = inset;
+    if (opening) _showLatest();
+  }
+
+  void _onText() {
+    final String text = widget.textController?.text ?? '';
+    if (text == _text) return; // selection / composing-only change
+    _text = text;
+    if (text.isNotEmpty) _showLatest();
+  }
+
+  /// After this frame's layout (the list has its new size by then). The
+  /// keyboard reports a new inset on every frame while it slides in, so one
+  /// call is batched per frame and a running scroll is never restarted.
+  void _showLatest() {
+    final ScrollController? controller = widget.scrollController;
+    if (controller == null || _pending || _scrolling) return;
+    _pending = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pending = false;
+      if (!mounted) return;
+      final Future<void>? scroll = showChatLatest(controller, reverse: widget.reverse);
+      if (scroll == null) return;
+      _scrolling = true;
+      scroll.whenComplete(() => _scrolling = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget messages = widget.messages;
+    if (widget.maxContentWidth != null) messages = DsResponsive(maxWidth: widget.maxContentWidth!, child: messages);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // The composer below owns the bottom safe area.
+        Expanded(
+          child: MediaQuery.removePadding(context: context, removeBottom: true, child: messages),
+        ),
+        widget.composer,
+      ],
+    );
+  }
+}
+
 /// Pill composer used by the chat and support screens.
+///
+/// Place it with [ChatThreadLayout] (in the Scaffold body). It is a plain
+/// [DsStickyBar]: it does not add the keyboard inset itself, because the
+/// Scaffold already lays the body out above the keyboard.
 class ChatComposer extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
@@ -187,12 +327,9 @@ class ChatComposer extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.dsColors;
     return DsStickyBar(
-      // The composer sits in the Scaffold's bottomNavigationBar slot, which is
-      // laid out at the bottom of the SCREEN — `resizeToAvoidBottomInset`
-      // only shrinks the body, so without this the keyboard covered the text
-      // field (bug #13). DsStickyBar applies `viewInsets` once; never add it
-      // again here.
-      avoidKeyboard: true,
+      // Lives in the Scaffold BODY (see ChatThreadLayout), which the Scaffold
+      // already lays out above the keyboard — so no `avoidKeyboard` here: the
+      // inset must be applied exactly once (bug #13 had it in the bottom bar).
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [

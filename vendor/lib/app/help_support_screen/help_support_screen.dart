@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:vendor/app/chat_screens/chat_video_container.dart';
 import 'package:vendor/app/chat_screens/full_screen_image_viewer.dart';
 import 'package:vendor/app/chat_screens/full_screen_video_viewer.dart';
+import 'package:vendor/app/chat_screens/widgets/chat_widgets.dart';
 import 'package:vendor/app/dash_board_screens/dash_board_screen.dart';
 import 'package:vendor/constant/collection_name.dart';
 import 'package:vendor/constant/constant.dart';
@@ -47,6 +48,9 @@ class HelpSupportScreen extends StatelessWidget {
           final t = context.dsText;
           return Scaffold(
             backgroundColor: c.background,
+            // The composer is in the body (ChatThreadLayout), which the
+            // Scaffold lays out above the keyboard, so it rides up with it.
+            resizeToAvoidBottomInset: true,
             appBar: DsAppBar(
               leading: DsBackButton(
                 onPressed: () async {
@@ -97,108 +101,55 @@ class HelpSupportScreen extends StatelessWidget {
                 child: Container(color: c.divider, height: 1),
               ),
             ),
-            body: Column(
-              children: <Widget>[
-                Expanded(
-                  child: DsResponsive(
-                    maxWidth: DsLayout.contentMax,
-                    child: GestureDetector(
-                      onTap: () {
-                        FocusScope.of(context).unfocus();
-                      },
-                      child: FirestorePagination(
-                        controller: controller.scrollController.value,
-                        physics: const BouncingScrollPhysics(),
-                        query: FireStoreUtils.fireStore
-                            .collection(CollectionName.chat)
-                            .doc(FireStoreUtils.getCurrentUid())
-                            .collection('thread')
-                            .orderBy('createdAt', descending: true),
-                        isLive: true,
-                        shrinkWrap: true,
-                        reverse: true,
-                        onEmpty: DsEmptyState(icon: Icons.forum_outlined, title: "No conversion found".tr, compact: true),
-                        viewType: ViewType.list,
-                        // to fetch real-time data
-                        itemBuilder: (context, documentSnapshots, index) {
-                          ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
-                          return chatItemView(isMe: inboxModel.senderId == FireStoreUtils.getCurrentUid(), data: inboxModel, context: context, controller: controller);
-                        },
-                      ),
-                    ),
-                  ),
+            body: ChatThreadLayout(
+              maxContentWidth: DsLayout.contentMax,
+              scrollController: controller.scrollController.value,
+              textController: controller.messageController.value,
+              messages: GestureDetector(
+                onTap: () {
+                  FocusScope.of(context).unfocus();
+                },
+                child: FirestorePagination(
+                  controller: controller.scrollController.value,
+                  physics: const BouncingScrollPhysics(),
+                  query: FireStoreUtils.fireStore
+                      .collection(CollectionName.chat)
+                      .doc(FireStoreUtils.getCurrentUid())
+                      .collection('thread')
+                      .orderBy('createdAt', descending: true),
+                  isLive: true,
+                  shrinkWrap: true,
+                  reverse: true,
+                  onEmpty: DsEmptyState(icon: Icons.forum_outlined, title: "No conversion found".tr, compact: true),
+                  viewType: ViewType.list,
+                  // to fetch real-time data
+                  itemBuilder: (context, documentSnapshots, index) {
+                    ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+                    return chatItemView(isMe: inboxModel.senderId == FireStoreUtils.getCurrentUid(), data: inboxModel, context: context, controller: controller);
+                  },
                 ),
-                // Composer
-                DsStickyBar(
-                  child: Row(
-                    children: [
-                      DsIconButton(
-                        icon: Icons.add_photo_alternate_outlined,
-                        semanticLabel: 'Send Media'.tr,
-                        variant: DsIconButtonVariant.tonal,
-                        size: 44,
-                        onPressed: () async {
-                          _onCameraClick(isDark: isDark, controller: controller, context: context);
-                        },
-                      ),
-                      const DsGap(DsSpace.sm),
-                      Expanded(
-                        child: TextField(
-                          style: t.body.withColor(c.textPrimary),
-                          textInputAction: TextInputAction.send,
-                          keyboardType: TextInputType.text,
-                          textCapitalization: TextCapitalization.sentences,
-                          controller: controller.messageController.value,
-                          cursorColor: c.brand,
-                          minLines: 1,
-                          maxLines: 1,
-                          decoration:
-                              DsInputDecoration.of(
-                                context,
-                                hint: 'Start typing with admin...'.tr,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: DsSpace.xl, vertical: 14),
-                              ).copyWith(
-                                border: OutlineInputBorder(
-                                  borderRadius: DsRadius.brPill,
-                                  borderSide: BorderSide(color: c.border),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: DsRadius.brPill,
-                                  borderSide: BorderSide(color: c.isDark ? c.border : c.surfaceAlt),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: DsRadius.brPill,
-                                  borderSide: BorderSide(color: c.brand, width: 1.4),
-                                ),
-                              ),
-                          onSubmitted: (value) async {
-                            if (controller.messageController.value.text.isNotEmpty) {
-                              controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
-                              // Timer(const Duration(milliseconds: 500), () => _controller.jumpTo(_controller.position.maxScrollExtent));
-                              controller.messageController.value.clear();
-                            }
-                          },
-                        ),
-                      ),
-                      const DsGap(DsSpace.sm),
-                      DsIconButton(
-                        icon: Icons.send_rounded,
-                        semanticLabel: 'Send'.tr,
-                        variant: DsIconButtonVariant.filled,
-                        size: 44,
-                        onPressed: () async {
-                          if (controller.messageController.value.text.isNotEmpty) {
-                            controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
-                            controller.messageController.value.clear();
-                          } else {
-                            ShowToastDialog.showToast("Please enter text".tr);
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+              ),
+              composer: HelpSupportComposer(
+                controller: controller.messageController.value,
+                onAttach: () async {
+                  _onCameraClick(isDark: isDark, controller: controller, context: context);
+                },
+                onSend: () async {
+                  if (controller.messageController.value.text.isNotEmpty) {
+                    controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
+                    controller.messageController.value.clear();
+                  } else {
+                    ShowToastDialog.showToast("Please enter text".tr);
+                  }
+                },
+                onSubmitted: (value) async {
+                  if (controller.messageController.value.text.isNotEmpty) {
+                    controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
+                    // Timer(const Duration(milliseconds: 500), () => _controller.jumpTo(_controller.position.maxScrollExtent));
+                    controller.messageController.value.clear();
+                  }
+                },
+              ),
             ),
           );
         },

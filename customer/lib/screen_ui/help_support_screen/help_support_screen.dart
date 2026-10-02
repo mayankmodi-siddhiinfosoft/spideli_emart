@@ -44,7 +44,12 @@ class HelpSupportScreen extends StatelessWidget {
           final t = context.dsText;
           final avatarUrl = controller.userModel.value.profilePictureURL.toString();
           return DsScaffold(
-            maxContentWidth: DsLayout.contentMax,
+            // The thread layout constrains the message list itself, so the
+            // composer bar under it stays full width, as before.
+            maxContentWidth: null,
+            // The composer is in the body (ChatThreadLayout), which the
+            // Scaffold lays out above the keyboard, so it rides up with it.
+            resizeToAvoidBottomInset: true,
             appBar: DsAppBar(
               onBack: () async {
                 if (isNavigateViaNotification == true) {
@@ -71,59 +76,64 @@ class HelpSupportScreen extends StatelessWidget {
                 ],
               ),
             ),
-            bottomBar: ChatComposer(
-              controller: controller.messageController.value,
-              hint: 'Start typing with admin...'.tr,
-              attachIcon: const Icon(Icons.camera_alt_outlined, size: 22),
-              onAttach: () async {
-                _onCameraClick(controller: controller, context: context);
-              },
-              onSend: () async {
-                if (controller.messageController.value.text.isNotEmpty) {
-                  controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
-                  controller.messageController.value.clear();
-                } else {
-                  ShowToastDialog.showToast("Please enter text".tr);
-                }
-              },
-              onSubmitted: (value) async {
-                if (controller.messageController.value.text.isNotEmpty) {
-                  controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
-                  // Timer(const Duration(milliseconds: 500), () => _controller.jumpTo(_controller.position.maxScrollExtent));
-                  controller.messageController.value.clear();
-                }
-              },
-            ),
-            body: GestureDetector(
-              onTap: () {
-                FocusScope.of(context).unfocus();
-              },
-              child: FirestorePagination(
-                controller: controller.scrollController.value,
-                physics: const BouncingScrollPhysics(),
-                query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(FireStoreUtils.getCurrentUid()).collection('thread').orderBy('createdAt', descending: true),
-                isLive: true,
-                shrinkWrap: true,
-                reverse: true,
-                padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
-                onEmpty: DsEmptyState(
-                  icon: Icons.support_agent_rounded,
-                  title: "No conversion found".tr,
-                  message: "Send us a message and our team will get back to you.".tr,
-                ),
-                viewType: ViewType.list,
-                initialLoader: const DsSkeletonList(itemCount: 4, trailing: false),
-                // to fetch real-time data
-                itemBuilder: (context, documentSnapshots, index) {
-                  ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
-                  return chatItemView(
-                    isMe: inboxModel.senderId == FireStoreUtils.getCurrentUid(),
-                    data: inboxModel,
-                    context: context,
-                    controller: controller,
-                    avatarUrl: avatarUrl,
-                  );
+            body: ChatThreadLayout(
+              maxContentWidth: DsLayout.contentMax,
+              scrollController: controller.scrollController.value,
+              textController: controller.messageController.value,
+              composer: ChatComposer(
+                controller: controller.messageController.value,
+                hint: 'Start typing with admin...'.tr,
+                attachIcon: const Icon(Icons.camera_alt_outlined, size: 22),
+                onAttach: () async {
+                  _onCameraClick(controller: controller, context: context);
                 },
+                onSend: () async {
+                  if (controller.messageController.value.text.isNotEmpty) {
+                    controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
+                    controller.messageController.value.clear();
+                  } else {
+                    ShowToastDialog.showToast("Please enter text".tr);
+                  }
+                },
+                onSubmitted: (value) async {
+                  if (controller.messageController.value.text.isNotEmpty) {
+                    controller.sendMessage(message: controller.messageController.value.text, url: null, videoThumbnail: '', messageType: 'text');
+                    // Timer(const Duration(milliseconds: 500), () => _controller.jumpTo(_controller.position.maxScrollExtent));
+                    controller.messageController.value.clear();
+                  }
+                },
+              ),
+              messages: GestureDetector(
+                onTap: () {
+                  FocusScope.of(context).unfocus();
+                },
+                child: FirestorePagination(
+                  controller: controller.scrollController.value,
+                  physics: const BouncingScrollPhysics(),
+                  query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(FireStoreUtils.getCurrentUid()).collection('thread').orderBy('createdAt', descending: true),
+                  isLive: true,
+                  shrinkWrap: true,
+                  reverse: true,
+                  padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
+                  onEmpty: DsEmptyState(
+                    icon: Icons.support_agent_rounded,
+                    title: "No conversion found".tr,
+                    message: "Send us a message and our team will get back to you.".tr,
+                  ),
+                  viewType: ViewType.list,
+                  initialLoader: const DsSkeletonList(itemCount: 4, trailing: false),
+                  // to fetch real-time data
+                  itemBuilder: (context, documentSnapshots, index) {
+                    ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+                    return chatItemView(
+                      isMe: inboxModel.senderId == FireStoreUtils.getCurrentUid(),
+                      data: inboxModel,
+                      context: context,
+                      controller: controller,
+                      avatarUrl: avatarUrl,
+                    );
+                  },
+                ),
               ),
             ),
           );

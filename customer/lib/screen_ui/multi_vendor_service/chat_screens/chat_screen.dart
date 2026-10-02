@@ -35,7 +35,12 @@ class ChatScreen extends StatelessWidget {
         final profileUrl = controller.receivedProfileUrl.value;
         final orderLabel = "${"Order".tr} ${Constant.orderId(orderId: controller.orderId.value.toString())}";
         return DsScaffold(
-          maxContentWidth: DsLayout.contentMax,
+          // The thread layout constrains the message list itself, so the
+          // composer bar under it stays full width, as before.
+          maxContentWidth: null,
+          // The composer is in the body (ChatThreadLayout), which the
+          // Scaffold lays out above the keyboard, so it rides up with it.
+          resizeToAvoidBottomInset: true,
           appBar: DsAppBar(
             titleWidget: Row(
               children: [
@@ -54,52 +59,57 @@ class ChatScreen extends StatelessWidget {
               ],
             ),
           ),
-          bottomBar: ChatComposer(
-            controller: controller.messageController.value,
-            hint: 'Type message here....'.tr,
-            attachIcon: SvgPicture.asset("assets/icons/ic_picture_one.svg", width: 22, height: 22, colorFilter: ColorFilter.mode(c.brandStrong, BlendMode.srcIn)),
-            sendIcon: SvgPicture.asset("assets/icons/ic_send.svg", width: 20, height: 20, colorFilter: ColorFilter.mode(c.onBrand, BlendMode.srcIn)),
-            onAttach: () {
-              onCameraClick(context, controller);
-            },
-            // sendMessage scrolls the thread to the newest message itself
-            // (and only when the list is still attached).
-            onSend: () {
-              if (controller.messageController.value.text.isNotEmpty) {
-                controller.sendMessage(controller.messageController.value.text, null, '', 'text', controller);
-                controller.messageController.value.clear();
-              }
-            },
-            onSubmitted: (value) async {
-              if (controller.messageController.value.text.isNotEmpty) {
-                controller.sendMessage(controller.messageController.value.text, null, '', 'text', controller);
-                controller.messageController.value.clear();
-              }
-            },
-          ),
-          body: GestureDetector(
-            onTap: () {
-              FocusScope.of(context).unfocus();
-            },
-            // A thread is keyed by its order id: without one there is no
-            // `chat/<id>/thread` collection to page through, and building the
-            // query anyway threw ArgumentError out of build().
-            child: !controller.hasThread
-                ? Constant.showEmptyView(message: "No Conversion found".tr)
-                : FirestorePagination(
-                    reverse: true,
-                    controller: controller.scrollController.value,
-                    physics: const BouncingScrollPhysics(),
-                    itemBuilder: (context, documentSnapshots, index) {
-                      ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
-                      return chatItemView(context, inboxModel.senderId == FireStoreUtils.getCurrentUid(), inboxModel);
-                    },
-                    onEmpty: Constant.showEmptyView(message: "No Conversion found".tr),
-                    // orderBy is compulsory to enable pagination
-                    query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.threadId).collection("thread").orderBy('createdAt', descending: true),
-                    isLive: true,
-                    viewType: ViewType.list,
-                  ),
+          body: ChatThreadLayout(
+            maxContentWidth: DsLayout.contentMax,
+            scrollController: controller.scrollController.value,
+            textController: controller.messageController.value,
+            composer: ChatComposer(
+              controller: controller.messageController.value,
+              hint: 'Type message here....'.tr,
+              attachIcon: SvgPicture.asset("assets/icons/ic_picture_one.svg", width: 22, height: 22, colorFilter: ColorFilter.mode(c.brandStrong, BlendMode.srcIn)),
+              sendIcon: SvgPicture.asset("assets/icons/ic_send.svg", width: 20, height: 20, colorFilter: ColorFilter.mode(c.onBrand, BlendMode.srcIn)),
+              onAttach: () {
+                onCameraClick(context, controller);
+              },
+              // sendMessage scrolls the thread to the newest message itself
+              // (and only when the list is still attached).
+              onSend: () {
+                if (controller.messageController.value.text.isNotEmpty) {
+                  controller.sendMessage(controller.messageController.value.text, null, '', 'text', controller);
+                  controller.messageController.value.clear();
+                }
+              },
+              onSubmitted: (value) async {
+                if (controller.messageController.value.text.isNotEmpty) {
+                  controller.sendMessage(controller.messageController.value.text, null, '', 'text', controller);
+                  controller.messageController.value.clear();
+                }
+              },
+            ),
+            messages: GestureDetector(
+              onTap: () {
+                FocusScope.of(context).unfocus();
+              },
+              // A thread is keyed by its order id: without one there is no
+              // `chat/<id>/thread` collection to page through, and building the
+              // query anyway threw ArgumentError out of build().
+              child: !controller.hasThread
+                  ? Constant.showEmptyView(message: "No Conversion found".tr)
+                  : FirestorePagination(
+                      reverse: true,
+                      controller: controller.scrollController.value,
+                      physics: const BouncingScrollPhysics(),
+                      itemBuilder: (context, documentSnapshots, index) {
+                        ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+                        return chatItemView(context, inboxModel.senderId == FireStoreUtils.getCurrentUid(), inboxModel);
+                      },
+                      onEmpty: Constant.showEmptyView(message: "No Conversion found".tr),
+                      // orderBy is compulsory to enable pagination
+                      query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.threadId).collection("thread").orderBy('createdAt', descending: true),
+                      isLive: true,
+                      viewType: ViewType.list,
+                    ),
+            ),
           ),
         );
       },

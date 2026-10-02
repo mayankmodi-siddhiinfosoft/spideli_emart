@@ -105,25 +105,35 @@ class HelpSupportScreen extends StatelessWidget {
                     onTap: () {
                       FocusScope.of(context).unfocus();
                     },
-                    child: FirestorePagination(
+                    // Newest message stays in view when the keyboard opens
+                    // and while typing.
+                    child: DsChatAutoScroll(
                       controller: controller.scrollController.value,
-                      physics: const BouncingScrollPhysics(),
-                      padding: EdgeInsets.symmetric(horizontal: context.dsLayout.gutter, vertical: DsSpace.sm),
-                      query: FireStoreUtils.firestore.collection('chat').doc(FireStoreUtils.getCurrentUid()).collection('thread').orderBy('createdAt', descending: true),
-                      isLive: true,
-                      shrinkWrap: true,
-                      reverse: true,
-                      onEmpty: DsEmptyState(icon: Icons.support_agent_rounded, title: "No conversion found".tr),
-                      initialLoader: const DsSkeletonList(itemCount: 5, leading: false, trailing: false),
-                      viewType: ViewType.list,
-                      // to fetch real-time data
-                      itemBuilder: (context, documentSnapshots, index) {
-                        ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
-                        return chatItemView(isMe: inboxModel.senderId == FireStoreUtils.getCurrentUid(), data: inboxModel, context: context, controller: controller);
-                      },
+                      textController: controller.messageController.value,
+                      child: FirestorePagination(
+                        controller: controller.scrollController.value,
+                        physics: const BouncingScrollPhysics(),
+                        padding: EdgeInsets.symmetric(horizontal: context.dsLayout.gutter, vertical: DsSpace.sm),
+                        query: FireStoreUtils.firestore.collection('chat').doc(FireStoreUtils.getCurrentUid()).collection('thread').orderBy('createdAt', descending: true),
+                        isLive: true,
+                        shrinkWrap: true,
+                        reverse: true,
+                        onEmpty: DsEmptyState(icon: Icons.support_agent_rounded, title: "No conversion found".tr),
+                        initialLoader: const DsSkeletonList(itemCount: 5, leading: false, trailing: false),
+                        viewType: ViewType.list,
+                        // to fetch real-time data
+                        itemBuilder: (context, documentSnapshots, index) {
+                          ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+                          return chatItemView(isMe: inboxModel.senderId == FireStoreUtils.getCurrentUid(), data: inboxModel, context: context, controller: controller);
+                        },
+                      ),
                     ),
                   ),
                 ),
+                // The composer is the last child of the body (not a bottom
+                // bar), so the resized body already keeps it above the
+                // keyboard — also when this page is shown inside the
+                // dashboard's Scaffold. No extra keyboard inset here.
                 DsStickyBar(
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,

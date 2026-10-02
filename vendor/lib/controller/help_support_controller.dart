@@ -7,6 +7,7 @@ import 'package:vendor/constant/constant.dart';
 import 'package:vendor/models/conversation_model.dart';
 import 'package:vendor/models/inbox_model.dart';
 import 'package:vendor/models/user_model.dart';
+import 'package:vendor/utils/chat_scroll.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/preferences.dart';
 
@@ -42,7 +43,11 @@ class HelpSupportController extends GetxController {
   }
 
   Future<void> sendMessage({required String message, Url? url, required String videoThumbnail, required String messageType}) async {
-    List<String> senderReceiverId = [userModel.value.id!, 'admin'];
+    // The profile may not have loaded yet; fall back to the signed-in user.
+    final String senderId = (userModel.value.id ?? '').isNotEmpty ? userModel.value.id! : FireStoreUtils.getCurrentUid();
+    if (senderId.isEmpty) return;
+    userModel.value.id ??= senderId;
+    List<String> senderReceiverId = [senderId, 'admin'];
     InboxModel inboxModel = InboxModel(
       senderReceiverId: senderReceiverId,
       chatType: Constant.userRoleVendor,
@@ -82,6 +87,7 @@ class HelpSupportController extends GetxController {
     }
 
     FireStoreUtils.addChat(conversationModel);
-    Timer(const Duration(milliseconds: 500), () => scrollController.value.jumpTo(scrollController.value.position.minScrollExtent));
+    // Guarded: the thread may be closed (or not laid out yet) when it fires.
+    scrollChatToLatest(scrollController.value, delay: const Duration(milliseconds: 500));
   }
 }

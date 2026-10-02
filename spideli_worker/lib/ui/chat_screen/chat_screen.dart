@@ -97,24 +97,35 @@ class ChatScreen extends StatelessWidget {
                     title: "No conversion found".tr,
                     message: "This conversation could not be opened. Open it again from the booking.".tr,
                   )
-                : FirestorePagination(
-                  reverse: true,
-                  controller: controller.scrollController.value,
-                  physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.md),
-                  itemBuilder: (context, documentSnapshots, index) {
-                    ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+                // Newest message stays in view when the keyboard opens and
+                // while typing.
+                : DsChatAutoScroll(
+                    controller: controller.scrollController.value,
+                    textController: controller.messageController.value,
+                    child: FirestorePagination(
+                      reverse: true,
+                      controller: controller.scrollController.value,
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.md),
+                      itemBuilder: (context, documentSnapshots, index) {
+                        ConversationModel chatmodel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
 
-                    return chatItemView(context, chatmodel.senderId == FireStoreUtils.getCurrentUid(), chatmodel);
-                  },
-                  onEmpty: DsEmptyState(icon: Icons.forum_outlined, title: "No conversion found".tr),
-                  query: FireStoreUtils.firestore.collection('chat').doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
-                  isLive: true,
-                  viewType: ViewType.list,
-                  initialLoader: const DsSkeletonList(itemCount: 5, leading: false, trailing: false),
-                ),
+                        return chatItemView(context, chatmodel.senderId == FireStoreUtils.getCurrentUid(), chatmodel);
+                      },
+                      onEmpty: DsEmptyState(icon: Icons.forum_outlined, title: "No conversion found".tr),
+                      query: FireStoreUtils.firestore.collection('chat').doc(controller.orderId.value).collection("thread").orderBy('createdAt', descending: true),
+                      isLive: true,
+                      viewType: ViewType.list,
+                      initialLoader: const DsSkeletonList(itemCount: 5, leading: false, trailing: false),
+                    ),
+                  ),
           ),
+          // The composer is the Scaffold's bottom bar, which the keyboard
+          // would cover (resizeToAvoidBottomInset only shrinks the body):
+          // avoidKeyboard lifts it above the keyboard, applying the inset
+          // once.
           bottomNavigationBar: DsStickyBar(
+            avoidKeyboard: true,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -142,7 +153,7 @@ class ChatScreen extends StatelessWidget {
                       onSubmitted: (value) async {
                         if (controller.messageController.value.text.isNotEmpty) {
                           controller.sendMessage(controller.messageController.value.text, null, '', 'text');
-                          Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
+                          Timer(const Duration(milliseconds: 500), () => _scrollToNewest(controller.scrollController.value));
                           controller.messageController.value.clear();
                         }
                       },
@@ -157,7 +168,7 @@ class ChatScreen extends StatelessWidget {
                   onPressed: () {
                     if (controller.messageController.value.text.isNotEmpty) {
                       controller.sendMessage(controller.messageController.value.text, null, '', 'text');
-                      Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
+                      Timer(const Duration(milliseconds: 500), () => _scrollToNewest(controller.scrollController.value));
                       controller.messageController.value.clear();
                     }
                   },
@@ -168,6 +179,13 @@ class ChatScreen extends StatelessWidget {
         );
       },
     );
+  }
+
+  /// Jumps a reversed chat list to its newest message (guarded: the list may
+  /// have been disposed or not built yet when the timer fires).
+  static void _scrollToNewest(ScrollController scroll) {
+    if (!scroll.hasClients) return;
+    scroll.jumpTo(scroll.position.minScrollExtent);
   }
 
   Widget chatItemView(BuildContext context, bool isMe, ConversationModel data) {
@@ -262,7 +280,7 @@ class ChatScreen extends StatelessWidget {
               if (image != null) {
                 Url url = await FireStoreUtils.uploadChatImageToFireStorage(File(image.path));
                 controller.sendMessage(controller.messageController.value.text, url, '', 'image');
-                Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
+                Timer(const Duration(milliseconds: 500), () => _scrollToNewest(controller.scrollController.value));
               }
             } catch (e) {
               ShowToastDialog.showToast("Storage permission is not enabled. Please allow it.");
@@ -279,7 +297,7 @@ class ChatScreen extends StatelessWidget {
               ChatVideoContainer? videoContainer = await FireStoreUtils.uploadChatVideoToFireStorage(File(galleryVideo.path));
               if (videoContainer != null) {
                 controller.sendMessage(controller.messageController.value.text, videoContainer.videoUrl, videoContainer.thumbnailUrl, 'video');
-                Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
+                Timer(const Duration(milliseconds: 500), () => _scrollToNewest(controller.scrollController.value));
               }
             }
           },
@@ -294,7 +312,7 @@ class ChatScreen extends StatelessWidget {
               if (image != null) {
                 Url url = await FireStoreUtils.uploadChatImageToFireStorage(File(image.path));
                 controller.sendMessage(controller.messageController.value.text, url, '', 'image');
-                Timer(const Duration(milliseconds: 500), () => controller.scrollController.value.jumpTo(controller.scrollController.value.position.minScrollExtent));
+                Timer(const Duration(milliseconds: 500), () => _scrollToNewest(controller.scrollController.value));
               }
             } catch (e) {
               ShowToastDialog.showToast("Camera access is not enabled. Please allow camera permission.");

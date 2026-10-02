@@ -121,8 +121,11 @@ class DsBackButton extends StatelessWidget {
 /// ```dart
 /// bottomBar: DsStickyBar(child: DsButton.primary(label: 'Save'.tr, expand: true, onPressed: c.save))
 /// bottomBar: DsStickyBar(child: Row(children: [Expanded(child: DsButton.dangerTonal(...)), DsGap.md, Expanded(child: DsButton.primary(...))]))
-/// bottomBar: DsStickyBar(avoidKeyboard: true, child: ChatComposer(...))
 /// ```
+///
+/// A chat composer does not go here: it belongs in the body, under the
+/// message list (`ChatThreadLayout`), where the Scaffold itself keeps it above
+/// the keyboard.
 class DsStickyBar extends StatelessWidget {
   final Widget child;
   final double maxWidth;
@@ -134,7 +137,8 @@ class DsStickyBar extends StatelessWidget {
   /// itself stays underneath the keyboard. Bars that sit above a focused field
   /// (a chat composer) must opt in; a plain submit bar keeps the old
   /// behaviour. This is the only place the inset is applied — do not add it
-  /// again in the child.
+  /// again in the child. A bar placed in the *body* does not need it: the
+  /// Scaffold already lays the body out above the keyboard.
   final bool avoidKeyboard;
 
   const DsStickyBar({super.key, required this.child, this.maxWidth = DsLayout.contentMax, this.avoidKeyboard = false});
@@ -145,12 +149,10 @@ class DsStickyBar extends StatelessWidget {
     final l = DsLayout.of(context);
     final bar = _bar(context, c, l);
     if (!avoidKeyboard) return bar;
-    return AnimatedPadding(
-      duration: DsMotion.of(context, DsMotion.fast),
-      curve: DsMotion.standard,
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: bar,
-    );
+    // A plain Padding, not an AnimatedPadding: the platform already reports
+    // the inset frame by frame as the keyboard slides, and re-tweening it made
+    // the bar trail behind the keyboard (and dip under it) on the way up.
+    return Padding(padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom), child: bar);
   }
 
   Widget _bar(BuildContext context, DsColors c, DsLayout l) {

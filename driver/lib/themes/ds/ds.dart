@@ -25,6 +25,7 @@ export 'loading/ds_skeleton.dart';
 
 // Components
 export 'components/ds_buttons.dart';
+export 'components/ds_chat.dart';
 export 'components/ds_driver.dart';
 export 'components/ds_feedback.dart';
 export 'components/ds_forms.dart';
