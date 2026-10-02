@@ -1,3 +1,6 @@
+import 'package:driver/app/widgets/cancellation_block.dart';
+import 'package:driver/models/parcel_order_model.dart';
+import 'package:driver/services/parcel_tracking_service.dart';
 import 'package:driver/app/parcel_screen/parcel_tracking/parcel_shipment_info_card.dart';
 import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/widgets/order_ui.dart';
@@ -14,6 +17,13 @@ import '../../themes/theme_controller.dart';
 /// breakdown, each in its own surface.
 class ParcelOrderDetails extends StatelessWidget {
   const ParcelOrderDetails({super.key});
+
+  /// A parcel cancelled through its tracking status (`parcelStatus`) counts too.
+  static CancellationSummary? _cancellation(ParcelOrderModel order) => CancellationSummary.of(
+        status: order.status,
+        info: order.cancellation,
+        cancelled: order.parcelStatus == ParcelTrackingStatus.cancelled,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +81,10 @@ class ParcelOrderDetails extends StatelessWidget {
                           ),
                         ),
                         const DsGap(DsSpace.lg),
+                        if (_cancellation(order) != null) ...[
+                          CancellationBlock(summary: _cancellation(order)),
+                          const DsGap(DsSpace.lg),
+                        ],
 
                         // ------------------------------------------- shipment
                         ParcelShipmentInfoCard(order: controller.parcelOrder.value, isDark: isDark),

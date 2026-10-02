@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:driver/models/cancellation_info.dart';
 import 'package:driver/models/cart_product_model.dart';
 import 'package:driver/models/cashback_model.dart';
 import 'package:driver/models/tax_model.dart';
@@ -56,6 +57,10 @@ class OrderModel {
   /// Proof the driver recorded when completing the delivery — the same shape
   /// a parcel uses: `{type: 'otp'|'photo', photoUrl?, at, by}`.
   Map<String, dynamic>? deliveryProof;
+
+  /// Cancel-reason contract fields (`cancelReason`, `cancelledBy`, ...) and
+  /// the drivers' `driverRejections`; written back only when known.
+  CancellationInfo cancellation = CancellationInfo();
 
   OrderModel({
     this.address,
@@ -178,6 +183,7 @@ class OrderModel {
     }
     final dynamic proof = json['deliveryProof'];
     deliveryProof = proof is Map ? Map<String, dynamic>.from(proof) : null;
+    cancellation = CancellationInfo.fromJson(json);
   }
 
   Map<String, dynamic> toJson() {
@@ -245,6 +251,7 @@ class OrderModel {
     // a code the customer app set.
     if (otpCode != null && otpCode!.isNotEmpty) data['otpCode'] = otpCode;
     if (deliveryProof != null) data['deliveryProof'] = deliveryProof;
+    data.addAll(cancellation.toJson());
     return data;
   }
 }

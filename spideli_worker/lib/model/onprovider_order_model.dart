@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:spideliworker/model/cancellation_info.dart';
 import 'package:spideliworker/model/address_model.dart';
 import 'package:spideliworker/model/provider_service_model.dart';
 import 'package:spideliworker/model/tax_model.dart';
@@ -33,6 +34,11 @@ class OnProviderOrderModel {
   bool? paymentStatus;
   bool? extraPaymentStatus;
   String? workerId;
+
+  /// Cancel-reason contract fields (who cancelled / rejected and why). The
+  /// pre-contract [reason] (a customer's cancellation) is kept alongside.
+  /// Written back only when known, so a later save never clears them.
+  CancellationInfo cancellation;
 
   // Additive, READ ONLY here (never in toJson, so a save cannot erase them):
   // `regionId` = the provider's region (spec 18.12); `completionPhotos` =
@@ -73,10 +79,12 @@ class OnProviderOrderModel {
     this.paymentStatus,
     this.extraPaymentStatus,
     this.workerId,
+    CancellationInfo? cancellation,
     this.regionId,
     this.completionPhotos = const [],
     this.completionSignature,
-  })  : author = author ?? User(),
+  })  : cancellation = cancellation ?? CancellationInfo(),
+        author = author ?? User(),
         createdAt = createdAt ?? Timestamp.now(),
         provider = provider ?? ProviderServiceModel(),
         scheduleDateTime = scheduleDateTime ?? Timestamp.now();
@@ -119,6 +127,7 @@ class OnProviderOrderModel {
       paymentStatus: parsedJson['paymentStatus'],
       extraPaymentStatus: parsedJson['extraPaymentStatus'],
       workerId: parsedJson['workerId'] ?? "",
+      cancellation: CancellationInfo.fromJson(parsedJson),
       regionId: (parsedJson['regionId']?.toString().isNotEmpty == true) ? parsedJson['regionId'].toString() : null,
       completionSignature: (parsedJson['completionSignature'] ?? '').toString().isEmpty ? null : parsedJson['completionSignature'].toString(),
       completionPhotos: parsedJson['completionPhotos'] is List ? (parsedJson['completionPhotos'] as List).map((e) => e.toString()).toList() : const [],
@@ -156,6 +165,7 @@ class OnProviderOrderModel {
       'paymentStatus': paymentStatus,
       'extraPaymentStatus': extraPaymentStatus,
       'workerId': workerId,
+      ...cancellation.toJson(),
     };
   }
 }

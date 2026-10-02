@@ -1494,6 +1494,17 @@ class FireStoreUtils {
     }
   }
 
+  /// Known-fields update of a `vendor_orders` document.
+  static Future<bool> updateVendorOrderFields(String orderId, Map<String, dynamic> data) async {
+    try {
+      await fireStore.collection(CollectionName.vendorOrders).doc(orderId).setKnownFields(data);
+      return true;
+    } catch (e) {
+      log("updateVendorOrderFields failed: $e");
+      return false;
+    }
+  }
+
   /// Known-fields update of a `rental_orders` document.
   static Future<bool> updateRentalFields(String orderId, Map<String, dynamic> data) async {
     try {

@@ -1,3 +1,4 @@
+import 'package:driver/app/widgets/cancellation_block.dart';
 import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/widgets/order_ui.dart';
 import 'package:flutter/material.dart';
@@ -99,6 +100,7 @@ class _CabOrderTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
+    final cancellation = CancellationSummary.of(status: order.status, info: order.cancellation);
     return DsCard.outlined(
       margin: const EdgeInsets.only(bottom: DsSpace.lg),
       onTap: onTap,
@@ -141,6 +143,10 @@ class _CabOrderTile extends StatelessWidget {
               DsRouteStop(kind: DsStopKind.drop, label: "Destination".tr, address: AddressFormat.orPlaceholder(order.destinationLocationName)),
             ],
           ),
+          if (cancellation != null) ...[
+            const DsGap(DsSpace.md),
+            CancellationLine(summary: cancellation),
+          ],
         ],
       ),
     );

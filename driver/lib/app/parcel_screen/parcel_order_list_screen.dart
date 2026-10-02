@@ -1,3 +1,5 @@
+import 'package:driver/services/parcel_tracking_service.dart';
+import 'package:driver/app/widgets/cancellation_block.dart';
 import 'package:driver/app/parcel_screen/parcel_order_details.dart';
 import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/widgets/order_ui.dart';
@@ -113,6 +115,11 @@ class _ParcelHistoryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
+    final cancellation = CancellationSummary.of(
+      status: order.status,
+      info: order.cancellation,
+      cancelled: order.parcelStatus == ParcelTrackingStatus.cancelled,
+    );
     return DsCard.outlined(
       onTap: onTap,
       padding: EdgeInsets.zero,
@@ -173,6 +180,10 @@ class _ParcelHistoryCard extends StatelessWidget {
                   phone: order.receiver?.phone ?? '',
                   showConnector: false,
                 ),
+                if (cancellation != null) ...[
+                  const DsGap(DsSpace.md),
+                  CancellationLine(summary: cancellation),
+                ],
               ],
             ),
           ),

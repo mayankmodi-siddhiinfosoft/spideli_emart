@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/send_notification.dart';
@@ -12,6 +13,7 @@ import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/utils/args.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/region_service.dart';
+import 'package:driver/widget/cancel_reason_sheet.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -124,53 +126,58 @@ class HomeController extends GetxController {
     ShowToastDialog.closeLoader();
   }
 
+  /// Driver passes on the delivery offer on screen. A reason is mandatory
+  /// and nothing changes until one is given. The order goes back to dispatch
+  /// (status "Driver Rejected", this driver in `rejectedByDrivers`) and the
+  /// reason is appended to `driverRejections`, in one known-fields write.
   Future<void> rejectOrder() async {
-    ShowToastDialog.showLoader("Please wait".tr);
-    // 🔊 Stop any ongoing alert sound (if playing)
-    await AudioPlayerService.playSound(false);
-
     final driver = driverModel.value;
     final order = currentOrder.value;
-
-    // 1️⃣ Validate order and driver
-    if (order.id == null || driver.id == null) {
+    final String? orderId = order.id;
+    if (orderId == null || driver.id == null) {
       debugPrint("⚠️ No valid order or driver found for rejection.");
       return;
     }
 
-    // 2️⃣ Add driver to rejected list safely
-    order.rejectedByDrivers ??= [];
-    if (!order.rejectedByDrivers!.contains(driver.id)) {
-      order.rejectedByDrivers!.add(driver.id);
+    final reason = await CancelReasonSheet.show(title: "Why are you rejecting this order?".tr);
+    if (reason == null) return;
+    // The offer may have been withdrawn or replaced while the sheet was open.
+    if (currentOrder.value.id != orderId) return;
+
+    ShowToastDialog.showLoader("Please wait".tr);
+    // 🔊 Stop any ongoing alert sound (if playing)
+    await AudioPlayerService.playSound(false);
+
+    final ok = await FireStoreUtils.updateVendorOrderFields(orderId, {
+      'status': Constant.driverRejected,
+      'rejectedByDrivers': FieldValue.arrayUnion([driver.id]),
+      ...reason.toFields(driver.id),
+    });
+    if (!ok) {
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+      return;
     }
 
-    // 3️⃣ Update order status
-    order.status = Constant.driverRejected;
-
-    // 4️⃣ Push order update to Firestore
-    await FireStoreUtils.setOrder(order);
-
-    // 5️⃣ Clean up driver's order tracking data safely
-    driver.orderRequestData?.remove(order.id);
-    driver.inProgressOrderID?.remove(order.id);
-
-    // 6️⃣ Update driver info in Firestore
+    // Clean up driver's order tracking data safely
+    driver.orderRequestData?.remove(orderId);
+    driver.inProgressOrderID?.remove(orderId);
     await FireStoreUtils.updateUser(driver);
 
-    // 7️⃣ Reset order states
+    // Reset order states
     currentOrder.value = OrderModel();
     orderModel.value = OrderModel();
 
-    // 8️⃣ Clear map visuals and UI
+    // Clear map visuals and UI
     await clearMap();
     update();
 
-    // 9️⃣ If multiple orders allowed, close dialog/screen
+    // If multiple orders allowed, close dialog/screen
     ShowToastDialog.closeLoader();
     if (Constant.singleOrderReceive == false) {
       Get.back();
     }
-    debugPrint("✅ Order ${order.id} rejected by driver ${driver.id}");
+    debugPrint("✅ Order $orderId rejected by driver ${driver.id}");
   }
 
   Future<void> clearMap() async {

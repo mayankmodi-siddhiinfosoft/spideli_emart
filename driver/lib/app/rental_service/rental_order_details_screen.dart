@@ -7,6 +7,7 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/app/widgets/cancellation_block.dart';
 import 'package:driver/app/widgets/order_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -39,16 +40,10 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                       if (controller.order.value.id != null) controller.fetchOrder(controller.order.value.id!);
                     },
                   ),
-                  if ((controller.order.value.cancelReason?.isNotEmpty ?? false) &&
-                      [Constant.orderCancelled, Constant.orderRejected, Constant.driverRejected].contains(controller.order.value.status))
+                  if (_cancellation(controller) != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: DsSpace.md),
-                      child: DsInlineAlert(
-                        tone: DsTone.danger,
-                        icon: Icons.block_rounded,
-                        message:
-                            "${'Cancellation reason'.tr}${controller.order.value.cancelledBy == null ? '' : ' (${controller.order.value.cancelledBy!.tr})'}: ${controller.order.value.cancelReason}",
-                      ),
+                      child: CancellationBlock(summary: _cancellation(controller)),
                     ),
                   _bookingCard(context, controller),
                   const DsGap(DsSpace.lg),
@@ -85,6 +80,9 @@ class RentalOrderDetailsScreen extends StatelessWidget {
       },
     );
   }
+
+  CancellationSummary? _cancellation(RentalOrderDetailsController controller) =>
+      CancellationSummary.of(status: controller.order.value.status, info: controller.order.value.cancellation);
 
   Widget _bookingCard(BuildContext context, RentalOrderDetailsController controller) {
     final String status = controller.order.value.status ?? '';

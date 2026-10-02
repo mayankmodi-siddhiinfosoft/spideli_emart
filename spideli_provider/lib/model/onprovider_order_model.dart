@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:spideliprovider/model/cancellation_info.dart';
 import 'package:spideliprovider/model/address_model.dart';
 import 'package:spideliprovider/model/provider_service_model.dart';
 import 'package:spideliprovider/model/tax_model.dart';
@@ -33,6 +34,11 @@ class OnProviderOrderModel {
   bool? paymentStatus;
   bool? extraPaymentStatus;
   String? workerId;
+
+  /// Cancel-reason contract fields (who cancelled / rejected and why). The
+  /// pre-contract [reason] (a customer's cancellation) is kept alongside.
+  /// Written back only when known, so a later save never clears them.
+  CancellationInfo cancellation;
 
   /// Region the booking was charged in (`provider_orders.regionId`). Read-only
   /// here: [toJson] never writes it and updates merge, so it is kept.
@@ -72,9 +78,11 @@ class OnProviderOrderModel {
     this.paymentStatus,
     this.extraPaymentStatus,
     this.workerId,
+    CancellationInfo? cancellation,
     this.regionId,
     List<AssignmentLogEntry>? assignmentLog,
-  })  : assignmentLog = assignmentLog ?? const [],
+  })  : cancellation = cancellation ?? CancellationInfo(),
+        assignmentLog = assignmentLog ?? const [],
         author = author ?? User(),
         createdAt = createdAt ?? Timestamp.now(),
         provider = provider ?? ProviderServiceModel(),
@@ -123,6 +131,7 @@ class OnProviderOrderModel {
       paymentStatus: parsedJson['paymentStatus'],
       extraPaymentStatus: parsedJson['extraPaymentStatus'],
       workerId: parsedJson['workerId'] ?? "",
+      cancellation: CancellationInfo.fromJson(parsedJson),
       extraChargesDescription: parsedJson['extraChargesDescription'] ?? "",
       regionId: (parsedJson['regionId']?.toString().isNotEmpty ?? false) ? parsedJson['regionId'].toString() : null,
       assignmentLog: parsedJson['assignmentLog'] is List
@@ -162,6 +171,7 @@ class OnProviderOrderModel {
       'paymentStatus': paymentStatus,
       'extraPaymentStatus': extraPaymentStatus,
       'workerId': workerId,
+      ...cancellation.toJson(),
       'extraChargesDescription': extraChargesDescription,
     };
   }

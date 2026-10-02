@@ -560,6 +560,12 @@ class FireStoreUtils {
     await firestore.collection(PROVIDER_ORDER).doc(onProviderOrderModel.id).set(onProviderOrderModel.toJson(), SetOptions(merge: true));
   }
 
+  /// Writes only the given top-level fields of a booking (a status change
+  /// together with its cancel-reason contract fields, in one write).
+  static Future<void> updateOrderFields(String orderId, Map<String, dynamic> data) async {
+    await firestore.collection(PROVIDER_ORDER).doc(orderId).set(data, SetOptions(mergeFields: data.keys.map((key) => FieldPath([key])).toList()));
+  }
+
   static Future<NotificationModel?> getNotificationContent(String type) async {
     NotificationModel? notificationModel;
     await firestore.collection(dynamicNotification).where('type', isEqualTo: type).get().then((value) {

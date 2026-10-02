@@ -7,9 +7,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 /// CabCar details from the ride document (spec 4.8 / 9.1, APP-CONTRACT):
 /// written-communication badge, rider booked for someone else, passengers,
-/// instructions, stops in order (with "Reached" when [onStopReached] is set)
-/// and, for history, the cancellation reason. Every block is hidden when its
-/// field is absent, so rides without these fields look exactly as before.
+/// instructions and stops in order (with "Reached" when [onStopReached] is
+/// set). Every block is hidden when its field is absent, so rides without
+/// these fields look exactly as before. Who cancelled and why is shown by
+/// `CancellationBlock` on the details screen.
 class CabRideExtras extends StatelessWidget {
   final CabOrderModel order;
 
@@ -19,29 +20,19 @@ class CabRideExtras extends StatelessWidget {
   /// When set, the next unreached stop shows a "Reached" button.
   final void Function(int index)? onStopReached;
 
-  /// Show `cancelReason` (history screens).
-  final bool showCancellation;
+  const CabRideExtras({super.key, required this.order, required this.isDark, this.onStopReached});
 
-  const CabRideExtras({super.key, required this.order, required this.isDark, this.onStopReached, this.showCancellation = false});
-
-  static bool hasContent(CabOrderModel order, {bool showCancellation = false}) {
+  static bool hasContent(CabOrderModel order) {
     return order.writtenCommunicationOnly == true ||
         order.isForSomeoneElse ||
         order.hasPassengers ||
         (order.instructions?.trim().isNotEmpty ?? false) ||
-        (order.stops?.isNotEmpty ?? false) ||
-        (showCancellation && _hasCancellation(order));
+        (order.stops?.isNotEmpty ?? false);
   }
-
-  /// A ride rejected by one driver goes back to dispatch and may later be
-  /// completed by another, so the reason is shown only on a ride that ended
-  /// cancelled / rejected.
-  static bool _hasCancellation(CabOrderModel order) =>
-      (order.cancelReason?.isNotEmpty ?? false) && [Constant.orderCancelled, Constant.orderRejected, Constant.driverRejected].contains(order.status);
 
   @override
   Widget build(BuildContext context) {
-    if (!hasContent(order, showCancellation: showCancellation)) return const SizedBox();
+    if (!hasContent(order)) return const SizedBox();
     final c = context.dsColors;
     final t = context.dsText;
     final children = <Widget>[];
@@ -137,20 +128,6 @@ class CabRideExtras extends StatelessWidget {
             );
           }),
         ),
-      ));
-    }
-
-    if (showCancellation && _hasCancellation(order)) {
-      final by = order.cancelledBy == 'driver'
-          ? "by driver".tr
-          : order.cancelledBy == 'customer'
-              ? "by customer".tr
-              : '';
-      children.add(DsInlineAlert(
-        tone: DsTone.danger,
-        icon: Icons.block_rounded,
-        title: "${'Cancellation reason'.tr} $by".trim(),
-        message: order.cancelReason!,
       ));
     }
 

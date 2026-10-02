@@ -1,3 +1,5 @@
+import 'package:spideliprovider/widgets/cancellation_block.dart';
+import 'package:spideliprovider/widgets/cancel_reason_sheet.dart';
 import 'package:spideliprovider/services/provider_verification_gate.dart';
 import 'package:bottom_picker/bottom_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -315,6 +317,10 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
               ),
             ],
           ),
+          if (CancellationSummary.of(onProviderOrder) != null) ...[
+            const DsGap(DsSpace.md),
+            CancellationLine(summary: CancellationSummary.of(onProviderOrder)),
+          ],
           const DsGap(DsSpace.md),
 
           // Detail block.
@@ -508,9 +514,22 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
               label: 'Decline'.tr,
               expand: true,
               onPressed: () async {
+                // A reason is mandatory; backing out changes nothing (no
+                // status, refund or notification).
+                final reason = await CancelReasonSheet.show(title: "Why are you declining this booking?".tr);
+                if (reason == null) return;
                 ShowToastDialog.showLoader('Please wait...');
+                try {
+                  await FireStoreUtils.updateOrderFields(onProviderOrder.id, {
+                    'status': ORDER_STATUS_REJECTED,
+                    ...reason.toFields(action: 'rejected', byName: MyAppState.currentUser?.fullName()),
+                  });
+                } catch (e) {
+                  ShowToastDialog.closeLoader();
+                  ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+                  return;
+                }
                 onProviderOrder.status = ORDER_STATUS_REJECTED;
-                await FireStoreUtils.updateOrder(onProviderOrder);
 
                 Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
                 await SendNotification.sendFcmMessage(providerRejected, onProviderOrder.author.fcmToken, payLoad);

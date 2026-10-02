@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/send_notification.dart';
@@ -6,6 +7,7 @@ import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/widget/cancel_reason_sheet.dart';
 import 'package:get/get.dart';
 
 class HomeScreenMultipleOrderController extends GetxController {
@@ -87,15 +89,30 @@ class HomeScreenMultipleOrderController extends GetxController {
     await SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, currentOrder.vendor?.fcmToken ?? '', {});
   }
 
+  /// Driver passes on one of the offers in the list. A reason is mandatory
+  /// and nothing changes until one is given. The order goes back to dispatch
+  /// (status "Driver Rejected", this driver in `rejectedByDrivers`) and the
+  /// reason is appended to `driverRejections`, in one known-fields write.
   Future<void> rejectOrder(OrderModel currentOrder) async {
+    final String? orderId = currentOrder.id;
+    final String? driverId = driverModel.value.id;
+    if (orderId == null || driverId == null) return;
+    final reason = await CancelReasonSheet.show(title: "Why are you rejecting this order?".tr);
+    if (reason == null) return;
     ShowToastDialog.showLoader("Please wait".tr);
     await AudioPlayerService.playSound(false);
-    currentOrder.rejectedByDrivers ??= [];
-    currentOrder.rejectedByDrivers!.add(driverModel.value.id);
-    currentOrder.status = Constant.driverRejected;
-    await FireStoreUtils.setOrder(currentOrder);
+    final ok = await FireStoreUtils.updateVendorOrderFields(orderId, {
+      'status': Constant.driverRejected,
+      'rejectedByDrivers': FieldValue.arrayUnion([driverId]),
+      ...reason.toFields(driverId),
+    });
+    if (!ok) {
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+      return;
+    }
     driverModel.value.orderRequestData ??= [];
-    driverModel.value.orderRequestData!.remove(currentOrder.id);
+    driverModel.value.orderRequestData!.remove(orderId);
     await FireStoreUtils.updateUser(driverModel.value);
     ShowToastDialog.closeLoader();
   }

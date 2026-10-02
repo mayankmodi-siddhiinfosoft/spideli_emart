@@ -1,3 +1,5 @@
+import 'package:spideliprovider/widgets/cancellation_block.dart';
+import 'package:spideliprovider/widgets/cancel_reason_sheet.dart';
 import 'package:spideliprovider/services/provider_verification_gate.dart';
 import 'package:bottom_picker/bottom_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -93,6 +95,10 @@ class BookingDetailsScreen extends StatelessWidget {
                                   children: DsFadeSlideIn.stagger([
                                     _headerCard(context, onProviderOrder),
                                     DsGap.lg,
+                                    if (CancellationSummary.of(onProviderOrder) != null) ...[
+                                      CancellationBlock(summary: CancellationSummary.of(onProviderOrder)),
+                                      DsGap.lg,
+                                    ],
                                     _timelineCard(context, onProviderOrder),
                                     DsGap.lg,
                                     _workerSection(context, controller, onProviderOrder),
@@ -101,7 +107,6 @@ class BookingDetailsScreen extends StatelessWidget {
                                     DsSectionHeader(title: "Price Detail".tr, icon: Icons.receipt_long_outlined),
                                     priceTotalRow(controller, onProviderOrder, context),
                                     _extraChargesCard(context, onProviderOrder),
-                                    _cancelReasonCard(context, onProviderOrder),
                                     _adminCommissionCard(context, controller, onProviderOrder),
                                     receiptAndAssignmentSection(context, onProviderOrder, themeChange),
                                     _reviewsSection(context, controller),
@@ -502,7 +507,7 @@ class BookingDetailsScreen extends StatelessWidget {
   }
 
   // ---------------------------------------------------------------------------
-  // Extra charges / cancel reason / admin commission
+  // Extra charges / admin commission
   // ---------------------------------------------------------------------------
 
   Widget _extraChargesCard(BuildContext context, OnProviderOrderModel onProviderOrder) {
@@ -528,19 +533,6 @@ class BookingDetailsScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _cancelReasonCard(BuildContext context, OnProviderOrderModel onProviderOrder) {
-    if (onProviderOrder.reason!.isEmpty || onProviderOrder.reason == null) return const SizedBox();
-    return Padding(
-      padding: const EdgeInsets.only(top: DsSpace.md),
-      child: DsInlineAlert(
-        tone: DsTone.danger,
-        icon: Icons.cancel_outlined,
-        title: "Cancelled reason".tr,
-        message: "${onProviderOrder.reason.toString()}",
       ),
     );
   }
@@ -923,9 +915,22 @@ class BookingDetailsScreen extends StatelessWidget {
               label: 'Decline'.tr,
               expand: true,
               onPressed: () async {
+                // A reason is mandatory; backing out changes nothing (no
+                // status, refund or notification).
+                final reason = await CancelReasonSheet.show(title: "Why are you declining this booking?".tr);
+                if (reason == null) return;
                 ShowToastDialog.showLoader('Please wait...');
+                try {
+                  await FireStoreUtils.updateOrderFields(onProviderOrder.id, {
+                    'status': ORDER_STATUS_REJECTED,
+                    ...reason.toFields(action: 'rejected', byName: MyAppState.currentUser?.fullName()),
+                  });
+                } catch (e) {
+                  ShowToastDialog.closeLoader();
+                  ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+                  return;
+                }
                 onProviderOrder.status = ORDER_STATUS_REJECTED;
-                await FireStoreUtils.updateOrder(onProviderOrder);
 
                 Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
                 await SendNotification.sendFcmMessage(providerRejected, onProviderOrder.author.fcmToken, payLoad);

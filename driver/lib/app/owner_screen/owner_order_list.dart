@@ -1,3 +1,5 @@
+import 'package:driver/services/parcel_tracking_service.dart';
+import 'package:driver/app/widgets/cancellation_block.dart';
 import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/utils/address_format.dart';
 import 'package:driver/utils/region_service.dart';
@@ -145,6 +147,10 @@ class OwnerOrderListScreen extends StatelessWidget {
 
   // ── Shared pieces ─────────────────────────────────────────────────────
 
+  /// One-line "Cancelled by … · reason" under the header of a cancelled order.
+  List<Widget> _cancelLine(CancellationSummary? summary) =>
+      summary == null ? const [] : [const DsGap(DsSpace.sm), CancellationLine(summary: summary)];
+
   Widget _emptyOrders() => DsEmptyState(
         icon: Icons.receipt_long_outlined,
         title: "No orders found".tr,
@@ -218,6 +224,7 @@ class OwnerOrderListScreen extends StatelessWidget {
                                 copiedMessage: "Order ID copied to clipboard".tr,
                               ),
                             ),
+                            ..._cancelLine(CancellationSummary.of(status: order.status, info: order.cancellation)),
                             const DsGap(DsSpace.md),
                             DsRouteStops(
                               stops: [
@@ -307,6 +314,7 @@ class OwnerOrderListScreen extends StatelessWidget {
                                 copiedMessage: "Order ID copied to clipboard".tr,
                               ),
                             ),
+                            ..._cancelLine(CancellationSummary.of(status: order.status, info: order.cancellation, cancelled: order.parcelStatus == ParcelTrackingStatus.cancelled)),
                             const DsGap(DsSpace.sm),
                             _orderDate(
                               context,
@@ -440,6 +448,7 @@ class OwnerOrderListScreen extends StatelessWidget {
                                 copiedMessage: "Booking ID copied to clipboard".tr,
                               ),
                             ),
+                            ..._cancelLine(CancellationSummary.of(status: order.status, info: order.cancellation)),
                             const DsGap(DsSpace.md),
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -611,6 +620,7 @@ class OwnerOrderListScreen extends StatelessWidget {
                                 copiedMessage: "Order ID copied to clipboard".tr,
                               ),
                             ),
+                            ..._cancelLine(CancellationSummary.of(status: order.status, info: order.cancellation, storeWord: CancellationSummary.storeWordFor(order.sectionId))),
                             const DsGap(DsSpace.sm),
                             // ── Order date ───────────────────
                             if (order.createdAt != null)

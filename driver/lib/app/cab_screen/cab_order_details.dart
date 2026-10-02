@@ -1,5 +1,6 @@
 import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/cab_screen/widget/cab_ride_extras.dart';
+import 'package:driver/app/widgets/cancellation_block.dart';
 import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +32,10 @@ class CabOrderDetails extends StatelessWidget {
               child: Column(
                 children: DsFadeSlideIn.stagger([
                   _orderIdCard(context, controller),
+                  if (_cancellation(controller) != null) ...[
+                    const DsGap(DsSpace.lg),
+                    CancellationBlock(summary: _cancellation(controller)),
+                  ],
                   const DsGap(DsSpace.lg),
                   _routeCard(context, controller),
                   const DsGap(DsSpace.lg),
@@ -41,9 +46,9 @@ class CabOrderDetails extends StatelessWidget {
                   ],
                   const DsGap(DsSpace.lg),
                   _metricsCard(context, controller),
-                  if (CabRideExtras.hasContent(controller.cabOrder.value, showCancellation: true)) ...[
+                  if (CabRideExtras.hasContent(controller.cabOrder.value)) ...[
                     const DsGap(DsSpace.lg),
-                    DsCard(child: CabRideExtras(order: controller.cabOrder.value, isDark: context.dsIsDark, showCancellation: true)),
+                    DsCard(child: CabRideExtras(order: controller.cabOrder.value, isDark: context.dsIsDark)),
                   ],
                   const DsGap(DsSpace.lg),
                   _summaryCard(context, controller),
@@ -66,6 +71,9 @@ class CabOrderDetails extends StatelessWidget {
       },
     );
   }
+
+  CancellationSummary? _cancellation(CabOrderDetailsController controller) =>
+      CancellationSummary.of(status: controller.cabOrder.value.status, info: controller.cabOrder.value.cancellation);
 
   Widget _orderIdCard(BuildContext context, CabOrderDetailsController controller) {
     final order = controller.cabOrder.value;

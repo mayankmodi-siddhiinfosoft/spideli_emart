@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:driver/models/cancellation_info.dart';
 import 'package:driver/models/tax_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/models/vehicle_type.dart';
@@ -61,10 +62,9 @@ class CabOrderModel {
   /// `{ name, phone, email }` when the ride was booked for someone else.
   Map<String, dynamic>? rideFor;
 
-  String? cancelReason;
-  String? cancelReasonCode;
-  String? cancelledBy;
-  Timestamp? cancelledAt;
+  /// Cancel-reason contract fields (`cancelReason`, `cancelledBy`, ...) and
+  /// the drivers' `driverRejections`; written back only when known.
+  CancellationInfo cancellation = CancellationInfo();
 
   CabOrderModel({
     this.status,
@@ -158,10 +158,7 @@ class CabOrderModel {
     instructions = json['instructions']?.toString();
     writtenCommunicationOnly = json['writtenCommunicationOnly'] == true ? true : (json['writtenCommunicationOnly'] == false ? false : null);
     rideFor = json['rideFor'] is Map ? Map<String, dynamic>.from(json['rideFor']) : null;
-    cancelReason = json['cancelReason']?.toString();
-    cancelReasonCode = json['cancelReasonCode']?.toString();
-    cancelledBy = json['cancelledBy']?.toString();
-    cancelledAt = json['cancelledAt'] is Timestamp ? json['cancelledAt'] : null;
+    cancellation = CancellationInfo.fromJson(json);
   }
 
   /// Stops sorted by their `order` key (falls back to list position).
@@ -247,10 +244,7 @@ class CabOrderModel {
     if (instructions != null) data['instructions'] = instructions;
     if (writtenCommunicationOnly != null) data['writtenCommunicationOnly'] = writtenCommunicationOnly;
     if (rideFor != null) data['rideFor'] = rideFor;
-    if (cancelReason != null) data['cancelReason'] = cancelReason;
-    if (cancelReasonCode != null) data['cancelReasonCode'] = cancelReasonCode;
-    if (cancelledBy != null) data['cancelledBy'] = cancelledBy;
-    if (cancelledAt != null) data['cancelledAt'] = cancelledAt;
+    data.addAll(cancellation.toJson());
     return data;
   }
 }

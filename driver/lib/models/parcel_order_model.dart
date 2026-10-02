@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:driver/models/cancellation_info.dart';
 import 'package:driver/models/tax_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/models/vendor_model.dart';
@@ -82,6 +83,10 @@ class ParcelOrderModel {
   String? parcelStatus;
   List<ParcelTrackingEvent> trackingEvents = [];
   Map<String, dynamic>? deliveryProof;
+
+  /// Cancel-reason contract fields (`cancelReason`, `cancelledBy`, ...) and
+  /// the drivers' `driverRejections`; written back only when known.
+  CancellationInfo cancellation = CancellationInfo();
 
   ParcelOrderModel({
     this.author,
@@ -212,6 +217,7 @@ class ParcelOrderModel {
         if (e is Map) trackingEvents.add(ParcelTrackingEvent.fromMap(Map<String, dynamic>.from(e)));
       }
     }
+    cancellation = CancellationInfo.fromJson(json);
   }
 
   /// True when the order was created with the parcel/mail contract fields.
@@ -281,6 +287,7 @@ class ParcelOrderModel {
       data['platformTax'] = platformTax!.map((v) => v.toJson()).toList();
     }
     if (regionId != null && regionId!.isNotEmpty) data['regionId'] = regionId;
+    data.addAll(cancellation.toJson());
 
     return data;
   }

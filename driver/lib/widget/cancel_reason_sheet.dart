@@ -86,8 +86,8 @@ class _CancelReasonBodyState extends State<_CancelReasonBody> {
     }
     if (_isOther(_selected)) {
       final text = _other.text.trim();
-      if (text.isEmpty) {
-        ShowToastDialog.showToast("Please describe the reason".tr);
+      if (text.length < 3) {
+        ShowToastDialog.showToast("Please describe the reason (at least 3 characters)".tr);
         return;
       }
       Get.back(result: CancelReasonResult(reason: text, code: 'other'));

@@ -1,3 +1,4 @@
+import 'package:driver/app/widgets/cancellation_block.dart';
 import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/utils/address_format.dart';
 import 'package:driver/utils/region_service.dart';
@@ -34,6 +35,8 @@ class OrderDetailsScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
                 children: DsFadeSlideIn.stagger([
                   Padding(padding: const EdgeInsets.only(bottom: DsSpace.lg), child: _summaryCard(context, controller)),
+                  if (_cancellation(controller) != null)
+                    Padding(padding: const EdgeInsets.only(bottom: DsSpace.lg), child: CancellationBlock(summary: _cancellation(controller))),
                   Padding(padding: const EdgeInsets.only(bottom: DsSpace.xl), child: _routeCard(context, controller)),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -57,6 +60,11 @@ class OrderDetailsScreen extends StatelessWidget {
             ),
           );
         });
+  }
+
+  CancellationSummary? _cancellation(OrderDetailsController controller) {
+    final order = controller.orderModel.value;
+    return CancellationSummary.of(status: order.status, info: order.cancellation, storeWord: CancellationSummary.storeWordFor(order.sectionId));
   }
 
   Widget _summaryCard(BuildContext context, OrderDetailsController controller) {

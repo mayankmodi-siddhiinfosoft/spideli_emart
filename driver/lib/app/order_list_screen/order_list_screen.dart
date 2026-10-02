@@ -1,3 +1,4 @@
+import 'package:driver/app/widgets/cancellation_block.dart';
 import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/utils/address_format.dart';
 import 'package:driver/utils/region_service.dart';
@@ -83,6 +84,8 @@ class OrderListScreen extends StatelessWidget {
     final String tip = orderModel.tipAmount ?? '';
     final bool hasTip = tip.isNotEmpty && double.parse(tip.toString()) > 0;
     final bool showEarnings = Constant.userModel?.vendorID?.isEmpty == true;
+    final cancellation = CancellationSummary.of(
+        status: orderModel.status, info: orderModel.cancellation, storeWord: CancellationSummary.storeWordFor(orderModel.sectionId));
 
     return DsCard.outlined(
       margin: const EdgeInsets.only(bottom: DsSpace.md),
@@ -146,6 +149,10 @@ class OrderListScreen extends StatelessWidget {
               ),
             ],
           ),
+          if (cancellation != null) ...[
+            const DsGap(DsSpace.md),
+            CancellationLine(summary: cancellation),
+          ],
           if (showEarnings || hasTip) ...[
             const DsGap(DsSpace.md),
             DsTripMetrics(

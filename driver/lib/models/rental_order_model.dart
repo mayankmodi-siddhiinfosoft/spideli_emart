@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:driver/models/cancellation_info.dart';
 import 'package:driver/models/rental_package_model.dart';
 import 'package:driver/models/rental_vehicle_type.dart';
 import 'package:driver/models/tax_model.dart';
@@ -53,10 +54,9 @@ class RentalOrderModel {
   /// once by RentalProposalService, never by a model save).
   String? listedPrice;
 
-  String? cancelReason;
-  String? cancelReasonCode;
-  String? cancelledBy;
-  Timestamp? cancelledAt;
+  /// Cancel-reason contract fields (`cancelReason`, `cancelledBy`, ...) and
+  /// the drivers' `driverRejections`; written back only when known.
+  CancellationInfo cancellation = CancellationInfo();
 
   RentalOrderModel({
     this.status,
@@ -143,10 +143,7 @@ class RentalOrderModel {
     regionId = json['regionId']?.toString();
     priceProposal = json['priceProposal'] is Map ? Map<String, dynamic>.from(json['priceProposal']) : null;
     listedPrice = json['listedPrice']?.toString();
-    cancelReason = json['cancelReason']?.toString();
-    cancelReasonCode = json['cancelReasonCode']?.toString();
-    cancelledBy = json['cancelledBy']?.toString();
-    cancelledAt = json['cancelledAt'] is Timestamp ? json['cancelledAt'] : null;
+    cancellation = CancellationInfo.fromJson(json);
   }
 
   String? get proposalStatus => priceProposal?['status']?.toString();
@@ -221,10 +218,7 @@ class RentalOrderModel {
     // Additive fields: only written when known, so a save never clears them.
     if (regionId != null && regionId!.isNotEmpty) data['regionId'] = regionId;
     if (priceProposal != null) data['priceProposal'] = priceProposal;
-    if (cancelReason != null) data['cancelReason'] = cancelReason;
-    if (cancelReasonCode != null) data['cancelReasonCode'] = cancelReasonCode;
-    if (cancelledBy != null) data['cancelledBy'] = cancelledBy;
-    if (cancelledAt != null) data['cancelledAt'] = cancelledAt;
+    data.addAll(cancellation.toJson());
     return data;
   }
 }

@@ -1,3 +1,4 @@
+import 'package:spideliworker/widgets/cancellation_block.dart';
 import 'package:spideliworker/constant/constants.dart';
 import 'package:spideliworker/constant/show_toast_dialog.dart';
 import 'package:spideliworker/controller/booking_details_controller.dart';
@@ -90,9 +91,14 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                           }
                         }
 
+                        final CancellationSummary? cancellation = CancellationSummary.of(onProviderOrder);
                         final Widget primaryColumn = Column(crossAxisAlignment: CrossAxisAlignment.start, children: DsFadeSlideIn.stagger([
                           summaryCard(context, onProviderOrder, total),
                           const DsGap(DsSpace.lg),
+                          if (cancellation != null) ...[
+                            CancellationBlock(summary: cancellation),
+                            const DsGap(DsSpace.lg),
+                          ],
                           lifecycleCard(context, onProviderOrder),
                         ]));
 
@@ -103,7 +109,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                           const DsGap(DsSpace.sm),
                           priceTotalRow(controller, onProviderOrder, context),
                           extraChargesCard(context, onProviderOrder),
-                          cancelReasonCard(context, onProviderOrder),
                           reviewsSection(context, controller),
                           completionPhotosWidget(context, onProviderOrder),
                         ]));
@@ -436,19 +441,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget cancelReasonCard(BuildContext context, OnProviderOrderModel onProviderOrder) {
-    if (onProviderOrder.reason!.isEmpty || onProviderOrder.reason == null) return const SizedBox();
-    return Padding(
-      padding: const EdgeInsets.only(top: DsSpace.md),
-      child: DsInlineAlert(
-        tone: DsTone.danger,
-        icon: Icons.cancel_outlined,
-        title: "Cancelled reason".tr,
-        message: onProviderOrder.reason.toString(),
       ),
     );
   }

@@ -1,3 +1,5 @@
+import 'package:driver/app/widgets/cancellation_block.dart';
+import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/utils/region_service.dart';
@@ -53,7 +55,7 @@ class RentalOrderListScreen extends StatelessWidget {
                         itemCount: orders.length,
                         itemBuilder: (context, index) {
                           RentalOrderModel order = orders[index]; //use this
-                          return DsFadeSlideIn(index: index, child: _RentalOrderTile(order: order));
+                          return DsFadeSlideIn(index: index, child: _RentalOrderTile(order: order, onCancel: () => controller.cancelBooking(order)));
                         },
                       );
                     }).toList(),
@@ -70,13 +72,19 @@ class RentalOrderListScreen extends StatelessWidget {
 
 class _RentalOrderTile extends StatelessWidget {
   final RentalOrderModel order;
+  final VoidCallback onCancel;
 
-  const _RentalOrderTile({required this.order});
+  const _RentalOrderTile({required this.order, required this.onCancel});
 
   @override
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
+    final cancellation = CancellationSummary.of(status: order.status, info: order.cancellation);
+    // Only the assigned driver hands a booking back (not an owner viewing a
+    // driver's bookings).
+    final bool canCancel =
+        (order.status == Constant.orderPlaced || order.status == Constant.driverAccepted) && order.driverId != null && order.driverId == FireStoreUtils.getCurrentUid();
     return DsCard.outlined(
       margin: const EdgeInsets.only(bottom: DsSpace.md),
       onTap: () {
@@ -108,6 +116,10 @@ class _RentalOrderTile extends StatelessWidget {
               ),
             ],
           ),
+          if (cancellation != null) ...[
+            const DsGap(DsSpace.sm),
+            CancellationLine(summary: cancellation),
+          ],
           const DsGap(DsSpace.sm),
           Row(
             children: [
@@ -171,16 +183,13 @@ class _RentalOrderTile extends StatelessWidget {
               ],
             ),
           ),
-          if (order.status == Constant.orderPlaced || order.status == Constant.driverAccepted) ...[
+          if (canCancel) ...[
             const DsGap(DsSpace.md),
-            if (order.status == Constant.orderPlaced || order.status == Constant.driverAccepted)
-              DsButton.danger(
-                label: "Cancel Booking".tr,
-                expand: true,
-                onPressed: () {
-                  // controller.cancelRentalRequest(order);
-                },
-              ),
+            DsButton.danger(
+              label: "Cancel Booking".tr,
+              expand: true,
+              onPressed: onCancel,
+            ),
           ],
         ],
       ),
