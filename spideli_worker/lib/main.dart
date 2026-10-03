@@ -43,6 +43,12 @@ void main() async {
   // The one background handler: top-level, `vm:entry-point` (release builds
   // tree-shook the old unannotated one), and it initializes Firebase itself.
   FirebaseMessaging.onBackgroundMessage(firebaseMessageBackgroundHandle);
+  // Diagnostics only: compiled in only with --dart-define=PUSH_DEBUG=true
+  // (end-to-end push tests on an emulator); release builds never log it.
+  if (const bool.fromEnvironment('PUSH_DEBUG')) {
+    FirebaseMessaging.instance.onTokenRefresh.listen((t) => debugPrint('PUSH_DEBUG token=$t'));
+    FirebaseMessaging.instance.getToken().then((t) => debugPrint('PUSH_DEBUG token=$t'), onError: (Object e) => debugPrint('PUSH_DEBUG token error: $e'));
+  }
   // Before runApp, so a push that arrives right after the first launch
   // already has its Android channel (and iOS shows pushes in the foreground).
   await NotificationService.prepareBeforeRunApp();

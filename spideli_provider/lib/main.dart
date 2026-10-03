@@ -44,6 +44,12 @@ void main() async {
   // The one background handler (top-level, entry-point; it starts Firebase in
   // its own isolate). Registered before runApp, as firebase_messaging requires.
   FirebaseMessaging.onBackgroundMessage(firebaseMessageBackgroundHandle);
+  // Diagnostics only: compiled in only with --dart-define=PUSH_DEBUG=true
+  // (end-to-end push tests on an emulator); release builds never log it.
+  if (const bool.fromEnvironment('PUSH_DEBUG')) {
+    FirebaseMessaging.instance.onTokenRefresh.listen((t) => debugPrint('PUSH_DEBUG token=$t'));
+    FirebaseMessaging.instance.getToken().then((t) => debugPrint('PUSH_DEBUG token=$t'), onError: (Object e) => debugPrint('PUSH_DEBUG token error: $e'));
+  }
   await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
     alert: true,
     badge: true,

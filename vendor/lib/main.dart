@@ -29,6 +29,12 @@ void main() async {
   // Registered here, before any UI, so a push that arrives with the app closed
   // or in the background always reaches a handler (report #11).
   FirebaseMessaging.onBackgroundMessage(firebaseMessageBackgroundHandle);
+  // Diagnostics only: compiled in only with --dart-define=PUSH_DEBUG=true
+  // (end-to-end push tests on an emulator); release builds never log it.
+  if (const bool.fromEnvironment('PUSH_DEBUG')) {
+    FirebaseMessaging.instance.onTokenRefresh.listen((t) => debugPrint('PUSH_DEBUG token=$t'));
+    FirebaseMessaging.instance.getToken().then((t) => debugPrint('PUSH_DEBUG token=$t'), onError: (Object e) => debugPrint('PUSH_DEBUG token error: $e'));
+  }
   // The Android channels exist before anything else runs, so a push that
   // arrives during start-up still rings on the loud order channel.
   await NotificationService.createChannels();

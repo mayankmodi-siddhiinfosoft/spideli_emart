@@ -30,6 +30,12 @@ void main() async {
   // Background / terminated pushes: registered once, before runApp. It was
   // never registered, so data-only pushes were dropped with the app closed.
   FirebaseMessaging.onBackgroundMessage(firebaseMessageBackgroundHandle);
+  // Diagnostics only: compiled in only with --dart-define=PUSH_DEBUG=true
+  // (end-to-end push tests on an emulator); release builds never log it.
+  if (const bool.fromEnvironment('PUSH_DEBUG')) {
+    FirebaseMessaging.instance.onTokenRefresh.listen((t) => debugPrint('PUSH_DEBUG token=$t'));
+    FirebaseMessaging.instance.getToken().then((t) => debugPrint('PUSH_DEBUG token=$t'), onError: (Object e) => debugPrint('PUSH_DEBUG token error: $e'));
+  }
   // Both Android channels exist before any push can arrive: one that arrives
   // first is posted on a silent fallback channel the SDK makes (report #19).
   await NotificationService.createChannels();
