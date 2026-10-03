@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/main.dart';
@@ -24,19 +26,71 @@ class LoginController extends GetxController {
 
   RxBool passwordVisible = true.obs;
 
+  /// Messages shown under the email / password fields and, for a failed
+  /// sign-in, above the Login button. Translation keys (null = no message);
+  /// cleared as soon as the user edits a field.
+  Rx<String?> emailError = Rx<String?>(null);
+  Rx<String?> passwordError = Rx<String?>(null);
+  Rx<String?> formError = Rx<String?>(null);
+
+  /// The message under the "Forgot password" email field.
+  Rx<String?> resetEmailError = Rx<String?>(null);
+
+  /// A sign-in or reset request is running: a second tap is ignored.
+  bool _busy = false;
+
+  void onEmailChanged(String _) {
+    emailError.value = null;
+    formError.value = null;
+    resetEmailError.value = null;
+  }
+
+  void onPasswordChanged(String _) {
+    passwordError.value = null;
+    formError.value = null;
+  }
+
+  /// Sign-in failed: the same friendly message as a toast and above the
+  /// Login button (it stays there until the user edits a field).
+  void _showLoginError(String message) {
+    formError.value = message;
+    ShowToastDialog.showToast(message.tr);
+  }
+
   /// login with email and password with firebase
   /// @param email user email
   /// @param password user password
-  loginWithEmailAndPassword({required String email, required String password, required BuildContext context}) async {
+  Future<void> loginWithEmailAndPassword({required String email, required String password, required BuildContext context}) async {
+    if (_busy) return;
     // Checked before any request: nothing is sent with an empty field or a
-    // malformed email.
+    // malformed email. Each problem is shown under its field, and the
+    // summary ("Please enter your email and password." when both are
+    // empty) as a toast.
     final String? invalid = LoginValidation.validate(email, password);
+    final fields = LoginValidation.fieldErrors(email, password);
+    emailError.value = fields.email;
+    passwordError.value = fields.password;
+    formError.value = null;
     if (invalid != null) {
       ShowToastDialog.showToast(invalid.tr);
       return;
     }
+    _busy = true;
     ShowToastDialog.showLoader('Logging in, please wait...'.tr);
-    dynamic result = await FireStoreUtils.loginWithEmailAndPassword(email.trim(), password.trim());
+    try {
+      await _loginWithEmailAndPassword(email.trim(), password.trim());
+    } catch (e, s) {
+      // Never the exception's own text on screen.
+      log('LoginController.loginWithEmailAndPassword $e $s');
+      ShowToastDialog.closeLoader();
+      _showLoginError(LoginValidation.genericError);
+    } finally {
+      _busy = false;
+    }
+  }
+
+  Future<void> _loginWithEmailAndPassword(String email, String password) async {
+    dynamic result = await FireStoreUtils.loginWithEmailAndPassword(email, password);
     ShowToastDialog.closeLoader();
     if (result != null && result is User && result.role == 'provider') {
       if (result.active == true) {
@@ -98,11 +152,58 @@ class LoginController extends GetxController {
         );
       }
     } else if (result != null && result is String) {
-      showAlertDialog(context, "Couldn't Authenticate".tr, result, true);
+      // Already a friendly message (LoginValidation.authErrorMessage): a
+      // wrong email, a wrong password or both give "Invalid email or
+      // password."
+      _showLoginError(result);
     } else {
-      showAlertDialog(context, "Couldn't Authenticate".tr, 'Login failed, Please try again.'.tr, true);
-      print("result ans:" + result.toString());
+      // No provider profile for this account (or another role).
+      _showLoginError(LoginValidation.genericError);
     }
+  }
+
+  /// "Forgot password": checks the email (empty, format) before sending
+  /// anything, and shows a friendly message for every failure.
+  Future<void> sendPasswordResetEmail() async {
+    if (_busy) return;
+    final String email = emailController.value.text.trim();
+    final String? invalid = LoginValidation.validateEmail(email);
+    resetEmailError.value = invalid;
+    if (invalid != null) {
+      ShowToastDialog.showToast(invalid.tr);
+      return;
+    }
+    _busy = true;
+    ShowToastDialog.showLoader('Sending Email...'.tr);
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      ShowToastDialog.closeLoader();
+      _passwordResetSent();
+    } on FirebaseAuthException catch (e, s) {
+      log('LoginController.sendPasswordResetEmail ${e.code} $s');
+      ShowToastDialog.closeLoader();
+      final String? message = LoginValidation.passwordResetErrorMessage(e.code, e.message);
+      if (message == null) {
+        // No account for this email: the same answer as for one with an
+        // account, so registered emails are not revealed.
+        _passwordResetSent();
+      } else {
+        if (message == LoginValidation.emailInvalid) resetEmailError.value = message;
+        ShowToastDialog.showToast(message.tr);
+      }
+    } catch (e, s) {
+      log('LoginController.sendPasswordResetEmail $e $s');
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast(LoginValidation.genericError.tr);
+    } finally {
+      _busy = false;
+    }
+  }
+
+  void _passwordResetSent() {
+    resetEmailError.value = null;
+    if (Get.isDialogOpen == true) Get.back();
+    ShowToastDialog.showToast('Please check your email.'.tr);
   }
 
   loginWithApple(BuildContext context) async {

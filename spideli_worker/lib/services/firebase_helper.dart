@@ -231,6 +231,9 @@ class FireStoreUtils {
     });
   }
 
+  /// The signed-in worker, null when the account has no worker document, or
+  /// a friendly message (a translation key, see [LoginValidation]) when the
+  /// sign-in failed. Firebase's own error text is never returned.
   static Future<dynamic> loginWithEmailAndPassword(String email, String password) async {
     try {
       auth.UserCredential result = await auth.FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
@@ -249,10 +252,14 @@ class FireStoreUtils {
       log('$exception$s');
       // One message for a wrong email, a wrong password or both
       // ('invalid-credential' used to give "Unexpected firebase error").
-      return LoginValidation.authErrorMessage(exception.code).tr;
+      return LoginValidation.authErrorMessage(exception.code);
+    } on FirebaseException catch (exception, s) {
+      // The worker document read ('unavailable' when offline).
+      log('$exception$s');
+      return LoginValidation.authErrorMessage(exception.code);
     } catch (e, s) {
       log('$e$s');
-      return 'Login failed, Please try again.'.tr;
+      return LoginValidation.genericError;
     }
   }
 

@@ -221,5 +221,5 @@ const Map<String, String> enUS = {
   "Too many attempts. Please try again later.": "Too many attempts. Please try again later.",
   "No internet connection. Please check your connection and try again.": "No internet connection. Please check your connection and try again.",
   "Something went wrong. Please try again.": "Something went wrong. Please try again.",
-  "This account has been disabled. Please contact the administrator.": "This account has been disabled. Please contact the administrator.",
+  "This user is disable please contact to administrator": "This user is disable please contact to administrator",
 };

@@ -427,4 +427,5 @@ const Map<String, String> zhCH = {
   "Please enter your password.": "请输入您的密码。",
   "Please enter a valid email address.": "请输入有效的邮箱地址。",
   "Invalid email or password.": "邮箱或密码无效。",
+  "No user found for that email.": "未找到与该邮箱关联的账户。",
 };

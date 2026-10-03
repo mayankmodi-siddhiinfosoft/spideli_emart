@@ -1,9 +1,6 @@
-import 'package:spideliworker/constant/constants.dart';
-import 'package:spideliworker/constant/show_toast_dialog.dart';
 import 'package:spideliworker/controller/login_controller.dart';
 import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
-import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
@@ -11,8 +8,9 @@ import 'package:provider/provider.dart';
 
 /// Log in (archetype F). Phones get a brand mark, a large display title and a
 /// focused form; tablets and iPad split the screen into a brand-gradient
-/// panel and a 440-wide form card. Every validation and the controller call
-/// are unchanged.
+/// panel and a 440-wide form card. The fields are checked before any request
+/// (LoginValidation); problems show under the field, a failed sign-in above
+/// the Log In button, both also as a toast.
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
 
@@ -23,20 +21,26 @@ class LoginScreen extends StatelessWidget {
     return GetX<LoginController>(
         init: LoginController(),
         builder: (controller) {
-          // Read synchronously so this GetX tracks the reveal toggle.
+          // Read synchronously so this GetX tracks the reveal toggle and the
+          // inline messages.
           final bool passwordVisible = controller.passwordVisible.value;
+          final String? emailError = controller.emailError.value;
+          final String? passwordError = controller.passwordError.value;
+          final String? formError = controller.formError.value;
           final c = context.dsColors;
           final l = context.dsLayout;
 
           final Widget form = _LoginForm(
             controller: controller,
             passwordVisible: passwordVisible,
+            emailError: emailError?.tr,
+            passwordError: passwordError?.tr,
+            formError: formError?.tr,
             onForgot: () => showResetPwdAlertDialog(context, controller),
             // The controller checks the fields (empty, both empty, email
             // format) before sending anything.
-            onSubmit: () async {
+            onSubmit: () {
               controller.loginWithEmailAndPassword(
-                context: context,
                 email: controller.emailController.value.text.toLowerCase().trim(),
                 password: controller.passwordController.value.text.trim(),
               );
@@ -109,9 +113,10 @@ class LoginScreen extends StatelessWidget {
         });
   }
 
-  void showResetPwdAlertDialog(BuildContext context, controller) {
+  void showResetPwdAlertDialog(BuildContext context, LoginController controller) {
+    controller.resetEmailError.value = null;
     Get.defaultDialog(
-        title: 'Reset Password',
+        title: 'Reset Password'.tr,
         titleStyle: DsTypography.title.copyWith(color: DsColors.of(context).textPrimary),
         backgroundColor: DsColors.of(context).surfaceRaised,
         content: Column(
@@ -121,13 +126,20 @@ class LoginScreen extends StatelessWidget {
               constraints: const BoxConstraints(minWidth: double.infinity),
               child: Padding(
                 padding: const EdgeInsets.only(top: 16.0, right: 16.0, left: 16.0),
-                child: TextField(
-                  controller: controller.emailController.value,
-                  keyboardType: TextInputType.text,
-                  maxLines: 1,
-                  style: DsTypography.bodyStrong.copyWith(color: DsColors.of(context).textPrimary),
-                  decoration: DsInputDecoration.of(context, hint: 'Email'.tr, prefixIcon: Icons.mail_outline_rounded),
-                ),
+                // Read synchronously so the inline message follows the
+                // controller (set on Send Link, cleared while typing).
+                child: Obx(() {
+                  final String? error = controller.resetEmailError.value;
+                  return TextField(
+                    controller: controller.emailController.value,
+                    keyboardType: TextInputType.emailAddress,
+                    autofillHints: const [AutofillHints.email],
+                    maxLines: 1,
+                    onChanged: controller.onResetEmailChanged,
+                    style: DsTypography.bodyStrong.copyWith(color: DsColors.of(context).textPrimary),
+                    decoration: DsInputDecoration.of(context, hint: 'Email'.tr, prefixIcon: Icons.mail_outline_rounded, error: error?.tr),
+                  );
+                }),
               ),
             ),
             const DsGap(DsSpace.xxl),
@@ -138,14 +150,11 @@ class LoginScreen extends StatelessWidget {
                 icon: Icons.send_rounded,
                 expand: true,
                 onPressed: () async {
-                  if (controller.emailController.value.text.toString().isNotEmpty) {
-                    showProgress(context, 'Sending Email...'.tr, false);
-                    await auth.FirebaseAuth.instance.sendPasswordResetEmail(email: controller.emailController.value.text.toString());
-                    hideProgress();
-                    Get.back();
-
-                    ShowToastDialog.showToast('Please check your email.'.tr);
-                  }
+                  // Empty or malformed emails are stopped in the controller
+                  // before any request; failures show a friendly message.
+                  final bool sent = await controller.sendPasswordResetEmail();
+                  // Only this dialog: it may have been dismissed meanwhile.
+                  if (sent && Get.isDialogOpen == true) Get.back();
                 },
               ),
             )
@@ -158,12 +167,20 @@ class LoginScreen extends StatelessWidget {
 class _LoginForm extends StatelessWidget {
   final LoginController controller;
   final bool passwordVisible;
+
+  /// Translated inline messages; null hides them.
+  final String? emailError;
+  final String? passwordError;
+  final String? formError;
   final VoidCallback onForgot;
   final VoidCallback onSubmit;
 
   const _LoginForm({
     required this.controller,
     required this.passwordVisible,
+    required this.emailError,
+    required this.passwordError,
+    required this.formError,
     required this.onForgot,
     required this.onSubmit,
   });
@@ -187,7 +204,10 @@ class _LoginForm extends StatelessWidget {
           label: 'Email'.tr,
           hint: 'Enter email address'.tr,
           controller: controller.emailController.value,
+          errorText: emailError,
+          onChanged: controller.onEmailChanged,
           keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
           autofillHints: const [AutofillHints.email],
           prefix: Padding(
             padding: const EdgeInsets.all(12),
@@ -198,6 +218,11 @@ class _LoginForm extends StatelessWidget {
           label: 'Password'.tr,
           hint: 'Enter Password'.tr,
           controller: controller.passwordController.value,
+          errorText: passwordError,
+          onChanged: controller.onPasswordChanged,
+          // Enter / Done signs in too (keyboards on web and desktop).
+          onSubmitted: (_) => onSubmit(),
+          textInputAction: TextInputAction.done,
           obscureText: passwordVisible,
           autofillHints: const [AutofillHints.password],
           prefix: Padding(
@@ -228,6 +253,12 @@ class _LoginForm extends StatelessWidget {
             onPressed: onForgot,
           ),
         ),
+        // Why the last sign-in failed ("Invalid email or password." for a
+        // wrong email, a wrong password or both); also shown as a toast.
+        if (formError != null) ...[
+          const DsGap(DsSpace.md),
+          DsInlineAlert(tone: DsTone.danger, message: formError!),
+        ],
         const DsGap(DsSpace.xxl),
         DsButton.primary(
           label: 'Log In'.tr,

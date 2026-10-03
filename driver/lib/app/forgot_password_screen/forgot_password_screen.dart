@@ -1,5 +1,4 @@
 import 'package:driver/app/auth_screen/widgets/auth_shell.dart';
-import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/forgot_password_controller.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +13,8 @@ class ForgotPasswordScreen extends StatelessWidget {
     return GetX(
         init: ForgotPasswordController(),
         builder: (controller) {
+          // Read inside the tracked builder so the field error rebuilds.
+          final String? emailError = controller.emailError.value;
           return DsScaffold(
             appBar: const DsAppBar(),
             body: AuthShell(
@@ -32,6 +33,10 @@ class ForgotPasswordScreen extends StatelessWidget {
                       hint: 'Enter email address'.tr,
                       prefixIcon: Icons.mail_outline_rounded,
                       keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.done,
+                      errorText: emailError?.tr,
+                      onChanged: controller.onEmailChanged,
+                      onSubmitted: (_) => controller.forgotPassword(),
                       bottomSpacing: 0,
                     ),
                   ],
@@ -50,13 +55,9 @@ class ForgotPasswordScreen extends StatelessWidget {
                 icon: Icons.send_rounded,
                 size: DsButtonSize.lg,
                 expand: true,
-                onPressed: () {
-                  if (controller.emailEditingController.value.text.isEmpty) {
-                    ShowToastDialog.showToast("Please enter valid email".tr);
-                  } else {
-                    controller.forgotPassword();
-                  }
-                },
+                // The controller checks the address (empty, format) before
+                // sending anything.
+                onPressed: controller.forgotPassword,
               ),
             ),
           );

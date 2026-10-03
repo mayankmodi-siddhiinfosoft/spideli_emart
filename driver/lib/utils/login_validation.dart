@@ -17,6 +17,10 @@ class LoginValidation {
   static const String accountDisabled = 'This user is disable please contact to administrator';
   static const String genericError = 'Something went wrong. Please try again.';
 
+  /// Forgot password only: the app's existing wording for an address with no
+  /// account (sign-in never says this, see [authErrorMessage]).
+  static const String noAccountForEmail = 'No user found for that email.';
+
   /// The pattern sign-up and profile screens already use (`validateEmail`,
   /// `GetUtils.isEmail`), so login never rejects an address they accepted.
   static final RegExp _email = RegExp(
@@ -37,6 +41,18 @@ class LoginValidation {
     return null;
   }
 
+  /// The message shown under the email field (also the Forgot password
+  /// field), or null when the address may be sent.
+  static String? emailError(String email) {
+    if (email.trim().isEmpty) return emailRequired;
+    if (!isValidEmail(email)) return emailInvalid;
+    return null;
+  }
+
+  /// The message shown under the password field, or null when it is filled
+  /// in. Only spaces counts as empty.
+  static String? passwordError(String password) => password.trim().isEmpty ? passwordRequired : null;
+
   /// The message for a Firebase Auth sign-in error [code]. A wrong email, a
   /// wrong password or both give the same message, so the app never says
   /// which one was wrong, and Firebase's own (technical) text is never shown.
@@ -45,7 +61,7 @@ class LoginValidation {
   /// web, 'invalid-login-credentials' or 'INVALID_LOGIN_CREDENTIALS' on
   /// Android), so they are compared lower-case with dashes.
   static String authErrorMessage(String code) {
-    switch (code.trim().toLowerCase().replaceAll('_', '-')) {
+    switch (_normalise(code)) {
       case 'user-not-found':
       case 'wrong-password':
       case 'invalid-credential':
@@ -68,4 +84,16 @@ class LoginValidation {
         return genericError;
     }
   }
+
+  /// The message for a Firebase Auth error from sending the password reset
+  /// email. Keeps the existing "no account" message for an unknown address
+  /// (projects with email enumeration protection never report it); a
+  /// credential error, which a reset cannot cause, is a generic error.
+  static String resetErrorMessage(String code) {
+    if (_normalise(code) == 'user-not-found') return noAccountForEmail;
+    final String message = authErrorMessage(code);
+    return message == invalidCredentials ? genericError : message;
+  }
+
+  static String _normalise(String code) => code.trim().toLowerCase().replaceAll('_', '-');
 }

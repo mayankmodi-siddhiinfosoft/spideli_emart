@@ -427,4 +427,5 @@ const Map<String, String> ruRU = {
   "Please enter your password.": "Введите пароль.",
   "Please enter a valid email address.": "Введите корректный адрес электронной почты.",
   "Invalid email or password.": "Неверный адрес электронной почты или пароль.",
+  "No user found for that email.": "Аккаунт с этим адресом электронной почты не найден.",
 };

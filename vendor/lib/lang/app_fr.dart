@@ -147,5 +147,11 @@ const Map<String, String> trFR = {
   "Too many attempts. Please try again later.": "Trop de tentatives. Veuillez réessayer plus tard.",
   "No internet connection. Please check your connection and try again.": "Pas de connexion Internet. Vérifiez votre connexion et réessayez.",
   "Something went wrong. Please try again.": "Une erreur s'est produite. Veuillez réessayer.",
+  "A password reset link has been sent to @email.": "Un lien de réinitialisation du mot de passe a été envoyé à @email.",
+  "No user found for that email.": "Aucun utilisateur trouvé pour cette adresse e-mail.",
   "This user is disable please contact to administrator": "Ce compte est désactivé. Veuillez contacter l'administrateur.",
+  "This user is not created in store application.": "Cet utilisateur n'est pas enregistré dans l'application du magasin.",
+  "This user is not created in restaurant application.": "Cet utilisateur n'est pas enregistré dans l'application du restaurant.",
+  "Please wait.": "Veuillez patienter.",
+  "Please wait": "Veuillez patienter",
 };

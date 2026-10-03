@@ -172,14 +172,16 @@ class FireStoreUtils {
           return user;
         }
       }
-    } on auth.FirebaseAuthException catch (exception, s) {
+    } on FirebaseException catch (exception, s) {
+      // FirebaseAuthException (sign-in) and the profile read (offline:
+      // 'unavailable'). One message for a wrong email, a wrong password or
+      // both ('invalid-credential' used to give "Unexpected firebase
+      // error"), and never Firebase's own text.
       log('$exception$s');
-      // One message for a wrong email, a wrong password or both
-      // ('invalid-credential' used to give "Unexpected firebase error").
-      return LoginValidation.authErrorMessage(exception.code).tr;
+      return LoginValidation.authErrorMessage(exception.code, exception.message).tr;
     } catch (e, s) {
       log('$e$s');
-      return 'Login failed, Please try again.'.tr;
+      return LoginValidation.genericError.tr;
     }
   }
 

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:vendor/app/auth_screen/widgets/auth_layout.dart';
-import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/forgot_password_controller.dart';
 import 'package:vendor/themes/ds/ds.dart';
 
@@ -35,6 +34,8 @@ class ForgotPasswordScreen extends StatelessWidget {
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.done,
                 autofillHints: const [AutofillHints.email],
+                errorText: controller.emailError.value?.tr,
+                onChanged: (_) => controller.emailEdited(),
               ),
               const DsGap(DsSpace.sm),
               DsButton.primary(
@@ -42,13 +43,9 @@ class ForgotPasswordScreen extends StatelessWidget {
                 size: DsButtonSize.lg,
                 expand: true,
                 icon: Icons.send_rounded,
-                onPressed: () async {
-                  if (controller.emailEditingController.value.text.trim().isEmpty) {
-                    ShowToastDialog.showToast("Please enter valid email".tr);
-                  } else {
-                    controller.forgotPassword();
-                  }
-                },
+                // The controller checks the email (empty, format) before
+                // sending anything.
+                onPressed: controller.forgotPassword,
               ),
               const DsGap(DsSpace.xxxl),
               // Small "how it works" strip – purely informational.

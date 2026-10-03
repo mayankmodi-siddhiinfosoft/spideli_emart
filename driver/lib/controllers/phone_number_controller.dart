@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../constant/constant.dart';
+import '../utils/login_validation.dart';
 
 class PhoneNumberController extends GetxController {
   Rx<TextEditingController> phoneNUmberEditingController = TextEditingController().obs;
@@ -18,12 +19,13 @@ class PhoneNumberController extends GetxController {
             phoneNumber: countryCodeEditingController.value.text + phoneNUmberEditingController.value.text,
             verificationCompleted: (PhoneAuthCredential credential) {},
             verificationFailed: (FirebaseAuthException e) {
-              debugPrint("FirebaseAuthException--->${e.message}");
+              debugPrint("verifyPhoneNumber failed: ${e.code}");
               ShowToastDialog.closeLoader();
               if (e.code == 'invalid-phone-number') {
                 ShowToastDialog.showToast("invalid_phone_number".tr);
               } else {
-                ShowToastDialog.showToast(e.message);
+                // Never Firebase's own text (e.g. the quota message).
+                ShowToastDialog.showToast(LoginValidation.authErrorMessage(e.code).tr);
               }
             },
             codeSent: (String verificationId, int? resendToken) {

@@ -17,6 +17,11 @@ class LoginValidation {
   static const String accountDisabled = 'This user is disable please contact to administrator';
   static const String genericError = 'Something went wrong. Please try again.';
 
+  /// Forgot password: the existing wording for an unknown address, and the
+  /// confirmation (`@email` is filled in with `trParams`).
+  static const String noAccountForEmail = 'No user found for that email.';
+  static const String resetLinkSent = 'A password reset link has been sent to @email.';
+
   /// The pattern sign-up and profile screens already use (`validateEmail`,
   /// `GetUtils.isEmail`), so login never rejects an address they accepted.
   static final RegExp _email = RegExp(
@@ -37,6 +42,21 @@ class LoginValidation {
     return null;
   }
 
+  /// The message shown under each field (null = that field is fine). Both
+  /// are null exactly when [validate] returns null.
+  static ({String? email, String? password}) fieldErrors(String email, String password) {
+    return (email: validateEmail(email), password: password.trim().isEmpty ? passwordRequired : null);
+  }
+
+  /// An email field on its own (forgot password): empty, then format.
+  static String? validateEmail(String email) {
+    if (email.trim().isEmpty) return emailRequired;
+    if (!isValidEmail(email)) return emailInvalid;
+    return null;
+  }
+
+  static String _normalise(String code) => code.trim().toLowerCase().replaceAll('_', '-');
+
   /// The message for a Firebase Auth sign-in error [code]. A wrong email, a
   /// wrong password or both give the same message, so the app never says
   /// which one was wrong, and Firebase's own (technical) text is never shown.
@@ -45,7 +65,7 @@ class LoginValidation {
   /// web, 'invalid-login-credentials' or 'INVALID_LOGIN_CREDENTIALS' on
   /// Android), so they are compared lower-case with dashes.
   static String authErrorMessage(String code) {
-    switch (code.trim().toLowerCase().replaceAll('_', '-')) {
+    switch (_normalise(code)) {
       case 'user-not-found':
       case 'wrong-password':
       case 'invalid-credential':
@@ -58,6 +78,27 @@ class LoginValidation {
         return emailRequired;
       case 'missing-password':
         return passwordRequired;
+      case 'user-disabled':
+        return accountDisabled;
+      case 'too-many-requests':
+        return tooManyAttempts;
+      case 'network-request-failed':
+        return noConnection;
+      default:
+        return genericError;
+    }
+  }
+
+  /// The message for a Firebase Auth error from the password reset request.
+  /// Like [authErrorMessage], Firebase's own text is never shown.
+  static String resetErrorMessage(String code) {
+    switch (_normalise(code)) {
+      case 'user-not-found':
+        return noAccountForEmail;
+      case 'invalid-email':
+        return emailInvalid;
+      case 'missing-email':
+        return emailRequired;
       case 'user-disabled':
         return accountDisabled;
       case 'too-many-requests':

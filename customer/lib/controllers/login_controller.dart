@@ -30,23 +30,42 @@ class LoginController extends GetxController {
 
   RxBool passwordVisible = true.obs;
 
+  /// Inline messages under the email / password fields (translation keys,
+  /// null = no error). Set by [loginWithEmail], cleared as the user edits.
+  final RxnString emailError = RxnString();
+  final RxnString passwordError = RxnString();
+
+  void onEmailChanged(String _) {
+    if (emailError.value != null) emailError.value = null;
+  }
+
+  void onPasswordChanged(String _) {
+    if (passwordError.value != null) passwordError.value = null;
+  }
+
   Future<void> loginWithEmail() async {
+    // One request at a time (double tap, Enter key on web / desktop).
+    if (isLoading.value) return;
     final email = emailController.value.text.trim();
     final password = passwordController.value.text.trim();
     // Checked before any request: nothing is sent with an empty field or a
-    // malformed email.
-    final String? invalid = LoginValidation.validate(email, password);
-    if (invalid != null) {
-      ShowToastDialog.showToast(invalid.tr);
+    // malformed email. The problem is shown under the field and as a toast.
+    final LoginFormErrors errors = LoginValidation.validateForm(email, password);
+    emailError.value = errors.email;
+    passwordError.value = errors.password;
+    if (!errors.isValid) {
+      ShowToastDialog.showToast(errors.message!.tr);
       return;
     }
 
     String? message;
+    bool signedIn = false;
     try {
       isLoading.value = true;
       ShowToastDialog.showLoader("Logging in...".tr);
 
       final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
+      signedIn = true;
 
       final userModel = await FireStoreUtils.getUserProfile(credential.user!.uid);
 
@@ -75,14 +94,20 @@ class LoginController extends GetxController {
         message = "This user does not exist in the customer app.";
         Get.offAll(() => const LoginScreen());
       }
-    } on FirebaseAuthException catch (e) {
+    } on FirebaseException catch (e) {
+      // FirebaseAuthException (sign-in) or a Firestore error (profile save).
       // One message for a wrong email, a wrong password or both; Firebase's
       // own text (e.message) is never shown.
-      debugPrint("Email login failed: ${e.code}");
+      debugPrint("Email login failed: ${e.plugin}/${e.code}");
       message = LoginValidation.authErrorMessage(e.code);
+      // Firebase rejected an address the local pattern accepted: show it
+      // under the field too, like the local check does.
+      if (message == LoginValidation.emailInvalid) emailError.value = message;
+      if (signedIn) await _signOutQuietly();
     } catch (e) {
-      debugPrint("Email login failed: $e");
+      debugPrint("Email login failed: ${e.runtimeType}");
       message = LoginValidation.genericError;
+      if (signedIn) await _signOutQuietly();
     } finally {
       isLoading.value = false;
       ShowToastDialog.closeLoader();
@@ -90,6 +115,16 @@ class LoginController extends GetxController {
     // Shown after the loader closes: EasyLoading has one overlay, so a toast
     // shown before closeLoader() was dismissed with it.
     if (message != null) ShowToastDialog.showToast(message.tr);
+  }
+
+  /// A step after a successful sign-in failed: sign out again so the app is
+  /// not left signed in behind an error on the login screen.
+  Future<void> _signOutQuietly() async {
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (e) {
+      debugPrint("Sign out after failed login: ${e.runtimeType}");
+    }
   }
 
   Future<void> loginWithGoogle() async {

@@ -1,4 +1,3 @@
-import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/controller/login_controller.dart';
 import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/ui/auth/auth_layout.dart';
@@ -7,10 +6,8 @@ import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_auth/firebase_auth.dart' as auth;
 
-import 'dart:io';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -31,6 +28,9 @@ class LoginScreen extends StatelessWidget {
         // Every observable is read here, inside the tracked builder, and the
         // values are handed to the (eagerly built) sub-trees below.
         final bool passwordVisible = controller.passwordVisible.value;
+        final String? emailError = controller.emailError.value;
+        final String? passwordError = controller.passwordError.value;
+        final String? formError = controller.formError.value;
         final Widget form = AuthShell(
           children: [
             Text("Welcome Back! 👋".tr, style: t.display),
@@ -44,6 +44,9 @@ class LoginScreen extends StatelessWidget {
               keyboardType: TextInputType.emailAddress,
               autofillHints: const [AutofillHints.email],
               bottomSpacing: DsSpace.lg,
+              // Shown under the field; cleared as soon as the user types.
+              errorText: emailError?.tr,
+              onChanged: controller.onEmailChanged,
               prefix: Padding(
                 padding: const EdgeInsets.all(12),
                 child: SvgPicture.asset("assets/icons/ic_mail.svg", colorFilter: ColorFilter.mode(c.textMuted, BlendMode.srcIn)),
@@ -54,6 +57,8 @@ class LoginScreen extends StatelessWidget {
               hint: 'Enter Password'.tr,
               controller: controller.passwordController.value,
               obscure: passwordVisible,
+              errorText: passwordError?.tr,
+              onChanged: controller.onPasswordChanged,
               prefix: Padding(
                 padding: const EdgeInsets.all(12),
                 child: SvgPicture.asset("assets/icons/ic_lock.svg", colorFilter: ColorFilter.mode(c.textMuted, BlendMode.srcIn)),
@@ -73,6 +78,15 @@ class LoginScreen extends StatelessWidget {
               ),
             ),
             const DsGap(DsSpace.xl),
+            // A failed sign-in ("Invalid email or password.", no connection,
+            // ...) stays here until a field is edited. Always one child, so
+            // the staggered entrance of the rows below is not replayed.
+            formError == null
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(bottom: DsSpace.lg),
+                    child: DsInlineAlert(tone: DsTone.danger, message: formError.tr),
+                  ),
             DsButton.primary(
               label: "Login".tr,
               expand: true,
@@ -109,7 +123,8 @@ class LoginScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Platform.isIOS
+                // Not dart:io's Platform, which throws on the web.
+                !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS
                     ? Expanded(
                         child: DsButton.secondary(
                           label: "with Apple".tr,
@@ -155,10 +170,11 @@ class LoginScreen extends StatelessWidget {
     );
   }
 
-  void showResetPwdAlertDialog(BuildContext context, controller) {
+  void showResetPwdAlertDialog(BuildContext context, LoginController controller) {
     final c = context.dsColors;
+    controller.resetEmailError.value = null;
     Get.defaultDialog(
-      title: 'Reset Password',
+      title: 'Reset Password'.tr,
       titleStyle: DsTypography.title.copyWith(color: c.textPrimary),
       backgroundColor: c.surfaceRaised,
       radius: DsRadius.lg,
@@ -171,28 +187,26 @@ class LoginScreen extends StatelessWidget {
             style: DsTypography.body.copyWith(color: c.textSecondary),
           ),
           const DsGap(DsSpace.xl),
-          TextField(
-            controller: controller.emailController.value,
-            keyboardType: TextInputType.text,
-            maxLines: 1,
-            style: DsTypography.bodyStrong.copyWith(color: c.textPrimary),
-            cursorColor: c.brand,
-            decoration: DsInputDecoration.of(context, hint: 'Email'.tr, prefixIcon: Icons.mail_outline_rounded),
-          ),
+          // The same checks as the login form (empty, format) before any
+          // request; the message is shown under the field.
+          Obx(() {
+            final String? error = controller.resetEmailError.value;
+            return TextField(
+              controller: controller.emailController.value,
+              keyboardType: TextInputType.emailAddress,
+              autofillHints: const [AutofillHints.email],
+              maxLines: 1,
+              onChanged: controller.onEmailChanged,
+              style: DsTypography.bodyStrong.copyWith(color: c.textPrimary),
+              cursorColor: c.brand,
+              decoration: DsInputDecoration.of(context, hint: 'Email'.tr, prefixIcon: Icons.mail_outline_rounded, error: error?.tr),
+            );
+          }),
           const SizedBox(height: 30.0),
           DsButton.primary(
             label: 'Send Link'.tr,
             expand: true,
-            onPressed: () async {
-              if (controller.emailController.value.text.toString().isNotEmpty) {
-                ShowToastDialog.showLoader('Sending Email...'.tr);
-                await auth.FirebaseAuth.instance.sendPasswordResetEmail(email: controller.emailController.value.text.toString());
-                ShowToastDialog.closeLoader();
-                Get.back();
-
-                ShowToastDialog.showToast('Please check your email.'.tr);
-              }
-            },
+            onPressed: controller.sendPasswordResetEmail,
           ),
         ],
       ),

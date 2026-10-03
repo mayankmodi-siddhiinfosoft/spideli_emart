@@ -32,6 +32,14 @@ class LoginController extends GetxController {
 
   RxInt selectedTabbar = 0.obs;
 
+  /// Inline errors of the owner and employee forms.
+  final LoginFormErrors ownerErrors = LoginFormErrors();
+  final LoginFormErrors employeeErrors = LoginFormErrors();
+
+  /// True while a sign-in request is running: a second tap on Login is
+  /// ignored instead of sending a second request.
+  bool _signingIn = false;
+
   @override
   void onInit() {
     // TODO: implement onInit
@@ -39,15 +47,19 @@ class LoginController extends GetxController {
   }
 
   Future<void> onwerloginWithEmailAndPassword() async {
+    if (_signingIn) return;
     final String email = emailEditingControllerOwner.value.text.toLowerCase().trim();
     final String password = passwordEditingControllerOwner.value.text.trim();
     // Checked before any request: nothing is sent with an empty field or a
-    // malformed email.
+    // malformed email. Each field shows its own message, the toast the
+    // whole problem ("Please enter your email and password.").
     final String? invalid = LoginValidation.validate(email, password);
+    ownerErrors.show(LoginValidation.fieldErrors(email, password));
     if (invalid != null) {
       ShowToastDialog.showToast(invalid.tr);
       return;
     }
+    _signingIn = true;
     ShowToastDialog.showLoader("Please wait.".tr);
     String? message;
     try {
@@ -125,22 +137,31 @@ class LoginController extends GetxController {
       message = LoginValidation.genericError;
     } finally {
       ShowToastDialog.closeLoader();
+      _signingIn = false;
     }
     // Shown after the loader closes: EasyLoading has one overlay, so a toast
-    // shown before closeLoader() was dismissed with it.
-    if (message != null) ShowToastDialog.showToast(message.tr);
+    // shown before closeLoader() was dismissed with it. The form keeps the
+    // message above the Login button until a field is edited.
+    if (message != null) {
+      ownerErrors.form.value = message;
+      ShowToastDialog.showToast(message.tr);
+    }
   }
 
   Future<void> employeeloginWithEmailAndPassword() async {
+    if (_signingIn) return;
     final String email = emailEditingControllerEmployee.value.text.toLowerCase().trim();
     final String password = passwordEditingControllerEmployee.value.text.trim();
     // Checked before any request: nothing is sent with an empty field or a
-    // malformed email.
+    // malformed email. Each field shows its own message, the toast the
+    // whole problem ("Please enter your email and password.").
     final String? invalid = LoginValidation.validate(email, password);
+    employeeErrors.show(LoginValidation.fieldErrors(email, password));
     if (invalid != null) {
       ShowToastDialog.showToast(invalid.tr);
       return;
     }
+    _signingIn = true;
     ShowToastDialog.showLoader("Please wait.".tr);
     String? message;
     try {
@@ -211,10 +232,15 @@ class LoginController extends GetxController {
       message = LoginValidation.genericError;
     } finally {
       ShowToastDialog.closeLoader();
+      _signingIn = false;
     }
     // Shown after the loader closes: EasyLoading has one overlay, so a toast
-    // shown before closeLoader() was dismissed with it.
-    if (message != null) ShowToastDialog.showToast(message.tr);
+    // shown before closeLoader() was dismissed with it. The form keeps the
+    // message above the Login button until a field is edited.
+    if (message != null) {
+      employeeErrors.form.value = message;
+      ShowToastDialog.showToast(message.tr);
+    }
   }
 
   Future<void> loginWithGoogle() async {
@@ -448,5 +474,33 @@ class LoginController extends GetxController {
       debugPrint(e.toString());
     }
     return null;
+  }
+}
+
+/// Inline errors of one email / password login form. Every value is a
+/// translation key (null = nothing to show); editing a field clears its own
+/// message and the sign-in failure.
+class LoginFormErrors {
+  final RxnString email = RxnString();
+  final RxnString password = RxnString();
+
+  /// Why the sign-in request failed ("Invalid email or password." ...),
+  /// shown above the Login button: it is about both fields, not one.
+  final RxnString form = RxnString();
+
+  void show(({String? email, String? password}) errors) {
+    email.value = errors.email;
+    password.value = errors.password;
+    form.value = null;
+  }
+
+  void emailEdited() {
+    email.value = null;
+    form.value = null;
+  }
+
+  void passwordEdited() {
+    password.value = null;
+    form.value = null;
   }
 }

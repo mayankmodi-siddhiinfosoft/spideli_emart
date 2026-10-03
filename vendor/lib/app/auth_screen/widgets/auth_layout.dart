@@ -278,6 +278,10 @@ class AuthField extends StatelessWidget {
   final List<TextInputFormatter>? inputFormatters;
   final Iterable<String>? autofillHints;
 
+  /// Shown in the DS error style under the field (null = no error).
+  final String? errorText;
+  final ValueChanged<String>? onChanged;
+
   const AuthField({
     super.key,
     required this.label,
@@ -292,6 +296,8 @@ class AuthField extends StatelessWidget {
     this.textInputAction,
     this.inputFormatters,
     this.autofillHints,
+    this.errorText,
+    this.onChanged,
   });
 
   @override
@@ -313,9 +319,10 @@ class AuthField extends StatelessWidget {
             textInputAction: textInputAction,
             inputFormatters: inputFormatters,
             autofillHints: autofillHints,
+            onChanged: onChanged,
             cursorColor: c.brand,
             style: context.dsText.bodyStrong.withColor(enabled ? c.textPrimary : c.textSecondary),
-            decoration: DsInputDecoration.of(context, hint: hint, prefixIcon: prefixIcon, prefix: prefix, suffix: suffix, enabled: enabled),
+            decoration: DsInputDecoration.of(context, hint: hint, prefixIcon: prefixIcon, prefix: prefix, suffix: suffix, enabled: enabled, error: errorText),
           ),
         ],
       ),

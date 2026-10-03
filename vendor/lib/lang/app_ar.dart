@@ -923,4 +923,6 @@ const Map<String, String> lnAr = {
   "Too many attempts. Please try again later.": "محاولات كثيرة جدًا. يرجى المحاولة لاحقًا.",
   "No internet connection. Please check your connection and try again.": "لا يوجد اتصال بالإنترنت. تحقق من اتصالك وحاول مرة أخرى.",
   "Something went wrong. Please try again.": "حدث خطأ ما. يرجى المحاولة مرة أخرى.",
+  "A password reset link has been sent to @email.": "تم إرسال رابط إعادة تعيين كلمة المرور إلى @email.",
+  "This user is not created in store application.": "هذا المستخدم غير مسجل في تطبيق المتجر.",
 };

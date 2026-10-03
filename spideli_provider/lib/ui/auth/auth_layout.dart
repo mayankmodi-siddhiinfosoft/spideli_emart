@@ -116,7 +116,11 @@ class AuthPasswordField extends StatelessWidget {
   final Widget? prefix;
   final double bottomSpacing;
 
-  const AuthPasswordField({super.key, required this.label, required this.hint, required this.controller, required this.obscure, required this.onToggle, this.prefix, this.bottomSpacing = DsSpace.lg});
+  /// Shown under the field in the DS error style (red border and text).
+  final String? errorText;
+  final ValueChanged<String>? onChanged;
+
+  const AuthPasswordField({super.key, required this.label, required this.hint, required this.controller, required this.obscure, required this.onToggle, this.prefix, this.bottomSpacing = DsSpace.lg, this.errorText, this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -133,11 +137,13 @@ class AuthPasswordField extends StatelessWidget {
             obscureText: obscure,
             obscuringCharacter: '●',
             maxLines: 1,
+            onChanged: onChanged,
             style: DsTypography.bodyStrong.copyWith(color: c.textPrimary),
             cursorColor: c.brand,
             decoration: DsInputDecoration.of(
               context,
               hint: hint,
+              error: errorText,
               prefix: prefix,
               suffix: DsIconButton(
                 icon: obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,

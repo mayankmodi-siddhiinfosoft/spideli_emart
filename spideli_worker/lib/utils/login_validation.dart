@@ -25,27 +25,49 @@ class LoginValidation {
 
   static bool isValidEmail(String email) => _email.hasMatch(email.trim());
 
-  /// The message for the first problem in the form, or null when the sign-in
-  /// request may be sent. A field holding only spaces counts as empty.
-  static String? validate(String email, String password) {
-    final bool noEmail = email.trim().isEmpty;
-    final bool noPassword = password.trim().isEmpty;
-    if (noEmail && noPassword) return emailAndPasswordRequired;
-    if (noEmail) return emailRequired;
+  /// The message shown under the email field (login and "Forgot password"),
+  /// or null when the email may be sent. Spaces alone count as empty.
+  static String? emailError(String email) {
+    if (email.trim().isEmpty) return emailRequired;
     if (!isValidEmail(email)) return emailInvalid;
-    if (noPassword) return passwordRequired;
     return null;
   }
 
-  /// The message for a Firebase Auth sign-in error [code]. A wrong email, a
-  /// wrong password or both give the same message, so the app never says
-  /// which one was wrong, and Firebase's own (technical) text is never shown.
+  /// The message shown under the password field, or null when it is filled.
+  /// Spaces alone count as empty.
+  static String? passwordError(String password) => password.trim().isEmpty ? passwordRequired : null;
+
+  /// The message for the first problem in the form, or null when the sign-in
+  /// request may be sent. A field holding only spaces counts as empty; both
+  /// fields empty give the one combined message.
+  static String? validate(String email, String password) {
+    final String? emailProblem = emailError(email);
+    final String? passwordProblem = passwordError(password);
+    if (emailProblem == emailRequired && passwordProblem != null) return emailAndPasswordRequired;
+    return emailProblem ?? passwordProblem;
+  }
+
+  /// The message for a failed "Forgot password" request, or null when it is
+  /// to be reported as sent. 'user-not-found' is reported as sent so the form
+  /// never says whether an account exists for an email (what Firebase itself
+  /// does when email enumeration protection is on).
+  static String? passwordResetErrorMessage(String code) {
+    if (_normalize(code) == 'user-not-found') return null;
+    return authErrorMessage(code);
+  }
+
+  static String _normalize(String code) => code.trim().toLowerCase().replaceAll('_', '-');
+
+  /// The message for a sign-in error [code] (Firebase Auth's, or Firestore's
+  /// for the account read that follows the sign-in). A wrong email, a wrong
+  /// password or both give the same message, so the app never says which one
+  /// was wrong, and Firebase's own (technical) text is never shown.
   ///
   /// Codes arrive in several spellings ('invalid-credential' on iOS and the
   /// web, 'invalid-login-credentials' or 'INVALID_LOGIN_CREDENTIALS' on
   /// Android), so they are compared lower-case with dashes.
   static String authErrorMessage(String code) {
-    switch (code.trim().toLowerCase().replaceAll('_', '-')) {
+    switch (_normalize(code)) {
       case 'user-not-found':
       case 'wrong-password':
       case 'invalid-credential':
@@ -63,6 +85,7 @@ class LoginValidation {
       case 'too-many-requests':
         return tooManyAttempts;
       case 'network-request-failed':
+      case 'unavailable': // Firestore, offline
         return noConnection;
       default:
         return genericError;

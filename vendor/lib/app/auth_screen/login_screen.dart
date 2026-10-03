@@ -1,5 +1,4 @@
-import 'dart:io';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
@@ -81,6 +80,28 @@ class LoginScreen extends StatelessWidget {
   }
 }
 
+/// Apple sign-in and the shorter Google label are for the iOS app only.
+/// `defaultTargetPlatform` (not `dart:io` Platform) keeps this screen working
+/// on the web and desktop too.
+bool get _isIOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
+/// Why the last sign-in failed ("Invalid email or password." ...), above the
+/// Login button until a field is edited. [message] is a translation key.
+class LoginFailureAlert extends StatelessWidget {
+  final String? message;
+  const LoginFailureAlert({super.key, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = message;
+    if (text == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpace.lg),
+      child: DsInlineAlert(tone: DsTone.danger, message: text.tr),
+    );
+  }
+}
+
 class OwnerLoginForm extends StatelessWidget {
   final LoginController controller;
   const OwnerLoginForm({super.key, required this.controller});
@@ -100,6 +121,8 @@ class OwnerLoginForm extends StatelessWidget {
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
             autofillHints: const [AutofillHints.email],
+            errorText: controller.ownerErrors.email.value?.tr,
+            onChanged: (_) => controller.ownerErrors.emailEdited(),
           ),
           AuthField(
             label: 'Password'.tr,
@@ -109,12 +132,15 @@ class OwnerLoginForm extends StatelessWidget {
             prefixIcon: Icons.lock_outline_rounded,
             autofillHints: const [AutofillHints.password],
             suffix: AuthVisibilityToggle(obscured: controller.passwordVisible.value, onTap: () => controller.passwordVisible.value = !controller.passwordVisible.value),
+            errorText: controller.ownerErrors.password.value?.tr,
+            onChanged: (_) => controller.ownerErrors.passwordEdited(),
           ),
           Align(
             alignment: AlignmentDirectional.centerEnd,
             child: DsButton.ghost(label: "Forgot Password".tr, size: DsButtonSize.sm, onPressed: () => Get.to(const ForgotPasswordScreen())),
           ),
           const DsGap(DsSpace.lg),
+          LoginFailureAlert(message: controller.ownerErrors.form.value),
           DsButton.primary(
             label: "Login".tr,
             size: DsButtonSize.lg,
@@ -131,14 +157,14 @@ class OwnerLoginForm extends StatelessWidget {
             children: [
               Expanded(
                 child: DsButton.secondary(
-                  label: Platform.isIOS ? "with Google".tr : 'Continue with Google'.tr,
+                  label: _isIOS ? "with Google".tr : 'Continue with Google'.tr,
                   expand: true,
                   leading: SvgPicture.asset("assets/icons/ic_google.svg", width: 20, height: 20),
                   onPressed: () => controller.loginWithGoogle(),
                 ),
               ),
-              if (Platform.isIOS) const DsGap(DsSpace.md),
-              if (Platform.isIOS)
+              if (_isIOS) const DsGap(DsSpace.md),
+              if (_isIOS)
                 Expanded(
                   child: DsButton.secondary(
                     label: "with Apple".tr,
@@ -175,6 +201,8 @@ class EmployeeLoginForm extends StatelessWidget {
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
             autofillHints: const [AutofillHints.email],
+            errorText: controller.employeeErrors.email.value?.tr,
+            onChanged: (_) => controller.employeeErrors.emailEdited(),
           ),
           AuthField(
             label: 'Password'.tr,
@@ -184,8 +212,11 @@ class EmployeeLoginForm extends StatelessWidget {
             prefixIcon: Icons.lock_outline_rounded,
             autofillHints: const [AutofillHints.password],
             suffix: AuthVisibilityToggle(obscured: controller.passwordVisible.value, onTap: () => controller.passwordVisible.value = !controller.passwordVisible.value),
+            errorText: controller.employeeErrors.password.value?.tr,
+            onChanged: (_) => controller.employeeErrors.passwordEdited(),
           ),
           const DsGap(DsSpace.lg),
+          LoginFailureAlert(message: controller.employeeErrors.form.value),
           DsButton.primary(
             label: "Login".tr,
             size: DsButtonSize.lg,

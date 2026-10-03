@@ -39,6 +39,10 @@ class ForgotPasswordScreen extends StatelessWidget {
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.done,
                 autofillHints: const [AutofillHints.email],
+                // Read inside the tracked builder so it appears / clears live.
+                errorText: controller.emailError.value?.tr,
+                onChanged: controller.onEmailChanged,
+                onSubmitted: (_) => controller.forgotPassword(),
               ),
             ),
             const DsGap(DsSpace.lg),

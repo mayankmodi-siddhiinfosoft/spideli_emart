@@ -427,4 +427,5 @@ const Map<String, String> jaJP = {
   "Please enter your password.": "パスワードを入力してください。",
   "Please enter a valid email address.": "有効なメールアドレスを入力してください。",
   "Invalid email or password.": "メールアドレスまたはパスワードが正しくありません。",
+  "No user found for that email.": "このメールアドレスのアカウントが見つかりません。",
 };

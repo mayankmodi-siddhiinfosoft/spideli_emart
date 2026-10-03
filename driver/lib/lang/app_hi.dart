@@ -427,4 +427,5 @@ const Map<String, String> hiIN = {
   "Please enter your password.": "कृपया अपना पासवर्ड दर्ज करें।",
   "Please enter a valid email address.": "कृपया एक मान्य ईमेल पता दर्ज करें।",
   "Invalid email or password.": "ईमेल या पासवर्ड अमान्य है।",
+  "No user found for that email.": "इस ईमेल पते से कोई खाता नहीं मिला।",
 };

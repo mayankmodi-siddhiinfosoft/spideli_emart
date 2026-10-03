@@ -19,28 +19,55 @@ class LoginController extends GetxController {
 
   RxBool passwordVisible = true.obs;
 
+  /// Messages (translation keys) shown under the email and password fields,
+  /// and in the alert under the form when the sign-in itself failed. Each is
+  /// cleared as soon as the user edits a field.
+  final RxnString emailError = RxnString();
+  final RxnString passwordError = RxnString();
+  final RxnString formError = RxnString();
+
+  /// A second tap while a sign-in is running is ignored.
+  bool _signingIn = false;
+
   @override
   void onInit() {
     super.onInit();
   }
 
+  void onEmailChanged(String _) {
+    emailError.value = null;
+    formError.value = null;
+  }
+
+  void onPasswordChanged(String _) {
+    passwordError.value = null;
+    formError.value = null;
+  }
+
   Future<void> loginWithEmailAndPassword() async {
+    if (_signingIn) return;
     final String email = emailEditingController.value.text.toLowerCase().trim();
+    // Trimmed as before, so existing accounts still sign in.
     final String password = passwordEditingController.value.text.trim();
     // Checked before any request: nothing is sent with an empty field or a
-    // malformed email.
+    // malformed email. Each field shows its own message; the toast gives the
+    // one for the whole form (e.g. "Please enter your email and password.").
+    formError.value = null;
+    emailError.value = LoginValidation.emailError(email);
+    passwordError.value = LoginValidation.passwordError(password);
     final String? invalid = LoginValidation.validate(email, password);
     if (invalid != null) {
       ShowToastDialog.showToast(invalid.tr);
       return;
     }
+    _signingIn = true;
     ShowToastDialog.showLoader("Please wait".tr);
     String? message;
     try {
       final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
       final String? uid = credential.user?.uid;
       if (uid == null || uid.isEmpty) {
-        message = "Something went wrong. Please try again.";
+        message = LoginValidation.genericError;
       } else {
         final AccountResult result = await DriverSignIn.open(uid);
         if (result.outcome == AccountOutcome.missing) {
@@ -51,6 +78,8 @@ class LoginController extends GetxController {
         }
       }
     } on FirebaseAuthException catch (e) {
+      // Only the code is used: Firebase's own text is never shown. A wrong
+      // email, a wrong password or both give "Invalid email or password.".
       log("Email login failed: ${e.code}");
       message = DriverSignIn.authErrorMessage(e);
     } catch (e) {
@@ -58,13 +87,18 @@ class LoginController extends GetxController {
       // the "endless loading" drivers reported.
       log("Email login failed: $e");
       await DriverSignIn.signOutQuietly();
-      message = "Something went wrong. Please try again.";
+      message = LoginValidation.genericError;
     } finally {
       ShowToastDialog.closeLoader();
+      _signingIn = false;
     }
     // Shown after the loader closes: EasyLoading shows one overlay at a time,
-    // so a toast shown before closeLoader() was dismissed with it.
-    if (message != null) ShowToastDialog.showToast(message.tr);
+    // so a toast shown before closeLoader() was dismissed with it. The alert
+    // under the form keeps the message visible after the toast is gone.
+    if (message != null) {
+      if (!isClosed) formError.value = message;
+      ShowToastDialog.showToast(message.tr);
+    }
   }
 
   Future<void> loginWithGoogle() async {

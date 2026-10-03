@@ -427,4 +427,5 @@ const Map<String, String> trFR = {
   "Please enter your password.": "Veuillez saisir votre mot de passe.",
   "Please enter a valid email address.": "Veuillez saisir une adresse e-mail valide.",
   "Invalid email or password.": "Adresse e-mail ou mot de passe invalide.",
+  "No user found for that email.": "Aucun compte n'est associé à cette adresse e-mail.",
 };

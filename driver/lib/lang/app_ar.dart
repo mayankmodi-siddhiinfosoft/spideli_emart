@@ -427,4 +427,5 @@ const Map<String, String> lnAr = {
   "Please enter your password.": "يرجى إدخال كلمة المرور.",
   "Please enter a valid email address.": "يرجى إدخال عنوان بريد إلكتروني صالح.",
   "Invalid email or password.": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+  "No user found for that email.": "لا يوجد حساب مرتبط بهذا البريد الإلكتروني.",
 };

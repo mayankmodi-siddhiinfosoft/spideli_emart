@@ -1,9 +1,8 @@
-import 'dart:io';
-
 import 'package:customer/screen_ui/auth_screens/sign_up_screen.dart';
 import 'package:customer/screen_ui/auth_screens/widgets/auth_shell.dart';
 import 'package:customer/screen_ui/location_enable_screens/location_permission_screen.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
@@ -23,6 +22,12 @@ class LoginScreen extends StatelessWidget {
         final c = context.dsColors;
         final t = context.dsText;
         final passwordHidden = controller.passwordVisible.value;
+        // Read here, inside the tracked builder, so the messages under the
+        // fields appear and clear as the controller sets them.
+        final String? emailError = controller.emailError.value;
+        final String? passwordError = controller.passwordError.value;
+        // Not dart:io's Platform, which throws on the web.
+        final bool showApple = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
         return AuthScaffold(
           eyebrow: "Welcome back",
           title: "Log in to explore your all in one vendor app favourites and shop effortlessly.".tr,
@@ -51,6 +56,8 @@ class LoginScreen extends StatelessWidget {
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
                     autofillHints: const [AutofillHints.email],
+                    errorText: emailError?.tr,
+                    onChanged: controller.onEmailChanged,
                   ),
                   AuthPasswordField(
                     label: "Password*".tr,
@@ -58,6 +65,10 @@ class LoginScreen extends StatelessWidget {
                     controller: controller.passwordController.value,
                     focusNode: controller.passwordFocusNode,
                     obscured: passwordHidden,
+                    errorText: passwordError?.tr,
+                    onChanged: controller.onPasswordChanged,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => controller.loginWithEmail(),
                     onToggle: () {
                       controller.passwordVisible.value = !controller.passwordVisible.value;
                     },
@@ -94,8 +105,8 @@ class LoginScreen extends StatelessWidget {
                     },
                   ),
                 ),
-                Platform.isIOS ? const DsGap(DsSpace.md) : const SizedBox(),
-                Platform.isIOS
+                showApple ? const DsGap(DsSpace.md) : const SizedBox(),
+                showApple
                     ? Expanded(
                       child: AuthAltButton(
                         label: "Continue with Apple".tr,

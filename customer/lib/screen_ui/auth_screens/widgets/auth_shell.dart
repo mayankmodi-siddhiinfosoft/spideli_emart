@@ -307,6 +307,12 @@ class AuthPasswordField extends StatelessWidget {
   final bool obscured;
   final VoidCallback onToggle;
 
+  /// Message shown under the field (already translated), or null.
+  final String? errorText;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+  final TextInputAction? textInputAction;
+
   const AuthPasswordField({
     super.key,
     required this.label,
@@ -315,6 +321,10 @@ class AuthPasswordField extends StatelessWidget {
     required this.obscured,
     required this.onToggle,
     this.focusNode,
+    this.errorText,
+    this.onChanged,
+    this.onSubmitted,
+    this.textInputAction,
   });
 
   @override
@@ -332,11 +342,15 @@ class AuthPasswordField extends StatelessWidget {
             focusNode: focusNode,
             obscureText: obscured,
             obscuringCharacter: '●',
+            textInputAction: textInputAction,
+            onChanged: onChanged,
+            onFieldSubmitted: onSubmitted,
             cursorColor: c.brand,
             style: DsTypography.bodyStrong.copyWith(color: c.textPrimary),
             decoration: DsInputDecoration.of(
               context,
               hint: hint,
+              error: errorText,
               prefixIcon: Icons.lock_outline_rounded,
               suffix: DsIconButton(
                 icon: obscured ? Icons.visibility_outlined : Icons.visibility_off_outlined,

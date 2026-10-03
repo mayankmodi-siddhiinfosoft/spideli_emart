@@ -427,4 +427,5 @@ const Map<String, String> ptPO = {
   "Please enter your password.": "Digite sua senha.",
   "Please enter a valid email address.": "Digite um endereço de e-mail válido.",
   "Invalid email or password.": "E-mail ou senha inválidos.",
+  "No user found for that email.": "Nenhuma conta encontrada para este e-mail.",
 };

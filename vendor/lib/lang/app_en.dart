@@ -929,4 +929,6 @@ const Map<String, String> enUS = {
   "Too many attempts. Please try again later.": "Too many attempts. Please try again later.",
   "No internet connection. Please check your connection and try again.": "No internet connection. Please check your connection and try again.",
   "Something went wrong. Please try again.": "Something went wrong. Please try again.",
+  "A password reset link has been sent to @email.": "A password reset link has been sent to @email.",
+  "This user is not created in store application.": "This user is not created in store application.",
 };

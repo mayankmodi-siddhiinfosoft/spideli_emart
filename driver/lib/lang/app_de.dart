@@ -427,4 +427,5 @@ const Map<String, String> deGR = {
   "Please enter your password.": "Bitte geben Sie Ihr Passwort ein.",
   "Please enter a valid email address.": "Bitte geben Sie eine gültige E-Mail-Adresse ein.",
   "Invalid email or password.": "E-Mail-Adresse oder Passwort ist ungültig.",
+  "No user found for that email.": "Für diese E-Mail-Adresse wurde kein Konto gefunden.",
 };
