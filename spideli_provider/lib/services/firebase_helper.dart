@@ -263,10 +263,14 @@ class FireStoreUtils {
 
   static Future<bool> isMaintenanceMode() async {
     bool isMaintenance = false;
-    await firestore.collection(Setting).doc('maintenance_settings').get().then((value) async {
+    try {
+      final value = await firestore.collection(Setting).doc('maintenance_settings').get();
       isMaintenance = value.data()?['isMaintenanceModeForProvider'] == true;
-      log("isMaintenance :: $isMaintenance");
-    });
+    } catch (e) {
+      // Unreachable Firestore: treated as "not in maintenance" so start-up
+      // carries on instead of throwing out of the splash redirect.
+      log("isMaintenanceMode failed: $e");
+    }
     return isMaintenance;
   }
 

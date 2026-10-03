@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/model/currency_model.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
@@ -15,21 +16,27 @@ class GlobalSettingController extends GetxController {
   }
 
   getCurrentCurrency() async {
-    await FireStoreUtils.getCurrency().then((value) {
-      if (value != null) {
-        currencyData = value;
-      } else {
-        currencyData = CurrencyModel(id: "", code: "USD", decimal: 2, isactive: true, name: "US Dollar", symbol: "\$", symbolatright: false);
-      }
-      // Global currency is only the fallback; a provider with a region keeps
-      // its region currency even if this read finishes last.
-      RegionService.onGlobalCurrency(currencyData!);
-    });
+    // Each read is guarded: offline, they used to throw an unhandled
+    // exception at start-up (seen with the splash hang).
+    CurrencyModel? value;
+    try {
+      value = await FireStoreUtils.getCurrency();
+    } catch (e) {
+      log("getCurrency failed: $e");
+    }
+    currencyData = value ?? CurrencyModel(id: "", code: "USD", decimal: 2, isactive: true, name: "US Dollar", symbol: "\$", symbolatright: false);
+    // Global currency is only the fallback; a provider with a region keeps
+    // its region currency even if this read finishes last.
+    RegionService.onGlobalCurrency(currencyData!);
 
-    await FireStoreUtils.firestore.collection(Setting).doc('globalSettings').get().then((value) {
-      defaultCountryCode = value.data()?['defaultCountryCode'] ?? '';
-      defaultCountry = value.data()?['defaultCountry'] ?? '';
-      update();
-    });
+    try {
+      final settings = await FireStoreUtils.firestore.collection(Setting).doc('globalSettings').get();
+      defaultCountryCode = settings.data()?['defaultCountryCode'] ?? '';
+      defaultCountry = settings.data()?['defaultCountry'] ?? '';
+    } catch (e) {
+      log("globalSettings read failed: $e");
+    }
+    update();
   }
+
 }
