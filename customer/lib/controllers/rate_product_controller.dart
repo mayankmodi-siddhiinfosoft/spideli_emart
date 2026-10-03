@@ -122,6 +122,10 @@ class RateProductController extends GetxController {
       productModel.value.reviewsSum = productReviewSum.value + ratings.value;
       productModel.value.reviewAttributes = reviewProductAttributes;
 
+      // Only the change against the totals loaded at screen open is written
+      // (as increments), never the whole store document.
+      final num vendorCountDelta = (vendorReviewCount.value + 1) - (vendorModel.value.reviewsCount ?? 0);
+      final num vendorSumDelta = (vendorReviewSum.value + ratings.value) - (vendorModel.value.reviewsSum ?? 0);
       vendorModel.value.reviewsCount = vendorReviewCount.value + 1;
       vendorModel.value.reviewsSum = vendorReviewSum.value + ratings.value;
 
@@ -163,7 +167,7 @@ class RateProductController extends GetxController {
       );
 
       await FireStoreUtils.updateReviewById(ratingProduct);
-      await FireStoreUtils.updateVendor(vendorModel.value);
+      await FireStoreUtils.addVendorReviewTotals(vendorModel.value.id, countDelta: vendorCountDelta, sumDelta: vendorSumDelta);
       await FireStoreUtils.setProduct(productModel.value);
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast("Rating saved successfully.".tr);

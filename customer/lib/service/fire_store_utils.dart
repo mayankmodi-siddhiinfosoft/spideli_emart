@@ -966,10 +966,29 @@ class FireStoreUtils {
   //   return isAdded;
   // }
 
-  static Future<VendorModel?> updateVendor(VendorModel vendor) async {
-    return await fireStore.collection(CollectionName.vendors).doc(vendor.id).setKnownFields(vendor.toJson()).then((document) {
-      return vendor;
-    });
+  /// Adds a customer's rating to a store's review totals: only `reviewsCount`
+  /// and `reviewsSum`, as increments. It used to write back the whole
+  /// [VendorModel] loaded when the rating screen opened, which restored a
+  /// stale `fcmToken`, `reststatus`, `workingHours` or
+  /// `subscriptionTotalOrders` changed meanwhile by the store app.
+  static Future<bool> addVendorReviewTotals(String? vendorId, {required num countDelta, required num sumDelta}) {
+    return _addReviewTotals(CollectionName.vendors, vendorId, countDelta: countDelta, sumDelta: sumDelta);
+  }
+
+  static Future<bool> _addReviewTotals(String collection, String? id, {required num countDelta, required num sumDelta}) async {
+    final String docId = (id ?? '').trim();
+    if (docId.isEmpty) return false;
+    if (countDelta == 0 && sumDelta == 0) return true;
+    try {
+      await fireStore.collection(collection).doc(docId).update({
+        'reviewsCount': FieldValue.increment(countDelta),
+        'reviewsSum': FieldValue.increment(sumDelta),
+      });
+      return true;
+    } catch (e) {
+      log('Failed to update the review totals of $collection/$docId: $e');
+      return false;
+    }
   }
 
   static Future<bool?> setProduct(ProductModel orderModel) async {
@@ -2784,15 +2803,12 @@ class FireStoreUtils {
     }
   }
 
-  static Future<WorkerModel?> updateWorker(WorkerModel worker) async {
-    try {
-      await fireStore.collection(CollectionName.providersWorkers).doc(worker.id).setKnownFields(worker.toJson());
-      return worker;
-    } catch (e, stackTrace) {
-      print('Error updating worker: $e');
-      print(stackTrace);
-      return null;
-    }
+  /// Adds a customer's rating to a worker's review totals: only `reviewsCount`
+  /// and `reviewsSum`, as increments. It used to write back the whole
+  /// [WorkerModel] loaded when the review screen opened, which restored a
+  /// stale `fcmToken` (cleared on sign-out), `online` or `active`.
+  static Future<bool> addWorkerReviewTotals(String? workerId, {required num countDelta, required num sumDelta}) {
+    return _addReviewTotals(CollectionName.providersWorkers, workerId, countDelta: countDelta, sumDelta: sumDelta);
   }
 
   static Future<ParcelOrderModel?> getParcelOrder(String orderId) async {

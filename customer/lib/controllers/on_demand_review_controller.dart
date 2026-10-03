@@ -143,6 +143,10 @@ class OnDemandReviewController extends GetxController {
 
   Future<void> _workerReviewSubmit() async {
     ShowToastDialog.showLoader("Submit in...".tr);
+    // Only the change against the totals loaded at screen open is written
+    // (as increments), never the whole worker document.
+    final num workerCountDelta = (workerReviewCount.value + 1) - (workerModel.value!.reviewsCount ?? 0);
+    final num workerSumDelta = (workerReviewSum.value + ratings.value) - (workerModel.value!.reviewsSum ?? 0);
     workerModel.value!.reviewsCount = workerReviewCount.value + 1;
     workerModel.value!.reviewsSum = workerReviewSum.value + ratings.value;
 
@@ -161,7 +165,7 @@ class OnDemandReviewController extends GetxController {
     );
 
     await FireStoreUtils.updateReviewById(rate);
-    await FireStoreUtils.updateWorker(workerModel.value!);
+    await FireStoreUtils.addWorkerReviewTotals(workerModel.value!.id, countDelta: workerCountDelta, sumDelta: workerSumDelta);
 
     ShowToastDialog.closeLoader();
     Get.back(result: true);
