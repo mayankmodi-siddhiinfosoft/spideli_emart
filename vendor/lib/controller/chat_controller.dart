@@ -11,6 +11,7 @@ import 'package:vendor/models/conversation_model.dart';
 import 'package:vendor/models/inbox_model.dart';
 import 'package:vendor/models/user_model.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/push_payload.dart';
 
 class ChatController extends GetxController {
   Rx<TextEditingController> messageController = TextEditingController().obs;
@@ -53,7 +54,11 @@ class ChatController extends GetxController {
       token.value = argumentData['token'] ?? '';
       chatType.value = argumentData['chatType'] ?? '';
       if (receivedId.value != 'admin') {
-        receiverUser.value = await FireStoreUtils.getUserProfile(receivedId.value);
+        // getUserById, not getUserProfile: getUserProfile also makes the user
+        // it reads the session's user (Constant.userModel), so after opening
+        // a chat the store was signed in as the customer - and sign-out then
+        // wiped the customer's FCM token.
+        receiverUser.value = await FireStoreUtils.getUserById(receivedId.value);
       }
     }
     setSeen();
@@ -106,7 +111,8 @@ class ChatController extends GetxController {
     }
 
     FireStoreUtils.addChat(conversationModel);
-    log("receiverUser.value :: ${receiverUser.value?.fullName()} :: ${conversationModel.message.toString()} :: ${receiverUser.value?.fcmToken} :: ${inboxModel.type} :: ${inboxModel.chatType}");
+    // No token in the log.
+    log("receiverUser.value :: ${receiverUser.value?.id} :: ${inboxModel.type} :: ${inboxModel.chatType}");
     await notifyRecipient(conversationModel.message.toString(), inboxModel);
   }
 
@@ -116,27 +122,23 @@ class ChatController extends GetxController {
   /// [sendMessage]. Two things were wrong before: the notification was titled
   /// with the *recipient's* own name, and an empty token - or a recipient whose
   /// profile had not been read yet - passed the old `!= null` check and the push
-  /// went nowhere. The recipient is re-read once if their token is missing, and
-  /// a recipient with no token at all is skipped silently: a chat message must
-  /// never fail because of its notification.
+  /// went nowhere. The recipient's current token is read from their user record
+  /// at send time, and a recipient with no token at all is skipped (logged): a
+  /// chat message must never fail because of its notification.
   Future<void> notifyRecipient(String message, InboxModel inboxModel) async {
     if (receivedId.value.isEmpty || receivedId.value == 'admin') return;
-    String fcmToken = receiverUser.value?.fcmToken ?? '';
-    if (fcmToken.isEmpty) {
-      receiverUser.value = await FireStoreUtils.getUserProfile(receivedId.value);
-      fcmToken = receiverUser.value?.fcmToken ?? '';
-    }
-    if (fcmToken.isEmpty) {
-      log("chat push skipped: no fcm token stored for ${receivedId.value}");
-      return;
-    }
+    // SendNotification reads the recipient's current token from their user
+    // record (recipientId); the copy loaded with the chat is the fallback.
+    final String fcmToken = receiverUser.value?.fcmToken ?? '';
     try {
-      await SendNotification.sendChatFcmMessage(senderName.value.isEmpty ? "New message".tr : senderName.value, message, fcmToken, {
-        'type': inboxModel.type,
-        'chatType': inboxModel.chatType,
-        'orderId': orderId.value,
-        'senderId': FireStoreUtils.getCurrentUid(),
-      });
+      await SendNotification.sendChatFcmMessage(
+        senderName.value.isEmpty ? "New message".tr : senderName.value,
+        message,
+        fcmToken,
+        {'type': inboxModel.type, 'chatType': inboxModel.chatType, 'orderId': orderId.value, 'senderId': FireStoreUtils.getCurrentUid()},
+        recipientId: receivedId.value,
+        recipient: PushPayload.recipientForRole(receiverUser.value?.role),
+      );
     } catch (e) {
       log("chat push failed: $e");
     }

@@ -121,6 +121,33 @@ class HomeController extends GetxController {
     isLoading.value = false;
   }
 
+  /// Shows an order the store has just cancelled or rejected in its tab
+  /// straight away, without waiting for the order listener (which then
+  /// confirms it with the stored record).
+  void showEndedOrder(OrderModel order) {
+    final String? id = order.id;
+    if (id == null) return;
+    final int index = allOrderList.indexWhere((o) => o.id == id);
+    if (index >= 0) {
+      allOrderList[index] = order;
+    } else {
+      allOrderList.insert(0, order);
+    }
+    _splitIntoTabs();
+  }
+
+  void _splitIntoTabs() {
+    // Tabs (spec: New | Preparing | Ready | Completed, then Rejected and
+    // Cancelled), mapped onto the existing statuses.
+    newOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderPlaced).toList();
+    preparingOrderList.value = allOrderList.where((p0) => preparingStatuses.contains(p0.status)).toList();
+    readyOrderList.value = allOrderList.where((p0) => readyStatuses.contains(p0.status)).toList();
+    completedOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderCompleted).toList();
+    rejectedOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderRejected).toList();
+    cancelledOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderCancelled).toList();
+    update();
+  }
+
   Future<void> getOrder() async {
     await _orderSubscription?.cancel();
     _orderSubscription = FireStoreUtils.fireStore.collection(CollectionName.vendorOrders).where('vendorID', isEqualTo: Constant.userModel!.vendorID).orderBy('createdAt', descending: true).snapshots().listen((
@@ -136,15 +163,7 @@ class HomeController extends GetxController {
           log("Skipping unreadable order ${element.id}: $e");
         }
       }
-      // Tabs (spec: New | Preparing | Ready | Completed, then Rejected and
-      // Cancelled), mapped onto the existing statuses.
-      newOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderPlaced).toList();
-      preparingOrderList.value = allOrderList.where((p0) => preparingStatuses.contains(p0.status)).toList();
-      readyOrderList.value = allOrderList.where((p0) => readyStatuses.contains(p0.status)).toList();
-      completedOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderCompleted).toList();
-      rejectedOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderRejected).toList();
-      cancelledOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderCancelled).toList();
-      update();
+      _splitIntoTabs();
       _ordersWaiting = newOrderList.isNotEmpty;
       if (newOrderList.isNotEmpty == true) {
         await AudioPlayerService.playSound(true);

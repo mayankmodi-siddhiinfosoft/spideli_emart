@@ -187,8 +187,8 @@ class HomeScreenMultipleOrderController extends GetxController {
       switch (result.answer) {
         case OfferAnswer.done:
           final OrderModel notified = result.order ?? offer;
-          await SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, notified.author?.fcmToken ?? '', {});
-          await SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, notified.vendor?.fcmToken ?? '', {});
+          // Customer and store, each on its app's channel, by their live tokens.
+          await SendNotification.notifyOrderAccepted(notified);
         case OfferAnswer.held:
           break;
         case OfferAnswer.gone:

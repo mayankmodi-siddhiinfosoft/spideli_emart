@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:developer';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -39,7 +38,6 @@ class _MidtransScreenState extends State<MidtransScreen> {
                 });
               }),
               onNavigationRequest: (NavigationRequest navigation) async {
-                log("Midtrans :: ${navigation.url}");
                 if (Platform.isIOS) {
                   if (navigation.url.contains('/success')) {
                     Get.back(result: true);

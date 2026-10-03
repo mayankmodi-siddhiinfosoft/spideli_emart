@@ -64,7 +64,6 @@ class CabOrderDetailsController extends GetxController {
         }
       });
 
-      print(driverUser.value.toJson());
       await FireStoreUtils.getReviewsbyID(cabOrder.value.id.toString()).then((value) {
         if (value != null) {
           ratingModel.value = value;

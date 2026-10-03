@@ -1,1 +1,17 @@
-const Map<String, String> jaJP = {};
+const Map<String, String> jaJP = {
+  "Order cancelled": "注文をキャンセルしました",
+  "Order rejected": "注文を拒否しました",
+  "Cashback": "キャッシュバック",
+  "Refund": "返金",
+  "Store credit": "店舗クレジット",
+  "The order was updated, but these steps did not finish: @steps. Please check your connection or contact support.": "注文は更新されましたが、次の処理が完了しませんでした: @steps。接続を確認するか、サポートに連絡してください。",
+  "Please enter your email and password.": "メールアドレスとパスワードを入力してください。",
+  "Please enter your email address.": "メールアドレスを入力してください。",
+  "Please enter your password.": "パスワードを入力してください。",
+  "Please enter a valid email address.": "有効なメールアドレスを入力してください。",
+  "Invalid email or password.": "メールアドレスまたはパスワードが正しくありません。",
+  "Too many attempts. Please try again later.": "試行回数が多すぎます。しばらくしてからもう一度お試しください。",
+  "No internet connection. Please check your connection and try again.": "インターネットに接続されていません。接続を確認して、もう一度お試しください。",
+  "Something went wrong. Please try again.": "問題が発生しました。もう一度お試しください。",
+  "This user is disable please contact to administrator": "このアカウントは無効になっています。管理者に連絡してください。",
+};

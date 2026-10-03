@@ -422,7 +422,6 @@ class RentalOrderDetailsController extends GetxController {
     log(double.parse(amount).toStringAsFixed(0));
     try {
       Map<String, dynamic>? paymentIntentData = await createStripeIntent(amount: amount);
-      log("stripe Responce====>$paymentIntentData");
       if (paymentIntentData!.containsKey("error")) {
         Get.back();
         ShowToastDialog.showToast("Something went wrong, please contact admin.".tr);
@@ -769,7 +768,6 @@ class RentalOrderDetailsController extends GetxController {
         "issandbox": paytmModel.value.isSandboxEnabled == true ? "1" : "2",
       },
     );
-    log(response.body);
     final data = jsonDecode(response.body);
     if (data["body"]["txnToken"] == null || data["body"]["txnToken"].toString().isEmpty) {
       Get.back();

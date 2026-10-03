@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
@@ -67,7 +68,6 @@ class SignupController extends GetxController {
       userModel.value.email = emailEditingController.value.text.toString().toLowerCase();
       userModel.value.phoneNumber = phoneNUmberEditingController.value.text.toString();
       userModel.value.role = Constant.userRoleVendor;
-      userModel.value.fcmToken = await NotificationService.getToken();
       userModel.value.active = Constant.autoApproveVendor == true ? true : false;
       userModel.value.countryCode = countryCodeEditingController.value.text;
       userModel.value.countryISOCode = countryISOCodeEditingController.value.text;
@@ -77,6 +77,8 @@ class SignupController extends GetxController {
       userModel.value.isAutoVerify = Constant.isStoreVerification == false ? true : false;
 
       await FireStoreUtils.updateUser(userModel.value).then((value) async {
+        // Once the profile exists: the token is saved field by field.
+        unawaited(NotificationService.syncToken());
         if (Constant.autoApproveVendor == true) {
           bool isPlanExpire = false;
           if (userModel.value.subscriptionPlan?.id != null) {
@@ -119,7 +121,6 @@ class SignupController extends GetxController {
           userModel.value.email = emailEditingController.value.text.toString().toLowerCase();
           userModel.value.phoneNumber = phoneNUmberEditingController.value.text.toString();
           userModel.value.role = Constant.userRoleVendor;
-          userModel.value.fcmToken = await NotificationService.getToken();
           userModel.value.active = Constant.autoApproveVendor == true ? true : false;
           userModel.value.isDocumentVerify = Constant.isStoreVerification == true ? false : true;
           userModel.value.countryCode = countryCodeEditingController.value.text;
@@ -130,6 +131,8 @@ class SignupController extends GetxController {
           userModel.value.isAutoVerify = Constant.isStoreVerification == false ? true : false;
 
           await FireStoreUtils.updateUser(userModel.value).then((value) async {
+            // Once the profile exists: the token is saved field by field.
+            unawaited(NotificationService.syncToken());
             if (Constant.autoApproveVendor == true) {
               bool isPlanExpire = false;
               if (userModel.value.subscriptionPlan?.id != null) {

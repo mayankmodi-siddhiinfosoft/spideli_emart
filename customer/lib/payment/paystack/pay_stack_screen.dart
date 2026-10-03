@@ -44,8 +44,6 @@ class _PayStackScreenState extends State<PayStackScreen> {
           },
           onWebResourceError: (WebResourceError error) {},
           onNavigationRequest: (NavigationRequest navigation) async {
-            debugPrint("--->2${navigation.url}");
-            debugPrint("--->2" "${widget.callBackUrl}?trxref=${widget.reference}&reference=${widget.reference}");
             if (navigation.url == 'https://foodieweb.siswebapp.com/success?trxref=${widget.reference}&reference=${widget.reference}' ||
                 navigation.url == '${widget.callBackUrl}?trxref=${widget.reference}&reference=${widget.reference}') {
               final isDone = await PayStackURLGen.verifyTransaction(secretKey: widget.secretKey, reference: widget.reference, amount: widget.amount);

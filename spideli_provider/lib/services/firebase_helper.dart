@@ -41,7 +41,10 @@ import 'package:spideliprovider/model/subscription_plan_model.dart';
 import 'package:spideliprovider/model/topupTranHistory.dart';
 import 'package:spideliprovider/model/withdrawHistoryModel.dart';
 import 'package:spideliprovider/model/withdraw_method_model.dart';
+import 'package:spideliprovider/services/notification_service.dart';
+import 'package:spideliprovider/services/push_message.dart';
 import 'package:spideliprovider/services/region_service.dart';
+import 'package:spideliprovider/utils/login_validation.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
@@ -102,7 +105,9 @@ class FireStoreUtils {
           id: result.user?.uid ?? '',
           lastName: lastName,
           role: USER_ROLE_PROVIDER,
-          fcmToken: await firebaseMessaging.getToken() ?? '',
+          // Never throws: getToken() used to throw on iOS before the APNs
+          // token arrived, which failed the sign-up after the account existed.
+          fcmToken: await NotificationService.getToken(),
           createdAt: Timestamp.now(),
           profilePictureURL: profilePicUrl);
       String? errorMessage = await firebaseCreateNewUser(user);
@@ -160,26 +165,18 @@ class FireStoreUtils {
       if (documentSnapshot.exists) {
         user = User.fromJson(documentSnapshot.data() ?? {});
         if (user.role == 'provider') {
-          user.fcmToken = await firebaseMessaging.getToken() ?? '';
+          // getToken() threw on iOS before the APNs token arrived and the login
+          // failed; and '' must not replace the stored, working token.
+          user.fcmToken = await NotificationService.freshTokenOr(user.fcmToken);
 
           return user;
         }
       }
     } on auth.FirebaseAuthException catch (exception, s) {
       log('$exception$s');
-      switch ((exception).code) {
-        case 'invalid-email':
-          return 'Email address is malformed.'.tr;
-        case 'wrong-password':
-          return 'Wrong password.'.tr;
-        case 'user-not-found':
-          return 'No user corresponding to the given email address.'.tr;
-        case 'user-disabled':
-          return 'This user has been disabled.'.tr;
-        case 'too-many-requests':
-          return 'Too many attempts to sign in as this user.'.tr;
-      }
-      return 'Unexpected firebase error, Please try again.'.tr;
+      // One message for a wrong email, a wrong password or both
+      // ('invalid-credential' used to give "Unexpected firebase error").
+      return LoginValidation.authErrorMessage(exception.code).tr;
     } catch (e, s) {
       log('$e$s');
       return 'Login failed, Please try again.'.tr;
@@ -188,10 +185,44 @@ class FireStoreUtils {
 
   /// Writes only the fields the [User] model knows (contract lesson 2), so
   /// panel-written fields (`regionId`, `isDocumentVerify`, ...) survive.
+  ///
+  /// `fcmToken` is this device's current token when it is known (the model is
+  /// often a copy loaded before the token was refreshed), else the model's
+  /// token; '' is never written over the stored one.
   static Future<User?> updateCurrentUser(User user) async {
-    return await firestore.collection(USERS).doc(user.id).setKnownFields(user.toJson()).then((document) {
+    final Map<String, dynamic> data = user.toJson();
+    final String? token = tokenForUserWrite(
+      deviceToken: user.id == auth.FirebaseAuth.instance.currentUser?.uid ? NotificationService.deviceToken : null,
+      modelToken: user.fcmToken,
+    );
+    if (token == null) {
+      data.remove('fcmToken');
+    } else {
+      data['fcmToken'] = token;
+      user.fcmToken = token;
+    }
+    return await firestore.collection(USERS).doc(user.id).setKnownFields(data).then((document) {
       return user;
     });
+  }
+
+  /// Clears `users/{uid}.fcmToken` (field-level) only while it still equals
+  /// [token], this device's token: another device of the same account that
+  /// signed in later owns the field.
+  static Future<void> clearFcmTokenIfMatches(String uid, String token) async {
+    if (uid.isEmpty || !isUsableFcmToken(token)) return;
+    try {
+      final DocumentReference<Map<String, dynamic>> ref = firestore.collection(USERS).doc(uid);
+      await firestore.runTransaction((Transaction transaction) async {
+        final DocumentSnapshot<Map<String, dynamic>> snapshot = await transaction.get(ref);
+        if (!snapshot.exists) return;
+        if (shouldClearTokenOnSignOut(storedToken: snapshot.data()?['fcmToken']?.toString(), deviceToken: token)) {
+          transaction.update(ref, {'fcmToken': ''});
+        }
+      });
+    } catch (e) {
+      log("FCM token not cleared: $e");
+    }
   }
 
   /// Merges [data] into `users/{uid}` (creates the doc when missing).
@@ -292,7 +323,7 @@ class FireStoreUtils {
     User? user = await getCurrentUser(authResult.user?.uid ?? '');
     if (user != null) {
       user.role = USER_ROLE_PROVIDER;
-      user.fcmToken = await firebaseMessaging.getToken() ?? '';
+      user.fcmToken = await NotificationService.freshTokenOr(user.fcmToken);
       dynamic result = await updateCurrentUser(user);
       return result;
     } else {
@@ -305,7 +336,7 @@ class FireStoreUtils {
         lastName: appleIdCredential.fullName?.familyName ?? '',
         role: USER_ROLE_PROVIDER,
         active: true,
-        fcmToken: await firebaseMessaging.getToken() ?? '',
+        fcmToken: await NotificationService.getToken(),
         phoneNumber: '',
       );
       String? errorMessage = await firebaseCreateNewUser(user);
@@ -333,7 +364,7 @@ class FireStoreUtils {
       User user = User(
           firstName: firstName,
           lastName: lastName,
-          fcmToken: await firebaseMessaging.getToken() ?? '',
+          fcmToken: await NotificationService.getToken(),
           phoneNumber: phoneNumber,
           profilePictureURL: profileImageUrl,
           id: userCredential.user?.uid ?? '',
@@ -943,7 +974,10 @@ class FireStoreUtils {
   }
 
   static Future<User> firebaseUpdateWorker(User User) async {
-    await firestore.collection(WORKERS).doc(User.id).setKnownFields(User.toJson());
+    // `fcmToken` is the worker app's to write: the copy here was loaded when
+    // the list opened, and writing it back replaced a newer token (or wrote '')
+    // so the worker stopped receiving assignments.
+    await firestore.collection(WORKERS).doc(User.id).setKnownFields(User.toJson()..remove('fcmToken'));
 
     return User;
   }

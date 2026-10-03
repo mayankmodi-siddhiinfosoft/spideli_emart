@@ -1,8 +1,6 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get/get.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/models/currency_model.dart';
-import 'package:vendor/models/user_model.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/notification_service.dart';
 import 'package:vendor/utils/region_service.dart';
@@ -34,16 +32,9 @@ class GlobalSettingController extends GetxController {
 
   NotificationService notificationService = NotificationService();
 
-  dynamic notificationInit() => notificationService.initInfo().then((value) async {
-    String token = await NotificationService.getToken();
-    if (FirebaseAuth.instance.currentUser != null) {
-      await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid()).then((value) {
-        if (value != null) {
-          UserModel driverUserModel = value;
-          driverUserModel.fcmToken = token;
-          FireStoreUtils.updateUser(driverUserModel);
-        }
-      });
-    }
-  });
+  /// Channels, listeners, permission and the device token. `initInfo` saves
+  /// the token on the signed-in user itself, as a field-level write. This
+  /// used to write the whole profile back with whatever `getToken()`
+  /// returned - `''` on iOS, where it ran before the APNs token existed.
+  Future<void> notificationInit() => notificationService.initInfo();
 }

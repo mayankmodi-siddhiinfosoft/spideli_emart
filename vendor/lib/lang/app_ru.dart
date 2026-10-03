@@ -1,1 +1,17 @@
-const Map<String, String> ruRU = {};
+const Map<String, String> ruRU = {
+  "Order cancelled": "Заказ отменён",
+  "Order rejected": "Заказ отклонён",
+  "Cashback": "Кэшбэк",
+  "Refund": "Возврат средств",
+  "Store credit": "Кредит магазина",
+  "The order was updated, but these steps did not finish: @steps. Please check your connection or contact support.": "Заказ обновлён, но эти шаги не завершились: @steps. Проверьте подключение или обратитесь в поддержку.",
+  "Please enter your email and password.": "Введите адрес электронной почты и пароль.",
+  "Please enter your email address.": "Введите адрес электронной почты.",
+  "Please enter your password.": "Введите пароль.",
+  "Please enter a valid email address.": "Введите корректный адрес электронной почты.",
+  "Invalid email or password.": "Неверный адрес электронной почты или пароль.",
+  "Too many attempts. Please try again later.": "Слишком много попыток. Повторите попытку позже.",
+  "No internet connection. Please check your connection and try again.": "Нет подключения к Интернету. Проверьте подключение и повторите попытку.",
+  "Something went wrong. Please try again.": "Что-то пошло не так. Попробуйте ещё раз.",
+  "This user is disable please contact to administrator": "Этот аккаунт отключён. Обратитесь к администратору.",
+};

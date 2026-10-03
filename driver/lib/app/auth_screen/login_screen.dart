@@ -4,7 +4,6 @@ import 'package:driver/app/auth_screen/phone_number_screen.dart';
 import 'package:driver/app/auth_screen/signup_screen.dart';
 import 'package:driver/app/auth_screen/widgets/auth_shell.dart';
 import 'package:driver/app/forgot_password_screen/forgot_password_screen.dart';
-import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/login_controller.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/gestures.dart';
@@ -151,15 +150,9 @@ class LoginScreen extends StatelessWidget {
                 icon: Icons.arrow_forward_rounded,
                 size: DsButtonSize.lg,
                 expand: true,
-                onPressed: () {
-                  if (controller.emailEditingController.value.text.trim().isEmpty) {
-                    ShowToastDialog.showToast("Please enter valid email".tr);
-                  } else if (controller.passwordEditingController.value.text.trim().isEmpty) {
-                    ShowToastDialog.showToast("Please enter valid password".tr);
-                  } else {
-                    controller.loginWithEmailAndPassword();
-                  }
-                },
+                // The controller checks the fields (empty, both empty, email
+                // format) before sending anything.
+                onPressed: controller.loginWithEmailAndPassword,
               ),
             ),
           );

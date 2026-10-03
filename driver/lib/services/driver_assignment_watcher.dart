@@ -7,6 +7,7 @@ import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/push_message.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -74,7 +75,8 @@ class DriverAssignmentWatcher {
   /// active state is an abandoned record, not a job.
   static const Duration _adoptWindow = Duration(hours: 48);
 
-  static const String _channelId = 'driver_notifications_channel';
+  /// The loud job channel (`NotificationService.jobChannelId`), created at start-up.
+  static const String _channelId = PushChannels.driverJob;
   static const int _notificationId = 9115; // next to the job queue's 9114.
   static const int _seenCap = 300;
 
@@ -248,10 +250,11 @@ class DriverAssignmentWatcher {
     try {
       const AndroidNotificationDetails android = AndroidNotificationDetails(
         _channelId,
-        'Driver Notifications',
-        channelDescription: 'App Notifications',
-        importance: Importance.high,
+        'New jobs',
+        channelDescription: 'Loud alert for a new or assigned delivery, ride, parcel or rental job',
+        importance: Importance.max,
         priority: Priority.high,
+        audioAttributesUsage: AudioAttributesUsage.notificationRingtone,
         ticker: 'ticker',
       );
       const DarwinNotificationDetails ios = DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true);

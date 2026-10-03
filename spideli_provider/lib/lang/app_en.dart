@@ -213,4 +213,13 @@ const Map<String, String> enUS = {
   "Please select a location on the map": "Please select a location on the map",
   "Address not found": "Address not found",
   "Error getting address": "Error getting address",
+  "Please enter your email and password.": "Please enter your email and password.",
+  "Please enter your email address.": "Please enter your email address.",
+  "Please enter your password.": "Please enter your password.",
+  "Please enter a valid email address.": "Please enter a valid email address.",
+  "Invalid email or password.": "Invalid email or password.",
+  "Too many attempts. Please try again later.": "Too many attempts. Please try again later.",
+  "No internet connection. Please check your connection and try again.": "No internet connection. Please check your connection and try again.",
+  "Something went wrong. Please try again.": "Something went wrong. Please try again.",
+  "This account has been disabled. Please contact the administrator.": "This account has been disabled. Please contact the administrator.",
 };

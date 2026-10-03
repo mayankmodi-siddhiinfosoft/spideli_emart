@@ -32,6 +32,14 @@ class SectionModel {
   /// Read only.
   num? order;
 
+  /// Lower [order] first; a section without one goes last; ties by name.
+  static int compareByOrder(SectionModel a, SectionModel b) {
+    final num ao = a.order ?? double.infinity;
+    final num bo = b.order ?? double.infinity;
+    final int byOrder = ao.compareTo(bo);
+    return byOrder != 0 ? byOrder : (a.name ?? '').toLowerCase().compareTo((b.name ?? '').toLowerCase());
+  }
+
   SectionModel({
     this.referralAmount,
     this.serviceType,
@@ -57,21 +65,24 @@ class SectionModel {
   });
 
   SectionModel.fromJson(Map<String, dynamic> json) {
-    referralAmount = json['referralAmount'] ?? '';
-    serviceType = json['serviceType'] ?? '';
-    color = json['color'];
-    name = json['name'];
-    sectionImage = json['sectionImage'];
-    markerIcon = json['markerIcon'];
-    id = json['id'];
-    adminCommision = json.containsKey('adminCommision') ? AdminCommission.fromJson(json['adminCommision']) : null;
-    isActive = json['isActive'];
-    theme = json['theme'] ?? "theme_2";
-    dineInActive = json['dine_in_active'] ?? false;
-    isProductDetails = json['is_product_details'] ?? false;
-    serviceTypeFlag = json['serviceTypeFlag'] ?? '';
-    deliveryCharge = json['delivery_charge'] ?? '';
-    rideType = json['rideType'] ?? 'ride';
+    // Read tolerantly: a value of an unexpected type (a number where text is
+    // expected, a missing platformFee) used to throw, and getSections then
+    // dropped that section, so an active service silently disappeared.
+    referralAmount = _text(json['referralAmount']) ?? '';
+    serviceType = _text(json['serviceType']) ?? '';
+    color = _text(json['color']);
+    name = _text(json['name']);
+    sectionImage = _text(json['sectionImage']);
+    markerIcon = _text(json['markerIcon']);
+    id = _text(json['id']);
+    adminCommision = json['adminCommision'] is Map ? _tryParse(() => AdminCommission.fromJson(Map<String, dynamic>.from(json['adminCommision']))) : null;
+    isActive = json['isActive'] is bool ? json['isActive'] as bool : json['isActive']?.toString() == 'true';
+    theme = _text(json['theme']) ?? "theme_2";
+    dineInActive = json['dine_in_active'] == true;
+    isProductDetails = json['is_product_details'] == true;
+    serviceTypeFlag = _text(json['serviceTypeFlag']) ?? '';
+    deliveryCharge = _text(json['delivery_charge']) ?? '';
+    rideType = _text(json['rideType']) ?? 'ride';
 
     // 👇 Safe parsing for number (handles NaN, double, int)
     final rawRadius = json['nearByRadius'];
@@ -80,11 +91,21 @@ class SectionModel {
     } else {
       nearByRadius = rawRadius.toInt();
     }
-    platformFee = PlatformFeeModel.fromJson(json['platformFee']);
-    packagingChargeEnable = json['packagingChargeEnable'] ?? false;
+    platformFee = json['platformFee'] is Map ? _tryParse(() => PlatformFeeModel.fromJson(Map<String, dynamic>.from(json['platformFee']))) : null;
+    packagingChargeEnable = json['packagingChargeEnable'] == true;
     regionIds = json['regionIds'] is List ? (json['regionIds'] as List).map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList() : null;
     serviceGroup = json['serviceGroup']?.toString();
     order = json['order'] is num ? json['order'] as num : num.tryParse(json['order']?.toString() ?? '');
+  }
+
+  static String? _text(dynamic value) => value == null ? null : (value is String ? value : (value is Map || value is List ? null : value.toString()));
+
+  static T? _tryParse<T>(T Function() parse) {
+    try {
+      return parse();
+    } catch (_) {
+      return null;
+    }
   }
 
   Map<String, dynamic> toJson() {

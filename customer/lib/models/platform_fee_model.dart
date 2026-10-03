@@ -5,8 +5,8 @@ class PlatformFeeModel {
   PlatformFeeModel({this.fee, this.enable});
 
   PlatformFeeModel.fromJson(Map<String, dynamic> json) {
-    fee = json['fee'] ?? '0.0';
-    enable = json['enable'] ?? false;
+    fee = json['fee']?.toString() ?? '0.0';
+    enable = json['enable'] == true || json['enable']?.toString() == 'true';
   }
 
   Map<String, dynamic> toJson() {

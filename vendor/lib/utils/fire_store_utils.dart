@@ -65,6 +65,8 @@ import 'package:vendor/service/audio_player_service.dart';
 import 'package:vendor/themes/app_them_data.dart';
 import 'package:vendor/utils/cancel_reasons.dart';
 import 'package:vendor/utils/preferences.dart';
+import 'package:vendor/utils/push_payload.dart';
+import 'package:vendor/utils/store_credit_once.dart';
 import 'package:video_compress/video_compress.dart';
 
 enum FirebaseEnv { defaultDb, staging }
@@ -309,7 +311,11 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.users)
         .doc(userModel.id)
-        .setKnownFields(_userWriteData(userModel))
+        // Never the FCM token: it is written field by field by
+        // [saveDeviceFcmToken] / [clearDeviceFcmToken]. Writing it from this
+        // in-memory copy put an old (or empty) token back over the one the
+        // device had just saved, and that phone stopped receiving pushes.
+        .setKnownFields(_userWriteData(userModel)..remove('fcmToken'))
         .whenComplete(() async {
           Constant.userModel = userModel;
           if (userModel.employeePermissionId != null) {
@@ -356,6 +362,101 @@ class FireStoreUtils {
       return true;
     } catch (e) {
       log("updateUserFields failed: $e");
+      return false;
+    }
+  }
+
+  // ── FCM token: field-level writes only ──
+
+  /// The stored FCM token of [userId] (`''` when there is none).
+  static Future<String> getUserFcmToken(String userId) async {
+    if (userId.isEmpty) return '';
+    final doc = await fireStore.collection(CollectionName.users).doc(userId).get();
+    final dynamic token = doc.data()?['fcmToken'];
+    return token == null ? '' : token.toString();
+  }
+
+  /// Saves this device's [token] on the signed-in user [uid]: only the
+  /// `fcmToken` field, only when it is a real token and differs from the
+  /// stored one ([PushTokenPolicy.shouldSave]).
+  ///
+  /// For a store owner it is also saved on every store they own
+  /// (`vendors/{id}.fcmToken`): the customer app sends dine-in bookings and
+  /// chat, and the driver app "driver accepted", to the store's token, which
+  /// used to be written only once, when the store was created - so after a
+  /// reinstall, a new phone or a token rotation those pushes went nowhere.
+  ///
+  /// `update`, never a merge, so it cannot create a stub user for an account
+  /// that has not finished signing up (that stub would pass `isLogin`).
+  static Future<bool> saveDeviceFcmToken(String uid, String token) async {
+    if (uid.isEmpty || !PushPayload.isUsableToken(token)) return false;
+    final String t = token.trim();
+    try {
+      final userRef = fireStore.collection(CollectionName.users).doc(uid);
+      final userDoc = await userRef.get();
+      if (!userDoc.exists) return false;
+      final Map<String, dynamic> user = userDoc.data() ?? {};
+      if (PushTokenPolicy.shouldSave(newToken: t, storedToken: user['fcmToken']?.toString())) {
+        await userRef.update({'fcmToken': t});
+      }
+      if (Constant.userModel?.id == uid) Constant.userModel?.fcmToken = t;
+      if (user['role']?.toString() == Constant.userRoleVendor) {
+        final stores = await fireStore.collection(CollectionName.vendors).where('author', isEqualTo: uid).get();
+        for (final store in stores.docs) {
+          if (PushTokenPolicy.shouldSave(newToken: t, storedToken: store.data()['fcmToken']?.toString())) {
+            await store.reference.update({'fcmToken': t});
+          }
+        }
+      }
+      return true;
+    } catch (e) {
+      log("saveDeviceFcmToken failed: $e");
+      return false;
+    }
+  }
+
+  /// On sign-out: clears `fcmToken` on the user [uid] (and the stores they
+  /// own) only where it is still this device's [token]
+  /// ([PushTokenPolicy.shouldClearOnSignOut]). It used to write `''` over
+  /// whatever was stored - including the token of the phone the account had
+  /// since signed in on.
+  static Future<void> clearDeviceFcmToken(String uid, String token) async {
+    if (uid.isEmpty || !PushPayload.isUsableToken(token)) return;
+    try {
+      final userRef = fireStore.collection(CollectionName.users).doc(uid);
+      final userDoc = await userRef.get();
+      if (userDoc.exists && PushTokenPolicy.shouldClearOnSignOut(storedToken: userDoc.data()?['fcmToken']?.toString(), deviceToken: token)) {
+        await userRef.update({'fcmToken': ''});
+      }
+      if (userDoc.data()?['role']?.toString() == Constant.userRoleVendor) {
+        final stores = await fireStore.collection(CollectionName.vendors).where('author', isEqualTo: uid).get();
+        for (final store in stores.docs) {
+          if (PushTokenPolicy.shouldClearOnSignOut(storedToken: store.data()['fcmToken']?.toString(), deviceToken: token)) {
+            await store.reference.update({'fcmToken': ''});
+          }
+        }
+      }
+    } catch (e) {
+      log("clearDeviceFcmToken failed: $e");
+    }
+  }
+
+  /// FCM reported [badToken] dead: clears `users/{userId}.fcmToken` in a
+  /// transaction, only while it still equals [badToken]
+  /// ([PushTokenPolicy.shouldClearStale]). Returns true when it was cleared.
+  static Future<bool> clearUserFcmTokenIfEquals(String userId, String badToken) async {
+    if (userId.isEmpty || !PushPayload.isUsableToken(badToken)) return false;
+    try {
+      final ref = fireStore.collection(CollectionName.users).doc(userId);
+      return await fireStore.runTransaction<bool>((transaction) async {
+        final snapshot = await transaction.get(ref);
+        if (!snapshot.exists) return false;
+        if (!PushTokenPolicy.shouldClearStale(storedToken: snapshot.data()?['fcmToken']?.toString(), badToken: badToken)) return false;
+        transaction.update(ref, {'fcmToken': ''});
+        return true;
+      });
+    } catch (e) {
+      log("clearUserFcmTokenIfEquals failed: $e");
       return false;
     }
   }
@@ -553,8 +654,13 @@ class FireStoreUtils {
 
       fireStore.collection(CollectionName.settings).doc("notification_setting").snapshots().listen((event) {
         if (event.exists) {
-          Constant.senderId = event.data()?["senderId"];
-          Constant.jsonNotificationFileURL = event.data()?["serviceJson"];
+          // `?.toString() ?? ''`: a missing field threw a TypeError here
+          // (null into a String) and the rest of the document was never read.
+          Constant.senderId = event.data()?["senderId"]?.toString() ?? '';
+          Constant.jsonNotificationFileURL = event.data()?["serviceJson"]?.toString() ?? '';
+          // Always assigned, so clearing the field switches back to the
+          // legacy path (the rollback in SERVER-PUSH-CONTRACT.md).
+          Constant.serverPushUrl = event.data()?["serverPushUrl"]?.toString() ?? '';
         }
       });
 
@@ -819,12 +925,11 @@ class FireStoreUtils {
     await adjustVendorWallet(amount: -credited.total, vendorId: (orderModel.vendorID ?? orderModel.vendor?.id).toString(), ownerId: vendorOwnerId);
   }
 
+  /// Step 1 of [StoreCreditOnce]: any credit row of the order, including one
+  /// an older build wrote under a random id.
   static Future<bool> _isOrderAlreadyCredited(String orderId) async {
     final snapshot = await fireStore.collection(CollectionName.wallet).where('order_id', isEqualTo: orderId).get();
-    return snapshot.docs.any((doc) {
-      final data = doc.data();
-      return data['transactionUser'] == 'vendor' && data['isTopUp'] == true && data['payment_method'] == 'Wallet';
-    });
+    return StoreCreditOnce.anyCreditRow(snapshot.docs.map((doc) => doc.data()));
   }
 
   /// What [restaurantVendorWalletSet] credits a store for an order, and the
@@ -942,61 +1047,117 @@ class FireStoreUtils {
     );
   }
 
-  static Future restaurantVendorWalletSet(OrderModel orderModel) async {
-    // Credit each order once. Takeaway orders reached this twice - on Accept
-    // and again on Delivered - paying the store double. The vendor credit row
-    // in `wallet` (payment_method 'Wallet', isTopUp) marks it as already done.
-    if (orderModel.id != null && await _isOrderAlreadyCredited(orderModel.id!)) {
-      log("restaurantVendorWalletSet: order ${orderModel.id} already credited, skipping");
-      return;
-    }
+  /// Credits the store for [orderModel] - once per order, whichever of the
+  /// Store app (accept, self-delivery assign, shipped, completed) and the
+  /// Driver app (delivery completed) gets there first. The rule is
+  /// [StoreCreditOnce], shared with the Driver app's `VendorWalletService`:
+  /// the two `wallet` rows have deterministic ids and are written in ONE
+  /// transaction with the owner's and the store's `wallet_amount` and the
+  /// order's `vendorCredited`, after reading the credit row and the order. The
+  /// store and its delivery man completing the same order at the same moment
+  /// can no longer both pay it. Amounts, rows and wallets are the same as
+  /// before: the order amount and its tax, to the owner `vendor.author` and to
+  /// the store that took the order.
+  ///
+  /// Never throws - the caller already wrote the order, and a throw here
+  /// aborted its notifications half-way. Returns true when it credited now.
+  static Future<bool> restaurantVendorWalletSet(OrderModel orderModel) async {
+    final String orderId = (orderModel.id ?? '').toString();
     // The store owner the credit belongs to. `orderModel.vendor!.author` threw
     // for an order whose embedded store snapshot is missing, and the throw
     // aborted the rest of the caller (the customer's notification, the driver's
     // notification) half-way through.
     final String ownerId = (orderModel.vendor?.author ?? '').toString();
     final String storeId = (orderModel.vendorID ?? orderModel.vendor?.id ?? '').toString();
-    if (ownerId.isEmpty) {
-      log("restaurantVendorWalletSet: order ${orderModel.id} carries no store owner, nothing credited");
-      return;
+    if (orderId.isEmpty) {
+      log("restaurantVendorWalletSet: order without an id, nothing credited");
+      return false;
     }
-    final credit = vendorOrderCredit(orderModel);
-    final double basePrice = credit.basePrice;
-    final double totalTaxAmount = credit.totalTaxAmount;
+    if (ownerId.isEmpty) {
+      log("restaurantVendorWalletSet: order $orderId carries no store owner, nothing credited");
+      return false;
+    }
+    num parse(dynamic value) => num.tryParse(value?.toString() ?? '') ?? 0;
+    try {
+      // Credit each order once. Takeaway orders reached this twice - on Accept
+      // and again on Delivered - paying the store double. A vendor credit row
+      // in `wallet` (payment_method 'Wallet', isTopUp), whatever its id, marks
+      // it as already done.
+      if (await _isOrderAlreadyCredited(orderId)) {
+        log("restaurantVendorWalletSet: order $orderId already credited, skipping");
+        return false;
+      }
+      final credit = vendorOrderCredit(orderModel);
+      final double basePrice = credit.basePrice;
+      final double totalTaxAmount = credit.totalTaxAmount;
+      final num amount = basePrice + totalTaxAmount;
 
-    WalletTransactionModel historyModel = WalletTransactionModel(
-      amount: basePrice,
-      id: const Uuid().v4(),
-      orderId: orderModel.id,
-      userId: orderModel.vendor?.author,
-      date: Timestamp.now(),
-      isTopup: true,
-      note: "Order Amount credited",
-      paymentMethod: "Wallet",
-      paymentStatus: "success",
-      transactionUser: "vendor",
-    );
+      final Map<String, dynamic> creditRow = WalletTransactionModel(
+        amount: basePrice,
+        id: StoreCreditOnce.creditRowId(orderId),
+        orderId: orderId,
+        userId: ownerId,
+        date: Timestamp.now(),
+        isTopup: true,
+        note: "Order Amount credited",
+        paymentMethod: "Wallet",
+        paymentStatus: "success",
+        transactionUser: "vendor",
+      ).toJson();
+      final Map<String, dynamic> taxRow = WalletTransactionModel(
+        amount: totalTaxAmount,
+        id: StoreCreditOnce.taxRowId(orderId),
+        orderId: orderId,
+        userId: ownerId,
+        date: Timestamp.now(),
+        isTopup: true,
+        note: "Order Tax credited",
+        paymentMethod: "tax",
+        paymentStatus: "success",
+        transactionUser: "vendor",
+      ).toJson();
+      log("restaurantVendorWalletSet :: $creditRow / $taxRow");
 
-    log("historyModel :: ${historyModel.toJson()}");
-    await fireStore.collection(CollectionName.wallet).doc(historyModel.id).set(historyModel.toJson());
+      final orderRef = fireStore.collection(CollectionName.vendorOrders).doc(orderId);
+      final creditRef = fireStore.collection(CollectionName.wallet).doc(StoreCreditOnce.creditRowId(orderId));
+      final taxRef = fireStore.collection(CollectionName.wallet).doc(StoreCreditOnce.taxRowId(orderId));
+      final userRef = fireStore.collection(CollectionName.users).doc(ownerId);
+      final storeRef = storeId.isEmpty ? null : fireStore.collection(CollectionName.vendors).doc(storeId);
+      num? ownerTotal;
+      final bool credited = await fireStore.runTransaction<bool>((transaction) async {
+        ownerTotal = null;
+        // All reads first, as Firestore requires.
+        final orderSnap = await transaction.get(orderRef);
+        final creditSnap = await transaction.get(creditRef);
+        if (StoreCreditOnce.alreadyCredited(creditRowExists: creditSnap.exists, order: orderSnap.data())) return false;
+        final userSnap = await transaction.get(userRef);
+        final storeSnap = storeRef == null ? null : await transaction.get(storeRef);
 
-    WalletTransactionModel taxModel = WalletTransactionModel(
-      amount: totalTaxAmount,
-      id: const Uuid().v4(),
-      orderId: orderModel.id,
-      userId: orderModel.vendor?.author,
-      date: Timestamp.now(),
-      isTopup: true,
-      note: "Order Tax credited",
-      paymentMethod: "tax",
-      paymentStatus: "success",
-      transactionUser: "vendor",
-    );
-    log("taxModel historyModel :: ${taxModel.toJson()}");
-
-    await fireStore.collection(CollectionName.wallet).doc(taxModel.id).set(taxModel.toJson());
-
-    await adjustVendorWallet(amount: basePrice + totalTaxAmount, vendorId: storeId, ownerId: ownerId);
+        transaction.set(creditRef, creditRow);
+        transaction.set(taxRef, taxRow);
+        if (userSnap.exists) {
+          ownerTotal = parse(userSnap.data()?['wallet_amount']) + amount;
+          transaction.update(userRef, {'wallet_amount': ownerTotal});
+        }
+        if (storeRef != null && storeSnap != null && storeSnap.exists) {
+          transaction.update(storeRef, {'wallet_amount': parse(storeSnap.data()?['wallet_amount']) + amount});
+        }
+        if (orderSnap.exists) {
+          transaction.update(orderRef, {StoreCreditOnce.orderFlag: true});
+        }
+        return true;
+      });
+      if (!credited) {
+        log("restaurantVendorWalletSet: order $orderId was credited meanwhile, skipping");
+      } else if (ownerTotal != null && Constant.userModel?.id == ownerId) {
+        // Keep the signed-in owner's copy in step, as adjustVendorWallet does.
+        Constant.userModel!.walletAmount = ownerTotal;
+      }
+      return credited;
+    } catch (e, s) {
+      log("restaurantVendorWalletSet failed for $orderId: $e", stackTrace: s);
+      return false;
+    }
   }
 
   static Future<RatingModel?> getOrderReviewsByID(String orderId, String productID) async {
@@ -1659,7 +1820,11 @@ class FireStoreUtils {
   }
 
   static Future<VendorModel?> updateVendor(VendorModel vendor) async {
-    return await fireStore.collection(CollectionName.vendors).doc(vendor.id).setKnownFields(vendor.toJson()).then((document) {
+    // Never the FCM token: the owner's device keeps `vendors/{id}.fcmToken`
+    // current through [saveDeviceFcmToken]. This copy of the store was read
+    // when a screen opened, so writing its token back undid a newer one and
+    // the store stopped receiving dine-in, chat and "driver accepted" pushes.
+    return await fireStore.collection(CollectionName.vendors).doc(vendor.id).setKnownFields(vendor.toJson()..remove('fcmToken')).then((document) {
       Constant.vendorAdminCommission = vendor.adminCommission;
       return vendor;
     });

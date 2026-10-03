@@ -36,7 +36,9 @@ class SplashController extends GetxController {
               Constant.userModel = value;
               if (Constant.userModel?.role == Constant.userRoleVendor) {
                 if (Constant.userModel?.active == true) {
-                  Constant.userModel?.fcmToken = await NotificationService.getToken();
+                  // The token is saved field by field and never as '' (it used to be
+                  // written here as '' on iOS, before the APNs token existed).
+                  unawaited(NotificationService.syncToken());
                   await FireStoreUtils.updateUser(Constant.userModel!);
                   // VendorModel? vendor = await FireStoreUtils.getVendorById(Constant.userModel!.vendorID!);
                   bool isPlanExpire = false;
@@ -81,7 +83,9 @@ class SplashController extends GetxController {
                 }
               } else if (Constant.userModel?.role == Constant.userRoleEmployee) {
                 if (Constant.userModel?.active == true) {
-                  Constant.userModel?.fcmToken = await NotificationService.getToken();
+                  // The token is saved field by field and never as '' (it used to be
+                  // written here as '' on iOS, before the APNs token existed).
+                  unawaited(NotificationService.syncToken());
                   await FireStoreUtils.updateUser(Constant.userModel!);
                   VendorModel? vendor = await FireStoreUtils.getVendorById(Constant.userModel!.vendorID!);
                   bool isPlanExpire = false;

@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:developer';
+
 import 'package:bottom_picker/resources/extensions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:dropdown_search/dropdown_search.dart';
@@ -32,6 +35,7 @@ import 'package:vendor/service/audio_player_service.dart';
 import 'package:vendor/models/currency_model.dart';
 import 'package:vendor/utils/cancellation.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/push_payload.dart';
 import 'package:vendor/utils/region_service.dart';
 import 'package:vendor/widget/cancel_reason_sheet.dart';
 import 'package:vendor/widget/cancellation_block.dart';
@@ -305,6 +309,88 @@ class HomeScreen extends StatelessWidget {
     return null;
   }
 
+  /// Moves an order the store has just cancelled / rejected into its tab
+  /// right away and opens that tab. The live order listener confirms it.
+  static void _showEndedOrder(HomeController controller, OrderModel orderModel, TabController? tabs) {
+    controller.showEndedOrder(orderModel);
+    final int tab = orderModel.status == Constant.orderRejected ? 4 : 5;
+    controller.selectedTabIndex.value = tab;
+    if (tabs != null && tab < tabs.length) tabs.animateTo(tab);
+  }
+
+  /// The amount refunded to a customer who paid online, as before; a missing
+  /// discount, delivery charge or tip counts as 0 instead of throwing.
+  static double _refundAmount(OrderModel orderModel, {required double subTotal, required double specialDiscountAmount, required double totalTaxAmount}) {
+    double amount(dynamic value) => double.tryParse('${value ?? ''}'.trim()) ?? 0.0;
+    return subTotal + amount(orderModel.discount) + specialDiscountAmount + totalTaxAmount + amount(orderModel.deliveryCharge) + amount(orderModel.tipAmount);
+  }
+
+  /// Everything that follows a store cancel / reject once the new status is
+  /// saved: the cashback redemption given back, the delivery man freed and
+  /// told, the customer told, an online payment refunded to the wallet and the
+  /// store's credit reversed. Each step runs on its own, so one failure no
+  /// longer stops the rest; the store is told if any of them failed.
+  static Future<void> _afterVendorEndedOrder({required OrderModel orderModel, required String customerNotification, required double refundAmount}) async {
+    final List<String> failed = [];
+    Future<void> step(String name, Future<void> Function() run) async {
+      try {
+        await run();
+      } catch (e) {
+        log("$name failed after ending order ${orderModel.id}: $e");
+        failed.add(name.tr);
+      }
+    }
+
+    // The redemption is given back only once the order has ended.
+    if (orderModel.cashback?.id != null && orderModel.cashback?.cashbackValue != null) {
+      await step("Cashback", () => FireStoreUtils.deleteCashbackRedeem(orderModel));
+    }
+    // The delivery man is freed only now that the order has ended: freed
+    // earlier, the order still named him and was still active, so his app's
+    // assignment watcher put it straight back on his list.
+    final String? driverId = orderModel.driverID;
+    if (driverId != null && driverId.isNotEmpty) {
+      await step("Delivery man", () => FireStoreUtils.releaseDriverOrder(driverId, orderModel.id));
+      await step("Delivery man", () async {
+        final UserModel? driverModel = await FireStoreUtils.getUserById(driverId);
+        if ((driverModel?.fcmToken ?? '').isNotEmpty) {
+          SendNotification.sendFcmMessage(Constant.driverCancelled, driverModel!.fcmToken.toString(), {'title': 'Cancelled Order', 'orderId': orderModel.id}, recipientId: driverId, recipient: PushRecipient.driver);
+        }
+      });
+    }
+    SendNotification.sendFcmMessage(customerNotification, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id);
+
+    final String customerId = (orderModel.author?.id ?? orderModel.authorID ?? '').toString();
+    final String paymentMethod = (orderModel.paymentMethod ?? '').toLowerCase();
+    if (paymentMethod.isNotEmpty && paymentMethod != 'cod' && refundAmount > 0 && customerId.isNotEmpty) {
+      await step("Refund", () async {
+        final WalletTransactionModel historyModel = WalletTransactionModel(
+          amount: refundAmount,
+          id: const Uuid().v4(),
+          orderId: orderModel.id,
+          userId: customerId,
+          date: Timestamp.now(),
+          isTopup: true,
+          paymentMethod: "Wallet",
+          paymentStatus: "success",
+          note: "Order Refund success",
+          transactionUser: "user",
+        );
+        await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(historyModel.id).set(historyModel.toJson());
+        await FireStoreUtils.updateUserWallet(amount: refundAmount.toString(), userId: customerId);
+      });
+    }
+
+    // Reverse exactly what this order credited the store - read back from its
+    // wallet rows - rather than recomputing it. An order that was never
+    // credited (most rejected new orders) is not debited.
+    await step("Store credit", () => FireStoreUtils.reverseVendorCreditForOrder(orderModel));
+
+    if (failed.isNotEmpty) {
+      ShowToastDialog.showToast("The order was updated, but these steps did not finish: @steps. Please check your connection or contact support.".trParams({'steps': failed.toSet().join(', ')}));
+    }
+  }
+
   /// The reason sheet keeps the order open for a while: if someone else
   /// (customer, driver, admin) changed its status meanwhile, the store's
   /// action - and its refund - must not run on top of theirs. Closes the
@@ -440,50 +526,37 @@ class HomeScreen extends StatelessWidget {
                       // status, refund, wallet reversal or notification.
                       final CancelReasonResult? rejection = await CancelReasonSheet.showForRejection();
                       if (rejection == null) return;
+                      // Captured now: the card leaves this tab once the order is rejected.
+                      final TabController? tabs = context.mounted ? DefaultTabController.maybeOf(context) : null;
                       ShowToastDialog.showLoader('Please wait...'.tr);
                       if (!await _unchangedSinceShown(orderModel, controller)) return;
                       await AudioPlayerService.playSound(false);
                       orderModel.status = Constant.orderRejected;
                       // Written in the same updateOrder as the status change.
                       orderModel.markEndedByVendor(action: CancelAction.rejected, reason: rejection.reason, code: rejection.code, byName: _storeName(orderModel, controller));
-                      if (orderModel.cashback?.id != null && orderModel.cashback?.cashbackValue != null) {
-                        await FireStoreUtils.deleteCashbackRedeem(orderModel);
+                      final bool isRejected = await FireStoreUtils.updateOrder(orderModel);
+                      if (!isRejected) {
+                        // Nothing else - no cashback release, driver release,
+                        // refund, reversal or notification - for an order that
+                        // is still live.
+                        ShowToastDialog.closeLoader();
+                        ShowToastDialog.showToast("Could not update this order. Please check your connection and try again.".tr);
+                        await controller.getOrder();
+                        return;
                       }
-                      await FireStoreUtils.updateOrder(orderModel);
-
-                      SendNotification.sendFcmMessage(Constant.restaurantRejected, orderModel.author!.fcmToken.toString(), {});
-
-                      if (orderModel.paymentMethod!.toLowerCase() != 'cod') {
-                        double finalAmount =
-                            (subTotal + double.parse(orderModel.discount.toString()) + specialDiscountAmount + double.parse(totalTaxAmount.toString())) +
-                            double.parse(orderModel.deliveryCharge.toString()) +
-                            double.parse(orderModel.tipAmount.toString());
-
-                        WalletTransactionModel historyModel = WalletTransactionModel(
-                          amount: finalAmount,
-                          id: const Uuid().v4(),
-                          orderId: orderModel.id,
-                          userId: orderModel.author!.id,
-                          date: Timestamp.now(),
-                          isTopup: true,
-                          paymentMethod: "Wallet",
-                          paymentStatus: "success",
-                          note: "Order Refund success",
-                          transactionUser: "user",
-                        );
-
-                        await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(historyModel.id).set(historyModel.toJson());
-                        await FireStoreUtils.updateUserWallet(amount: finalAmount.toString(), userId: orderModel.author!.id.toString());
-                      }
-
-                      // A new order is normally rejected before anything was
-                      // credited, but a POS / panel-created order can already
-                      // carry a credit. Guarded: an order that was never
-                      // credited is not debited.
-                      await FireStoreUtils.reverseVendorCreditForOrder(orderModel);
-
+                      // The order is rejected: show it in Rejected at once and
+                      // let the follow-ups (cashback, driver, notifications,
+                      // refund, credit reversal) run without holding the screen.
+                      _showEndedOrder(controller, orderModel, tabs);
                       ShowToastDialog.closeLoader();
-                      controller.getOrder();
+                      ShowToastDialog.showToast("Order rejected".tr);
+                      unawaited(
+                        _afterVendorEndedOrder(
+                          orderModel: orderModel,
+                          customerNotification: Constant.restaurantRejected,
+                          refundAmount: _refundAmount(orderModel, subTotal: subTotal, specialDiscountAmount: specialDiscountAmount, totalTaxAmount: totalTaxAmount),
+                        ),
+                      );
                     },
                   ),
                 ),
@@ -759,6 +832,8 @@ class HomeScreen extends StatelessWidget {
                 // including the refund below - is touched in that case.
                 final CancelReasonResult? cancellation = await CancelReasonSheet.show();
                 if (cancellation == null) return;
+                // Captured now: the card leaves this tab once the order is cancelled.
+                final TabController? tabs = context.mounted ? DefaultTabController.maybeOf(context) : null;
                 ShowToastDialog.showLoader('Please wait...'.tr);
                 if (!await _unchangedSinceShown(orderModel, controller)) return;
                 orderModel.status = Constant.orderCancelled;
@@ -773,56 +848,21 @@ class HomeScreen extends StatelessWidget {
                   await controller.getOrder();
                   return;
                 }
-                // The redemption is given back only once the order is cancelled.
-                if (orderModel.cashback?.id != null && orderModel.cashback?.cashbackValue != null) {
-                  await FireStoreUtils.deleteCashbackRedeem(orderModel);
-                }
-                // The delivery man is freed only now that the order is
-                // cancelled: freed earlier, the order still named him and was
-                // still active, so his app's assignment watcher put it straight
-                // back on his list and he stayed "Occupied".
-                final String? driverId = orderModel.driverID;
-                if ((driverId ?? '').isNotEmpty) {
-                  await FireStoreUtils.releaseDriverOrder(driverId, orderModel.id);
-                  // Only for the notification: a failed read must not stop
-                  // the refund below now that the order is cancelled.
-                  final UserModel? driverModel = await FireStoreUtils.getUserById(driverId!).catchError((_) => null);
-                  if ((driverModel?.fcmToken ?? '').isNotEmpty) {
-                    SendNotification.sendFcmMessage(Constant.driverCancelled, driverModel!.fcmToken.toString(), {'title': 'Cancelled Order'});
-                  }
-                }
-                SendNotification.sendFcmMessage(Constant.restaurantCancelled, orderModel.author!.fcmToken.toString(), {});
-
-                if (orderModel.paymentMethod!.toLowerCase() != 'cod') {
-                  double finalAmount =
-                      (subTotal + double.parse(orderModel.discount.toString()) + specialDiscountAmount + double.parse(totalTaxAmount.toString())) +
-                      double.parse(orderModel.deliveryCharge.toString()) +
-                      double.parse(orderModel.tipAmount.toString());
-
-                  WalletTransactionModel historyModel = WalletTransactionModel(
-                    amount: finalAmount,
-                    id: const Uuid().v4(),
-                    orderId: orderModel.id,
-                    userId: orderModel.author!.id,
-                    date: Timestamp.now(),
-                    isTopup: true,
-                    paymentMethod: "Wallet",
-                    paymentStatus: "success",
-                    note: "Order Refund success",
-                    transactionUser: "user",
-                  );
-
-                  await FireStoreUtils.fireStore.collection(CollectionName.wallet).doc(historyModel.id).set(historyModel.toJson());
-                  await FireStoreUtils.updateUserWallet(amount: finalAmount.toString(), userId: orderModel.author!.id.toString());
-                }
-
-                // Reverse exactly what this order credited the store - read back
-                // from its wallet rows - rather than recomputing it: the recomputed
-                // figure left out the packaging charge, and an order that was never
-                // credited must not be debited at all.
-                await FireStoreUtils.reverseVendorCreditForOrder(orderModel);
-                await controller.getOrder();
+                // The order is cancelled: it moves to the Cancelled tab at once.
+                // The loader used to stay up through every follow-up below,
+                // one network call after another, and a missing discount /
+                // delivery charge / tip threw in the refund sum, leaving it up
+                // for good - the order then seemed never to reach Cancelled.
+                _showEndedOrder(controller, orderModel, tabs);
                 ShowToastDialog.closeLoader();
+                ShowToastDialog.showToast("Order cancelled".tr);
+                unawaited(
+                  _afterVendorEndedOrder(
+                    orderModel: orderModel,
+                    customerNotification: Constant.restaurantCancelled,
+                    refundAmount: _refundAmount(orderModel, subTotal: subTotal, specialDiscountAmount: specialDiscountAmount, totalTaxAmount: totalTaxAmount),
+                  ),
+                );
               },
             ),
           ),
@@ -838,7 +878,9 @@ class HomeScreen extends StatelessWidget {
                 ShowToastDialog.showLoader("Please wait".tr);
 
                 UserModel? customer = await FireStoreUtils.getUserById(orderModel.authorID.toString());
-                UserModel? restaurant = await FireStoreUtils.getUserProfile(orderModel.vendor!.author.toString());
+                // getUserById: getUserProfile would also make the owner the session's
+                // user (Constant.userModel) - for an employee, the wrong account.
+                UserModel? restaurant = await FireStoreUtils.getUserById(orderModel.vendor!.author.toString());
                 // VendorModel? vendorModel = await FireStoreUtils.getVendorById(orderModel.vendorID.toString());
                 ShowToastDialog.closeLoader();
 
@@ -1379,13 +1421,14 @@ class HomeScreen extends StatelessWidget {
       }
 
       if (notificationType != null) {
-        SendNotification.sendFcmMessage(notificationType, orderModel.author!.fcmToken.toString(), {});
+        SendNotification.sendFcmMessage(notificationType, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id);
       } else {
         SendNotification.sendOneNotification(
-          token: orderModel.author!.fcmToken.toString(),
+          token: orderModel.author?.fcmToken ?? '',
           title: "Order Delivered".tr,
           body: "Your order has been delivered successfully".tr,
-          payload: {},
+          payload: {'type': 'store_completed', 'orderId': orderModel.id},
+          recipientId: orderModel.authorID ?? orderModel.author?.id,
         );
       }
       ShowToastDialog.closeLoader();
@@ -1407,7 +1450,7 @@ class HomeScreen extends StatelessWidget {
     await AudioPlayerService.playSound(false);
     await FireStoreUtils.updateOrder(orderModel);
     await FireStoreUtils.restaurantVendorWalletSet(orderModel);
-    SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author!.fcmToken.toString(), {});
+    SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id);
     ShowToastDialog.closeLoader();
   }
 
@@ -1498,8 +1541,8 @@ class HomeScreen extends StatelessWidget {
                             await FireStoreUtils.releaseDriverOrder(previousDriverId, orderModel.id);
                           }
                           await FireStoreUtils.restaurantVendorWalletSet(orderModel);
-                          SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author!.fcmToken.toString(), {});
-                          SendNotification.sendFcmMessage(Constant.newDeliveryOrder, orderModel.driver?.fcmToken ?? '', {});
+                          SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id);
+                          SendNotification.sendFcmMessage(Constant.newDeliveryOrder, orderModel.driver?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.driverID ?? orderModel.driver?.id, recipient: PushRecipient.driver);
                         } else {
                           // Drops the unsaved delivery man and status from the card.
                           await controller.getOrder();
@@ -1711,7 +1754,7 @@ class HomeScreen extends StatelessWidget {
                     await AudioPlayerService.playSound(false);
                     await FireStoreUtils.updateOrder(orderModel);
                     await FireStoreUtils.restaurantVendorWalletSet(orderModel);
-                    SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author!.fcmToken.toString(), {});
+                    SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id);
 
                     ShowToastDialog.closeLoader();
                     Get.back();

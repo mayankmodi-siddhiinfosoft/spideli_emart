@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
 
@@ -19,6 +20,7 @@ import 'package:vendor/models/vendor_model.dart';
 import 'package:vendor/models/zone_model.dart';
 import 'package:vendor/utils/address_format.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/notification_service.dart';
 import 'package:vendor/utils/region_service.dart';
 import 'package:vendor/widget/geoflutterfire/src/geoflutterfire.dart';
 
@@ -431,6 +433,9 @@ class AddRestaurantController extends GetxController {
             });
           }
           await FireStoreUtils.firebaseCreateNewVendor(vendorModel.value, selectAsCurrent: !isNewStore).then((value) {
+            // The new store gets this phone's current token (customers send
+            // dine-in bookings and chat to the store's token).
+            unawaited(NotificationService.syncToken());
             ShowToastDialog.closeLoader();
             ShowToastDialog.showToast("Store details save successfully".tr);
             if (isNewStore) {

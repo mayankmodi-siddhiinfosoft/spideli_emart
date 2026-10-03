@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
+import '../service/push_message.dart';
 import '../service/send_notification.dart';
 import '../themes/show_toast_dialog.dart';
 
@@ -94,7 +95,17 @@ class DineInRestaurantDetailsController extends GetxController {
         firstVisit: firstVisit.value,
       );
       await FireStoreUtils.setBookedOrder(dineInBookingModel);
-      await SendNotification.sendFcmMessage(Constant.dineInPlaced, vendorModel.value.fcmToken.toString(), {});
+      // The store owner's own token (users/{vendor.author}), which the store
+      // app keeps current; the copy on the vendor document is only refreshed
+      // when the store edits its profile, so it is just the fallback.
+      final String ownerId = (vendorModel.value.author ?? '').trim();
+      final String ownerToken = ownerId.isEmpty ? '' : ((await FireStoreUtils.getUserProfile(ownerId))?.fcmToken ?? '');
+      await SendNotification.sendFcmMessage(
+        Constant.dineInPlaced,
+        PushPayload.isUsableToken(ownerToken) ? ownerToken : (vendorModel.value.fcmToken ?? ''),
+        {'orderId': dineInBookingModel.id},
+        recipient: PushRecipient.store,
+      );
       ShowToastDialog.closeLoader();
       selectedDate.value = Timestamp.now();
       Get.back();

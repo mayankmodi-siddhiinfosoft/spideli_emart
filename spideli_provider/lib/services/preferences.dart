@@ -3,14 +3,29 @@ import 'package:shared_preferences/shared_preferences.dart';
 class Preferences {
   static const languageKey = "languageKey";
   static const themeKey = "themeKey";
-  static const passwordKey = "password";
   static const isFinishOnBoardingKey = "isFinishOnBoardingKey";
   static const isClickOnNotification = "isClickOnNotification";
 
+  /// Older builds saved the login password here in plain text. Nothing reads
+  /// it (the FirebaseAuth session keeps the user signed in), so it is never
+  /// written again and any saved copy is removed at startup.
+  static const _legacyPasswordKey = "password";
+
   static late SharedPreferences pref;
 
-  static initPref() async {
+  static Future<void> initPref() async {
     pref = await SharedPreferences.getInstance();
+    await _removeLegacyPassword();
+  }
+
+  static Future<void> _removeLegacyPassword() async {
+    try {
+      if (pref.containsKey(_legacyPasswordKey)) {
+        await pref.remove(_legacyPasswordKey);
+      }
+    } catch (_) {
+      // Best effort: never block startup on this cleanup.
+    }
   }
 
   static String getString(String key) {

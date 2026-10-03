@@ -1,93 +1,221 @@
-// ignore_for_file: non_constant_identifier_names
-
+import 'dart:async';
 import 'dart:convert';
 
-
-import 'package:spideliworker/constant/constants.dart';
-import 'package:spideliworker/model/notification_model.dart';
-import 'package:spideliworker/services/firebase_helper.dart';
-import 'package:flutter/cupertino.dart';
+import 'package:firebase_auth/firebase_auth.dart' as auth;
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:googleapis_auth/auth_io.dart';
 import 'package:http/http.dart' as http;
+import 'package:spideliworker/constant/constants.dart';
+import 'package:spideliworker/model/notification_model.dart';
+import 'package:spideliworker/model/user.dart';
+import 'package:spideliworker/services/firebase_helper.dart';
+import 'package:spideliworker/services/push_message.dart';
 
+/// Every push the worker app sends: job status to the customer
+/// ([sendFcmMessage]) and chat messages ([sendChatFcmMessage]).
+///
+/// Two paths, one message (see push_message.dart and
+/// `.claude/SERVER-PUSH-CONTRACT.md`):
+/// - `serverPushUrl` is an https URL: POST to the `sendPush` function with the
+///   worker's Firebase ID token. The service-account key is never downloaded.
+/// - otherwise (legacy): FCM HTTP v1 with an OAuth token minted from
+///   `serviceJson`, cached until shortly before it expires.
+///
+/// Both return true only when the push was accepted, and log the HTTP status
+/// and FCM error code on failure -- never a token, an access token or the
+/// message text.
 class SendNotification {
-  static final _scopes = ['https://www.googleapis.com/auth/firebase.messaging'];
+  SendNotification._();
 
-  static Future getCharacters() {
-    return http.get(Uri.parse(jsonNotificationFileURL.toString()));
+  static final List<String> _scopes = ['https://www.googleapis.com/auth/firebase.messaging'];
+
+  static bool get useServerPush => isHttpsUrl(serverPushUrl);
+
+  static String? _accessToken;
+  static DateTime? _accessTokenExpiry;
+  static Future<String>? _accessTokenInFlight;
+
+  static Future<http.Response> getCharacters() {
+    if (useServerPush) {
+      throw StateError('Server push is on: the service-account key is not downloaded.');
+    }
+    return http.get(Uri.parse(jsonNotificationFileURL.toString())).timeout(const Duration(seconds: 20));
   }
 
-  static Future<String> getAccessToken() async {
-    Map<String, dynamic> jsonData = {};
-
-    await getCharacters().then((response) {
-      jsonData = json.decode(response.body);
-    });
-    final serviceAccountCredentials = ServiceAccountCredentials.fromJson(jsonData);
-
-    final client = await clientViaServiceAccount(serviceAccountCredentials, _scopes);
-    return client.credentials.accessToken.data;
+  /// The OAuth access token for FCM (legacy path only). It is a live
+  /// credential: never log it.
+  static Future<String> getAccessToken() {
+    if (useServerPush) {
+      throw StateError('Server push is on: no access token is minted on the device.');
+    }
+    if (_accessToken != null && accessTokenUsable(_accessTokenExpiry, DateTime.now())) {
+      return Future<String>.value(_accessToken);
+    }
+    return _accessTokenInFlight ??= _mintAccessToken().whenComplete(() => _accessTokenInFlight = null);
   }
 
-  static Future<bool> sendFcmMessage(String type, String token, Map<String, dynamic>? payload) async {
-    print(type);
+  static Future<String> _mintAccessToken() async {
+    final http.Response response = await getCharacters();
+    if (response.statusCode != 200) {
+      throw StateError('Service account file not available (HTTP ${response.statusCode}).');
+    }
+    final ServiceAccountCredentials credentials = ServiceAccountCredentials.fromJson(json.decode(response.body));
+    final AutoRefreshingAuthClient client = await clientViaServiceAccount(credentials, _scopes);
     try {
-      // The OAuth access token is a live credential: never log it.
-      final String accessToken = await getAccessToken();
-      NotificationModel? notificationModel = await FireStoreUtils.getNotificationContent(type);
+      final AccessToken token = client.credentials.accessToken;
+      _accessToken = token.data;
+      _accessTokenExpiry = token.expiry;
+      return token.data;
+    } finally {
+      client.close();
+    }
+  }
 
-      final response = await http.post(
-        Uri.parse('https://fcm.googleapis.com/v1/projects/$senderId/messages:send'),
-        headers: <String, String>{
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $accessToken',
-        },
-        body: jsonEncode(
-          <String, dynamic>{
-            'message': {
-              'token': token,
-              'notification': {'body': notificationModel!.message ??'', 'title': notificationModel.subject ?? ''},
-              'data':  payload,
-            }
-          },
-        ),
+  static void _forgetAccessToken() {
+    _accessToken = null;
+    _accessTokenExpiry = null;
+  }
+
+  /// The recipient's current FCM token: `users/{uid}.fcmToken`, else
+  /// [fallback] (the copy embedded in the order when it was placed, which goes
+  /// stale when the customer's token rotates or was empty on iOS).
+  static Future<String> tokenForUser(String? uid, {String? fallback}) async {
+    String? fresh;
+    final String id = uid?.trim() ?? '';
+    if (id.isNotEmpty) {
+      try {
+        final User? user = await FireStoreUtils.getUser(id);
+        fresh = user?.fcmToken;
+      } catch (e) {
+        debugPrint('push: recipient profile not read: $e');
+      }
+    }
+    return pickRecipientToken(fresh: fresh, snapshot: fallback);
+  }
+
+  /// A job-status push from the `dynamic_notification` template [type].
+  static Future<bool> sendFcmMessage(String type, String token, Map<String, dynamic>? payload, {PushRecipient recipient = PushRecipient.customer}) async {
+    if (!isUsableFcmToken(token)) {
+      debugPrint('push "$type" skipped: the recipient has no FCM token');
+      return false;
+    }
+    try {
+      final NotificationModel? template = await FireStoreUtils.getNotificationContent(type);
+      return await _send(
+        token: token,
+        title: template?.subject ?? '',
+        body: template?.message ?? '',
+        data: fcmDataPayload(payload, fallbackType: type),
+        kind: type,
+        recipient: recipient,
       );
-
-      debugPrint("Notification=======>");
-      debugPrint(response.statusCode.toString());
-      debugPrint(response.body);
-      return true;
     } catch (e) {
-      debugPrint(e.toString());
+      debugPrint('push "$type" not sent: $e');
       return false;
     }
   }
 
-  static Future<bool> sendChatFcmMessage(String title, String message, String token, Map<String, dynamic>? payload) async {
+  /// A chat message push.
+  static Future<bool> sendChatFcmMessage(String title, String message, String token, Map<String, dynamic>? payload, {PushRecipient recipient = PushRecipient.customer}) async {
+    if (!isUsableFcmToken(token)) {
+      debugPrint('chat push skipped: the recipient has no FCM token');
+      return false;
+    }
     try {
-      final String accessToken = await getAccessToken();
-      final response = await http.post(
-        Uri.parse('https://fcm.googleapis.com/v1/projects/$senderId/messages:send'),
-        headers: <String, String>{
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $accessToken',
-        },
-        body: jsonEncode(
-          <String, dynamic>{
-            'message': {
-              'token': token,
-              'notification': {'body': message , 'title': title},
-              'data':  payload,
-            }
-          },
-        ),
+      return await _send(
+        token: token,
+        title: title,
+        body: message,
+        data: fcmDataPayload(payload, fallbackType: 'orderChat'),
+        kind: 'chat',
+        recipient: recipient,
       );
-      debugPrint("Notification=======>");
-      debugPrint(response.statusCode.toString());
-      debugPrint(response.body);
-      return true;
     } catch (e) {
-      print(e);
+      debugPrint('chat push not sent: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> _send({
+    required String token,
+    required String title,
+    required String body,
+    required Map<String, String> data,
+    required String kind,
+    required PushRecipient recipient,
+  }) {
+    final PushChannel channel = pushChannelFor(recipient);
+    if (useServerPush) {
+      return _sendViaServer(buildServerPushBody(token: token, title: title, body: body, data: data, channel: channel, kind: kind), kind);
+    }
+    return _sendLegacy(buildFcmV1Message(token: token, title: title, body: body, data: data, channel: channel), kind);
+  }
+
+  static Future<bool> _sendLegacy(Map<String, dynamic> message, String kind) async {
+    String projectId = '';
+    try {
+      projectId = Firebase.app().options.projectId;
+    } catch (_) {
+      // No default app (should not happen once main() ran): use settings.
+    }
+    projectId = fcmProjectId(optionsProjectId: projectId, settingsSenderId: senderId);
+    if (projectId.isEmpty) {
+      debugPrint('push "$kind" not sent: no Firebase project id');
+      return false;
+    }
+    final Uri url = Uri.parse('https://fcm.googleapis.com/v1/projects/$projectId/messages:send');
+    final String requestBody = jsonEncode(message);
+
+    Future<http.Response> post() async {
+      final String accessToken = await getAccessToken();
+      return http
+          .post(url, headers: <String, String>{'Content-Type': 'application/json', 'Authorization': 'Bearer $accessToken'}, body: requestBody)
+          .timeout(const Duration(seconds: 20));
+    }
+
+    http.Response response = await post();
+    if (response.statusCode == 401) {
+      // The cached access token was revoked or expired early: mint once more.
+      _forgetAccessToken();
+      response = await post();
+    }
+    if (response.statusCode >= 200 && response.statusCode < 300) return true;
+    final PushSendError error = parseFcmError(response.statusCode, response.body);
+    // A dead customer token is not cleared from here: the worker must not
+    // write other users' profiles, and the customer app saves its fresh token
+    // on its next start.
+    debugPrint('push "$kind" rejected by FCM: $error');
+    return false;
+  }
+
+  static Future<bool> _sendViaServer(Map<String, dynamic> body, String kind) async {
+    final auth.User? user = auth.FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      debugPrint('push "$kind" not sent: no signed-in worker for the server push');
+      return false;
+    }
+    final String requestBody = jsonEncode(body);
+
+    Future<http.Response> post(bool refreshIdToken) async {
+      final String? idToken = await user.getIdToken(refreshIdToken);
+      return http
+          .post(
+            Uri.parse(serverPushUrl.trim()),
+            headers: <String, String>{'Content-Type': 'application/json', 'Authorization': 'Bearer ${idToken ?? ''}'},
+            body: requestBody,
+          )
+          .timeout(const Duration(seconds: 15));
+    }
+
+    try {
+      http.Response response = await post(false);
+      if (response.statusCode == 401) response = await post(true);
+      if (response.statusCode == 200) return true;
+      debugPrint('push "$kind" rejected by sendPush: ${parseServerPushError(response.statusCode, response.body)}');
+      return false;
+    } catch (e) {
+      debugPrint('push "$kind" server call failed: $e');
       return false;
     }
   }

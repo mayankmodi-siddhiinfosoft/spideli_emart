@@ -14,6 +14,7 @@ import 'package:driver/models/user_model.dart';
 import 'package:driver/services/driver_assignment_watcher.dart';
 import 'package:driver/services/driver_job_queue_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/notification_service.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/utils/preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -53,10 +54,12 @@ class DriverSessions {
   /// deletion removed it but could not delete the auth user, or an admin
   /// deleted it). Ends the session WITHOUT writing to `users/{uid}`: any write
   /// there would re-create it as a stub that locks the number out of login
-  /// and sign-up (NotificationService.onSignOut clears the token with a merge
-  /// set, so it is not called).
+  /// and sign-up. NotificationService.onSignOut runs without its token write
+  /// (a merge set): it used to be skipped altogether, which left the device
+  /// subscribed to the deleted driver's FCM topics (job pushes kept coming).
   static Future<void> endDeletedAccount() async {
     await stopAll();
+    await NotificationService.onSignOut(clearStoredToken: false);
     DriverAssignmentWatcher.stop();
     DriverJobQueueService.reset();
     await FirebaseAuth.instance.signOut();

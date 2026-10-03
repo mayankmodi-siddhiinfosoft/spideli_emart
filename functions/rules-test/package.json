@@ -1,0 +1,13 @@
+{
+  "name": "spideli-firestore-rules-test",
+  "private": true,
+  "description": "Emulator tests for /firestore.rules.draft. Local only: runs against the Firestore emulator under the demo-spideli project id and never touches spideli-870b0. Not deployed (excluded in firebase.json).",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project demo-spideli \"node --test test/\"",
+    "test:running-emulator": "node --test test/"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase": "^12.19.0"
+  }
+}

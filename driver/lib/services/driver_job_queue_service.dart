@@ -9,6 +9,7 @@ import 'package:driver/controllers/rental_booking_search_controller.dart';
 import 'package:driver/models/parcel_order_model.dart';
 import 'package:driver/models/rental_order_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/push_message.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -46,7 +47,8 @@ class DriverJobQueueService {
   /// True while a scan is in flight (a screen may show a subtle spinner).
   static final RxBool isScanning = false.obs;
 
-  static const String _channelId = 'driver_notifications_channel';
+  /// The loud job channel (`NotificationService.jobChannelId`), created at start-up.
+  static const String _channelId = PushChannels.driverJob;
   static const int _notificationId = 9114; // spec §9 / §14, kept out of FCM's range.
 
   static final Set<String> _announced = <String>{};
@@ -245,10 +247,11 @@ class DriverJobQueueService {
     try {
       const AndroidNotificationDetails android = AndroidNotificationDetails(
         _channelId,
-        'Driver Notifications',
-        channelDescription: 'App Notifications',
-        importance: Importance.high,
+        'New jobs',
+        channelDescription: 'Loud alert for a new or assigned delivery, ride, parcel or rental job',
+        importance: Importance.max,
         priority: Priority.high,
+        audioAttributesUsage: AudioAttributesUsage.notificationRingtone,
         ticker: 'ticker',
       );
       const DarwinNotificationDetails ios = DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true);

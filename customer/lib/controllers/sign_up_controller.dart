@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
@@ -12,7 +13,8 @@ import '../models/referral_model.dart';
 import '../screen_ui/service_home_screen/service_list_screen.dart';
 import '../service/fire_store_utils.dart';
 import '../themes/show_toast_dialog.dart';
-import '../utils/notification_service.dart';
+import '../utils/push_token.dart';
+import '../utils/push_token_sync.dart';
 
 class SignUpController extends GetxController {
   Rx<TextEditingController> firstNameEditingController = TextEditingController().obs;
@@ -83,7 +85,9 @@ class SignUpController extends GetxController {
       userModel.value.email = emailEditingController.value.text.toString().toLowerCase();
       userModel.value.phoneNumber = phoneNUmberEditingController.value.text.toString();
       userModel.value.role = Constant.userRoleCustomer;
-      userModel.value.fcmToken = await NotificationService.getToken();
+      // This device's token when it already has one; PushTokenSync saves it
+      // (field-level) once the document exists.
+      userModel.value.fcmToken = PushToken.preferDevice(userModel.value.fcmToken) ?? '';
       userModel.value.active = true;
       userModel.value.countryCode = countryCodeEditingController.value.text;
       userModel.value.countryISOCode = countryISOCodeEditingController.value.text;
@@ -101,6 +105,7 @@ class SignUpController extends GetxController {
       });
 
       await FireStoreUtils.updateUser(userModel.value).then((value) {
+        unawaited(PushTokenSync.syncForCurrentUser());
         if (userModel.value.shippingAddress != null && userModel.value.shippingAddress!.isNotEmpty) {
           if (userModel.value.shippingAddress!.where((element) => element.isDefault == true).isNotEmpty) {
             Constant.selectedLocation = userModel.value.shippingAddress!.where((element) => element.isDefault == true).single;
@@ -123,7 +128,7 @@ class SignUpController extends GetxController {
           userModel.value.email = emailEditingController.value.text.toString().toLowerCase();
           userModel.value.phoneNumber = phoneNUmberEditingController.value.text.toString();
           userModel.value.role = Constant.userRoleCustomer;
-          userModel.value.fcmToken = await NotificationService.getToken();
+          userModel.value.fcmToken = PushToken.preferDevice(userModel.value.fcmToken) ?? '';
           userModel.value.active = true;
           userModel.value.countryCode = countryCodeEditingController.value.text;
           userModel.value.countryISOCode = countryISOCodeEditingController.value.text;
@@ -142,6 +147,7 @@ class SignUpController extends GetxController {
           });
 
           await FireStoreUtils.updateUser(userModel.value).then((value) async {
+            unawaited(PushTokenSync.syncForCurrentUser());
             if (userModel.value.shippingAddress != null && userModel.value.shippingAddress!.isNotEmpty) {
               if (userModel.value.shippingAddress!.where((element) => element.isDefault == true).isNotEmpty) {
                 Constant.selectedLocation = userModel.value.shippingAddress!.where((element) => element.isDefault == true).single;

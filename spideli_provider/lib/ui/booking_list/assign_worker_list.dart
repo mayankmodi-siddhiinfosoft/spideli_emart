@@ -121,7 +121,7 @@ class AssignWorkerList extends StatelessWidget {
                       );
                     }
                     Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": controller.onProviderOrder.value.id};
-                    await SendNotification.sendFcmMessage(workerBookingAssigned, controller.fcmToken.value, payLoad);
+                    await SendNotification.sendFcmMessage(workerBookingAssigned, controller.fcmToken.value, payLoad, recipientId: newWorkerId);
 
                     Get.back();
                     ShowToastDialog.closeLoader();

@@ -5,6 +5,7 @@ import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:driver/models/section_model.dart';
+import 'package:driver/services/store_credit_once.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 
 /// Credits the STORE for an order the DRIVER completes.
@@ -31,7 +32,12 @@ import 'package:driver/utils/fire_store_utils.dart';
 ///   A refund in the Store panel therefore reverses exactly what was paid
 ///   here, and never debits an order that was never credited;
 /// * the order is stamped `vendorCredited: true` inside the same transaction,
-///   so a retry (a second tap, a re-run after a crash) cannot pay twice.
+///   so a retry (a second tap, a re-run after a crash) cannot pay twice;
+/// * the rule is [StoreCreditOnce], shared with the Store app's
+///   `restaurantVendorWalletSet`: both apps read the deterministic credit row
+///   and the order inside the transaction and pay only when neither says the
+///   order was credited, so the store and its delivery man completing the
+///   same self-delivery order at the same moment credit it once.
 ///
 /// Everything is additive: an order without `vendorCredited` behaves exactly
 /// as before, and the amount is computed with the Store app's own formula so
@@ -43,21 +49,19 @@ class VendorWalletService {
 
   static double _num(dynamic value) => double.tryParse(value?.toString() ?? '') ?? 0;
 
-  /// Deterministic ids, so a retry rewrites the same two rows instead of
-  /// adding a second pair.
-  static String _creditRowId(String orderId) => 'vendorcredit_$orderId';
+  /// Deterministic ids shared with the Store app, so a retry - or the other
+  /// app - finds the credit instead of adding a second pair.
+  static String _creditRowId(String orderId) => StoreCreditOnce.creditRowId(orderId);
 
-  static String _taxRowId(String orderId) => 'vendortax_$orderId';
+  static String _taxRowId(String orderId) => StoreCreditOnce.taxRowId(orderId);
 
   /// True when some `wallet` row already credits this order to the store —
-  /// including one the Store app wrote when it accepted or shipped the order.
-  /// Mirrors `FireStoreUtils._isOrderAlreadyCredited` in the Store app.
+  /// including one the Store app wrote when it accepted or shipped the order,
+  /// under a random id on older builds. Mirrors
+  /// `FireStoreUtils._isOrderAlreadyCredited` in the Store app.
   static Future<bool> _alreadyCredited(String orderId) async {
     final snapshot = await _db.collection(CollectionName.wallet).where('order_id', isEqualTo: orderId).get();
-    return snapshot.docs.any((doc) {
-      final data = doc.data();
-      return data['transactionUser'] == 'vendor' && data['isTopUp'] == true && data['payment_method'] == 'Wallet';
-    });
+    return StoreCreditOnce.anyCreditRow(snapshot.docs.map((doc) => doc.data()));
   }
 
   /// What the store earns on [orderModel] and the tax passed through to it.
@@ -167,12 +171,14 @@ class VendorWalletService {
 
       final DocumentReference<Map<String, dynamic>> orderRef = _db.collection(CollectionName.vendorOrders).doc(orderId);
       final DocumentReference<Map<String, dynamic>> storeRef = _db.collection(CollectionName.vendors).doc(vendorId);
+      final DocumentReference<Map<String, dynamic>> creditRef = _db.collection(CollectionName.wallet).doc(_creditRowId(orderId));
 
       await _db.runTransaction((transaction) async {
         // All reads first, as Firestore requires.
         final orderSnap = await transaction.get(orderRef);
-        if (orderSnap.data()?['vendorCredited'] == true) {
-          log("VendorWalletService: order $orderId is already stamped vendorCredited, skipping");
+        final creditSnap = await transaction.get(creditRef);
+        if (StoreCreditOnce.alreadyCredited(creditRowExists: creditSnap.exists, order: orderSnap.data())) {
+          log("VendorWalletService: order $orderId was already credited (credit row or vendorCredited), skipping");
           return;
         }
         final storeSnap = await transaction.get(storeRef);
@@ -193,7 +199,7 @@ class VendorWalletService {
 
         // Writes.
         final Timestamp now = Timestamp.now();
-        transaction.set(_db.collection(CollectionName.wallet).doc(_creditRowId(orderId)), {
+        transaction.set(creditRef, {
           'id': _creditRowId(orderId),
           'user_id': ownerId,
           'payment_method': 'Wallet',
@@ -224,7 +230,7 @@ class VendorWalletService {
           final num ownerTotal = _num(ownerSnap.data()?['wallet_amount']) + credit.total;
           transaction.update(ownerRef, {'wallet_amount': ownerTotal});
         }
-        transaction.set(orderRef, {'vendorCredited': true}, SetOptions(merge: true));
+        transaction.set(orderRef, {StoreCreditOnce.orderFlag: true}, SetOptions(merge: true));
       });
     } catch (e, s) {
       // Never block the driver from finishing a delivery over a wallet write.

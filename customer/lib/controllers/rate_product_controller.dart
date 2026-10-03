@@ -1,4 +1,3 @@
-import 'dart:developer';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/constant.dart';
@@ -163,7 +162,6 @@ class RateProductController extends GetxController {
         reviewAttributes: reviewAttribute,
       );
 
-      log(vendorModel.value.toJson().toString());
       await FireStoreUtils.updateReviewById(ratingProduct);
       await FireStoreUtils.updateVendor(vendorModel.value);
       await FireStoreUtils.setProduct(productModel.value);

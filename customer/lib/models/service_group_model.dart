@@ -29,8 +29,29 @@ class ServiceGroupModel {
     if (value is Map) {
       final String lang = Get.locale?.languageCode ?? 'en';
       final dynamic picked = value[lang] ?? value['en'] ?? (value.values.isNotEmpty ? value.values.first : null);
-      return picked?.toString() ?? '';
+      return decodeHtmlEntities(picked?.toString() ?? '');
     }
-    return value?.toString() ?? '';
+    return decodeHtmlEntities(value?.toString() ?? '');
+  }
+
+  /// The panel saves names HTML-escaped ("Online Shopping &amp; Restaurant");
+  /// shown as typed. Handles the named entities a name can contain and
+  /// numeric ones (&#39; / &#x27;).
+  static String decodeHtmlEntities(String text) {
+    if (!text.contains('&')) return text;
+    const Map<String, String> named = {'&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'", '&nbsp;': ' '};
+    return text.replaceAllMapped(RegExp(r'&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);'), (m) {
+      final String entity = m.group(0)!;
+      final String body = m.group(1)!;
+      if (body.startsWith('#x') || body.startsWith('#X')) {
+        final int? code = int.tryParse(body.substring(2), radix: 16);
+        return code == null ? entity : String.fromCharCode(code);
+      }
+      if (body.startsWith('#')) {
+        final int? code = int.tryParse(body.substring(1));
+        return code == null ? entity : String.fromCharCode(code);
+      }
+      return named[entity.toLowerCase()] ?? entity;
+    });
   }
 }

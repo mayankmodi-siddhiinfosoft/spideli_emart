@@ -21,10 +21,6 @@ import 'package:get/get.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
-}
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Preferences.initPref();
@@ -44,12 +40,12 @@ void main() async {
     appleProvider: AppleProvider.appAttest,
   );
   initializeDateFormatting();
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-  await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
-    alert: true,
-    badge: true,
-    sound: true,
-  );
+  // The one background handler: top-level, `vm:entry-point` (release builds
+  // tree-shook the old unannotated one), and it initializes Firebase itself.
+  FirebaseMessaging.onBackgroundMessage(firebaseMessageBackgroundHandle);
+  // Before runApp, so a push that arrives right after the first launch
+  // already has its Android channel (and iOS shows pushes in the foreground).
+  await NotificationService.prepareBeforeRunApp();
 
   // The notification permission is NOT requested here: awaiting it before
   // runApp left the first screen blank behind the system dialog. It is asked
@@ -73,11 +69,14 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   Future<void> notificationInit() async {
     try {
-      // The single notification-permission request of this launch.
-      await notificationService.initInfo();
-      // Store the FCM token on the user document at launch and on every
-      // refresh, so this app can actually be reached by chat and order pushes.
-      await NotificationService.syncTokenToUserDoc();
+      // The single notification-permission request of this launch, and the
+      // FCM token on the worker's document (at launch and on every refresh).
+      // In parallel: the token does not need the permission, and on iOS it
+      // must not wait for the user to answer the dialog.
+      await Future.wait<void>([
+        notificationService.initInfo(),
+        NotificationService.syncTokenToUserDoc(),
+      ]);
     } catch (e) {
       log("Notification init failed: $e");
     }
@@ -95,6 +94,22 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   }
 
   void initializeFlutterFire() async {
+    // First and on its own: a failure in the reads below must not leave the
+    // push settings unloaded (every push would then fail).
+    try {
+      await FireStoreUtils.firestore.collection(Setting).doc("notification_setting").get().then((value) {
+        // Never log this document: `serviceJson` is a tokenised download URL
+        // of a service-account key file.
+        final Map<String, dynamic> data = value.data() ?? {};
+        senderId = (data['senderId'] ?? '').toString();
+        jsonNotificationFileURL = (data['serviceJson'] ?? '').toString();
+        // Always assigned, so clearing the field switches back to the legacy
+        // path (SERVER-PUSH-CONTRACT.md 1).
+        serverPushUrl = (data['serverPushUrl'] ?? '').toString().trim();
+      });
+    } catch (e) {
+      log("notification settings not loaded: $e");
+    }
     try {
       /// Wait for Firebase to initialize and set `_initialized` state to true
 
@@ -103,13 +118,6 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       });
       await FireStoreUtils.firestore.collection(Setting).doc("googleMapKey").get().then((value) {
         GOOGLE_API_KEY = value.data()!['key'].toString();
-      });
-
-      await FireStoreUtils.firestore.collection(Setting).doc("notification_setting").get().then((value) {
-        // Never log this document: `serviceJson` is a tokenised download URL
-        // of a service-account key file.
-        senderId = value.data()!['senderId'].toString();
-        jsonNotificationFileURL = value.data()!['serviceJson'].toString();
       });
 
       await FireStoreUtils.firestore.collection(Setting).doc("globalSettings").get().then((value) {

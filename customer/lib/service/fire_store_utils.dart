@@ -78,6 +78,7 @@ import '../screen_ui/multi_vendor_service/chat_screens/chat_video_container.dart
 import '../themes/app_them_data.dart';
 import '../themes/show_toast_dialog.dart';
 import '../utils/preferences.dart';
+import '../utils/push_token.dart';
 import '../utils/region_service.dart';
 import '../widget/geoflutterfire/src/geoflutterfire.dart';
 import '../widget/geoflutterfire/src/models/point.dart';
@@ -197,8 +198,16 @@ class FireStoreUtils {
   /// refund the store just made). When the document belongs to SOMEONE ELSE
   /// (a customer rating a driver or provider), their account status,
   /// verification, subscription and earnings fields are left alone too.
-  static Map<String, dynamic> _userWriteData(UserModel userModel) {
+  ///
+  /// Never `fcmToken` on an existing document either: the token is written
+  /// field-level by PushTokenSync only. A whole-user save carried whatever
+  /// token its copy was loaded with, so a login on an iPhone (where the token
+  /// was still '') wiped the good one, and a review or a profile edit put a
+  /// stale token back over a refreshed one. [includeFcmToken] is for a new
+  /// document (sign-up).
+  static Map<String, dynamic> _userWriteData(UserModel userModel, {bool includeFcmToken = false}) {
     final data = userModel.toJson()..remove('wallet_amount');
+    if (!includeFcmToken) data.remove('fcmToken');
     final String? me = auth.FirebaseAuth.instance.currentUser?.uid;
     if (me != null && userModel.id != me) {
       for (final key in const [
@@ -214,20 +223,28 @@ class FireStoreUtils {
 
   static Future<bool> updateUser(UserModel userModel) async {
     bool isUpdate = false;
+    bool isNew = false;
     // Sign-up creates the user through here: give a NEW document an explicit
     // wallet_amount of 0 (updateUser never writes the balance otherwise).
     try {
       final ref = fireStore.collection(CollectionName.users).doc(userModel.id);
       if (!(await ref.get()).exists) {
+        isNew = true;
         await ref.set({'wallet_amount': 0}, SetOptions(merge: true));
       }
     } catch (e) {
       log("updateUser: wallet_amount init skipped: $e");
     }
+    final String? me = auth.FirebaseAuth.instance.currentUser?.uid;
+    final bool isMine = me != null && userModel.id == me;
+    // The signed-in customer's copy (Constant.userModel, embedded in new
+    // orders as `author`) carries this device's current token, not the one
+    // it was loaded with.
+    if (isMine) userModel.fcmToken = PushToken.preferDevice(userModel.fcmToken);
     await fireStore
         .collection(CollectionName.users)
         .doc(userModel.id)
-        .setKnownFields(_userWriteData(userModel))
+        .setKnownFields(_userWriteData(userModel, includeFcmToken: isNew && isMine))
         .whenComplete(() {
           // Reviews also update drivers/providers through here: only the
           // signed-in customer's own document refreshes the session copy.
@@ -313,7 +330,10 @@ class FireStoreUtils {
 
   static Future<List<SectionModel>> getSections() async {
     List<SectionModel> sections = [];
-    QuerySnapshot<Map<String, dynamic>> productsQuery = await fireStore.collection(CollectionName.sections).where("isActive", isEqualTo: true).orderBy("order", descending: false).get();
+    // Sorted here, not with orderBy("order"): the panel stores `order` as text
+    // ("2", "10"), which Firestore sorts as text ("10" before "2"), and
+    // orderBy leaves out every section that has no `order` at all.
+    QuerySnapshot<Map<String, dynamic>> productsQuery = await fireStore.collection(CollectionName.sections).where("isActive", isEqualTo: true).get();
 
     await Future.forEach(productsQuery.docs, (QueryDocumentSnapshot<Map<String, dynamic>> document) {
       try {
@@ -322,6 +342,7 @@ class FireStoreUtils {
         print('**-FireStoreUtils.getSection Parse error $e');
       }
     });
+    sections.sort(SectionModel.compareByOrder);
     return sections;
   }
 
@@ -764,6 +785,9 @@ class FireStoreUtils {
           final String? serviceJson = event.data()?["serviceJson"]?.toString();
           if (senderId != null && senderId.isNotEmpty) Constant.senderId = senderId;
           if (serviceJson != null && serviceJson.isNotEmpty) Constant.jsonNotificationFileURL = serviceJson;
+          // The server-push switch (SERVER-PUSH-CONTRACT): always assigned, so
+          // clearing the field moves a running app back to the legacy path.
+          Constant.serverPushUrl = (event.data()?["serverPushUrl"] ?? '').toString().trim();
         }
       });
 
@@ -1689,7 +1713,6 @@ class FireStoreUtils {
 
   static Future<GiftCardsOrderModel> placeGiftCardOrder(GiftCardsOrderModel giftCardsOrderModel) async {
     print("=====>");
-    print(giftCardsOrderModel.toJson());
     await fireStore.collection(CollectionName.giftPurchases).doc(giftCardsOrderModel.id).set(giftCardsOrderModel.toJson());
     return giftCardsOrderModel;
   }
@@ -2120,7 +2143,6 @@ class FireStoreUtils {
         .map((snapshot) {
           return snapshot.docs.map((doc) {
             log("===>");
-            print(doc.data());
             return ParcelOrderModel.fromJson(doc.data());
           }).toList();
         });

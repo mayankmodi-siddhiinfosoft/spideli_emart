@@ -1,9 +1,10 @@
-import 'dart:developer';
+import 'dart:async';
+
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/currency_model.dart';
-import 'package:customer/models/user_model.dart';
 import 'package:customer/utils/notification_service.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:customer/utils/push_token_sync.dart';
+import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import '../constant/collection_name.dart';
 import '../service/fire_store_utils.dart';
@@ -34,18 +35,12 @@ class GlobalSettingController extends GetxController {
   NotificationService notificationService = NotificationService();
 
   void notificationInit() {
-    notificationService.initInfo().then((value) async {
-      String token = await NotificationService.getToken();
-      log(":::::::TOKEN:::::: $token");
-      if (FirebaseAuth.instance.currentUser != null) {
-        await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid()).then((value) {
-          if (value != null) {
-            UserModel driverUserModel = value;
-            driverUserModel.fcmToken = token;
-            FireStoreUtils.updateUser(driverUserModel);
-          }
-        });
-      }
-    });
+    // The token does not need the permission (and the dialog can stay open),
+    // so it is saved straight away: field-level, and never '' over a good one.
+    // This used to save a whole user with whatever getToken() gave, which on
+    // iOS was '' (no APNs token yet), wiping the iPhone's token on every start.
+    unawaited(PushTokenSync.syncForCurrentUser());
+    // Receiving and the permission dialog, after the first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(notificationService.initInfo()));
   }
 }

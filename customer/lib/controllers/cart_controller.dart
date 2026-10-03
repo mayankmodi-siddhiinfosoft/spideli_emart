@@ -60,6 +60,7 @@ import 'food_home_controller.dart';
 import 'home_e_commerce_controller.dart';
 import 'package:customer/models/currency_model.dart';
 import '../service/fire_store_utils.dart';
+import '../service/push_message.dart';
 import '../service/send_notification.dart';
 import '../themes/show_toast_dialog.dart';
 
@@ -635,10 +636,12 @@ class CartController extends GetxController {
     await FireStoreUtils.setOrder(orderModel).then((value) async {
       await FireStoreUtils.getUserProfile(orderModel.vendor!.author.toString()).then((value) async {
         if (value != null) {
+          // To the store owner, on the store's loud new-order channel. The
+          // data carries `type` (the template type) and the order id.
           if (orderModel.scheduleTime != null) {
-            await SendNotification.sendFcmMessage(Constant.scheduleOrder, value.fcmToken ?? '', {});
+            await SendNotification.sendFcmMessage(Constant.scheduleOrder, value.fcmToken ?? '', {'orderId': orderModel.id}, recipient: PushRecipient.store);
           } else {
-            await SendNotification.sendFcmMessage(Constant.orderPlacedNotification, value.fcmToken ?? '', {});
+            await SendNotification.sendFcmMessage(Constant.orderPlacedNotification, value.fcmToken ?? '', {'orderId': orderModel.id}, recipient: PushRecipient.store);
           }
         }
       });
@@ -730,7 +733,6 @@ class CartController extends GetxController {
     log(double.parse(amount).toStringAsFixed(0));
     try {
       Map<String, dynamic>? paymentIntentData = await createStripeIntent(amount: amount);
-      log("stripe Responce====>$paymentIntentData");
       if (paymentIntentData!.containsKey("error")) {
         Get.back();
         ShowToastDialog.showToast("Something went wrong, please contact admin.".tr);
@@ -1077,7 +1079,6 @@ class CartController extends GetxController {
         "issandbox": paytmModel.value.isSandboxEnabled == true ? "1" : "2",
       },
     );
-    log(response.body);
     final data = jsonDecode(response.body);
     if (data["body"]["txnToken"] == null || data["body"]["txnToken"].toString().isEmpty) {
       Get.back();

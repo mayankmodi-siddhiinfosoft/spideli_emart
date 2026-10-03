@@ -132,61 +132,68 @@ class UserModel {
     return sum / count;
   }
 
+  /// Read tolerantly: driver documents are written by this app, the Store
+  /// app and the admin panel, and a value of an unexpected type (a number
+  /// stored as text, "true" for a bool, a malformed nested map) used to throw
+  /// here. getUserProfile then returned null, so the driver was told the
+  /// account "is not created in driver application" and signed out, or the
+  /// splash screen never moved on.
   UserModel.fromJson(Map<String, dynamic> json) {
-    id = json['id'];
-    email = json['email'];
-    firstName = json['firstName'];
-    lastName = json['lastName'];
-    profilePictureURL = json['profilePictureURL'];
-    fcmToken = json['fcmToken'];
-    countryCode = json['countryCode'];
-    countryISOCode = json['countryISOCode'];
-    phoneNumber = json['phoneNumber'];
-    walletAmount = json['wallet_amount'] ?? 0;
-    createdAt = json['createdAt'];
-    active = json['active'];
-    isActive = json['isActive'];
-    isDocumentVerify = json['isDocumentVerify'] ?? false;
-    role = json['role'] ?? 'user';
-    location = json['location'] != null ? UserLocation.fromJson(json['location']) : null;
-    userBankDetails = json['userBankDetails'] != null ? UserBankDetails.fromJson(json['userBankDetails']) : null;
-    if (json['shippingAddress'] != null) {
+    id = _text(json['id']);
+    email = _text(json['email']);
+    firstName = _text(json['firstName']);
+    lastName = _text(json['lastName']);
+    profilePictureURL = _text(json['profilePictureURL']);
+    fcmToken = _text(json['fcmToken']);
+    countryCode = _text(json['countryCode']);
+    countryISOCode = _text(json['countryISOCode']);
+    phoneNumber = _text(json['phoneNumber']);
+    walletAmount = _num(json['wallet_amount']) ?? 0;
+    createdAt = _timestamp(json['createdAt']);
+    active = _bool(json['active']);
+    isActive = _bool(json['isActive']);
+    isDocumentVerify = _bool(json['isDocumentVerify']) ?? false;
+    role = _text(json['role']) ?? 'user';
+    location = _nested(json['location'], UserLocation.fromJson);
+    userBankDetails = _nested(json['userBankDetails'], UserBankDetails.fromJson);
+    if (json['shippingAddress'] is List) {
       shippingAddress = <ShippingAddress>[];
-      json['shippingAddress'].forEach((v) {
-        shippingAddress!.add(ShippingAddress.fromJson(v));
-      });
+      for (final v in json['shippingAddress'] as List) {
+        final ShippingAddress? address = _nested(v, ShippingAddress.fromJson);
+        if (address != null) shippingAddress!.add(address);
+      }
     }
-    carPictureURL = json['carPictureURL'];
-    inProgressOrderID = json['inProgressOrderID'] ?? [];
-    orderRequestData = json['orderRequestData'] ?? [];
-    vendorID = json['vendorID'] ?? '';
-    zoneId = json['zoneId'] ?? '';
-    rotation = json['rotation'];
-    appIdentifier = json['appIdentifier'];
-    provider = json['provider'];
-    subscriptionPlanId = json['subscriptionPlanId'];
-    subscriptionExpiryDate = json['subscriptionExpiryDate'];
-    subscriptionPlan = json['subscription_plan'] != null ? SubscriptionPlanModel.fromJson(json['subscription_plan']) : null;
+    carPictureURL = _text(json['carPictureURL']);
+    inProgressOrderID = json['inProgressOrderID'] is List ? List<dynamic>.from(json['inProgressOrderID']) : [];
+    orderRequestData = json['orderRequestData'] is List ? List<dynamic>.from(json['orderRequestData']) : [];
+    vendorID = _text(json['vendorID']) ?? '';
+    zoneId = _text(json['zoneId']) ?? '';
+    rotation = _num(json['rotation']);
+    appIdentifier = _text(json['appIdentifier']);
+    provider = _text(json['provider']);
+    subscriptionPlanId = _text(json['subscriptionPlanId']);
+    subscriptionExpiryDate = _timestamp(json['subscriptionExpiryDate']);
+    subscriptionPlan = _nested(json['subscription_plan'], SubscriptionPlanModel.fromJson);
     // serviceTypes: use new field; fall back to legacy serviceType for old documents
-    serviceTypes = json['serviceTypes'] != null ? List<String>.from(json['serviceTypes']) : (json['serviceType'] != null ? [json['serviceType'] as String] : null);
+    serviceTypes = _textList(json['serviceTypes']) ?? _textList(json['serviceType']);
     // sectionIds: use new field; fall back to legacy sectionId for old documents
-    sectionIds = json['sectionIds'] != null ? List<String>.from(json['sectionIds']) : (json['sectionId'] != null && json['sectionId'].toString().isNotEmpty ? [json['sectionId'].toString()] : null);
+    sectionIds = _textList(json['sectionIds']) ?? _textList(json['sectionId']);
     // sectionNames: use new field; fall back to legacy serviceDetails for old documents
-    if (json['sectionNames'] != null) {
-      sectionNames = Map<String, String>.from(json['sectionNames']);
-    } else if (json['serviceDetails'] != null) {
+    if (json['sectionNames'] is Map) {
+      sectionNames = {for (final e in (json['sectionNames'] as Map).entries) e.key.toString(): '${e.value ?? ''}'};
+    } else if (json['serviceDetails'] is Map) {
       final legacy = Map<String, dynamic>.from(json['serviceDetails']);
-      sectionNames = {for (final e in legacy.entries) e.key: (e.value['sectionName'] ?? e.key).toString()};
+      sectionNames = {for (final e in legacy.entries) e.key: ((e.value is Map ? e.value['sectionName'] : null) ?? e.key).toString()};
     }
-    vehicleDetails = json['vehicleDetails'] != null ? Map<String, dynamic>.from(json['vehicleDetails']) : null;
+    vehicleDetails = json['vehicleDetails'] is Map ? Map<String, dynamic>.from(json['vehicleDetails']) : null;
     reviewsCount = json['reviewsCount'] == null ? '0' : json['reviewsCount'].toString();
     reviewsSum = json['reviewsSum'] == null ? '0' : json['reviewsSum'].toString();
-    adminCommissionModel = json['adminCommission'] != null ? AdminCommission.fromJson(json['adminCommission']) : null;
-    orderCabRequestData = json['ordercabRequestData'] != null ? CabOrderModel.fromJson(json['ordercabRequestData']) : null;
-    rideType = json['rideType'];
-    ownerId = json['ownerId'];
-    isOwner = json['isOwner'];
-    isAutoVerify = json['isAutoVerify'];
+    adminCommissionModel = _nested(json['adminCommission'], AdminCommission.fromJson);
+    orderCabRequestData = _nested(json['ordercabRequestData'], CabOrderModel.fromJson);
+    rideType = _text(json['rideType']);
+    ownerId = _text(json['ownerId']);
+    isOwner = _bool(json['isOwner']);
+    isAutoVerify = _bool(json['isAutoVerify']);
     regionId = _str(json['regionId']);
     driverType = _str(json['driverType']);
     // Carrier membership, read tolerantly: the panel may spell it either way.
@@ -198,6 +205,57 @@ class UserModel {
     operatingLicenceFile = _str(json['operatingLicenceFile']);
     commercialRegisterFile = _str(json['commercialRegisterFile']);
     uniqueIdNumberFile = _str(json['uniqueIdNumberFile']);
+  }
+
+  /// A string value as stored ('' kept), anything else as its text.
+  static String? _text(dynamic value) => value == null ? null : (value is String ? value : value.toString());
+
+  static num? _num(dynamic value) => value is num ? value : (value == null ? null : num.tryParse(value.toString().trim()));
+
+  static bool? _bool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      switch (value.trim().toLowerCase()) {
+        case 'true':
+        case '1':
+          return true;
+        case 'false':
+        case '0':
+          return false;
+      }
+    }
+    return null;
+  }
+
+  static Timestamp? _timestamp(dynamic value) {
+    if (value is Timestamp) return value;
+    if (value is int) return Timestamp.fromMillisecondsSinceEpoch(value);
+    if (value is String) {
+      final DateTime? date = DateTime.tryParse(value);
+      return date == null ? null : Timestamp.fromDate(date);
+    }
+    return null;
+  }
+
+  /// A list of strings from a list (nulls and blanks dropped) or a single
+  /// non-blank value (the legacy single-value fields).
+  static List<String>? _textList(dynamic value) {
+    if (value is Iterable) {
+      return value.where((e) => e != null && e.toString().trim().isNotEmpty).map((e) => e.toString()).toList();
+    }
+    if (value != null && value is! Map && value.toString().trim().isNotEmpty) return [value.toString()];
+    return null;
+  }
+
+  /// A nested model, or null when the value is not a map or does not parse.
+  static T? _nested<T>(dynamic value, T Function(Map<String, dynamic>) parse) {
+    if (value is! Map) return null;
+    try {
+      return parse(Map<String, dynamic>.from(value));
+    } catch (_) {
+      return null;
+    }
   }
 
   static String? _str(dynamic value) {
@@ -350,13 +408,7 @@ class UserBankDetails {
   String accountNumber;
   String otherDetails;
 
-  UserBankDetails({
-    this.bankName = '',
-    this.otherDetails = '',
-    this.branchName = '',
-    this.accountNumber = '',
-    this.holderName = '',
-  });
+  UserBankDetails({this.bankName = '', this.otherDetails = '', this.branchName = '', this.accountNumber = '', this.holderName = ''});
 
   factory UserBankDetails.fromJson(Map<String, dynamic> parsedJson) {
     return UserBankDetails(
@@ -369,12 +421,6 @@ class UserBankDetails {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'bankName': bankName,
-      'branchName': branchName,
-      'holderName': holderName,
-      'accountNumber': accountNumber,
-      'otherDetails': otherDetails,
-    };
+    return {'bankName': bankName, 'branchName': branchName, 'holderName': holderName, 'accountNumber': accountNumber, 'otherDetails': otherDetails};
   }
 }

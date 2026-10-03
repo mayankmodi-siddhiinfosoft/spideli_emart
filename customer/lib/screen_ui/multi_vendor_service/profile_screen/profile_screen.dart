@@ -10,6 +10,7 @@ import 'package:in_app_review/in_app_review.dart';
 import '../../../controllers/theme_controller.dart';
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
+import '../../../utils/push_token_sync.dart';
 import '../../auth_screens/login_screen.dart';
 import '../cashback_screen/cashback_offers_list.dart';
 import '../change_language/change_language_screen.dart';
@@ -276,8 +277,11 @@ class ProfileScreen extends StatelessWidget {
                                           positiveString: "Log out".tr,
                                           negativeString: "Cancel".tr,
                                           positiveClick: () async {
-                                            Constant.userModel!.fcmToken = "";
-                                            await FireStoreUtils.updateUser(Constant.userModel!);
+                                            // Clears users/{uid}.fcmToken only while it is still
+                                            // this phone's token (field-level). A whole-user save
+                                            // with '' wiped the token of a phone the customer had
+                                            // signed in on since.
+                                            await PushTokenSync.clearOnSignOut();
                                             Constant.userModel = null;
                                             await FirebaseAuth.instance.signOut();
                                             Get.offAll(const LoginScreen());

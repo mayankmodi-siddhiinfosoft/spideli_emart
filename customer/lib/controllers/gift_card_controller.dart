@@ -640,7 +640,6 @@ class GiftCardController extends GetxController {
         "issandbox": paytmModel.value.isSandboxEnabled == true ? "1" : "2",
       },
     );
-    print(response.body);
     final data = jsonDecode(response.body);
     if (data["body"]["txnToken"] == null || data["body"]["txnToken"].toString().isEmpty) {
       Get.back();

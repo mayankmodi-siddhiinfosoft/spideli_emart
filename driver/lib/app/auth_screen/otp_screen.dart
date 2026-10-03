@@ -1,18 +1,13 @@
+
 import 'package:driver/app/auth_screen/login_screen.dart';
 import 'package:driver/app/auth_screen/signup_screen.dart';
 import 'package:driver/app/auth_screen/widgets/auth_shell.dart';
-import 'package:driver/app/cab_screen/cab_dashboard_screen.dart';
-import 'package:driver/app/dash_board_screen/dash_board_screen.dart';
-import 'package:driver/app/multi_service/multi_service_dashboard_screen.dart';
-import 'package:driver/app/owner_screen/owner_dashboard_screen.dart';
-import 'package:driver/app/parcel_screen/parcel_dashboard_screen.dart';
-import 'package:driver/app/rental_service/rental_dashboard_screen.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/otp_controller.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/driver_sign_in.dart';
 import 'package:driver/themes/ds/ds.dart';
-import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart';
@@ -125,7 +120,10 @@ class OtpScreen extends StatelessWidget {
                     ShowToastDialog.showLoader("Verify otp".tr);
 
                     PhoneAuthCredential credential = PhoneAuthProvider.credential(verificationId: controller.verificationId.value, smsCode: controller.otpController.value.text);
-                    String fcmToken = await NotificationService.getToken();
+                    // The token warmed at start-up, without waiting: on iOS a
+                    // fresh fetch can wait for the APNs token. Sign-up saves the
+                    // live one again once the account exists.
+                    final String fcmToken = NotificationService.cachedToken;
                     await FirebaseAuth.instance.signInWithCredential(credential).then((value) async {
                       if (value.additionalUserInfo!.isNewUser) {
                         UserModel userModel = UserModel();
@@ -142,47 +140,15 @@ class OtpScreen extends StatelessWidget {
                           "type": "mobileNumber",
                         });
                       } else {
-                        await FireStoreUtils.userExistOrNot(value.user!.uid).then((userExit) async {
-                          ShowToastDialog.closeLoader();
-                          if (userExit == true) {
-                            UserModel? userModel = await FireStoreUtils.getUserProfile(value.user!.uid);
-                            if (userModel!.role == Constant.userRoleDriver) {
-                              if (userModel.active == true) {
-                                final String token = await NotificationService.getToken();
-                                if (token.isNotEmpty) userModel.fcmToken = token;
-                                await FireStoreUtils.updateUser(userModel);
-                                // Client point 19.
-                                NotificationService.listenForTokenRefresh();
-                                await NotificationService.subscribeDriverTopics(userModel);
-                                if (userModel.isOwner == true) {
-                                  Get.offAll(OwnerDashboardScreen());
-                                } else if ((userModel.serviceTypes?.length ?? 0) > 1) {
-                                  Get.offAll(const MultiServiceDashboardScreen());
-                                } else {
-                                  final st = userModel.serviceTypes?.first;
-                                  if (st == "delivery-service") {
-                                    Get.offAll(const DashBoardScreen());
-                                  } else if (st == "cab-service") {
-                                    Get.offAll(const CabDashboardScreen());
-                                  } else if (st == "parcel_delivery") {
-                                    Get.offAll(const ParcelDashboardScreen());
-                                  } else if (st == "rental-service") {
-                                    Get.offAll(const RentalDashboardScreen());
-                                  } else {
-                                    Get.offAll(const DashBoardScreen());
-                                  }
-                                }
-                              } else {
-                                ShowToastDialog.showToast("This user is disable please contact to administrator".tr);
-                                await FirebaseAuth.instance.signOut();
-                                Get.offAll(const LoginScreen());
-                              }
-                            } else {
-                              await FirebaseAuth.instance.signOut();
-                              Get.offAll(const LoginScreen());
-                              ShowToastDialog.showToast("Account already created in other application. You are not able login this application.".tr);
-                            }
-                          } else {
+                        // Shared with email / Google / Apple sign-in: never
+                        // throws, opens the right dashboard, signs out again
+                        // on every refusal.
+                        final AccountResult result = await DriverSignIn.open(value.user!.uid);
+                        ShowToastDialog.closeLoader();
+                        switch (result.outcome) {
+                          case AccountOutcome.opened:
+                            break;
+                          case AccountOutcome.missing:
                             UserModel userModel = UserModel();
                             userModel.id = value.user!.uid;
                             userModel.countryCode = controller.countryCode.value;
@@ -195,12 +161,26 @@ class OtpScreen extends StatelessWidget {
                               "userModel": userModel,
                               "type": "mobileNumber",
                             });
-                          }
-                        });
+                            break;
+                          case AccountOutcome.notDriver:
+                            Get.offAll(const LoginScreen());
+                            ShowToastDialog.showToast("Account already created in other application. You are not able login this application.".tr);
+                            break;
+                          case AccountOutcome.inactive:
+                          case AccountOutcome.failed:
+                            Get.offAll(const LoginScreen());
+                            ShowToastDialog.showToast((result.message ?? "Something went wrong. Please try again.").tr);
+                            break;
+                        }
                       }
                     }).catchError((error) {
                       ShowToastDialog.closeLoader();
-                      ShowToastDialog.showToast("Invalid Code".tr);
+                      ShowToastDialog.showToast(
+                        (error is FirebaseAuthException && error.code != 'invalid-verification-code' && error.code != 'invalid-verification-id' && error.code != 'session-expired'
+                                ? DriverSignIn.authErrorMessage(error)
+                                : "Invalid Code")
+                            .tr,
+                      );
                     });
                   } else {
                     ShowToastDialog.showToast("Enter Valid otp".tr);

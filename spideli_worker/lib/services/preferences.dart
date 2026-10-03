@@ -7,10 +7,26 @@ class Preferences {
 
   static const isClickOnNotification = "isClickOnNotification";
 
+  /// The app never stores the login password (the FirebaseAuth session keeps
+  /// the worker signed in). Builds from the shared template saved it under
+  /// this key in plain text, so any copy left from one is removed at startup.
+  static const _legacyPasswordKey = "password";
+
   static late SharedPreferences pref;
 
   static Future<void> initPref() async {
     pref = await SharedPreferences.getInstance();
+    await _removeLegacyPassword();
+  }
+
+  static Future<void> _removeLegacyPassword() async {
+    try {
+      if (pref.containsKey(_legacyPasswordKey)) {
+        await pref.remove(_legacyPasswordKey);
+      }
+    } catch (_) {
+      // Best effort: never block startup on this cleanup.
+    }
   }
 
   static String getString(String key) {

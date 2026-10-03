@@ -6,6 +6,7 @@ import 'package:spideliworker/controller/profile_controller.dart';
 import 'package:spideliworker/controller/verification_controller.dart';
 import 'package:spideliworker/main.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
+import 'package:spideliworker/services/notification_service.dart';
 import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/chat_screen/inbox_screen.dart';
 import 'package:spideliworker/ui/help_support_screen/help_support_screen.dart';
@@ -112,6 +113,9 @@ class ProfileScreen extends StatelessWidget {
                 leadingIcon: Icons.logout_rounded,
                 destructive: true,
                 onTap: () async {
+                  // Before signing out (it needs the session): this phone
+                  // stops receiving the worker's pushes. Never throws.
+                  await NotificationService.clearTokenOnSignOut();
                   MyAppState.currentUser = null;
                   await FirebaseAuth.instance.signOut();
                   Get.offAll(const LoginScreen());

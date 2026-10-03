@@ -53,7 +53,7 @@ class ViewAllDriverScreen extends StatelessWidget {
                         onViewOrders: () {
                           Get.to(() => const DriverOrderList(), arguments: {
                             "driverId": driver.id,
-                            "serviceType": driver.serviceTypes?.first,
+                            "serviceType": driver.serviceTypes?.firstOrNull,
                           });
                         },
                       ),

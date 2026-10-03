@@ -1,1 +1,17 @@
-const Map<String, String> hiIN = {};
+const Map<String, String> hiIN = {
+  "Order cancelled": "ऑर्डर रद्द किया गया",
+  "Order rejected": "ऑर्डर अस्वीकार किया गया",
+  "Cashback": "कैशबैक",
+  "Refund": "रिफंड",
+  "Store credit": "स्टोर क्रेडिट",
+  "The order was updated, but these steps did not finish: @steps. Please check your connection or contact support.": "ऑर्डर अपडेट हो गया, लेकिन ये चरण पूरे नहीं हुए: @steps. कृपया अपना कनेक्शन जांचें या सहायता से संपर्क करें।",
+  "Please enter your email and password.": "कृपया अपना ईमेल और पासवर्ड दर्ज करें।",
+  "Please enter your email address.": "कृपया अपना ईमेल पता दर्ज करें।",
+  "Please enter your password.": "कृपया अपना पासवर्ड दर्ज करें।",
+  "Please enter a valid email address.": "कृपया एक मान्य ईमेल पता दर्ज करें।",
+  "Invalid email or password.": "ईमेल या पासवर्ड अमान्य है।",
+  "Too many attempts. Please try again later.": "बहुत अधिक प्रयास। कृपया बाद में पुनः प्रयास करें।",
+  "No internet connection. Please check your connection and try again.": "इंटरनेट कनेक्शन नहीं है। कृपया अपना कनेक्शन जाँचें और पुनः प्रयास करें।",
+  "Something went wrong. Please try again.": "कुछ गलत हो गया। कृपया फिर से प्रयास करें।",
+  "This user is disable please contact to administrator": "यह खाता निष्क्रिय है। कृपया व्यवस्थापक से संपर्क करें।",
+};

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
 
@@ -19,6 +20,7 @@ import 'package:driver/models/user_model.dart';
 import 'package:driver/models/vehicle_type.dart';
 import 'package:driver/models/zone_model.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/notification_service.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -313,12 +315,15 @@ class SignupController extends GetxController {
         }
         userModel.value.id = uid;
         if (isCompany) await _uploadCompanyFiles(uid);
-        final bool saved = await FireStoreUtils.updateUser(userModel.value);
+        final bool saved = await FireStoreUtils.updateUser(userModel.value, isNew: true);
         ShowToastDialog.closeLoader();
         if (!saved) {
           ShowToastDialog.showToast("Your account could not be saved. Please check your connection and try again.".tr);
           return;
         }
+        // The device token (field-level) and, once active, the topics: a new
+        // driver used to get no push until the app was restarted.
+        unawaited(NotificationService.syncSignedInDevice(userModel.value));
         _navigateAfterSignup(userModel.value);
         return;
       }
@@ -335,12 +340,13 @@ class SignupController extends GetxController {
       userModel.value.id = credential.user!.uid;
       _populateUserModel();
       if (isCompany) await _uploadCompanyFiles(credential.user!.uid);
-      final bool saved = await FireStoreUtils.updateUser(userModel.value);
+      final bool saved = await FireStoreUtils.updateUser(userModel.value, isNew: true);
       ShowToastDialog.closeLoader();
       if (!saved) {
         ShowToastDialog.showToast("Your account was created but its details could not be saved. Please sign in and complete your profile.".tr);
         return;
       }
+      unawaited(NotificationService.syncSignedInDevice(userModel.value));
       _navigateAfterSignup(userModel.value);
     } on FirebaseAuthException catch (e) {
       ShowToastDialog.closeLoader();
@@ -487,7 +493,8 @@ class SignupController extends GetxController {
     } else if ((user.serviceTypes?.length ?? 0) > 1) {
       Get.offAll(const MultiServiceDashboardScreen());
     } else {
-      _navigateByServiceType(user.serviceTypes?.first ?? 'delivery-service');
+      // firstOrNull: an empty list used to throw here.
+      _navigateByServiceType(user.serviceTypes?.firstOrNull ?? 'delivery-service');
     }
   }
 

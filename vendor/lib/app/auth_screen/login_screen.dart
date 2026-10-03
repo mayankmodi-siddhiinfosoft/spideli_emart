@@ -8,7 +8,6 @@ import 'package:vendor/constant/constant.dart';
 import 'package:vendor/app/auth_screen/phone_number_screen.dart';
 import 'package:vendor/app/auth_screen/signup_screen.dart';
 import 'package:vendor/app/forgot_password_screen/forgot_password_screen.dart';
-import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/login_controller.dart';
 import 'package:vendor/themes/ds/ds.dart';
 
@@ -121,15 +120,9 @@ class OwnerLoginForm extends StatelessWidget {
             size: DsButtonSize.lg,
             expand: true,
             trailingIcon: Icons.arrow_forward_rounded,
-            onPressed: () {
-              if (controller.emailEditingControllerOwner.value.text.trim().isEmpty) {
-                ShowToastDialog.showToast("Please enter valid email".tr);
-              } else if (controller.passwordEditingControllerOwner.value.text.trim().isEmpty) {
-                ShowToastDialog.showToast("Please enter valid password".tr);
-              } else {
-                controller.onwerloginWithEmailAndPassword();
-              }
-            },
+            // The controller checks the fields (empty, both empty, email
+            // format) before sending anything.
+            onPressed: controller.onwerloginWithEmailAndPassword,
           ),
           DsDivider(label: "or".tr, spacing: DsSpace.xxl),
           DsButton.secondary(label: "Continue with Mobile Number".tr, expand: true, icon: Icons.phone_iphone_rounded, onPressed: () => Get.to(const PhoneNumberScreen())),
@@ -198,15 +191,9 @@ class EmployeeLoginForm extends StatelessWidget {
             size: DsButtonSize.lg,
             expand: true,
             trailingIcon: Icons.arrow_forward_rounded,
-            onPressed: () {
-              if (controller.emailEditingControllerEmployee.value.text.trim().isEmpty) {
-                ShowToastDialog.showToast("Please enter valid email".tr);
-              } else if (controller.passwordEditingControllerEmployee.value.text.trim().isEmpty) {
-                ShowToastDialog.showToast("Please enter valid password".tr);
-              } else {
-                controller.employeeloginWithEmailAndPassword();
-              }
-            },
+            // The controller checks the fields (empty, both empty, email
+            // format) before sending anything.
+            onPressed: controller.employeeloginWithEmailAndPassword,
           ),
         ],
       ),

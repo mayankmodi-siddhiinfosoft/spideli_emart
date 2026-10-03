@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:customer/models/section_model.dart';
 import 'package:customer/models/service_group_model.dart';
 import 'package:customer/models/tax_model.dart';
@@ -16,7 +17,9 @@ import 'package:customer/models/currency_model.dart';
 import 'package:customer/themes/app_them_data.dart';
 import 'package:customer/themes/round_button_fill.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
+import 'package:customer/utils/delivery_code_push.dart';
 import 'package:customer/utils/notification_service.dart';
+import 'package:customer/utils/push_token_sync.dart';
 import 'package:customer/utils/preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:flutter/material.dart';
@@ -42,6 +45,17 @@ class ServiceListController extends GetxController {
     loadData();
   }
 
+  @override
+  void onReady() {
+    super.onReady();
+    // A delivery-code push that launched the app opens its order now that the
+    // customer is home — also when the splash first sent them to set an
+    // address or to sign in.
+    DeliveryCodePush.markAppReady();
+    // Same for a chat / support push that launched the app.
+    NotificationService.markAppReady();
+  }
+
   Future<void> loadData() async {
     isLoading.value = true;
 
@@ -53,17 +67,16 @@ class ServiceListController extends GetxController {
     // Load sections
     List<SectionModel> sections = await FireStoreUtils.getSections();
 
-    // Service availability by region (spec 18.8): a section with a non-empty
-    // `regionIds` is shown only when it includes one of the customer's current
-    // regions. An unresolved customer region shows every section (today).
+    // Every active section is listed for every customer (client decision,
+    // 3 Oct 2026): a section limited to other regions (`regionIds`) used to
+    // be hidden, so a customer in India never saw Yaounde-only services.
+    // What is INSIDE a section (stores, providers, vehicles) is still limited
+    // to the customer's region / zone by the screens that list it.
     await RegionService.ensureLoaded();
     final List<String> customerRegions = RegionService.customerRegionIds;
-    sections = sections.where((section) => RegionService.isAvailableInAnyRegion(section.regionIds, customerRegions)).toList();
 
     sectionList.assignAll(sections);
 
-    // Favourites and groups are computed from the region-filtered list:
-    // region filter first, grouping second.
     final (List<ServiceGroupModel> groups, Map<String, dynamic>? favouritesConfig, banners) = await (HomeServices.loadGroups(), HomeServices.loadFavouritesConfig(), HomeServices.loadBanners()).wait;
     favouriteList.assignAll(HomeServices.favourites(sections, customerRegions: customerRegions, config: favouritesConfig));
     groupList.assignAll(HomeServices.group(sections, groups));
@@ -98,8 +111,9 @@ class ServiceListController extends GetxController {
         String uid = auth.FirebaseAuth.instance.currentUser!.uid;
         UserModel? user = await FireStoreUtils.getUserProfile(uid);
         if (user != null && user.role == Constant.userRoleCustomer) {
-          user.fcmToken = await NotificationService.getToken();
           await FireStoreUtils.updateUser(user);
+          // This device's token, field-level (never '' over a good one).
+          unawaited(PushTokenSync.syncForCurrentUser());
           ShowToastDialog.closeLoader();
           if (sectionModel.serviceType == 'Ecommerce Service') {
             await Preferences.setString(Preferences.foodDeliveryType, 'Delivery');

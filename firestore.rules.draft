@@ -1,0 +1,847 @@
+rules_version = '2';
+
+// =============================================================================
+// Spideli (spideli-870b0) - Firestore security rules - DRAFT, 3 Oct 2026
+//
+// NOT DEPLOYED, and deliberately not referenced by any firebase.json (a
+// `firebase deploy` from this repo can never replace the live rules).
+// Read .claude/FIRESTORE-RULES-DRAFT.md before using it. In short:
+//   1. Copy the rules that are live today (Firebase console > Firestore > Rules)
+//      and merge them with this file. Rules are OR-ed: one broad allow left
+//      anywhere (e.g. match /{document=**} { allow read, write: if
+//      request.auth != null; }) silently cancels every restriction below.
+//   2. Confirm how each web panel signs in to Firebase (see isAdmin()).
+//   3. Run the emulator tests (functions/rules-test, `npm test`), extend them
+//      with whatever the merge added, and only then paste into the console.
+//
+// What this adds: a field-protection layer on users/{uid} (role, wallet shape,
+// business approval, subscription, verification, ownership) and on
+// providers_workers/{uid} (provider link, activation, salary, verification),
+// admin detection, order_pod access, an OTP-bypass guard on vendor_orders.pod,
+// ledger rules for wallet rows, read-only settings, and the server-only
+// push_rate_limits. Everything marked TODO keeps "signed-in may read/write"
+// (today's behaviour as far as we can tell) because the apps' use of it was
+// not fully reasoned about.
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // Small helpers
+    // -------------------------------------------------------------------------
+
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+
+    // A field read without tripping on "absent" vs null vs "" (the apps write
+    // all three for the same meaning, e.g. users.ownerId).
+    function val(m, f) { return m.get(f, null); }
+    function txt(m, f) { return m.get(f, '') == null ? '' : m.get(f, ''); }
+    function flag(m, f) { return m.get(f, false) == true; }
+
+    function userDoc(id) { return /databases/$(database)/documents/users/$(id); }
+    function vendorDoc(id) { return /databases/$(database)/documents/vendors/$(id); }
+    function settingDoc(id) { return /databases/$(database)/documents/settings/$(id); }
+    function planDoc(id) { return /databases/$(database)/documents/subscription_plans/$(id); }
+    function orderDoc(id) { return /databases/$(database)/documents/vendor_orders/$(id); }
+    function podDoc(id) { return /databases/$(database)/documents/order_pod/$(id); }
+    function workerDoc(id) { return /databases/$(database)/documents/providers_workers/$(id); }
+
+    function setting(id) { return exists(settingDoc(id)) ? get(settingDoc(id)).data : {}; }
+
+    // -------------------------------------------------------------------------
+    // Who is calling
+    // -------------------------------------------------------------------------
+
+    function hasProfile() { return signedIn() && exists(userDoc(uid())); }
+    function myProfile() { return get(userDoc(uid())).data; }
+    function myRole() { return hasProfile() ? txt(myProfile(), 'role') : ''; }
+
+    // ADMIN. Two ways in, both impossible for a client to forge:
+    //  - custom claim `admin: true` on the Firebase ID token (preferred: the
+    //    Laravel admin panel owns its login in MySQL, so it should mint a
+    //    Firebase custom token with this claim for its session; no extra read);
+    //  - users/{uid}.role == 'admin' (what functions/sendPush already uses for
+    //    topic sends). The users rules below never let a client write 'admin'.
+    // If the admin panel talks to Firestore WITHOUT a Firebase sign-in, neither
+    // works and the panel loses every write restricted here. Check first.
+    function isAdmin() {
+      return signedIn() && (request.auth.token.get('admin', false) == true || myRole() == 'admin');
+    }
+
+    // Workers have no users/{uid}; their profile is providers_workers/{uid}.
+    function isWorker() { return signedIn() && exists(workerDoc(uid())); }
+
+    // Accounts whose app pays OTHER people (driver earnings, store credit,
+    // customer refunds / cashback, referral bonus, provider earnings). The
+    // customer app never moves another user's balance; these do.
+    function isBusinessActor() {
+      return signedIn() && (myRole() in ['driver', 'vendor', 'employee', 'provider'] || isWorker());
+    }
+
+    // The owner of a store is vendors/{id}.author (APP-SPEC-STORE.md section 2).
+    function authorsStore(storeId) {
+      return storeId != '' && exists(vendorDoc(storeId)) && txt(get(vendorDoc(storeId)).data, 'author') == uid();
+    }
+
+    // The store's owner, or one of its employees.
+    function managesStore(storeId) {
+      return storeId != ''
+        && (authorsStore(storeId) || (myRole() == 'employee' && txt(myProfile(), 'vendorID') == storeId));
+    }
+
+    // A company (fleet owner) account in the driver app.
+    function isFleetOwner() { return myRole() == 'driver' && flag(myProfile(), 'isOwner'); }
+
+    // =========================================================================
+    // users/{uid}
+    // =========================================================================
+
+    function newU() { return request.resource.data; }
+    function oldU() { return resource.data; }
+
+    function sameVal(f) { return val(newU(), f) == val(oldU(), f); }
+    function sameTxt(f) { return txt(newU(), f) == txt(oldU(), f); }
+    function sameFlag(f) { return flag(newU(), f) == flag(oldU(), f); }
+    // A grant (false/absent -> true) is refused; keeping or dropping it is not.
+    // Dropping is allowed on purpose: several apps write the whole profile back
+    // from a copy read earlier, and refusing a stale "false" would fail the save.
+    function notRaised(f) { return !flag(newU(), f) || flag(oldU(), f); }
+
+    function walletShapeOk() {
+      return val(newU(), 'wallet_amount') == null || newU().wallet_amount is number;
+    }
+
+    // ----- business account (wholesale gate: accountType == 'business' AND
+    // businessProfile.status == 'approved'; only the admin panel approves) -----
+
+    function pendingProfile(bp) {
+      return bp is map
+        && bp.get('status', 'pending') == 'pending'
+        && !bp.keys().hasAny(['reviewedAt', 'reviewedBy', 'rejectionReason', 'approvedAt', 'approvedBy', 'rejectedAt', 'rejectedBy']);
+    }
+
+    // Unchanged, withdrawn, or (re)submitted as a pending request - what the
+    // customer app (BusinessAccount.submit) and the website write. Never
+    // 'approved' / 'rejected' / review fields. accountType alone grants nothing
+    // without an approved profile, so it is left to the account.
+    function businessOk() {
+      let bp = val(newU(), 'businessProfile');
+      return bp == val(oldU(), 'businessProfile') || bp == null || pendingProfile(bp);
+    }
+
+    // ----- platform subscription on the account -----
+
+    function hasPlan(m) {
+      return txt(m, 'subscriptionPlanId') != '' || val(m, 'subscription_plan') != null || val(m, 'subscriptionExpiryDate') != null;
+    }
+
+    // Customers: the snapshot is checked too (the order-history gate reads its
+    // planFor / features). Vendor and provider apps re-serialise the snapshot on
+    // every profile save (and turn a null itemLimit into "null"), so for them
+    // only the plan id and the expiry are compared.
+    function planChanged(customerSide) {
+      return !sameTxt('subscriptionPlanId') || !sameVal('subscriptionExpiryDate')
+        || (customerSide && !sameVal('subscription_plan'));
+    }
+
+    // A real, enabled plan of the right kind, and an expiry no later than one
+    // plan period (+1 day of clock slack) after now - or after the current
+    // expiry, when renewing early (customer app newExpiry()). Never-expiring
+    // plans (expiryDay "-1") are written with a null expiry by every client.
+    // NOT checked: that the plan was paid for. Rules cannot see a gateway
+    // payment, and the wallet debit is a separate transaction (see doc).
+    function planWriteOk(customerSide) {
+      let pid = txt(newU(), 'subscriptionPlanId');
+      return pid == ''
+        ? val(newU(), 'subscriptionExpiryDate') == null && (!customerSide || val(newU(), 'subscription_plan') == null)
+        : exists(planDoc(pid)) && planMatches(get(planDoc(pid)).data, pid, customerSide);
+    }
+
+    function planMatches(plan, pid, customerSide) {
+      return plan.get('isEnable', false) == true
+        && (customerSide ? plan.get('planFor', '') == 'customer' : plan.get('planFor', '') != 'customer')
+        && expiryOk(plan)
+        && (!customerSide || snapshotOk(plan, pid));
+    }
+
+    function expiryOk(plan) {
+      let exp = val(newU(), 'subscriptionExpiryDate');
+      let days = string(plan.get('expiryDay', '-1'));
+      let oldExp = val(oldU(), 'subscriptionExpiryDate');
+      let base = (oldExp is timestamp && oldExp > request.time) ? oldExp : request.time;
+      return days == '-1'
+        ? exp == null
+        : (exp is timestamp && exp <= base + duration.value(int(days) + 1, 'd'));
+    }
+
+    // Customer app writes {...plan, id, planFor: 'customer'}; the website writes
+    // the whole plan document. Either way these equal the plan's own values.
+    function snapshotOk(plan, pid) {
+      let snap = val(newU(), 'subscription_plan');
+      return snap is map
+        && snap.get('planFor', '') == 'customer'
+        && string(snap.get('id', pid)) == pid
+        && snap.get('features', null) == plan.get('features', null)
+        && snap.get('expiryDay', null) == plan.get('expiryDay', null);
+    }
+
+    // ----- store link -----
+
+    // users.vendorID is the store the vendor app works on. An account may move
+    // it to a store it owns (StoreService.selectStore, firebaseCreateNewVendor),
+    // or clear it. Employees and store drivers cannot re-point themselves.
+    function vendorIdOk() {
+      let v = txt(newU(), 'vendorID');
+      return (resource != null && v == txt(oldU(), 'vendorID')) || v == '' || authorsStore(v);
+    }
+
+    // ----- sign-up -----
+
+    // '' is the stub some apps create first ({wallet_amount: 0} in the customer
+    // app, {regionId, companyName} in provider social sign-up) and fill in with
+    // the role a moment later. 'user' is what the apps' fromJson defaults to.
+    function selfServiceRole(r) { return r in ['', 'customer', 'user', 'driver', 'vendor', 'provider']; }
+
+    // Mirrors the apps: active = auto-approve setting of that app; customers are
+    // always active (customer sign-up writes active: true).
+    function autoApproved(role) {
+      return role in ['customer', 'user']
+        || (role == 'driver' && setting('DriverNearBy').get('auto_approve_driver', false) == true)
+        || (role == 'vendor' && setting('vendor').get('auto_approve_vendor', false) == true)
+        || (role == 'provider' && setting('provider').get('auto_approve_provider', false) == true);
+    }
+
+    // Mirrors the apps: isDocumentVerify / isAutoVerify start true only when the
+    // matching verification is switched off (an absent setting counts as off,
+    // exactly as `Constant.isXVerification == true ? false : true` does).
+    function verificationOff(role, owner) {
+      let s = setting('document_verification_settings');
+      return (role == 'driver' && (owner ? s.get('isOwnerVerification', false) != true : s.get('isDriverVerification', false) != true))
+        || (role == 'vendor' && s.get('isStoreVerification', false) != true);
+    }
+
+    // What a brand-new account may say about itself. ownerId is never set by a
+    // self sign-up (only a fleet owner creating its driver writes it): attaching
+    // yourself to a company would also skip the minimum-deposit check.
+    function signupFieldsOk() {
+      let d = newU();
+      let role = txt(d, 'role');
+      return selfServiceRole(role)
+        && (!flag(d, 'active') || autoApproved(role))
+        && ((!flag(d, 'isDocumentVerify') && !flag(d, 'isAutoVerify')) || verificationOff(role, flag(d, 'isOwner')))
+        && (!flag(d, 'isOwner') || role == 'driver')
+        && txt(d, 'ownerId') == ''
+        && txt(d, 'employeePermissionId') == ''
+        && txt(d, 'carrierId') == ''
+        && vendorIdOk()
+        && !hasPlan(d)
+        && (val(d, 'businessProfile') == null || pendingProfile(val(d, 'businessProfile')))
+        && walletShapeOk();
+    }
+
+    function newWalletZero() {
+      return val(newU(), 'wallet_amount') == null || newU().wallet_amount == 0;
+    }
+
+    // ----- update checks are driven by the set of keys the write changes -----
+    // Rules stop at 1000 evaluated expressions per request. Every check below
+    // is skipped unless its key is in `ch`, so an ordinary write (a location
+    // tick, a rating, an order list) costs a handful of set lookups. A key in
+    // `ch` is then compared normalised: absent / null / '' / false are the
+    // same value, because the apps' fromJson defaults write them back that way.
+
+    function changedKeys() { return request.resource.data.diff(resource.data).affectedKeys(); }
+
+    function privilegedKeys() {
+      return ['role', 'active', 'isDocumentVerify', 'isAutoVerify', 'isOwner', 'ownerId', 'vendorID',
+              'employeePermissionId', 'carrierId', 'subscriptionPlanId', 'subscriptionExpiryDate',
+              'subscription_plan', 'businessProfile', 'accountType'];
+    }
+    // Contact, push and payout details belong to the account (redirecting
+    // another driver's bank details or FCM token is the attack here).
+    function identityKeys() {
+      return ['email', 'phoneNumber', 'countryCode', 'fcmToken', 'userBankDetails', 'savedPaymentMethods'];
+    }
+    function planKeys() { return ['subscriptionPlanId', 'subscriptionExpiryDate', 'subscription_plan']; }
+
+    // ----- the account editing itself -----
+
+    // Provider app writes `active: active ?? isActive ?? false` back, so a legacy
+    // provider document with isActive but no `active` must not be refused.
+    function activeNotRaised() {
+      return notRaised('active')
+        || (txt(oldU(), 'role') == 'provider' && val(oldU(), 'active') == null && flag(oldU(), 'isActive'));
+    }
+
+    function selfUpdateOk() {
+      return txt(oldU(), 'role') == '' ? signupFieldsOk() : selfUpdateFieldsOk(changedKeys());
+    }
+
+    function selfUpdateFieldsOk(ch) {
+      return !ch.hasAny(privilegedKeys().concat(['wallet_amount'])) || selfPrivilegedOk(ch);
+    }
+
+    function selfPrivilegedOk(ch) {
+      let customerSide = txt(oldU(), 'role') in ['customer', 'user'];
+      return (!('role' in ch) || sameTxt('role'))
+        && (!('active' in ch) || activeNotRaised())
+        && (!('isDocumentVerify' in ch) || notRaised('isDocumentVerify'))
+        && (!('isAutoVerify' in ch) || notRaised('isAutoVerify'))
+        && (!('isOwner' in ch) || notRaised('isOwner'))
+        && (!('ownerId' in ch) || sameTxt('ownerId'))
+        && (!('employeePermissionId' in ch) || sameTxt('employeePermissionId'))
+        && (!('carrierId' in ch) || sameTxt('carrierId'))
+        && (!('vendorID' in ch) || vendorIdOk())
+        && (!ch.hasAny(planKeys()) || !planChanged(customerSide) || planWriteOk(customerSide))
+        && (!('businessProfile' in ch) || businessOk())
+        // wallet_amount: KNOWN GAP. Top-ups, refunds, gift cards, earnings and
+        // wallet payments all move the account's own balance from the phone
+        // today, so a rule cannot tell a real credit from a forged one. Once
+        // credits run server-side, replace the next line with
+        //   (!('wallet_amount' in ch) || newU().wallet_amount < oldU().wallet_amount)
+        // so the account itself can only spend.
+        && (!('wallet_amount' in ch) || walletShapeOk());
+    }
+    // TODO (not guarded, the apps write them on their own document):
+    //  - subscriptionTotalOrders (orders left on the plan): the provider and
+    //    store apps decrement it on every accepted order and reset it to the
+    //    plan's orderLimit on purchase, as a STRING ('-1' = unlimited). A
+    //    "may only go down, or equal the new plan's orderLimit" rule needs the
+    //    string-to-int handling tested on real documents first.
+    //  - adminCommission: the provider app copies its section's commission
+    //    onto its own users doc (add_or_update_service, subscription
+    //    controller). Compare it with sections/{section_id}.adminCommision
+    //    once the shapes are confirmed equal.
+    //  - A legacy document with NO role is treated as a sign-up (signupFieldsOk)
+    //    on every write, so if one ever holds a plan or an approved
+    //    businessProfile its saves are refused until the panel sets the role.
+    //  - A plan with expiryDay "0" makes the apps write a null expiry, which
+    //    expiryOk() refuses. No such plan is known; check the plans list.
+
+    // ----- someone else editing an account -----
+
+    function privilegedSame(ch) {
+      return !ch.hasAny(privilegedKeys()) || (
+        (!('role' in ch) || sameTxt('role'))
+        && (!('active' in ch) || sameFlag('active'))
+        && (!('isDocumentVerify' in ch) || sameFlag('isDocumentVerify'))
+        && (!('isAutoVerify' in ch) || sameFlag('isAutoVerify'))
+        && (!('isOwner' in ch) || sameFlag('isOwner'))
+        && (!('ownerId' in ch) || sameTxt('ownerId'))
+        && (!('vendorID' in ch) || sameTxt('vendorID'))
+        && (!('employeePermissionId' in ch) || sameTxt('employeePermissionId'))
+        && (!('carrierId' in ch) || sameTxt('carrierId'))
+        && (!('subscriptionPlanId' in ch) || sameTxt('subscriptionPlanId'))
+        && otherMapsSame(ch));
+    }
+
+    // absent == null for these (a write-back may carry an explicit null).
+    function otherMapsSame(ch) {
+      return (!('subscriptionExpiryDate' in ch) || sameVal('subscriptionExpiryDate'))
+        && (!('subscription_plan' in ch) || sameVal('subscription_plan'))
+        && (!('businessProfile' in ch) || sameVal('businessProfile'))
+        && (!('accountType' in ch) || sameVal('accountType'));
+    }
+
+    function identitySame(ch) {
+      return !ch.hasAny(identityKeys()) || (
+        (!('email' in ch) || sameTxt('email'))
+        && (!('phoneNumber' in ch) || sameTxt('phoneNumber'))
+        && (!('countryCode' in ch) || sameTxt('countryCode'))
+        && (!('fcmToken' in ch) || sameTxt('fcmToken'))
+        && (!('userBankDetails' in ch) || sameVal('userBankDetails'))
+        && (!('savedPaymentMethods' in ch) || sameVal('savedPaymentMethods')));
+    }
+
+    function walletSameOrPayer(ch) { return !('wallet_amount' in ch) || isBusinessActor(); }
+
+    // Ratings (customer -> driver/provider, driver -> customer), order
+    // assignment lists, credits. Customer app strips the privileged keys before
+    // writing someone else's profile; the driver app writes a fresh copy back.
+    function plainOtherEditOk(ch) { return privilegedSame(ch) && identitySame(ch) && walletSameOrPayer(ch); }
+
+    // What no manager may change on its staff either.
+    function managedSame(ch) {
+      return (!('role' in ch) || sameTxt('role'))
+        && (!('vendorID' in ch) || sameTxt('vendorID'))
+        && (!('ownerId' in ch) || sameTxt('ownerId'))
+        && (!('isOwner' in ch) || notRaised('isOwner'))
+        && (!('isAutoVerify' in ch) || notRaised('isAutoVerify'))
+        && (!('carrierId' in ch) || sameTxt('carrierId'))
+        && (!('subscriptionPlanId' in ch) || sameTxt('subscriptionPlanId'))
+        && otherMapsSame(ch)
+        && walletSameOrPayer(ch);
+    }
+
+    // Store app (add_driver / add_employee / driver & employee lists): names,
+    // phone, permission role, the on/off switch.
+    function storeManagerOf(target) {
+      return txt(target, 'role') in ['driver', 'employee'] && managesStore(txt(target, 'vendorID'));
+    }
+
+    // Driver app fleet owner (driver_create_controller): writes its driver's
+    // whole profile, including active / isDocumentVerify and contact details.
+    function fleetOwnerOf(target) { return isFleetOwner() && txt(target, 'ownerId') == uid(); }
+    function fleetEditOk(ch) {
+      return txt(newU(), 'role') == 'driver' && managedSame(ch)
+        && (!('employeePermissionId' in ch) || sameTxt('employeePermissionId'));
+    }
+
+    // Fast path first: most writes to someone else's profile touch none of the
+    // guarded keys and need no document read at all.
+    // Known race: a rating writes back the whole profile the customer read a
+    // moment earlier (setKnownFields). If the driver's fcmToken / phone changed
+    // in between, identitySame() refuses that one rating write; retrying after
+    // a fresh read succeeds. Narrowing the apps to field-level review writes
+    // removes it.
+    function otherUpdateOk() {
+      let ch = changedKeys();
+      return !ch.hasAny(privilegedKeys().concat(identityKeys()).concat(['wallet_amount']))
+        || plainOtherEditOk(ch)
+        || (fleetOwnerOf(oldU()) && fleetEditOk(ch))
+        || (storeManagerOf(oldU()) && managedSame(ch));
+    }
+
+    // ----- someone else creating an account (staff) -----
+
+    function notPrivilegedAtCreate(d) {
+      return !flag(d, 'isOwner') && !flag(d, 'isAutoVerify') && !hasPlan(d)
+        && txt(d, 'carrierId') == '' && val(d, 'businessProfile') == null
+        && (val(d, 'wallet_amount') == null || d.wallet_amount == 0);
+    }
+
+    // The add-driver button only shows to a verified owner (owner_home_screen).
+    function fleetOwnerCanAdd() {
+      return isFleetOwner() && flag(myProfile(), 'active')
+        && (flag(myProfile(), 'isDocumentVerify') || flag(myProfile(), 'isAutoVerify'));
+    }
+
+    // Store app creates its delivery men and employees, the fleet owner its
+    // drivers, both through a secondary FirebaseApp for the Auth account and the
+    // main (owner's) session for this document. The store/owner vouches for
+    // them, so they may start active and verified.
+    function staffCreateOk(userId) {
+      let d = newU();
+      return userId != uid() && notPrivilegedAtCreate(d) && (
+        (fleetOwnerCanAdd() && txt(d, 'role') == 'driver' && txt(d, 'ownerId') == uid() && txt(d, 'vendorID') == '')
+        || (txt(d, 'role') in ['driver', 'employee'] && txt(d, 'ownerId') == '' && managesStore(txt(d, 'vendorID')))
+      );
+    }
+
+    match /users/{userId} {
+      // TODO: any signed-in user reads any profile (phone, email, bank details,
+      // FCM token). The apps need other users' names, photos, location and
+      // tokens; narrowing this needs a public-profile split.
+      allow read: if signedIn();
+
+      allow create: if signedIn() && (
+        (userId == uid() && signupFieldsOk() && newWalletZero())
+        || isAdmin()
+        || staffCreateOk(userId));
+
+      // The self branch comes first so a driver's location tick costs no extra
+      // document read; isAdmin() comes before the cross-user checks so a long
+      // refusal there can never use up the expression budget an admin needs.
+      allow update: if signedIn() && (
+        (userId == uid() && selfUpdateOk())
+        || isAdmin()
+        || (userId != uid() && otherUpdateOk()));
+
+      // Account deletion (all apps), a fleet owner removing its driver.
+      allow delete: if signedIn() && (userId == uid() || fleetOwnerOf(resource.data) || isAdmin());
+    }
+
+    // =========================================================================
+    // providers_workers/{workerId} - a provider's worker. Workers have no
+    // users/{uid}: this is the worker app's own profile.
+    // =========================================================================
+    // Writers (checked in the apps):
+    //  - worker app, own doc: updateCurrentUser() writes its whole User.toJson()
+    //    minus fcmToken back (setKnownFields: profile, online switch, location,
+    //    g, and - from the in-memory copy - active / isActive (= active),
+    //    salary, providerId, wallet_amount, subscription fields); splash and
+    //    NotificationService update fcmToken only.
+    //  - provider app: creates its workers (Auth account through a secondary
+    //    FirebaseApp, this document from the provider's own session with
+    //    providerId = provider uid, active: true), edits them with its whole
+    //    User.toJson() (firebaseUpdateWorker), deletes them.
+    //  - customer app, rating: writes back the whole WorkerModel it read
+    //    (reviewsCount / reviewsSum change; absent fields come back as ''/false).
+    // isDocumentVerify / isAutoVerify are never written by an app (panel only).
+
+    function workerGuardKeys() {
+      return ['providerId', 'role', 'active', 'isActive', 'salary', 'isDocumentVerify', 'isAutoVerify', 'wallet_amount'];
+    }
+
+    // The worker editing itself. Legacy documents may hold only isActive, or
+    // only active; the worker app writes both from `active ?? isActive`.
+    function workerSelfOk(ch) {
+      return !ch.hasAny(workerGuardKeys()) || (
+        (!('providerId' in ch) || sameTxt('providerId'))
+        && (!('role' in ch) || sameTxt('role'))
+        && (!('active' in ch) || notRaised('active') || (val(oldU(), 'active') == null && flag(oldU(), 'isActive')))
+        && (!('isActive' in ch) || notRaised('isActive') || flag(oldU(), 'active'))
+        // Race: if the provider changes the salary while the worker app holds
+        // an older copy, the worker's next save is refused until it re-reads
+        // its profile (the profile screen does on open).
+        && (!('salary' in ch) || sameVal('salary'))
+        && (!('isDocumentVerify' in ch) || notRaised('isDocumentVerify'))
+        && (!('isAutoVerify' in ch) || notRaised('isAutoVerify'))
+        // wallet_amount: KNOWN GAP, as on users. The worker app also writes a
+        // stale balance back on every save (app bug, see the doc).
+        && (!('wallet_amount' in ch) || walletShapeOk()));
+    }
+
+    function worksForMe(w) { return myRole() == 'provider' && txt(w, 'providerId') == uid(); }
+
+    // The worker's provider: activation, salary, profile; never re-pointing the
+    // worker to another provider or verifying it.
+    function workerProviderEditOk(ch) {
+      return worksForMe(oldU())
+        && (!('providerId' in ch) || sameTxt('providerId'))
+        && (!('role' in ch) || sameTxt('role'))
+        && (!('isDocumentVerify' in ch) || notRaised('isDocumentVerify'))
+        && (!('isAutoVerify' in ch) || notRaised('isAutoVerify'))
+        && (!('wallet_amount' in ch) || walletShapeOk());
+    }
+
+    // Anyone else (a customer rating the worker): none of the guarded keys or
+    // the contact / push details may change. Compared normalised, so the ''
+    // and false the customer's model writes for an absent field pass.
+    function workerOtherEditOk(ch) {
+      return (!('providerId' in ch) || sameTxt('providerId'))
+        && (!('role' in ch) || sameTxt('role'))
+        && (!('active' in ch) || sameFlag('active'))
+        && (!('isActive' in ch) || sameFlag('isActive'))
+        && (!('salary' in ch) || sameTxt('salary'))
+        && (!('isDocumentVerify' in ch) || sameFlag('isDocumentVerify'))
+        && (!('isAutoVerify' in ch) || sameFlag('isAutoVerify'))
+        && (!('wallet_amount' in ch) || isBusinessActor())
+        && (!('fcmToken' in ch) || sameTxt('fcmToken'))
+        && (!('email' in ch) || sameTxt('email'))
+        && (!('phoneNumber' in ch) || sameTxt('phoneNumber'));
+    }
+
+    match /providers_workers/{workerId} {
+      // TODO: as users - any signed-in account reads any worker (the customer
+      // app needs name, photo, location and fcmToken for chat and tracking).
+      allow read: if signedIn();
+
+      // A provider creating its own worker. The provider vouches for it, so it
+      // may start active; it can never start verified or with money.
+      allow create: if signedIn() && workerId != uid() && (
+        isAdmin()
+        || (worksForMe(newU())
+            && !flag(newU(), 'isDocumentVerify') && !flag(newU(), 'isAutoVerify')
+            && (val(newU(), 'wallet_amount') == null || newU().wallet_amount == 0)));
+
+      allow update: if signedIn() && (
+        (workerId == uid() && workerSelfOk(changedKeys()))
+        || isAdmin()
+        || (workerId != uid() && (workerProviderEditOk(changedKeys()) || workerOtherEditOk(changedKeys()))));
+
+      // Worker account deletion, the provider removing its worker.
+      allow delete: if signedIn() && (workerId == uid() || worksForMe(resource.data) || isAdmin());
+    }
+
+    // =========================================================================
+    // order_pod/{orderId} - the delivery OTP (POD-OTP-CONTRACT.md)
+    // =========================================================================
+    // LIMITATION: the driver app (and the store app for self-delivery)
+    // generates and verifies the code on the phone, so it must be able to read
+    // it. The code is therefore readable by the order's driver and store, not
+    // only by its customer, and a modified driver app could complete without
+    // asking. The contract's "customer may read, driver may not" needs code
+    // generation + verification in a Cloud Function first; then reduce this to
+    // customer read only and no client writes.
+
+    function drivesOrStoresOrder(orderId) {
+      return exists(orderDoc(orderId)) && (
+        txt(get(orderDoc(orderId)).data, 'driverID') == uid()
+        || managesStore(txt(get(orderDoc(orderId)).data, 'vendorID')));
+    }
+
+    match /order_pod/{orderId} {
+      // A code that does not exist yet reads as "missing" for anyone signed in:
+      // the customer's listener and both apps' transactions read it first.
+      allow get: if signedIn() && (
+        resource == null
+        || txt(resource.data, 'customerId') == uid()
+        || txt(resource.data, 'driverId') == uid()
+        || drivesOrStoresOrder(orderId)
+        || managesStore(txt(resource.data, 'vendorId'))
+        || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if signedIn()
+        && request.resource.data.get('orderId', orderId) == orderId
+        && (drivesOrStoresOrder(orderId) || isAdmin());
+
+      // The generating driver keeps access after a release, so a cancelled
+      // order's pending code can still be expired inside its transaction.
+      allow update: if signedIn()
+        && request.resource.data.get('orderId', orderId) == orderId
+        && (drivesOrStoresOrder(orderId)
+            || txt(resource.data, 'driverId') == uid()
+            || managesStore(txt(resource.data, 'vendorId'))
+            || isAdmin());
+
+      allow delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // vendor_orders - TODO: open to any signed-in user (status, payment,
+    // driver assignment). Only the proof-of-delivery transition is guarded.
+    // =========================================================================
+
+    function podStatus(m) { return m.get('pod', null) is map ? m.pod.get('status', '') : ''; }
+
+    // vendor_orders.pod may become 'verified' only in the same write that marks
+    // order_pod/{id} verified (or after it already is). Both apps' verification
+    // transactions do exactly that; no OrderModel.toJson writes `pod`.
+    function podTransitionOk(orderId) {
+      return podStatus(request.resource.data) != 'verified'
+        || podStatus(resource.data) == 'verified'
+        || (existsAfter(podDoc(orderId)) && getAfter(podDoc(orderId)).data.get('status', '') == 'verified')
+        || isAdmin();
+    }
+
+    match /vendor_orders/{orderId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && (podStatus(request.resource.data) != 'verified' || isAdmin());
+      allow update: if signedIn() && podTransitionOk(orderId);
+      allow delete: if signedIn(); // TODO
+    }
+
+    // =========================================================================
+    // wallet/{rowId} - the ledger. Balances live in users / vendors.wallet_amount.
+    // =========================================================================
+    // Rows are written by the owner (top-up, payment, plan purchase), by the
+    // apps that pay other people (driver, store, provider, worker), and by the
+    // customer app for its provider (on-demand extra charge / refund rows).
+    // Clients never edit or delete a row; the paying apps may re-set one of
+    // their own deterministic rows (e.g. a store-credit tax row) in a retry.
+
+    match /wallet/{rowId} {
+      allow get: if signedIn() && (
+        resource == null
+        || txt(resource.data, 'user_id') == uid()
+        || isBusinessActor()
+        || isAdmin());
+      // Customers list their own rows (where user_id == uid); the paying apps
+      // query by order_id.
+      allow list: if signedIn() && (resource.data.user_id == request.auth.uid || isBusinessActor() || isAdmin());
+
+      // TODO: tie a row for someone else to an order the writer is part of.
+      allow create: if signedIn() && request.resource.data.get('id', rowId) == rowId;
+      allow update: if signedIn() && (isBusinessActor() || isAdmin())
+        && val(request.resource.data, 'user_id') == val(resource.data, 'user_id');
+      allow delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // settings - read-only for every client.
+    // =========================================================================
+    // Read is public: splash (maintenance_settings), on-boarding, sign-up
+    // screens and the website read settings before anyone signs in.
+    // SECRETS readable here today (TODO, see doc): notification_setting.serviceJson
+    // (URL of a service-account key; set it to "" - do not delete the field -
+    // once server push is live, SERVER-PUSH-CONTRACT.md step 11), the payment
+    // gateway documents' secret keys, SMSGateway.key_api, emailSetting.
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Server-only (functions/ sendPush rate limiter).
+    match /push_rate_limits/{docId} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // parcel_sms_outbox - PARCEL-SMS-OUTBOX.md section 6.6
+    // =========================================================================
+    // Apps create one request per order+status and `get` it first as the
+    // duplicate check. An existing request is not readable by clients (it holds
+    // the receiver's number and the pickup code); the apps treat that
+    // permission error exactly like "already queued" (requestFor() catches and
+    // returns null), so the outcome is unchanged.
+    match /parcel_sms_outbox/{msgId} {
+      allow get: if signedIn() && (resource == null || isAdmin());
+      allow list: if isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.get('id', msgId) == msgId
+        && request.resource.data.get('sendState', '') == 'pending'
+        && !request.resource.data.keys().hasAny(['sentAt', 'error']);
+      allow update, delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // Subscriptions
+    // =========================================================================
+
+    match /subscription_plans/{planId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Invoices: customer app, website, vendor app, provider app each write the
+    // buyer's own row (user_id == the signed-in account).
+    match /subscription_history/{rowId} {
+      allow read: if signedIn(); // TODO: own rows only, once the panels are checked
+      allow create: if signedIn() && txt(request.resource.data, 'user_id') == uid();
+      allow update, delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // Stores
+    // =========================================================================
+    // TODO: subscriptionPlanId / subscriptionExpiryDate / subscriptionTotalOrders
+    // / adminCommission / wallet_amount on vendors are as open as they were on
+    // users. Blocker: the customer app writes the WHOLE vendor document when a
+    // product is rated (rate_product_controller -> updateVendor), and the driver
+    // app credits vendors.wallet_amount. Only the owner link is locked here.
+    match /vendors/{vendorId} {
+      allow read: if true;
+      allow create: if signedIn() && (txt(request.resource.data, 'author') == uid() || isAdmin());
+      allow update: if signedIn() && (txt(request.resource.data, 'author') == txt(resource.data, 'author') || isAdmin());
+      allow delete: if signedIn() && (txt(resource.data, 'author') == uid() || isAdmin());
+    }
+
+    // Driver app (company account) maintains its own carrier's commercial
+    // fields only (DeliveryCarrierModel.editableFields); the panel owns the rest.
+    function linkedCarrier(carrierId) {
+      return (hasProfile() && txt(myProfile(), 'carrierId') == carrierId)
+        || txt(resource.data, 'ownerId') == uid()
+        || txt(resource.data, 'userId') == uid()
+        || txt(resource.data, 'ownerUserId') == uid()
+        || txt(resource.data, 'companyId') == uid()
+        || txt(resource.data, 'driverId') == uid();
+    }
+
+    match /delivery_carriers/{carrierId} {
+      allow read: if signedIn();
+      allow update: if signedIn() && (isAdmin() || (linkedCarrier(carrierId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'countryCode', 'phone', 'conditions',
+          'baseCharge', 'perKmCharge', 'perKgCharge', 'minimumCharge',
+          'maxWeight', 'minDeliveryTime', 'maxDeliveryTime', 'deliveryTimeUnit'])));
+      allow create, delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // Platform configuration - written by the admin panel only. No app writes
+    // any of these (checked). Public read: shown before sign-in and on the
+    // website to signed-out visitors.
+    // =========================================================================
+    match /sections/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /zone/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /regions/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /currencies/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /on_boarding/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /banner_items/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /tax/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /vehicle_type/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /rental_vehicle_type/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /rental_packages/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /car_make/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /car_model/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /parcel_categories/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /parcel_weight/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /popular_destinations/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /service_groups/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /provider_categories/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /pickup_points/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /gift_cards/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /cashback/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /promos/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /parcel_coupons/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /rental_coupons/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /documents/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /admin_products/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /dynamic_notification/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /email_templates/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
+
+    // =========================================================================
+    // TODO - not reasoned about field by field: signed-in may read and write,
+    // as before. Public read where the website shows it to signed-out visitors.
+    // =========================================================================
+
+    // Store catalogue (store app / store panel write).
+    match /vendor_products/{id} { allow read: if true; allow write: if signedIn(); }
+    match /vendor_categories/{id} { allow read: if true; allow write: if signedIn(); }
+    match /vendor_attributes/{id} { allow read: if true; allow write: if signedIn(); }
+    match /review_attributes/{id} { allow read: if true; allow write: if signedIn(); }
+    match /brands/{id} { allow read: if true; allow write: if signedIn(); }
+    match /coupons/{id} { allow read: if true; allow write: if signedIn(); }
+    match /story/{id} { allow read: if true; allow write: if signedIn(); }
+    match /advertisements/{id} { allow read: if true; allow write: if signedIn(); }
+    match /items_review/{id} { allow read: if true; allow write: if signedIn(); }
+    match /foods_review/{id} { allow read: if true; allow write: if signedIn(); }
+    match /menu_items/{id} { allow read: if true; allow write: if signedIn(); }
+    match /vendor_subscription_plans/{id} { allow read: if true; allow write: if signedIn(); }
+    match /providers_services/{id} { allow read: if true; allow write: if signedIn(); }
+    match /providers_coupons/{id} { allow read: if true; allow write: if signedIn(); }
+
+    // Orders and bookings (vendor_orders is above).
+    match /rides/{id} { allow read, write: if signedIn(); }
+    match /parcel_orders/{id} { allow read, write: if signedIn(); }
+    match /rental_orders/{id} { allow read, write: if signedIn(); }
+    match /provider_orders/{id} { allow read, write: if signedIn(); }
+    match /booked_table/{id} { allow read, write: if signedIn(); }
+
+    // Store product subscriptions (website / customer app buy, store reads).
+    match /vendor_subscriptions/{id} { allow read, write: if signedIn(); }
+    match /vendor_subscription_payments/{id} { allow read, write: if signedIn(); }
+
+    // People and money around them.
+    // documents_verify/{uid}: TODO. Each actor uploads its own documents with
+    // a per-document `status`; the admin approves them there. The worker and
+    // provider apps derive "verified" partly from those statuses, so an actor
+    // writing 'approved' on its own entry would pass that part of the gate.
+    // Rules cannot inspect every element of the `documents` list; the real
+    // fix is a status map keyed by document id, or approval server-side. The
+    // account-level flag (users / providers_workers.isDocumentVerify) IS
+    // protected above / below.
+    match /documents_verify/{id} { allow read, write: if signedIn(); }
+    match /referral/{id} { allow read, write: if signedIn(); }
+    match /payouts/{id} { allow read, write: if signedIn(); }
+    match /driver_payouts/{id} { allow read, write: if signedIn(); }
+    match /withdraw_method/{id} { allow read, write: if signedIn(); }
+    match /gift_purchases/{id} { allow read, write: if signedIn(); }
+    match /cashback_redeem/{id} { allow read, write: if signedIn(); }
+    match /vendor_employee_roles/{id} { allow read, write: if signedIn(); }
+    // No app touches it; the panels do (APP-SPEC-ADMIN.md region table). Kept
+    // open to signed-in accounts in case the store panel reads it as a vendor.
+    match /order_transactions/{id} { allow read, write: if signedIn(); }
+
+    // Favourites, complaints, SOS, notifications.
+    match /favorite_item/{id} { allow read, write: if signedIn(); }
+    match /favorite_vendor/{id} { allow read, write: if signedIn(); }
+    match /favorite_restaurant/{id} { allow read, write: if signedIn(); }
+    match /favorite_service/{id} { allow read, write: if signedIn(); }
+    match /favorite_provider/{id} { allow read, write: if signedIn(); }
+    match /complaints/{id} { allow read, write: if signedIn(); }
+    match /SOS/{id} { allow read, write: if signedIn(); }
+    match /notifications/{id} { allow read, write: if signedIn(); }
+
+    // Chats, with their `thread` subcollections.
+    match /chat/{document=**} { allow read, write: if signedIn(); }
+    match /chat_driver/{document=**} { allow read, write: if signedIn(); }
+    match /chat_store/{document=**} { allow read, write: if signedIn(); }
+    match /chat_restaurant/{document=**} { allow read, write: if signedIn(); }
+    match /chat_provider/{document=**} { allow read, write: if signedIn(); }
+    match /chat_worker/{document=**} { allow read, write: if signedIn(); }
+    match /chat_admin/{document=**} { allow read, write: if signedIn(); }
+
+    // =========================================================================
+    // Admin: everything, including panel-only collections not listed above.
+    // This is the ONLY wildcard. Do not add a non-admin one (see header).
+    // =========================================================================
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

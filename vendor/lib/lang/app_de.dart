@@ -1,1 +1,17 @@
-const Map<String, String> deGR = {};
+const Map<String, String> deGR = {
+  "Order cancelled": "Bestellung storniert",
+  "Order rejected": "Bestellung abgelehnt",
+  "Cashback": "Cashback",
+  "Refund": "Rückerstattung",
+  "Store credit": "Shop-Guthaben",
+  "The order was updated, but these steps did not finish: @steps. Please check your connection or contact support.": "Die Bestellung wurde aktualisiert, aber diese Schritte wurden nicht abgeschlossen: @steps. Bitte prüfen Sie Ihre Verbindung oder wenden Sie sich an den Support.",
+  "Please enter your email and password.": "Bitte geben Sie Ihre E-Mail-Adresse und Ihr Passwort ein.",
+  "Please enter your email address.": "Bitte geben Sie Ihre E-Mail-Adresse ein.",
+  "Please enter your password.": "Bitte geben Sie Ihr Passwort ein.",
+  "Please enter a valid email address.": "Bitte geben Sie eine gültige E-Mail-Adresse ein.",
+  "Invalid email or password.": "E-Mail-Adresse oder Passwort ist ungültig.",
+  "Too many attempts. Please try again later.": "Zu viele Versuche. Bitte versuchen Sie es später erneut.",
+  "No internet connection. Please check your connection and try again.": "Keine Internetverbindung. Bitte prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+  "Something went wrong. Please try again.": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
+  "This user is disable please contact to administrator": "Dieses Konto ist deaktiviert. Bitte wenden Sie sich an den Administrator.",
+};

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:developer';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
@@ -15,6 +17,7 @@ import 'package:vendor/controller/store_selector_controller.dart';
 import 'package:vendor/models/user_model.dart';
 import 'package:vendor/models/vendor_model.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/login_validation.dart';
 import 'package:vendor/utils/notification_service.dart';
 import 'package:flutter/material.dart';
 
@@ -36,18 +39,27 @@ class LoginController extends GetxController {
   }
 
   Future<void> onwerloginWithEmailAndPassword() async {
+    final String email = emailEditingControllerOwner.value.text.toLowerCase().trim();
+    final String password = passwordEditingControllerOwner.value.text.trim();
+    // Checked before any request: nothing is sent with an empty field or a
+    // malformed email.
+    final String? invalid = LoginValidation.validate(email, password);
+    if (invalid != null) {
+      ShowToastDialog.showToast(invalid.tr);
+      return;
+    }
     ShowToastDialog.showLoader("Please wait.".tr);
+    String? message;
     try {
-      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: emailEditingControllerOwner.value.text.toLowerCase().trim(),
-        password: passwordEditingControllerOwner.value.text.trim(),
-      );
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
       UserModel? userModel = await FireStoreUtils.getUserProfile(credential.user!.uid);
       if (userModel != null) {
         if (userModel.role == Constant.userRoleVendor) {
           if (userModel.active == true) {
-            userModel.fcmToken = await NotificationService.getToken();
             await FireStoreUtils.updateUser(userModel);
+            // The token is saved on its own, field by field (and never as ''),
+            // so a slow APNs token on iOS cannot hold up the sign-in.
+            unawaited(NotificationService.syncToken());
             // Owners with several stores pick one first (spec: Login > Store selector > Dashboard).
             if (await StoreSelectorController.openIfNeeded(userModel)) {
               ShowToastDialog.closeLoader();
@@ -90,39 +102,57 @@ class LoginController extends GetxController {
             }
           } else {
             await FirebaseAuth.instance.signOut();
-            ShowToastDialog.showToast("This user is disable please contact to administrator".tr);
+            message = "This user is disable please contact to administrator";
           }
         } else {
           await FirebaseAuth.instance.signOut();
-          ShowToastDialog.showToast("This user is not created in store application.".tr);
+          message = "This user is not created in store application.";
         }
+      } else {
+        // Signed in, but there is no profile: it used to close the loader
+        // and show nothing.
+        await FirebaseAuth.instance.signOut();
+        message = "This user is not created in store application.";
       }
     } on FirebaseAuthException catch (e) {
-      print(e.code);
-      if (e.code == 'user-not-found') {
-        ShowToastDialog.showToast("No user found for that email.".tr);
-      } else if (e.code == 'wrong-password') {
-        ShowToastDialog.showToast("Wrong password provided for that user.".tr);
-      } else if (e.code == 'invalid-email') {
-        ShowToastDialog.showToast("Invalid Email.".tr);
-      }
+      // One message for a wrong email, a wrong password or both
+      // ('invalid-credential' used to show nothing).
+      log("Owner login failed: ${e.code}");
+      message = LoginValidation.authErrorMessage(e.code);
+    } catch (e) {
+      // Anything else used to escape with the loader still up.
+      log("Owner login failed: $e");
+      message = LoginValidation.genericError;
+    } finally {
+      ShowToastDialog.closeLoader();
     }
-    ShowToastDialog.closeLoader();
+    // Shown after the loader closes: EasyLoading has one overlay, so a toast
+    // shown before closeLoader() was dismissed with it.
+    if (message != null) ShowToastDialog.showToast(message.tr);
   }
 
   Future<void> employeeloginWithEmailAndPassword() async {
+    final String email = emailEditingControllerEmployee.value.text.toLowerCase().trim();
+    final String password = passwordEditingControllerEmployee.value.text.trim();
+    // Checked before any request: nothing is sent with an empty field or a
+    // malformed email.
+    final String? invalid = LoginValidation.validate(email, password);
+    if (invalid != null) {
+      ShowToastDialog.showToast(invalid.tr);
+      return;
+    }
     ShowToastDialog.showLoader("Please wait.".tr);
+    String? message;
     try {
-      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: emailEditingControllerEmployee.value.text.toLowerCase().trim(),
-        password: passwordEditingControllerEmployee.value.text.trim(),
-      );
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
       UserModel? userModel = await FireStoreUtils.getUserProfile(credential.user!.uid);
       if (userModel != null) {
         if (userModel.role == Constant.userRoleEmployee) {
           if (userModel.active == true) {
-            userModel.fcmToken = await NotificationService.getToken();
             await FireStoreUtils.updateUser(userModel);
+            // The token is saved on its own, field by field (and never as ''),
+            // so a slow APNs token on iOS cannot hold up the sign-in.
+            unawaited(NotificationService.syncToken());
             VendorModel? vendor = await FireStoreUtils.getVendorById(userModel.vendorID!);
             bool isPlanExpire = false;
             if (vendor?.subscriptionPlan?.id != null) {
@@ -158,24 +188,33 @@ class LoginController extends GetxController {
             }
           } else {
             await FirebaseAuth.instance.signOut();
-            ShowToastDialog.showToast("This user is disable please contact to administrator".tr);
+            message = "This user is disable please contact to administrator";
           }
         } else {
           await FirebaseAuth.instance.signOut();
-          ShowToastDialog.showToast("This user is not created in restaurant application.".tr);
+          message = "This user is not created in restaurant application.";
         }
+      } else {
+        // Signed in, but there is no profile: it used to close the loader
+        // and show nothing.
+        await FirebaseAuth.instance.signOut();
+        message = "This user is not created in restaurant application.";
       }
     } on FirebaseAuthException catch (e) {
-      print(e.code);
-      if (e.code == 'user-not-found') {
-        ShowToastDialog.showToast("No user found for that email.".tr);
-      } else if (e.code == 'wrong-password') {
-        ShowToastDialog.showToast("Wrong password provided for that user.".tr);
-      } else if (e.code == 'invalid-email') {
-        ShowToastDialog.showToast("Invalid Email.".tr);
-      }
+      // One message for a wrong email, a wrong password or both
+      // ('invalid-credential' used to show nothing).
+      log("Employee login failed: ${e.code}");
+      message = LoginValidation.authErrorMessage(e.code);
+    } catch (e) {
+      // Anything else used to escape with the loader still up.
+      log("Employee login failed: $e");
+      message = LoginValidation.genericError;
+    } finally {
+      ShowToastDialog.closeLoader();
     }
-    ShowToastDialog.closeLoader();
+    // Shown after the loader closes: EasyLoading has one overlay, so a toast
+    // shown before closeLoader() was dismissed with it.
+    if (message != null) ShowToastDialog.showToast(message.tr);
   }
 
   Future<void> loginWithGoogle() async {
@@ -200,8 +239,10 @@ class LoginController extends GetxController {
               UserModel? userModel = await FireStoreUtils.getUserProfile(value.user!.uid);
               if (userModel!.role == Constant.userRoleVendor) {
                 if (userModel.active == true) {
-                  userModel.fcmToken = await NotificationService.getToken();
                   await FireStoreUtils.updateUser(userModel);
+                  // The token is saved on its own, field by field (and never as ''),
+                  // so a slow APNs token on iOS cannot hold up the sign-in.
+                  unawaited(NotificationService.syncToken());
                   // Owners with several stores pick one first (spec: Login > Store selector > Dashboard).
                   if (await StoreSelectorController.openIfNeeded(userModel)) {
                     ShowToastDialog.closeLoader();
@@ -290,8 +331,10 @@ class LoginController extends GetxController {
               UserModel? userModel = await FireStoreUtils.getUserProfile(userCredential.user!.uid);
               if (userModel!.role == Constant.userRoleVendor) {
                 if (userModel.active == true) {
-                  userModel.fcmToken = await NotificationService.getToken();
                   await FireStoreUtils.updateUser(userModel);
+                  // The token is saved on its own, field by field (and never as ''),
+                  // so a slow APNs token on iOS cannot hold up the sign-in.
+                  unawaited(NotificationService.syncToken());
                   // Owners with several stores pick one first (spec: Login > Store selector > Dashboard).
                   if (await StoreSelectorController.openIfNeeded(userModel)) {
                     ShowToastDialog.closeLoader();

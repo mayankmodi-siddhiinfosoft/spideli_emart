@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:spideliworker/constant/constants.dart';
 import 'package:spideliworker/main.dart';
 import 'package:spideliworker/model/user.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
@@ -35,14 +34,18 @@ class SplashController extends GetxController {
           if (user != null) {
             if (user.active == true) {
               user.active = true;
-              // `value!` threw when FCM had no token yet (iOS, before the APNS
-              // token arrives) and the throw was unhandled because nothing
-              // awaited this.
-              await NotificationService.syncTokenToUserDoc();
+              // Not awaited: on iOS getting the token waits for the APNs token
+              // (up to ~10 s) and must not hold the dashboard back. It shares
+              // the launch's sync started in main.dart, and never throws.
+              unawaited(NotificationService.syncTokenToUserDoc());
               MyAppState.currentUser = user;
               Get.offAll(const DashBoardScreen(), arguments: {'user': user});
+              // A push tapped while the app was killed opens now, on top of
+              // the dashboard (opening it earlier, it was replaced by it).
+              NotificationService.openPendingTap();
             } else {
-              await FireStoreUtils.firestore.collection(WORKERS).doc(user.id).update({"fcmToken": ""});
+              // Only this device's token, and only the fcmToken field.
+              await NotificationService.clearTokenOnSignOut();
               await auth.FirebaseAuth.instance.signOut();
               MyAppState.currentUser = null;
               Get.offAll(const LoginScreen());

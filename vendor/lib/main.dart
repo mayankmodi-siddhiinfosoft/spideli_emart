@@ -29,6 +29,9 @@ void main() async {
   // Registered here, before any UI, so a push that arrives with the app closed
   // or in the background always reaches a handler (report #11).
   FirebaseMessaging.onBackgroundMessage(firebaseMessageBackgroundHandle);
+  // The Android channels exist before anything else runs, so a push that
+  // arrives during start-up still rings on the loud order channel.
+  await NotificationService.createChannels();
   await FirebaseAppCheck.instance.activate(webProvider: ReCaptchaV3Provider('recaptcha-v3-site-key'), androidProvider: AndroidProvider.playIntegrity, appleProvider: AppleProvider.appAttest);
   await Preferences.initPref();
   Get.put(ThemeController());

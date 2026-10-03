@@ -181,7 +181,7 @@ class OwnerHomeScreen extends StatelessWidget {
                                                 print("driver ::::::: ${driverModel.email}");
                                                 Get.to(() => const DriverOrderList(), arguments: {
                                                   "driverId": driverModel.id,
-                                                  "serviceType": driverModel.serviceTypes?.first,
+                                                  "serviceType": driverModel.serviceTypes?.firstOrNull,
                                                 });
                                               },
                                             ),

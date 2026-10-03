@@ -8,7 +8,9 @@ import 'package:spideliworker/model/user.dart';
 import 'package:spideliworker/constant/show_toast_dialog.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/utils/args.dart';
+import 'package:spideliworker/services/push_message.dart';
 import 'package:spideliworker/services/send_notification.dart';
+import 'package:spideliworker/main.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
@@ -136,22 +138,38 @@ class ChatController extends GetxController {
   /// fails with a 400.
   Future<void> _notifyRecipient(ConversationModel conversationModel, InboxModel inboxModel) async {
     try {
-      if ((receiverUser.value?.fcmToken ?? '').isEmpty && receivedId.value.isNotEmpty && receivedId.value != 'admin') {
+      final bool canLookUp = receivedId.value.isNotEmpty && receivedId.value != 'admin';
+      bool reread = false;
+      if (!isUsableFcmToken(receiverUser.value?.fcmToken) && canLookUp) {
         receiverUser.value = await FireStoreUtils.getChatUser(receivedId.value);
+        reread = true;
       }
-      final String token = receiverUser.value?.fcmToken ?? '';
-      log("chat push :: to=${receiverUser.value?.fullName()} :: token=${token.isEmpty ? 'none' : 'set'} :: ${inboxModel.type} :: ${inboxModel.chatType}");
-      if (token.isEmpty) return;
+      String token = receiverUser.value?.fcmToken ?? '';
+      log("chat push :: token=${isUsableFcmToken(token) ? 'set' : 'none'} :: ${inboxModel.type} :: ${inboxModel.chatType}");
+      if (!isUsableFcmToken(token)) return;
 
-      // Title is who sent it: the recipient used to see their own name.
-      final String title = senderName.value.trim().isNotEmpty ? senderName.value : receivedName.value;
-      await SendNotification.sendChatFcmMessage(title, conversationModel.message.toString(), token, {
+      // Title is who sent it (this worker): the recipient used to see their
+      // own name when the chat was opened without a sender name (from a push).
+      final String me = senderName.value.trim().isNotEmpty ? senderName.value : (MyAppState.currentUser?.fullName().trim() ?? '');
+      final String title = me.isNotEmpty ? me : "New message".tr;
+      final Map<String, dynamic> payload = {
         'type': inboxModel.type,
         'chatType': inboxModel.chatType,
         'orderId': orderId.value,
         'senderId': FireStoreUtils.getCurrentUid(),
-        'senderName': senderName.value,
-      });
+        'senderName': me,
+      };
+      final bool sent = await SendNotification.sendChatFcmMessage(title, conversationModel.message.toString(), token, payload);
+      if (!sent && !reread && canLookUp) {
+        // The token read when the chat was opened may have rotated since:
+        // read the recipient again and retry once with a changed token.
+        receiverUser.value = await FireStoreUtils.getChatUser(receivedId.value);
+        final String fresh = receiverUser.value?.fcmToken ?? '';
+        if (isUsableFcmToken(fresh) && fresh.trim() != token.trim()) {
+          token = fresh;
+          await SendNotification.sendChatFcmMessage(title, conversationModel.message.toString(), token, payload);
+        }
+      }
     } catch (e) {
       // A chat message must never fail because the push could not be sent.
       log("Chat notification not sent: $e");

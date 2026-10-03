@@ -38,7 +38,6 @@ class _MercadoPagoScreenState extends State<MercadoPagoScreen> {
               },
               onWebResourceError: (WebResourceError error) {},
               onNavigationRequest: (NavigationRequest navigation) async {
-                debugPrint("--->2 ${navigation.url}");
                 final uri = Uri.parse(navigation.url);
 
                 if (navigation.url.contains("${Constant.globalUrl}payment/success")) {

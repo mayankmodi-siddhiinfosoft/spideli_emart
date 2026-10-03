@@ -29,6 +29,11 @@ const CATEGORIES = 'provider_categories';
 const STORAGE_ROOT = 'spideli';
 String senderId = '';
 String jsonNotificationFileURL = '';
+
+/// `settings/notification_setting.serverPushUrl`: when it is an https URL,
+/// pushes go through the `sendPush` function (.claude/SERVER-PUSH-CONTRACT.md)
+/// and the service-account file is never downloaded. '' = legacy path.
+String serverPushUrl = '';
 String GOOGLE_API_KEY = 'AIzaSyBhZufLHi10nF6KpZtqXlmJ84QMStjBmRo';
 String selectedMapType = '';
 const USER_ROLE_PROVIDER = 'provider';
@@ -291,8 +296,8 @@ sendMail({String? subject, String? body, bool? isAdmin = false, List<dynamic>? r
   print(isAdmin);
   if (isAdmin == true) {
     print("SENDGMAIL11");
+    // Not logged: the list now holds the SMTP login (userName) and user emails.
     recipients!.add(mailSettings!.userName.toString());
-    print(recipients);
   }
   final message = Message()
     ..from = Address(mailSettings!.userName.toString(), mailSettings!.fromName.toString())

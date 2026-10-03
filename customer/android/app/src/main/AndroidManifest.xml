@@ -118,6 +118,11 @@
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />
 
+        <!-- Channel a push is posted on when the app is in the background or
+             closed and the push names no channel (or one this app does not
+             create). NotificationService creates it in main() before runApp
+             (importance max, default sound); the app used to create only '0',
+             so these pushes fell back to a silent "Miscellaneous" channel. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="high_importance_channel" />

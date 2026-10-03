@@ -9,6 +9,7 @@ import '../models/onprovider_order_model.dart';
 import '../models/wallet_transaction_model.dart';
 import '../models/worker_model.dart';
 import '../service/fire_store_utils.dart';
+import '../service/push_message.dart';
 import '../service/send_notification.dart';
 import '../themes/show_toast_dialog.dart';
 import '../widget/cancel_reason_sheet.dart';
@@ -280,7 +281,7 @@ class OnDemandOrderDetailsController extends GetxController {
 
       if (provider != null) {
         Map<String, dynamic> payload = {"type": 'provider_order', "orderId": order.id};
-        await SendNotification.sendFcmMessage(Constant.bookingPlaced, provider.fcmToken ?? '', payload);
+        await SendNotification.sendFcmMessage(Constant.bookingPlaced, provider.fcmToken ?? '', payload, recipient: PushRecipient.provider);
       }
 
       ShowToastDialog.closeLoader();

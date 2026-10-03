@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer';
 
 import 'package:customer/payment/xendit_model.dart';
 import 'package:flutter/material.dart';
@@ -74,7 +73,6 @@ class _XenditScreenState extends State<XenditScreen> {
                 });
               }),
               onNavigationRequest: (NavigationRequest navigation) async {
-                log("URL :: ${navigation.url}");
                 return NavigationDecision.navigate;
               },
             ),

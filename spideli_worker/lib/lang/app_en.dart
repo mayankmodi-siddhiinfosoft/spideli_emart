@@ -84,4 +84,13 @@ const Map<String, String> enUS = {
   "Sorry for the inconvenience but we're performing some maintenance at the moment. We'll be back online shortly!":
       "Sorry for the inconvenience but we're performing some maintenance at the moment. We'll be back online shortly!",
   "No location on this booking": "No location on this booking",
+  "Please enter your email and password.": "Please enter your email and password.",
+  "Please enter your email address.": "Please enter your email address.",
+  "Please enter your password.": "Please enter your password.",
+  "Please enter a valid email address.": "Please enter a valid email address.",
+  "Invalid email or password.": "Invalid email or password.",
+  "Too many attempts. Please try again later.": "Too many attempts. Please try again later.",
+  "No internet connection. Please check your connection and try again.": "No internet connection. Please check your connection and try again.",
+  "Something went wrong. Please try again.": "Something went wrong. Please try again.",
+  "This account has been disabled. Please contact the administrator.": "This account has been disabled. Please contact the administrator.",
 };

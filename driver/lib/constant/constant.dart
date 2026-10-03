@@ -65,6 +65,11 @@ class Constant {
   static String senderId = '';
   static String jsonNotificationFileURL = '';
 
+  /// `settings/notification_setting.serverPushUrl`: when it is an https URL
+  /// pushes go through the `sendPush` function (SERVER-PUSH-CONTRACT.md).
+  /// Always assigned (default ''), so clearing it switches back live.
+  static String serverPushUrl = '';
+
   static String distanceType = "km";
   static String? referralAmount = "0.0";
 

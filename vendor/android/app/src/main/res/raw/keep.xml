@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The order alert tone is only referenced by name at run time (the
+     new_order channel and `android.notification.sound` in a push), so the
+     resource shrinker cannot see it. Keep it if shrinking is ever turned on,
+     or new orders would ring with the default tone (or not at all). -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/order_alert" />

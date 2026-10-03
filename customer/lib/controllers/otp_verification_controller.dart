@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:customer/screen_ui/location_enable_screens/location_permission_screen.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,7 +11,8 @@ import '../screen_ui/auth_screens/login_screen.dart';
 import '../screen_ui/auth_screens/sign_up_screen.dart';
 import '../screen_ui/service_home_screen/service_list_screen.dart';
 import '../service/fire_store_utils.dart';
-import '../utils/notification_service.dart';
+import '../utils/push_token.dart';
+import '../utils/push_token_sync.dart';
 
 class OtpVerifyController extends GetxController {
   /// Use a normal controller (NOT obs)
@@ -66,7 +69,10 @@ class OtpVerifyController extends GetxController {
 
       final credential = PhoneAuthProvider.credential(verificationId: verificationId.value, smsCode: otpController.value.text.trim());
 
-      final fcmToken = await NotificationService.getToken();
+      // This device's token if it already has one (it is saved field-level
+      // below / after sign-up; never awaited here, iOS may still be waiting
+      // for its APNs token).
+      final String fcmToken = PushToken.device ?? '';
       final result = await _auth.signInWithCredential(credential);
 
       if (result.additionalUserInfo?.isNewUser == true) {
@@ -99,8 +105,8 @@ class OtpVerifyController extends GetxController {
         return;
       }
 
-      userModel.fcmToken = fcmToken;
       await FireStoreUtils.updateUser(userModel);
+      unawaited(PushTokenSync.syncForCurrentUser());
 
       if (userModel.shippingAddress?.isNotEmpty ?? false) {
         final defaultAddress = userModel.shippingAddress!.firstWhere((e) => e.isDefault == true, orElse: () => userModel.shippingAddress!.first);

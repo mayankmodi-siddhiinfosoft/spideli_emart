@@ -1,1 +1,17 @@
-const Map<String, String> ptPO = {};
+const Map<String, String> ptPO = {
+  "Order cancelled": "Pedido cancelado",
+  "Order rejected": "Pedido recusado",
+  "Cashback": "Cashback",
+  "Refund": "Reembolso",
+  "Store credit": "Crédito da loja",
+  "The order was updated, but these steps did not finish: @steps. Please check your connection or contact support.": "O pedido foi atualizado, mas estas etapas não foram concluídas: @steps. Verifique sua conexão ou contate o suporte.",
+  "Please enter your email and password.": "Digite seu e-mail e sua senha.",
+  "Please enter your email address.": "Digite seu endereço de e-mail.",
+  "Please enter your password.": "Digite sua senha.",
+  "Please enter a valid email address.": "Digite um endereço de e-mail válido.",
+  "Invalid email or password.": "E-mail ou senha inválidos.",
+  "Too many attempts. Please try again later.": "Muitas tentativas. Tente novamente mais tarde.",
+  "No internet connection. Please check your connection and try again.": "Sem conexão com a internet. Verifique sua conexão e tente novamente.",
+  "Something went wrong. Please try again.": "Algo deu errado. Tente novamente.",
+  "This user is disable please contact to administrator": "Esta conta está desativada. Entre em contato com o administrador.",
+};

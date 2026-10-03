@@ -318,7 +318,9 @@ class RentalHomeScreen extends StatelessWidget {
 
   /// The single next step for this booking – unchanged conditions and handlers.
   Widget _bookingAction(BuildContext context, RentalHomeController controller, RentalOrderModel rentalBookingData) {
-    if (rentalBookingData.status == Constant.driverAccepted) {
+    // 'Order Shipped' is a booking not started yet, like 'Driver Accepted':
+    // it fell through to "Complete Booking" / the payment button.
+    if (rentalBookingData.status == Constant.driverAccepted || rentalBookingData.status == Constant.orderShipped) {
       return DsButton.primary(
         label: "Reached Location".tr,
         icon: Icons.location_on_outlined,
@@ -561,7 +563,8 @@ class RentalHomeScreen extends StatelessWidget {
             return;
           }
           Map<String, dynamic> payLoad = <String, dynamic>{"type": "rental_order", "orderId": rentalBookingData.id};
-          SendNotification.sendFcmMessage(Constant.rentalCompleted, rentalBookingData.author?.fcmToken ?? '', payLoad);
+          SendNotification.customerToken(customerId: rentalBookingData.authorID ?? rentalBookingData.author?.id, embeddedToken: rentalBookingData.author?.fcmToken)
+              .then((String token) => SendNotification.sendFcmMessage(Constant.rentalCompleted, token, payLoad));
           ShowToastDialog.closeLoader();
           ShowToastDialog.showToast("Ride completed successfully".tr);
           Get.back();

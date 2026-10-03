@@ -46,6 +46,11 @@ class Constant {
 
   static String senderId = '';
   static String jsonNotificationFileURL = '';
+
+  /// `settings/notification_setting.serverPushUrl`. An https URL sends every
+  /// push through the server function (SERVER-PUSH-CONTRACT); '' keeps the
+  /// legacy path. Always assigned, so clearing the field switches back.
+  static String serverPushUrl = '';
   static String appVersion = '';
   static String? country = "";
   static String? selectedMapType = "";

@@ -3,9 +3,11 @@ import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/service/localization_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/easy_loading_config.dart';
+import 'package:customer/utils/notification_service.dart';
 import 'package:customer/utils/preferences.dart';
 import 'package:cupertino_ui/cupertino_ui.dart' as cupertino_ui;
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:get/get.dart';
@@ -18,6 +20,11 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   FirebaseApp firebaseApp = await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Push: one top-level background handler, registered before runApp, and the
+  // Android channel created before any push can arrive.
+  FirebaseMessaging.onBackgroundMessage(firebaseMessageBackgroundHandle);
+  await NotificationService.createChannels();
 
   if (currentEnv == FirebaseEnv.defaultDb) {
     FireStoreUtils.instance.init(firebaseApp);

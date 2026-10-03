@@ -132,7 +132,8 @@ class OtpScreen extends StatelessWidget {
                                     User? userModel = await FireStoreUtils.getUserProfile(value.user!.uid);
                                     if (userModel!.role == USER_ROLE_PROVIDER) {
                                       if (userModel.active == true) {
-                                        userModel.fcmToken = await NotificationService.getToken();
+                                        // '' (no token yet on iOS) must not replace a working one.
+                                        userModel.fcmToken = await NotificationService.freshTokenOr(userModel.fcmToken);
                                         await FireStoreUtils.updateCurrentUser(userModel);
                                         bool isPlanExpire = false;
                                         if (userModel.subscriptionPlan?.id != null) {

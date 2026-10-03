@@ -77,14 +77,10 @@ class LoginScreen extends StatelessWidget {
               label: "Login".tr,
               expand: true,
               size: DsButtonSize.lg,
+              // The controller checks the fields (empty, both empty, email
+              // format) before sending anything.
               onPressed: () async {
-                if (controller.emailController.value.text.trim().isEmpty) {
-                  ShowToastDialog.showToast("Please enter valid email".tr);
-                } else if (controller.passwordController.value.text.trim().isEmpty) {
-                  ShowToastDialog.showToast("Please enter valid password".tr);
-                } else {
-                  controller.loginWithEmailAndPassword(context: context, email: controller.emailController.value.text.toLowerCase().trim(), password: controller.passwordController.value.text.trim());
-                }
+                controller.loginWithEmailAndPassword(context: context, email: controller.emailController.value.text.toLowerCase().trim(), password: controller.passwordController.value.text.trim());
               },
             ),
             const DsGap(DsSpace.sm),

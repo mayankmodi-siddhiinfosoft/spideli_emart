@@ -41,6 +41,7 @@ import '../payment/xendit_screen.dart';
 import '../screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import '../screen_ui/on_demand_service/on_demand_dashboard_screen.dart';
 import '../service/fire_store_utils.dart';
+import '../service/push_message.dart';
 import '../service/send_notification.dart';
 import '../themes/app_them_data.dart';
 import '../themes/show_toast_dialog.dart';
@@ -95,7 +96,7 @@ class OnDemandPaymentController extends GetxController {
 
         if (providerUser != null) {
           final payLoad = {"type": 'provider_order', "orderId": onDemandOrderModel.value?.id};
-          await SendNotification.sendFcmMessage(Constant.bookingPlaced, providerUser.fcmToken ?? '', payLoad);
+          await SendNotification.sendFcmMessage(Constant.bookingPlaced, providerUser.fcmToken ?? '', payLoad, recipient: PushRecipient.provider);
         }
 
         ShowToastDialog.showToast("OnDemand Service successfully booked".tr);
@@ -280,7 +281,6 @@ class OnDemandPaymentController extends GetxController {
     log(double.parse(amount).toStringAsFixed(0));
     try {
       Map<String, dynamic>? paymentIntentData = await createStripeIntent(amount: amount);
-      log("stripe Responce====>$paymentIntentData");
       if (paymentIntentData!.containsKey("error")) {
         Get.back();
         ShowToastDialog.showToast("Something went wrong, please contact admin.".tr);
@@ -623,7 +623,6 @@ class OnDemandPaymentController extends GetxController {
         "issandbox": paytmModel.value.isSandboxEnabled == true ? "1" : "2",
       },
     );
-    log(response.body);
     final data = jsonDecode(response.body);
     if (data["body"]["txnToken"] == null || data["body"]["txnToken"].toString().isEmpty) {
       Get.back();

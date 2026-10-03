@@ -316,7 +316,7 @@ class DriverCreateController extends GetxController {
       _applyCommonFields();
       driverModel.value.vehicleDetails = _buildVehicleDetails({});
 
-      final bool saved = await FireStoreUtils.updateUser(driverModel.value);
+      final bool saved = await FireStoreUtils.updateUser(driverModel.value, isNew: true);
       // The owner's own session must not be replaced by the new driver's.
       try {
         await secondaryAuth.signOut();

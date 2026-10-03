@@ -8,6 +8,7 @@ import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/utils/args.dart';
+import 'package:spideliprovider/services/push_message.dart';
 import 'package:spideliprovider/services/send_notification.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -136,26 +137,42 @@ class ChatController extends GetxController {
   /// fails with a 400.
   Future<void> _notifyRecipient(ConversationModel conversationModel, InboxModel inboxModel) async {
     try {
-      if ((receiverUser.value?.fcmToken ?? '').isEmpty && receivedId.value.isNotEmpty && receivedId.value != 'admin') {
+      if (!isUsableFcmToken(receiverUser.value?.fcmToken) && receivedId.value.isNotEmpty && receivedId.value != 'admin') {
         receiverUser.value = await FireStoreUtils.getChatUser(receivedId.value);
       }
       final String token = receiverUser.value?.fcmToken ?? '';
-      log("chat push :: to=${receiverUser.value?.fullName()} :: token=${token.isEmpty ? 'none' : 'set'} :: ${inboxModel.type} :: ${inboxModel.chatType}");
-      if (token.isEmpty) return;
+      log("chat push :: to=${receiverUser.value?.fullName()} :: token=${isUsableFcmToken(token) ? 'set' : 'none'} :: ${inboxModel.type} :: ${inboxModel.chatType}");
+      if (!isUsableFcmToken(token)) return;
 
       // Title is who sent it: the recipient used to see their own name.
       final String title = senderName.value.trim().isNotEmpty ? senderName.value : receivedName.value;
-      await SendNotification.sendChatFcmMessage(title, conversationModel.message.toString(), token, {
-        'type': inboxModel.type,
-        'chatType': inboxModel.chatType,
-        'orderId': orderId.value,
-        'senderId': FireStoreUtils.getCurrentUid(),
-        'senderName': senderName.value,
-      });
+      await SendNotification.sendChatFcmMessage(
+        title,
+        conversationModel.message.toString(),
+        token,
+        {
+          'type': inboxModel.type,
+          'chatType': inboxModel.chatType,
+          'orderId': orderId.value,
+          'senderId': FireStoreUtils.getCurrentUid(),
+          'senderName': senderName.value,
+        },
+        recipient: _recipientApp(receiverUser.value),
+      );
     } catch (e) {
       // A chat message must never fail because the push could not be sent.
       log("Chat notification not sent: $e");
     }
+  }
+
+  /// Which app the other side of the thread uses, for the push's Android
+  /// channel: workers live in `providers_workers` and carry their provider's
+  /// id; everyone else this app chats with is a customer.
+  static PushApp _recipientApp(User? receiver) {
+    if (receiver != null && receiver.role != 'customer' && (receiver.providerId ?? '').trim().isNotEmpty) {
+      return PushApp.worker;
+    }
+    return PushApp.customer;
   }
 
   final ImagePicker imagePicker = ImagePicker();

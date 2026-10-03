@@ -15,7 +15,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../constant/constants.dart';
 import '../services/notification_service.dart';
-import '../services/preferences.dart';
 
 class SignUpController extends GetxController {
   File? image;
@@ -123,7 +122,7 @@ class SignUpController extends GetxController {
       userModel.value.email = emailEditingController.value.text.toString().toLowerCase();
       userModel.value.phoneNumber = phoneNUmberEditingController.value.text.toString();
       userModel.value.role = USER_ROLE_PROVIDER;
-      userModel.value.fcmToken = await NotificationService.getToken();
+      userModel.value.fcmToken = await NotificationService.freshTokenOr(userModel.value.fcmToken);
       userModel.value.active = auto_approve_provider == true ? true : false;
       userModel.value.countryCode = countryCodeEditingController.value.text;
       userModel.value.createdAt = Timestamp.now();
@@ -134,7 +133,6 @@ class SignUpController extends GetxController {
         if (auto_approve_provider == true) {
           if (value?.active == true) {
             value?.active = true;
-            Preferences.setString(Preferences.passwordKey, passwordEditingController.value.text.toString());
             await FireStoreUtils.updateCurrentUser(value!);
             MyAppState.currentUser = value;
             if (MyAppState.currentUser!.sectionId.isNotEmpty) {
@@ -176,7 +174,6 @@ class SignUpController extends GetxController {
         if (auto_approve_provider == true) {
           if (result.active == true) {
             result.active = true;
-            Preferences.setString(Preferences.passwordKey, passwordEditingController.value.text.toString());
             await FireStoreUtils.updateCurrentUser(result);
             MyAppState.currentUser = result;
             if (MyAppState.currentUser!.sectionId.isNotEmpty) {

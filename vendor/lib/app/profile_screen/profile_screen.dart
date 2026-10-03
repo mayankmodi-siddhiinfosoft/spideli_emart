@@ -36,6 +36,7 @@ import 'package:vendor/models/user_model.dart';
 import 'package:vendor/themes/custom_dialog_box.dart';
 import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/notification_service.dart';
 import 'package:vendor/utils/network_image_widget.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -459,8 +460,11 @@ class ProfileScreen extends StatelessWidget {
                         // Also ends the new-order listener, which outlives the
                         // home tab and would otherwise ring after sign-out.
                         await HomeController.stopOrderAlerts();
-                        Constant.userModel!.fcmToken = "";
-                        await FireStoreUtils.updateUser(Constant.userModel!);
+                        // Clears the stored token only if it is still this
+                        // phone's. It used to write the whole in-memory user
+                        // back with an empty token, wiping the token of the
+                        // phone the account had since signed in on.
+                        await NotificationService.clearTokenOnSignOut();
                         Constant.userModel = null;
                         await FirebaseAuth.instance.signOut();
                         ShowToastDialog.closeLoader();

@@ -532,7 +532,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                 onProviderOrder.status = ORDER_STATUS_REJECTED;
 
                 Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-                await SendNotification.sendFcmMessage(providerRejected, onProviderOrder.author.fcmToken, payLoad);
+                await SendNotification.sendFcmMessage(providerRejected, onProviderOrder.author.fcmToken, payLoad, recipientId: onProviderOrder.authorID);
 
                 if (onProviderOrder.provider.priceUnit == "Fixed") {
                   if (onProviderOrder.payment_method.toLowerCase() != 'cod') {
@@ -565,7 +565,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
             }
             await FireStoreUtils.updateOrder(onProviderOrder);
             Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-            await SendNotification.sendFcmMessage(providerServiceInTransit, onProviderOrder.author.fcmToken, payLoad);
+            await SendNotification.sendFcmMessage(providerServiceInTransit, onProviderOrder.author.fcmToken, payLoad, recipientId: onProviderOrder.authorID);
 
             ShowToastDialog.closeLoader();
           } else {
@@ -596,7 +596,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                 }
                 await FireStoreUtils.updateOrder(onProviderOrder);
                 Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-                await SendNotification.sendFcmMessage(providerStopTime, onProviderOrder.author.fcmToken, payLoad);
+                await SendNotification.sendFcmMessage(providerStopTime, onProviderOrder.author.fcmToken, payLoad, recipientId: onProviderOrder.authorID);
                 ShowToastDialog.closeLoader();
               },
             )
@@ -747,7 +747,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
           }
         }
         Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-        await SendNotification.sendFcmMessage(providerAccepted, onProviderOrder.author.fcmToken, payLoad);
+        await SendNotification.sendFcmMessage(providerAccepted, onProviderOrder.author.fcmToken, payLoad, recipientId: onProviderOrder.authorID);
         ShowToastDialog.closeLoader();
       },
     );
@@ -768,7 +768,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
 
         await FireStoreUtils.updateOrder(onProviderOrder);
         Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-        await SendNotification.sendFcmMessage(providerServiceCompleted, onProviderOrder.author.fcmToken, payLoad);
+        await SendNotification.sendFcmMessage(providerServiceCompleted, onProviderOrder.author.fcmToken, payLoad, recipientId: onProviderOrder.authorID);
 
         ShowToastDialog.closeLoader();
         setState(() {});

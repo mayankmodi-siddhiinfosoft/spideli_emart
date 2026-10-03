@@ -24,6 +24,15 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Pushes that arrive while the app is in the background or killed
+             (and any push whose channel id this app does not create) are
+             posted on this channel. It is created in main() before runApp
+             (NotificationService.prepareBeforeRunApp, lib/services/push_message.dart
+             workerChannelId) with high importance and the default sound.
+             Without it FCM used a silent-looking "Miscellaneous" channel. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="01" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

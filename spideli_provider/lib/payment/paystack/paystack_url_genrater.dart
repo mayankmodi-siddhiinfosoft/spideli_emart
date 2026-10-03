@@ -68,7 +68,8 @@ class PayStackURLGen {
       body: body,
     );
 
-    debugPrint(response.body);
+    // Not logged: the PayFast checkout page can echo the posted form (merchant
+    // id/key, payer name and email).
     return response.body;
   }
 }

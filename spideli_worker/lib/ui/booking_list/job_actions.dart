@@ -39,6 +39,14 @@ class JobActions {
 
   static Map<String, dynamic> _payload(OnProviderOrderModel order) => <String, dynamic>{"type": "provider_order", "orderId": order.id};
 
+  /// The job-status push to the customer, on the customer's CURRENT token
+  /// (`users/{authorID}`): `author.fcmToken` is a copy taken when the booking
+  /// was placed, stale once the token rotates (and empty for iPhones then).
+  static Future<void> _notifyCustomer(OnProviderOrderModel order, String type) async {
+    final String token = await SendNotification.tokenForUser(order.authorID, fallback: order.author.fcmToken);
+    await SendNotification.sendFcmMessage(type, token, _payload(order));
+  }
+
   static Future<void> start(OnProviderOrderModel order) async {
     if (!_verifiedOrWarn()) return;
     final Timestamp schedule = order.newScheduleDateTime ?? order.scheduleDateTime ?? Timestamp.now();
@@ -51,7 +59,7 @@ class JobActions {
       final Map<String, dynamic> data = {'status': ORDER_STATUS_ONGOING};
       if (order.provider.priceUnit == "Hourly") data['startTime'] = Timestamp.now();
       await FireStoreUtils.updateOrderFields(order.id, data);
-      await SendNotification.sendFcmMessage(providerServiceInTransit, order.author.fcmToken, _payload(order));
+      await _notifyCustomer(order, providerServiceInTransit);
     } finally {
       ShowToastDialog.closeLoader();
     }
@@ -66,7 +74,7 @@ class JobActions {
       final int minutes = end.toDate().difference(start).inMinutes;
       final double quantity = minutes > 60 ? double.parse(durationToString(minutes)) : double.parse(durationToString(60));
       await FireStoreUtils.updateOrderFields(order.id, {'endTime': end, 'paymentStatus': false, 'quantity': quantity});
-      await SendNotification.sendFcmMessage(providerStopTime, order.author.fcmToken, _payload(order));
+      await _notifyCustomer(order, providerStopTime);
     } finally {
       ShowToastDialog.closeLoader();
     }
@@ -117,7 +125,7 @@ class JobActions {
         // The referral bonus must never block or repeat the completion.
         debugPrint('JobActions.complete: referral credit skipped: $e');
       }
-      await SendNotification.sendFcmMessage(providerServiceCompleted, order.author.fcmToken, _payload(order));
+      await _notifyCustomer(order, providerServiceCompleted);
     } catch (e) {
       ShowToastDialog.showToast("Something went wrong, please try again.".tr);
     } finally {

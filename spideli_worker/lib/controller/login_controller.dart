@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer';
 
 import 'package:spideliworker/constant/constants.dart';
@@ -6,7 +7,9 @@ import 'package:spideliworker/main.dart';
 import 'package:spideliworker/model/user.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/services/helper.dart';
+import 'package:spideliworker/services/notification_service.dart';
 import 'package:spideliworker/ui/dashboard/dashboard_screen.dart';
+import 'package:spideliworker/utils/login_validation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -20,6 +23,13 @@ class LoginController extends GetxController {
   /// @param email user email
   /// @param password user password
   Future<void> loginWithEmailAndPassword({required String email, required String password, required BuildContext context}) async {
+    // Checked before any request: nothing is sent with an empty field or a
+    // malformed email.
+    final String? invalid = LoginValidation.validate(email, password);
+    if (invalid != null) {
+      ShowToastDialog.showToast(invalid.tr);
+      return;
+    }
     await showProgress(context, 'Logging in, please wait...'.tr, false);
     dynamic result = await FireStoreUtils.loginWithEmailAndPassword(email.trim(), password.trim());
     await hideProgress();
@@ -27,6 +37,9 @@ class LoginController extends GetxController {
       if (result.active == true) {
         await FireStoreUtils.updateCurrentUser(result);
         MyAppState.currentUser = result;
+        // This device's FCM token on the worker's document (field-level).
+        // Not awaited: on iOS it waits for the APNs token. Never throws.
+        unawaited(NotificationService.syncTokenToUserDoc());
         Get.offAll(const DashBoardScreen(), arguments: {'user': result});
       } else {
         ShowToastDialog.showToast("Your account is deactivate.Please contact to administrator");

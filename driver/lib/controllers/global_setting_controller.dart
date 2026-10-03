@@ -41,20 +41,15 @@ class GlobalSettingController extends GetxController {
     notificationService.initInfo().then((value) async {
       // Client point 19: the token has to be on the driver's user document on
       // every launch AND whenever FCM rotates it, and the driver has to be on
-      // the topics the server addresses available work by.
-      NotificationService.listenForTokenRefresh();
-      String token = await NotificationService.getToken();
-      log(":::::::TOKEN:::::: $token");
-      if (FirebaseAuth.instance.currentUser != null) {
-        await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid()).then((value) async {
-          if (value != null) {
-            UserModel driverUserModel = value;
-            if (token.isNotEmpty) driverUserModel.fcmToken = token;
-            await FireStoreUtils.updateUser(driverUserModel);
-            await NotificationService.subscribeDriverTopics(driverUserModel);
-          }
-        });
-      }
+      // the topics the server addresses available work by. The token is
+      // written field-level (it used to write the whole user document back,
+      // over whatever changed since it was read) and never logged.
+      final User? user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      final UserModel? driverUserModel = await FireStoreUtils.getUserProfile(user.uid);
+      await NotificationService.syncSignedInDevice(driverUserModel);
+    }).catchError((Object e) {
+      log("notificationInit failed: $e");
     });
   }
 }

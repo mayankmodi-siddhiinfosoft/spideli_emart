@@ -18,6 +18,7 @@ import 'package:spideliworker/model/referral_model.dart';
 import 'package:spideliworker/model/sectionModel.dart';
 import 'package:spideliworker/model/topupTranHistory.dart';
 import 'package:spideliworker/model/user.dart';
+import 'package:spideliworker/utils/login_validation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -219,8 +220,13 @@ class FireStoreUtils {
 
   static Future<User?> updateCurrentUser(User user) async {
     // Known fields only, so panel-written fields (regionId, isDocumentVerify)
-    // survive a profile / online-status save.
-    return await firestore.collection(WORKERS).doc(user.id).setKnownFields(user.toJson()).then((document) {
+    // survive a profile / online-status save. Never `fcmToken`: the copy in
+    // memory is the one read at start-up, so an online toggle or a new photo
+    // wrote an old (on iOS: empty) token over the one NotificationService had
+    // just stored, and the worker stopped receiving pushes. Only
+    // NotificationService writes the token.
+    final Map<String, dynamic> data = user.toJson()..remove('fcmToken');
+    return await firestore.collection(WORKERS).doc(user.id).setKnownFields(data).then((document) {
       return user;
     });
   }
@@ -233,26 +239,17 @@ class FireStoreUtils {
 
       if (documentSnapshot.exists) {
         user = User.fromJson(documentSnapshot.data() ?? {});
-
-        user.fcmToken = await firebaseMessaging.getToken() ?? '';
-
+        // The FCM token is stored after login by
+        // NotificationService.syncTokenToUserDoc (LoginController). Reading it
+        // here threw on iOS before the APNs token arrived, which reported a
+        // successful sign-in as "Login failed".
         return user;
       }
     } on auth.FirebaseAuthException catch (exception, s) {
       log('$exception$s');
-      switch ((exception).code) {
-        case 'invalid-email':
-          return 'Email address is malformed.'.tr;
-        case 'wrong-password':
-          return 'Wrong password.'.tr;
-        case 'user-not-found':
-          return 'No user corresponding to the given email address.'.tr;
-        case 'user-disabled':
-          return 'This user has been disabled.'.tr;
-        case 'too-many-requests':
-          return 'Too many attempts to sign in as this user.'.tr;
-      }
-      return 'Unexpected firebase error, Please try again.'.tr;
+      // One message for a wrong email, a wrong password or both
+      // ('invalid-credential' used to give "Unexpected firebase error").
+      return LoginValidation.authErrorMessage(exception.code).tr;
     } catch (e, s) {
       log('$e$s');
       return 'Login failed, Please try again.'.tr;

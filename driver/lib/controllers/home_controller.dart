@@ -157,8 +157,8 @@ class HomeController extends GetxController {
       switch (result.answer) {
         case OfferAnswer.done:
           final OrderModel notified = result.order ?? order;
-          SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, notified.author?.fcmToken ?? '', {});
-          SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, notified.vendor?.fcmToken ?? '', {});
+          // Customer and store, each on its app's channel, by their live tokens.
+          unawaited(SendNotification.notifyOrderAccepted(notified));
         case OfferAnswer.held:
           break;
         case OfferAnswer.gone:
@@ -755,13 +755,17 @@ class HomeController extends GetxController {
     return LatLng(lat, lng);
   }
 
-  Rx<location.LatLng> source = location.LatLng(21.1702, 72.8311).obs; // Start (e.g., Surat)
+  /// The pickup (store) of the order on screen, or null when it has no
+  /// position or there is no order. It was a hard-coded default (Surat),
+  /// pinned on the map for every order.
+  Rx<location.LatLng?> source = Rx<location.LatLng?>(null);
   Rx<location.LatLng> current = location.LatLng(21.1800, 72.8400).obs; // Moving marker
   Rx<location.LatLng> destination = location.LatLng(21.2000, 72.8600).obs; // Destination
 
-  /// False while the OSM target has no position (a store saved without one):
-  /// no destination pin, and no route, rather than both at 0,0.
-  bool _osmHasDestination = true;
+  /// False while the OSM target has no position (a store saved without one),
+  /// or before any order was routed: no destination pin, and no route,
+  /// rather than one at 0,0 or at the default above.
+  bool _osmHasDestination = false;
 
   /// Routes the OSM map from [from] to [to], or draws no route and no
   /// destination pin when [to] is null.
@@ -781,21 +785,31 @@ class HomeController extends GetxController {
   location.LatLng? _osmPoint(double? lat, double? lng) => Utils.isRoutable(lat, lng) ? location.LatLng(lat!, lng!) : null;
 
   void setOsmMapMarker() {
+    final OrderModel order = currentOrder.value;
+    final bool hasOrder = order.id != null;
+    // The store's real position, or no pin (a store saved without one).
+    final location.LatLng? store = hasOrder ? _osmPoint(order.vendor?.latitude, order.vendor?.longitude) : null;
+    source.value = store;
+    final bool hasDestination = hasOrder && _osmHasDestination;
+    // On the way to the store the store IS the destination pin: not twice.
+    final bool storeIsDestination = hasDestination && destination.value == store;
     osmMarkers.value = [
-      flutterMap.Marker(
-        point: current.value,
-        width: 45,
-        height: 45,
-        rotate: true,
-        child: Image.asset('assets/images/food_delivery.png'),
-      ),
-      flutterMap.Marker(
-        point: source.value,
-        width: 40,
-        height: 40,
-        child: Image.asset('assets/images/location_black3x.png'),
-      ),
-      if (_osmHasDestination)
+      if (Utils.isRoutable(current.value.latitude, current.value.longitude))
+        flutterMap.Marker(
+          point: current.value,
+          width: 45,
+          height: 45,
+          rotate: true,
+          child: Image.asset('assets/images/food_delivery.png'),
+        ),
+      if (store != null && !storeIsDestination)
+        flutterMap.Marker(
+          point: store,
+          width: 40,
+          height: 40,
+          child: Image.asset('assets/images/location_black3x.png'),
+        ),
+      if (hasDestination)
         flutterMap.Marker(
           point: destination.value,
           width: 40,

@@ -388,8 +388,8 @@ class ParcelTrackingService {
     o.driverCredited = true;
     await _updateWalletAmount(o);
     try {
-      final token = o.author?.fcmToken;
-      if (token != null && token.isNotEmpty) {
+      final String token = await SendNotification.customerToken(customerId: o.authorID ?? o.author?.id, embeddedToken: o.author?.fcmToken);
+      if (token.isNotEmpty) {
         Map<String, dynamic> payLoad = <String, dynamic>{"type": "parcel_order", "orderId": o.id};
         await SendNotification.sendFcmMessage(Constant.parcelCompleted, token, payLoad);
       }

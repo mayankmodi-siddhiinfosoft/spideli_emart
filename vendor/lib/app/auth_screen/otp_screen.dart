@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -93,7 +94,6 @@ class OtpScreen extends StatelessWidget {
                     ShowToastDialog.showLoader("Verify otp".tr);
 
                     PhoneAuthCredential credential = PhoneAuthProvider.credential(verificationId: controller.verificationId.value, smsCode: controller.otpController.value.text);
-                    String fcmToken = await NotificationService.getToken();
                     await FirebaseAuth.instance
                         .signInWithCredential(credential)
                         .then((value) async {
@@ -103,7 +103,6 @@ class OtpScreen extends StatelessWidget {
                             userModel.countryCode = controller.countryCode.value;
                             userModel.countryISOCode = controller.countryISOCode.value;
                             userModel.phoneNumber = controller.phoneNumber.value;
-                            userModel.fcmToken = fcmToken;
                             userModel.provider = 'phone';
 
                             ShowToastDialog.closeLoader();
@@ -115,8 +114,9 @@ class OtpScreen extends StatelessWidget {
                                 UserModel? userModel = await FireStoreUtils.getUserProfile(value.user!.uid);
                                 if (userModel!.role == Constant.userRoleVendor) {
                                   if (userModel.active == true) {
-                                    userModel.fcmToken = await NotificationService.getToken();
                                     await FireStoreUtils.updateUser(userModel);
+                                    // Field-level, never '' (see NotificationService.syncToken).
+                                    unawaited(NotificationService.syncToken());
                                     // Owners with several stores pick one first (spec: Login > Store selector > Dashboard).
                                     if (await StoreSelectorController.openIfNeeded(userModel)) {
                                       ShowToastDialog.closeLoader();
@@ -172,7 +172,6 @@ class OtpScreen extends StatelessWidget {
                                 userModel.countryCode = controller.countryCode.value;
                                 userModel.countryISOCode = controller.countryISOCode.value;
                                 userModel.phoneNumber = controller.phoneNumber.value;
-                                userModel.fcmToken = fcmToken;
                                 userModel.provider = 'phone';
 
                                 Get.off(const SignupScreen(), arguments: {"userModel": userModel, "type": "mobileNumber"});

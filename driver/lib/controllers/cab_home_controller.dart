@@ -45,6 +45,21 @@ class CabHomeController extends GetxController {
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _orderDocSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _orderQuerySub;
 
+  /// The company owner's user document (wallet warning, owner-wallet check
+  /// on Accept). It was never cancelled and outlived this controller.
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _ownerSub;
+
+  /// True while the shared alert sound rings for the ride request on THIS
+  /// screen. The player is shared with the delivery module, and
+  /// [changeData] (run on every user snapshot) stopped it whenever no ride
+  /// request was showing, silencing a delivery offer ringing meanwhile.
+  bool _ringing = false;
+
+  Future<void> _stopAlert() {
+    _ringing = false;
+    return AudioPlayerService.playSound(false);
+  }
+
   @override
   void onInit() {
     getData();
@@ -153,6 +168,7 @@ class CabHomeController extends GetxController {
   @override
   void onClose() {
     _driverSub?.cancel();
+    _ownerSub?.cancel();
     _orderDocSub?.cancel();
     _orderQuerySub?.cancel();
     _ridesWatch.cancel();
@@ -266,7 +282,7 @@ class CabHomeController extends GetxController {
       return;
     }
     try {
-      await AudioPlayerService.playSound(false);
+      await _stopAlert();
       ShowToastDialog.showLoader("Please wait".tr);
 
       // Field-level: this ride joins `inProgressOrderID` and the request is
@@ -295,7 +311,8 @@ class CabHomeController extends GetxController {
 
       ShowToastDialog.closeLoader();
 
-      await SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, order.author?.fcmToken ?? "", {});
+      final String customerToken = await SendNotification.customerToken(customerId: order.authorID ?? order.author?.id, embeddedToken: order.author?.fcmToken);
+      await SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, customerToken, {'orderId': order.id});
     } catch (e, s) {
       ShowToastDialog.closeLoader();
       debugPrint("Error in acceptOrder: $e");
@@ -324,7 +341,7 @@ class CabHomeController extends GetxController {
     final bool onScreen = currentOrder.value.id == rideId;
     try {
       if (onScreen) {
-        await AudioPlayerService.playSound(false);
+        await _stopAlert();
 
         // 1️⃣ Immediately update local state (UI)
         currentOrder.value.status = Constant.driverRejected;
@@ -340,13 +357,12 @@ class CabHomeController extends GetxController {
       // 2️⃣ This request and this ride id only.
       await _releaseRide(rideId, clearRequest: true);
 
-      // 3️⃣ Close bottom sheet immediately (don’t wait for Firestore)
-      if (!silent) {
-        if (Get.isBottomSheetOpen ?? false) {
-          Get.back();
-        } else if (Constant.singleOrderReceive == false) {
-          Get.back();
-        }
+      // 3️⃣ Close a sheet / dialog still open over the screen (don’t wait
+      // for Firestore). Only when one IS open: the request card is part of
+      // the screen, and in multiple-order mode an unconditional Get.back()
+      // popped the route under it instead.
+      if (!silent && ((Get.isBottomSheetOpen ?? false) || (Get.isDialogOpen ?? false))) {
+        Get.back();
       }
 
       // 4️⃣ Clear map immediately
@@ -393,7 +409,7 @@ class CabHomeController extends GetxController {
     if (reason == null) return;
     try {
       ShowToastDialog.showLoader("Please wait".tr);
-      await AudioPlayerService.playSound(false);
+      await _stopAlert();
       final uid = driverModel.value.id;
       await FireStoreUtils.updateRideFields(order.id!, {
         'status': Constant.driverRejected,
@@ -486,7 +502,7 @@ class CabHomeController extends GetxController {
   }
 
   Future<void> clearMap() async {
-    await AudioPlayerService.playSound(false);
+    await _stopAlert();
     if (Constant.selectedMapType != 'osm') {
       markers.clear();
       polyLines.clear();
@@ -498,7 +514,7 @@ class CabHomeController extends GetxController {
   }
 
   Future<void> onRideStatus() async {
-    await AudioPlayerService.playSound(false);
+    await _stopAlert();
     ShowToastDialog.showLoader("Please wait".tr);
     currentOrder.value.status = Constant.orderInTransit;
     await FireStoreUtils.setCabOrder(currentOrder.value);
@@ -659,7 +675,7 @@ class CabHomeController extends GetxController {
       if (currentOrder.value.id == null) return;
       currentOrder.value = CabOrderModel();
       await clearMap();
-      await AudioPlayerService.playSound(false);
+      await _stopAlert();
       update();
     } catch (e) {
       log("getCurrentOrder() error: $e");
@@ -698,7 +714,7 @@ class CabHomeController extends GetxController {
             await _releaseRide(id);
             currentOrder.value = CabOrderModel();
             await clearMap();
-            await AudioPlayerService.playSound(false);
+            await _stopAlert();
             update();
             return;
           }
@@ -709,7 +725,7 @@ class CabHomeController extends GetxController {
             await _releaseRide(id);
             currentOrder.value = CabOrderModel();
             await clearMap();
-            await AudioPlayerService.playSound(false);
+            await _stopAlert();
             update();
             return;
           } else if (currentOrder.value.status == Constant.orderRejected || currentOrder.value.status == Constant.orderCancelled) {
@@ -717,7 +733,7 @@ class CabHomeController extends GetxController {
             await _releaseRide(id, clearRequest: true);
             currentOrder.value = CabOrderModel();
             await clearMap();
-            await AudioPlayerService.playSound(false);
+            await _stopAlert();
             update();
             return;
           }
@@ -757,7 +773,7 @@ class CabHomeController extends GetxController {
           if (id != null) await _releaseRide(id);
           currentOrder.value = CabOrderModel();
           await clearMap();
-          await AudioPlayerService.playSound(false);
+          await _stopAlert();
           update();
           return;
         }
@@ -765,7 +781,7 @@ class CabHomeController extends GetxController {
         return;
       } else {
         currentOrder.value = CabOrderModel();
-        await AudioPlayerService.playSound(false);
+        await _stopAlert();
         update();
       }
     } catch (e) {
@@ -785,14 +801,20 @@ class CabHomeController extends GetxController {
     }
     // Play alert sound for both "Order Placed" and "Driver Pending" — both need
     // accept/reject — when the card is actually shown (see [showRequestSheet]).
+    // Only the sound this screen started is stopped.
     if (showRequestSheet) {
+      _ringing = true;
       await AudioPlayerService.playSound(true);
-    } else {
-      await AudioPlayerService.playSound(false);
+    } else if (_ringing) {
+      await _stopAlert();
     }
   }
 
   Future<void> _subscribeDriver() async {
+    // A refresh replaces the listeners instead of stacking new ones.
+    _driverSub?.cancel();
+    _ownerSub?.cancel();
+    _ownerSub = null;
     _driverSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen((event) => _onDriverSnapshot(event));
 
     // An independent driver has no owner, and `Constant.userModel` itself
@@ -801,7 +823,7 @@ class CabHomeController extends GetxController {
     // other modules) down with it.
     final String ownerId = Constant.userModel?.ownerId ?? '';
     if (ownerId.isNotEmpty) {
-      FireStoreUtils.fireStore.collection(CollectionName.users).doc(ownerId).snapshots().listen(
+      _ownerSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(ownerId).snapshots().listen(
         (event) async {
           if (event.exists) {
             ownerModel.value = UserModel.fromJson(event.data()!);

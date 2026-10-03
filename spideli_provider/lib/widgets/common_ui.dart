@@ -129,7 +129,7 @@ class CommonUI {
 
                       await FireStoreUtils.updateOrder(onProviderOrder);
                       Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-                      await SendNotification.sendFcmMessage(providerServiceExtraCharges, onProviderOrder.author.fcmToken, payLoad);
+                      await SendNotification.sendFcmMessage(providerServiceExtraCharges, onProviderOrder.author.fcmToken, payLoad, recipientId: onProviderOrder.authorID);
 
                       ShowToastDialog.closeLoader();
                       Get.back();

@@ -57,6 +57,11 @@ class Constant {
   static String senderId = '';
   static String jsonNotificationFileURL = '';
 
+  /// `settings/notification_setting.serverPushUrl`. A non-empty https URL
+  /// sends every push through the `sendPush` server function
+  /// (`.claude/SERVER-PUSH-CONTRACT.md`); empty means the legacy path.
+  static String serverPushUrl = '';
+
   static String distanceType = "km";
 
   static bool? isEmployeeManagement = true;

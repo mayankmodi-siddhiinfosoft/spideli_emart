@@ -211,6 +211,14 @@ enum OfferAnswer {
 /// Replaces a new listener per user-document snapshot — the user document is
 /// rewritten on every location update, so those piled up, and an old order's
 /// listener could overwrite the order on screen.
+///
+/// A failed listen keeps the set of ids ([watch] with the same ids stays a
+/// no-op) and is retried by this class after [retryDelays]. It used to forget
+/// the ids, and a caller that calls [watch] again from [onChange] (the cab
+/// screen) re-opened the failing query at once, in a tight loop. A `whereIn`
+/// query that keeps failing ([queryFailuresBeforeFallback] times in a row —
+/// e.g. rules that allow reading each order but not the query) is replaced by
+/// one listener per order document, for the rest of this watch's life.
 class OrdersByIdWatch<T> {
   OrdersByIdWatch({required this.collection, required this.parse, required this.idOf, required this.onChange});
 
@@ -222,13 +230,28 @@ class OrdersByIdWatch<T> {
   /// the server (true) or only from the local cache (false).
   final void Function(Map<String, T> orders, bool fromServer) onChange;
 
-  final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>> _subs = [];
-  final Map<int, Map<String, T>> _chunks = {};
-  final Map<int, bool> _chunkFromServer = {};
+  /// Waits before re-opening a failed listener: 2s, 5s, 15s, then every 30s.
+  static const List<Duration> retryDelays = [Duration(seconds: 2), Duration(seconds: 5), Duration(seconds: 15), Duration(seconds: 30)];
+
+  /// Consecutive failures of a `whereIn` chunk after which every id is
+  /// watched through its own document listener instead.
+  static const int queryFailuresBeforeFallback = 3;
+
+  // One "unit" per open listener: a `whereIn` chunk ('q0', 'q1', ...) or,
+  // after the fallback, one order document ('d<id>').
+  final Map<String, StreamSubscription<dynamic>> _subs = {};
+  final Map<String, Timer> _retries = {};
+  final Map<String, int> _failures = {};
+  final Map<String, Map<String, T>> _found = {};
+  final Map<String, bool> _fromServer = {};
+  List<String> _ids = const [];
+  int _units = 0;
+  int _generation = 0;
+  bool _byDocument = false;
   String? _key;
   bool _loaded = false;
 
-  /// True once every chunk has delivered its first snapshot.
+  /// True once every chunk has delivered its first snapshot (or failed).
   bool get loaded => _loaded;
 
   void watch(Iterable<dynamic> rawIds) {
@@ -241,61 +264,166 @@ class OrdersByIdWatch<T> {
     if (key == _key) return;
     cancel();
     _key = key;
+    _ids = ids;
     if (ids.isEmpty) {
       _loaded = true;
       onChange(const {}, true);
       return;
     }
-    for (int start = 0, index = 0; start < ids.length; start += 30, index++) {
-      final List<String> chunk = ids.sublist(start, start + 30 > ids.length ? ids.length : start + 30);
-      final int chunkIndex = index;
-      _subs.add(
-        FireStoreUtils.fireStore.collection(collection).where('id', whereIn: chunk).snapshots().listen(
-          (snap) {
-            final Map<String, T> found = {};
-            for (final doc in snap.docs) {
-              try {
-                final T order = parse(doc.data());
-                found[idOf(order) ?? doc.id] = order;
-              } catch (e) {
-                // One unreadable record must not hide every other order.
-                log("OrdersByIdWatch($collection): ${doc.id} could not be read: $e");
-              }
-            }
-            _chunks[chunkIndex] = found;
-            _chunkFromServer[chunkIndex] = !snap.metadata.isFromCache;
-            _emit();
-          },
-          onError: (Object e) {
-            log("OrdersByIdWatch($collection) failed: $e");
-            // A failed stream is closed for good; the next watch() reopens it.
-            _key = null;
-            _chunks[chunkIndex] = const {};
-            _chunkFromServer[chunkIndex] = false;
-            _emit();
-          },
-        ),
-      );
+    _open();
+  }
+
+  void _open() {
+    final int generation = _generation;
+    if (_byDocument) {
+      _units = _ids.length;
+      for (final String id in _ids) {
+        _listenDocument(id, generation);
+      }
+      return;
     }
+    final List<List<String>> chunks = [
+      for (int start = 0; start < _ids.length; start += 30) _ids.sublist(start, start + 30 > _ids.length ? _ids.length : start + 30),
+    ];
+    _units = chunks.length;
+    for (int index = 0; index < chunks.length; index++) {
+      _listenQuery('q$index', chunks[index], generation);
+    }
+  }
+
+  void _listenQuery(String unit, List<String> chunk, int generation) {
+    if (generation != _generation) return;
+    _subs.remove(unit)?.cancel();
+    _subs[unit] = FireStoreUtils.fireStore.collection(collection).where('id', whereIn: chunk).snapshots().listen(
+      (snap) {
+        if (generation != _generation) return;
+        if (!snap.metadata.isFromCache) _failures.remove(unit);
+        final Map<String, T> found = {};
+        for (final doc in snap.docs) {
+          try {
+            final T order = parse(doc.data());
+            found[idOf(order) ?? doc.id] = order;
+          } catch (e) {
+            // One unreadable record must not hide every other order.
+            log("OrdersByIdWatch($collection): ${doc.id} could not be read: $e");
+          }
+        }
+        _deliver(unit, found, !snap.metadata.isFromCache);
+      },
+      onError: (Object e) {
+        if (generation != _generation) return;
+        final int failures = (_failures[unit] ?? 0) + 1;
+        _failures[unit] = failures;
+        log("OrdersByIdWatch($collection) failed ($failures in a row): $e");
+        _failed(unit);
+        if (generation != _generation) return; // onChange watched other ids
+        if (failures >= queryFailuresBeforeFallback) {
+          log("OrdersByIdWatch($collection): the query keeps failing, watching each order document instead");
+          _switchToDocuments();
+          return;
+        }
+        _retryLater(unit, failures, () => _listenQuery(unit, chunk, generation));
+      },
+      cancelOnError: true,
+    );
+  }
+
+  void _listenDocument(String id, int generation) {
+    if (generation != _generation) return;
+    final String unit = 'd$id';
+    _subs.remove(unit)?.cancel();
+    _subs[unit] = FireStoreUtils.fireStore.collection(collection).doc(id).snapshots().listen(
+      (snap) {
+        if (generation != _generation) return;
+        if (!snap.metadata.isFromCache) _failures.remove(unit);
+        final Map<String, T> found = {};
+        final Map<String, dynamic>? data = snap.data();
+        if (snap.exists && data != null) {
+          try {
+            final T order = parse(data);
+            found[idOf(order) ?? snap.id] = order;
+          } catch (e) {
+            log("OrdersByIdWatch($collection): $id could not be read: $e");
+          }
+        }
+        _deliver(unit, found, !snap.metadata.isFromCache);
+      },
+      onError: (Object e) {
+        if (generation != _generation) return;
+        final int failures = (_failures[unit] ?? 0) + 1;
+        _failures[unit] = failures;
+        log("OrdersByIdWatch($collection): $id failed ($failures in a row): $e");
+        _failed(unit);
+        if (generation != _generation) return;
+        _retryLater(unit, failures, () => _listenDocument(id, generation));
+      },
+      cancelOnError: true,
+    );
+  }
+
+  /// The ids stay the same: whatever was last found for [unit] is kept (a
+  /// failure is not "the order is gone"), only marked as not from the server.
+  void _failed(String unit) {
+    _subs.remove(unit);
+    _found.putIfAbsent(unit, () => const {});
+    _fromServer[unit] = false;
+    _emit();
+  }
+
+  void _retryLater(String unit, int failures, void Function() reopen) {
+    final Duration delay = retryDelays[(failures - 1).clamp(0, retryDelays.length - 1)];
+    _retries.remove(unit)?.cancel();
+    _retries[unit] = Timer(delay, () {
+      _retries.remove(unit);
+      reopen();
+    });
+  }
+
+  /// Same ids, one document listener each. What is on screen stays until
+  /// every document has answered.
+  void _switchToDocuments() {
+    final String? key = _key;
+    final List<String> ids = _ids;
+    final bool loaded = _loaded;
+    cancel();
+    _byDocument = true;
+    _key = key;
+    _ids = ids;
+    _loaded = loaded;
+    _open();
+  }
+
+  void _deliver(String unit, Map<String, T> found, bool fromServer) {
+    _found[unit] = found;
+    _fromServer[unit] = fromServer;
+    _emit();
   }
 
   void _emit() {
-    if (_chunks.length < _subs.length) return;
+    if (_found.length < _units) return;
     _loaded = true;
     final Map<String, T> all = {};
-    for (final Map<String, T> chunk in _chunks.values) {
-      all.addAll(chunk);
+    for (final Map<String, T> unit in _found.values) {
+      all.addAll(unit);
     }
-    onChange(all, _chunkFromServer.values.every((v) => v));
+    onChange(all, _fromServer.values.every((v) => v));
   }
 
   void cancel() {
-    for (final sub in _subs) {
+    _generation++;
+    for (final sub in _subs.values) {
       sub.cancel();
     }
     _subs.clear();
-    _chunks.clear();
-    _chunkFromServer.clear();
+    for (final timer in _retries.values) {
+      timer.cancel();
+    }
+    _retries.clear();
+    _failures.clear();
+    _found.clear();
+    _fromServer.clear();
+    _ids = const [];
+    _units = 0;
     _key = null;
     _loaded = false;
   }

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/main.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
+import 'package:spideliprovider/services/notification_service.dart';
 import 'package:spideliprovider/services/preferences.dart';
 import 'package:spideliprovider/ui/add_service/all_services_screen.dart';
 import 'package:spideliprovider/ui/auth/auth_screen.dart';
@@ -109,10 +112,11 @@ class DashBoardController extends GetxController {
           ShowToastDialog.showLoader("Logging out...".tr);
 
           try {
-            MyAppState.currentUser?.fcmToken = "";
-            if (MyAppState.currentUser != null) {
-              await FireStoreUtils.updateCurrentUser(MyAppState.currentUser!);
-            }
+            // Before signOut (the write needs the session). Field-level, and
+            // only while the stored token is still this device's: a full
+            // write of the in-memory record also cleared the token of another
+            // device this account signed in on later, silencing it.
+            await NotificationService.clearTokenOnSignOut(MyAppState.currentUser?.id ?? auth.FirebaseAuth.instance.currentUser?.uid ?? '');
 
             await auth.FirebaseAuth.instance.signOut();
             Preferences.clearSharPreference();
@@ -149,6 +153,16 @@ class DashBoardController extends GetxController {
     getArgument();
     getData();
     super.onInit();
+  }
+
+  @override
+  void onReady() {
+    super.onReady();
+    // Store this device's token (field-level; sign-ins are also covered by
+    // the auth listener in NotificationService), then open a notification
+    // that was tapped before the dashboard was up.
+    unawaited(NotificationService.syncTokenToUserDoc());
+    NotificationService.onHomeReady();
   }
 
   getArgument() async {

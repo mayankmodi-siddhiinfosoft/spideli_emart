@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Android 13+: asked once at startup by NotificationService.initInfo. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <queries>
         <intent>
@@ -78,6 +80,16 @@
         <meta-data
             android:name="com.facebook.sdk.ClientToken"
             android:value="@string/facebook_client_token" />
+
+        <!-- Channel for pushes that arrive while the app is in the background or
+             closed and name no channel (or one this app does not have). Without
+             it the Firebase SDK posts them on a "Miscellaneous" channel it
+             creates with default importance: no heads-up banner. The app
+             creates "01" at startup with max importance
+             (NotificationService.createAndroidChannels, PushChannels.provider). -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="01" />
 
 
     </application>

@@ -33,7 +33,7 @@ class MultiServiceDashboardScreen extends StatelessWidget {
     if (user.serviceTypes != null && user.serviceTypes!.isNotEmpty) {
       return user.serviceTypes!;
     }
-    return [user.serviceTypes?.first ?? 'delivery-service'];
+    return [user.serviceTypes?.firstOrNull ?? 'delivery-service'];
   }
 
   Widget _dashboardForService(String serviceType) {

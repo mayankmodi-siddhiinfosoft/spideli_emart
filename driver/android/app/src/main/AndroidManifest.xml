@@ -12,6 +12,10 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- Android 13+: without it no notification is shown at all. Also merged
+         from firebase_messaging; declared here so it never depends on a plugin. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:label="Spideli Driver"
@@ -58,11 +62,13 @@
             android:value="true" />
 
         <!-- Channel a notification message is posted on when the app is in the
-             background or closed and the push carries no android_channel_id
-             (report #19). Without this the Firebase SDK invents a channel with
-             DEFAULT importance, so an "order available" push is silent and never
-             shows a heads-up banner. NotificationService creates this channel
-             (high importance, sound, vibration) on start. -->
+             background or closed and the push carries no channel_id, or one this
+             device does not have (report #19). Without this the Firebase SDK
+             invents a channel with DEFAULT importance, so an "order available"
+             push is silent and never shows a heads-up banner. main() creates this
+             channel (high importance, sound, vibration) and the loud job channel
+             `driver_jobs` before runApp (NotificationService.createChannels).
+             Senders: see .claude/PUSH-CHANNELS.md, driver section. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="driver_notifications_channel" />

@@ -509,7 +509,6 @@ class BookParcelController extends GetxController {
 
     debugPrint("Order Distance: ${distance.value}");
     debugPrint("Subtotal: ${subTotal.value}");
-    debugPrint("Order JSON: ${order.toJson()}");
 
     Get.to(() => ParcelOrderConfirmationScreen(), arguments: {'parcelOrder': order, 'images': images});
   }

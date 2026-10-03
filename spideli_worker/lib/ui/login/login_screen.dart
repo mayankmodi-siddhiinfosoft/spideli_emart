@@ -32,18 +32,14 @@ class LoginScreen extends StatelessWidget {
             controller: controller,
             passwordVisible: passwordVisible,
             onForgot: () => showResetPwdAlertDialog(context, controller),
+            // The controller checks the fields (empty, both empty, email
+            // format) before sending anything.
             onSubmit: () async {
-              if (controller.emailController.value.text.trim().isEmpty) {
-                ShowToastDialog.showToast("Please enter valid email".tr);
-              } else if (controller.passwordController.value.text.trim().isEmpty) {
-                ShowToastDialog.showToast("Please enter valid password".tr);
-              } else {
-                controller.loginWithEmailAndPassword(
-                  context: context,
-                  email: controller.emailController.value.text.toLowerCase().trim(),
-                  password: controller.passwordController.value.text.trim(),
-                );
-              }
+              controller.loginWithEmailAndPassword(
+                context: context,
+                email: controller.emailController.value.text.toLowerCase().trim(),
+                password: controller.passwordController.value.text.trim(),
+              );
             },
           );
 

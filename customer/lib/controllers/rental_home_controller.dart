@@ -1,6 +1,5 @@
 import 'package:customer/models/currency_model.dart';
 import 'package:customer/utils/region_service.dart';
-import 'dart:developer';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/models/rental_order_model.dart';
 import 'package:customer/models/rental_package_model.dart';
@@ -174,7 +173,6 @@ class RentalHomeController extends GetxController {
     );
     rentalOrderModel.zoneId = Constant.getZoneId(sourceLocation.latitude ?? 0.0, sourceLocation.longitude ?? 0.0);
 
-    log(rentalOrderModel.toJson().toString());
     Get.back();
     Get.back();
 

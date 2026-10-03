@@ -12,9 +12,11 @@ import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/easy_loading_config.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/notification_service.dart';
 import 'package:driver/utils/preferences.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:get/get.dart';
@@ -24,6 +26,13 @@ void main() async {
   FirebaseApp firebaseApp = await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Background / terminated pushes: registered once, before runApp. It was
+  // never registered, so data-only pushes were dropped with the app closed.
+  FirebaseMessaging.onBackgroundMessage(firebaseMessageBackgroundHandle);
+  // Both Android channels exist before any push can arrive: one that arrives
+  // first is posted on a silent fallback channel the SDK makes (report #19).
+  await NotificationService.createChannels();
 
   if (currentEnv == FirebaseEnv.defaultDb) {
     FireStoreUtils.instance.init(firebaseApp);

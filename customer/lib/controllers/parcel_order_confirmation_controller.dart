@@ -388,7 +388,6 @@ class ParcelOrderConfirmationController extends GetxController {
     log(double.parse(amount).toStringAsFixed(0));
     try {
       Map<String, dynamic>? paymentIntentData = await createStripeIntent(amount: amount);
-      log("stripe Responce====>$paymentIntentData");
       if (paymentIntentData!.containsKey("error")) {
         Get.back();
         ShowToastDialog.showToast("Something went wrong, please contact admin.".tr);
@@ -522,7 +521,6 @@ class ParcelOrderConfirmationController extends GetxController {
               ],
               note: "Contact us for any questions on your order.",
               onSuccess: (Map params) async {
-                debugPrint("✅ PayPal Payment Success: $params");
                 placeOrder();
                 ShowToastDialog.showToast("Payment Successful!!".tr);
               },
@@ -532,7 +530,6 @@ class ParcelOrderConfirmationController extends GetxController {
                 ShowToastDialog.showToast("Payment UnSuccessful!!".tr);
               },
               onCancel: (params) {
-                debugPrint("⚠️ PayPal Payment Canceled: $params");
                 Get.back();
                 ShowToastDialog.showToast("Payment UnSuccessful!!".tr);
               },
@@ -808,8 +805,6 @@ class ParcelOrderConfirmationController extends GetxController {
       },
     );
 
-    log("Paytm Initiate Response: ${response.body}");
-
     final data = jsonDecode(response.body);
     if (data["body"]["txnToken"] == null || data["body"]["txnToken"].toString().isEmpty) {
       Get.back();
@@ -963,8 +958,6 @@ class ParcelOrderConfirmationController extends GetxController {
     ShowToastDialog.closeLoader();
 
     if (paymentURL.toString().isNotEmpty) {
-      debugPrint('✅ Payment URL fetched successfully: $paymentURL');
-
       Get.to(() => OrangeMoneyScreen(initialURl: paymentURL, accessToken: accessToken, amount: amount, orangePay: orangeMoneyModel.value, orderId: orderId, payToken: payToken))?.then((value) async {
         if (value == true) {
           ShowToastDialog.showToast("Payment Successful!!".tr);
@@ -999,12 +992,10 @@ class ParcelOrderConfirmationController extends GetxController {
     );
 
     debugPrint('🔍 Response Code: ${response.statusCode}');
-    debugPrint('📨 Response Body: ${response.body}');
 
     if (response.statusCode == 200) {
       final Map<String, dynamic> responseData = jsonDecode(response.body);
       accessToken = responseData['access_token'];
-      debugPrint('✅ Access Token Received: $accessToken');
 
       return await webpayment(context: context, amountData: amount, currency: currency, orderIdData: orderId);
     } else {
@@ -1037,7 +1028,6 @@ class ParcelOrderConfirmationController extends GetxController {
 
     debugPrint('💳 Creating Web Payment...');
     debugPrint('📡 POST $apiUrl');
-    debugPrint('📦 Request Body: ${jsonEncode(requestBody)}');
 
     final response = await http.post(
       Uri.parse(apiUrl),
@@ -1046,14 +1036,11 @@ class ParcelOrderConfirmationController extends GetxController {
     );
 
     debugPrint('🔍 Response Code: ${response.statusCode}');
-    debugPrint('📨 Response Body: ${response.body}');
 
     if (response.statusCode == 201) {
       final Map<String, dynamic> responseData = jsonDecode(response.body);
       if (responseData['message'] == 'OK') {
         payToken = responseData['pay_token'];
-        debugPrint('✅ Payment Token: $payToken');
-        debugPrint('🌍 Payment URL: ${responseData['payment_url']}');
         return responseData['payment_url'];
       } else {
         debugPrint('⚠️ Unexpected message: ${responseData['message']}');

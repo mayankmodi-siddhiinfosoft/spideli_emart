@@ -1,1 +1,17 @@
-const Map<String, String> zhCH = {};
+const Map<String, String> zhCH = {
+  "Order cancelled": "订单已取消",
+  "Order rejected": "订单已拒绝",
+  "Cashback": "返现",
+  "Refund": "退款",
+  "Store credit": "店铺余额",
+  "The order was updated, but these steps did not finish: @steps. Please check your connection or contact support.": "订单已更新，但以下步骤未完成：@steps。请检查网络或联系客服。",
+  "Please enter your email and password.": "请输入您的邮箱和密码。",
+  "Please enter your email address.": "请输入您的邮箱地址。",
+  "Please enter your password.": "请输入您的密码。",
+  "Please enter a valid email address.": "请输入有效的邮箱地址。",
+  "Invalid email or password.": "邮箱或密码无效。",
+  "Too many attempts. Please try again later.": "尝试次数过多，请稍后再试。",
+  "No internet connection. Please check your connection and try again.": "没有网络连接。请检查网络后重试。",
+  "Something went wrong. Please try again.": "出了点问题，请重试。",
+  "This user is disable please contact to administrator": "此账户已被停用，请联系管理员。",
+};

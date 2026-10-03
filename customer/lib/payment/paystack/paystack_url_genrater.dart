@@ -16,7 +16,6 @@ class PayStackURLGen {
     }, headers: {
       "Authorization": "Bearer $secretKey",
     });
-    debugPrint(response.body);
     final data = jsonDecode(response.body);
     if (!data["status"]) {
       return null;
@@ -38,7 +37,6 @@ class PayStackURLGen {
       "Authorization": "Bearer $secretKey",
     });
 
-    debugPrint(response.body);
     final data = jsonDecode(response.body);
     if (data["status"] == true) {
       if (data["message"] == "Verification successful") {}
@@ -69,7 +67,6 @@ class PayStackURLGen {
       body: body,
     );
 
-    debugPrint(response.body);
     return response.body;
   }
 }

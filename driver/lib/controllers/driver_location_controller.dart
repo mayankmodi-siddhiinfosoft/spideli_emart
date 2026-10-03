@@ -170,7 +170,7 @@ class DriverLocationController extends GetxController {
                       onPress: () async {
                         Get.to(DriverOrderList(), arguments: {
                           "driverId": driver.id,
-                          "serviceType": driver.serviceTypes?.first,
+                          "serviceType": driver.serviceTypes?.firstOrNull,
                         });
                       },
                     ),

@@ -14,6 +14,9 @@ import 'package:url_launcher/url_launcher.dart';
 const STORAGE_ROOT = 'spideli';
 String senderId = '';
 String jsonNotificationFileURL = '';
+// settings/notification_setting.serverPushUrl: an https URL switches pushes to
+// the sendPush function (SendNotification.useServerPush); '' = legacy path.
+String serverPushUrl = '';
 String GOOGLE_API_KEY = 'AIzaSyBhZufLHi10nF6KpZtqXlmJ84QMStjBmRo';
 const Setting = 'settings';
 const WALLET = "wallet";

@@ -11,6 +11,7 @@ import '../service/fire_store_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:uuid/uuid.dart';
+import '../service/push_message.dart';
 import '../service/send_notification.dart';
 
 class ChatController extends GetxController {
@@ -157,21 +158,34 @@ class ChatController extends GetxController {
   /// Missing token (the other side never registered one, or an admin thread
   /// with no device) is not an error for the sender: the message is already
   /// saved, so this returns quietly.
+  ///
+  /// The token read when the chat opened (`receiverUser`, now found in
+  /// `users` too) is preferred over the one the previous screen passed in,
+  /// which may have been loaded long before and gone stale since.
   Future<void> notifyReceiver(ConversationModel conversationModel, InboxModel inboxModel) async {
-    final String fcmToken = token.value.trim().isNotEmpty ? token.value.trim() : (receiverUser?.fcmToken ?? '').trim();
-    if (fcmToken.isEmpty) {
+    final String freshToken = (receiverUser?.fcmToken ?? '').trim();
+    final String fcmToken = PushPayload.isUsableToken(freshToken) ? freshToken : token.value.trim();
+    if (!PushPayload.isUsableToken(fcmToken)) {
       log("chat push skipped: no fcm token for ${receivedId.value}");
       return;
     }
     // Same payload shape as the app's other notifications: `type` and
-    // `chatType` are what NotificationService.handleMessageClick routes on,
-    // and FCM data values must be strings.
-    await SendNotification.sendChatFcmMessage(senderName.value, conversationModel.message.toString(), fcmToken, {
-      'type': inboxModel.type ?? 'orderChat',
-      'chatType': inboxModel.chatType ?? '',
-      'orderId': orderId.value,
-      'senderId': conversationModel.senderId ?? '',
-    });
+    // `chatType` are what the receiving apps route on (`senderName` lets the
+    // provider / worker open the thread itself). SendNotification turns every
+    // value into a string and picks the receiving app's channel.
+    await SendNotification.sendChatFcmMessage(
+      senderName.value,
+      conversationModel.message.toString(),
+      fcmToken,
+      {
+        'type': inboxModel.type ?? 'orderChat',
+        'chatType': inboxModel.chatType ?? '',
+        'orderId': orderId.value,
+        'senderId': conversationModel.senderId ?? '',
+        'senderName': senderName.value,
+      },
+      recipient: PushChannels.recipientForChatType(chatType.value),
+    );
   }
 
   final ImagePicker imagePicker = ImagePicker();

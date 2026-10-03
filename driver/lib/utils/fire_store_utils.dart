@@ -144,18 +144,30 @@ class FireStoreUtils {
     return userModel;
   }
 
+  /// Adds [amount] (negative to debit) to one user's `wallet_amount` in a
+  /// transaction. It used to read the user, add locally and write the whole
+  /// document back ([updateUser]), so a credit made meanwhile by another app
+  /// or the server was undone. [updateUser] never writes the wallet.
   static Future<bool?> updateUserWallet({required String amount, required String userId}) async {
-    bool isAdded = false;
-    await getUserProfile(userId).then((value) async {
-      if (value != null) {
-        UserModel userModel = value;
-        userModel.walletAmount = double.parse(userModel.walletAmount.toString()) + double.parse(amount);
-        await FireStoreUtils.updateUser(userModel).then((value) {
-          isAdded = value;
-        });
+    final num delta = num.tryParse(amount) ?? 0;
+    try {
+      final DocumentReference<Map<String, dynamic>> ref = fireStore.collection(CollectionName.users).doc(userId);
+      final num? newTotal = await fireStore.runTransaction<num?>((transaction) async {
+        final DocumentSnapshot<Map<String, dynamic>> snap = await transaction.get(ref);
+        if (!snap.exists) return null;
+        final num total = (num.tryParse(snap.data()?['wallet_amount']?.toString() ?? '') ?? 0) + delta;
+        transaction.update(ref, {'wallet_amount': total});
+        return total;
+      });
+      // Keep the signed-in user's copy in step.
+      if (newTotal != null && Constant.userModel?.id == userId) {
+        Constant.userModel!.walletAmount = newTotal;
       }
-    });
-    return isAdded;
+      return newTotal != null;
+    } catch (e, s) {
+      log("updateUserWallet failed: $e", stackTrace: s);
+      return false;
+    }
   }
 
   static Map<String, dynamic> removeNulls(Map<String, dynamic> map) {
@@ -173,13 +185,27 @@ class FireStoreUtils {
     return map;
   }
 
-  static Future<bool> updateUser(UserModel userModel) async {
+  /// Saves a user, never its `wallet_amount`: a balance moves only through
+  /// [updateUserWallet] / `WalletOnce` (transactions). This in-memory copy,
+  /// written back, undid a credit made by another app or the server between
+  /// its read and this write.
+  ///
+  /// [isNew] (sign-up, a fleet owner creating a driver): the document starts
+  /// with `wallet_amount: 0` if it has no balance yet ([_openWallet]).
+  ///
+  /// `fcmToken` is written only for a new document: afterwards it moves only
+  /// through `NotificationService.saveToken` (a field-level write). A copy
+  /// read a moment earlier, written back whole, put a stale token over the
+  /// one the device had just saved, and pushes stopped reaching it.
+  static Future<bool> updateUser(UserModel userModel, {bool isNew = false}) async {
     try {
       final docRef = fireStore.collection(CollectionName.users).doc(userModel.id);
 
-      final Map<String, dynamic> data = removeNulls(userModel.toJson());
+      final Map<String, dynamic> data = removeNulls(userModel.toJson()..remove('wallet_amount'));
+      if (!isNew) data.remove('fcmToken');
 
       await docRef.set(data, SetOptions(merge: true));
+      if (isNew) await _openWallet(docRef);
 
       // Clean up legacy / deprecated top-level fields via a separate update()
       // call. Sentinels (FieldValue.delete) can only appear at the top level
@@ -213,6 +239,21 @@ class FireStoreUtils {
       log("Failed to update user: $error");
       log(stack.toString());
       return false;
+    }
+  }
+
+  /// `wallet_amount: 0` on a user document that has no balance yet, in a
+  /// transaction: one that already has a balance is never reset.
+  static Future<void> _openWallet(DocumentReference<Map<String, dynamic>> ref) async {
+    try {
+      await fireStore.runTransaction<void>((transaction) async {
+        final DocumentSnapshot<Map<String, dynamic>> snap = await transaction.get(ref);
+        if (snap.exists && snap.data()?['wallet_amount'] == null) {
+          transaction.update(ref, {'wallet_amount': 0});
+        }
+      });
+    } catch (e) {
+      log("opening the wallet of ${ref.id} failed: $e");
     }
   }
 
@@ -275,7 +316,28 @@ class FireStoreUtils {
     return isAdded;
   }
 
+  static StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _notificationSettingsSub;
+
+  /// `settings/notification_setting`, live. Registered on its own, before
+  /// anything else in [getSettings]: it used to sit after the globalSettings
+  /// read, so a throw there (e.g. a missing `app_driver_color`) left
+  /// `senderId` / `serviceJson` empty and every push failed. Every field is
+  /// read null-safely and always assigned, so clearing one in Firestore
+  /// takes effect live (that is the server-push rollback).
+  static void listenNotificationSettings() {
+    _notificationSettingsSub ??= fireStore.collection(CollectionName.settings).doc("notification_setting").snapshots().listen(
+      (event) {
+        final Map<String, dynamic> data = event.data() ?? const <String, dynamic>{};
+        Constant.senderId = (data["senderId"] ?? '').toString();
+        Constant.jsonNotificationFileURL = (data["serviceJson"] ?? '').toString();
+        Constant.serverPushUrl = (data["serverPushUrl"] ?? '').toString();
+      },
+      onError: (Object e) => log("notification_setting listener failed: $e"),
+    );
+  }
+
   static Future<void> getSettings() async {
+    listenNotificationSettings();
     try {
       await fireStore.collection(CollectionName.settings).doc("globalSettings").get().then((value) async {
         Constant.orderRingtoneUrl = value.data()?['order_ringtone_url'] ?? '';
@@ -292,13 +354,6 @@ class FireStoreUtils {
       fireStore.collection(CollectionName.settings).doc("googleMapKey").snapshots().listen((event) {
         if (event.exists) {
           Constant.mapAPIKey = event.data()!["key"];
-        }
-      });
-
-      fireStore.collection(CollectionName.settings).doc("notification_setting").snapshots().listen((event) {
-        if (event.exists) {
-          Constant.senderId = event.data()?["senderId"];
-          Constant.jsonNotificationFileURL = event.data()?["serviceJson"];
         }
       });
 
@@ -1301,7 +1356,7 @@ class FireStoreUtils {
               await fireStore
                   .collection(CollectionName.users)
                   .doc(user.id)
-                  .update({"wallet_amount": double.parse(user.walletAmount.toString()) + double.parse(sectionModel!.referralAmount.toString())});
+                  .update({"wallet_amount": FieldValue.increment(double.parse(sectionModel!.referralAmount.toString()))});
 
               WalletTransactionModel transactionModel = WalletTransactionModel(
                   id: Constant.getUuid(),
@@ -1379,7 +1434,7 @@ class FireStoreUtils {
               await fireStore
                   .collection(CollectionName.users)
                   .doc(user.id)
-                  .update({"wallet_amount": double.parse(user.walletAmount.toString()) + double.parse(sectionModel!.referralAmount.toString())});
+                  .update({"wallet_amount": FieldValue.increment(double.parse(sectionModel!.referralAmount.toString()))});
 
               WalletTransactionModel transactionModel = WalletTransactionModel(
                   id: Constant.getUuid(),
@@ -1434,7 +1489,7 @@ class FireStoreUtils {
               await fireStore
                   .collection(CollectionName.users)
                   .doc(user.id)
-                  .update({"wallet_amount": double.parse(user.walletAmount.toString()) + double.parse(sectionModel!.referralAmount.toString())});
+                  .update({"wallet_amount": FieldValue.increment(double.parse(sectionModel!.referralAmount.toString()))});
 
               WalletTransactionModel transactionModel = WalletTransactionModel(
                   id: Constant.getUuid(),

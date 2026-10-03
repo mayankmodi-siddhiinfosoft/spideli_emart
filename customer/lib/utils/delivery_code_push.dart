@@ -9,6 +9,7 @@ import 'package:customer/screen_ui/multi_vendor_service/order_list_screen/order_
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 
 /// The `delivery_otp` push (POD-OTP-CONTRACT): "Your order has arrived — open
@@ -18,9 +19,26 @@ import 'package:get/get.dart';
 abstract final class DeliveryCodePush {
   static const String type = 'delivery_otp';
 
-  /// A tap that launched the app, held until the splash has routed.
+  /// A tap that launched the app, held until the customer reaches the home
+  /// (the service list) — also when the splash first sends them to set an
+  /// address or to sign in.
   static String? _pending;
   static bool _appReady = false;
+
+  /// Opens an order; [open] outside tests.
+  @visibleForTesting
+  static Future<void> Function(String orderId) opener = open;
+
+  /// The order id held for [markAppReady], for tests.
+  @visibleForTesting
+  static String? get pendingOrderId => _pending;
+
+  @visibleForTesting
+  static void resetForTest() {
+    _pending = null;
+    _appReady = false;
+    opener = open;
+  }
 
   /// The order id from a push payload, or null.
   static String? orderIdOf(Map<String, dynamic> data) {
@@ -32,7 +50,7 @@ abstract final class DeliveryCodePush {
   }
 
   /// A tap on the notification. On a cold start ([coldStart]) the order is
-  /// opened once the splash has finished routing ([markAppReady]).
+  /// opened once the customer reaches the home ([markAppReady]).
   static Future<void> handleTap(Map<String, dynamic> data, {bool coldStart = false}) async {
     final String? orderId = orderIdOf(data);
     if (orderId == null) return;
@@ -40,15 +58,16 @@ abstract final class DeliveryCodePush {
       _pending = orderId;
       return;
     }
-    await open(orderId);
+    await opener(orderId);
   }
 
-  /// Called by the splash once the signed-in customer reached the app.
+  /// Called by the home (the service list controller) each time it opens:
+  /// a held tap is opened once, on top of the home.
   static void markAppReady() {
     _appReady = true;
     final String? pending = _pending;
     _pending = null;
-    if (pending != null) unawaited(open(pending));
+    if (pending != null) unawaited(opener(pending));
   }
 
   /// Opens the details screen of the signed-in customer's order [orderId].

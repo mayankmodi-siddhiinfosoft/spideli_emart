@@ -39,10 +39,11 @@ class SplashController extends GetxController {
               user.active = true;
               user.role = USER_ROLE_PROVIDER;
               // `value!` threw when FCM had no token yet (iOS, before the APNS
-              // token arrives) and the throw was unhandled because nothing
-              // awaited this. The shared helper also registers the
-              // `onTokenRefresh` write, so the stored token stays current.
-              await NotificationService.syncTokenToUserDoc();
+              // token arrives). The shared helper also registers the
+              // `onTokenRefresh` write, so the stored token stays current. Not
+              // awaited: on iOS it can wait seconds for the APNs token, and the
+              // splash must not.
+              unawaited(NotificationService.syncTokenToUserDoc());
               MyAppState.currentUser = user;
               if (MyAppState.currentUser!.sectionId.isNotEmpty) {
                 await FireStoreUtils.getSectionsById(MyAppState.currentUser!.sectionId).then(
@@ -74,7 +75,8 @@ class SplashController extends GetxController {
               }
             } else {
               user.lastOnlineTimestamp = Timestamp.now();
-              await FireStoreUtils.firestore.collection(USERS).doc(user.id).update({"fcmToken": ""});
+              // Only while the stored token is still this device's (field-level).
+              await NotificationService.clearTokenOnSignOut(user.id);
 
               MyAppState.currentUser = null;
               Get.offAll(AuthScreen());

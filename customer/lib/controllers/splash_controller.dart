@@ -1,14 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/language_model.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/screen_ui/maintenance_mode_screen/maintenance_mode_screen.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
 import 'package:customer/service/localization_service.dart';
-import 'package:customer/utils/delivery_code_push.dart';
-import 'package:customer/utils/notification_service.dart';
+import 'package:customer/utils/push_token_sync.dart';
 import 'package:customer/utils/preferences.dart';
 import 'package:customer/utils/wholesale_entitlement.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -50,11 +48,11 @@ class SplashController extends GetxController {
           await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid()).then((value) async {
             if (value != null) {
               UserModel userModel = value;
-              log(userModel.toJson().toString());
               if (userModel.role == Constant.userRoleCustomer) {
                 if (userModel.active == true) {
-                  userModel.fcmToken = await NotificationService.getToken();
                   await FireStoreUtils.updateUser(userModel);
+                  // This device's token, field-level (never '' over a good one).
+                  unawaited(PushTokenSync.syncForCurrentUser());
                   // Whether wholesale applies at all (WEB spec §19): looked up
                   // ONCE and awaited here, so no listing renders on a guess.
                   // Every failure path answers "retail".
@@ -65,11 +63,12 @@ class SplashController extends GetxController {
                     } else {
                       Constant.selectedLocation = userModel.shippingAddress!.first;
                     }
-                    Get.offAll(const ServiceListScreen());
                     // A delivery-code push that launched the app opens its
-                    // order now that the customer is in.
-                    DeliveryCodePush.markAppReady();
+                    // order once the home is up (ServiceListController.onReady).
+                    Get.offAll(const ServiceListScreen());
                   } else {
+                    // No address yet: a held delivery-code push waits until the
+                    // customer has set one and reached the home.
                     Get.offAll(const LocationPermissionScreen());
                   }
                 } else {

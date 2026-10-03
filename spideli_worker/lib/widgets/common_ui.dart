@@ -129,7 +129,9 @@ class CommonUI {
                     'extraPaymentStatus': false,
                   });
                   Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-                  await SendNotification.sendFcmMessage(providerServiceExtraCharges, onProviderOrder.author.fcmToken, payLoad);
+                  // The customer's current token; the copy in the order goes stale.
+                  final String customerToken = await SendNotification.tokenForUser(onProviderOrder.authorID, fallback: onProviderOrder.author.fcmToken);
+                  await SendNotification.sendFcmMessage(providerServiceExtraCharges, customerToken, payLoad);
 
                   ShowToastDialog.closeLoader();
                   Get.back();

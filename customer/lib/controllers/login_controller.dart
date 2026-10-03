@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:customer/screen_ui/location_enable_screens/location_permission_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,7 +13,8 @@ import '../screen_ui/auth_screens/sign_up_screen.dart';
 import '../screen_ui/service_home_screen/service_list_screen.dart';
 import '../service/fire_store_utils.dart';
 import '../themes/show_toast_dialog.dart';
-import '../utils/notification_service.dart';
+import '../utils/login_validation.dart';
+import '../utils/push_token_sync.dart';
 import 'package:crypto/crypto.dart';
 
 class LoginController extends GetxController {
@@ -31,16 +33,15 @@ class LoginController extends GetxController {
   Future<void> loginWithEmail() async {
     final email = emailController.value.text.trim();
     final password = passwordController.value.text.trim();
-    if (email.isEmpty || !email.contains('@')) {
-      ShowToastDialog.showToast("Please enter a valid email address".tr);
+    // Checked before any request: nothing is sent with an empty field or a
+    // malformed email.
+    final String? invalid = LoginValidation.validate(email, password);
+    if (invalid != null) {
+      ShowToastDialog.showToast(invalid.tr);
       return;
     }
 
-    if (password.isEmpty) {
-      ShowToastDialog.showToast("Please enter your password".tr);
-      return;
-    }
-
+    String? message;
     try {
       isLoading.value = true;
       ShowToastDialog.showLoader("Logging in...".tr);
@@ -51,8 +52,9 @@ class LoginController extends GetxController {
 
       if (userModel != null && userModel.role == Constant.userRoleCustomer) {
         if (userModel.active == true) {
-          userModel.fcmToken = await NotificationService.getToken();
           await FireStoreUtils.updateUser(userModel);
+          // This device's token, field-level (never '' over a good one).
+          unawaited(PushTokenSync.syncForCurrentUser());
 
           if (userModel.shippingAddress != null && userModel.shippingAddress!.isNotEmpty) {
             final defaultAddress = userModel.shippingAddress!.firstWhere((e) => e.isDefault == true, orElse: () => userModel.shippingAddress!.first);
@@ -65,28 +67,29 @@ class LoginController extends GetxController {
           }
         } else {
           await FirebaseAuth.instance.signOut();
-          ShowToastDialog.showToast("This user is disabled. Please contact admin.".tr);
+          message = "This user is disabled. Please contact admin.";
           Get.offAll(() => const LoginScreen());
         }
       } else {
         await FirebaseAuth.instance.signOut();
-        ShowToastDialog.showToast("This user does not exist in the customer app.".tr);
+        message = "This user does not exist in the customer app.";
         Get.offAll(() => const LoginScreen());
       }
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'user-not-found') {
-        ShowToastDialog.showToast("No user found for that email.".tr);
-      } else if (e.code == 'wrong-password') {
-        ShowToastDialog.showToast("Wrong password provided.".tr);
-      } else if (e.code == 'invalid-email') {
-        ShowToastDialog.showToast("Invalid email.".tr);
-      } else {
-        ShowToastDialog.showToast(e.message?.tr ?? "Login failed. Please try again.".tr);
-      }
+      // One message for a wrong email, a wrong password or both; Firebase's
+      // own text (e.message) is never shown.
+      debugPrint("Email login failed: ${e.code}");
+      message = LoginValidation.authErrorMessage(e.code);
+    } catch (e) {
+      debugPrint("Email login failed: $e");
+      message = LoginValidation.genericError;
     } finally {
       isLoading.value = false;
       ShowToastDialog.closeLoader();
     }
+    // Shown after the loader closes: EasyLoading has one overlay, so a toast
+    // shown before closeLoader() was dismissed with it.
+    if (message != null) ShowToastDialog.showToast(message.tr);
   }
 
   Future<void> loginWithGoogle() async {
@@ -111,8 +114,9 @@ class LoginController extends GetxController {
               UserModel? userModel = await FireStoreUtils.getUserProfile(value.user!.uid);
               if (userModel != null && userModel.role == Constant.userRoleCustomer) {
                 if (userModel.active == true) {
-                  userModel.fcmToken = await NotificationService.getToken();
                   await FireStoreUtils.updateUser(userModel);
+                  // This device's token, field-level (never '' over a good one).
+                  unawaited(PushTokenSync.syncForCurrentUser());
 
                   if (userModel.shippingAddress != null && userModel.shippingAddress!.isNotEmpty) {
                     final defaultAddress = userModel.shippingAddress!.firstWhere((e) => e.isDefault == true, orElse: () => userModel.shippingAddress!.first);
@@ -177,8 +181,9 @@ class LoginController extends GetxController {
               UserModel? userModel = await FireStoreUtils.getUserProfile(userCredential.user!.uid);
               if (userModel != null && userModel.role == Constant.userRoleCustomer) {
                 if (userModel.active == true) {
-                  userModel.fcmToken = await NotificationService.getToken();
                   await FireStoreUtils.updateUser(userModel);
+                  // This device's token, field-level (never '' over a good one).
+                  unawaited(PushTokenSync.syncForCurrentUser());
 
                   if (userModel.shippingAddress != null && userModel.shippingAddress!.isNotEmpty) {
                     final defaultAddress = userModel.shippingAddress!.firstWhere((e) => e.isDefault == true, orElse: () => userModel.shippingAddress!.first);

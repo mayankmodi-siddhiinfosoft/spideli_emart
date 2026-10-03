@@ -554,7 +554,6 @@ class CabBookingController extends GetxController with CabRideOptions {
     orderModel.platformTax = Constant.platformTaxList;
     // Stops, passengers, instructions, written-only, rider (spec 4.8).
     applyRideOptions(orderModel);
-    log("Order Model : ${orderModel.toJson()}");
     ShowToastDialog.showLoader("Please wait".tr);
     // Creation write: the model's fields plus `stops` (which toJson leaves out
     // so later customer-side updates never undo a stop the driver reached).
@@ -1160,7 +1159,6 @@ class CabBookingController extends GetxController with CabRideOptions {
     log(double.parse(amount).toStringAsFixed(0));
     try {
       Map<String, dynamic>? paymentIntentData = await createStripeIntent(amount: amount);
-      log("stripe Responce====>$paymentIntentData");
       if (paymentIntentData!.containsKey("error")) {
         Get.back();
         ShowToastDialog.showToast("Something went wrong, please contact admin.".tr);
@@ -1507,7 +1505,6 @@ class CabBookingController extends GetxController with CabRideOptions {
         "issandbox": paytmModel.value.isSandboxEnabled == true ? "1" : "2",
       },
     );
-    log(response.body);
     final data = jsonDecode(response.body);
     if (data["body"]["txnToken"] == null || data["body"]["txnToken"].toString().isEmpty) {
       Get.back();

@@ -4,10 +4,10 @@ import 'package:spideliprovider/main.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/services/helper.dart';
-import 'package:spideliprovider/services/preferences.dart';
 import 'package:spideliprovider/ui/dashboard/dashboard_screen.dart';
 import 'package:spideliprovider/ui/subscription_plan_screen/app_not_access_screen.dart';
 import 'package:spideliprovider/ui/subscription_plan_screen/subscription_plan_screen.dart';
+import 'package:spideliprovider/utils/login_validation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide User;
@@ -28,13 +28,21 @@ class LoginController extends GetxController {
   /// @param email user email
   /// @param password user password
   loginWithEmailAndPassword({required String email, required String password, required BuildContext context}) async {
+    // Checked before any request: nothing is sent with an empty field or a
+    // malformed email.
+    final String? invalid = LoginValidation.validate(email, password);
+    if (invalid != null) {
+      ShowToastDialog.showToast(invalid.tr);
+      return;
+    }
     ShowToastDialog.showLoader('Logging in, please wait...'.tr);
     dynamic result = await FireStoreUtils.loginWithEmailAndPassword(email.trim(), password.trim());
     ShowToastDialog.closeLoader();
     if (result != null && result is User && result.role == 'provider') {
       if (result.active == true) {
         result.active = true;
-        Preferences.setString(Preferences.passwordKey, password);
+        // The password is not kept on the device: the FirebaseAuth session
+        // keeps the user signed in.
         await FireStoreUtils.updateCurrentUser(result);
         MyAppState.currentUser = result;
         if (MyAppState.currentUser!.sectionId.isNotEmpty) {
@@ -130,7 +138,9 @@ class LoginController extends GetxController {
 
               if (userModel?.role == USER_ROLE_PROVIDER) {
                 if (userModel?.active == true) {
-                  userModel?.fcmToken = await NotificationService.getToken();
+                  // Keeps the stored token when this device has none yet (iOS,
+                  // before the APNs token): '' must not replace a working one.
+                  userModel?.fcmToken = await NotificationService.freshTokenOr(userModel.fcmToken);
                   await FireStoreUtils.updateCurrentUser(userModel!);
                   MyAppState.currentUser = userModel;
 
@@ -217,7 +227,9 @@ class LoginController extends GetxController {
               User? userModel = await FireStoreUtils.getUserProfile(value.user!.uid);
               if (userModel?.role == USER_ROLE_PROVIDER) {
                 if (userModel?.active == true) {
-                  userModel?.fcmToken = await NotificationService.getToken();
+                  // Keeps the stored token when this device has none yet (iOS,
+                  // before the APNs token): '' must not replace a working one.
+                  userModel?.fcmToken = await NotificationService.freshTokenOr(userModel.fcmToken);
                   await FireStoreUtils.updateCurrentUser(userModel!);
                   MyAppState.currentUser = userModel;
                   if (MyAppState.currentUser!.sectionId.isNotEmpty) {
