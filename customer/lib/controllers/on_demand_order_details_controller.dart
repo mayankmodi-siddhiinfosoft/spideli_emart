@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/models/coupon_model.dart';
@@ -9,8 +10,7 @@ import '../models/onprovider_order_model.dart';
 import '../models/wallet_transaction_model.dart';
 import '../models/worker_model.dart';
 import '../service/fire_store_utils.dart';
-import '../service/push_message.dart';
-import '../service/send_notification.dart';
+import '../service/on_demand_notifier.dart';
 import '../themes/show_toast_dialog.dart';
 import '../widget/cancel_reason_sheet.dart';
 
@@ -206,7 +206,6 @@ class OnDemandOrderDetailsController extends GetxController {
           adminComm = double.tryParse(order.adminCommission!) ?? 0;
         }
       }
-      final provider = await FireStoreUtils.getUserProfile(order.provider.author ?? '');
       // Refund customer wallet if not COD
       if ((order.payment_method).toLowerCase() != 'cod') {
         await FireStoreUtils.setWalletTransaction(
@@ -277,12 +276,10 @@ class OnDemandOrderDetailsController extends GetxController {
 
       await FireStoreUtils.updateOnDemandOrder(order, extra: reason.toFields()); // Ensure this completes
 
-      // Notify provider
-
-      if (provider != null) {
-        Map<String, dynamic> payload = {"type": 'provider_order', "orderId": order.id};
-        await SendNotification.sendFcmMessage(Constant.bookingPlaced, provider.fcmToken ?? '', payload, recipient: PushRecipient.provider);
-      }
+      // Event 2: the provider and the assigned worker (it used to send the
+      // provider the "booking placed" template). Not awaited: a failed push
+      // never holds up the cancellation.
+      unawaited(OnDemandNotifier.bookingCancelled(order));
 
       ShowToastDialog.closeLoader();
       // Stay on the details screen, now showing who cancelled and why.

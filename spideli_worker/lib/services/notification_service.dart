@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
 import 'package:spideliworker/constant/constants.dart';
+import 'package:spideliworker/controller/dashboard_controller.dart';
 import 'package:spideliworker/firebase_options.dart';
 import 'package:spideliworker/main.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
@@ -136,7 +137,6 @@ class NotificationService {
     if (_listening) return;
     _listening = true;
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      if (message.notification == null) return;
       // FCM does not display a push while the app is open on Android: post it
       // on the worker channel. iOS presents it from the options set in main().
       if (_isAndroid) _display(message);
@@ -177,7 +177,9 @@ class NotificationService {
     try {
       switch (pushRouteFor(data)) {
         case PushRoute.booking:
-          Get.to(const BookingDetailsScreen(), arguments: {"orderId": value('orderId')});
+          unawaited(_openJob(value('orderId')));
+        case PushRoute.jobList:
+          _openJobList();
         case PushRoute.chat:
           // The sender of the push is the other side of the chat.
           Get.to(const ChatScreen(), arguments: {
@@ -214,10 +216,73 @@ class NotificationService {
     }
   }
 
+  /// A booking push (assigned, reassigned, cancelled, rejected): its details
+  /// when the booking is still this worker's, else the job list
+  /// ([jobTapTarget]). Never throws.
+  static Future<void> _openJob(String orderId) async {
+    bool? exists;
+    String? assignedWorker;
+    if (jobTapTarget(orderId: orderId) == JobTapTarget.details) {
+      try {
+        final snapshot = await FireStoreUtils.firestore.collection(PROVIDER_ORDER).doc(orderId).get().timeout(const Duration(seconds: 8));
+        exists = snapshot.exists;
+        assignedWorker = snapshot.data()?['workerId']?.toString();
+      } catch (e) {
+        // Offline or not readable: the details screen shows its own state.
+        log("Tapped booking not read: $e");
+      }
+    }
+    try {
+      final JobTapTarget target = jobTapTarget(
+        orderId: orderId,
+        orderExists: exists,
+        orderWorkerId: assignedWorker,
+        currentWorkerId: auth.FirebaseAuth.instance.currentUser?.uid,
+      );
+      if (target == JobTapTarget.details) {
+        // Not deduplicated: a push for another booking opened from a booking's
+        // details must still open (each screen has its own controller).
+        Get.to(() => const BookingDetailsScreen(), arguments: {"orderId": orderId.trim()}, preventDuplicates: false);
+      } else {
+        _openJobList();
+      }
+    } catch (e) {
+      log("Tapped booking not opened: $e");
+    }
+  }
+
+  /// Back to the dashboard, on the Jobs tab. Never throws.
+  static void _openJobList() {
+    try {
+      Get.until((route) => route.isFirst);
+      if (Get.isRegistered<DashBoardController>()) {
+        final DashBoardController dashboard = Get.find<DashBoardController>();
+        dashboard.selectedIndex.value = 0;
+        if (dashboard.pageController.hasClients) dashboard.pageController.jumpToPage(0);
+      }
+    } catch (e) {
+      log("Job list not opened: $e");
+    }
+  }
+
   static Future<void> _display(RemoteMessage message) async {
     try {
       final RemoteNotification? notification = message.notification;
-      if (notification == null) return;
+      String title = notification?.title?.trim() ?? '';
+      String body = notification?.body?.trim() ?? '';
+      if (title.isEmpty && body.isEmpty) {
+        // A booking push whose Firestore template is missing arrives with an
+        // empty title and body: show the app's own text for it.
+        final fallback = onDemandFallbackText(message.data);
+        if (fallback != null) {
+          title = fallback.title.tr;
+          body = fallback.body.tr;
+        } else if (notification == null) {
+          // Data-only pushes are not notifications (and nothing to show).
+          return;
+        }
+      }
+      if (title.isEmpty && body.isEmpty) return;
       const NotificationDetails details = NotificationDetails(
         android: AndroidNotificationDetails(
           workerChannelId,
@@ -233,8 +298,8 @@ class NotificationService {
         // One notification per push: a fixed id made each new push replace
         // the previous one.
         id: (message.messageId ?? '${DateTime.now().microsecondsSinceEpoch}').hashCode & 0x7fffffff,
-        title: notification.title,
-        body: notification.body,
+        title: title,
+        body: body,
         notificationDetails: details,
         payload: jsonEncode(message.data),
       );

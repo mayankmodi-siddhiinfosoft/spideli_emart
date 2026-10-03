@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:customer/utils/region_service.dart';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
@@ -41,8 +42,7 @@ import '../payment/xendit_screen.dart';
 import '../screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import '../screen_ui/on_demand_service/on_demand_dashboard_screen.dart';
 import '../service/fire_store_utils.dart';
-import '../service/push_message.dart';
-import '../service/send_notification.dart';
+import '../service/on_demand_notifier.dart';
 import '../themes/app_them_data.dart';
 import '../themes/show_toast_dialog.dart';
 import '../utils/preferences.dart';
@@ -87,17 +87,16 @@ class OnDemandPaymentController extends GetxController {
       onDemandOrderModel.value?.paymentStatus = onDemandOrderModel.value?.provider.priceUnit == "Fixed" && selectedPaymentMethod.value == "cod" ? false : true;
       onDemandOrderModel.value?.extraPaymentStatus = true;
 
+      // A fixed-price booking reaches here new (no id yet); an hourly booking
+      // already exists and is paid from its details screen ("Pay Now").
+      final bool isNewBooking = onDemandOrderModel.value!.id.isEmpty;
       await FireStoreUtils.onDemandOrderPlace(onDemandOrderModel.value!, totalAmount.value);
+      // Event 1 once per new booking, else the payment (event 14). Not
+      // awaited: a failed push never holds up the booking or the payment.
+      unawaited(isNewBooking ? OnDemandNotifier.bookingPlaced(onDemandOrderModel.value!) : OnDemandNotifier.bookingPaid(onDemandOrderModel.value!));
 
       if (onDemandOrderModel.value?.status == Constant.orderPlaced) {
         await FireStoreUtils.sendOrderOnDemandServiceEmail(orderModel: onDemandOrderModel.value!);
-
-        final providerUser = await FireStoreUtils.getUserProfile(onDemandOrderModel.value!.provider.author!);
-
-        if (providerUser != null) {
-          final payLoad = {"type": 'provider_order', "orderId": onDemandOrderModel.value?.id};
-          await SendNotification.sendFcmMessage(Constant.bookingPlaced, providerUser.fcmToken ?? '', payLoad, recipient: PushRecipient.provider);
-        }
 
         ShowToastDialog.showToast("OnDemand Service successfully booked".tr);
       }
@@ -179,6 +178,7 @@ class OnDemandPaymentController extends GetxController {
       }
 
       await FireStoreUtils.updateOnDemandOrder(onDemandOrderModel.value!);
+      unawaited(OnDemandNotifier.extraChargesPaid(onDemandOrderModel.value!));
 
       ShowToastDialog.closeLoader();
       Get.offAll(const OnDemandDashboardScreen());

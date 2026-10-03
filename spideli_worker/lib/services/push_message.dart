@@ -26,8 +26,8 @@ const String workerChannelDescription = 'Assigned bookings and chat messages';
 /// (customer/lib/utils/notification_service.dart, `.claude/PUSH-CHANNELS.md`).
 const String customerChannelId = 'high_importance_channel';
 
-/// The provider app's foreground channel (spideli_provider NotificationService).
-/// The worker does not push to providers today; this is only the mapping.
+/// The provider app's channel (spideli_provider NotificationService,
+/// `.claude/PUSH-CHANNELS.md`).
 const String providerChannelId = '01';
 
 /// Who receives a push sent by the worker app.
@@ -265,8 +265,91 @@ bool shouldClearTokenOnSignOut({required String? storedToken, required String? d
   return isUsableFcmToken(deviceToken) && isUsableFcmToken(storedToken) && storedToken!.trim() == deviceToken!.trim();
 }
 
+// ------------------------------------------------- on-demand bookings --
+
+/// The `type` every on-demand booking push carries (all three apps route on
+/// it). See `.claude/ONDEMAND-NOTIFICATIONS.md`.
+const String onDemandPushType = 'provider_order';
+
+/// The `event` codes of `.claude/ONDEMAND-NOTIFICATIONS.md` (one per action).
+class OnDemandEvent {
+  OnDemandEvent._();
+
+  static const String bookingPlaced = 'booking_placed'; // 1
+  static const String bookingCancelledByCustomer = 'booking_cancelled_by_customer'; // 2
+  static const String providerAccepted = 'provider_accepted'; // 3
+  static const String providerRejected = 'provider_rejected'; // 4
+  static const String workerAssigned = 'worker_assigned'; // 5
+  static const String workerAssignedCustomer = 'worker_assigned_customer'; // 6
+  static const String workerUnassigned = 'worker_unassigned'; // 7
+  static const String serviceInTransit = 'service_intransit'; // 8
+  static const String stopTime = 'stop_time'; // 9
+  static const String serviceCharges = 'service_charges'; // 10
+  static const String serviceCompleted = 'service_completed'; // 11
+  static const String workerAccepted = 'worker_accepted'; // 12
+  static const String workerRejected = 'worker_rejected'; // 13
+
+  /// Every code above: a push whose `type` is one of them (older senders put
+  /// the template type there) is an on-demand booking push too.
+  static const Set<String> all = <String>{
+    bookingPlaced,
+    bookingCancelledByCustomer,
+    providerAccepted,
+    providerRejected,
+    workerAssigned,
+    workerAssignedCustomer,
+    workerUnassigned,
+    serviceInTransit,
+    stopTime,
+    serviceCharges,
+    serviceCompleted,
+    workerAccepted,
+    workerRejected,
+  };
+}
+
+/// The data of an on-demand booking push sent by the worker app (contract
+/// "Data payload"): `type`, `event`, `orderId`, `status`, the service and the
+/// parties when known, `senderRole` = `worker`. Blank or `"null"` values are
+/// dropped, never sent.
+Map<String, String> onDemandPushData({
+  required String event,
+  required String orderId,
+  required String status,
+  String? serviceId,
+  String? serviceName,
+  String? customerId,
+  String? providerId,
+  String? workerId,
+  String senderRole = 'worker',
+}) {
+  final Map<String, String> out = <String, String>{};
+  void put(String key, String? value) {
+    final String text = value?.trim() ?? '';
+    final String lower = text.toLowerCase();
+    if (text.isEmpty || lower == 'null' || lower == 'undefined' || lower == 'nil') return;
+    out[key] = text;
+  }
+
+  put('type', onDemandPushType);
+  put('event', event);
+  put('orderId', orderId);
+  put('status', status);
+  put('serviceId', serviceId);
+  put('serviceName', serviceName);
+  put('customerId', customerId);
+  put('providerId', providerId);
+  put('workerId', workerId);
+  put('senderRole', senderRole);
+  return out;
+}
+
 /// Where a tapped push opens.
-enum PushRoute { none, booking, chat, inbox, legacyProviderChat, adminChat }
+///
+/// [jobList] is the Jobs tab: an on-demand booking push without a usable
+/// `orderId`, or one telling the worker the booking was taken off them
+/// (`worker_unassigned`).
+enum PushRoute { none, booking, jobList, chat, inbox, legacyProviderChat, adminChat }
 
 String _value(Map<String, dynamic> data, String key) {
   final String text = (data[key] ?? '').toString().trim();
@@ -278,8 +361,9 @@ String _value(Map<String, dynamic> data, String key) {
 /// a push without what its screen needs opens nothing (the app just comes to
 /// the front).
 ///
-/// - `provider_order` + `orderId` (booking assigned, sent by the provider):
-///   the booking.
+/// - `provider_order` (or an on-demand `event` code as the type) + `orderId`:
+///   the booking ([jobTapTarget] then decides details or job list); without a
+///   usable `orderId`, or `event` = `worker_unassigned`: the job list.
 /// - `orderChat` / `chat` + `orderId` + `senderId` (chat from a customer): that
 ///   chat; without the order or the sender: the inbox.
 /// - `provider_chat` + `orderId`: the chat, with the arguments in the payload.
@@ -295,8 +379,55 @@ PushRoute pushRouteFor(Map<String, dynamic> data) {
       return orderId.isEmpty || _value(data, 'senderId').isEmpty ? PushRoute.inbox : PushRoute.chat;
     case 'provider_chat':
       return orderId.isEmpty ? PushRoute.none : PushRoute.legacyProviderChat;
+  }
+  final String event = _value(data, 'event');
+  final bool onDemand = type == onDemandPushType || OnDemandEvent.all.contains(type) || OnDemandEvent.all.contains(event);
+  if (onDemand) {
+    // A booking taken off this worker is no longer theirs to open.
+    if (event == OnDemandEvent.workerUnassigned || type == OnDemandEvent.workerUnassigned) return PushRoute.jobList;
+    return orderId.isEmpty ? PushRoute.jobList : PushRoute.booking;
+  }
+  return orderId.isEmpty ? PushRoute.none : PushRoute.booking;
+}
+
+/// What a tapped booking push opens once the booking was looked up.
+enum JobTapTarget { details, jobList }
+
+/// The job a tapped on-demand push opens ([pushRouteFor] said
+/// [PushRoute.booking]), after reading `provider_orders/{orderId}`:
+/// - [orderExists] false (no such booking): the job list;
+/// - the booking is now assigned to another worker ([orderWorkerId] set and not
+///   [currentWorkerId]): the job list (it was reassigned);
+/// - otherwise, and when the booking could not be read ([orderExists] null:
+///   offline, timeout), its details: that screen shows its own error state.
+JobTapTarget jobTapTarget({required String orderId, bool? orderExists, String? orderWorkerId, String? currentWorkerId}) {
+  final String id = orderId.trim();
+  final String lower = id.toLowerCase();
+  if (id.isEmpty || lower == 'null' || lower == 'undefined' || lower == 'nil' || id.contains('/')) return JobTapTarget.jobList;
+  if (orderExists == false) return JobTapTarget.jobList;
+  final String assigned = orderWorkerId?.trim() ?? '';
+  final String me = currentWorkerId?.trim() ?? '';
+  if (orderExists == true && assigned.isNotEmpty && me.isNotEmpty && assigned != me) return JobTapTarget.jobList;
+  return JobTapTarget.details;
+}
+
+/// The text of a booking push shown in the foreground when the push itself
+/// carries none (a template missing on Firestore): untranslated keys of
+/// `lib/lang/app_en.dart`, or null for pushes that are not on-demand events
+/// the worker receives.
+({String title, String body})? onDemandFallbackText(Map<String, dynamic> data) {
+  final String event = _value(data, 'event').isEmpty ? _value(data, 'type') : _value(data, 'event');
+  switch (event) {
+    case OnDemandEvent.workerAssigned:
+      return (title: 'New job assigned', body: 'A new booking has been assigned to you. Tap to view it.');
+    case OnDemandEvent.workerUnassigned:
+      return (title: 'Booking reassigned', body: 'This booking is no longer assigned to you');
+    case OnDemandEvent.bookingCancelledByCustomer:
+      return (title: 'Booking cancelled', body: 'The customer cancelled this booking.');
+    case OnDemandEvent.providerRejected:
+      return (title: 'Booking cancelled', body: 'The provider cancelled this booking.');
     default:
-      return orderId.isEmpty ? PushRoute.none : PushRoute.booking;
+      return null;
   }
 }
 

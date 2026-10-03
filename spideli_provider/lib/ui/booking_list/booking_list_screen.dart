@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:spideliprovider/widgets/cancellation_block.dart';
 import 'package:spideliprovider/widgets/cancel_reason_sheet.dart';
 import 'package:spideliprovider/services/provider_verification_gate.dart';
@@ -11,7 +13,8 @@ import 'package:spideliprovider/model/onprovider_order_model.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/services/region_service.dart';
-import 'package:spideliprovider/services/send_notification.dart';
+import 'package:spideliprovider/services/booking_notifier.dart';
+import 'package:spideliprovider/services/booking_push.dart';
 import 'package:spideliprovider/themes/app_colors.dart';
 import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/ui/booking_list/assign_worker_list.dart';
@@ -531,8 +534,8 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                 }
                 onProviderOrder.status = ORDER_STATUS_REJECTED;
 
-                Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-                await SendNotification.sendFcmMessage(providerRejected, onProviderOrder.author.fcmToken, payLoad, recipientId: onProviderOrder.authorID);
+                // The write is done: the push never blocks or undoes it.
+                unawaited(BookingNotifier.notify(ProviderBookingAction.reject, onProviderOrder));
 
                 if (onProviderOrder.provider.priceUnit == "Fixed") {
                   if (onProviderOrder.payment_method.toLowerCase() != 'cod') {
@@ -564,8 +567,8 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
               onProviderOrder.startTime = Timestamp.now();
             }
             await FireStoreUtils.updateOrder(onProviderOrder);
-            Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-            await SendNotification.sendFcmMessage(providerServiceInTransit, onProviderOrder.author.fcmToken, payLoad, recipientId: onProviderOrder.authorID);
+            // The write is done: the push never blocks or undoes it.
+            unawaited(BookingNotifier.notify(ProviderBookingAction.start, onProviderOrder));
 
             ShowToastDialog.closeLoader();
           } else {
@@ -595,8 +598,8 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                   onProviderOrder.quantity = minutes > 60 ? double.parse(durationToString(minutes)) : double.parse(durationToString(60));
                 }
                 await FireStoreUtils.updateOrder(onProviderOrder);
-                Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-                await SendNotification.sendFcmMessage(providerStopTime, onProviderOrder.author.fcmToken, payLoad, recipientId: onProviderOrder.authorID);
+                // The write is done: the push never blocks or undoes it.
+                unawaited(BookingNotifier.notify(ProviderBookingAction.stopTime, onProviderOrder));
                 ShowToastDialog.closeLoader();
               },
             )
@@ -646,6 +649,7 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                 ShowToastDialog.showLoader('Please wait...');
                 onProviderOrder.status = ORDER_STATUS_ASSIGNED;
                 await FireStoreUtils.updateOrder(onProviderOrder);
+                unawaited(BookingNotifier.notify(ProviderBookingAction.assignSelf, onProviderOrder));
                 ShowToastDialog.closeLoader();
               },
             ),
@@ -746,8 +750,8 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
             await FireStoreUtils.updateCurrentUser(MyAppState.currentUser!);
           }
         }
-        Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-        await SendNotification.sendFcmMessage(providerAccepted, onProviderOrder.author.fcmToken, payLoad, recipientId: onProviderOrder.authorID);
+        // The write is done: the push never blocks or undoes it.
+        unawaited(BookingNotifier.notify(ProviderBookingAction.accept, onProviderOrder));
         ShowToastDialog.closeLoader();
       },
     );
@@ -767,8 +771,8 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
         }
 
         await FireStoreUtils.updateOrder(onProviderOrder);
-        Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-        await SendNotification.sendFcmMessage(providerServiceCompleted, onProviderOrder.author.fcmToken, payLoad, recipientId: onProviderOrder.authorID);
+        // The write is done: the push never blocks or undoes it.
+        unawaited(BookingNotifier.notify(ProviderBookingAction.complete, onProviderOrder));
 
         ShowToastDialog.closeLoader();
         setState(() {});

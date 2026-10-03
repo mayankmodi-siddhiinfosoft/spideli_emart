@@ -1,8 +1,12 @@
 import 'dart:convert';
 
+import 'package:customer/utils/on_demand_push.dart';
+
 /// Where a tapped push takes the customer (besides `delivery_otp`, which
-/// `DeliveryCodePush` handles).
-enum PushTapTarget { supportChat, storeInbox, driverInbox, providerInbox, workerInbox }
+/// `DeliveryCodePush` handles). [onDemandBooking] is the booking details
+/// screen of the push's `orderId`; [onDemandBookings] the bookings list, for
+/// a booking push without a usable `orderId`.
+enum PushTapTarget { supportChat, storeInbox, driverInbox, providerInbox, workerInbox, onDemandBooking, onDemandBookings }
 
 /// The pure parts of handling a received push: reading its payload and
 /// deciding what to show or open. No Firebase, so it is unit tested.
@@ -45,6 +49,10 @@ abstract final class PushTap {
         default:
           return PushTapTarget.driverInbox;
       }
+    }
+    // On-demand booking (`type: provider_order`, or an on-demand event).
+    if (OnDemandPush.isOnDemand(data)) {
+      return OnDemandPush.orderIdOf(data) != null ? PushTapTarget.onDemandBooking : PushTapTarget.onDemandBookings;
     }
     return null;
   }

@@ -1,10 +1,13 @@
+import 'dart:async';
+
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/controller/booking_details_controller.dart';
 import 'package:spideliprovider/model/onprovider_order_model.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/services/region_service.dart';
-import 'package:spideliprovider/services/send_notification.dart';
+import 'package:spideliprovider/services/booking_notifier.dart';
+import 'package:spideliprovider/services/booking_push.dart';
 import 'package:spideliprovider/themes/app_colors.dart';
 import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
@@ -128,8 +131,8 @@ class CommonUI {
                       onProviderOrder.extraPaymentStatus = false;
 
                       await FireStoreUtils.updateOrder(onProviderOrder);
-                      Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-                      await SendNotification.sendFcmMessage(providerServiceExtraCharges, onProviderOrder.author.fcmToken, payLoad, recipientId: onProviderOrder.authorID);
+                      // The write is done: the push never blocks or undoes it.
+                      unawaited(BookingNotifier.notify(ProviderBookingAction.extraCharges, onProviderOrder));
 
                       ShowToastDialog.closeLoader();
                       Get.back();

@@ -39,9 +39,24 @@ class BookingDetailsController extends GetxController {
       // pass a missing payload field the same way. See [argString].
       orderId.value = argString(argumentData, 'orderId');
     }
-    await FireStoreUtils.getReviewByProviderServiceId(orderId.toString()).then((value) {
-      ratingService.value = value;
-    });
+    await _loadReviews();
+  }
+
+  /// Shows another booking on the open screen (a tapped booking push while a
+  /// details screen is already up).
+  Future<void> openOrder(String id) async {
+    if (id.trim().isEmpty || id.trim() == orderId.value) return;
+    orderId.value = id.trim();
+    ratingService.clear();
+    update();
+    await _loadReviews();
+  }
+
+  Future<void> _loadReviews() async {
+    final String requested = orderId.value;
+    final value = await FireStoreUtils.getReviewByProviderServiceId(requested);
+    // A booking opened meanwhile keeps its own reviews.
+    if (requested == orderId.value) ratingService.value = value;
     update();
   }
 }

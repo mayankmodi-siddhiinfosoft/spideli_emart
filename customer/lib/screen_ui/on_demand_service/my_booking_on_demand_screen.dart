@@ -14,7 +14,11 @@ import 'on_demand_order_details_screen.dart';
 /// Archetype F – booking history. Pill tabs over status-led booking cards
 /// with a schedule/worker recap block.
 class MyBookingOnDemandScreen extends StatelessWidget {
-  const MyBookingOnDemandScreen({super.key});
+  const MyBookingOnDemandScreen({super.key, this.showBack = false});
+
+  /// True when opened on its own (a booking push without a usable booking),
+  /// not as the dashboard's bookings tab.
+  final bool showBack;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +34,7 @@ class MyBookingOnDemandScreen extends StatelessWidget {
           child: DsScaffold(
             appBar: DsAppBar(
               title: "Booking History".tr,
-              showBack: false,
+              showBack: showBack,
               bottom: DsTabBar(
                 tabs: tabs,
                 onTap: (index) {

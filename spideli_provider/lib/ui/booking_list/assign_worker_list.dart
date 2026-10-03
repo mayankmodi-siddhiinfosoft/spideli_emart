@@ -1,10 +1,13 @@
+import 'dart:async';
+
 import 'package:spideliprovider/services/provider_verification_gate.dart';
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/controller/assign_worker_controller.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
-import 'package:spideliprovider/services/send_notification.dart';
+import 'package:spideliprovider/services/booking_notifier.dart';
+import 'package:spideliprovider/services/booking_push.dart';
 import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:flutter/material.dart';
@@ -120,8 +123,16 @@ class AssignWorkerList extends StatelessWidget {
                         previousWorkerId: previousWorkerId,
                       );
                     }
-                    Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": controller.onProviderOrder.value.id};
-                    await SendNotification.sendFcmMessage(workerBookingAssigned, controller.fcmToken.value, payLoad, recipientId: newWorkerId);
+                    // The new worker (worker_assigned), the previous one on a
+                    // reassignment (worker_unassigned) and the customer
+                    // (worker_assigned_customer); nothing when the same worker
+                    // was picked again. Never blocks the assignment.
+                    unawaited(BookingNotifier.notify(
+                      ProviderBookingAction.assignWorker,
+                      controller.onProviderOrder.value,
+                      previousWorkerId: previousWorkerId,
+                      workerToken: controller.fcmToken.value,
+                    ));
 
                     Get.back();
                     ShowToastDialog.closeLoader();

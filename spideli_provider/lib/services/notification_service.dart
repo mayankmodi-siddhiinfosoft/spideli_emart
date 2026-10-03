@@ -6,13 +6,17 @@ import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/firebase_options.dart';
 import 'package:spideliprovider/main.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
+import 'package:spideliprovider/services/booking_push.dart';
 import 'package:spideliprovider/services/push_message.dart';
+import 'package:spideliprovider/controller/booking_details_controller.dart';
+import 'package:spideliprovider/controller/dashboard_controller.dart';
 import 'package:spideliprovider/ui/booking_list/booking_details_screen.dart';
 import 'package:spideliprovider/ui/chat_screen/chat_screen.dart';
 import 'package:spideliprovider/ui/help_support_screen/help_support_screen.dart';
@@ -247,32 +251,30 @@ class NotificationService {
 
   static void _route(Map<String, dynamic> data) {
     try {
-      final String type = pushDataString(data, 'type');
-      final String orderId = pushDataString(data, 'orderId');
-      switch (type) {
-        case 'provider_order':
-        case 'booking_placed':
-          if (orderId.isEmpty) return;
-          Get.to(() => const BookingDetailsScreen(), arguments: {"orderId": orderId});
+      final ProviderTapTarget target = providerTapTarget(data);
+      final String orderId = target.orderId;
+      switch (target.kind) {
+        case ProviderTapKind.bookingDetails:
+          unawaited(_openBooking(orderId));
           break;
-        case 'orderChat':
+        case ProviderTapKind.bookingList:
+          _openBookingList();
+          break;
+        case ProviderTapKind.orderChat:
           // A customer's or worker's chat message: `senderId` is the other side.
-          final String otherId = pushDataString(data, 'senderId');
-          if (orderId.isEmpty || otherId.isEmpty) return;
           Get.to(() => const ChatScreen(), arguments: {
             "senderName": MyAppState.currentUser?.fullName() ?? '',
             "senderId": FireStoreUtils.getCurrentUid(),
             "senderProfileUrl": MyAppState.currentUser?.profilePictureURL ?? '',
             "receivedName": pushDataString(data, 'senderName'),
-            "receivedId": otherId,
+            "receivedId": pushDataString(data, 'senderId'),
             "receivedProfileUrl": '',
             "orderId": orderId,
             "token": '',
             "chatType": pushDataString(data, 'chatType'),
           });
           break;
-        case 'provider_chat':
-          if (orderId.isEmpty) return;
+        case ProviderTapKind.providerChat:
           Get.to(() => const ChatScreen(), arguments: {
             "senderName": pushDataString(data, 'senderName'),
             "senderId": pushDataString(data, 'senderId'),
@@ -285,15 +287,80 @@ class NotificationService {
             "chatType": pushDataString(data, 'chatType'),
           });
           break;
-        case 'admin_chat':
-        case 'admin':
+        case ProviderTapKind.adminChat:
           // The drawer position of Help & Support moves with the optional
           // Subscription item, so the screen is opened directly.
           Get.to(() => HelpSupportScreen());
           break;
+        case ProviderTapKind.none:
+          break;
       }
     } catch (e) {
       log("Notification tap not routed: $e");
+    }
+  }
+
+  /// A booking push: the booking details screen for [orderId], or the
+  /// bookings list when the booking does not exist (deleted, or a malformed
+  /// id) or is not this provider's.
+  static Future<void> _openBooking(String orderId) async {
+    try {
+      final snapshot = await FireStoreUtils.firestore.collection(PROVIDER_ORDER).doc(orderId).get();
+      if (!snapshot.exists) {
+        _openBookingList();
+        return;
+      }
+      final dynamic provider = snapshot.data()?['provider'];
+      final String owner = provider is Map ? pushDataString(provider, 'author') : '';
+      if (owner.isNotEmpty && owner != FireStoreUtils.getCurrentUid()) {
+        _openBookingList();
+        return;
+      }
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied' || e.code == 'invalid-argument') {
+        _openBookingList();
+        return;
+      }
+      // Offline or slow: the screen shows the booking (or its error) itself.
+      log("Booking ${e.code} on tap, opening it anyway.");
+    } catch (e) {
+      log("Booking not checked on tap: $e");
+    }
+    try {
+      _showBookingDetails(orderId);
+    } catch (e) {
+      log("Booking details not opened: $e");
+      _openBookingList();
+    }
+  }
+
+  static const String _detailsRoute = '/BookingDetailsScreen';
+
+  /// The details screen keeps one global controller: a second copy pushed on
+  /// top would share it (and GetX refuses a push of the route on top anyway),
+  /// so an open details screen is brought forward and switched to [orderId].
+  static void _showBookingDetails(String orderId) {
+    if (Get.isRegistered<BookingDetailsController>()) {
+      Get.until((Route<dynamic> route) => route.settings.name == _detailsRoute || route.isFirst);
+      if (Get.currentRoute == _detailsRoute && Get.isRegistered<BookingDetailsController>()) {
+        Get.find<BookingDetailsController>().openOrder(orderId);
+        return;
+      }
+    }
+    Get.to(() => const BookingDetailsScreen(), arguments: {"orderId": orderId}, preventDuplicates: false);
+  }
+
+  /// Back to the dashboard, on the Booking List.
+  static void _openBookingList() {
+    try {
+      Get.until((Route<dynamic> route) => route.isFirst);
+      if (Get.isRegistered<DashBoardController>()) {
+        final DashBoardController dashboard = Get.find<DashBoardController>();
+        final int index = dashboard.drawerItems.indexWhere((DrawerItem item) => item.id == 'bookings');
+        if (index >= 0) dashboard.selectedDrawerIndex.value = index;
+      }
+    } catch (e) {
+      log("Bookings list not opened: $e");
     }
   }
 

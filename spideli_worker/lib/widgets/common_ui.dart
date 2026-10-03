@@ -3,8 +3,9 @@ import 'package:spideliworker/constant/show_toast_dialog.dart';
 import 'package:spideliworker/controller/booking_details_controller.dart';
 import 'package:spideliworker/model/onprovider_order_model.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
-import 'package:spideliworker/services/send_notification.dart';
+import 'package:spideliworker/services/push_message.dart';
 import 'package:spideliworker/themes/app_colors.dart';
+import 'package:spideliworker/ui/booking_list/job_actions.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 import 'package:spideliworker/utils/region_service.dart';
 import 'package:flutter/material.dart';
@@ -122,16 +123,20 @@ class CommonUI {
                   onProviderOrder.extraChargesDescription = controller.descriptionController.value.text.toString();
                   onProviderOrder.extraPaymentStatus = false;
 
-                  // Only the extra-charge fields (known-fields write).
-                  await FireStoreUtils.updateOrderFields(onProviderOrder.id, {
-                    'extraCharges': onProviderOrder.extraCharges,
-                    'extraChargesDescription': onProviderOrder.extraChargesDescription,
-                    'extraPaymentStatus': false,
-                  });
-                  Map<String, dynamic> payLoad = <String, dynamic>{"type": "provider_order", "orderId": onProviderOrder.id};
-                  // The customer's current token; the copy in the order goes stale.
-                  final String customerToken = await SendNotification.tokenForUser(onProviderOrder.authorID, fallback: onProviderOrder.author.fcmToken);
-                  await SendNotification.sendFcmMessage(providerServiceExtraCharges, customerToken, payLoad);
+                  try {
+                    // Only the extra-charge fields (known-fields write).
+                    await FireStoreUtils.updateOrderFields(onProviderOrder.id, {
+                      'extraCharges': onProviderOrder.extraCharges,
+                      'extraChargesDescription': onProviderOrder.extraChargesDescription,
+                      'extraPaymentStatus': false,
+                    });
+                  } catch (e) {
+                    ShowToastDialog.closeLoader();
+                    ShowToastDialog.showToast("Something went wrong, please try again.".tr);
+                    return;
+                  }
+                  // After the write, never holding it up (event 10, customer).
+                  JobActions.notifyCustomer(onProviderOrder, OnDemandEvent.serviceCharges);
 
                   ShowToastDialog.closeLoader();
                   Get.back();

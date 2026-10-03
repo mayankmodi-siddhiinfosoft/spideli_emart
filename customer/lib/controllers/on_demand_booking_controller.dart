@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/coupon_model.dart';
@@ -10,8 +12,7 @@ import '../models/provider_serivce_model.dart';
 import '../screen_ui/on_demand_service/on_demand_dashboard_screen.dart';
 import '../screen_ui/on_demand_service/on_demand_payment_screen.dart';
 import '../service/fire_store_utils.dart';
-import '../service/push_message.dart';
-import '../service/send_notification.dart';
+import '../service/on_demand_notifier.dart';
 import '../themes/show_toast_dialog.dart';
 import 'on_demand_dashboard_controller.dart';
 
@@ -227,12 +228,11 @@ class OnDemandBookingController extends GetxController {
         );
 
         await FireStoreUtils.onDemandOrderPlace(onDemandOrder, 0.0);
+        // Event 1 (hourly booking; a fixed-price one is booked after payment,
+        // OnDemandPaymentController). Not awaited: a failed push never holds
+        // up the booking.
+        unawaited(OnDemandNotifier.bookingPlaced(onDemandOrder));
         await FireStoreUtils.sendOrderOnDemandServiceEmail(orderModel: onDemandOrder);
-
-        if (providerUser != null) {
-          Map<String, dynamic> payLoad = {"type": 'provider_order', "orderId": onDemandOrder.id};
-          await SendNotification.sendFcmMessage(Constant.bookingPlaced, providerUser.fcmToken ?? '', payLoad, recipient: PushRecipient.provider);
-        }
 
         ShowToastDialog.closeLoader();
         Get.offAll(const OnDemandDashboardScreen());

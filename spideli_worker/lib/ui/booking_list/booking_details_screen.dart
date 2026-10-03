@@ -38,6 +38,10 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   /// the right action without opening a second stream.
   final ValueNotifier<OnProviderOrderModel?> _current = ValueNotifier<OnProviderOrderModel?>(null);
 
+  /// Each details screen has its own controller: a second one (a tapped push
+  /// for another booking) would otherwise reuse the first one's `orderId`.
+  late final String _controllerTag = 'booking-details-${identityHashCode(this)}';
+
   @override
   void dispose() {
     _current.dispose();
@@ -59,6 +63,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     Provider.of<DarkThemeProvider>(context);
     return GetBuilder<BookingDetailsController>(
         init: BookingDetailsController(),
+        tag: _controllerTag,
         builder: (controller) {
           final l = context.dsLayout;
           return Scaffold(
@@ -76,7 +81,13 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                         if (snapshot.connectionState == ConnectionState.waiting) {
                           return const DsSkeletonDetail(mediaHeight: 140);
                         }
-                        OnProviderOrderModel onProviderOrder = OnProviderOrderModel.fromJson(snapshot.data!.data()!);
+                        final Map<String, dynamic>? orderData = snapshot.data?.data();
+                        if (orderData == null) {
+                          // Deleted, or a push carried a wrong id: no crash.
+                          _publish(null);
+                          return DsErrorState(message: 'This booking is no longer available.'.tr);
+                        }
+                        OnProviderOrderModel onProviderOrder = OnProviderOrderModel.fromJson(orderData);
                         _publish(onProviderOrder);
                         double total = 0.0;
                         if (onProviderOrder.provider.disPrice == "" || onProviderOrder.provider.disPrice == "0") {

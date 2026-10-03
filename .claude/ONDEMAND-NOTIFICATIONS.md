@@ -57,8 +57,11 @@ Firestore templates.
 | 9 | Provider or Worker | stops the time (hourly) | `stop_time` | Customer | `stop_time` |
 | 10 | Provider or Worker | adds extra charges | `service_charges` | Customer | `service_charges` |
 | 11 | Provider or Worker | completes | `service_completed` | Customer | `service_completed` |
-| 12 | Worker | accepts the assigned job (if the app has this action) | `worker_accepted` | Customer and Provider | none |
-| 13 | Worker | rejects / declines the assigned job (if the app has it) | `worker_rejected` | Customer and Provider | none |
+| 12 | Worker | accepts the assigned job (the Worker app has NO such action today) | `worker_accepted` | Customer and Provider | none |
+| 13 | Worker | rejects / declines the assigned job (no such action today) | `worker_rejected` | Customer and Provider | none |
+| 14a | Provider | "Assign to myself" (Accepted → Assigned, no worker) | `provider_self_assigned` | Customer | none |
+| 14b | Customer | pays an hourly booking ("Pay Now", booking already exists) | `booking_paid` | Provider (and Worker if assigned) | none |
+| 14c | Customer | pays extra charges | `extra_charges_paid` | Provider (and Worker if assigned) | none |
 | 14 | any | any other status change found in the code | an event code named after it | the other parties | template if one fits |
 
 Rules: one push per recipient per action (a screen and a list that both offer
@@ -77,3 +80,15 @@ Works from foreground (local notification tap), background
 (`onMessageOpenedApp`) and terminated (`getInitialMessage`, opened after the
 app's start-up navigation); a missing/invalid `orderId` opens the bookings
 list and never crashes.
+
+## Notes (3 Oct 2026, implementation)
+
+- Provider declining a booking also tells an assigned worker with app text
+  "Booking cancelled" (the `provider_rejected` template is worded for the
+  customer). Reassignment pushes also carry `previousWorkerId`.
+- Provider sends go through `spideli_provider/lib/services/booking_notifier.dart`
+  (one call per action, 30 s de-duplication); customer through
+  `customer/lib/service/on_demand_notifier.dart`; worker through
+  `spideli_worker/lib/ui/booking_list/job_actions.dart` `JobActions.notifyCustomer`.
+- Fixed: the customer's cancel flow used to send the `booking_placed`
+  template ("New Booking Received") to the provider.

@@ -10,6 +10,8 @@ import 'package:customer/screen_ui/on_demand_service/provider_inbox_screen.dart'
 import 'package:customer/screen_ui/on_demand_service/worker_inbox_screen.dart';
 import 'package:customer/service/push_message.dart';
 import 'package:customer/utils/delivery_code_push.dart';
+import 'package:customer/utils/on_demand_booking_opener.dart';
+import 'package:customer/utils/on_demand_push.dart';
 import 'package:customer/utils/push_tap.dart';
 import 'package:customer/utils/push_token.dart';
 import 'package:customer/utils/push_token_sync.dart';
@@ -189,7 +191,8 @@ class NotificationService {
   static Future<String> getToken() async => await PushTokenSync.deviceToken() ?? '';
 
   /// Called by the home (ServiceListController.onReady): a tap that launched
-  /// the app is opened now, on top of the home.
+  /// the app (chat, support, on-demand booking) is opened now, on top of the
+  /// home.
   static void markAppReady() {
     _appReady = true;
     final Map<String, dynamic>? pending = _pendingTap;
@@ -227,6 +230,10 @@ class NotificationService {
           await Get.to(() => const ProviderInboxScreen());
         case PushTapTarget.workerInbox:
           await Get.to(() => const WorkerInboxScreen());
+        case PushTapTarget.onDemandBooking:
+        case PushTapTarget.onDemandBookings:
+          // The booking's details, or the bookings list without a usable id.
+          await OnDemandBookingOpener.open(OnDemandPush.orderIdOf(data));
       }
     } catch (e) {
       log('push: tap routing failed (${e.runtimeType})');

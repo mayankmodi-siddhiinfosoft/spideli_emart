@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
@@ -13,6 +15,7 @@ import 'package:spideliworker/constant/show_toast_dialog.dart';
 import 'package:spideliworker/controller/verification_controller.dart';
 import 'package:spideliworker/model/onprovider_order_model.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
+import 'package:spideliworker/services/push_message.dart';
 import 'package:spideliworker/services/send_notification.dart';
 import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/booking_list/verify_otp_screen.dart';
@@ -37,14 +40,47 @@ class JobActions {
     return true;
   }
 
-  static Map<String, dynamic> _payload(OnProviderOrderModel order) => <String, dynamic>{"type": "provider_order", "orderId": order.id};
+  /// The data of a push about [order] after a worker action
+  /// (`.claude/ONDEMAND-NOTIFICATIONS.md`): `type` `provider_order`, the
+  /// [event], the booking id, its [status] after the action (default: the
+  /// order's), the service, the three parties and `senderRole` `worker`.
+  /// [currentWorkerId] stands in when the booking has no `workerId`.
+  static Map<String, String> pushData(OnProviderOrderModel order, String event, {String? status, String? currentWorkerId}) {
+    final String assigned = order.workerId?.trim() ?? '';
+    return onDemandPushData(
+      event: event,
+      orderId: order.id,
+      status: status ?? order.status,
+      serviceId: order.provider.id,
+      serviceName: order.provider.title,
+      customerId: order.authorID,
+      providerId: order.provider.author,
+      workerId: assigned.isNotEmpty ? assigned : currentWorkerId,
+    );
+  }
 
-  /// The job-status push to the customer, on the customer's CURRENT token
-  /// (`users/{authorID}`): `author.fcmToken` is a copy taken when the booking
-  /// was placed, stale once the token rotates (and empty for iPhones then).
-  static Future<void> _notifyCustomer(OnProviderOrderModel order, String type) async {
-    final String token = await SendNotification.tokenForUser(order.authorID, fallback: order.author.fcmToken);
-    await SendNotification.sendFcmMessage(type, token, _payload(order));
+  /// The job-status push to the customer (contract events 8-11), sent once,
+  /// AFTER the action's Firestore write and without holding it up: the
+  /// action is done whether the push goes out or not. Every worker action
+  /// that changes a booking calls this from here only (the job list, the job
+  /// details and the extra-charges dialog share it), so one push per action.
+  ///
+  /// [event] is also the Firestore `dynamic_notification` template (every
+  /// worker event has one). The customer's CURRENT token (`users/{authorID}`)
+  /// is read at send time; `author.fcmToken`, the copy taken when the booking
+  /// was placed, is only the fallback.
+  static void notifyCustomer(OnProviderOrderModel order, String event, {String? status}) {
+    unawaited(_notifyCustomer(order, event, status: status));
+  }
+
+  static Future<void> _notifyCustomer(OnProviderOrderModel order, String event, {String? status}) async {
+    try {
+      final Map<String, String> data = pushData(order, event, status: status, currentWorkerId: auth.FirebaseAuth.instance.currentUser?.uid);
+      final String token = await SendNotification.tokenForUser(order.authorID, fallback: order.author.fcmToken);
+      await SendNotification.sendFcmMessage(event, token, data, recipient: PushRecipient.customer);
+    } catch (e) {
+      debugPrint('push "$event" to the customer not sent: $e');
+    }
   }
 
   static Future<void> start(OnProviderOrderModel order) async {
@@ -59,7 +95,7 @@ class JobActions {
       final Map<String, dynamic> data = {'status': ORDER_STATUS_ONGOING};
       if (order.provider.priceUnit == "Hourly") data['startTime'] = Timestamp.now();
       await FireStoreUtils.updateOrderFields(order.id, data);
-      await _notifyCustomer(order, providerServiceInTransit);
+      notifyCustomer(order, OnDemandEvent.serviceInTransit, status: ORDER_STATUS_ONGOING);
     } finally {
       ShowToastDialog.closeLoader();
     }
@@ -74,7 +110,8 @@ class JobActions {
       final int minutes = end.toDate().difference(start).inMinutes;
       final double quantity = minutes > 60 ? double.parse(durationToString(minutes)) : double.parse(durationToString(60));
       await FireStoreUtils.updateOrderFields(order.id, {'endTime': end, 'paymentStatus': false, 'quantity': quantity});
-      await _notifyCustomer(order, providerStopTime);
+      // The status stays "Order Ongoing" until the job is completed.
+      notifyCustomer(order, OnDemandEvent.stopTime);
     } finally {
       ShowToastDialog.closeLoader();
     }
@@ -112,6 +149,9 @@ class JobActions {
         if (urls.isNotEmpty) 'completionPhotos': FieldValue.arrayUnion(urls),
         'completionSignature': ?signatureUrl,
       });
+      // Right after the status write: a failed wallet or referral credit below
+      // must not cost the customer the "completed" push.
+      notifyCustomer(order, OnDemandEvent.serviceCompleted, status: ORDER_STATUS_COMPLETED);
       if (order.provider.priceUnit != "Fixed") {
         await FireStoreUtils.providerWalletSet(order, true);
       }
@@ -125,7 +165,6 @@ class JobActions {
         // The referral bonus must never block or repeat the completion.
         debugPrint('JobActions.complete: referral credit skipped: $e');
       }
-      await _notifyCustomer(order, providerServiceCompleted);
     } catch (e) {
       ShowToastDialog.showToast("Something went wrong, please try again.".tr);
     } finally {

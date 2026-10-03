@@ -236,8 +236,23 @@ void main() {
     test('booking assigned by the provider opens the booking', () {
       expect(pushRouteFor({'type': 'provider_order', 'orderId': 'o1'}), PushRoute.booking);
       expect(pushRouteFor({'type': 'worker_assigned', 'orderId': 'o1'}), PushRoute.booking);
-      expect(pushRouteFor({'type': 'provider_order'}), PushRoute.none);
-      expect(pushRouteFor({'type': 'provider_order', 'orderId': 'null'}), PushRoute.none);
+      // A booking push without a usable id opens the job list.
+      expect(pushRouteFor({'type': 'provider_order'}), PushRoute.jobList);
+      expect(pushRouteFor({'type': 'provider_order', 'orderId': 'null'}), PushRoute.jobList);
+    });
+
+    test('contract events: assigned / cancelled / rejected open the booking, unassigned the job list', () {
+      Map<String, dynamic> push(String event, {String? orderId = 'o1'}) => {'type': 'provider_order', 'event': event, 'orderId': ?orderId, 'status': 'Order Assigned'};
+      expect(pushRouteFor(push(OnDemandEvent.workerAssigned)), PushRoute.booking);
+      expect(pushRouteFor(push(OnDemandEvent.bookingCancelledByCustomer)), PushRoute.booking);
+      expect(pushRouteFor(push(OnDemandEvent.providerRejected)), PushRoute.booking);
+      expect(pushRouteFor(push(OnDemandEvent.workerUnassigned)), PushRoute.jobList);
+      expect(pushRouteFor(push(OnDemandEvent.workerAssigned, orderId: null)), PushRoute.jobList);
+      expect(pushRouteFor(push(OnDemandEvent.workerAssigned, orderId: '  ')), PushRoute.jobList);
+      // Older senders put the template type in `type`.
+      expect(pushRouteFor({'type': 'worker_unassigned', 'orderId': 'o1'}), PushRoute.jobList);
+      expect(pushRouteFor({'type': 'worker_assigned'}), PushRoute.jobList);
+      expect(pushRouteFor({'event': 'worker_assigned', 'orderId': 'o1'}), PushRoute.booking);
     });
 
     test('a customer chat (orderChat) opens the chat, or the inbox without a sender', () {
@@ -257,6 +272,95 @@ void main() {
       expect(pushRouteFor(<String, dynamic>{}), PushRoute.none);
       expect(pushRouteFor({'type': null, 'orderId': null}), PushRoute.none);
     });
+  });
+
+  group('onDemandPushData', () {
+    test('the contract payload: every key a string, senderRole worker', () {
+      final Map<String, String> data = onDemandPushData(
+        event: OnDemandEvent.serviceInTransit,
+        orderId: 'o1',
+        status: 'Order Ongoing',
+        serviceId: 's1',
+        serviceName: 'AC repair',
+        customerId: 'c1',
+        providerId: 'p1',
+        workerId: 'w1',
+      );
+      expect(data, {
+        'type': 'provider_order',
+        'event': 'service_intransit',
+        'orderId': 'o1',
+        'status': 'Order Ongoing',
+        'serviceId': 's1',
+        'serviceName': 'AC repair',
+        'customerId': 'c1',
+        'providerId': 'p1',
+        'workerId': 'w1',
+        'senderRole': 'worker',
+      });
+    });
+
+    test('unknown parties are dropped, never sent as null', () {
+      final Map<String, String> data = onDemandPushData(event: 'stop_time', orderId: ' o1 ', status: 'Order Ongoing', serviceId: '', serviceName: null, customerId: 'null', providerId: '  ', workerId: null);
+      expect(data, {'type': 'provider_order', 'event': 'stop_time', 'orderId': 'o1', 'status': 'Order Ongoing', 'senderRole': 'worker'});
+      // Unchanged by the sender's stringifier.
+      expect(fcmDataPayload(data, fallbackType: 'stop_time'), data);
+    });
+
+    test('event codes match the contract', () {
+      expect(OnDemandEvent.serviceInTransit, 'service_intransit');
+      expect(OnDemandEvent.stopTime, 'stop_time');
+      expect(OnDemandEvent.serviceCharges, 'service_charges');
+      expect(OnDemandEvent.serviceCompleted, 'service_completed');
+      expect(OnDemandEvent.workerAssigned, 'worker_assigned');
+      expect(OnDemandEvent.workerUnassigned, 'worker_unassigned');
+      expect(OnDemandEvent.bookingCancelledByCustomer, 'booking_cancelled_by_customer');
+      expect(OnDemandEvent.providerRejected, 'provider_rejected');
+      expect(OnDemandEvent.all.length, 13);
+    });
+  });
+
+  group('jobTapTarget', () {
+    test('a booking still assigned to this worker opens its details', () {
+      expect(jobTapTarget(orderId: 'o1', orderExists: true, orderWorkerId: 'w1', currentWorkerId: 'w1'), JobTapTarget.details);
+      // A cancelled / rejected booking keeps its worker: details (with the reason).
+      expect(jobTapTarget(orderId: 'o1', orderExists: true, orderWorkerId: '', currentWorkerId: 'w1'), JobTapTarget.details);
+    });
+
+    test('reassigned, deleted or invalid bookings open the job list', () {
+      expect(jobTapTarget(orderId: 'o1', orderExists: true, orderWorkerId: 'w2', currentWorkerId: 'w1'), JobTapTarget.jobList);
+      expect(jobTapTarget(orderId: 'o1', orderExists: false), JobTapTarget.jobList);
+      expect(jobTapTarget(orderId: ''), JobTapTarget.jobList);
+      expect(jobTapTarget(orderId: 'null'), JobTapTarget.jobList);
+      expect(jobTapTarget(orderId: 'a/b'), JobTapTarget.jobList);
+    });
+
+    test('a booking that could not be read opens its details (own error state)', () {
+      expect(jobTapTarget(orderId: 'o1'), JobTapTarget.details);
+      expect(jobTapTarget(orderId: 'o1', orderWorkerId: 'w2', currentWorkerId: 'w1'), JobTapTarget.details);
+    });
+  });
+
+  test('onDemandFallbackText: text for the events the worker receives', () {
+    expect(onDemandFallbackText({'event': 'worker_assigned'})?.title, 'New job assigned');
+    expect(onDemandFallbackText({'event': 'worker_unassigned'})?.body, 'This booking is no longer assigned to you');
+    expect(onDemandFallbackText({'event': 'booking_cancelled_by_customer'})?.title, 'Booking cancelled');
+    expect(onDemandFallbackText({'event': 'provider_rejected'})?.body, 'The provider cancelled this booking.');
+    expect(onDemandFallbackText({'type': 'worker_assigned'})?.title, 'New job assigned');
+    expect(onDemandFallbackText({'type': 'provider_order'}), isNull);
+    expect(onDemandFallbackText(<String, dynamic>{}), isNull);
+  });
+
+  test('every fallback text is translated (en and ar)', () {
+    final String en = File('lib/lang/app_en.dart').readAsStringSync();
+    final String ar = File('lib/lang/app_ar.dart').readAsStringSync();
+    for (final String event in ['worker_assigned', 'worker_unassigned', 'booking_cancelled_by_customer', 'provider_rejected']) {
+      final text = onDemandFallbackText({'event': event})!;
+      for (final String key in [text.title, text.body]) {
+        expect(en.contains('"$key":'), isTrue, reason: 'en: $key');
+        expect(ar.contains('"$key":'), isTrue, reason: 'ar: $key');
+      }
+    }
   });
 
   test('decodeNotificationPayload', () {

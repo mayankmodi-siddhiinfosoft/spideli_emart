@@ -19,12 +19,18 @@ import 'package:customer/utils/order_receipt_pdf.dart';
 /// Archetype F – booking detail: status hero, service recap, the people on
 /// the job (worker / provider) and the bill, with the payment actions.
 class OnDemandOrderDetailsScreen extends StatelessWidget {
-  const OnDemandOrderDetailsScreen({super.key});
+  const OnDemandOrderDetailsScreen({super.key, this.tag});
+
+  /// Registers the controller under this tag. A tapped push opens the
+  /// booking with one (`OnDemandBookingOpener`), so it never reuses the
+  /// controller of another booking's details screen that is already open.
+  final String? tag;
 
   @override
   Widget build(BuildContext context) {
-    return GetX(
+    return GetX<OnDemandOrderDetailsController>(
       init: OnDemandOrderDetailsController(),
+      tag: tag,
       builder: (controller) {
         final t = context.dsText;
         final l = context.dsLayout;
