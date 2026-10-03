@@ -74,9 +74,10 @@ void main() {
 
     test('the recipient token read at send time beats the copy on the booking', () {
       expect(preferFreshToken(fresh: 'fresh', fallback: 'copy'), 'fresh');
-      expect(preferFreshToken(fresh: '', fallback: 'copy'), 'copy', reason: 'record read but no token there');
-      expect(preferFreshToken(fresh: null, fallback: ' copy '), 'copy');
-      expect(preferFreshToken(fresh: 'null', fallback: ''), '');
+      expect(preferFreshToken(fresh: '', fallback: 'copy'), '', reason: 'record read but no token there: signed out, the copy may be the next account on that phone');
+      expect(preferFreshToken(fresh: 'null', fallback: 'copy'), '');
+      expect(preferFreshToken(fresh: null, fallback: ' copy '), 'copy', reason: 'record not read or missing');
+      expect(preferFreshToken(fresh: null, fallback: 'null'), '');
       expect(preferFreshToken(), '');
     });
 

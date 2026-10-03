@@ -79,7 +79,9 @@ class SendNotification {
 
   /// The recipient's current FCM token: `users/{uid}.fcmToken`, else
   /// [fallback] (the copy embedded in the order when it was placed, which goes
-  /// stale when the customer's token rotates or was empty on iOS).
+  /// stale when the customer's token rotates or was empty on iOS) - but only
+  /// when the profile could not be read or does not exist; an existing profile
+  /// with no token means signed out, so nothing is sent ([pickRecipientToken]).
   static Future<String> tokenForUser(String? uid, {String? fallback}) async {
     String? fresh;
     final String id = uid?.trim() ?? '';

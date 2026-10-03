@@ -103,11 +103,14 @@ bool isUsableFcmToken(String? token) {
   return t.isNotEmpty && t.toLowerCase() != 'null';
 }
 
-/// The token to send to: the recipient's [fresh] token (read from their record
-/// at send time) when usable, else [fallback] (a copy on an order or a list
-/// loaded earlier), else ''.
+/// The token to send to. [fresh] is the token on the recipient's record read
+/// at send time ('' when the record has none), or null when the record could
+/// not be read or does not exist. [fallback] (a copy on an order or a list
+/// loaded earlier) is used only in that null case: a record with an empty
+/// token means the recipient signed out on that phone, and the copied token
+/// may now belong to the next account signed in there, so nothing is sent.
 String preferFreshToken({String? fresh, String? fallback}) {
-  if (isUsableFcmToken(fresh)) return fresh!.trim();
+  if (fresh != null) return isUsableFcmToken(fresh) ? fresh.trim() : '';
   if (isUsableFcmToken(fallback)) return fallback!.trim();
   return '';
 }

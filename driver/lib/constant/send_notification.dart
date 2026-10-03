@@ -106,12 +106,19 @@ class SendNotification {
   /// to the copy embedded in the order. That copy is the token at order time:
   /// it goes stale when FCM rotates the token, and was '' for every iPhone
   /// that placed an order before its APNs token was in.
+  ///
+  /// The copy is used only when the user record could not be read or does
+  /// not exist. A record with an empty token means the customer signed out on
+  /// that phone, so nothing is sent: the copied token may now belong to the
+  /// next account signed in there.
   static Future<String> customerToken({String? customerId, String? embeddedToken}) async {
     final String id = (customerId ?? '').trim();
     if (id.isNotEmpty) {
       final UserModel? customer = await FireStoreUtils.getUserProfile(id);
-      final String live = (customer?.fcmToken ?? '').trim();
-      if (PushMessage.isUsableToken(live)) return live;
+      if (customer != null) {
+        final String live = (customer.fcmToken ?? '').trim();
+        return PushMessage.isUsableToken(live) ? live : '';
+      }
     }
     final String embedded = (embeddedToken ?? '').trim();
     return PushMessage.isUsableToken(embedded) ? embedded : '';

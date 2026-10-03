@@ -198,12 +198,16 @@ class SendNotification {
 
   static String _who(String? recipientId) => (recipientId ?? '').isEmpty ? 'the recipient' : 'user $recipientId';
 
-  /// The recipient's current token from their user record, else [fallback].
+  /// The recipient's current token from their user record. [fallback] (the
+  /// token copied onto the order) is used only when that record could not be
+  /// read or does not exist: an existing record with an empty token means the
+  /// recipient signed out on that phone, so nothing is sent - the copied token
+  /// may now belong to the next account signed in there.
   static Future<String> _resolveToken(String fallback, String? recipientId) async {
     if ((recipientId ?? '').trim().isNotEmpty) {
       try {
-        final String current = await FireStoreUtils.getUserFcmToken(recipientId!.trim());
-        if (PushPayload.isUsableToken(current)) return current.trim();
+        final String? current = await FireStoreUtils.getUserFcmToken(recipientId!.trim());
+        if (current != null) return PushPayload.isUsableToken(current) ? current.trim() : '';
       } catch (e) {
         debugPrint('push: could not read the current token of ${_who(recipientId)}: $e');
       }

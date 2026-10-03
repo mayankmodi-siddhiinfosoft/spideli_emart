@@ -153,14 +153,16 @@ class SendNotification {
     }
   }
 
-  /// The recipient's token as stored now, else [fallback].
+  /// The recipient's token as stored now; [fallback] only when the record
+  /// could not be read or does not exist ([preferFreshToken]).
   static Future<String> _currentToken(PushApp recipient, String? recipientId, {required String fallback}) async {
     final String id = (recipientId ?? '').trim();
     if (id.isEmpty) return preferFreshToken(fallback: fallback);
     try {
       final String collection = recipient == PushApp.worker ? WORKERS : USERS;
       final snapshot = await FireStoreUtils.firestore.collection(collection).doc(id).get();
-      return preferFreshToken(fresh: snapshot.data()?['fcmToken']?.toString(), fallback: fallback);
+      // A missing record (null) may use the copy; an existing one with no token may not.
+      return preferFreshToken(fresh: snapshot.exists ? (snapshot.data()?['fcmToken']?.toString() ?? '') : null, fallback: fallback);
     } catch (e) {
       log("Recipient token not read, using the one on the record: $e");
       return preferFreshToken(fallback: fallback);

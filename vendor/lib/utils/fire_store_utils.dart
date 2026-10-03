@@ -369,9 +369,13 @@ class FireStoreUtils {
   // ── FCM token: field-level writes only ──
 
   /// The stored FCM token of [userId] (`''` when there is none).
-  static Future<String> getUserFcmToken(String userId) async {
-    if (userId.isEmpty) return '';
+  /// The `fcmToken` stored on `users/{userId}`: '' when the document exists
+  /// without a token (e.g. cleared on sign-out), null when there is no such
+  /// document.
+  static Future<String?> getUserFcmToken(String userId) async {
+    if (userId.isEmpty) return null;
     final doc = await fireStore.collection(CollectionName.users).doc(userId).get();
+    if (!doc.exists) return null;
     final dynamic token = doc.data()?['fcmToken'];
     return token == null ? '' : token.toString();
   }
@@ -569,7 +573,31 @@ class FireStoreUtils {
     return isAdded;
   }
 
+  static StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _notificationSettingsSub;
+
+  /// `settings/notification_setting`, live. Registered on its own, before
+  /// anything else in [getSettings]: it used to sit after the awaited
+  /// globalSettings and settings/vendor reads, so a throw there (a missing
+  /// `app_store_color` or `subscription_model`, or a first start offline)
+  /// left `senderId` / `serviceJson` / `serverPushUrl` empty for the session
+  /// and every push was skipped. Every field is read null-safely and always
+  /// assigned, so clearing `serverPushUrl` switches back to the legacy path
+  /// (the rollback in SERVER-PUSH-CONTRACT.md).
+  static void listenNotificationSettings() {
+    _notificationSettingsSub ??= fireStore.collection(CollectionName.settings).doc("notification_setting").snapshots().listen(
+      (event) {
+        if (!event.exists) return;
+        final Map<String, dynamic> data = event.data() ?? const <String, dynamic>{};
+        Constant.senderId = data["senderId"]?.toString() ?? '';
+        Constant.jsonNotificationFileURL = data["serviceJson"]?.toString() ?? '';
+        Constant.serverPushUrl = data["serverPushUrl"]?.toString() ?? '';
+      },
+      onError: (Object e) => log("notification_setting listener failed: $e"),
+    );
+  }
+
   static Future<void> getSettings() async {
+    listenNotificationSettings();
     try {
       await fireStore.collection(CollectionName.settings).doc("globalSettings").get().then((value) async {
         Constant.orderRingtoneUrl = value.data()?['order_ringtone_url'] ?? '';
@@ -649,18 +677,6 @@ class FireStoreUtils {
       fireStore.collection(CollectionName.settings).doc("ContactUs").get().then((time) {
         if (time.exists) {
           Constant.adminEmail = time.data()!["Email"];
-        }
-      });
-
-      fireStore.collection(CollectionName.settings).doc("notification_setting").snapshots().listen((event) {
-        if (event.exists) {
-          // `?.toString() ?? ''`: a missing field threw a TypeError here
-          // (null into a String) and the rest of the document was never read.
-          Constant.senderId = event.data()?["senderId"]?.toString() ?? '';
-          Constant.jsonNotificationFileURL = event.data()?["serviceJson"]?.toString() ?? '';
-          // Always assigned, so clearing the field switches back to the
-          // legacy path (the rollback in SERVER-PUSH-CONTRACT.md).
-          Constant.serverPushUrl = event.data()?["serverPushUrl"]?.toString() ?? '';
         }
       });
 

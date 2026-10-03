@@ -60,8 +60,9 @@ void main() {
 
     test('pickRecipientToken prefers the fresh profile token', () {
       expect(pickRecipientToken(fresh: 'fresh', snapshot: 'old'), 'fresh');
-      expect(pickRecipientToken(fresh: '', snapshot: 'old'), 'old');
-      expect(pickRecipientToken(fresh: 'null', snapshot: ' old '), 'old');
+      expect(pickRecipientToken(fresh: '', snapshot: 'old'), '', reason: 'profile read, token cleared on sign-out: the copy may be the next account on that phone');
+      expect(pickRecipientToken(fresh: 'null', snapshot: ' old '), '');
+      expect(pickRecipientToken(fresh: null, snapshot: ' old '), 'old', reason: 'profile not read or missing');
       expect(pickRecipientToken(fresh: null, snapshot: null), '');
     });
 

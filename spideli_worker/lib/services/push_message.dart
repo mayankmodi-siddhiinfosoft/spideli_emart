@@ -239,10 +239,14 @@ bool accessTokenUsable(DateTime? expiry, DateTime now, {Duration margin = const 
   return expiry != null && now.toUtc().isBefore(expiry.toUtc().subtract(margin));
 }
 
-/// The recipient's current token from their profile, else the copy embedded in
-/// the order when it was placed (which goes stale when the token rotates).
+/// The recipient's current token from their profile ([fresh]: '' when the
+/// profile has none, null when it could not be read or does not exist). The
+/// copy embedded in the order ([snapshot]) is used only in that null case: a
+/// profile with an empty token means the recipient signed out on that phone,
+/// and the copied token may now belong to the next account signed in there,
+/// so nothing is sent.
 String pickRecipientToken({String? fresh, String? snapshot}) {
-  if (isUsableFcmToken(fresh)) return fresh!.trim();
+  if (fresh != null) return isUsableFcmToken(fresh) ? fresh.trim() : '';
   if (isUsableFcmToken(snapshot)) return snapshot!.trim();
   return '';
 }
