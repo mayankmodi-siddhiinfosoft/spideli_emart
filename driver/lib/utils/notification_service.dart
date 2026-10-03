@@ -133,7 +133,7 @@ class NotificationService {
 
     try {
       const InitializationSettings initializationSettings = InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        android: AndroidInitializationSettings('@drawable/ic_stat_notification'),
         // The permission is asked once, by FirebaseMessaging.requestPermission
         // below; the plugin's defaults would ask a second time on initialize.
         iOS: DarwinInitializationSettings(
@@ -433,7 +433,7 @@ class NotificationService {
         playSound: true,
         enableVibration: true,
         audioAttributesUsage: channel.audioAttributesUsage,
-        icon: '@mipmap/ic_launcher',
+        icon: '@drawable/ic_stat_notification',
         ticker: 'ticker',
       ),
       iOS: const DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),

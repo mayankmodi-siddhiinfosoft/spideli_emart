@@ -428,4 +428,8 @@ const Map<String, String> hiIN = {
   "Please enter a valid email address.": "कृपया एक मान्य ईमेल पता दर्ज करें।",
   "Invalid email or password.": "ईमेल या पासवर्ड अमान्य है।",
   "No user found for that email.": "इस ईमेल पते से कोई खाता नहीं मिला।",
+  "Allow notifications when the app is closed": "ऐप बंद होने पर सूचनाओं की अनुमति दें",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "आपका @phone फ़ोन ऐप बंद करने के बाद उसे सूचनाएँ प्राप्त करने से रोकता है। इस ऐप के लिए Autostart चालू करें और बैटरी उपयोग को कोई प्रतिबंध नहीं पर सेट करें, ताकि कोई अपडेट न छूटे।",
+  "Not now": "अभी नहीं",
+  "Open settings": "सेटिंग्स खोलें",
 };

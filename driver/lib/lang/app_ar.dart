@@ -428,4 +428,8 @@ const Map<String, String> lnAr = {
   "Please enter a valid email address.": "يرجى إدخال عنوان بريد إلكتروني صالح.",
   "Invalid email or password.": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
   "No user found for that email.": "لا يوجد حساب مرتبط بهذا البريد الإلكتروني.",
+  "Allow notifications when the app is closed": "السماح بالإشعارات عند إغلاق التطبيق",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "يمنع هاتف @phone التطبيقات من تلقي الإشعارات بعد إغلاقها. فعّل التشغيل التلقائي لهذا التطبيق واضبط استخدام البطارية على بلا قيود حتى لا تفوتك أي تحديثات.",
+  "Not now": "ليس الآن",
+  "Open settings": "فتح الإعدادات",
 };

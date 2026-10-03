@@ -28,6 +28,7 @@ import 'package:get/get.dart';
 
 import '../constant/show_toast_dialog.dart';
 import '../themes/custom_dialog_box.dart';
+import 'package:spideliprovider/utils/background_delivery.dart';
 
 class DashBoardController extends GetxController {
   RxBool isLoading = true.obs;
@@ -158,6 +159,8 @@ class DashBoardController extends GetxController {
   @override
   void onReady() {
     super.onReady();
+    // Xiaomi & co.: explain Autostart once, or a closed app gets no push.
+    BackgroundDelivery.maybePrompt();
     // Store this device's token (field-level; sign-ins are also covered by
     // the auth listener in NotificationService), then open a notification
     // that was tapped before the dashboard was up.

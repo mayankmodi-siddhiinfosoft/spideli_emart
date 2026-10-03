@@ -51,6 +51,10 @@
              background or closed and the push carries no android_channel_id.
              The app creates this channel (max importance, order_alert sound) on
              start, so a background order alert is audible and heads-up. -->
+        <!-- Status-bar icon for pushes shown by FCM: must be a white silhouette on transparent. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notification" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="new_order" />

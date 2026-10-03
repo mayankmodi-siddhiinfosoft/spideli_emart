@@ -69,6 +69,10 @@
              channel (high importance, sound, vibration) and the loud job channel
              `driver_jobs` before runApp (NotificationService.createChannels).
              Senders: see .claude/PUSH-CHANNELS.md, driver section. -->
+        <!-- Status-bar icon for pushes shown by FCM: must be a white silhouette on transparent. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notification" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="driver_notifications_channel" />

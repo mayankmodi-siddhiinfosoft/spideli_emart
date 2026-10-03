@@ -143,7 +143,7 @@ class NotificationService {
 
   static Future<void> _initLocalNotifications() async {
     if (_localReady) return;
-    const AndroidInitializationSettings android = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const AndroidInitializationSettings android = AndroidInitializationSettings('@drawable/ic_stat_notification');
     // No permission prompt from this plugin: [requestPermissionOnce] asks once.
     const DarwinInitializationSettings ios = DarwinInitializationSettings(requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false);
     await _plugin.initialize(
@@ -373,7 +373,7 @@ class NotificationService {
         // Background isolate: the plugin and channels of the main isolate are
         // not there.
         await createChannels();
-        await _plugin.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher'), iOS: DarwinInitializationSettings(requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false)));
+        await _plugin.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings('@drawable/ic_stat_notification'), iOS: DarwinInitializationSettings(requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false)));
         _localReady = true;
       }
       final bool orderAlert = isOrderAlert(message);

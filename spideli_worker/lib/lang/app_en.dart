@@ -93,4 +93,8 @@ const Map<String, String> enUS = {
   "No internet connection. Please check your connection and try again.": "No internet connection. Please check your connection and try again.",
   "Something went wrong. Please try again.": "Something went wrong. Please try again.",
   "This account has been disabled. Please contact the administrator.": "This account has been disabled. Please contact the administrator.",
+  "Allow notifications when the app is closed": "Allow notifications when the app is closed",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.",
+  "Not now": "Not now",
+  "Open settings": "Open settings",
 };

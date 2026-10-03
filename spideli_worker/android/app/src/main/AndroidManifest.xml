@@ -30,6 +30,10 @@
              (NotificationService.prepareBeforeRunApp, lib/services/push_message.dart
              workerChannelId) with high importance and the default sound.
              Without it FCM used a silent-looking "Miscellaneous" channel. -->
+        <!-- Status-bar icon for pushes shown by FCM: must be a white silhouette on transparent. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notification" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="01" />

@@ -17,8 +17,16 @@ import 'package:location/location.dart';
 
 import '../constant/constant.dart' show Constant;
 import '../themes/theme_controller.dart';
+import 'package:driver/utils/background_delivery.dart';
 
 class ParcelDashboardController extends GetxController {
+  @override
+  void onReady() {
+    super.onReady();
+    // Xiaomi & co.: explain Autostart once, or a closed app gets no push.
+    BackgroundDelivery.maybePrompt();
+  }
+
   RxInt drawerIndex = 0.obs;
 
   @override

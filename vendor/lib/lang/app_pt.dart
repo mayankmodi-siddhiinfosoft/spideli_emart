@@ -22,4 +22,8 @@ const Map<String, String> ptPO = {
   "This user is not created in restaurant application.": "Este usuário não está cadastrado no aplicativo do restaurante.",
   "Please wait.": "Aguarde.",
   "Please wait": "Aguarde",
+  "Allow notifications when the app is closed": "Permitir notificações com o app fechado",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Seu telefone @phone impede que os apps recebam notificações depois de fechados. Ative o Início automático para este app e defina o uso da bateria como Sem restrições para não perder nenhuma atualização.",
+  "Not now": "Agora não",
+  "Open settings": "Abrir configurações",
 };

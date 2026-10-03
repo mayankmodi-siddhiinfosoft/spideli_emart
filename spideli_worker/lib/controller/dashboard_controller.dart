@@ -8,8 +8,16 @@ import 'package:spideliworker/ui/documents/documents_screen.dart';
 import 'package:spideliworker/ui/profile/profile_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:spideliworker/utils/background_delivery.dart';
 
 class DashBoardController extends GetxController {
+  @override
+  void onReady() {
+    super.onReady();
+    // Xiaomi & co.: explain Autostart once, or a closed app gets no push.
+    BackgroundDelivery.maybePrompt();
+  }
+
   RxBool isLoading = true.obs;
 
   RxInt selectedIndex = 0.obs;

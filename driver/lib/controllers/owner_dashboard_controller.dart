@@ -7,8 +7,16 @@ import 'package:driver/utils/preferences.dart';
 import 'package:get/get.dart';
 
 import '../themes/theme_controller.dart';
+import 'package:driver/utils/background_delivery.dart';
 
 class OwnerDashboardController extends GetxController{
+  @override
+  void onReady() {
+    super.onReady();
+    // Xiaomi & co.: explain Autostart once, or a closed app gets no push.
+    BackgroundDelivery.maybePrompt();
+  }
+
   RxInt drawerIndex = 0.obs;
 
   @override

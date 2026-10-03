@@ -853,4 +853,8 @@ const Map<String, String> enUS = {
   'Invalid email or password.': 'Invalid email or password.',
   'Too many attempts. Please try again later.': 'Too many attempts. Please try again later.',
   'No internet connection. Please check your connection and try again.': 'No internet connection. Please check your connection and try again.',
+  "Allow notifications when the app is closed": "Allow notifications when the app is closed",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.",
+  "Not now": "Not now",
+  "Open settings": "Open settings",
 };

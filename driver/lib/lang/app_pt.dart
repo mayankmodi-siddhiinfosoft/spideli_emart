@@ -428,4 +428,8 @@ const Map<String, String> ptPO = {
   "Please enter a valid email address.": "Digite um endereço de e-mail válido.",
   "Invalid email or password.": "E-mail ou senha inválidos.",
   "No user found for that email.": "Nenhuma conta encontrada para este e-mail.",
+  "Allow notifications when the app is closed": "Permitir notificações com o app fechado",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Seu telefone @phone impede que os apps recebam notificações depois de fechados. Ative o Início automático para este app e defina o uso da bateria como Sem restrições para não perder nenhuma atualização.",
+  "Not now": "Agora não",
+  "Open settings": "Abrir configurações",
 };

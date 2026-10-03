@@ -471,4 +471,8 @@ const Map<String, String> enUS = {
   "Please enter your password.": "Please enter your password.",
   "Please enter a valid email address.": "Please enter a valid email address.",
   "Invalid email or password.": "Invalid email or password.",
+  "Allow notifications when the app is closed": "Allow notifications when the app is closed",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.",
+  "Not now": "Not now",
+  "Open settings": "Open settings",
 };

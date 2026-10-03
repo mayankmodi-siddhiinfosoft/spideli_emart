@@ -428,4 +428,8 @@ const Map<String, String> deGR = {
   "Please enter a valid email address.": "Bitte geben Sie eine gültige E-Mail-Adresse ein.",
   "Invalid email or password.": "E-Mail-Adresse oder Passwort ist ungültig.",
   "No user found for that email.": "Für diese E-Mail-Adresse wurde kein Konto gefunden.",
+  "Allow notifications when the app is closed": "Benachrichtigungen bei geschlossener App erlauben",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Ihr @phone-Telefon verhindert, dass Apps nach dem Schließen Benachrichtigungen erhalten. Aktivieren Sie Autostart für diese App und stellen Sie die Akkunutzung auf Keine Einschränkungen, damit Sie nichts verpassen.",
+  "Not now": "Nicht jetzt",
+  "Open settings": "Einstellungen öffnen",
 };

@@ -22,4 +22,8 @@ const Map<String, String> hiIN = {
   "This user is not created in restaurant application.": "यह उपयोगकर्ता रेस्टोरेंट ऐप में पंजीकृत नहीं है।",
   "Please wait.": "कृपया प्रतीक्षा करें।",
   "Please wait": "कृपया प्रतीक्षा करें",
+  "Allow notifications when the app is closed": "ऐप बंद होने पर सूचनाओं की अनुमति दें",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "आपका @phone फ़ोन ऐप बंद करने के बाद उसे सूचनाएँ प्राप्त करने से रोकता है। इस ऐप के लिए Autostart चालू करें और बैटरी उपयोग को कोई प्रतिबंध नहीं पर सेट करें, ताकि कोई अपडेट न छूटे।",
+  "Not now": "अभी नहीं",
+  "Open settings": "सेटिंग्स खोलें",
 };

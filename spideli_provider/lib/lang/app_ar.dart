@@ -10,4 +10,8 @@ const Map<String, String> lnAr = {
   "Something went wrong. Please try again.": "حدث خطأ ما. يرجى المحاولة مرة أخرى.",
   "This user is disable please contact to administrator": "تم تعطيل هذا المستخدم، يرجى التواصل مع المسؤول.",
   "Please check your email.": "يرجى التحقق من بريدك الإلكتروني.",
+  "Allow notifications when the app is closed": "السماح بالإشعارات عند إغلاق التطبيق",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "يمنع هاتف @phone التطبيقات من تلقي الإشعارات بعد إغلاقها. فعّل التشغيل التلقائي لهذا التطبيق واضبط استخدام البطارية على بلا قيود حتى لا تفوتك أي تحديثات.",
+  "Not now": "ليس الآن",
+  "Open settings": "فتح الإعدادات",
 };

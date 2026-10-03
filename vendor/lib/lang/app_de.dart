@@ -22,4 +22,8 @@ const Map<String, String> deGR = {
   "This user is not created in restaurant application.": "Dieser Benutzer ist in der Restaurant-App nicht registriert.",
   "Please wait.": "Bitte warten.",
   "Please wait": "Bitte warten",
+  "Allow notifications when the app is closed": "Benachrichtigungen bei geschlossener App erlauben",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Ihr @phone-Telefon verhindert, dass Apps nach dem Schließen Benachrichtigungen erhalten. Aktivieren Sie Autostart für diese App und stellen Sie die Akkunutzung auf Keine Einschränkungen, damit Sie nichts verpassen.",
+  "Not now": "Nicht jetzt",
+  "Open settings": "Einstellungen öffnen",
 };

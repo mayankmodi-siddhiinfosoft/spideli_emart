@@ -116,7 +116,7 @@
         <!-- Firebase Notification Icons -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@mipmap/ic_launcher" />
+            android:resource="@drawable/ic_stat_notification" />
 
         <!-- Channel a push is posted on when the app is in the background or
              closed and the push names no channel (or one this app does not

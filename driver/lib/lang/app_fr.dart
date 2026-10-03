@@ -428,4 +428,8 @@ const Map<String, String> trFR = {
   "Please enter a valid email address.": "Veuillez saisir une adresse e-mail valide.",
   "Invalid email or password.": "Adresse e-mail ou mot de passe invalide.",
   "No user found for that email.": "Aucun compte n'est associé à cette adresse e-mail.",
+  "Allow notifications when the app is closed": "Autoriser les notifications quand l'application est fermée",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Votre téléphone @phone empêche les applications de recevoir des notifications après leur fermeture. Activez le démarrage automatique (Autostart) pour cette application et réglez sa batterie sur « Aucune restriction » pour ne rien manquer.",
+  "Not now": "Plus tard",
+  "Open settings": "Ouvrir les paramètres",
 };

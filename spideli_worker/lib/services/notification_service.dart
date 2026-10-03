@@ -94,7 +94,7 @@ class NotificationService {
     try {
       await _local.initialize(
         settings: const InitializationSettings(
-          android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+          android: AndroidInitializationSettings('@drawable/ic_stat_notification'),
           // firebase_messaging asks for the permission below; the plugin must
           // not raise a second dialog.
           iOS: DarwinInitializationSettings(requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false),

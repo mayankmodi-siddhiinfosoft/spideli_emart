@@ -154,4 +154,8 @@ const Map<String, String> trFR = {
   "This user is not created in restaurant application.": "Cet utilisateur n'est pas enregistré dans l'application du restaurant.",
   "Please wait.": "Veuillez patienter.",
   "Please wait": "Veuillez patienter",
+  "Allow notifications when the app is closed": "Autoriser les notifications quand l'application est fermée",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Votre téléphone @phone empêche les applications de recevoir des notifications après leur fermeture. Activez le démarrage automatique (Autostart) pour cette application et réglez sa batterie sur « Aucune restriction » pour ne rien manquer.",
+  "Not now": "Plus tard",
+  "Open settings": "Ouvrir les paramètres",
 };

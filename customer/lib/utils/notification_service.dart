@@ -103,7 +103,7 @@ class NotificationService {
   static Future<void> _initLocalNotifications() async {
     try {
       const InitializationSettings settings = InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        android: AndroidInitializationSettings('@drawable/ic_stat_notification'),
         // The permission is asked once, by FirebaseMessaging.requestPermission.
         iOS: DarwinInitializationSettings(requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false),
       );

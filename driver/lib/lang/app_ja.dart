@@ -428,4 +428,8 @@ const Map<String, String> jaJP = {
   "Please enter a valid email address.": "有効なメールアドレスを入力してください。",
   "Invalid email or password.": "メールアドレスまたはパスワードが正しくありません。",
   "No user found for that email.": "このメールアドレスのアカウントが見つかりません。",
+  "Allow notifications when the app is closed": "アプリを閉じているときも通知を許可",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "お使いの@phoneの端末は、アプリを閉じると通知を受け取れなくします。このアプリの自動起動をオンにし、バッテリー使用を「制限なし」に設定すると、更新を見逃しません。",
+  "Not now": "後で",
+  "Open settings": "設定を開く",
 };

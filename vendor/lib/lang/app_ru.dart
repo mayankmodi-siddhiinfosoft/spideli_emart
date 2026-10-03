@@ -22,4 +22,8 @@ const Map<String, String> ruRU = {
   "This user is not created in restaurant application.": "Этот пользователь не зарегистрирован в приложении ресторана.",
   "Please wait.": "Пожалуйста, подождите.",
   "Please wait": "Пожалуйста, подождите",
+  "Allow notifications when the app is closed": "Разрешить уведомления, когда приложение закрыто",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Ваш телефон @phone не даёт приложениям получать уведомления после закрытия. Включите автозапуск для этого приложения и установите для батареи режим «Без ограничений», чтобы ничего не пропустить.",
+  "Not now": "Не сейчас",
+  "Open settings": "Открыть настройки",
 };

@@ -120,7 +120,7 @@ class NotificationService {
 
   static Future<void> _initLocal() async {
     const InitializationSettings settings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      android: AndroidInitializationSettings('@drawable/ic_stat_notification'),
       // No prompts here: the permission is asked once, by initInfo.
       iOS: DarwinInitializationSettings(requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false),
     );
@@ -139,7 +139,7 @@ class NotificationService {
         channelDescription: _channel.description,
         importance: Importance.max,
         priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
+        icon: '@drawable/ic_stat_notification',
         ticker: 'ticker',
       ),
       iOS: const DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),

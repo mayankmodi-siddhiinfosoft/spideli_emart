@@ -22,6 +22,7 @@ import 'package:get/get.dart';
 import 'package:location/location.dart';
 
 import '../themes/theme_controller.dart';
+import 'package:driver/utils/background_delivery.dart';
 
 /// The location stream and `users/{uid}` listener of every dashboard alive
 /// (the multi-service shell keeps all four in one IndexedStack). Logout and
@@ -69,6 +70,13 @@ class DriverSessions {
 }
 
 class DashBoardController extends GetxController {
+  @override
+  void onReady() {
+    super.onReady();
+    // Xiaomi & co.: explain Autostart once, or a closed app gets no push.
+    BackgroundDelivery.maybePrompt();
+  }
+
   RxInt drawerIndex = 0.obs;
 
   @override

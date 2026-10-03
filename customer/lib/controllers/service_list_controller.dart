@@ -27,6 +27,7 @@ import 'package:get/get.dart';
 import '../screen_ui/auth_screens/login_screen.dart';
 import '../screen_ui/multi_vendor_service/dash_board_screens/dash_board_screen.dart';
 import '../screen_ui/on_demand_service/on_demand_dashboard_screen.dart';
+import 'package:customer/utils/background_delivery.dart';
 
 class ServiceListController extends GetxController {
   var isLoading = false.obs;
@@ -48,6 +49,8 @@ class ServiceListController extends GetxController {
   @override
   void onReady() {
     super.onReady();
+    // Xiaomi & co.: explain Autostart once, or a closed app gets no push.
+    BackgroundDelivery.maybePrompt();
     // A delivery-code push that launched the app opens its order now that the
     // customer is home — also when the splash first sent them to set an
     // address or to sign in.

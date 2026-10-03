@@ -13,8 +13,16 @@ import 'package:vendor/models/tax_model.dart';
 import 'package:vendor/models/vendor_model.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/region_service.dart';
+import 'package:vendor/utils/background_delivery.dart';
 
 class DashBoardController extends GetxController {
+  @override
+  void onReady() {
+    super.onReady();
+    // Xiaomi & co.: explain Autostart once, or a closed app gets no push.
+    BackgroundDelivery.maybePrompt();
+  }
+
   RxBool isLoading = true.obs;
   RxInt selectedIndex = 0.obs;
   RxList<NavigationItem> navigationItems = <NavigationItem>[].obs;

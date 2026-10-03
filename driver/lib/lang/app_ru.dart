@@ -428,4 +428,8 @@ const Map<String, String> ruRU = {
   "Please enter a valid email address.": "Введите корректный адрес электронной почты.",
   "Invalid email or password.": "Неверный адрес электронной почты или пароль.",
   "No user found for that email.": "Аккаунт с этим адресом электронной почты не найден.",
+  "Allow notifications when the app is closed": "Разрешить уведомления, когда приложение закрыто",
+  "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Ваш телефон @phone не даёт приложениям получать уведомления после закрытия. Включите автозапуск для этого приложения и установите для батареи режим «Без ограничений», чтобы ничего не пропустить.",
+  "Not now": "Не сейчас",
+  "Open settings": "Открыть настройки",
 };
