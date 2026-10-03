@@ -311,11 +311,17 @@ class HomeScreen extends StatelessWidget {
 
   /// Moves an order the store has just cancelled / rejected into its tab
   /// right away and opens that tab. The live order listener confirms it.
+  /// Never throws: the home tab (and [tabs]) may have been disposed while the
+  /// status was being saved (notification tap, back, bottom-nav switch).
   static void _showEndedOrder(HomeController controller, OrderModel orderModel, TabController? tabs) {
-    controller.showEndedOrder(orderModel);
-    final int tab = orderModel.status == Constant.orderRejected ? 4 : 5;
-    controller.selectedTabIndex.value = tab;
-    if (tabs != null && tab < tabs.length) tabs.animateTo(tab);
+    try {
+      controller.showEndedOrder(orderModel);
+      final int tab = orderModel.status == Constant.orderRejected ? 4 : 5;
+      controller.selectedTabIndex.value = tab;
+      if (tabs != null && tab < tabs.length) tabs.animateTo(tab);
+    } catch (e) {
+      log("Could not open the tab of ended order ${orderModel.id}: $e");
+    }
   }
 
   /// The amount refunded to a customer who paid online, as before; a missing
@@ -326,11 +332,18 @@ class HomeScreen extends StatelessWidget {
   }
 
   /// Everything that follows a store cancel / reject once the new status is
-  /// saved: the cashback redemption given back, the delivery man freed and
-  /// told, the customer told, an online payment refunded to the wallet and the
-  /// store's credit reversed. Each step runs on its own, so one failure no
-  /// longer stops the rest; the store is told if any of them failed.
-  static Future<void> _afterVendorEndedOrder({required OrderModel orderModel, required String customerNotification, required double refundAmount}) async {
+  /// saved: the cashback redemption given back, an online payment refunded to
+  /// the wallet and the store's credit reversed - with the loader still up -
+  /// then [onMoneySettled] (closes the loader, shows the order in its tab),
+  /// then the delivery man freed and told and the customer told. Each step
+  /// runs on its own, so one failure no longer stops the rest; the store is
+  /// told if any of them failed.
+  static Future<void> _afterVendorEndedOrder({
+    required OrderModel orderModel,
+    required String customerNotification,
+    required double refundAmount,
+    required void Function() onMoneySettled,
+  }) async {
     final List<String> failed = [];
     Future<void> step(String name, Future<void> Function() run) async {
       try {
@@ -345,20 +358,6 @@ class HomeScreen extends StatelessWidget {
     if (orderModel.cashback?.id != null && orderModel.cashback?.cashbackValue != null) {
       await step("Cashback", () => FireStoreUtils.deleteCashbackRedeem(orderModel));
     }
-    // The delivery man is freed only now that the order has ended: freed
-    // earlier, the order still named him and was still active, so his app's
-    // assignment watcher put it straight back on his list.
-    final String? driverId = orderModel.driverID;
-    if (driverId != null && driverId.isNotEmpty) {
-      await step("Delivery man", () => FireStoreUtils.releaseDriverOrder(driverId, orderModel.id));
-      await step("Delivery man", () async {
-        final UserModel? driverModel = await FireStoreUtils.getUserById(driverId);
-        if ((driverModel?.fcmToken ?? '').isNotEmpty) {
-          SendNotification.sendFcmMessage(Constant.driverCancelled, driverModel!.fcmToken.toString(), {'title': 'Cancelled Order', 'orderId': orderModel.id}, recipientId: driverId, recipient: PushRecipient.driver);
-        }
-      });
-    }
-    SendNotification.sendFcmMessage(customerNotification, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id);
 
     final String customerId = (orderModel.author?.id ?? orderModel.authorID ?? '').toString();
     final String paymentMethod = (orderModel.paymentMethod ?? '').toLowerCase();
@@ -385,6 +384,28 @@ class HomeScreen extends StatelessWidget {
     // wallet rows - rather than recomputing it. An order that was never
     // credited (most rejected new orders) is not debited.
     await step("Store credit", () => FireStoreUtils.reverseVendorCreditForOrder(orderModel));
+
+    // The money is settled (or its failure recorded): the screen is released.
+    try {
+      onMoneySettled();
+    } catch (e) {
+      log("Releasing the screen after ending order ${orderModel.id} failed: $e");
+    }
+
+    // The delivery man is freed only now that the order has ended: freed
+    // earlier, the order still named him and was still active, so his app's
+    // assignment watcher put it straight back on his list.
+    final String? driverId = orderModel.driverID;
+    if (driverId != null && driverId.isNotEmpty) {
+      await step("Delivery man", () => FireStoreUtils.releaseDriverOrder(driverId, orderModel.id));
+      await step("Delivery man", () async {
+        final UserModel? driverModel = await FireStoreUtils.getUserById(driverId);
+        if ((driverModel?.fcmToken ?? '').isNotEmpty) {
+          SendNotification.sendFcmMessage(Constant.driverCancelled, driverModel!.fcmToken.toString(), {'title': 'Cancelled Order', 'orderId': orderModel.id}, recipientId: driverId, recipient: PushRecipient.driver);
+        }
+      });
+    }
+    SendNotification.sendFcmMessage(customerNotification, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id);
 
     if (failed.isNotEmpty) {
       ShowToastDialog.showToast("The order was updated, but these steps did not finish: @steps. Please check your connection or contact support.".trParams({'steps': failed.toSet().join(', ')}));
@@ -544,17 +565,20 @@ class HomeScreen extends StatelessWidget {
                         await controller.getOrder();
                         return;
                       }
-                      // The order is rejected: show it in Rejected at once and
-                      // let the follow-ups (cashback, driver, notifications,
-                      // refund, credit reversal) run without holding the screen.
-                      _showEndedOrder(controller, orderModel, tabs);
-                      ShowToastDialog.closeLoader();
-                      ShowToastDialog.showToast("Order rejected".tr);
+                      // The order is rejected. The loader stays up through the
+                      // money steps (cashback, refund, credit reversal); then it
+                      // closes and the order shows in Rejected, while the
+                      // delivery man and the customer are told in the background.
                       unawaited(
                         _afterVendorEndedOrder(
                           orderModel: orderModel,
                           customerNotification: Constant.restaurantRejected,
                           refundAmount: _refundAmount(orderModel, subTotal: subTotal, specialDiscountAmount: specialDiscountAmount, totalTaxAmount: totalTaxAmount),
+                          onMoneySettled: () {
+                            ShowToastDialog.closeLoader();
+                            ShowToastDialog.showToast("Order rejected".tr);
+                            _showEndedOrder(controller, orderModel, tabs);
+                          },
                         ),
                       );
                     },
@@ -848,19 +872,22 @@ class HomeScreen extends StatelessWidget {
                   await controller.getOrder();
                   return;
                 }
-                // The order is cancelled: it moves to the Cancelled tab at once.
-                // The loader used to stay up through every follow-up below,
-                // one network call after another, and a missing discount /
-                // delivery charge / tip threw in the refund sum, leaving it up
-                // for good - the order then seemed never to reach Cancelled.
-                _showEndedOrder(controller, orderModel, tabs);
-                ShowToastDialog.closeLoader();
-                ShowToastDialog.showToast("Order cancelled".tr);
+                // The order is cancelled. The loader stays up through the money
+                // steps only (cashback, refund, credit reversal - a missing
+                // discount / delivery charge / tip no longer throws in the
+                // refund sum); then it closes and the order moves to Cancelled,
+                // while the delivery man and the customer are told in the
+                // background.
                 unawaited(
                   _afterVendorEndedOrder(
                     orderModel: orderModel,
                     customerNotification: Constant.restaurantCancelled,
                     refundAmount: _refundAmount(orderModel, subTotal: subTotal, specialDiscountAmount: specialDiscountAmount, totalTaxAmount: totalTaxAmount),
+                    onMoneySettled: () {
+                      ShowToastDialog.closeLoader();
+                      ShowToastDialog.showToast("Order cancelled".tr);
+                      _showEndedOrder(controller, orderModel, tabs);
+                    },
                   ),
                 );
               },

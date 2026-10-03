@@ -129,7 +129,10 @@ class HomeController extends GetxController {
     if (id == null) return;
     final int index = allOrderList.indexWhere((o) => o.id == id);
     if (index >= 0) {
-      allOrderList[index] = order;
+      // The listener may already have delivered the stored record (server
+      // timestamps, fields others wrote meanwhile): only a list entry that
+      // has not caught up with the new status is replaced.
+      if (allOrderList[index].status != order.status) allOrderList[index] = order;
     } else {
       allOrderList.insert(0, order);
     }
