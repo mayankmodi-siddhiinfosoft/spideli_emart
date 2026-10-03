@@ -23,14 +23,6 @@
           }
         },
         {
-          "client_id": "248496578266-h99v5hjse9e1jgfbsq47323iig501pje.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.spideli.customer",
-            "certificate_hash": "a4f70c8f603845bace670059eb571e76c967b5f6"
-          }
-        },
-        {
           "client_id": "248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -66,14 +58,6 @@
         }
       },
       "oauth_client": [
-        {
-          "client_id": "248496578266-e7ftitsci6m0henkkk00sh0de3uggpj8.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.spideli.driver",
-            "certificate_hash": "a4f70c8f603845bace670059eb571e76c967b5f6"
-          }
-        },
         {
           "client_id": "248496578266-gp9q3j3hdfj6v7j7b30bg56u6e7hpvue.apps.googleusercontent.com",
           "client_type": 1,
@@ -127,14 +111,6 @@
           }
         },
         {
-          "client_id": "248496578266-bvv56nlma7ar54qerv3402hjbbo1gmf8.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.spideli.provider",
-            "certificate_hash": "a4f70c8f603845bace670059eb571e76c967b5f6"
-          }
-        },
-        {
           "client_id": "248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -170,14 +146,6 @@
         }
       },
       "oauth_client": [
-        {
-          "client_id": "248496578266-aekmvciqstpqc7ltp2j0hqk00iu1mnhv.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.spideli.store",
-            "certificate_hash": "a4f70c8f603845bace670059eb571e76c967b5f6"
-          }
-        },
         {
           "client_id": "248496578266-q45cqkf4g1h6shq9v9apmi2os7iknrcl.apps.googleusercontent.com",
           "client_type": 1,
@@ -228,14 +196,6 @@
           "android_info": {
             "package_name": "com.spideli.worker",
             "certificate_hash": "ef36ea11358e68e7717db72332482050767d0f5c"
-          }
-        },
-        {
-          "client_id": "248496578266-qeooo9frmbkah2aonugs66qjef8j36q5.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.spideli.worker",
-            "certificate_hash": "a4f70c8f603845bace670059eb571e76c967b5f6"
           }
         },
         {
