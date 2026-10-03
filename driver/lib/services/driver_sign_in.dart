@@ -74,7 +74,9 @@ class DriverSignIn {
       if (!snapshot.exists || data == null) return const AccountResult(AccountOutcome.missing);
 
       final UserModel userModel = UserModel.fromJson(data);
-      userModel.id ??= uid;
+      // The signed-in uid, never a missing or different `id` stored in the
+      // document: updateUser writes to users/<id>.
+      userModel.id = uid;
       if (userModel.role != Constant.userRoleDriver) {
         await signOutQuietly();
         return const AccountResult(AccountOutcome.notDriver, "This user is not created in driver application.");

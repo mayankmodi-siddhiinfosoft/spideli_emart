@@ -23,7 +23,20 @@ class UserModel {
   String? role;
   UserLocation? location;
   UserBankDetails? userBankDetails;
-  List<ShippingAddress>? shippingAddress;
+  /// Assigning it clears [shippingAddressUnreadable]: the list is then
+  /// written as set.
+  List<ShippingAddress>? get shippingAddress => _shippingAddress;
+  set shippingAddress(List<ShippingAddress>? value) {
+    _shippingAddress = value;
+    _shippingAddressUnreadable = false;
+  }
+
+  List<ShippingAddress>? _shippingAddress;
+
+  /// An entry of the stored `shippingAddress` did not parse and was left out
+  /// of [shippingAddress]: the shortened list is never written back.
+  bool get shippingAddressUnreadable => _shippingAddressUnreadable;
+  bool _shippingAddressUnreadable = false;
   String? carPictureURL;
   List<dynamic>? inProgressOrderID;
   List<dynamic>? orderRequestData;
@@ -42,7 +55,21 @@ class UserModel {
   String? reviewsCount;
   String? reviewsSum;
   AdminCommission? adminCommissionModel;
-  CabOrderModel? orderCabRequestData;
+  /// Assigning it (null included, to clear the offer) clears
+  /// [cabRequestUnreadable].
+  CabOrderModel? get orderCabRequestData => _orderCabRequestData;
+  set orderCabRequestData(CabOrderModel? value) {
+    _orderCabRequestData = value;
+    _cabRequestUnreadable = false;
+  }
+
+  CabOrderModel? _orderCabRequestData;
+
+  /// The stored `ordercabRequestData` is there but did not parse, so
+  /// [orderCabRequestData] is null: [FireStoreUtils.updateUser] must not take
+  /// that null for "no offer" and delete the driver's live ride offer.
+  bool get cabRequestUnreadable => _cabRequestUnreadable;
+  bool _cabRequestUnreadable = false;
   String? rideType;
   String? ownerId;
   bool? isOwner;
@@ -85,7 +112,7 @@ class UserModel {
     this.createdAt,
     this.role,
     this.location,
-    this.shippingAddress,
+    List<ShippingAddress>? shippingAddress,
     this.carPictureURL,
     this.inProgressOrderID,
     this.orderRequestData,
@@ -104,7 +131,7 @@ class UserModel {
     this.reviewsCount,
     this.reviewsSum,
     this.adminCommissionModel,
-    this.orderCabRequestData,
+    CabOrderModel? orderCabRequestData,
     this.rideType,
     this.ownerId,
     this.isOwner,
@@ -118,7 +145,10 @@ class UserModel {
     this.operatingLicenceFile,
     this.commercialRegisterFile,
     this.uniqueIdNumberFile,
-  });
+  }) {
+    this.shippingAddress = shippingAddress;
+    this.orderCabRequestData = orderCabRequestData;
+  }
 
   String fullName() {
     return "${firstName ?? ''} ${lastName ?? ''}";
@@ -157,11 +187,13 @@ class UserModel {
     location = _nested(json['location'], UserLocation.fromJson);
     userBankDetails = _nested(json['userBankDetails'], UserBankDetails.fromJson);
     if (json['shippingAddress'] is List) {
-      shippingAddress = <ShippingAddress>[];
+      final List<ShippingAddress> addresses = <ShippingAddress>[];
       for (final v in json['shippingAddress'] as List) {
         final ShippingAddress? address = _nested(v, ShippingAddress.fromJson);
-        if (address != null) shippingAddress!.add(address);
+        if (address != null) addresses.add(address);
       }
+      _shippingAddress = addresses;
+      _shippingAddressUnreadable = addresses.length != (json['shippingAddress'] as List).length;
     }
     carPictureURL = _text(json['carPictureURL']);
     inProgressOrderID = json['inProgressOrderID'] is List ? List<dynamic>.from(json['inProgressOrderID']) : [];
@@ -189,7 +221,8 @@ class UserModel {
     reviewsCount = json['reviewsCount'] == null ? '0' : json['reviewsCount'].toString();
     reviewsSum = json['reviewsSum'] == null ? '0' : json['reviewsSum'].toString();
     adminCommissionModel = _nested(json['adminCommission'], AdminCommission.fromJson);
-    orderCabRequestData = _nested(json['ordercabRequestData'], CabOrderModel.fromJson);
+    _orderCabRequestData = _nested(json['ordercabRequestData'], CabOrderModel.fromJson);
+    _cabRequestUnreadable = json['ordercabRequestData'] is Map && _orderCabRequestData == null;
     rideType = _text(json['rideType']);
     ownerId = _text(json['ownerId']);
     isOwner = _bool(json['isOwner']);
@@ -290,7 +323,9 @@ class UserModel {
     if (userBankDetails != null) {
       data['userBankDetails'] = userBankDetails!.toJson();
     }
-    if (shippingAddress != null) {
+    // Not written when an entry could not be read: merge would replace the
+    // stored list with the shortened one.
+    if (shippingAddress != null && !shippingAddressUnreadable) {
       data['shippingAddress'] = shippingAddress!.map((v) => v.toJson()).toList();
     }
     data['serviceTypes'] = serviceTypes ?? ['delivery-service'];

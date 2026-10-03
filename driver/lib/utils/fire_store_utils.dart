@@ -225,7 +225,8 @@ class FireStoreUtils {
           'rideType': FieldValue.delete(),
         });
       }
-      if (userModel.orderCabRequestData == null) {
+      // An offer that is stored but could not be read is kept.
+      if (userModel.orderCabRequestData == null && !userModel.cabRequestUnreadable) {
         deletes['ordercabRequestData'] = FieldValue.delete();
       }
       await docRef.update(deletes);
