@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:developer';
 
+import 'package:spideliworker/constant/show_toast_dialog.dart';
 import 'package:spideliworker/main.dart';
 import 'package:spideliworker/model/user.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
@@ -19,7 +21,26 @@ class SplashController extends GetxController {
     super.onInit();
   }
 
+  /// Retries after a failure instead of leaving the splash spinner up for
+  /// ever: an unreachable Firestore (no network, DNS failing) used to throw
+  /// out of the redirect, and nothing ever moved on.
+  static const Duration _retryDelay = Duration(seconds: 5);
+  bool _offlineToastShown = false;
+
   Future<void> redirectScreen() async {
+    try {
+      await _redirect();
+    } catch (e) {
+      log("Splash redirect failed, retrying in ${_retryDelay.inSeconds}s: $e");
+      if (!_offlineToastShown) {
+        _offlineToastShown = true;
+        ShowToastDialog.showToast("No internet connection. Please check your connection and try again.".tr);
+      }
+      if (!isClosed) Timer(_retryDelay, () => redirectScreen());
+    }
+  }
+
+  Future<void> _redirect() async {
     if (await FireStoreUtils.isMaintenanceMode() == true) {
       Get.offAll(() => MaintenanceModeScreen());
       return;

@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:spideliworker/constant/constants.dart';
 import 'package:spideliworker/model/currency_model.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
@@ -14,12 +16,14 @@ class GlobalSettingController extends GetxController {
   }
 
   Future<void> getCurrentCurrency() async {
-    await FireStoreUtils.getCurrency().then((value) {
-      if (value != null) {
-        currencyData = value;
-      } else {
-        currencyData = CurrencyModel(id: "", code: "USD", decimal: 2, isactive: true, name: "US Dollar", symbol: "\$", symbolatright: false);
-      }
-    });
+    // Guarded: offline it used to throw an unhandled exception at start-up.
+    CurrencyModel? value;
+    try {
+      value = await FireStoreUtils.getCurrency();
+    } catch (e) {
+      log("getCurrency failed: $e");
+    }
+    currencyData = value ?? CurrencyModel(id: "", code: "USD", decimal: 2, isactive: true, name: "US Dollar", symbol: "\$", symbolatright: false);
   }
+
 }
