@@ -13,15 +13,7 @@ const Map<String, String> lnAr = {
   "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "يمنع هاتف @phone التطبيقات من تلقي الإشعارات بعد إغلاقها. فعّل التشغيل التلقائي لهذا التطبيق واضبط استخدام البطارية على بلا قيود حتى لا تفوتك أي تحديثات.",
   "Not now": "ليس الآن",
   "Open settings": "فتح الإعدادات",
-  // On-demand booking pushes (lib/services/push_message.dart onDemandFallbackText)
-  // and the job details screen.
-  "New job assigned": "تم إسناد مهمة جديدة",
-  "A new booking has been assigned to you. Tap to view it.": "تم إسناد حجز جديد إليك. اضغط لعرضه.",
-  "Booking reassigned": "تمت إعادة إسناد الحجز",
-  "This booking is no longer assigned to you": "لم يعد هذا الحجز مسندًا إليك",
-  "Booking cancelled": "تم إلغاء الحجز",
-  "The customer cancelled this booking.": "ألغى العميل هذا الحجز.",
-  "The provider cancelled this booking.": "ألغى مقدم الخدمة هذا الحجز.",
+  // The job details screen.
   "This booking is no longer available.": "هذا الحجز لم يعد متاحًا.",
   "Something went wrong, please try again.": "حدث خطأ ما، يرجى المحاولة مرة أخرى.",
 };

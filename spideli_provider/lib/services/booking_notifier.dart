@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:developer';
 
-import 'package:get/get.dart';
 import 'package:spideliprovider/main.dart';
 import 'package:spideliprovider/model/onprovider_order_model.dart';
 import 'package:spideliprovider/services/booking_push.dart';
@@ -56,29 +55,14 @@ class BookingNotifier {
       return;
     }
     try {
-      final bool sent;
-      final String? template = push.template;
-      if (template != null) {
-        sent = await SendNotification.sendFcmMessage(
-          template,
-          push.fallbackToken,
-          push.data,
-          recipientId: push.recipientId,
-          recipient: push.recipient,
-          fallbackTitle: push.titleKey.tr,
-          fallbackBody: push.bodyKey.tr,
-        );
-      } else {
-        sent = await SendNotification.sendOneNotification(
-          kind: push.event,
-          title: push.titleKey.tr,
-          body: push.bodyKey.tr,
-          recipient: push.recipient,
-          token: push.fallbackToken,
-          recipientId: push.recipientId,
-          payload: push.data,
-        );
-      }
+      // The title and body are the template's (`dynamic_notification`).
+      final bool sent = await SendNotification.sendFcmMessage(
+        push.template,
+        push.fallbackToken,
+        push.data,
+        recipientId: push.recipientId,
+        recipient: push.recipient,
+      );
       if (!sent) {
         // Not accepted by FCM: a retry of the action may send it again.
         _deduper.release(push.dedupeKey);

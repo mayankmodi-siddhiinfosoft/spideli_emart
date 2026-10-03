@@ -842,9 +842,4 @@ const Map<String, String> arAR = {
   "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "يمنع هاتف @phone التطبيقات من تلقي الإشعارات بعد إغلاقها. فعّل التشغيل التلقائي لهذا التطبيق واضبط استخدام البطارية على بلا قيود حتى لا تفوتك أي تحديثات.",
   "Not now": "ليس الآن",
   "Open settings": "فتح الإعدادات",
-  // On-demand booking pushes the customer sends (ONDEMAND-NOTIFICATIONS, event 14).
-  "Booking paid": "تم دفع الحجز",
-  "The customer has paid for this booking": "دفع العميل قيمة هذا الحجز",
-  "Extra charges paid": "تم دفع الرسوم الإضافية",
-  "The customer has paid the extra charges for this booking": "دفع العميل الرسوم الإضافية لهذا الحجز",
 };

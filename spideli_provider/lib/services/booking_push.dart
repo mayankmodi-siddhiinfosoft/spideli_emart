@@ -60,6 +60,32 @@ class BookingEvent {
   };
 }
 
+/// The `dynamic_notification` templates (looked up by `type`; `subject` is
+/// the title, `message` the body) the provider's booking pushes are sent
+/// with. Every push's text comes from its template: none is written here.
+class BookingTemplate {
+  static const String providerAccepted = 'provider_accepted';
+  static const String providerRejected = 'provider_rejected';
+
+  /// The decline / cancel, to the worker who was assigned.
+  static const String providerRejectedWorker = 'provider_rejected_worker';
+  static const String providerSelfAssigned = 'provider_self_assigned';
+  static const String workerAssigned = 'worker_assigned';
+
+  /// To the customer: a worker assigned to a booking that had none.
+  static const String workerAssignedCustomer = 'worker_assigned_customer';
+
+  /// To the customer: the booking's worker replaced by another.
+  static const String workerChangedCustomer = 'worker_changed_customer';
+
+  /// To the previous worker of a reassigned booking.
+  static const String workerUnassigned = 'worker_unassigned';
+  static const String serviceInTransit = 'service_intransit';
+  static const String stopTime = 'stop_time';
+  static const String serviceCharges = 'service_charges';
+  static const String serviceCompleted = 'service_completed';
+}
+
 /// The routing key every on-demand booking push carries in `type`.
 const String bookingPushType = 'provider_order';
 
@@ -128,13 +154,9 @@ class BookingPush {
   /// The token copy to use only when the record cannot be read.
   final String fallbackToken;
 
-  /// The `dynamic_notification` template, or null for an app-defined text.
-  final String? template;
-
-  /// Translation keys (app_en.dart / app_ar.dart) of the app-defined title
-  /// and body; for a template push, the text used when the template is missing.
-  final String titleKey;
-  final String bodyKey;
+  /// The `dynamic_notification` template ([BookingTemplate]) that gives the
+  /// push its title and body.
+  final String template;
 
   /// The data block (strings only, no empty values).
   final Map<String, String> data;
@@ -145,8 +167,6 @@ class BookingPush {
     required this.recipientId,
     required this.fallbackToken,
     required this.template,
-    required this.titleKey,
-    required this.bodyKey,
     required this.data,
   });
 
@@ -154,62 +174,7 @@ class BookingPush {
   String get dedupeKey => '${data['orderId'] ?? ''}|$event|${data['status'] ?? ''}|${recipient.name}|$recipientId';
 
   @override
-  String toString() => 'BookingPush($event -> ${recipient.name} $recipientId${template == null ? '' : ', template $template'})';
-}
-
-/// Title / body translation keys. Every key is in app_en.dart and app_ar.dart.
-class BookingPushText {
-  static const String acceptedTitle = 'Booking accepted';
-  static const String acceptedBody = 'Your booking has been accepted.';
-  static const String rejectedTitle = 'Booking rejected';
-  static const String rejectedBody = 'Your booking has been rejected by the provider.';
-  static const String workerCancelledTitle = 'Booking cancelled';
-  static const String workerCancelledBody = 'The provider cancelled a booking that was assigned to you.';
-  static const String workerAssignedTitle = 'New job assigned';
-  static const String workerAssignedBody = 'A booking has been assigned to you.';
-  static const String customerWorkerAssignedTitle = 'Worker assigned';
-  static const String customerWorkerAssignedBody = 'A worker has been assigned to your booking';
-  static const String customerWorkerChangedTitle = 'Worker changed';
-  static const String customerWorkerChangedBody = "Your booking's worker has changed";
-  static const String workerUnassignedTitle = 'Booking reassigned';
-  static const String workerUnassignedBody = 'This booking is no longer assigned to you';
-  static const String selfAssignedTitle = 'Booking update';
-  static const String selfAssignedBody = 'Your provider will carry out your booking personally.';
-  static const String inTransitTitle = 'Service started';
-  static const String inTransitBody = 'Your service provider is on the way.';
-  static const String stopTimeTitle = 'Service time stopped';
-  static const String stopTimeBody = 'The service time for your booking has been stopped.';
-  static const String chargesTitle = 'Extra charges added';
-  static const String chargesBody = 'Extra charges were added to your booking.';
-  static const String completedTitle = 'Service completed';
-  static const String completedBody = 'Your booking has been completed.';
-
-  static const List<String> all = <String>[
-    acceptedTitle,
-    acceptedBody,
-    rejectedTitle,
-    rejectedBody,
-    workerCancelledTitle,
-    workerCancelledBody,
-    workerAssignedTitle,
-    workerAssignedBody,
-    customerWorkerAssignedTitle,
-    customerWorkerAssignedBody,
-    customerWorkerChangedTitle,
-    customerWorkerChangedBody,
-    workerUnassignedTitle,
-    workerUnassignedBody,
-    selfAssignedTitle,
-    selfAssignedBody,
-    inTransitTitle,
-    inTransitBody,
-    stopTimeTitle,
-    stopTimeBody,
-    chargesTitle,
-    chargesBody,
-    completedTitle,
-    completedBody,
-  ];
+  String toString() => 'BookingPush($event -> ${recipient.name} $recipientId, template $template)';
 }
 
 String _clean(String? value) {
@@ -249,7 +214,7 @@ List<BookingPush> planProviderBookingPushes(ProviderBookingAction action, Bookin
   final bool hasCustomer = customerId.isNotEmpty || isUsableFcmToken(customerToken);
   final List<BookingPush> pushes = <BookingPush>[];
 
-  void toCustomer(String event, String? template, String titleKey, String bodyKey) {
+  void toCustomer(String event, String template) {
     if (!hasCustomer) return;
     pushes.add(BookingPush(
       event: event,
@@ -257,13 +222,11 @@ List<BookingPush> planProviderBookingPushes(ProviderBookingAction action, Bookin
       recipientId: customerId,
       fallbackToken: customerToken,
       template: template,
-      titleKey: titleKey,
-      bodyKey: bodyKey,
       data: bookingPushData(event, facts),
     ));
   }
 
-  void toWorker(String id, String token, String event, String? template, String titleKey, String bodyKey, {bool withPreviousWorker = false}) {
+  void toWorker(String id, String token, String event, String template, {bool withPreviousWorker = false}) {
     if (id.isEmpty) return;
     pushes.add(BookingPush(
       event: event,
@@ -271,49 +234,40 @@ List<BookingPush> planProviderBookingPushes(ProviderBookingAction action, Bookin
       recipientId: id,
       fallbackToken: token,
       template: template,
-      titleKey: titleKey,
-      bodyKey: bodyKey,
       data: bookingPushData(event, facts, withPreviousWorker: withPreviousWorker),
     ));
   }
 
   switch (action) {
     case ProviderBookingAction.accept:
-      toCustomer(BookingEvent.providerAccepted, BookingEvent.providerAccepted, BookingPushText.acceptedTitle, BookingPushText.acceptedBody);
+      toCustomer(BookingEvent.providerAccepted, BookingTemplate.providerAccepted);
       break;
     case ProviderBookingAction.reject:
-      toCustomer(BookingEvent.providerRejected, BookingEvent.providerRejected, BookingPushText.rejectedTitle, BookingPushText.rejectedBody);
-      // The template is worded for the customer: the worker gets its own text.
-      toWorker(workerId, '', BookingEvent.providerRejected, null, BookingPushText.workerCancelledTitle, BookingPushText.workerCancelledBody);
+      toCustomer(BookingEvent.providerRejected, BookingTemplate.providerRejected);
+      // The customer's template is worded for the customer: the worker's own.
+      toWorker(workerId, '', BookingEvent.providerRejected, BookingTemplate.providerRejectedWorker);
       break;
     case ProviderBookingAction.assignSelf:
-      toCustomer(BookingEvent.providerSelfAssigned, null, BookingPushText.selfAssignedTitle, BookingPushText.selfAssignedBody);
+      toCustomer(BookingEvent.providerSelfAssigned, BookingTemplate.providerSelfAssigned);
       break;
     case ProviderBookingAction.assignWorker:
       if (workerId.isEmpty || workerId == previousWorkerId) break;
       final bool reassigned = previousWorkerId.isNotEmpty;
-      toWorker(workerId, _clean(facts.workerToken), BookingEvent.workerAssigned, BookingEvent.workerAssigned, BookingPushText.workerAssignedTitle,
-          BookingPushText.workerAssignedBody);
-      toWorker(previousWorkerId, '', BookingEvent.workerUnassigned, null, BookingPushText.workerUnassignedTitle, BookingPushText.workerUnassignedBody,
-          withPreviousWorker: true);
-      toCustomer(
-        BookingEvent.workerAssignedCustomer,
-        null,
-        reassigned ? BookingPushText.customerWorkerChangedTitle : BookingPushText.customerWorkerAssignedTitle,
-        reassigned ? BookingPushText.customerWorkerChangedBody : BookingPushText.customerWorkerAssignedBody,
-      );
+      toWorker(workerId, _clean(facts.workerToken), BookingEvent.workerAssigned, BookingTemplate.workerAssigned);
+      toWorker(previousWorkerId, '', BookingEvent.workerUnassigned, BookingTemplate.workerUnassigned, withPreviousWorker: true);
+      toCustomer(BookingEvent.workerAssignedCustomer, reassigned ? BookingTemplate.workerChangedCustomer : BookingTemplate.workerAssignedCustomer);
       break;
     case ProviderBookingAction.start:
-      toCustomer(BookingEvent.serviceInTransit, BookingEvent.serviceInTransit, BookingPushText.inTransitTitle, BookingPushText.inTransitBody);
+      toCustomer(BookingEvent.serviceInTransit, BookingTemplate.serviceInTransit);
       break;
     case ProviderBookingAction.stopTime:
-      toCustomer(BookingEvent.stopTime, BookingEvent.stopTime, BookingPushText.stopTimeTitle, BookingPushText.stopTimeBody);
+      toCustomer(BookingEvent.stopTime, BookingTemplate.stopTime);
       break;
     case ProviderBookingAction.extraCharges:
-      toCustomer(BookingEvent.serviceCharges, BookingEvent.serviceCharges, BookingPushText.chargesTitle, BookingPushText.chargesBody);
+      toCustomer(BookingEvent.serviceCharges, BookingTemplate.serviceCharges);
       break;
     case ProviderBookingAction.complete:
-      toCustomer(BookingEvent.serviceCompleted, BookingEvent.serviceCompleted, BookingPushText.completedTitle, BookingPushText.completedBody);
+      toCustomer(BookingEvent.serviceCompleted, BookingTemplate.serviceCompleted);
       break;
   }
   return pushes;

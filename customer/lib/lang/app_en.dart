@@ -857,9 +857,4 @@ const Map<String, String> enUS = {
   "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.",
   "Not now": "Not now",
   "Open settings": "Open settings",
-  // On-demand booking pushes the customer sends (ONDEMAND-NOTIFICATIONS, event 14).
-  "Booking paid": "Booking paid",
-  "The customer has paid for this booking": "The customer has paid for this booking",
-  "Extra charges paid": "Extra charges paid",
-  "The customer has paid the extra charges for this booking": "The customer has paid the extra charges for this booking",
 };

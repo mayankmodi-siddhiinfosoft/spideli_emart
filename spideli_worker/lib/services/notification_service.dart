@@ -137,6 +137,7 @@ class NotificationService {
     if (_listening) return;
     _listening = true;
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      if (message.notification == null) return;
       // FCM does not display a push while the app is open on Android: post it
       // on the worker channel. iOS presents it from the options set in main().
       if (_isAndroid) _display(message);
@@ -268,21 +269,7 @@ class NotificationService {
   static Future<void> _display(RemoteMessage message) async {
     try {
       final RemoteNotification? notification = message.notification;
-      String title = notification?.title?.trim() ?? '';
-      String body = notification?.body?.trim() ?? '';
-      if (title.isEmpty && body.isEmpty) {
-        // A booking push whose Firestore template is missing arrives with an
-        // empty title and body: show the app's own text for it.
-        final fallback = onDemandFallbackText(message.data);
-        if (fallback != null) {
-          title = fallback.title.tr;
-          body = fallback.body.tr;
-        } else if (notification == null) {
-          // Data-only pushes are not notifications (and nothing to show).
-          return;
-        }
-      }
-      if (title.isEmpty && body.isEmpty) return;
+      if (notification == null) return;
       const NotificationDetails details = NotificationDetails(
         android: AndroidNotificationDetails(
           workerChannelId,
@@ -298,8 +285,8 @@ class NotificationService {
         // One notification per push: a fixed id made each new push replace
         // the previous one.
         id: (message.messageId ?? '${DateTime.now().microsecondsSinceEpoch}').hashCode & 0x7fffffff,
-        title: title,
-        body: body,
+        title: notification.title,
+        body: notification.body,
         notificationDetails: details,
         payload: jsonEncode(message.data),
       );

@@ -411,26 +411,6 @@ JobTapTarget jobTapTarget({required String orderId, bool? orderExists, String? o
   return JobTapTarget.details;
 }
 
-/// The text of a booking push shown in the foreground when the push itself
-/// carries none (a template missing on Firestore): untranslated keys of
-/// `lib/lang/app_en.dart`, or null for pushes that are not on-demand events
-/// the worker receives.
-({String title, String body})? onDemandFallbackText(Map<String, dynamic> data) {
-  final String event = _value(data, 'event').isEmpty ? _value(data, 'type') : _value(data, 'event');
-  switch (event) {
-    case OnDemandEvent.workerAssigned:
-      return (title: 'New job assigned', body: 'A new booking has been assigned to you. Tap to view it.');
-    case OnDemandEvent.workerUnassigned:
-      return (title: 'Booking reassigned', body: 'This booking is no longer assigned to you');
-    case OnDemandEvent.bookingCancelledByCustomer:
-      return (title: 'Booking cancelled', body: 'The customer cancelled this booking.');
-    case OnDemandEvent.providerRejected:
-      return (title: 'Booking cancelled', body: 'The provider cancelled this booking.');
-    default:
-      return null;
-  }
-}
-
 /// The data of a tapped local notification (its payload is the push data as
 /// JSON). Anything unreadable is an empty map, never a throw.
 Map<String, dynamic> decodeNotificationPayload(String? payload) {

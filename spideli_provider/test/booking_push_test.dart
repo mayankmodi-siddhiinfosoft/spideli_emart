@@ -1,6 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:spideliprovider/lang/app_ar.dart';
-import 'package:spideliprovider/lang/app_en.dart';
 import 'package:spideliprovider/services/booking_push.dart';
 import 'package:spideliprovider/services/push_message.dart';
 
@@ -113,9 +111,9 @@ void main() {
         'customer:cust-1:provider_rejected',
         'worker:w-1:provider_rejected',
       ]);
-      // The template is worded for the customer: the worker gets app text.
-      expect(pushes.last.template, isNull);
-      expect(pushes.last.titleKey, BookingPushText.workerCancelledTitle);
+      expect(pushes.first.template, 'provider_rejected');
+      // The customer's template is worded for the customer: the worker's own.
+      expect(pushes.last.template, 'provider_rejected_worker');
     });
 
     test('assign to myself -> customer, provider_self_assigned (14)', () {
@@ -123,7 +121,7 @@ void main() {
       expect(pushes, hasLength(1));
       expect(pushes.single.event, 'provider_self_assigned');
       expect(pushes.single.recipient, PushApp.customer);
-      expect(pushes.single.template, isNull);
+      expect(pushes.single.template, 'provider_self_assigned');
     });
 
     test('assign a worker -> worker (5) and customer (6)', () {
@@ -138,8 +136,7 @@ void main() {
       expect(worker.fallbackToken, 'w-token');
       expect(worker.data['workerId'], 'w-1');
       final BookingPush customer = pushes.last;
-      expect(customer.template, isNull);
-      expect(customer.bodyKey, 'A worker has been assigned to your booking');
+      expect(customer.template, 'worker_assigned_customer', reason: 'the booking had no worker before');
     });
 
     test('reassign -> new worker (5), previous worker (7), customer (6)', () {
@@ -151,11 +148,12 @@ void main() {
         'customer:cust-1:worker_assigned_customer',
       ]);
       final BookingPush previous = pushes[1];
-      expect(previous.template, isNull);
+      expect(pushes.first.template, 'worker_assigned');
+      expect(previous.template, 'worker_unassigned');
       expect(previous.fallbackToken, isEmpty, reason: 'read fresh from providers_workers/{id}');
-      expect(previous.bodyKey, 'This booking is no longer assigned to you');
       expect(previous.data['previousWorkerId'], 'w-1');
-      expect(pushes.last.bodyKey, "Your booking's worker has changed");
+      expect(pushes.last.template, 'worker_changed_customer', reason: 'the booking had a worker before');
+      expect(pushes.last.data['event'], 'worker_assigned_customer', reason: 'the event code is the same for assign and change');
     });
 
     test('picking the same worker again sends nothing', () {
@@ -181,17 +179,36 @@ void main() {
       expect(pushes.single.fallbackToken, 'tok');
     });
 
-    test('every title and body is translated in English and Arabic', () {
-      for (final String key in BookingPushText.all) {
-        expect(enUS[key], isNotNull, reason: 'app_en.dart: $key');
-        expect(lnAr[key], isNotNull, reason: 'app_ar.dart: $key');
-        expect(lnAr[key], isNot(key), reason: 'app_ar.dart is not English: $key');
-      }
+    test('every push is a template push: no app-defined text', () {
+      const Set<String> templates = <String>{
+        'provider_accepted',
+        'provider_rejected',
+        'provider_rejected_worker',
+        'provider_self_assigned',
+        'worker_assigned',
+        'worker_assigned_customer',
+        'worker_changed_customer',
+        'worker_unassigned',
+        'service_intransit',
+        'stop_time',
+        'service_charges',
+        'service_completed',
+      };
       for (final ProviderBookingAction action in ProviderBookingAction.values) {
-        for (final BookingPush p in planProviderBookingPushes(action, facts(status: BookingStatus.assigned, workerId: 'w-2', previousWorkerId: 'w-1'))) {
-          expect(BookingPushText.all, containsAll(<String>[p.titleKey, p.bodyKey]), reason: p.toString());
+        for (final String previous in <String>['', 'w-1']) {
+          for (final BookingPush p in planProviderBookingPushes(action, facts(status: BookingStatus.assigned, workerId: 'w-2', previousWorkerId: previous))) {
+            expect(templates, contains(p.template), reason: p.toString());
+          }
         }
       }
+    });
+
+    test('worker templates go to the worker app', () {
+      expect(recipientForKind('worker_assigned'), PushApp.worker);
+      expect(recipientForKind('worker_unassigned'), PushApp.worker);
+      expect(recipientForKind('provider_rejected_worker'), PushApp.worker);
+      expect(recipientForKind('worker_changed_customer'), PushApp.customer);
+      expect(recipientForKind('provider_self_assigned'), PushApp.customer);
     });
   });
 

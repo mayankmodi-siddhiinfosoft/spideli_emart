@@ -37,6 +37,17 @@ abstract final class OnDemandPush {
   /// Firestore templates (`dynamic_notification`) the customer app sends with.
   static const String templateBookingPlaced = 'booking_placed';
   static const String templateServiceCancelled = 'service_cancelled';
+  static const String templateBookingPaid = 'booking_paid';
+  static const String templateExtraChargesPaid = 'extra_charges_paid';
+
+  /// The template each event the customer app sends goes out with: every
+  /// push's title and body are the template's (`subject` / `message`).
+  static const Map<String, String> templateFor = {
+    bookingPlaced: templateBookingPlaced,
+    bookingCancelledByCustomer: templateServiceCancelled,
+    bookingPaid: templateBookingPaid,
+    extraChargesPaid: templateExtraChargesPaid,
+  };
 
   /// Every on-demand event code and template type. A push whose `type` or
   /// `event` is one of these is a booking push, also from an older sender

@@ -341,28 +341,6 @@ void main() {
     });
   });
 
-  test('onDemandFallbackText: text for the events the worker receives', () {
-    expect(onDemandFallbackText({'event': 'worker_assigned'})?.title, 'New job assigned');
-    expect(onDemandFallbackText({'event': 'worker_unassigned'})?.body, 'This booking is no longer assigned to you');
-    expect(onDemandFallbackText({'event': 'booking_cancelled_by_customer'})?.title, 'Booking cancelled');
-    expect(onDemandFallbackText({'event': 'provider_rejected'})?.body, 'The provider cancelled this booking.');
-    expect(onDemandFallbackText({'type': 'worker_assigned'})?.title, 'New job assigned');
-    expect(onDemandFallbackText({'type': 'provider_order'}), isNull);
-    expect(onDemandFallbackText(<String, dynamic>{}), isNull);
-  });
-
-  test('every fallback text is translated (en and ar)', () {
-    final String en = File('lib/lang/app_en.dart').readAsStringSync();
-    final String ar = File('lib/lang/app_ar.dart').readAsStringSync();
-    for (final String event in ['worker_assigned', 'worker_unassigned', 'booking_cancelled_by_customer', 'provider_rejected']) {
-      final text = onDemandFallbackText({'event': event})!;
-      for (final String key in [text.title, text.body]) {
-        expect(en.contains('"$key":'), isTrue, reason: 'en: $key');
-        expect(ar.contains('"$key":'), isTrue, reason: 'ar: $key');
-      }
-    }
-  });
-
   test('decodeNotificationPayload', () {
     expect(decodeNotificationPayload('{"type":"provider_order","orderId":"o1"}'), {'type': 'provider_order', 'orderId': 'o1'});
     expect(decodeNotificationPayload(null), isEmpty);

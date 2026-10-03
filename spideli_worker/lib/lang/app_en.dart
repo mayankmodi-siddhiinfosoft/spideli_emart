@@ -97,15 +97,7 @@ const Map<String, String> enUS = {
   "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.",
   "Not now": "Not now",
   "Open settings": "Open settings",
-  // On-demand booking pushes (lib/services/push_message.dart onDemandFallbackText)
-  // and the job details screen.
-  "New job assigned": "New job assigned",
-  "A new booking has been assigned to you. Tap to view it.": "A new booking has been assigned to you. Tap to view it.",
-  "Booking reassigned": "Booking reassigned",
-  "This booking is no longer assigned to you": "This booking is no longer assigned to you",
-  "Booking cancelled": "Booking cancelled",
-  "The customer cancelled this booking.": "The customer cancelled this booking.",
-  "The provider cancelled this booking.": "The provider cancelled this booking.",
+  // The job details screen.
   "This booking is no longer available.": "This booking is no longer available.",
   "Something went wrong, please try again.": "Something went wrong, please try again.",
 };

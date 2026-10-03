@@ -127,18 +127,10 @@ class SendNotification {
   /// taken when the booking was placed -- '' when the customer's iPhone had no
   /// token yet, stale after a reinstall -- so status pushes never arrived.
   ///
-  /// [recipient] overrides the app derived from [type] (a template worded for
-  /// one app sent to another). [fallbackTitle] / [fallbackBody] are sent when
-  /// the template is not set up, instead of the "setup notification" stub.
-  static Future<bool> sendFcmMessage(
-    String type,
-    String token,
-    Map<String, dynamic>? payload, {
-    String? recipientId,
-    PushApp? recipient,
-    String? fallbackTitle,
-    String? fallbackBody,
-  }) async {
+  /// [recipient] overrides the app derived from [type]. The title and body
+  /// are always the template's `subject` / `message`: when the template is
+  /// not set up, nothing is sent (no "setup notification" stub, no app text).
+  static Future<bool> sendFcmMessage(String type, String token, Map<String, dynamic>? payload, {String? recipientId, PushApp? recipient}) async {
     try {
       final PushApp app = recipient ?? recipientForKind(type);
       final String target = await _currentToken(app, recipientId, fallback: token);
@@ -147,17 +139,16 @@ class SendNotification {
         return false;
       }
       final NotificationModel? template = await FireStoreUtils.getNotificationContent(type);
-      final bool hasFallback = (fallbackTitle ?? '').trim().isNotEmpty || (fallbackBody ?? '').trim().isNotEmpty;
       // getNotificationContent answers a stub (no id, no type) when the template does not exist.
       final bool templateMissing = template == null || ((template.id ?? '').isEmpty && (template.type ?? '').isEmpty) || ((template.subject ?? '').trim().isEmpty && (template.message ?? '').trim().isEmpty);
-      if (templateMissing && !hasFallback) {
+      if (templateMissing) {
         log("Push '$type' not sent: no notification template.");
         return false;
       }
       return await _send(
         token: target,
-        title: templateMissing ? (fallbackTitle ?? '') : (template.subject ?? ''),
-        body: templateMissing ? (fallbackBody ?? '') : (template.message ?? ''),
+        title: template.subject ?? '',
+        body: template.message ?? '',
         payload: payload,
         kind: type,
         recipient: app,
@@ -181,33 +172,6 @@ class SendNotification {
     } catch (e) {
       log("Recipient token not read, using the one on the record: $e");
       return preferFreshToken(fallback: fallback);
-    }
-  }
-
-  /// A push with an app-defined (already translated) [title] and [body], for
-  /// an event that has no `dynamic_notification` template. [recipientId] is
-  /// read for the current token as in [sendFcmMessage]; [token] is the
-  /// fallback. [kind] is the event code (used for `type` when the payload has
-  /// none, and in logs).
-  static Future<bool> sendOneNotification({
-    required String kind,
-    required String title,
-    required String body,
-    required PushApp recipient,
-    String token = '',
-    String? recipientId,
-    Map<String, dynamic>? payload,
-  }) async {
-    try {
-      final String target = await _currentToken(recipient, recipientId, fallback: token);
-      if (!isUsableFcmToken(target)) {
-        log("Push '$kind' not sent: the recipient has no FCM token.");
-        return false;
-      }
-      return await _send(token: target, title: title, body: body, payload: payload, kind: kind, recipient: recipient);
-    } catch (e) {
-      log("Push '$kind' not sent: $e");
-      return false;
     }
   }
 

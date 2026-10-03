@@ -7,7 +7,6 @@ import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/service/push_message.dart';
 import 'package:customer/service/send_notification.dart';
 import 'package:customer/utils/on_demand_push.dart';
-import 'package:get/get.dart';
 
 /// Sends the customer's on-demand booking pushes
 /// (`.claude/ONDEMAND-NOTIFICATIONS.md`) to the provider and, when one is
@@ -20,36 +19,25 @@ import 'package:get/get.dart';
 abstract final class OnDemandNotifier {
   /// [1] A new booking: the provider, template `booking_placed`.
   static Future<void> bookingPlaced(OnProviderOrderModel order) {
-    return _send(order, event: OnDemandPush.bookingPlaced, template: OnDemandPush.templateBookingPlaced, toWorker: false);
+    return _send(order, event: OnDemandPush.bookingPlaced, toWorker: false);
   }
 
   /// [2] The customer cancelled: the provider and the assigned worker,
   /// template `service_cancelled`.
   static Future<void> bookingCancelled(OnProviderOrderModel order) {
-    return _send(order, event: OnDemandPush.bookingCancelledByCustomer, template: OnDemandPush.templateServiceCancelled, toWorker: true);
+    return _send(order, event: OnDemandPush.bookingCancelledByCustomer, toWorker: true);
   }
 
   /// [14] An hourly booking paid from its details screen ("Pay Now"): the
-  /// provider and the assigned worker. No template exists for it.
+  /// provider and the assigned worker, template `booking_paid`.
   static Future<void> bookingPaid(OnProviderOrderModel order) {
-    return _send(
-      order,
-      event: OnDemandPush.bookingPaid,
-      title: 'Booking paid'.tr,
-      body: 'The customer has paid for this booking'.tr,
-      toWorker: true,
-    );
+    return _send(order, event: OnDemandPush.bookingPaid, toWorker: true);
   }
 
-  /// [14] Extra charges paid: the provider and the assigned worker.
+  /// [14] Extra charges paid: the provider and the assigned worker, template
+  /// `extra_charges_paid`.
   static Future<void> extraChargesPaid(OnProviderOrderModel order) {
-    return _send(
-      order,
-      event: OnDemandPush.extraChargesPaid,
-      title: 'Extra charges paid'.tr,
-      body: 'The customer has paid the extra charges for this booking'.tr,
-      toWorker: true,
-    );
+    return _send(order, event: OnDemandPush.extraChargesPaid, toWorker: true);
   }
 
   /// The contract payload of [order] for [event].
@@ -67,9 +55,15 @@ abstract final class OnDemandNotifier {
   }
 
   /// One push to the provider and, with [toWorker] and an assigned worker,
-  /// one to the worker: the Firestore [template] when given, else [title] /
-  /// [body].
-  static Future<void> _send(OnProviderOrderModel order, {required String event, String? template, String? title, String? body, required bool toWorker}) async {
+  /// one to the worker, with the title and body of the Firestore template of
+  /// [event] ([OnDemandPush.templateFor], `dynamic_notification`); no text is
+  /// written in the app.
+  static Future<void> _send(OnProviderOrderModel order, {required String event, required bool toWorker}) async {
+    final String? template = OnDemandPush.templateFor[event];
+    if (template == null) {
+      log('push "$event" not sent: no template for it');
+      return;
+    }
     if (order.id.trim().isEmpty) {
       log('push "$event" not sent: the booking has no id');
       return;
@@ -81,10 +75,7 @@ abstract final class OnDemandNotifier {
     final String workerId = order.workerId?.trim() ?? '';
 
     Future<void> deliver(String token, PushRecipient recipient) async {
-      final bool sent =
-          template != null
-              ? await SendNotification.sendFcmMessage(template, token, payload, recipient: recipient)
-              : await SendNotification.sendOneNotification(token: token, title: title ?? '', body: body ?? '', payload: payload, recipient: recipient);
+      final bool sent = await SendNotification.sendFcmMessage(template, token, payload, recipient: recipient);
       if (!sent) log('push "$event" to the ${recipient.name} was not delivered');
     }
 

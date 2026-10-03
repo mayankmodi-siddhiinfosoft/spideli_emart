@@ -1,6 +1,4 @@
 import 'package:customer/constant/constant.dart';
-import 'package:customer/lang/app_ar.dart';
-import 'package:customer/lang/app_en.dart';
 import 'package:customer/models/onprovider_order_model.dart';
 import 'package:customer/models/provider_serivce_model.dart';
 import 'package:customer/service/on_demand_notifier.dart';
@@ -136,15 +134,12 @@ void main() {
     });
   });
 
-  test('new push texts are translated in every language', () {
-    const keys = ['Booking paid', 'The customer has paid for this booking', 'Extra charges paid', 'The customer has paid the extra charges for this booking'];
-    for (final map in [enUS, arAR]) {
-      for (final k in keys) {
-        expect((map[k] ?? '').trim(), isNotEmpty, reason: k);
-      }
-    }
-    for (final k in keys) {
-      expect(arAR[k], isNot(k), reason: 'Arabic for "$k"');
-    }
+  test('every push the customer sends uses its Firestore template', () {
+    expect(OnDemandPush.templateFor, {
+      'booking_placed': 'booking_placed',
+      'booking_cancelled_by_customer': 'service_cancelled',
+      'booking_paid': 'booking_paid',
+      'extra_charges_paid': 'extra_charges_paid',
+    });
   });
 }
