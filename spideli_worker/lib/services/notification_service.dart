@@ -17,6 +17,7 @@ import 'package:spideliworker/ui/booking_list/booking_details_screen.dart';
 import 'package:spideliworker/ui/chat_screen/chat_screen.dart';
 import 'package:spideliworker/ui/chat_screen/inbox_screen.dart';
 import 'package:spideliworker/ui/help_support_screen/help_support_screen.dart';
+import 'package:spideliworker/utils/fcm_token_reset.dart';
 
 /// Pushes that arrive while the app is in the background or killed.
 ///
@@ -264,6 +265,8 @@ class NotificationService {
           return '';
         }
       }
+      // A token restored from an Android backup is dead: replace it once.
+      await FcmTokenReset.runOnce();
       final String? token = await FirebaseMessaging.instance.getToken();
       if (isUsableFcmToken(token)) {
         _deviceToken = token!.trim();

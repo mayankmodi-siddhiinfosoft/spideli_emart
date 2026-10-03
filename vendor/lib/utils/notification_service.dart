@@ -16,6 +16,7 @@ import 'package:vendor/firebase_options.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/preferences.dart';
 import 'package:vendor/utils/push_payload.dart';
+import 'package:vendor/utils/fcm_token_reset.dart';
 
 /// Runs for a message that arrives while the app is in the background or
 /// closed. Registered once from `main()` so it is always installed (report
@@ -216,6 +217,8 @@ class NotificationService {
         log("APNs token not available yet; the FCM token is saved when it arrives");
         return '';
       }
+      // A token restored from an Android backup is dead: replace it once.
+      await FcmTokenReset.runOnce();
       final String token = (await FirebaseMessaging.instance.getToken())?.trim() ?? '';
       if (PushPayload.isUsableToken(token)) _deviceToken = token;
       return token;

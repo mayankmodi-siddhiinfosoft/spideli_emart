@@ -24,6 +24,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
+import 'package:driver/utils/fcm_token_reset.dart';
 
 bool get _isAndroid => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 bool get _isIOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
@@ -231,6 +232,8 @@ class NotificationService {
         log("APNs token not available yet; the FCM token is saved from onTokenRefresh when it arrives.");
         return _deviceToken;
       }
+      // A token restored from an Android backup is dead: replace it once.
+      await FcmTokenReset.runOnce();
       final String token = ((await FirebaseMessaging.instance.getToken()) ?? '').trim();
       if (PushMessage.isUsableToken(token)) _deviceToken = token;
       return _deviceToken;

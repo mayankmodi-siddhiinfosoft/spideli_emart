@@ -44,6 +44,9 @@
     </queries>
 
     <application
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        tools:replace="android:allowBackup,android:fullBackupContent"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:label="Spideli Customer"

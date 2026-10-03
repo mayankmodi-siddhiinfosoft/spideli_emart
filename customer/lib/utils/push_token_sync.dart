@@ -8,6 +8,7 @@ import 'package:customer/utils/push_token.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:customer/utils/fcm_token_reset.dart';
 
 /// Keeps `users/{uid}.fcmToken` pointing at this device.
 ///
@@ -34,6 +35,8 @@ abstract final class PushTokenSync {
           return PushToken.device;
         }
       }
+      // A token restored from an Android backup is dead: replace it once.
+      await FcmTokenReset.runOnce();
       final String? token = await FirebaseMessaging.instance.getToken();
       if (PushToken.isUsable(token)) PushToken.device = token!.trim();
     } catch (e) {

@@ -23,6 +23,9 @@
 
 
     <application
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        tools:replace="android:allowBackup,android:fullBackupContent"
         android:label="Spideli Provider"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">

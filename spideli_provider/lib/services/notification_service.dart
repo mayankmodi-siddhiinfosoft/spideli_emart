@@ -16,6 +16,7 @@ import 'package:spideliprovider/services/push_message.dart';
 import 'package:spideliprovider/ui/booking_list/booking_details_screen.dart';
 import 'package:spideliprovider/ui/chat_screen/chat_screen.dart';
 import 'package:spideliprovider/ui/help_support_screen/help_support_screen.dart';
+import 'package:spideliprovider/utils/fcm_token_reset.dart';
 
 /// Pushes that arrive while the app is in the background or not running.
 ///
@@ -341,6 +342,8 @@ class NotificationService {
     try {
       final bool ready = await _waitForApnsToken().timeout(apnsWait, onTimeout: () => false);
       if (!ready) return '';
+      // A token restored from an Android backup is dead: replace it once.
+      await FcmTokenReset.runOnce();
       final String token = (await FirebaseMessaging.instance.getToken() ?? '').trim();
       if (!isUsableFcmToken(token)) return '';
       _deviceToken = token;
