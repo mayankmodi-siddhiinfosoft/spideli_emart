@@ -274,7 +274,7 @@ class DineInDetailsScreen extends StatelessWidget {
                                 const DsDivider(spacing: DsSpace.md),
                                 _FactRow(
                                   leading: Text(
-                                    (RegionService.currencyForVendor(vendor) ?? Constant.currencyModel!).symbol.toString(),
+                                    (RegionService.currencyForVendor(vendor) ?? Constant.currencyModel)?.symbol.toString() ?? "",
                                     textAlign: TextAlign.center,
                                     style: t.titleSm.tabular.withColor(c.textMuted),
                                   ),

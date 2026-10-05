@@ -583,8 +583,28 @@ class Constant {
     return DateFormat('dd/MM/yyyy').format(dateTime);
   }
 
-  static DateTime stringToDate(String openDineTime) {
-    return DateFormat('HH:mm').parse(DateFormat('HH:mm').format(DateFormat("hh:mm a").parse((Intl.getCurrentLocale() == "en_US") ? openDineTime : openDineTime.toLowerCase())));
+  /// A store's dine-in time as a time of day (date part 1970-01-01).
+  ///
+  /// Accepts both "11:00 AM" (older records) and "19:36" (what the panel saves
+  /// now). Only the 12-hour form used to parse: a 24-hour value threw while
+  /// the Dine-In screen was opening and the customer saw a blank grey screen.
+  /// Returns null when the value is empty or unreadable.
+  static DateTime? tryStringToDate(String? value) {
+    final String text = (value ?? '').trim();
+    if (text.isEmpty || text.toLowerCase() == 'null') return null;
+    for (final String pattern in const ['hh:mm a', 'h:mm a', 'HH:mm', 'H:mm']) {
+      try {
+        final DateTime parsed = DateFormat(pattern, 'en_US').parseStrict(pattern.contains('a') ? text.toUpperCase() : text);
+        return DateTime(1970, 1, 1, parsed.hour, parsed.minute);
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// [tryStringToDate], falling back to [fallback] ("10:00 AM" / "10:00 PM"
+  /// defaults are what the screens show for a store without dine-in times).
+  static DateTime stringToDate(String openDineTime, {String fallback = '10:00 AM'}) {
+    return tryStringToDate(openDineTime) ?? tryStringToDate(fallback)!;
   }
 
   static LanguageModel getLanguage() {

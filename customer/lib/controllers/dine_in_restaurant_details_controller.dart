@@ -58,7 +58,15 @@ class DineInRestaurantDetailsController extends GetxController {
   void onInit() {
     // TODO: implement onInit
     getArgument();
-    getRecord();
+    // Never let a malformed store record crash the screen (it used to show a
+    // blank grey screen): fall back to the next 7 days without discounts.
+    try {
+      getRecord();
+    } catch (e) {
+      debugPrint('Dine-in dates could not be built: $e');
+      dateList.assignAll(List.generate(7, (i) => DateModel(date: Timestamp.fromDate(DateTime.now().add(Duration(days: i))), discountPer: "0")));
+      selectedDate.value = dateList.first.date;
+    }
     super.onInit();
   }
 
@@ -115,33 +123,27 @@ class DineInRestaurantDetailsController extends GetxController {
   }
 
   void getRecord() {
+    dateList.clear();
     for (int i = 0; i < 7; i++) {
       final now = DateTime.now().add(Duration(days: i));
-      var day = DateFormat('EEEE').format(now);
+      // Store days are saved in English ("Monday"); the device language must
+      // not decide the match (a French phone formats "lundi").
+      final String day = DateFormat('EEEE', 'en_US').format(now);
+      String discountPer = "0";
       if (vendorModel.value.specialDiscount?.isNotEmpty == true && vendorModel.value.specialDiscountEnable == true) {
         for (var element in vendorModel.value.specialDiscount!) {
-          if (day == element.day.toString()) {
-            if (element.timeslot!.isNotEmpty) {
-              SpecialDiscountTimeslot employeeWithMaxSalary = element.timeslot!.reduce(
-                (item1, item2) => double.parse(item1.discount.toString()) > double.parse(item2.discount.toString()) ? item1 : item2,
-              );
-              if (employeeWithMaxSalary.discountType == "dinein") {
-                DateModel model = DateModel(date: Timestamp.fromDate(now), discountPer: employeeWithMaxSalary.discount.toString());
-                dateList.add(model);
-              } else {
-                DateModel model = DateModel(date: Timestamp.fromDate(now), discountPer: "0");
-                dateList.add(model);
-              }
-            } else {
-              DateModel model = DateModel(date: Timestamp.fromDate(now), discountPer: "0");
-              dateList.add(model);
-            }
+          final List<SpecialDiscountTimeslot> slots = element.timeslot ?? <SpecialDiscountTimeslot>[];
+          if (day == element.day.toString() && slots.isNotEmpty) {
+            final SpecialDiscountTimeslot best = slots.reduce(
+              (item1, item2) => (double.tryParse(item1.discount.toString()) ?? 0) > (double.tryParse(item2.discount.toString()) ?? 0) ? item1 : item2,
+            );
+            if (best.discountType == "dinein") discountPer = best.discount.toString();
           }
         }
-      } else {
-        DateModel model = DateModel(date: Timestamp.fromDate(now), discountPer: "0");
-        dateList.add(model);
       }
+      // Exactly one entry per day: an unmatched day used to be left out, and
+      // with no match at all `dateList.first` threw.
+      dateList.add(DateModel(date: Timestamp.fromDate(now), discountPer: discountPer));
     }
     selectedDate.value = dateList.first.date;
 
@@ -155,22 +157,22 @@ class DineInRestaurantDetailsController extends GetxController {
     timeSlotList.clear();
 
     for (
-      DateTime time = Constant.stringToDate(vendorModel.value.openDineTime.toString());
-      time.isBefore(Constant.stringToDate(vendorModel.value.closeDineTime.toString()));
+      DateTime time = Constant.stringToDate(vendorModel.value.openDineTime.toString(), fallback: '10:00 AM');
+      time.isBefore(Constant.stringToDate(vendorModel.value.closeDineTime.toString(), fallback: '10:00 PM'));
       time = time.add(const Duration(minutes: 30))
     ) {
       final now = DateTime.parse(selectedDate.toDate().toString());
-      var day = DateFormat('EEEE').format(now);
+      var day = DateFormat('EEEE', 'en_US').format(now);
       var date = DateFormat('dd-MM-yyyy').format(now);
 
       if (vendorModel.value.specialDiscount?.isNotEmpty == true && vendorModel.value.specialDiscountEnable == true) {
         for (var element in vendorModel.value.specialDiscount!) {
           if (day == element.day.toString()) {
-            if (element.timeslot!.isNotEmpty) {
+            if ((element.timeslot ?? const []).isNotEmpty) {
               for (var element in element.timeslot!) {
-                if (element.discountType == "dinein") {
-                  var start = DateFormat("dd-MM-yyyy HH:mm").parse("$date ${element.from}");
-                  var end = DateFormat("dd-MM-yyyy HH:mm").parse("$date ${element.to}");
+                final DateTime? start = _tryParseSlot(date, element.from);
+                final DateTime? end = _tryParseSlot(date, element.to);
+                if (element.discountType == "dinein" && start != null && end != null) {
                   var selected = DateFormat("dd-MM-yyyy HH:mm").parse("$date ${DateFormat.Hm().format(time)}");
 
                   if (isCurrentDateInRangeDineIn(start, end, selected)) {
@@ -261,18 +263,30 @@ class DineInRestaurantDetailsController extends GetxController {
     final now = DateTime.now();
     var day = DateFormat('EEEE', 'en_US').format(now);
     var date = DateFormat('dd-MM-yyyy').format(now);
-    for (var element in vendorModel.value.workingHours!) {
+    for (var element in vendorModel.value.workingHours ?? <WorkingHours>[]) {
       if (day == element.day.toString()) {
-        if (element.timeslot!.isNotEmpty) {
+        if ((element.timeslot ?? const []).isNotEmpty) {
           for (var element in element.timeslot!) {
-            var start = DateFormat("dd-MM-yyyy HH:mm").parse("$date ${element.from}");
-            var end = DateFormat("dd-MM-yyyy HH:mm").parse("$date ${element.to}");
-            if (isCurrentDateInRange(start, end)) {
+            final DateTime? start = _tryParseSlot(date, element.from);
+            final DateTime? end = _tryParseSlot(date, element.to);
+            if (start != null && end != null && isCurrentDateInRange(start, end)) {
               isOpen.value = true;
             }
           }
         }
       }
+    }
+  }
+
+  /// "dd-MM-yyyy HH:mm" for [date] and a stored "HH:mm" (or "hh:mm a") time;
+  /// null when the stored time is missing or unreadable.
+  DateTime? _tryParseSlot(String date, String? time) {
+    final DateTime? t = Constant.tryStringToDate(time);
+    if (t == null) return null;
+    try {
+      return DateFormat("dd-MM-yyyy HH:mm").parse("$date ${DateFormat('HH:mm').format(t)}");
+    } catch (_) {
+      return null;
     }
   }
 
