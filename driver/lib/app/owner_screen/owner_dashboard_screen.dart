@@ -27,6 +27,7 @@ import 'package:in_app_review/in_app_review.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'owner_order_list.dart';
+import 'package:driver/controllers/dash_board_controller.dart';
 
 /// Archetype K – drawer shell for the fleet / company owner.
 class OwnerDashboardScreen extends StatelessWidget {
@@ -371,12 +372,7 @@ class DrawerView extends StatelessWidget {
                                     positiveString: "Log out".tr,
                                     negativeString: "Cancel".tr,
                                     positiveClick: () async {
-                                      await AudioPlayerService.playSound(false);
-                                      // Client point 19: the device must stop receiving this driver's
-                                      // work, and the stored token must stop pointing at them.
-                                      await NotificationService.onSignOut();
-                                      await FirebaseAuth.instance.signOut();
-                                      Get.offAll(const LoginScreen());
+                                      await DriverSessions.signOutToLogin();
                                     },
                                     negativeClick: () {
                                       Get.back();

@@ -6,6 +6,7 @@ import 'package:driver/app/auth_screen/login_screen.dart';
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
+import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/controllers/cab_dashboard_controller.dart';
 import 'package:driver/controllers/parcel_dashboard_controller.dart';
 import 'package:driver/controllers/rental_dashboard_controller.dart';
@@ -58,6 +59,49 @@ class DriverSessions {
   /// and sign-up. NotificationService.onSignOut runs without its token write
   /// (a merge set): it used to be skipped altogether, which left the device
   /// subscribed to the deleted driver's FCM topics (job pushes kept coming).
+  static bool _signingOut = false;
+
+  /// Log out from any dashboard (individual, company, cab, parcel, rental).
+  ///
+  /// Client report (5 Oct 2026): "When we click on log out, nothing happens".
+  /// The handlers awaited each clean-up step before signing out; on a phone
+  /// where Google Play services is slow or offline, unsubscribing from the
+  /// FCM topics never completed ("Topic operation failed: SERVICE_NOT_AVAILABLE.
+  /// Will retry"), so the sign-out was never reached. Every step is now
+  /// bounded and can fail on its own; signing out and opening the login
+  /// screen always happen.
+  static Future<void> signOutToLogin() async {
+    if (_signingOut) return;
+    _signingOut = true;
+    ShowToastDialog.showLoader("Please wait".tr);
+    Future<void> step(String name, Future<void> Function() run, Duration limit) async {
+      try {
+        await run().timeout(limit);
+      } catch (e) {
+        log("Logout: $name skipped: $e");
+      }
+    }
+
+    try {
+      await step('alert sound', () => AudioPlayerService.playSound(false), const Duration(seconds: 2));
+      // Location streams and users listeners stop before the auth user goes
+      // away (no tick with a null user, none left to double up after login).
+      await step('dashboards', stopAll, const Duration(seconds: 4));
+      // Client point 19: stop receiving this driver's work and clear the
+      // stored token when it is this device's.
+      await step('notifications', () => NotificationService.onSignOut(), const Duration(seconds: 8));
+      try {
+        await FirebaseAuth.instance.signOut();
+      } catch (e) {
+        log("Logout: signOut failed: $e");
+      }
+    } finally {
+      ShowToastDialog.closeLoader();
+      _signingOut = false;
+      Get.offAll(const LoginScreen());
+    }
+  }
+
   static Future<void> endDeletedAccount() async {
     await stopAll();
     await NotificationService.onSignOut(clearStoredToken: false);

@@ -383,14 +383,22 @@ class NotificationService {
   /// topics are still unsubscribed, so the device stops getting that
   /// driver's job pushes.
   static Future<void> onSignOut({bool clearStoredToken = true}) async {
-    for (final String topic in _topics.toList()) {
-      try {
-        await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
-      } catch (e) {
-        log("unsubscribeFromTopic $topic failed: $e");
-      }
-    }
+    // In parallel and bounded: with Play services slow or offline an
+    // unsubscribe can wait indefinitely ("Will retry"), which used to hang
+    // the log-out. FCM finishes pending topic operations on its own later.
+    final List<String> topics = _topics.toList();
     _topics.clear();
+    try {
+      await Future.wait(topics.map((String topic) async {
+        try {
+          await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
+        } catch (e) {
+          log("unsubscribeFromTopic $topic failed: $e");
+        }
+      })).timeout(const Duration(seconds: 4));
+    } catch (e) {
+      log("Topic unsubscribe did not finish in time: $e");
+    }
     final String uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (clearStoredToken && uid.isNotEmpty) {
       final String deviceToken = await _quickToken();

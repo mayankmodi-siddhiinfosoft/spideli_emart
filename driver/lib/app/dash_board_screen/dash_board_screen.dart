@@ -393,16 +393,7 @@ class DrawerView extends StatelessWidget {
                                     positiveString: "Log out".tr,
                                     negativeString: "Cancel".tr,
                                     positiveClick: () async {
-                                      await AudioPlayerService.playSound(false);
-                                      // Every dashboard's location stream and users listener stops before
-                                      // the auth user goes away (no tick with a null user, none left over
-                                      // to double up after the next login).
-                                      await DriverSessions.stopAll();
-                                      // Client point 19: the device must stop receiving this driver's
-                                      // work, and the stored token must stop pointing at them.
-                                      await NotificationService.onSignOut();
-                                      await FirebaseAuth.instance.signOut();
-                                      Get.offAll(const LoginScreen());
+                                      await DriverSessions.signOutToLogin();
                                     },
                                     negativeClick: () {
                                       Get.back();
