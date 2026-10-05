@@ -8,10 +8,14 @@ import 'package:vendor/utils/pod_otp.dart';
 /// (`.claude/POD-OTP-CONTRACT.md`, "Order Details"): delivery status, POD
 /// status, when it was verified and the delivery man. Shows nothing for an
 /// order without a verified `pod`, and never the code.
+///
+/// A takeaway ([takeAway]) reads "Pickup status · Picked up"; a code the store
+/// entered (takeaway, self-delivery) adds "Verified by the store".
 class PodVerifiedBlock extends StatelessWidget {
   final OrderPod pod;
+  final bool takeAway;
 
-  const PodVerifiedBlock({super.key, required this.pod});
+  const PodVerifiedBlock({super.key, required this.pod, this.takeAway = false});
 
   @override
   Widget build(BuildContext context) {
@@ -34,8 +38,21 @@ class PodVerifiedBlock extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          row("Delivery status".tr, DsBadge(label: "Delivered".tr, tone: DsTone.success, icon: Icons.task_alt_rounded)),
+          takeAway
+              ? row("Pickup status".tr, DsBadge(label: "Picked up".tr, tone: DsTone.success, icon: Icons.shopping_bag_outlined))
+              : row("Delivery status".tr, DsBadge(label: "Delivered".tr, tone: DsTone.success, icon: Icons.task_alt_rounded)),
           row("POD status".tr, DsBadge(label: "OTP Verified".tr, tone: DsTone.success, icon: Icons.verified_rounded)),
+          if (pod.verifiedByStore)
+            Padding(
+              padding: const EdgeInsets.only(bottom: DsSpace.sm),
+              child: Row(
+                children: [
+                  Icon(Icons.storefront_outlined, size: 16, color: c.textMuted),
+                  DsGap.xs,
+                  Expanded(child: Text("Verified by the store".tr, style: t.bodySm)),
+                ],
+              ),
+            ),
           if (pod.verifiedAtText.isNotEmpty) row("Verified on".tr, Text(pod.verifiedAtText, textAlign: TextAlign.end, style: t.bodyStrong)),
           if (man != null) ...[
             Divider(height: DsSpace.lg, thickness: 1, color: c.divider),
@@ -90,8 +107,9 @@ class PodDeliveryManRow extends StatelessWidget {
 /// Verified", when, and who delivered.
 class PodVerifiedLine extends StatelessWidget {
   final OrderPod pod;
+  final bool takeAway;
 
-  const PodVerifiedLine({super.key, required this.pod});
+  const PodVerifiedLine({super.key, required this.pod, this.takeAway = false});
 
   @override
   Widget build(BuildContext context) {
@@ -111,7 +129,12 @@ class PodVerifiedLine extends StatelessWidget {
               Icon(Icons.verified_rounded, size: 16, color: tc.strong),
               DsGap.sm,
               Expanded(
-                child: Text("${"Delivered".tr} · ${"OTP Verified".tr}", maxLines: 1, overflow: TextOverflow.ellipsis, style: t.label.copyWith(color: tc.strong)),
+                child: Text(
+                  [takeAway ? "Picked up".tr : "Delivered".tr, "OTP Verified".tr, if (pod.verifiedByStore) "Verified by the store".tr].join(' · '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.label.copyWith(color: tc.strong),
+                ),
               ),
             ],
           ),
@@ -123,12 +146,19 @@ class PodVerifiedLine extends StatelessWidget {
   }
 }
 
-/// A code was asked for and the order is still on its way.
+/// A code was asked for and the order is still on its way (or, for a
+/// takeaway, waiting at the counter).
 class PodWaitingNote extends StatelessWidget {
-  const PodWaitingNote({super.key});
+  final bool takeAway;
+
+  const PodWaitingNote({super.key, this.takeAway = false});
 
   @override
   Widget build(BuildContext context) {
-    return DsInlineAlert(tone: DsTone.info, icon: Icons.pin_outlined, message: "Waiting for the customer's delivery code".tr);
+    return DsInlineAlert(
+      tone: DsTone.info,
+      icon: Icons.pin_outlined,
+      message: takeAway ? "Waiting for the customer's pickup code".tr : "Waiting for the customer's delivery code".tr,
+    );
   }
 }

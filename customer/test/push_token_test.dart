@@ -106,12 +106,12 @@ void main() {
       expect(PushTap.field(const {}, 'a'), '');
     });
 
-    test('foreground text: the notification, else data, else the delivery-code text', () {
+    test('foreground text: the notification, else data; never app text', () {
       expect(PushTap.displayText(title: 'T', body: 'B', data: {'title': 'x'}), (title: 'T', body: 'B'));
       expect(PushTap.displayText(data: {'title': 'dt', 'body': 'db'}), (title: 'dt', body: 'db'));
       expect(
-        PushTap.displayText(data: {'type': 'delivery_otp'}, deliveryCodeTitle: 'Your order has arrived', deliveryCodeBody: 'Open the app'),
-        (title: 'Your order has arrived', body: 'Open the app'),
+        PushTap.displayText(data: {'type': 'delivery_otp'}),
+        isNull,
       );
       expect(PushTap.displayText(title: ' ', body: '', data: {'type': 'order_placed'}), isNull);
     });

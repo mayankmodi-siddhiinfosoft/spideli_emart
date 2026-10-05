@@ -255,7 +255,7 @@ class _OrderCard extends StatelessWidget {
                       // "Cancelled by Restaurant · <reason>" on cancelled / rejected orders.
                       CancellationInfoLine(status: status, fields: orderModel, vendorWord: hideTrack ? 'Store' : 'Restaurant', padding: const EdgeInsets.only(top: DsSpace.xs)),
                       // "Delivered · OTP Verified · <time> · <delivery man>" once the delivery code was verified.
-                      PodInfoLine(pod: orderModel.pod),
+                      PodInfoLine(pod: orderModel.pod, takeAway: orderModel.takeAway == true),
                     ],
                   ),
                 ),

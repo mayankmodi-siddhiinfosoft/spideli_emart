@@ -277,12 +277,8 @@ abstract final class DeliveryPodService {
       }
       if (token.isEmpty) token = order.author?.fcmToken ?? '';
       if (token.isEmpty) return;
-      await SendNotification.sendOneNotification(
-        token: token,
-        title: 'Your order has arrived',
-        body: 'Open the app for your delivery code.',
-        payload: {'type': 'delivery_otp', 'orderId': order.id ?? ''},
-      );
+      // Wording from the `delivery_otp` dynamic_notification template.
+      await SendNotification.sendFcmMessage('delivery_otp', token, {'type': 'delivery_otp', 'orderId': order.id ?? ''});
     } catch (e) {
       debugPrint('DeliveryPodService.notifyCustomer $e');
     }

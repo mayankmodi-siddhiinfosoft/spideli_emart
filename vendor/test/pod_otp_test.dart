@@ -1,10 +1,17 @@
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get/get.dart';
+import 'package:vendor/lang/app_ar.dart';
+import 'package:vendor/lang/app_en.dart';
+import 'package:vendor/lang/app_fr.dart';
 import 'package:vendor/constant/constant.dart' as app;
 import 'package:vendor/models/order_model.dart';
+import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/utils/pod_otp.dart';
+import 'package:vendor/widget/pod_block.dart';
 
 /// Proof of delivery by customer OTP (`.claude/POD-OTP-CONTRACT.md`): the
 /// numbers and rules the Store app shares with the Driver and Customer apps.
@@ -164,6 +171,129 @@ void main() {
     test('counts down from 5 after the first code', () {
       expect(codeAt(t0, regenerations: 1).regenerationsLeft, 5);
       expect(codeAt(t0, regenerations: 6).regenerationsLeft, 0);
+    });
+  });
+
+  group('scope: which store completions need the customer\'s code (5 Oct 2026)', () {
+    StoreCompletion scope({
+      String? status = app.Constant.orderAccepted,
+      bool takeAway = false,
+      bool isEcommerce = false,
+      bool hasDriver = false,
+      bool storeDelivers = false,
+      bool handedOver = false,
+      bool isPosOrder = false,
+    }) => PodScope.storeCompletion(
+      status: status,
+      takeAway: takeAway,
+      isEcommerce: isEcommerce,
+      hasDriver: hasDriver,
+      storeDelivers: storeDelivers,
+      handedOver: handedOver,
+      isPosOrder: isPosOrder,
+    );
+
+    test('a takeaway now needs the pickup code — multivendor and e-commerce, whatever the delivery setup', () {
+      for (final bool ecommerce in [false, true]) {
+        for (final bool delivers in [false, true]) {
+          for (final String status in [app.Constant.orderAccepted, app.Constant.orderShipped, app.Constant.driverPending]) {
+            final StoreCompletion c = scope(status: status, takeAway: true, isEcommerce: ecommerce, storeDelivers: delivers, hasDriver: delivers, handedOver: delivers);
+            expect(c, StoreCompletion.pickupCode, reason: 'ecommerce=$ecommerce storeDelivers=$delivers status=$status');
+            expect(PodScope.needsCode(c), isTrue);
+          }
+        }
+      }
+    });
+
+    test('self delivery and e-commerce with a delivery man still need the delivery code', () {
+      expect(scope(storeDelivers: true, hasDriver: true, handedOver: true, status: app.Constant.orderInTransit), StoreCompletion.deliveryCode);
+      expect(scope(isEcommerce: true, hasDriver: true), StoreCompletion.deliveryCode);
+      expect(PodScope.needsCode(StoreCompletion.deliveryCode), isTrue);
+    });
+
+    test('e-commerce courier shipments stay exempt', () {
+      final StoreCompletion c = scope(isEcommerce: true, status: app.Constant.orderShipped);
+      expect(c, StoreCompletion.courier);
+      expect(PodScope.needsCode(c), isFalse);
+    });
+
+    test('a POS sale at the counter has no customer app and completes without a code', () {
+      final StoreCompletion c = scope(takeAway: true, isPosOrder: true);
+      expect(c, StoreCompletion.pos);
+      expect(PodScope.needsCode(c), isFalse);
+    });
+
+    test('nothing to complete: platform driver, not handed over yet', () {
+      expect(scope(hasDriver: true), StoreCompletion.waitForDriver);
+      expect(scope(storeDelivers: true, hasDriver: true), StoreCompletion.assignDriver);
+      expect(PodScope.needsCode(StoreCompletion.waitForDriver), isFalse);
+      expect(PodScope.needsCode(StoreCompletion.assignDriver), isFalse);
+    });
+
+    test('completed, cancelled and rejected takeaways are closed: no code, no completion', () {
+      for (final String status in [app.Constant.orderCompleted, app.Constant.orderCancelled, app.Constant.orderRejected]) {
+        final StoreCompletion c = scope(status: status, takeAway: true);
+        expect(c, StoreCompletion.closed, reason: status);
+        expect(PodScope.needsCode(c), isFalse);
+      }
+      // ...and a code entered for one is refused, exactly as for a delivery.
+      expect(PodOtp.check(code: codeAt(t0), entered: '123456', now: t0, orderStatus: app.Constant.orderCancelled).outcome, PodCheck.orderClosed);
+      expect(PodOtp.check(code: codeAt(t0), entered: '123456', now: t0, orderStatus: app.Constant.orderCompleted).outcome, PodCheck.orderClosed);
+    });
+
+    test('a pod the store verified says so', () {
+      expect(OrderPod.fromJson({'status': 'verified', 'verifiedByRole': 'vendor'})!.verifiedByStore, isTrue);
+      expect(OrderPod.fromJson({'status': 'verified', 'verifiedByRole': 'driver'})!.verifiedByStore, isFalse);
+      expect(OrderPod.fromJson({'status': 'verified'})!.verifiedByStore, isFalse);
+    });
+  });
+
+  group('takeaway wording', () {
+    Widget host(Widget child) => GetMaterialApp(
+      theme: DsTheme.light(),
+      home: Scaffold(body: Padding(padding: const EdgeInsets.all(16), child: child)),
+    );
+    final OrderPod storeVerified = OrderPod.fromJson({'method': 'otp', 'status': 'verified', 'verifiedBy': 'store-uid', 'verifiedByRole': 'vendor'})!;
+
+    testWidgets('a takeaway reads Picked up, Verified by the store', (tester) async {
+      await tester.pumpWidget(host(PodVerifiedBlock(pod: storeVerified, takeAway: true)));
+      expect(find.text('Picked up'), findsOneWidget);
+      expect(find.text('Delivered'), findsNothing);
+      expect(find.text('OTP Verified'), findsOneWidget);
+      expect(find.text('Verified by the store'), findsOneWidget);
+
+      await tester.pumpWidget(host(PodVerifiedLine(pod: storeVerified, takeAway: true)));
+      expect(find.text('Picked up · OTP Verified · Verified by the store'), findsOneWidget);
+
+      await tester.pumpWidget(host(const PodWaitingNote(takeAway: true)));
+      expect(find.text("Waiting for the customer's pickup code"), findsOneWidget);
+    });
+
+    testWidgets('a delivery keeps its delivery wording', (tester) async {
+      final OrderPod byDriver = OrderPod.fromJson({'method': 'otp', 'status': 'verified', 'verifiedByRole': 'driver'})!;
+      await tester.pumpWidget(host(PodVerifiedBlock(pod: byDriver)));
+      expect(find.text('Delivered'), findsOneWidget);
+      expect(find.text('Picked up'), findsNothing);
+      expect(find.text('Verified by the store'), findsNothing);
+
+      await tester.pumpWidget(host(const PodWaitingNote()));
+      expect(find.text("Waiting for the customer's delivery code"), findsOneWidget);
+    });
+
+    test('the pickup strings are translated (en, ar, fr)', () {
+      const List<String> keys = [
+        'Enter the pickup code',
+        'Pickup code',
+        'Your order is ready for pickup',
+        'Open the app for your pickup code.',
+        'Pickup status',
+        'Picked up',
+        'Verified by the store',
+        "Waiting for the customer's pickup code",
+      ];
+      for (final Map<String, String> map in [enUS, lnAr, trFR]) {
+        expect(keys.where((k) => (map[k] ?? '').trim().isEmpty), isEmpty);
+      }
     });
   });
 

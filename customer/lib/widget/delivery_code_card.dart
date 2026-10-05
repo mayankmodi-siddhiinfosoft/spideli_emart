@@ -12,7 +12,9 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 /// The customer's delivery code (POD-OTP-CONTRACT), shown on the order
-/// screens of an active multivendor / e-commerce delivery order:
+/// screens of an active multivendor / e-commerce order — a delivery, or a
+/// takeaway ([takeAway], 5 Oct 2026: the store asks for it at the counter and
+/// the card reads "Your pickup code"):
 ///
 /// * `pending` and before `expiresAt` → "Your delivery code", the 6 digits
 ///   large and spaced, the share warning and a live countdown;
@@ -26,10 +28,23 @@ class DeliveryCodeCard extends StatefulWidget {
   final OrderPodCode? code;
   final DateTime Function() now;
 
+  /// A takeaway: pickup wording, the store asks for the code.
+  final bool takeAway;
+
   /// Applied only while something is shown.
   final EdgeInsetsGeometry padding;
 
-  const DeliveryCodeCard({super.key, required this.code, this.now = DateTime.now, this.padding = EdgeInsets.zero});
+  const DeliveryCodeCard({super.key, required this.code, this.now = DateTime.now, this.takeAway = false, this.padding = EdgeInsets.zero});
+
+  /// "Your delivery code" / "Your pickup code".
+  static String titleFor({required bool takeAway}) => takeAway ? 'Your pickup code'.tr : 'Your delivery code'.tr;
+
+  /// Who to ask for a new code once it expired.
+  static String expiredFor({required bool takeAway}) => takeAway ? 'Code expired — ask the store for a new one'.tr : 'Code expired — ask your delivery partner for a new one'.tr;
+
+  /// Who to share it with, and when.
+  static String shareHintFor({required bool takeAway}) =>
+      takeAway ? 'Share this code with the store only when you collect your order'.tr : 'Share this code with your delivery partner only when you receive your order'.tr;
 
   @override
   State<DeliveryCodeCard> createState() => _DeliveryCodeCardState();
@@ -88,7 +103,7 @@ class _DeliveryCodeCardState extends State<DeliveryCodeCard> {
     final DateTime now = widget.now();
 
     if (code.isLive(now)) {
-      return Padding(padding: widget.padding, child: _LiveCode(code: code.code!, countdown: _mmss(code.remaining(now))));
+      return Padding(padding: widget.padding, child: _LiveCode(code: code.code!, countdown: _mmss(code.remaining(now)), takeAway: widget.takeAway));
     }
     if (code.isExpired(now)) {
       return Padding(
@@ -96,8 +111,8 @@ class _DeliveryCodeCardState extends State<DeliveryCodeCard> {
         child: DsInlineAlert(
           tone: DsTone.warning,
           icon: Icons.timer_off_outlined,
-          title: 'Your delivery code'.tr,
-          message: 'Code expired — ask your delivery partner for a new one'.tr,
+          title: DeliveryCodeCard.titleFor(takeAway: widget.takeAway),
+          message: DeliveryCodeCard.expiredFor(takeAway: widget.takeAway),
         ),
       );
     }
@@ -108,14 +123,16 @@ class _DeliveryCodeCardState extends State<DeliveryCodeCard> {
 class _LiveCode extends StatelessWidget {
   final String code;
   final String countdown;
+  final bool takeAway;
 
-  const _LiveCode({required this.code, required this.countdown});
+  const _LiveCode({required this.code, required this.countdown, required this.takeAway});
 
   @override
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
     final List<String> digits = code.split('');
+    final String title = DeliveryCodeCard.titleFor(takeAway: takeAway);
 
     return DsCard.tinted(
       tone: DsTone.brand,
@@ -127,7 +144,7 @@ class _LiveCode extends StatelessWidget {
             children: [
               const DsIconWell(icon: Icons.lock_outline_rounded, tone: DsTone.brand, size: 36),
               const DsGap(DsSpace.sm),
-              Expanded(child: Text('Your delivery code'.tr, style: t.titleSm)),
+              Expanded(child: Text(title, style: t.titleSm)),
               DsBadge(
                 key: const ValueKey('delivery-code-countdown'),
                 icon: Icons.timer_outlined,
@@ -138,7 +155,7 @@ class _LiveCode extends StatelessWidget {
           ),
           const DsGap(DsSpace.lg),
           Semantics(
-            label: '${'Your delivery code'.tr} ${digits.join(' ')}',
+            label: '$title ${digits.join(' ')}',
             excludeSemantics: true,
             child: FittedBox(
               fit: BoxFit.scaleDown,
@@ -165,7 +182,7 @@ class _LiveCode extends StatelessWidget {
             children: [
               Padding(padding: const EdgeInsets.only(top: 1), child: Icon(Icons.info_outline_rounded, size: 16, color: c.textSecondary)),
               const DsGap(DsSpace.xs),
-              Expanded(child: Text('Share this code with your delivery partner only when you receive your order'.tr, style: t.bodySm)),
+              Expanded(child: Text(DeliveryCodeCard.shareHintFor(takeAway: takeAway), style: t.bodySm)),
             ],
           ),
         ],
@@ -186,13 +203,13 @@ class DeliveryCodeWatcher extends StatefulWidget {
 
   const DeliveryCodeWatcher({super.key, required this.order, this.padding = EdgeInsets.zero});
 
-  /// An active (not taken away, not finished) delivery order of [uid] with no
-  /// verified proof of delivery yet.
+  /// An active (not finished) order of [uid] with no verified proof of
+  /// delivery yet — a delivery or, since 5 Oct 2026, a takeaway (the store
+  /// asks for the pickup code at the counter).
   static bool shouldWatch(OrderModel order, String? uid) {
     final String id = (order.id ?? '').trim();
     if (uid == null || uid.isEmpty || id.isEmpty) return false;
     if (order.authorID != uid) return false;
-    if (order.takeAway == true) return false;
     if (order.pod?.isVerified == true) return false;
     final String? status = order.status;
     if (status == Constant.orderCompleted || CancellationSummary.isFinalStatus(status)) return false;
@@ -269,6 +286,6 @@ class _DeliveryCodeWatcherState extends State<DeliveryCodeWatcher> {
   @override
   Widget build(BuildContext context) {
     if (_watching == null) return const SizedBox.shrink();
-    return DeliveryCodeCard(code: _code, padding: widget.padding);
+    return DeliveryCodeCard(code: _code, takeAway: widget.order.takeAway == true, padding: widget.padding);
   }
 }

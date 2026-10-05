@@ -165,5 +165,8 @@ class OrderPod {
 
   bool get isVerified => status == statusVerified;
 
+  /// The store entered the code (a takeaway, or the store's own delivery).
+  bool get verifiedByStore => verifiedByRole == 'vendor';
+
   Map<String, dynamic> toJson() => Map<String, dynamic>.from(raw);
 }

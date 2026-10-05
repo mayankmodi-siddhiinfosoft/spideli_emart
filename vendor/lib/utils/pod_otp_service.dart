@@ -50,8 +50,8 @@ class PodRegeneration {
   const PodRegeneration(this.result, {this.code, this.wait = Duration.zero});
 }
 
-/// Firestore side of the proof-of-delivery contract for the store's own
-/// (self-delivery) orders. Every write runs in one transaction on
+/// Firestore side of the proof-of-delivery contract for the orders the store
+/// completes itself (self-delivery, and takeaway since 5 Oct 2026). Every write runs in one transaction on
 /// `order_pod/{orderId}` together with the order's `pod`, so the code and what
 /// the apps display can never disagree.
 abstract final class PodOtpService {
@@ -289,11 +289,15 @@ abstract final class PodOtpService {
       if (customerId.isNotEmpty) token = (await FireStoreUtils.getUserById(customerId))?.fcmToken ?? '';
       if (token.isEmpty || token == 'null') token = order.author?.fcmToken ?? '';
       if (token.isEmpty || token == 'null') return;
-      await SendNotification.sendOneNotification(
-        token: token,
-        title: "Your order has arrived".tr,
-        body: "Open the app for your delivery code.".tr,
-        payload: {'type': PodRules.notificationType, 'orderId': order.id ?? ''},
+      // Wording from the dynamic_notification templates (no text in the
+      // app): `pickup_otp` for a takeaway collected at the counter,
+      // `delivery_otp` otherwise. The data keeps type delivery_otp, which is
+      // what the customer app routes on.
+      await SendNotification.sendFcmMessage(
+        order.takeAway == true ? 'pickup_otp' : 'delivery_otp',
+        token,
+        {'type': PodRules.notificationType, 'orderId': order.id ?? ''},
+        recipientId: customerId.isEmpty ? null : customerId,
       );
     } catch (e) {
       log('POD push failed for ${order.id}: $e');

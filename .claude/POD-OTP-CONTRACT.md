@@ -1,8 +1,11 @@
 # Proof of Delivery by customer OTP — one contract for the Customer, Driver and Store apps
 
 Client requirement (3 Oct 2026). Scope: **multivendor and e-commerce delivery
-orders** (`vendor_orders`, not takeaway). Not dine-in, not parcel (parcel keeps
-its own receiver code), not cab / rental.
+orders** (`vendor_orders`) and, since 5 Oct 2026, **multivendor and e-commerce
+takeaway orders** (`takeAway == true`; the store verifies the customer's code at
+the counter — see "Store app — takeaway"). Not dine-in, not e-commerce courier
+shipments, not POS counter sales, not parcel (parcel keeps its own receiver
+code), not cab / rental.
 
 ## The flow (client's words, made precise)
 1. The driver reaches the customer and taps **"Drop Delivery"** (the existing
@@ -96,15 +99,48 @@ already `verified`).
 ## Store app — self-delivery
 When the store completes a self-delivery order itself ("Mark as Completed"), the
 same flow applies with `verifiedByRole: "vendor"`: the store generates the code,
-the customer reads it from their app, the store enters it. Takeaway ("Delivered")
-and e-commerce courier shipments ("Mark Deliver", no delivery man) are unchanged;
-an e-commerce order WITH a delivery man is a delivery and needs the code.
+the customer reads it from their app, the store enters it. E-commerce courier
+shipments ("Mark Deliver", no delivery man, not takeaway) are unchanged; an
+e-commerce order WITH a delivery man is a delivery and needs the code.
+
+## Store app — takeaway (5 Oct 2026)
+Client requirement: "the store did not ask a code from the customer to validate
+the completed TAKEAWAY order". A takeaway order (`takeAway == true`, multivendor
+and e-commerce) is completed exactly like a self-delivery: the store taps
+"Delivered", the app generates (or reuses a live pending) code in
+`order_pod/{orderId}` with `generatedByRole: "vendor"`, sends the customer the
+same `delivery_otp` push (`{type: delivery_otp, orderId}`, never the code; title
+"Your order is ready for pickup", body "Open the app for your pickup code."),
+and opens the code entry sheet. Only a verified code runs the existing
+completion (cashback once, store credit once, `takeaway_completed` push).
+Backing out completes nothing; a cancelled / closed order cannot be completed.
+`pod.verifiedByRole` is `vendor`; `pod.deliveredBy` is not set (no delivery man).
+A POS order (`isPosOrder == true`, rung up at the counter) has no customer app
+and stays exempt. The Driver app never sees takeaway orders and is unchanged.
+
+The scope rule lives in one pure function per app, unit tested:
+Store `PodScope.storeCompletion` (`vendor/lib/utils/pod_otp.dart`),
+Customer `DeliveryCodeWatcher.shouldWatch` (`customer/lib/widget/delivery_code_card.dart`).
+
+### Wording
+Delivery orders keep the delivery wording. Takeaway orders use pickup wording
+(en + ar in the Customer app; en, ar, fr in the Store app):
+- Customer code card: "Your pickup code"; "Share this code with the store only
+  when you collect your order"; expired: "Code expired — ask the store for a new one".
+- Store sheet: "Enter the pickup code", field "Pickup code"; waiting note
+  "Waiting for the customer's pickup code".
+- POD block / history line once verified: "Proof of pickup", "Pickup status ·
+  Picked up", "OTP Verified", and "Verified by the store" (shown whenever
+  `pod.verifiedByRole == "vendor"`, so also on store self-deliveries).
 
 ## Order Details — what everyone sees once verified
 - Delivery status: **Delivered**
 - POD status: **OTP Verified**
 - Verification date and time (`pod.verifiedAt`)
 - Delivery man: name, phone, photo (`pod.deliveredBy`)
+
+For a takeaway: Pickup status **Picked up**, POD status **OTP Verified**,
+**Verified by the store**, the verification time, no delivery man.
 
 Customer, Store and Driver order details show this block. Orders completed before
 this existed show nothing extra (no "null"). The admin panel reads the same `pod`.

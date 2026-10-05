@@ -21,11 +21,16 @@ String? podVerifiedAtLabel(OrderPod pod) {
 ///
 /// Renders nothing for an order without a verified `pod` (older orders), and
 /// leaves out any row whose value is missing — never "null".
+///
+/// A takeaway ([takeAway]) reads "Proof of pickup", "Pickup status · Picked
+/// up"; a code the store entered (takeaway, store delivery) adds "Verified by
+/// the store".
 class PodInfoBlock extends StatelessWidget {
   final OrderPod? pod;
+  final bool takeAway;
   final EdgeInsetsGeometry padding;
 
-  const PodInfoBlock({super.key, required this.pod, this.padding = EdgeInsets.zero});
+  const PodInfoBlock({super.key, required this.pod, this.takeAway = false, this.padding = EdgeInsets.zero});
 
   @override
   Widget build(BuildContext context) {
@@ -58,12 +63,25 @@ class PodInfoBlock extends StatelessWidget {
               children: [
                 const DsIconWell(icon: Icons.verified_outlined, tone: DsTone.success, size: 36),
                 const DsGap(DsSpace.sm),
-                Expanded(child: Text('Proof of delivery'.tr, style: t.titleSm)),
+                Expanded(child: Text(takeAway ? 'Proof of pickup'.tr : 'Proof of delivery'.tr, style: t.titleSm)),
               ],
             ),
             const DsGap(DsSpace.xs),
-            row('Delivery status'.tr, DsBadge(label: 'Delivered'.tr, tone: DsTone.success, icon: Icons.check_circle_outline_rounded, small: true)),
+            takeAway
+                ? row('Pickup status'.tr, DsBadge(label: 'Picked up'.tr, tone: DsTone.success, icon: Icons.shopping_bag_outlined, small: true))
+                : row('Delivery status'.tr, DsBadge(label: 'Delivered'.tr, tone: DsTone.success, icon: Icons.check_circle_outline_rounded, small: true)),
             row('POD status'.tr, DsBadge(label: 'OTP Verified'.tr, tone: DsTone.success, icon: Icons.verified_user_outlined, small: true)),
+            if (pod.verifiedByStore)
+              Padding(
+                padding: const EdgeInsets.only(top: DsSpace.sm),
+                child: Row(
+                  children: [
+                    Icon(Icons.storefront_outlined, size: 16, color: c.textSecondary),
+                    const DsGap(DsSpace.xs),
+                    Expanded(child: Text('Verified by the store'.tr, style: t.bodySm)),
+                  ],
+                ),
+              ),
             if (verifiedAt != null) row('Verified on'.tr, Text(verifiedAt, textAlign: TextAlign.right, style: t.bodyStrong.tabular)),
             if (deliveredBy != null) ...[
               const DsDivider(spacing: DsSpace.md),
@@ -105,9 +123,10 @@ class PodInfoBlock extends StatelessWidget {
 /// Renders nothing without a verified `pod`.
 class PodInfoLine extends StatelessWidget {
   final OrderPod? pod;
+  final bool takeAway;
   final EdgeInsetsGeometry padding;
 
-  const PodInfoLine({super.key, required this.pod, this.padding = const EdgeInsets.only(top: DsSpace.xs)});
+  const PodInfoLine({super.key, required this.pod, this.takeAway = false, this.padding = const EdgeInsets.only(top: DsSpace.xs)});
 
   @override
   Widget build(BuildContext context) {
@@ -117,8 +136,9 @@ class PodInfoLine extends StatelessWidget {
     final t = context.dsText;
     final tone = c.tone(DsTone.success);
     final parts = <String>[
-      'Delivered'.tr,
+      takeAway ? 'Picked up'.tr : 'Delivered'.tr,
       'OTP Verified'.tr,
+      if (pod.verifiedByStore) 'Verified by the store'.tr,
       ?podVerifiedAtLabel(pod),
       ?pod.deliveredBy?.name,
     ];

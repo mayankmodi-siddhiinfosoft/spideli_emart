@@ -11,8 +11,10 @@ import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/pod_otp.dart';
 import 'package:vendor/utils/pod_otp_service.dart';
 
-/// Proof of delivery for an order the store delivers itself
-/// (`.claude/POD-OTP-CONTRACT.md`, "Store app — self-delivery").
+/// Proof of delivery for an order the store completes itself
+/// (`.claude/POD-OTP-CONTRACT.md`, "Store app"): one it delivers with its own
+/// delivery man, and a takeaway the customer collects at the counter (the
+/// customer's "pickup code", 5 Oct 2026).
 ///
 /// [run] returns true only once the customer's delivery code is verified for
 /// [OrderModel] — and then sets the order's `pod` — so the caller can run its
@@ -66,7 +68,9 @@ abstract final class DeliveryOtpFlow {
   }
 
   /// The store's delivery man assigned to [order], as `pod.deliveredBy`.
+  /// None for a takeaway: the customer collected it themselves.
   static Future<PodDeliveryMan?> _deliveryMan(OrderModel order) async {
+    if (order.takeAway == true) return null;
     UserModel? driver = order.driver;
     final String driverId = order.driverID ?? '';
     if (driverId.isNotEmpty) {
@@ -245,8 +249,9 @@ class _DeliveryOtpSheetState extends State<DeliveryOtpSheet> {
         ? const PodCheckResult(PodCheck.tooManyAttempts).message
         : const PodCheckResult(PodCheck.expired).message;
 
+    final bool pickup = widget.order.takeAway == true;
     return DsSheet(
-      title: "Enter the delivery code".tr,
+      title: pickup ? "Enter the pickup code".tr : "Enter the delivery code".tr,
       subtitle: "Ask the customer for the 6-digit code shown in their app.".tr,
       showClose: true,
       actions: Column(
@@ -269,7 +274,7 @@ class _DeliveryOtpSheetState extends State<DeliveryOtpSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           DsTextField(
-            label: "Delivery code".tr,
+            label: pickup ? "Pickup code".tr : "Delivery code".tr,
             hint: "6-digit code".tr,
             controller: _entry,
             enabled: !spent,

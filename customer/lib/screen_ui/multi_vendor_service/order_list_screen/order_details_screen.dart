@@ -110,13 +110,14 @@ class OrderDetailsScreen extends StatelessWidget {
                         ),
                       ),
 
-                      // ---------- delivery code (POD-OTP-CONTRACT) ----------
-                      // Live while the driver / store waits for it; gone once
-                      // verified, expired → "ask for a new one".
+                      // ---------- delivery / pickup code (POD-OTP-CONTRACT) ----------
+                      // Live while the driver / store waits for it (a takeaway
+                      // too: "Your pickup code"); gone once verified, expired →
+                      // "ask for a new one".
                       DeliveryCodeWatcher(order: order, padding: const EdgeInsets.only(top: DsSpace.md)),
 
                       // ---------- proof of delivery, once verified ----------
-                      PodInfoBlock(pod: order.pod, padding: const EdgeInsets.only(top: DsSpace.md)),
+                      PodInfoBlock(pod: order.pod, takeAway: order.takeAway == true, padding: const EdgeInsets.only(top: DsSpace.md)),
 
                       // ---------- who cancelled / rejected and why ----------
                       CancellationInfoBlock(

@@ -247,9 +247,6 @@ class NotificationService {
         title: message.notification?.title,
         body: message.notification?.body,
         data: message.data,
-        deliveryCodeType: DeliveryCodePush.type,
-        deliveryCodeTitle: 'Your order has arrived'.tr,
-        deliveryCodeBody: 'Open the app for your delivery code'.tr,
       );
       if (text == null) return;
       final AndroidNotificationDetails android = AndroidNotificationDetails(

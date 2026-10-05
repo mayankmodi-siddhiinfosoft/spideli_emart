@@ -50,6 +50,61 @@ abstract final class PodRules {
   static bool isCompletedStatus(String? orderStatus) => (orderStatus ?? '').trim().toLowerCase() == Constant.orderCompleted.toLowerCase();
 }
 
+/// What the store's action on a live order does, and so whether the
+/// customer's code is needed to complete it (POD-OTP-CONTRACT, "Scope").
+enum StoreCompletion {
+  /// Takeaway (5 Oct 2026): the customer collects it at the counter and only
+  /// their pickup code completes it — multivendor and e-commerce alike.
+  pickupCode,
+
+  /// A delivery the store closes itself (its own delivery man, or an
+  /// e-commerce order with a delivery man): only the customer's delivery
+  /// code completes it.
+  deliveryCode,
+
+  /// E-commerce shipped by a courier (no delivery man, not takeaway): no code.
+  courier,
+
+  /// Rung up at the counter through the POS: no customer app to show a
+  /// code, so it completes without one.
+  pos,
+
+  /// Self delivery not handed over yet: the store assigns a delivery man.
+  assignDriver,
+
+  /// A platform driver carries it: the Driver app completes it.
+  waitForDriver,
+
+  /// Completed, cancelled or rejected: nothing left to complete.
+  closed,
+}
+
+/// The scope rule as a pure function, so it is tested without a screen.
+abstract final class PodScope {
+  /// What the store can do with an order in [status].
+  ///
+  /// [storeDelivers]: the self-delivery feature is on and this store uses it.
+  /// [handedOver]: the order is ready / accepted by the store's delivery man.
+  static StoreCompletion storeCompletion({
+    required String? status,
+    required bool takeAway,
+    required bool isEcommerce,
+    required bool hasDriver,
+    required bool storeDelivers,
+    required bool handedOver,
+    bool isPosOrder = false,
+  }) {
+    if (PodRules.isCancelledStatus(status) || PodRules.isCompletedStatus(status)) return StoreCompletion.closed;
+    if (takeAway) return isPosOrder ? StoreCompletion.pos : StoreCompletion.pickupCode;
+    if (isEcommerce) return hasDriver ? StoreCompletion.deliveryCode : StoreCompletion.courier;
+    if (storeDelivers) return hasDriver && handedOver ? StoreCompletion.deliveryCode : StoreCompletion.assignDriver;
+    return StoreCompletion.waitForDriver;
+  }
+
+  /// Only the customer's code completes an order the store closes this way.
+  static bool needsCode(StoreCompletion completion) => completion == StoreCompletion.pickupCode || completion == StoreCompletion.deliveryCode;
+}
+
 /// `status` of `order_pod/{orderId}` and of an order's `pod`.
 abstract final class PodStatus {
   static const String pending = 'pending';
@@ -163,6 +218,9 @@ class OrderPod {
 
   /// "OTP Verified" block on the details screen and the Completed card.
   static bool showsVerified(OrderPod? pod) => pod?.isVerified == true;
+
+  /// The store entered the customer's code (takeaway, or its own delivery).
+  bool get verifiedByStore => (verifiedByRole ?? '').toLowerCase() == PodRole.vendor;
 
   /// "Waiting for the customer's delivery code": a code was asked for and
   /// the order is still on its way (not completed, cancelled or rejected).

@@ -57,24 +57,18 @@ abstract final class PushTap {
     return null;
   }
 
-  /// Title and body of a push the app shows itself (Android, foreground).
-  /// Falls back to `title` / `body` data keys, and for a delivery-code push to
-  /// the given texts. Null when there is nothing to show.
+  /// Title and body of a push the app shows itself (Android, foreground):
+  /// the notification's own text (from the sender's `dynamic_notification`
+  /// template), else `title` / `body` data keys. Null when there is nothing
+  /// to show — the app never supplies notification text of its own.
   static ({String? title, String? body})? displayText({
     String? title,
     String? body,
     Map<String, dynamic> data = const {},
-    String deliveryCodeType = 'delivery_otp',
-    String? deliveryCodeTitle,
-    String? deliveryCodeBody,
   }) {
     String? clean(String? s) => (s == null || s.trim().isEmpty) ? null : s;
-    String? t = clean(title) ?? clean(field(data, 'title'));
-    String? b = clean(body) ?? clean(field(data, 'body'));
-    if (field(data, 'type') == deliveryCodeType) {
-      t ??= clean(deliveryCodeTitle);
-      b ??= clean(deliveryCodeBody);
-    }
+    final String? t = clean(title) ?? clean(field(data, 'title'));
+    final String? b = clean(body) ?? clean(field(data, 'body'));
     if (t == null && b == null) return null;
     return (title: t, body: b);
   }

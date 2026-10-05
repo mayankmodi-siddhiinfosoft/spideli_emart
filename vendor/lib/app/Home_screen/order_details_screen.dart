@@ -289,9 +289,9 @@ class OrderDetailsScreen extends StatelessWidget {
         // the customer's code was verified, or that a code is awaited. An
         // order from before the contract has no `pod` and shows neither.
         final Widget? proofOfDelivery = OrderPod.showsVerified(order.pod)
-            ? PodVerifiedBlock(pod: order.pod!)
+            ? PodVerifiedBlock(pod: order.pod!, takeAway: order.takeAway == true)
             : OrderPod.showsWaiting(order.pod, order.status)
-            ? const PodWaitingNote()
+            ? PodWaitingNote(takeAway: order.takeAway == true)
             : null;
 
         final List<Widget> secondaryColumn = [

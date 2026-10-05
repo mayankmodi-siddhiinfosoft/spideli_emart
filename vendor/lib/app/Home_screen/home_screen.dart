@@ -1058,7 +1058,7 @@ class HomeScreen extends StatelessWidget {
           if (OrderPod.showsVerified(orderModel.pod))
             Padding(
               padding: const EdgeInsets.only(top: DsSpace.sm),
-              child: PodVerifiedLine(pod: orderModel.pod!),
+              child: PodVerifiedLine(pod: orderModel.pod!, takeAway: orderModel.takeAway == true),
             ),
         ],
       ),
@@ -1212,9 +1212,9 @@ class HomeScreen extends StatelessWidget {
             ),
           // A delivery code is out and the order is still on its way.
           if (OrderPod.showsWaiting(orderModel.pod, orderModel.status))
-            const Padding(
-              padding: EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, 0),
-              child: PodWaitingNote(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, 0),
+              child: PodWaitingNote(takeAway: orderModel.takeAway == true),
             ),
           Padding(
             padding: EdgeInsets.fromLTRB(DsSpace.lg, actions == null ? 0 : DsSpace.md, DsSpace.lg, DsSpace.lg),
@@ -1324,65 +1324,73 @@ class HomeScreen extends StatelessWidget {
     final bool storeDelivers = Constant.isSelfDeliveryFeature == true && controller.vendermodel.value.isSelfDelivery == true;
     final bool hasDriver = (orderModel.driverID ?? '').isNotEmpty;
     final String status = orderModel.status.toString();
-
-    // Collected by the customer at the counter.
-    if (orderModel.takeAway == true) {
-      return DsButton.primary(
-        label: "Delivered".tr,
-        icon: Icons.task_alt_rounded,
-        onPressed: () => completeOrder(orderModel, controller, notificationType: Constant.takeawayCompleted),
-      );
-    }
-
-    // Shipped by a courier (no delivery man on the order): the store is the
-    // only one who learns it arrived. Exempt from the delivery code
-    // (POD-OTP-CONTRACT).
-    if (isEcommerce && !hasDriver) {
-      return DsButton.primary(label: "Mark Deliver".tr, icon: Icons.task_alt_rounded, onPressed: () => completeOrder(orderModel, controller));
-    }
-
-    // An e-commerce order a delivery man carries is a delivery order: the
-    // customer's code is required, as for any other delivery.
-    if (isEcommerce && hasDriver) {
-      return DsButton.primary(label: "Mark as Completed".tr, icon: Icons.task_alt_rounded, onPressed: () => completeSelfDelivery(orderModel, controller));
-    }
-
-    // Self delivery: the store's own delivery man carries the order, so the
-    // store both assigns and closes it. Never a dead button in either state.
-    if (storeDelivers) {
-      final bool handedOver = HomeController.readyStatuses.contains(status) || status == Constant.driverAccepted;
-      if (hasDriver && handedOver) {
-        // Proof of delivery (3 Oct 2026 contract): only the customer's
-        // delivery code completes it. The existing completion then runs
-        // unchanged, once.
-        return DsButton.primary(label: "Mark as Completed".tr, icon: Icons.task_alt_rounded, onPressed: () => completeSelfDelivery(orderModel, controller));
-      }
-      // Not handed over yet (or handed over with no driver on the order):
-      // assign from the card itself instead of having to open the order
-      // (report #9).
-      return DsButton.primary(
-        label: hasDriver ? "Reassign Delivery Man".tr : "Assign Delivery Man".tr,
-        icon: Icons.delivery_dining_rounded,
-        onPressed: () => openAssignDriverDialog(context, controller, orderModel, isDark),
-      );
-    }
-
-    // A platform driver is carrying it: nothing for the store to do, so say
-    // who the order is waiting for.
-    return _WaitingNote(
-      label: hasDriver ? "${"With the delivery man".tr} · ${status.tr}" : "${"Waiting for a delivery partner".tr} · ${status.tr}",
+    // Which action, and whether the customer's code is needed, is the scope
+    // rule of POD-OTP-CONTRACT (PodScope, unit tested).
+    final StoreCompletion completion = PodScope.storeCompletion(
+      status: orderModel.status,
+      takeAway: orderModel.takeAway == true,
+      isEcommerce: isEcommerce,
+      hasDriver: hasDriver,
+      storeDelivers: storeDelivers,
+      handedOver: HomeController.readyStatuses.contains(status) || status == Constant.driverAccepted,
+      isPosOrder: orderModel.isPosOrder == true,
     );
+
+    switch (completion) {
+      // Collected by the customer at the counter (5 Oct 2026): only the
+      // customer's pickup code completes it, exactly as a self-delivery.
+      case StoreCompletion.pickupCode:
+        return DsButton.primary(label: "Delivered".tr, icon: Icons.task_alt_rounded, onPressed: () => completeWithCode(orderModel, controller, notificationType: Constant.takeawayCompleted));
+
+      // Rung up at the counter through the POS: no customer app to read a
+      // code from.
+      case StoreCompletion.pos:
+        return DsButton.primary(label: "Delivered".tr, icon: Icons.task_alt_rounded, onPressed: () => completeOrder(orderModel, controller, notificationType: Constant.takeawayCompleted));
+
+      // Shipped by a courier (no delivery man on the order): the store is the
+      // only one who learns it arrived. Exempt from the delivery code.
+      case StoreCompletion.courier:
+        return DsButton.primary(label: "Mark Deliver".tr, icon: Icons.task_alt_rounded, onPressed: () => completeOrder(orderModel, controller));
+
+      // An e-commerce order a delivery man carries, or the store's own
+      // delivery man handed it over (3 Oct 2026 contract): only the
+      // customer's delivery code completes it. The existing completion then
+      // runs unchanged, once.
+      case StoreCompletion.deliveryCode:
+        return DsButton.primary(label: "Mark as Completed".tr, icon: Icons.task_alt_rounded, onPressed: () => completeWithCode(orderModel, controller));
+
+      // Self delivery not handed over yet (or handed over with no driver on
+      // the order): assign from the card itself instead of having to open
+      // the order (report #9).
+      case StoreCompletion.assignDriver:
+        return DsButton.primary(
+          label: hasDriver ? "Reassign Delivery Man".tr : "Assign Delivery Man".tr,
+          icon: Icons.delivery_dining_rounded,
+          onPressed: () => openAssignDriverDialog(context, controller, orderModel, isDark),
+        );
+
+      // A platform driver is carrying it: nothing for the store to do, so say
+      // who the order is waiting for.
+      case StoreCompletion.waitForDriver:
+        return _WaitingNote(
+          label: hasDriver ? "${"With the delivery man".tr} · ${status.tr}" : "${"Waiting for a delivery partner".tr} · ${status.tr}",
+        );
+
+      // Completed / cancelled / rejected meanwhile: nothing to complete.
+      case StoreCompletion.closed:
+        return _WaitingNote(label: status.tr);
+    }
   }
 
-  /// "Mark as Completed" on an order the store delivers itself: the
-  /// customer's delivery code is verified first ([DeliveryOtpFlow]), then the
-  /// existing [completeOrder] runs. Backing out of the code leaves the order
-  /// untouched; an order verified before (its completion failed) skips the
-  /// code and completes.
-  Future<void> completeSelfDelivery(OrderModel orderModel, HomeController controller) async {
+  /// Completes an order only the customer's code may complete: a takeaway
+  /// the customer collects, or a delivery the store closes itself. The code
+  /// is verified first ([DeliveryOtpFlow]), then the existing [completeOrder]
+  /// runs. Backing out of the code leaves the order untouched; an order
+  /// verified before (its completion failed) skips the code and completes.
+  Future<void> completeWithCode(OrderModel orderModel, HomeController controller, {String? notificationType}) async {
     final bool verified = await DeliveryOtpFlow.run(orderModel);
     if (!verified) return;
-    await completeOrder(orderModel, controller);
+    await completeOrder(orderModel, controller, notificationType: notificationType);
   }
 
   /// Marks [orderModel] delivered: credits the cashback, writes the order,

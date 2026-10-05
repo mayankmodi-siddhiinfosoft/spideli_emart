@@ -133,11 +133,68 @@ void main() {
     expect(DeliveryCodeWatcher.shouldWatch(order(), 'cust-1'), isTrue);
     expect(DeliveryCodeWatcher.shouldWatch(order(), 'someone-else'), isFalse);
     expect(DeliveryCodeWatcher.shouldWatch(order(), null), isFalse);
-    expect(DeliveryCodeWatcher.shouldWatch(order(takeAway: true), 'cust-1'), isFalse);
+    // 5 Oct 2026: the store asks for the code on a takeaway too.
+    expect(DeliveryCodeWatcher.shouldWatch(order(takeAway: true), 'cust-1'), isTrue);
+    expect(DeliveryCodeWatcher.shouldWatch(order(takeAway: true, status: Constant.orderAccepted), 'cust-1'), isTrue);
+    expect(DeliveryCodeWatcher.shouldWatch(order(takeAway: true), 'someone-else'), isFalse);
+    expect(DeliveryCodeWatcher.shouldWatch(order(takeAway: true, status: Constant.orderCompleted), 'cust-1'), isFalse);
+    expect(DeliveryCodeWatcher.shouldWatch(order(takeAway: true, status: Constant.orderCancelled), 'cust-1'), isFalse);
+    expect(DeliveryCodeWatcher.shouldWatch(order(takeAway: true, status: Constant.orderRejected), 'cust-1'), isFalse);
+    expect(DeliveryCodeWatcher.shouldWatch(order(takeAway: true, pod: {'method': 'otp', 'status': 'verified'}), 'cust-1'), isFalse);
     expect(DeliveryCodeWatcher.shouldWatch(order(status: Constant.orderCompleted), 'cust-1'), isFalse);
     expect(DeliveryCodeWatcher.shouldWatch(order(status: Constant.orderCancelled), 'cust-1'), isFalse);
     expect(DeliveryCodeWatcher.shouldWatch(order(pod: {'method': 'otp', 'status': 'verified'}), 'cust-1'), isFalse);
     expect(DeliveryCodeWatcher.shouldWatch(order(pod: {'method': 'otp', 'status': 'pending'}), 'cust-1'), isTrue);
+  });
+
+  group('takeaway: the pickup code', () {
+    Widget pickup(OrderPodCode? c) => DeliveryCodeCard(code: c, takeAway: true, now: () => clock);
+
+    testWidgets('a live code reads "Your pickup code" and says to share it with the store', (tester) async {
+      await tester.pumpWidget(host(pickup(code())));
+      expect(find.text('Your pickup code'), findsOneWidget);
+      expect(find.text('Your delivery code'), findsNothing);
+      for (final d in '482913'.split('')) {
+        expect(find.text(d), findsOneWidget);
+      }
+      expect(find.text('Share this code with the store only when you collect your order'), findsOneWidget);
+      expect(find.text('Expires in 10:00'), findsOneWidget);
+    });
+
+    testWidgets('an expired code says to ask the store', (tester) async {
+      await tester.pumpWidget(host(pickup(code(status: 'expired'))));
+      expect(find.text('Code expired — ask the store for a new one'), findsOneWidget);
+      expect(find.textContaining('delivery partner'), findsNothing);
+    });
+
+    testWidgets('verified hides it, as for a delivery', (tester) async {
+      await tester.pumpWidget(host(pickup(code(status: 'verified'))));
+      expect(find.text('Your pickup code'), findsNothing);
+    });
+
+    final storeVerified = OrderPod.tryParse({
+      'method': 'otp',
+      'status': 'verified',
+      'verifiedAt': Timestamp.fromDate(DateTime(2026, 10, 5, 12, 30)),
+      'verifiedBy': 'store-uid',
+      'verifiedByRole': 'vendor',
+    });
+
+    testWidgets('block: Proof of pickup, Picked up, Verified by the store, no delivery man', (tester) async {
+      await tester.pumpWidget(host(PodInfoBlock(pod: storeVerified, takeAway: true)));
+      expect(find.text('Proof of pickup'), findsOneWidget);
+      expect(find.text('Picked up'), findsOneWidget);
+      expect(find.text('Delivered'), findsNothing);
+      expect(find.text('OTP Verified'), findsOneWidget);
+      expect(find.text('Verified by the store'), findsOneWidget);
+      expect(find.text('Delivery man'), findsNothing);
+      expect(find.textContaining('null'), findsNothing);
+    });
+
+    testWidgets('history line', (tester) async {
+      await tester.pumpWidget(host(PodInfoLine(pod: storeVerified, takeAway: true)));
+      expect(find.text('Picked up · OTP Verified · Verified by the store · 05 Oct 2026, 12:30 PM'), findsOneWidget);
+    });
   });
 
   group('proof of delivery once verified', () {
