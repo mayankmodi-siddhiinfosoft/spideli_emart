@@ -203,6 +203,12 @@ class FireStoreUtils {
 
       final Map<String, dynamic> data = removeNulls(userModel.toJson()..remove('wallet_amount'));
       if (!isNew) data.remove('fcmToken');
+      // Online / offline is the driver's own choice: only their online switch
+      // (DashBoardController.setOnline and the cab / parcel / rental
+      // equivalents) writes `isActive`. A profile, bank, vehicle or section
+      // save wrote back the value its copy was loaded with, which put a driver
+      // who had gone online since back offline.
+      if (!isNew) data.remove('isActive');
 
       await docRef.set(data, SetOptions(merge: true));
       if (isNew) await _openWallet(docRef);

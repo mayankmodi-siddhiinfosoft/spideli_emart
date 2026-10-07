@@ -362,7 +362,7 @@ class DriverCreateController extends GetxController {
   Future<void> updateDriver() async {
     ShowToastDialog.showLoader("Please wait".tr);
     try {
-      _applyCommonFields();
+      _applyCommonFields(isNew: false);
       // Start fresh — drop any vehicleDetails entries for deselected sections.
       driverModel.value.vehicleDetails = _buildVehicleDetails({});
       final bool saved = await FireStoreUtils.updateUser(driverModel.value);
@@ -380,14 +380,17 @@ class DriverCreateController extends GetxController {
     }
   }
 
-  void _applyCommonFields() {
+  /// [isNew]: a driver the owner is creating starts offline; editing an
+  /// existing driver never changes their online status (it used to set
+  /// `isActive` to false on every save, forcing the driver offline).
+  void _applyCommonFields({bool isNew = true}) {
     driverModel.value.firstName = firstNameEditingController.value.text;
     driverModel.value.lastName = lastNameEditingController.value.text;
     driverModel.value.email = emailEditingController.value.text.trim().toLowerCase();
     driverModel.value.phoneNumber = phoneNUmberEditingController.value.text;
     driverModel.value.role = Constant.userRoleDriver;
     driverModel.value.active = true;
-    driverModel.value.isActive = false;
+    if (isNew) driverModel.value.isActive = false;
     driverModel.value.isDocumentVerify = true;
     driverModel.value.countryCode = countryCodeEditingController.value.text;
     driverModel.value.countryISOCode = countryISOCodeEditingController.value.text;
