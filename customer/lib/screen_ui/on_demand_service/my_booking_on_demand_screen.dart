@@ -1,6 +1,8 @@
 import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/order_history_export.dart';
+import 'package:customer/widget/order_history_export_button.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
@@ -35,6 +37,7 @@ class MyBookingOnDemandScreen extends StatelessWidget {
             appBar: DsAppBar(
               title: "Booking History".tr,
               showBack: showBack,
+              actions: [if (Constant.userModel != null) const OrderHistoryExportButton(kind: OrderHistoryKind.onDemand)],
               bottom: DsTabBar(
                 tabs: tabs,
                 onTap: (index) {

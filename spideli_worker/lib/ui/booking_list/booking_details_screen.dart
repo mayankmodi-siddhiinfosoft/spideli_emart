@@ -9,6 +9,7 @@ import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/booking_list/job_actions.dart';
 import 'package:spideliworker/ui/chat_screen/full_screen_image_viewer.dart';
+import 'package:spideliworker/utils/booking_amount.dart';
 import 'package:spideliworker/utils/region_service.dart';
 import 'package:spideliworker/ui/chat_screen/chat_screen.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
@@ -524,40 +525,13 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   Widget priceTotalRow(BookingDetailsController controller, onProviderOrder, context) {
-    controller.price.value = 0.0;
-    controller.discount.value = 0.0;
-    controller.totalAmount.value = 0.0;
-    controller.adminComm.value = 0.0;
-
-    double safeDouble(value, [double defaultValue = 0.0]) {
-      if (value == null) return defaultValue;
-      final parsed = double.tryParse(value.toString());
-      return parsed ?? defaultValue;
-    }
-
-    if (onProviderOrder.provider.disPrice == "" || onProviderOrder.provider.disPrice == "0") {
-      controller.price.value = safeDouble(onProviderOrder.provider.price) * onProviderOrder.quantity;
-    } else {
-      controller.price.value = safeDouble(onProviderOrder.provider.disPrice) * onProviderOrder.quantity;
-    }
-
-    if (onProviderOrder.discountType == 'Percentage' || onProviderOrder.discountType == 'Percent') {
-      controller.discount.value = controller.price.value * safeDouble(onProviderOrder.discountLabel) / 100;
-    } else {
-      controller.discount.value = safeDouble(onProviderOrder.discountLabel);
-    }
-
-    controller.subTotal.value = controller.price.value - controller.discount.value;
-    controller.totalAmount.value = controller.subTotal.value;
-
-    controller.adminComm.value =
-        (onProviderOrder.adminCommissionType == 'Percent') ? (controller.totalAmount.value * safeDouble(onProviderOrder.adminCommission)) / 100 : safeDouble(onProviderOrder.adminCommission);
-
-    if (onProviderOrder.taxModel != null) {
-      for (var element in onProviderOrder.taxModel!) {
-        controller.totalAmount.value = controller.totalAmount.value + getTaxValue(amount: (controller.subTotal.value).toString(), taxModel: element);
-      }
-    }
+    // One calculation for this card and the orders history PDF export.
+    final BookingAmounts amounts = BookingAmounts.of(onProviderOrder);
+    controller.price.value = amounts.price;
+    controller.discount.value = amounts.discount;
+    controller.subTotal.value = amounts.subTotal;
+    controller.totalAmount.value = amounts.totalAmount;
+    controller.adminComm.value = amounts.adminComm;
 
     final BuildContext ctx = context;
     final c = ctx.dsColors;

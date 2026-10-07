@@ -286,7 +286,7 @@ class OrderReceiptPdf {
   // ---------------- PDF ----------------
 
   static List<int> _build(ReceiptData d, List<int> logo) {
-    String money(double value) => _money(value, d.currency);
+    String money(double value) => pdfMoney(value, d.currency);
 
     final PdfDocument document = PdfDocument();
     final _Writer w = _Writer(document);
@@ -377,7 +377,7 @@ class OrderReceiptPdf {
 
   /// [Constant.amountShow] in the order currency. The standard PDF fonts only
   /// cover Latin-1, so a symbol outside it is written as the currency code.
-  static String _money(double value, CurrencyModel? currency) {
+  static String pdfMoney(double value, CurrencyModel? currency) {
     final String shown = Constant.amountShow(currency: currency, amount: value.toString());
     if (!shown.codeUnits.every((u) => u <= 0xFF) && currency != null && currency.code.isNotEmpty) {
       return shown.replaceAll(currency.symbol, currency.code).trim();

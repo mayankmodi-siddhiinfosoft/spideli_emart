@@ -70,6 +70,10 @@ dependencies:
   uuid: ^4.6.0
   http: ^1.6.0
   signature: ^6.4.0
+  # Orders history export (PDF built on the device, then shared) - same
+  # versions as the Customer / Store / Provider apps.
+  syncfusion_flutter_pdf: ^34.2.8
+  share_plus: ^13.3.0
   
 
 dev_dependencies:

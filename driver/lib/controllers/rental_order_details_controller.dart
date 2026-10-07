@@ -50,60 +50,66 @@ class RentalOrderDetailsController extends GetxController {
   ///Safe calculation after order is loaded
   void calculateTotalAmount() {
     try {
-      subTotal.value = double.tryParse(order.value.subTotal?.toString() ?? "0") ?? 0.0;
-      discount.value = double.tryParse(order.value.discount?.toString() ?? "0") ?? 0.0;
-      taxAmount.value = 0.0;
-
-      if (order.value.endTime != null) {
-        DateTime start = order.value.startTime!.toDate();
-        DateTime end = order.value.endTime!.toDate();
-
-        // Total rented minutes
-        int totalMinutes = end.difference(start).inMinutes;
-
-        int includedMinutes = (int.tryParse(order.value.rentalPackageModel?.includedHours.toString() ?? "0") ?? 0) * 60;
-
-        if (totalMinutes > includedMinutes) {
-          int extraMinutes = totalMinutes - includedMinutes;
-
-          double minuteFare = double.tryParse(order.value.rentalPackageModel?.extraMinuteFare?.toString() ?? "0") ?? 0.0;
-
-          extraMinutesCharge.value = extraMinutes * minuteFare;
-        } else {
-          extraMinutesCharge.value = 0;
-        }
-      }
-      if (order.value.startKitoMetersReading != null && order.value.endKitoMetersReading != null) {
-        double startKm = double.tryParse(order.value.startKitoMetersReading?.toString() ?? "0") ?? 0.0;
-        double endKm = double.tryParse(order.value.endKitoMetersReading?.toString() ?? "0") ?? 0.0;
-        if (endKm > startKm) {
-          double totalKm = endKm - startKm;
-          if (totalKm > double.parse(order.value.rentalPackageModel!.includedDistance!)) {
-            totalKm = totalKm - double.parse(order.value.rentalPackageModel!.includedDistance!);
-            double extraKmRate = double.tryParse(order.value.rentalPackageModel?.extraKmFare?.toString() ?? "0") ?? 0.0;
-            extraKilometerCharge.value = totalKm * extraKmRate;
-          }
-        }
-      }
-      subTotal.value = subTotal.value + extraKilometerCharge.value + extraMinutesCharge.value;
-
-      if (order.value.taxSetting != null) {
-        for (var element in order.value.taxSetting!) {
-          taxAmount.value += Constant.calculateTax(amount: (subTotal.value - discount.value).toString(), taxModel: element);
-        }
-      }
-
-      if (order.value.adminCommission!.isNotEmpty) {
-        adminCommission.value = Constant.calculateAdminCommission(
-            amount: (subTotal.value - discount.value).toString(),
-            adminCommissionType: order.value.adminCommissionType.toString(),
-            adminCommission: order.value.adminCommission ?? '0');
-      }
-
-      totalAmount.value = (subTotal.value - discount.value) + taxAmount.value;
+      computeTotalAmount();
     } catch (e) {
       ShowToastDialog.showToast("Failed to calculate total: $e");
     }
+  }
+
+  /// The bill arithmetic of [calculateTotalAmount], without its toast: throws
+  /// on a booking it cannot price. Also used by the order-history PDF export.
+  void computeTotalAmount() {
+    subTotal.value = double.tryParse(order.value.subTotal?.toString() ?? "0") ?? 0.0;
+    discount.value = double.tryParse(order.value.discount?.toString() ?? "0") ?? 0.0;
+    taxAmount.value = 0.0;
+
+    if (order.value.endTime != null) {
+      DateTime start = order.value.startTime!.toDate();
+      DateTime end = order.value.endTime!.toDate();
+
+      // Total rented minutes
+      int totalMinutes = end.difference(start).inMinutes;
+
+      int includedMinutes = (int.tryParse(order.value.rentalPackageModel?.includedHours.toString() ?? "0") ?? 0) * 60;
+
+      if (totalMinutes > includedMinutes) {
+        int extraMinutes = totalMinutes - includedMinutes;
+
+        double minuteFare = double.tryParse(order.value.rentalPackageModel?.extraMinuteFare?.toString() ?? "0") ?? 0.0;
+
+        extraMinutesCharge.value = extraMinutes * minuteFare;
+      } else {
+        extraMinutesCharge.value = 0;
+      }
+    }
+    if (order.value.startKitoMetersReading != null && order.value.endKitoMetersReading != null) {
+      double startKm = double.tryParse(order.value.startKitoMetersReading?.toString() ?? "0") ?? 0.0;
+      double endKm = double.tryParse(order.value.endKitoMetersReading?.toString() ?? "0") ?? 0.0;
+      if (endKm > startKm) {
+        double totalKm = endKm - startKm;
+        if (totalKm > double.parse(order.value.rentalPackageModel!.includedDistance!)) {
+          totalKm = totalKm - double.parse(order.value.rentalPackageModel!.includedDistance!);
+          double extraKmRate = double.tryParse(order.value.rentalPackageModel?.extraKmFare?.toString() ?? "0") ?? 0.0;
+          extraKilometerCharge.value = totalKm * extraKmRate;
+        }
+      }
+    }
+    subTotal.value = subTotal.value + extraKilometerCharge.value + extraMinutesCharge.value;
+
+    if (order.value.taxSetting != null) {
+      for (var element in order.value.taxSetting!) {
+        taxAmount.value += Constant.calculateTax(amount: (subTotal.value - discount.value).toString(), taxModel: element);
+      }
+    }
+
+    if (order.value.adminCommission!.isNotEmpty) {
+      adminCommission.value = Constant.calculateAdminCommission(
+          amount: (subTotal.value - discount.value).toString(),
+          adminCommissionType: order.value.adminCommissionType.toString(),
+          adminCommission: order.value.adminCommission ?? '0');
+    }
+
+    totalAmount.value = (subTotal.value - discount.value) + taxAmount.value;
   }
 
   Future<void> fetchOrder(String orderId) async {

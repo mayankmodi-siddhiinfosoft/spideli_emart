@@ -1,4 +1,7 @@
+import 'package:driver/app/widgets/export_orders_pdf_button.dart';
+import 'package:driver/services/order_history_export_service.dart';
 import 'package:driver/themes/ds/ds.dart';
+import 'package:driver/utils/order_history_export.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../controllers/driver_order_controller.dart';
@@ -21,10 +24,32 @@ class DriverOrderList extends StatelessWidget {
           title: "Driver Orders".tr,
           subtitle: _serviceLabel(serviceType),
           maxContentWidth: null,
+          actions: [
+            // This driver's orders of this service, exported to PDF.
+            if (_exportType(serviceType) != null)
+              ExportOrdersPdfButton(
+                scope: () => DriverExportScope(driverId: controller.driverId.value, types: {_exportType(serviceType)!}),
+              ),
+            const DsGap(DsSpace.sm),
+          ],
           body: _buildBody(serviceType),
         );
       },
     );
+  }
+
+  /// The order type this screen lists (null: nothing listed).
+  OrderExportType? _exportType(String serviceType) {
+    switch (serviceType) {
+      case "cab-service":
+        return OrderExportType.cab;
+      case "parcel_delivery":
+        return OrderExportType.parcel;
+      case "rental-service":
+        return OrderExportType.rental;
+      default:
+        return null;
+    }
   }
 
   String? _serviceLabel(String serviceType) {

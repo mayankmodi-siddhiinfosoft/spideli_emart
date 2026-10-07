@@ -14,6 +14,7 @@ import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/themes/theme_controller.dart';
 import 'package:uuid/uuid.dart';
 import 'package:vendor/app/Home_screen/order_details_screen.dart';
+import 'package:vendor/app/Home_screen/order_history_export_sheet.dart';
 import 'package:vendor/app/add_restaurant_screen/add_restaurant_screen.dart';
 import 'package:vendor/app/chat_screens/chat_screen.dart';
 import 'package:vendor/app/chat_screens/restaurant_inbox_screen.dart';
@@ -1923,6 +1924,21 @@ class HomeScreen extends StatelessWidget {
                   ],
                 ),
               ),
+              // Export of the order history as a PDF: only where the order
+              // tabs are shown (verified store, "Manage Order" permission).
+              if (counts != null && OrderHistoryExportFlow.allowed) ...[
+                Container(
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.18)),
+                  child: DsIconButton(
+                    icon: Icons.picture_as_pdf_outlined,
+                    semanticLabel: "Export PDF".tr,
+                    size: 48,
+                    color: Colors.white,
+                    onPressed: () => OrderHistoryExportFlow.start(context, store: controller.vendermodel.value),
+                  ),
+                ),
+                if (controller.userModel.value.subscriptionPlan?.features?.chat != false) DsGap.sm,
+              ],
               if (controller.userModel.value.subscriptionPlan?.features?.chat != false)
                 Container(
                   decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.18)),

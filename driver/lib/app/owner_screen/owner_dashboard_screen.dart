@@ -1,5 +1,7 @@
+import 'package:driver/app/widgets/export_orders_pdf_button.dart';
+import 'package:driver/controllers/owner_order_list_controller.dart';
+import 'package:driver/services/order_history_export_service.dart';
 import 'package:driver/app/parcel_screen/parcel_tracking/parcel_run_screen.dart';
-import 'package:driver/utils/notification_service.dart';
 import 'package:driver/app/auth_screen/login_screen.dart';
 import 'package:driver/app/change_language/change_language_screen.dart';
 import 'package:driver/app/change_password_screen/change_password_screen.dart';
@@ -15,12 +17,10 @@ import 'package:driver/app/withdraw_method_setup_screens/withdraw_method_setup_s
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/owner_dashboard_controller.dart';
-import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/themes/custom_dialog_box.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:driver/utils/fire_store_utils.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:in_app_review/in_app_review.dart';
@@ -62,6 +62,16 @@ class OwnerDashboardScreen extends StatelessWidget {
                 ],
               ),
               actions: [
+                // Fleet order history: export a period to PDF, for the
+                // driver picked in the list's filter (all drivers otherwise).
+                if (controller.drawerIndex.value == 1) ...[
+                  ExportOrdersPdfButton(
+                    scope: () => OwnerExportScope(
+                      driver: Get.isRegistered<OwnerOrderListController>() ? Get.find<OwnerOrderListController>().selectedDriver.value : null,
+                    ),
+                  ),
+                  const DsGap(DsSpace.sm),
+                ],
                 DsIconButton(
                   icon: Icons.location_on_outlined,
                   semanticLabel: 'Driver Locations'.tr,

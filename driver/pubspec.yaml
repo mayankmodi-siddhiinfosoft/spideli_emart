@@ -70,6 +70,8 @@ dependencies:
   shared_preferences: ^2.5.5
   sign_in_with_apple: ^8.2.0
   syncfusion_flutter_datepicker: ^34.2.8
+  # Order-history PDF export (same package / version as customer, vendor and spideli_provider receipts).
+  syncfusion_flutter_pdf: ^34.2.8
   timer_count_down: ^2.2.2
   url_launcher: ^6.3.2
   uuid: ^4.5.3

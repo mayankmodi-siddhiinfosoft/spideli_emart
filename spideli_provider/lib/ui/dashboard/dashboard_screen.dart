@@ -5,6 +5,7 @@ import 'package:spideliprovider/controller/dashboard_controller.dart';
 import 'package:spideliprovider/main.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/themes/ds/ds.dart';
+import 'package:spideliprovider/ui/booking_list/export_bookings_sheet.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -42,6 +43,15 @@ class DashBoardScreen extends StatelessWidget {
                 );
               }),
               actions: [
+                // Booking history export (PDF over a period), on the booking list only.
+                if (controller.drawerItems[controller.selectedDrawerIndex.value].id == 'bookings')
+                  DsIconButton(
+                    icon: Icons.picture_as_pdf_outlined,
+                    semanticLabel: 'Export PDF'.tr,
+                    variant: DsIconButtonVariant.tonal,
+                    size: 36,
+                    onPressed: () => ExportBookingsSheet.show(),
+                  ),
                 DsIconButton(
                   icon: Icons.info_outline_rounded,
                   semanticLabel: 'Status Info'.tr,

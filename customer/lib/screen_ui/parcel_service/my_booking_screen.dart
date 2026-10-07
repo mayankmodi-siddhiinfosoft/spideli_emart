@@ -3,6 +3,8 @@ import 'package:customer/screen_ui/auth_screens/login_screen.dart';
 import 'package:customer/screen_ui/parcel_service/parcel_order_details.dart';
 import 'package:customer/screen_ui/widgets/order_ui.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/order_history_export.dart';
+import 'package:customer/widget/order_history_export_button.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../constant/constant.dart';
@@ -29,6 +31,7 @@ class MyBookingScreen extends StatelessWidget {
             appBar: DsAppBar(
               title: "Parcel History".tr,
               showBack: false,
+              actions: [if (Constant.userModel != null) const OrderHistoryExportButton(kind: OrderHistoryKind.parcels)],
               bottom: DsTabBar(
                 tabs: tabs,
                 // don't re-subscribe onTap — just update selectedTab (optional)

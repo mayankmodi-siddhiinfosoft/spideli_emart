@@ -358,6 +358,55 @@ class FireStoreUtils {
     return task.ref.getDownloadURL();
   }
 
+  /// The worker's bookings created in [start, endExclusive) in [statuses],
+  /// for the booking history PDF export.
+  ///
+  /// Same filters as the Jobs list (`workerId` == the worker, `status` in the
+  /// tab statuses, ordered by `createdAt`), bounded by a `createdAt` range so
+  /// only the period is read. The range sits on the field the list already
+  /// orders by, so it is served by the list's own index. Should that index
+  /// be missing anyway (failed-precondition), the bookings are read by
+  /// `workerId` alone and filtered here.
+  static Future<List<OnProviderOrderModel>> getWorkerBookingsInPeriod({
+    required String workerId,
+    required List<String> statuses,
+    required DateTime start,
+    required DateTime endExclusive,
+  }) async {
+    final CollectionReference<Map<String, dynamic>> orders = firestore.collection(PROVIDER_ORDER);
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+    try {
+      docs = (await orders
+              .where('workerId', isEqualTo: workerId)
+              .where('status', whereIn: statuses)
+              .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+              .where('createdAt', isLessThan: Timestamp.fromDate(endExclusive))
+              .orderBy('createdAt', descending: true)
+              .get())
+          .docs;
+    } on FirebaseException catch (e) {
+      if (e.code != 'failed-precondition') rethrow;
+      log('getWorkerBookingsInPeriod: index missing, filtering in the app: ${e.message}');
+      docs = (await orders.where('workerId', isEqualTo: workerId).get()).docs;
+    }
+    final List<OnProviderOrderModel> result = [];
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in docs) {
+      final Map<String, dynamic> data = doc.data();
+      final dynamic createdAt = data['createdAt'];
+      if (createdAt is! Timestamp || !statuses.contains(data['status'])) continue;
+      final DateTime created = createdAt.toDate();
+      if (created.isBefore(start) || !created.isBefore(endExclusive)) continue;
+      try {
+        final OnProviderOrderModel order = OnProviderOrderModel.fromJson(data);
+        if (order.id.isEmpty) order.id = doc.id;
+        result.add(order);
+      } catch (e) {
+        log('getWorkerBookingsInPeriod: booking ${doc.id} not readable: $e');
+      }
+    }
+    return result;
+  }
+
   static Future<List<RatingModel>> getReviewByProviderServiceId(String serviceId) async {
     List<RatingModel> providerReview = [];
 

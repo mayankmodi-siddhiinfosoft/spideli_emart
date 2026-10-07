@@ -52,7 +52,7 @@ class OrderReceiptPdf {
   static List<int> _build(OrderDetailsController c, List<int> logo) {
     final OrderModel order = c.orderModel.value;
     final CurrencyModel? currency = c.orderCurrency;
-    String money(double value) => _money(value, currency);
+    String money(double value) => OrderReceiptPdf.money(value, currency);
 
     final PdfDocument document = PdfDocument();
     final _Writer w = _Writer(document);
@@ -183,16 +183,16 @@ class OrderReceiptPdf {
 
   /// [Constant.amountShow] in the order currency. The standard PDF fonts only
   /// cover Latin-1, so a symbol outside it (e.g. the rupee sign) is written as
-  /// the currency code instead.
-  static String _money(double value, CurrencyModel? currency) {
+  /// the currency code instead. Also used by the order history export.
+  static String money(double value, CurrencyModel? currency) {
     final String shown = Constant.amountShow(currency: currency, amount: value.toString());
-    if (!_isLatin1(shown) && currency != null && (currency.code ?? '').isNotEmpty) {
+    if (!isLatin1(shown) && currency != null && (currency.code ?? '').isNotEmpty) {
       return shown.replaceAll(currency.symbol ?? '', currency.code!).trim();
     }
     return shown;
   }
 
-  static bool _isLatin1(String s) => s.codeUnits.every((u) => u <= 0xFF);
+  static bool isLatin1(String s) => s.codeUnits.every((u) => u <= 0xFF);
 }
 
 /// Top-to-bottom writer with automatic page breaks.

@@ -1,5 +1,5 @@
+import 'package:driver/app/widgets/export_orders_pdf_button.dart';
 import 'package:driver/app/auth_screen/login_screen.dart';
-import 'package:driver/utils/notification_service.dart';
 import 'package:driver/app/change_language/change_language_screen.dart';
 import 'package:driver/app/change_password_screen/change_password_screen.dart';
 import 'package:driver/app/chat_screens/driver_inbox_screen.dart';
@@ -16,12 +16,10 @@ import 'package:driver/app/withdraw_method_setup_screens/withdraw_method_setup_s
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/dash_board_controller.dart';
-import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/themes/custom_dialog_box.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:driver/utils/fire_store_utils.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:in_app_review/in_app_review.dart';
@@ -60,6 +58,12 @@ class DashBoardScreen extends StatelessWidget {
                 ],
               ),
               actions: [
+                // Order history: export a period to PDF (not while the list
+                // shows the documents-pending notice instead of orders).
+                if (controller.drawerIndex.value == 1 && !(Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false)) ...[
+                  const ExportOrdersPdfButton.currentDriver(),
+                  const DsGap(DsSpace.sm),
+                ],
                 Constant.userModel?.vendorID?.isEmpty == true
                     ? DsIconButton(
                         icon: Icons.account_balance_wallet_outlined,

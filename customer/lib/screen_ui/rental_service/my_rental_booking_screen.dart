@@ -6,6 +6,8 @@ import 'package:customer/screen_ui/rental_service/rental_order_details_screen.da
 import 'package:customer/screen_ui/rental_service/widget/rental_proposal_widgets.dart';
 import 'package:customer/screen_ui/widgets/order_ui.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/order_history_export.dart';
+import 'package:customer/widget/order_history_export_button.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../constant/constant.dart';
@@ -32,6 +34,7 @@ class MyRentalBookingScreen extends StatelessWidget {
             appBar: DsAppBar(
               title: "Rental History".tr,
               showBack: false,
+              actions: [if (Constant.userModel != null) const OrderHistoryExportButton(kind: OrderHistoryKind.rentals)],
               bottom: DsTabBar(
                 tabs: tabs,
                 onTap: (index) {

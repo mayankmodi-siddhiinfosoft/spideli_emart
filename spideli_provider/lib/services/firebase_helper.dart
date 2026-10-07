@@ -1049,6 +1049,55 @@ class FireStoreUtils {
     return products;
   }
 
+  /// The provider's bookings in [statuses] created in [start, endExclusive)
+  /// (booking history export). Same shape as the booking-list tabs
+  /// (`provider.author` + `status whereIn` + `orderBy createdAt desc`), so it
+  /// rides on the index those tabs already use, with a range on `createdAt`.
+  /// Should that index be missing (failed-precondition), it falls back to
+  /// the owner-only query and filters status and dates here.
+  static Future<List<OnProviderOrderModel>> getProviderBookingsCreatedBetween({
+    required String providerId,
+    required List<String> statuses,
+    required DateTime start,
+    required DateTime endExclusive,
+  }) async {
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+    bool filterHere = false;
+    try {
+      final snapshot = await firestore
+          .collection(PROVIDER_ORDER)
+          .where("provider.author", isEqualTo: providerId)
+          .where("status", whereIn: statuses)
+          .where("createdAt", isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+          .where("createdAt", isLessThan: Timestamp.fromDate(endExclusive))
+          .orderBy("createdAt", descending: true)
+          .get();
+      docs = snapshot.docs;
+    } on FirebaseException catch (e) {
+      if (e.code != 'failed-precondition') rethrow;
+      log("getProviderBookingsCreatedBetween: index missing, filtering in code ($e)");
+      docs = (await firestore.collection(PROVIDER_ORDER).where("provider.author", isEqualTo: providerId).get()).docs;
+      filterHere = true;
+    }
+
+    final List<OnProviderOrderModel> bookings = [];
+    for (final doc in docs) {
+      final Map<String, dynamic> data = doc.data();
+      if (filterHere) {
+        final dynamic created = data['createdAt'];
+        if (created is! Timestamp || !statuses.contains(data['status'])) continue;
+        final DateTime at = created.toDate();
+        if (at.isBefore(start) || !at.isBefore(endExclusive)) continue;
+      }
+      try {
+        bookings.add(OnProviderOrderModel.fromJson(data));
+      } catch (e) {
+        log("getProviderBookingsCreatedBetween: booking ${doc.id} skipped ($e)");
+      }
+    }
+    return bookings;
+  }
+
   Future<OnProviderOrderModel?> getProviderOrderById(String? orderId) async {
     DocumentSnapshot<Map<String, dynamic>> userDocument = await firestore.collection(PROVIDER_ORDER).doc(orderId).get();
     if (userDocument.data() != null && userDocument.exists) {

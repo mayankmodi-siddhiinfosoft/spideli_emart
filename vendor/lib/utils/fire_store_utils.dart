@@ -837,6 +837,40 @@ class FireStoreUtils {
     return orderList;
   }
 
+  /// Every order of store [vendorId] created in [start] (included) ..
+  /// [endExclusive], newest first - the home screen's order query
+  /// (`vendorID ==`, `orderBy createdAt desc`, so the same composite index)
+  /// bounded by the period. Used by the order history PDF export. Null when
+  /// the read failed (so "no orders" and "could not load" are told apart);
+  /// an unreadable order is skipped, as on the home screen.
+  static Future<List<OrderModel>?> getStoreOrdersBetween(String vendorId, DateTime start, DateTime endExclusive) async {
+    try {
+      final snapshot = await fireStore
+          .collection(CollectionName.vendorOrders)
+          .where('vendorID', isEqualTo: vendorId)
+          .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+          .where('createdAt', isLessThan: Timestamp.fromDate(endExclusive))
+          .orderBy('createdAt', descending: true)
+          // From the server only: offline, a plain get() quietly answers from
+          // the local cache (possibly empty or partial), which would export a
+          // false "no orders" or an incomplete statement. Offline now fails
+          // and the sheet says the orders could not be loaded.
+          .get(const GetOptions(source: Source.server));
+      final List<OrderModel> orders = [];
+      for (final element in snapshot.docs) {
+        try {
+          orders.add(OrderModel.fromJson(element.data()));
+        } catch (e) {
+          log("Skipping unreadable order ${element.id}: $e");
+        }
+      }
+      return orders;
+    } catch (e, s) {
+      log('FireStoreUtils.getStoreOrdersBetween $e $s');
+      return null;
+    }
+  }
+
   static Future<bool> deleteCashbackRedeem(OrderModel orderModel) async {
     bool isUpdate = false;
     try {

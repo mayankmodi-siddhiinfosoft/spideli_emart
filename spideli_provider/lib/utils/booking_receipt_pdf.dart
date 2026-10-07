@@ -134,7 +134,7 @@ class BookingReceiptPdf {
 
   static List<int> _build(OnProviderOrderModel order, User? provider, List<int> logo) {
     final CurrencyModel? currency = RegionService.currencyForBooking(order.regionId);
-    String money(double value) => _money(value, currency);
+    String money(double value) => pdfMoney(value, currency);
     final BookingTotals t = BookingTotals.of(order);
 
     final PdfDocument document = PdfDocument();
@@ -245,7 +245,7 @@ class BookingReceiptPdf {
 
   /// [amountShow] in the booking currency. Standard PDF fonts only cover
   /// Latin-1, so a symbol outside it is written as the currency code.
-  static String _money(double value, CurrencyModel? currency) {
+  static String pdfMoney(double value, CurrencyModel? currency) {
     final String shown = amountShow(currency: currency, amount: value.toString());
     if (!shown.codeUnits.every((u) => u <= 0xFF) && currency != null && (currency.code ?? '').isNotEmpty) {
       return shown.replaceAll(currency.symbol ?? '', ' ${currency.code!} ').trim();

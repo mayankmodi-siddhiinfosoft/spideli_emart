@@ -5,7 +5,9 @@ import 'package:customer/controllers/order_controller.dart';
 import 'package:customer/models/cart_product_model.dart';
 import 'package:customer/models/order_model.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/order_history_export.dart';
 import 'package:customer/utils/order_history_limit.dart';
+import 'package:customer/widget/order_history_export_button.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -76,6 +78,10 @@ class OrderScreen extends StatelessWidget {
                                   ],
                                 ),
                               ),
+                              const DsGap(DsSpace.sm),
+                              // Export the history of a period as a PDF
+                              // (order-history subscribers only).
+                              const OrderHistoryExportButton(kind: OrderHistoryKind.shopping),
                             ],
                           ),
                         ),

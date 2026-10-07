@@ -8,7 +8,9 @@ import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/booking_list/booking_details_screen.dart';
 import 'package:spideliworker/ui/booking_list/job_actions.dart';
+import 'package:spideliworker/ui/booking_list/orders_export_sheet.dart';
 import 'package:spideliworker/ui/documents/documents_screen.dart';
+import 'package:spideliworker/utils/booking_amount.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 import 'package:spideliworker/utils/region_service.dart';
 import 'package:spideliworker/widgets/common_ui.dart';
@@ -87,6 +89,20 @@ class _BookingListScreenState extends State<BookingListScreen> with SingleTicker
             showBack: false,
             title: "Jobs".tr,
             subtitle: DateFormat('EEEE, dd MMM yyyy').format(DateTime.now()),
+            actions: [
+              // Booking history as a PDF over a chosen period.
+              Builder(
+                builder: (buttonContext) => DsIconButton(
+                  icon: Icons.picture_as_pdf_outlined,
+                  semanticLabel: 'Export PDF'.tr,
+                  color: Colors.white,
+                  onPressed: () {
+                    final RenderBox? box = buttonContext.findRenderObject() as RenderBox?;
+                    OrdersExportSheet.show(shareOrigin: box == null ? null : box.localToGlobal(Offset.zero) & box.size);
+                  },
+                ),
+              ),
+            ],
             child: DsFadeSlideIn(
               child: Row(
                 children: [
@@ -268,16 +284,7 @@ class _JobCard extends StatelessWidget {
   }
 
   Widget _badge() {
-    String label;
-    if (order.status == ORDER_STATUS_PLACED) {
-      label = "Pending";
-    } else if (order.status == ORDER_STATUS_ACCEPTED || order.status == ORDER_STATUS_ASSIGNED) {
-      label = "Assigned";
-    } else if (order.status == ORDER_STATUS_COMPLETED) {
-      label = "Completed";
-    } else {
-      label = "In progress";
-    }
+    final String label = jobStatusLabel(order.status);
     return DsStatusChip(label: label.tr, status: order.status, pulse: order.status == ORDER_STATUS_ONGOING);
   }
 
