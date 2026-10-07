@@ -1,3 +1,4 @@
+import 'package:customer/constant/constant.dart';
 import 'package:customer/utils/address_format.dart';
 import 'package:customer/widget/place_picker/selected_location_model.dart';
 import 'package:get/get.dart';
@@ -18,13 +19,29 @@ class LocationController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    // The map opens at once on the best position already known, so a
+    // missing GPS fix or a refused location permission never leaves the
+    // picker on an endless spinner (customers could not add an address).
+    selectedLocation.value = _knownStartPosition();
     getArgument();
     getCurrentLocation();
   }
 
+  /// Yaoundé: where the map opens when nothing better is known.
+  static const LatLng fallbackCenter = LatLng(3.8480, 11.5021);
+
+  LatLng _knownStartPosition() {
+    final Position? device = Constant.currentLocation;
+    if (device != null) return LatLng(device.latitude, device.longitude);
+    final double? lat = Constant.selectedLocation.location?.latitude;
+    final double? lng = Constant.selectedLocation.location?.longitude;
+    if (lat != null && lng != null && !(lat == 0 && lng == 0)) return LatLng(lat, lng);
+    return fallbackCenter;
+  }
+
   void getArgument() {
     dynamic argumentData = Get.arguments;
-    if (argumentData != null) {
+    if (argumentData != null && argumentData is Map) {
       zipCode.value = argumentData['zipCode'] ?? '';
       if (zipCode.value.isNotEmpty) {
         getCoordinatesFromZipCode(zipCode.value);
@@ -33,19 +50,32 @@ class LocationController extends GetxController {
     update();
   }
 
+  /// Moves the map to the device's position when it can be had: the last
+  /// known fix first (instant), then a fresh one within 10 s. Without
+  /// permission or a fix the map simply stays where it opened; the customer
+  /// can search or move the map.
   Future<void> getCurrentLocation() async {
     try {
-      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      selectedLocation.value = LatLng(position.latitude, position.longitude);
-
-      if (mapController != null) {
-        mapController!.animateCamera(CameraUpdate.newLatLngZoom(selectedLocation.value!, 15));
+      final LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        await getAddressFromLatLng(selectedLocation.value!);
+        return;
       }
-
-      await getAddressFromLatLng(selectedLocation.value!);
+      final Position? last = await Geolocator.getLastKnownPosition();
+      if (last != null) _moveTo(LatLng(last.latitude, last.longitude));
+      final Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 10)),
+      );
+      _moveTo(LatLng(position.latitude, position.longitude));
     } catch (e) {
-      print("Error fetching current location: $e");
+      debugPrint("Current location unavailable: $e");
     }
+    if (selectedLocation.value != null) await getAddressFromLatLng(selectedLocation.value!);
+  }
+
+  void _moveTo(LatLng position) {
+    selectedLocation.value = position;
+    mapController?.animateCamera(CameraUpdate.newLatLngZoom(position, 15));
   }
 
   Future<void> getAddressFromLatLng(LatLng latLng) async {

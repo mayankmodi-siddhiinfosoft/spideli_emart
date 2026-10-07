@@ -1,3 +1,4 @@
+import 'package:geolocator/geolocator.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/service/fire_store_utils.dart';
@@ -51,38 +52,11 @@ class EnterManuallyLocationScreen extends StatelessWidget {
                       ),
                       const DsGap(DsSpace.xl),
 
-                      // Map picker. The row and the GPS button keep their own
-                      // (slightly different) original handlers.
+                      // Map picker: the row and the GPS button both open it
+                      // (_pickLocation), with or without location permission.
                       DsCard.outlined(
                         padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
-                        onTap: () {
-                          Constant.checkPermission(
-                            context: context,
-                            onTap: () async {
-                              if (Constant.selectedMapType == 'osm') {
-                                final result = await Get.to(() => MapPickerPage());
-                                if (result != null) {
-                                  final firstPlace = result;
-                                  final lat = firstPlace.coordinates.latitude;
-                                  final lng = firstPlace.coordinates.longitude;
-                                  final address = firstPlace.address;
-
-                                  controller.localityEditingController.value.text = address.toString();
-                                  controller.location.value = UserLocation(latitude: lat, longitude: lng);
-                                }
-                              } else {
-                                Get.to(LocationPickerScreen())!.then((value) async {
-                                  if (value != null) {
-                                    SelectedLocationModel selectedLocationModel = value;
-
-                                    controller.localityEditingController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
-                                    controller.location.value = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
-                                  }
-                                });
-                              }
-                            },
-                          );
-                        },
+                        onTap: () => _pickLocation(context, controller),
                         child: Row(
                           children: [
                             const DsIconWell(icon: Icons.map_outlined, size: 42, circle: true),
@@ -102,35 +76,7 @@ class EnterManuallyLocationScreen extends StatelessWidget {
                               icon: Icons.gps_fixed,
                               semanticLabel: "Choose Location".tr,
                               variant: DsIconButtonVariant.tonal,
-                              onPressed: () {
-                                Constant.checkPermission(
-                                  context: context,
-                                  onTap: () async {
-                                    if (Constant.selectedMapType == 'osm') {
-                                      final result = await Get.to(() => MapPickerPage());
-                                      if (result != null) {
-                                        final firstPlace = result;
-                                        final lat = firstPlace.coordinates.latitude;
-                                        final lng = firstPlace.coordinates.longitude;
-                                        final address = firstPlace.address;
-
-                                        controller.localityEditingController.value.text = address.toString();
-                                        controller.location.value = UserLocation(latitude: lat, longitude: lng);
-                                      }
-                                    } else {
-                                      Get.to(LocationPickerScreen())!.then((value) async {
-                                        if (value != null) {
-                                          SelectedLocationModel selectedLocationModel = value;
-
-                                          controller.localityEditingController.value.text = Utils.formatAddress(selectedLocation: selectedLocationModel);
-                                          controller.location.value = UserLocation(latitude: selectedLocationModel.latLng!.latitude, longitude: selectedLocationModel.latLng!.longitude);
-                                          Get.back();
-                                        }
-                                      });
-                                    }
-                                  },
-                                );
-                              },
+                              onPressed: () => _pickLocation(context, controller),
                             ),
                           ],
                         ),
@@ -262,6 +208,33 @@ class EnterManuallyLocationScreen extends StatelessWidget {
 }
 
 /// Selectable "Home / Work / Other" chip.
+/// Opens the map picker (OpenStreetMap or Google, per settings) and fills the
+/// locality and position. Location permission is asked for but never required:
+/// a customer who refuses it can still search or move the map (the picker used
+/// to stay closed, so the address could not be saved). The old GPS-button
+/// handler also popped this screen right after the pick.
+Future<void> _pickLocation(BuildContext context, EnterManuallyLocationController controller) async {
+  try {
+    final LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) await Geolocator.requestPermission();
+  } catch (_) {}
+  if (Constant.selectedMapType == 'osm') {
+    final result = await Get.to(() => MapPickerPage());
+    if (result != null) {
+      controller.localityEditingController.value.text = result.address.toString();
+      controller.location.value = UserLocation(latitude: result.coordinates.latitude, longitude: result.coordinates.longitude);
+    }
+    return;
+  }
+  final dynamic value = await Get.to(const LocationPickerScreen());
+  if (value is SelectedLocationModel && value.latLng != null) {
+    final String text = Utils.formatAddress(selectedLocation: value);
+    controller.localityEditingController.value.text =
+        text.isNotEmpty ? text : '${value.latLng!.latitude.toStringAsFixed(5)}, ${value.latLng!.longitude.toStringAsFixed(5)}';
+    controller.location.value = UserLocation(latitude: value.latLng!.latitude, longitude: value.latLng!.longitude);
+  }
+}
+
 class _SaveAsChip extends StatelessWidget {
   final String label;
   final bool selected;
