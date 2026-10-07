@@ -29,96 +29,103 @@ class LiveTrackingScreen extends StatelessWidget {
         return DsScaffold(
           maxContentWidth: null,
           backgroundColor: c.surface,
-          body: Stack(
-            children: [
-              Positioned.fill(
-                // The map opens on the first point we actually have (driver,
-                // then store, then the delivery address) instead of lat/lng
-                // 0,0, and the camera is only driven once the map says it is
-                // ready — see LiveTrackingController for bug #4.
-                child: controller.isOsm
-                    ? flutterMap.FlutterMap(
-                        mapController: controller.osmMapController,
-                        options: flutterMap.MapOptions(
-                          initialCenter: controller.initialTarget,
-                          initialZoom: 14,
-                          onMapReady: controller.onOsmMapReady,
-                        ),
-                        children: [
-                          flutterMap.TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.spideli.customer'),
-                          if (controller.routePoints.isNotEmpty)
-                            flutterMap.PolylineLayer(polylines: [flutterMap.Polyline(points: controller.routePoints.toList(), strokeWidth: 5.0, color: Colors.blue)]),
-                          // Read through toList() so this GetX observer is
-                          // subscribed to the marker list itself.
-                          flutterMap.MarkerLayer(markers: controller.osmMarkers.toList()),
-                        ],
-                      )
-                    : gmap.GoogleMap(
-                        onMapCreated: controller.onGoogleMapCreated,
-                        myLocationEnabled: true,
-                        zoomControlsEnabled: false,
-                        polylines: Set<gmap.Polyline>.of(controller.polyLines.values),
-                        markers: Set<gmap.Marker>.of(controller.markers.values),
-                        initialCameraPosition: gmap.CameraPosition(
-                          zoom: 14,
-                          target: gmap.LatLng(controller.initialTarget.latitude, controller.initialTarget.longitude),
-                        ),
-                      ),
-              ),
-              SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(DsSpace.md),
-                  child: Row(
-                    children: [
-                      const DsBackButton(variant: DsIconButtonVariant.filled),
-                      const DsGap(DsSpace.md),
-                      Flexible(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
-                          decoration: BoxDecoration(color: c.surface, borderRadius: DsRadius.brPill, boxShadow: DsShadows.md(context)),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.near_me_rounded, size: 18, color: c.brandStrong),
-                              const DsGap(DsSpace.sm),
-                              Flexible(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text("Live Tracking".tr, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm),
-                                    // Same short, never-wrapping id as the list
-                                    // and the detail screen.
-                                    OrderIdLine(id: controller.orderModel.value.id.toString(), compact: true, copyable: false),
-                                  ],
-                                ),
+          // SizedBox.expand: the Stack used to take its size from its only
+          // non-positioned child, the small header, so the full-screen map was
+          // only as tall as that header and the rest of the screen was blank.
+          body: SizedBox.expand(
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  // The map opens on the first point we actually have (driver,
+                  // then store, then the delivery address) instead of lat/lng
+                  // 0,0, and the camera is only driven once the map says it is
+                  // ready — see LiveTrackingController for bug #4.
+                  child: controller.isOsm
+                      ? flutterMap.FlutterMap(
+                          mapController: controller.osmMapController,
+                          options: flutterMap.MapOptions(initialCenter: controller.initialTarget, initialZoom: 14, onMapReady: controller.onOsmMapReady),
+                          children: [
+                            flutterMap.TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.spideli.customer'),
+                            if (controller.routePoints.isNotEmpty)
+                              flutterMap.PolylineLayer(
+                                polylines: [flutterMap.Polyline(points: controller.routePoints.toList(), strokeWidth: 5.0, color: Colors.blue)],
                               ),
-                            ],
-                          ),
+                            // Read through toList() so this GetX observer is
+                            // subscribed to the marker list itself.
+                            flutterMap.MarkerLayer(markers: controller.osmMarkers.toList()),
+                          ],
+                        )
+                      : gmap.GoogleMap(
+                          onMapCreated: controller.onGoogleMapCreated,
+                          myLocationEnabled: true,
+                          zoomControlsEnabled: false,
+                          polylines: Set<gmap.Polyline>.of(controller.polyLines.values),
+                          markers: Set<gmap.Marker>.of(controller.markers.values),
+                          initialCameraPosition: gmap.CameraPosition(zoom: 14, target: gmap.LatLng(controller.initialTarget.latitude, controller.initialTarget.longitude)),
                         ),
-                      ),
-                    ],
-                  ),
                 ),
-              ),
-              // The delivery code (POD-OTP-CONTRACT) floats over the map while
-              // the delivery partner waits for it; nothing is drawn otherwise.
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: SafeArea(
-                  top: false,
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 520),
-                      child: DeliveryCodeWatcher(order: controller.orderModel.value, padding: const EdgeInsets.all(DsSpace.md)),
+                // Pinned to the top, so the header no longer sizes the Stack.
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    bottom: false,
+                    child: Padding(
+                      padding: const EdgeInsets.all(DsSpace.md),
+                      child: Row(
+                        children: [
+                          const DsBackButton(variant: DsIconButtonVariant.filled),
+                          const DsGap(DsSpace.md),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+                              decoration: BoxDecoration(color: c.surface, borderRadius: DsRadius.brPill, boxShadow: DsShadows.md(context)),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.near_me_rounded, size: 18, color: c.brandStrong),
+                                  const DsGap(DsSpace.sm),
+                                  Flexible(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text("Live Tracking".tr, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSm),
+                                        // Same short, never-wrapping id as the list
+                                        // and the detail screen.
+                                        OrderIdLine(id: controller.orderModel.value.id.toString(), compact: true, copyable: false),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+                // The delivery code (POD-OTP-CONTRACT) floats over the map while
+                // the delivery partner waits for it; nothing is drawn otherwise.
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: SafeArea(
+                    top: false,
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 520),
+                        child: DeliveryCodeWatcher(order: controller.orderModel.value, padding: const EdgeInsets.all(DsSpace.md)),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
