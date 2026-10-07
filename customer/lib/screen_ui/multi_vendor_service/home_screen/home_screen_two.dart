@@ -14,6 +14,7 @@ import 'package:customer/screen_ui/location_enable_screens/location_permission_s
 import 'package:customer/screen_ui/multi_vendor_service/home_screen/restaurant_list_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/home_screen/story_view.dart';
 import 'package:customer/screen_ui/multi_vendor_service/home_screen/view_all_category_screen.dart';
+import 'package:customer/screen_ui/notification_center/notification_bell.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/network_image_widget.dart';
@@ -347,6 +348,7 @@ class _HomeTwoHeaderBar extends StatelessWidget {
           ),
         ),
         const DsGap(DsSpace.xs),
+        const NotificationBell(variant: DsIconButtonVariant.tonal, size: 42, trailingGap: DsSpace.xs),
         DsIconButton(
           semanticLabel: "Cart".tr,
           variant: DsIconButtonVariant.tonal,

@@ -252,4 +252,5 @@ const Map<String, String> enUS = {
   "Amount": "Amount",
   "Hourly": "Hourly",
   "Page": "Page",
+  "Unread messages": "Unread messages",
 };

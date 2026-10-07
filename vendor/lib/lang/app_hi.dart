@@ -63,4 +63,5 @@ const Map<String, String> hiIN = {
   "Amount": "राशि",
   "Takeaway": "टेकअवे",
   "Deliver to door": "दरवाज़े तक डिलीवरी",
+  "@count unread messages": "@count अपठित संदेश",
 };

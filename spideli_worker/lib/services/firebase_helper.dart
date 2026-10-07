@@ -18,6 +18,8 @@ import 'package:spideliworker/model/referral_model.dart';
 import 'package:spideliworker/model/sectionModel.dart';
 import 'package:spideliworker/model/topupTranHistory.dart';
 import 'package:spideliworker/model/user.dart';
+import 'package:spideliworker/services/customer_notification.dart';
+import 'package:spideliworker/utils/chat_unread.dart';
 import 'package:spideliworker/utils/login_validation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -645,23 +647,79 @@ class FireStoreUtils {
     adminChatSeenSubscription.cancel();
   }
 
-  static late StreamSubscription<QuerySnapshot> orderChatSeenSubscription;
-
-  static void setSeenChatForOrder({required String orderId}) {
-    orderChatSeenSubscription =
-        firestore.collection("chat").doc(orderId).collection("thread").where('senderId', isNotEqualTo: FireStoreUtils.getCurrentUid()).where('seen', isEqualTo: false).snapshots().listen(
+  /// Marks every message of the order chat [orderId] addressed to this worker
+  /// as seen, live, for as long as the returned subscription runs: the chat
+  /// screen holds it and cancels it when it closes (ChatController.onClose).
+  ///
+  /// Before, one static subscription was started per opened chat and never
+  /// cancelled, so a conversation kept being marked seen after the worker had
+  /// left it (its inbox unread badge could never show), and its
+  /// `senderId != me` + `seen` query needed a composite index. The filter is
+  /// now exactly the badge's (`receiverId == me`, `seen == false`,
+  /// lib/utils/chat_unread.dart): equality filters only, no composite index.
+  /// Returns null when there is no order id or no signed-in worker.
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? markOrderChatSeen({required String orderId}) {
+    final String threadId = orderId.trim();
+    // getCurrentUid() throws when nobody is signed in.
+    final String me = auth.FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (threadId.isEmpty || threadId.contains('/') || me.isEmpty) return null;
+    return _unreadOrderChatQuery(threadId, me).snapshots().listen(
       (querySnapshot) async {
+        if (querySnapshot.docs.isEmpty) return;
+        final WriteBatch batch = firestore.batch();
         for (final doc in querySnapshot.docs) {
-          try {
-            await doc.reference.update({'seen': true});
-          } catch (e) {
-            log(e.toString());
-          }
+          batch.update(doc.reference, {'seen': true});
+        }
+        try {
+          await batch.commit();
+        } catch (e) {
+          log('chat: messages not marked seen: $e');
         }
       },
       onError: (error) {
         log(error.toString());
       },
     );
+  }
+
+  /// The messages of `chat/{threadId}/thread` addressed to [me] and not seen,
+  /// at most [chatUnreadQueryLimit] (lib/utils/chat_unread.dart).
+  static Query<Map<String, dynamic>> _unreadOrderChatQuery(String threadId, String me) {
+    return firestore.collection(ChatWorker).doc(threadId).collection("thread").where('receiverId', isEqualTo: me).where('seen', isEqualTo: false).limit(chatUnreadQueryLimit);
+  }
+
+  /// The live unread count of one inbox conversation for the signed-in worker
+  /// (`.claude/CUSTOMER-NOTIFICATIONS.md` 2): a listener on at most
+  /// [chatUnreadQueryLimit] unread messages addressed to the worker, never the
+  /// whole thread. A conversation without a usable id, or a read error, is 0.
+  static Stream<int> orderChatUnreadCount(String? orderId) {
+    final String threadId = orderId?.trim() ?? '';
+    // getCurrentUid() throws when nobody is signed in.
+    final String me = auth.FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (threadId.isEmpty || threadId.contains('/') || me.isEmpty) return Stream<int>.value(0);
+    return _unreadOrderChatQuery(threadId, me)
+        .snapshots()
+        .map((snapshot) => unreadChatCount(snapshot.docs.map((d) => d.data()), me))
+        .handleError((Object error) => log('chat: unread count not read: $error'));
+  }
+
+  // ------------------------------------------------ customer notifications --
+
+  /// A new id for `users/{customerId}/notifications` (Firestore auto id; no
+  /// read or write).
+  static String newCustomerNotificationId(String customerId) {
+    return firestore.collection(USERS).doc(customerId.trim()).collection(customerNotificationsCollection).doc().id;
+  }
+
+  /// Writes the customer's Notification Center record
+  /// (`.claude/CUSTOMER-NOTIFICATIONS.md` 1) with a server `createdAt`. A
+  /// `set` on the given id, so a retry of the same push writes it once.
+  static Future<void> recordCustomerNotification(String customerId, String notificationId, Map<String, dynamic> record) {
+    return firestore
+        .collection(USERS)
+        .doc(customerId.trim())
+        .collection(customerNotificationsCollection)
+        .doc(notificationId)
+        .set(<String, dynamic>{...record, 'createdAt': FieldValue.serverTimestamp()});
   }
 }

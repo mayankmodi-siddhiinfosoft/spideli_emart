@@ -563,8 +563,11 @@ class RentalHomeScreen extends StatelessWidget {
             return;
           }
           Map<String, dynamic> payLoad = <String, dynamic>{"type": "rental_order", "orderId": rentalBookingData.id};
-          SendNotification.customerToken(customerId: rentalBookingData.authorID ?? rentalBookingData.author?.id, embeddedToken: rentalBookingData.author?.fcmToken)
-              .then((String token) => SendNotification.sendFcmMessage(Constant.rentalCompleted, token, payLoad));
+          SendNotification.notifyCustomer(Constant.rentalCompleted,
+              customerId: rentalBookingData.authorID ?? rentalBookingData.author?.id,
+              embeddedToken: rentalBookingData.author?.fcmToken,
+              payload: payLoad,
+              status: rentalBookingData.status);
           ShowToastDialog.closeLoader();
           ShowToastDialog.showToast("Ride completed successfully".tr);
           Get.back();

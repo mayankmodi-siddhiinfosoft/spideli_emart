@@ -324,7 +324,7 @@ class DineInOrderScreen extends StatelessWidget {
                             byName: isBlankText(controller.vendorModel.value.title) ? orderModel.vendor?.title : controller.vendorModel.value.title,
                           );
                           await FireStoreUtils.setBookedOrder(orderModel);
-                          SendNotification.sendFcmMessage(Constant.dineInCanceled, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id);
+                          SendNotification.sendFcmMessage(Constant.dineInCanceled, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id, orderStatus: orderModel.status);
                           controller.getDineBooking();
                           ShowToastDialog.closeLoader();
                         },
@@ -341,7 +341,7 @@ class DineInOrderScreen extends StatelessWidget {
                           ShowToastDialog.showLoader("Please wait.".tr);
                           orderModel.status = Constant.orderAccepted;
                           await FireStoreUtils.setBookedOrder(orderModel);
-                          SendNotification.sendFcmMessage(Constant.dineInAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id);
+                          SendNotification.sendFcmMessage(Constant.dineInAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id, orderStatus: orderModel.status);
                           controller.getDineBooking();
                           ShowToastDialog.closeLoader();
                         },

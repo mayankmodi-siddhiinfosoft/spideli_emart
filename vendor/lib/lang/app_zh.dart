@@ -63,4 +63,5 @@ const Map<String, String> zhCH = {
   "Amount": "金额",
   "Takeaway": "自取",
   "Deliver to door": "送货上门",
+  "@count unread messages": "@count 条未读消息",
 };

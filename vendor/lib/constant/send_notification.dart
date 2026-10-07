@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart' show FieldValue;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,7 @@ import 'package:googleapis_auth/auth_io.dart';
 import 'package:http/http.dart' as http;
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/models/notification_model.dart';
+import 'package:vendor/utils/customer_notification.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/push_payload.dart';
 
@@ -31,7 +33,15 @@ import 'package:vendor/utils/push_payload.dart';
 ///   `settings/notification_setting.serverPushUrl` is an https URL
 ///   (`.claude/SERVER-PUSH-CONTRACT.md`), and then never downloads the
 ///   service-account key. Otherwise the legacy FCM v1 call, with the access
-///   token cached until shortly before it expires.
+///   token cached until shortly before it expires;
+/// - to a CUSTOMER (recipient customer with a known user id): also writes the
+///   customer's Notification Center entry `users/{recipientId}/notifications/{id}`
+///   with the push's title / body, type, category, order id, [orderStatus]
+///   and data, and adds `notificationId` to the push data
+///   (`.claude/CUSTOMER-NOTIFICATIONS.md` section 1). Best effort and not
+///   awaited: it never blocks or fails the push or the store's action. It is
+///   written even when the customer has no usable token (signed out, token
+///   not synced yet), so the update is still in their list.
 class SendNotification {
   static final _scopes = ['https://www.googleapis.com/auth/firebase.messaging'];
 
@@ -115,14 +125,19 @@ class SendNotification {
   ///
   /// [recipientId] is the recipient's user id: their current token is read
   /// from `users/{recipientId}` and [token] is only the fallback.
-  /// [recipient] picks the receiving app's channel.
-  static Future<bool> sendFcmMessage(String type, String token, Map<String, dynamic>? payload, {String? recipientId, PushRecipient recipient = PushRecipient.customer}) async {
+  /// [recipient] picks the receiving app's channel. [orderStatus] is the
+  /// order / booking status after the store's action, for the customer's
+  /// Notification Center entry.
+  static Future<bool> sendFcmMessage(
+    String type,
+    String token,
+    Map<String, dynamic>? payload, {
+    String? recipientId,
+    PushRecipient recipient = PushRecipient.customer,
+    String? orderStatus,
+  }) async {
     try {
       final String target = await _resolveToken(token, recipientId);
-      if (!PushPayload.isUsableToken(target)) {
-        debugPrint("push '$type' skipped: no FCM token for ${_who(recipientId)}");
-        return false;
-      }
       final NotificationModel? notificationModel = await FireStoreUtils.getNotificationContent(type);
       // `notificationModel!` threw whenever the admin had no template for this
       // type, and the catch below turned that into a silent `false` - the
@@ -132,15 +147,22 @@ class SendNotification {
         debugPrint("sendFcmMessage: no notification template stored for type '$type'");
         return false;
       }
-      return await _send(
-        token: target,
+      final String title = notificationModel.subject ?? '';
+      final String body = notificationModel.message ?? '';
+      final Map<String, String> data = await _recordForCustomer(
+        recipient: recipient,
         recipientId: recipientId,
-        title: notificationModel.subject ?? '',
-        body: notificationModel.message ?? '',
+        title: title,
+        body: body,
         data: PushPayload.stringData(payload, type: type),
         kind: type,
-        recipient: recipient,
+        status: orderStatus,
       );
+      if (!PushPayload.isUsableToken(target)) {
+        debugPrint("push '$type' skipped: no FCM token for ${_who(recipientId)}");
+        return false;
+      }
+      return await _send(token: target, recipientId: recipientId, title: title, body: body, data: data, kind: type, recipient: recipient);
     } catch (e) {
       debugPrint("push '$type' failed: $e");
       return false;
@@ -155,10 +177,18 @@ class SendNotification {
     required Map<String, dynamic> payload,
     String? recipientId,
     PushRecipient recipient = PushRecipient.customer,
+    String? orderStatus,
   }) async {
     try {
       final String target = await _resolveToken(token, recipientId);
-      final Map<String, String> data = PushPayload.stringData(payload);
+      final Map<String, String> data = await _recordForCustomer(
+        recipient: recipient,
+        recipientId: recipientId,
+        title: title,
+        body: body,
+        data: PushPayload.stringData(payload),
+        status: orderStatus,
+      );
       if (!PushPayload.isUsableToken(target)) {
         debugPrint("push '${data['type'] ?? ''}' skipped: no FCM token for ${_who(recipientId)}");
         return false;
@@ -175,19 +205,19 @@ class SendNotification {
   static Future<bool> sendChatFcmMessage(String title, String message, String token, Map<String, dynamic>? payload, {String? recipientId, PushRecipient recipient = PushRecipient.customer}) async {
     try {
       final String target = await _resolveToken(token, recipientId);
-      if (!PushPayload.isUsableToken(target)) {
-        debugPrint("chat push skipped: no FCM token for ${_who(recipientId)}");
-        return false;
-      }
-      return await _send(
-        token: target,
+      final Map<String, String> data = await _recordForCustomer(
+        recipient: recipient,
         recipientId: recipientId,
         title: title,
         body: message,
         data: PushPayload.stringData(payload, type: 'orderChat'),
         kind: 'chat',
-        recipient: recipient,
       );
+      if (!PushPayload.isUsableToken(target)) {
+        debugPrint("chat push skipped: no FCM token for ${_who(recipientId)}");
+        return false;
+      }
+      return await _send(token: target, recipientId: recipientId, title: title, body: message, data: data, kind: 'chat', recipient: recipient);
     } catch (e) {
       debugPrint("chat push failed: $e");
       return false;
@@ -195,6 +225,51 @@ class SendNotification {
   }
 
   // ── Internals ──
+
+  /// A record write slower than this (offline) is left to finish on its own;
+  /// the push goes out with the id.
+  static const Duration _recordTimeout = Duration(seconds: 8);
+
+  /// Writes the customer's Notification Center entry for a push to a customer
+  /// and returns the push [data] with its `notificationId`; any other push
+  /// returns [data] unchanged. A refused write returns [data] without the id,
+  /// so the customer app stores its own copy on receipt; a write slower than
+  /// [_recordTimeout] (offline) keeps the id, Firestore delivers it later.
+  /// Never throws.
+  static Future<Map<String, String>> _recordForCustomer({
+    required PushRecipient recipient,
+    String? recipientId,
+    required String title,
+    required String body,
+    required Map<String, String> data,
+    String? kind,
+    String? status,
+  }) async {
+    if (!CustomerNotification.shouldRecord(recipient: recipient, recipientId: recipientId)) return data;
+    Map<String, String> sent = data;
+    try {
+      final String customerId = recipientId!.trim();
+      final String id = FireStoreUtils.newCustomerNotificationId(customerId);
+      sent = CustomerNotification.dataWithId(data, id);
+      final Map<String, dynamic> document = CustomerNotification.document(
+        id: id,
+        title: title,
+        body: body,
+        data: sent,
+        kind: kind,
+        status: status,
+        createdAt: FieldValue.serverTimestamp(),
+      );
+      final bool saved = await FireStoreUtils.addCustomerNotification(customerId: customerId, id: id, document: document).timeout(_recordTimeout);
+      return saved ? sent : data;
+    } on TimeoutException {
+      debugPrint("customer notification for ${_who(recipientId)} still pending; push sent with its id");
+      return sent;
+    } catch (e) {
+      debugPrint("customer notification for ${_who(recipientId)} not recorded: $e");
+      return data;
+    }
+  }
 
   static String _who(String? recipientId) => (recipientId ?? '').isEmpty ? 'the recipient' : 'user $recipientId';
 

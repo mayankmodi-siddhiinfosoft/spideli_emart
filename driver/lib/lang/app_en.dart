@@ -500,4 +500,5 @@ const Map<String, String> enUS = {
   "Parcel": "Parcel",
   "Rental": "Rental",
   "Driver": "Driver",
+  "unread messages": "unread messages",
 };

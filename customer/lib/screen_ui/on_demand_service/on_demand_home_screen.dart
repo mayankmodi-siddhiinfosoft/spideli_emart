@@ -7,6 +7,7 @@ import 'package:customer/screen_ui/location_enable_screens/address_list_screen.d
 import 'package:customer/screen_ui/location_enable_screens/location_permission_screen.dart';
 import 'package:customer/screen_ui/on_demand_service/view_all_popular_service_screen.dart';
 import 'package:customer/screen_ui/on_demand_service/view_category_service_screen.dart';
+import 'package:customer/screen_ui/notification_center/notification_bell.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
@@ -113,6 +114,7 @@ class OnDemandHomeScreen extends StatelessWidget {
         return DsScaffold.hero(
           onBack: () => Get.offAll(const ServiceListScreen()),
           onRefresh: controller.getData,
+          actions: const [NotificationBell(color: Colors.white)],
           hero: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

@@ -100,6 +100,11 @@ class Constant {
   static String driverCancelled = "driver_cancelled";
   static String restaurantAccepted = "restaurant_accepted";
   static String takeawayCompleted = "takeaway_completed";
+
+  /// Customer push when the store marks a courier order delivered: the same
+  /// "order delivered" template the driver app sends on delivery (no
+  /// notification text in the app).
+  static String orderDeliveredTemplate = "driver_completed";
   static String newDeliveryOrder = "new_delivery_order";
 
   static const String orderPlaced = "Order Placed";

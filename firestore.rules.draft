@@ -453,6 +453,22 @@ service cloud.firestore {
       allow delete: if signedIn() && (userId == uid() || fleetOwnerOf(resource.data) || isAdmin());
     }
 
+    // users/{customerId}/notifications/{id} - the customer's Notification
+    // Center (.claude/CUSTOMER-NOTIFICATIONS.md section 1). The store, driver,
+    // provider and worker apps create an entry next to each push they send a
+    // customer; the customer app creates its own copy of a push without one
+    // (id msg_<messageId>). Only the customer reads it and flips `read`;
+    // nobody rewrites an entry (a repeat write is refused, `read` stays).
+    match /users/{userId}/notifications/{notificationId} {
+      allow read: if signedIn() && (userId == uid() || isAdmin());
+      allow create: if signedIn()
+        && request.resource.data.get('id', '') == notificationId
+        && request.resource.data.get('read', null) == false;
+      allow update: if signedIn() && userId == uid()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if signedIn() && (userId == uid() || isAdmin());
+    }
+
     // =========================================================================
     // providers_workers/{workerId} - a provider's worker. Workers have no
     // users/{uid}: this is the worker app's own profile.

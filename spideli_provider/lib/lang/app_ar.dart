@@ -48,4 +48,5 @@ const Map<String, String> lnAr = {
   "Completed": "مكتمل",
   "Rejected": "مرفوض",
   "Cancelled": "ملغى",
+  "Unread messages": "رسائل غير مقروءة",
 };

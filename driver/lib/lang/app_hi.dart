@@ -457,4 +457,5 @@ const Map<String, String> hiIN = {
   "Parcel": "पार्सल",
   "Rental": "किराया",
   "Driver": "ड्राइवर",
+  "unread messages": "अपठित संदेश",
 };

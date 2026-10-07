@@ -77,7 +77,8 @@ class JobActions {
     try {
       final Map<String, String> data = pushData(order, event, status: status, currentWorkerId: auth.FirebaseAuth.instance.currentUser?.uid);
       final String token = await SendNotification.tokenForUser(order.authorID, fallback: order.author.fcmToken);
-      await SendNotification.sendFcmMessage(event, token, data, recipient: PushRecipient.customer);
+      // customerId: also recorded in the customer's Notification Center.
+      await SendNotification.sendFcmMessage(event, token, data, recipient: PushRecipient.customer, customerId: order.authorID);
     } catch (e) {
       debugPrint('push "$event" to the customer not sent: $e');
     }

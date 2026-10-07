@@ -41,6 +41,7 @@ import 'package:spideliprovider/model/subscription_plan_model.dart';
 import 'package:spideliprovider/model/topupTranHistory.dart';
 import 'package:spideliprovider/model/withdrawHistoryModel.dart';
 import 'package:spideliprovider/model/withdraw_method_model.dart';
+import 'package:spideliprovider/services/customer_notification.dart';
 import 'package:spideliprovider/services/notification_service.dart';
 import 'package:spideliprovider/services/push_message.dart';
 import 'package:spideliprovider/services/region_service.dart';
@@ -1555,11 +1556,64 @@ class FireStoreUtils {
     });
   }
 
-  static late StreamSubscription<QuerySnapshot> orderChatSeenSubscription;
+  static StreamSubscription<QuerySnapshot>? orderChatSeenSubscription;
 
+  /// The signed-in user's uid, '' when nobody is signed in
+  /// ([getCurrentUid] throws then).
+  static String _signedInUid() => auth.FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  /// The unread messages of the order chat [orderId] addressed to [me]
+  /// (the signed-in user): `chat/{orderId}/thread` where `receiverId == me` and
+  /// `seen == false`, at most [unreadBadgeQueryLimit]. Two equality filters,
+  /// so no composite index is needed.
+  static Query<Map<String, dynamic>> _unreadOrderChatQuery(String orderId, String me) => firestore
+      .collection("chat")
+      .doc(orderId)
+      .collection("thread")
+      .where('receiverId', isEqualTo: me)
+      .where('seen', isEqualTo: false)
+      .limit(unreadBadgeQueryLimit);
+
+  /// Live unread count of one conversation of the inbox (badge on its row);
+  /// 0 for an id that is not a document id or when nobody is signed in.
+  static Stream<int> unreadOrderChatCount(String orderId) {
+    final String id = orderId.trim();
+    final String me = _signedInUid();
+    if (id.isEmpty || id.contains('/') || me.isEmpty) return Stream<int>.value(0);
+    return _unreadOrderChatQuery(id, me).snapshots().map((snapshot) => snapshot.size).handleError((Object e) => log("Unread chat count of $id not read: $e"));
+  }
+
+  /// Live unread count of the Help & Support thread (`chat/{me}/thread`,
+  /// messages from the admin not seen yet), the same messages
+  /// [setSeen] marks seen when the thread is open.
+  static Stream<int> unreadAdminChatCount() {
+    final String me = _signedInUid();
+    if (me.isEmpty) return Stream<int>.value(0);
+    return firestore
+        .collection("chat")
+        .doc(me)
+        .collection("thread")
+        .where('senderId', isEqualTo: adminType)
+        .where('seen', isEqualTo: false)
+        .limit(unreadBadgeQueryLimit)
+        .snapshots()
+        .map((snapshot) => snapshot.size)
+        .handleError((Object e) => log("Unread support chat count not read: $e"));
+  }
+
+  /// Marks seen, while the conversation is open, every message of
+  /// [orderId] addressed to the signed-in user -- the messages the inbox badge
+  /// counts. Before, it marked every message not sent by the provider, so a
+  /// customer's message to the booking's worker (same thread) was marked
+  /// seen by the provider; and the listener was never cancelled, so messages
+  /// arriving after the chat was closed were marked seen too and the badge
+  /// could never show them. [stopSeenChatForOrder] ends it (ChatController.onClose).
   static void setSeenChatForOrder({required String orderId}) {
-    orderChatSeenSubscription =
-        firestore.collection("chat").doc(orderId).collection("thread").where('senderId', isNotEqualTo: FireStoreUtils.getCurrentUid()).where('seen', isEqualTo: false).snapshots().listen(
+    orderChatSeenSubscription?.cancel();
+    orderChatSeenSubscription = null;
+    final String me = _signedInUid();
+    if (orderId.trim().isEmpty || orderId.contains('/') || me.isEmpty) return;
+    orderChatSeenSubscription = _unreadOrderChatQuery(orderId, me).snapshots().listen(
       (querySnapshot) async {
         for (final doc in querySnapshot.docs) {
           try {
@@ -1575,10 +1629,17 @@ class FireStoreUtils {
     );
   }
 
-  static late StreamSubscription<QuerySnapshot> adminChatSeenSubscription;
+  static void stopSeenChatForOrder() {
+    orderChatSeenSubscription?.cancel();
+    orderChatSeenSubscription = null;
+  }
+
+  static StreamSubscription<QuerySnapshot>? adminChatSeenSubscription;
 
   static void setSeen() {
-    final currentUserId = FireStoreUtils.getCurrentUid();
+    final currentUserId = _signedInUid();
+    adminChatSeenSubscription?.cancel();
+    if (currentUserId.isEmpty) return;
 
     adminChatSeenSubscription = firestore.collection("chat").doc(currentUserId).collection("thread").where('senderId', isEqualTo: adminType).where('seen', isEqualTo: false).snapshots().listen(
       (querySnapshot) async {
@@ -1597,6 +1658,44 @@ class FireStoreUtils {
   }
 
   static void stopSeenListener() {
-    adminChatSeenSubscription.cancel();
+    adminChatSeenSubscription?.cancel();
+    adminChatSeenSubscription = null;
+  }
+
+  /// Stores the Notification Center copy of a push to a customer at
+  /// `users/{customerId}/notifications/{id}` (.claude/CUSTOMER-NOTIFICATIONS.md)
+  /// and returns its id for the push data, or null when the record was refused
+  /// (then the push goes without `notificationId` and the customer app stores
+  /// its own copy on receipt). Best effort: never throws, and waits at most
+  /// [wait] for the server -- offline the write stays queued and the id is
+  /// returned, so the push is never held up. Known limit: if that queued write
+  /// is refused once it reaches the server, the push carries an id with no
+  /// document and the customer app's fallback skips it, so that entry is
+  /// lost; dropping the id on timeout would store it twice instead.
+  static Future<String?> recordCustomerNotification({
+    required String customerId,
+    required String title,
+    required String body,
+    required String kind,
+    required Map<String, String> data,
+    Duration wait = const Duration(seconds: 4),
+  }) async {
+    try {
+      final DocumentReference<Map<String, dynamic>> ref = firestore.collection(USERS).doc(customerId.trim()).collection(customerNotificationsCollection).doc();
+      final Map<String, dynamic> record = buildCustomerNotificationRecord(id: ref.id, title: title, body: body, kind: kind, data: data)
+        ..['createdAt'] = FieldValue.serverTimestamp();
+      bool failed = false;
+      final Future<void> write = ref.set(record).catchError((Object e) {
+        failed = true;
+        log("Customer notification '$kind' not stored: $e");
+      });
+      await write.timeout(wait, onTimeout: () {
+        log("Customer notification '$kind' queued (no server answer yet).");
+      });
+      return failed ? null : ref.id;
+    } catch (e) {
+      log("Customer notification '$kind' not stored: $e");
+      return null;
+    }
   }
 }

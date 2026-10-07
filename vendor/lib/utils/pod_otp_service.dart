@@ -287,7 +287,9 @@ abstract final class PodOtpService {
       // current one is on their user record.
       if (customerId.isNotEmpty) token = (await FireStoreUtils.getUserById(customerId))?.fcmToken ?? '';
       if (token.isEmpty || token == 'null') token = order.author?.fcmToken ?? '';
-      if (token.isEmpty || token == 'null') return;
+      // No token: still sent through sendFcmMessage when the customer is
+      // known, which records the Notification Center entry and skips the push.
+      if ((token.isEmpty || token == 'null') && customerId.isEmpty) return;
       // Wording from the dynamic_notification templates (no text in the
       // app): `pickup_otp` for a takeaway collected at the counter,
       // `delivery_otp` otherwise. The data keeps type delivery_otp, which is
@@ -297,6 +299,7 @@ abstract final class PodOtpService {
         token,
         {'type': PodRules.notificationType, 'orderId': order.id ?? ''},
         recipientId: customerId.isEmpty ? null : customerId,
+        orderStatus: order.status,
       );
     } catch (e) {
       log('POD push failed for ${order.id}: $e');

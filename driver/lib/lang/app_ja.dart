@@ -457,4 +457,5 @@ const Map<String, String> jaJP = {
   "Parcel": "荷物",
   "Rental": "レンタル",
   "Driver": "ドライバー",
+  "unread messages": "件の未読メッセージ",
 };

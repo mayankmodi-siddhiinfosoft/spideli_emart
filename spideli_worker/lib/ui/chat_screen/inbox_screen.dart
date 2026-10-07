@@ -5,6 +5,7 @@ import 'package:spideliworker/model/user.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/chat_screen/chat_screen.dart';
+import 'package:spideliworker/utils/chat_unread.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 import 'package:firebase_pagination/firebase_pagination.dart';
 import 'package:flutter/material.dart';
@@ -14,8 +15,21 @@ import 'package:provider/provider.dart';
 /// Inbox (archetype B): avatar rows in `DsCard.outlined`, each with the
 /// customer's name, the booking reference and the time of the last message.
 /// A skeleton row stands in while the customer is being fetched.
-class InboxScreen extends StatelessWidget {
+class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
+
+  @override
+  State<InboxScreen> createState() => _InboxScreenState();
+}
+
+class _InboxScreenState extends State<InboxScreen> {
+  /// One profile read per customer for the life of the screen. The inbox is
+  /// live: every update rebuilds the rows, and a new future each time put
+  /// each row back on its skeleton, which unmounted `_InboxRow` and re-opened
+  /// its unread badge listener (the count flickered).
+  final Map<String, Future<User?>> _profiles = {};
+
+  Future<User?> _profile(String id) => _profiles.putIfAbsent(id, () => FireStoreUtils.getUser(id));
 
   @override
   Widget build(BuildContext context) {
@@ -39,9 +53,11 @@ class InboxScreen extends StatelessWidget {
           InboxModel inboxModel = InboxModel.fromJson(data!);
 
           return FutureBuilder<User?>(
-            future: FireStoreUtils.getUser(inboxModel.receiverId == FireStoreUtils.getCurrentUid() ? inboxModel.senderId! : inboxModel.receiverId!),
+            future: _profile(inboxModel.receiverId == FireStoreUtils.getCurrentUid() ? inboxModel.senderId! : inboxModel.receiverId!),
             builder: (context, snapshot) {
-              if (!snapshot.hasData || snapshot.hasError || snapshot.connectionState == ConnectionState.waiting) {
+              // Skeleton only until the first profile: a refetch keeps the row
+              // (and its badge listener) mounted.
+              if (!snapshot.hasData || snapshot.hasError) {
                 return const _InboxRowSkeleton();
               } else {
                 User? customer = snapshot.data;
@@ -90,7 +106,12 @@ class InboxScreen extends StatelessWidget {
   }
 }
 
-class _InboxRow extends StatelessWidget {
+/// One conversation. Its unread badge (`.claude/CUSTOMER-NOTIFICATIONS.md`
+/// 2) is the live number of messages in this thread addressed to the worker
+/// and not seen yet ([FireStoreUtils.orderChatUnreadCount]: a listener on at
+/// most 100 of them, never the whole thread); 0 shows no badge, more than 99
+/// shows `99+`. Opening the conversation marks them seen, so it clears.
+class _InboxRow extends StatefulWidget {
   final User? customer;
   final InboxModel inboxModel;
   final VoidCallback onTap;
@@ -98,13 +119,47 @@ class _InboxRow extends StatelessWidget {
   const _InboxRow({required this.customer, required this.inboxModel, required this.onTap});
 
   @override
+  State<_InboxRow> createState() => _InboxRowState();
+}
+
+class _InboxRowState extends State<_InboxRow> {
+  // Created once per conversation, not on every rebuild of the live list.
+  late Stream<int> _unread;
+
+  @override
+  void initState() {
+    super.initState();
+    _unread = FireStoreUtils.orderChatUnreadCount(widget.inboxModel.orderId);
+  }
+
+  @override
+  void didUpdateWidget(covariant _InboxRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.inboxModel.orderId != widget.inboxModel.orderId) {
+      _unread = FireStoreUtils.orderChatUnreadCount(widget.inboxModel.orderId);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    return StreamBuilder<int>(
+      stream: _unread,
+      initialData: 0,
+      builder: (context, snapshot) => _buildRow(context, snapshot.data ?? 0),
+    );
+  }
+
+  Widget _buildRow(BuildContext context, int unread) {
     final c = context.dsColors;
     final t = context.dsText;
+    final User? customer = widget.customer;
+    final InboxModel inboxModel = widget.inboxModel;
+    final String badge = chatUnreadBadgeLabel(unread);
+    final bool hasUnread = badge.isNotEmpty;
     return DsCard.outlined(
       margin: const EdgeInsets.only(bottom: DsSpace.md),
-      onTap: onTap,
-      semanticLabel: "${customer?.fullName()}",
+      onTap: widget.onTap,
+      semanticLabel: hasUnread ? "${customer?.fullName()}, ${"{0} unread messages".tr.replaceAll('{0}', badge)}" : "${customer?.fullName()}",
       child: Row(
         children: [
           DsAvatar(imageUrl: customer?.profilePictureURL ?? '', name: customer?.fullName(), size: 52),
@@ -121,14 +176,14 @@ class _InboxRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.start,
-                        style: t.titleSm,
+                        style: hasUnread ? t.titleSm.copyWith(fontWeight: FontWeight.w800) : t.titleSm,
                       ),
                     ),
                     const DsGap(DsSpace.sm),
                     Text(
                       timestampToDate(inboxModel.createdAt!),
                       textAlign: TextAlign.start,
-                      style: t.caption,
+                      style: hasUnread ? t.caption.copyWith(color: c.brand, fontWeight: FontWeight.w700) : t.caption,
                     ),
                   ],
                 ),
@@ -146,6 +201,10 @@ class _InboxRow extends StatelessWidget {
                         style: t.bodySm.tabular,
                       ),
                     ),
+                    if (hasUnread) ...[
+                      const DsGap(DsSpace.sm),
+                      ExcludeSemantics(child: DsBadge(label: badge, tone: DsTone.brand, style: DsBadgeStyle.solid, small: true)),
+                    ],
                     Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                   ],
                 ),

@@ -107,12 +107,12 @@ class ParcelSearchController extends GetxController {
       if (result == true) {
         // Try to send FCM but don't fail the accept flow if it errors
         try {
-          final String fcmToken = await SendNotification.customerToken(
-              customerId: parcelBookingData.authorID ?? parcelBookingData.author?.id, embeddedToken: parcelBookingData.author?.fcmToken);
-          if (fcmToken.isNotEmpty) {
-            final payLoad = <String, dynamic>{"type": "parcel_order", "orderId": parcelBookingData.id};
-            await SendNotification.sendFcmMessage(Constant.parcelAccepted, fcmToken, payLoad);
-          }
+          final payLoad = <String, dynamic>{"type": "parcel_order", "orderId": parcelBookingData.id};
+          await SendNotification.notifyCustomer(Constant.parcelAccepted,
+              customerId: parcelBookingData.authorID ?? parcelBookingData.author?.id,
+              embeddedToken: parcelBookingData.author?.fcmToken,
+              payload: payLoad,
+              status: parcelBookingData.status);
         } catch (e) {
           // FCM failure should not block order acceptance
           print("FCM send failed: $e");

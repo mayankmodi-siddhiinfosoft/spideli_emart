@@ -2,6 +2,7 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/cab_home_controller.dart';
 import 'package:customer/models/banner_model.dart';
 import 'package:customer/screen_ui/auth_screens/login_screen.dart';
+import 'package:customer/screen_ui/notification_center/notification_bell.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
@@ -29,6 +30,7 @@ class CabHomeScreen extends StatelessWidget {
             Get.offAll(const ServiceListScreen());
           },
           hero: const _HomeHero(),
+          actions: const [NotificationBell(color: Colors.white)],
           heroOverlap: const _RideModePicker(),
           slivers: [
             if (loading)

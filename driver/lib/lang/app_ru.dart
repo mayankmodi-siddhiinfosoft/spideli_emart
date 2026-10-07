@@ -457,4 +457,5 @@ const Map<String, String> ruRU = {
   "Parcel": "Посылка",
   "Rental": "Аренда",
   "Driver": "Водитель",
+  "unread messages": "непрочитанных сообщений",
 };

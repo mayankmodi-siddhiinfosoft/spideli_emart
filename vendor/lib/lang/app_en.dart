@@ -973,4 +973,5 @@ const Map<String, String> enUS = {
   "Each amount is the order's total, in the currency it was charged in.": "Each amount is the order's total, in the currency it was charged in.",
   "Date & time": "Date & time",
   "Status": "Status",
+  "@count unread messages": "@count unread messages",
 };

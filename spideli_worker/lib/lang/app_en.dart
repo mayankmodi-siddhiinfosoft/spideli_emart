@@ -130,4 +130,5 @@ const Map<String, String> enUS = {
   "Pending": "Pending",
   "Assigned": "Assigned",
   "In progress": "In progress",
+  "{0} unread messages": "{0} unread messages",
 };

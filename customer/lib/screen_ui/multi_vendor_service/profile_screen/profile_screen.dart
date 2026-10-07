@@ -3,7 +3,10 @@ import 'package:customer/controllers/my_profile_controller.dart';
 import 'package:customer/screen_ui/change_password_screen/change_password_screen.dart';
 import 'package:customer/screen_ui/help_support_screen/help_support_screen.dart';
 import 'package:customer/screen_ui/on_demand_service/provider_inbox_screen.dart';
+import 'package:customer/screen_ui/notification_center/notification_center_screen.dart';
 import 'package:customer/screen_ui/on_demand_service/worker_inbox_screen.dart';
+import 'package:customer/service/customer_notification_service.dart';
+import 'package:customer/widget/live_unread_badge.dart';
 import 'package:customer/themes/custom_dialog_box.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:in_app_review/in_app_review.dart';
@@ -224,6 +227,23 @@ class ProfileScreen extends StatelessWidget {
                             : DsTileGroup(
                                 title: "Communication".tr,
                                 children: [
+                                  // Notification Center, with its unread count.
+                                  DsListTile(
+                                    title: "Notifications".tr,
+                                    leading: const DsIconWell(icon: Icons.notifications_none_rounded, tone: DsTone.brand, size: 40),
+                                    trailing: LiveUnreadBadge(
+                                      streamKey: 'center/${FirebaseAuth.instance.currentUser?.uid ?? ''}',
+                                      create: () {
+                                        final String? uid = CustomerNotificationService.currentUid;
+                                        return uid == null ? Stream<int>.value(0) : CustomerNotificationService.unreadCount(uid);
+                                      },
+                                    ),
+                                    showChevron: true,
+                                    onTap: () {
+                                      FocusManager.instance.primaryFocus?.unfocus();
+                                      Get.to(() => const NotificationCenterScreen());
+                                    },
+                                  ),
                                   _tile(context, "assets/icons/ic_restaurant_chat.svg", "Store Inbox".tr, () {
                                     Get.to(const RestaurantInboxScreen());
                                   }),
@@ -244,7 +264,7 @@ class ProfileScreen extends StatelessWidget {
                           title: "Legal".tr,
                           children: [
                             if (Constant.userModel?.id != null)
-                              _tile(context, "assets/icons/ic_help_support.svg", "Help & Support", tone: DsTone.success, () {
+                              _tile(context, "assets/icons/ic_help_support.svg", "Help & Support", tone: DsTone.success, badge: LiveUnreadBadge.supportChat(), () {
                                 Get.to(HelpSupportScreen(isNavigateViaNotification: false));
                               }),
                             _tile(context, "assets/icons/ic_privacy_policy.svg", "Privacy Policy".tr, () {
@@ -361,6 +381,9 @@ class ProfileScreen extends StatelessWidget {
     DsTone tone = DsTone.brand,
     Widget? trailing,
     bool showChevron = true,
+
+    /// Shown before the chevron (an unread count), unlike [trailing].
+    Widget? badge,
   }) {
     final c = context.dsColors;
     final accent = c.tone(tone).strong;
@@ -371,7 +394,7 @@ class ProfileScreen extends StatelessWidget {
         size: 40,
         child: SvgPicture.asset(image, height: 20, width: 20, colorFilter: ColorFilter.mode(accent, BlendMode.srcIn)),
       ),
-      trailing: trailing,
+      trailing: trailing ?? badge,
       showChevron: trailing == null && showChevron,
       onTap: () {
         FocusManager.instance.primaryFocus?.unfocus();

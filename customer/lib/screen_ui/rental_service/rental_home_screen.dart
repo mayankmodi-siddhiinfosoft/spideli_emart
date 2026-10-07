@@ -4,6 +4,7 @@ import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/constant.dart';
+import 'package:customer/screen_ui/notification_center/notification_bell.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
@@ -44,6 +45,7 @@ class RentalHomeScreen extends StatelessWidget {
             Get.offAll(const ServiceListScreen());
           },
           hero: const _RentalHero(),
+          actions: const [NotificationBell(color: Colors.white)],
           heroOverlap: _TripCard(controller: controller, whenLabel: whenLabel),
           slivers: [
             if (loading)

@@ -6,6 +6,7 @@ import 'package:spideliprovider/main.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/ui/booking_list/export_bookings_sheet.dart';
+import 'package:spideliprovider/ui/chat_screen/unread_chat_badge.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -115,6 +116,11 @@ class DashBoardScreen extends StatelessWidget {
                           style: (selected ? t.label : t.bodyStrong).withColor(fg),
                         ),
                       ),
+                      // Unread messages from the support team.
+                      if (d.id == 'help') ...[
+                        UnreadChatBadge.adminChat(),
+                        const DsGap(DsSpace.sm),
+                      ],
                       if (selected)
                         Container(
                           width: 6,

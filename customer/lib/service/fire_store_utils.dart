@@ -105,10 +105,24 @@ class FireStoreUtils {
   static final FireStoreUtils instance = FireStoreUtils._privateConstructor();
 
   static late FirebaseFirestore fireStore;
+  static bool _initialized = false;
 
   /// Initialize Firestore with a FirebaseApp and optional databaseId
   void init(FirebaseApp app, {String? databaseId}) {
     fireStore = FirebaseFirestore.instanceFor(app: app, databaseId: databaseId);
+    _initialized = true;
+  }
+
+  /// [init] with the default Firebase app and [currentEnv], unless done
+  /// already. For the push background handler, which runs in its own isolate
+  /// where `main()` never ran (Firebase must be initialised first).
+  static void ensureInitialized() {
+    if (_initialized) return;
+    if (currentEnv == FirebaseEnv.defaultDb) {
+      instance.init(Firebase.app());
+    } else {
+      instance.init(Firebase.app(), databaseId: 'staging');
+    }
   }
 
   static String getCurrentUid() {
@@ -3157,7 +3171,22 @@ class FireStoreUtils {
 
   static StreamSubscription<QuerySnapshot>? orderChatSeenSubscription;
 
-  static void setSeenChatForOrder({required String orderId}) {
+  /// The unseen messages of `chat/{threadId}/thread` addressed to
+  /// [receiverId] and, when [senderId] is set, sent by that peer only: the
+  /// store and driver chats of one order (and the provider and worker chats
+  /// of one booking) share the thread, so the peer tells the conversations
+  /// apart. Equality filters only (no composite index needed). Shared by the
+  /// inbox badge (ChatUnreadService) and [setSeenChatForOrder].
+  static Query<Map<String, dynamic>> unreadOrderChatQuery({required String threadId, required String receiverId, String senderId = ''}) {
+    Query<Map<String, dynamic>> query = fireStore.collection(CollectionName.chat).doc(threadId.trim()).collection("thread").where('receiverId', isEqualTo: receiverId);
+    if (senderId.trim().isNotEmpty) query = query.where('senderId', isEqualTo: senderId.trim());
+    return query.where('seen', isEqualTo: false);
+  }
+
+  /// Marks seen, while the chat is open, the messages [senderId] sent to this
+  /// customer in the order thread [orderId] (the conversation the screen
+  /// shows, not the other party's messages in the same thread).
+  static void setSeenChatForOrder({required String orderId, String senderId = ''}) {
     // An order chat is keyed by the order id. A thread reached without one (an
     // inbox row whose `orderId` field is missing) used to build the document
     // path `chat/` + '' and throw ArgumentError out of the controller's
@@ -3165,12 +3194,15 @@ class FireStoreUtils {
     // stayed blank.
     if (orderId.trim().isEmpty) return;
     orderChatSeenSubscription?.cancel();
-    orderChatSeenSubscription = fireStore
-        .collection(CollectionName.chat)
-        .doc(orderId.trim())
-        .collection("thread")
-        .where('senderId', isNotEqualTo: FireStoreUtils.getCurrentUid())
-        .where('seen', isEqualTo: false)
+    // The messages addressed to this customer that are still unseen: exactly
+    // what the inbox row's unread badge counts (ChatUnreadService). Equality
+    // filters only: the old `senderId != me` + `seen == false` mixes an
+    // inequality with an equality, which Firestore serves only from a
+    // composite index; without one the listener failed and nothing was
+    // marked seen.
+    final String me = auth.FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (me.isEmpty) return;
+    orderChatSeenSubscription = unreadOrderChatQuery(threadId: orderId, receiverId: me, senderId: senderId)
         .snapshots()
         .listen(
           (querySnapshot) async {

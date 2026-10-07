@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/chat_screens/chat_video_container.dart';
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/services/wallet_once.dart';
+import 'package:driver/utils/chat_unread.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/firebase_options.dart';
@@ -986,19 +987,14 @@ class FireStoreUtils {
     return tagList;
   }
 
+  /// The `dynamic_notification` template for [type], or null when the admin
+  /// has not set one up. Notification text comes only from these templates:
+  /// there is no wording in the app to fall back to.
   static Future<NotificationModel?> getNotificationContent(String type) async {
-    NotificationModel? notificationModel;
-    await fireStore.collection(CollectionName.dynamicNotification).where('type', isEqualTo: type).get().then((value) {
-      print("------>");
-      if (value.docs.isNotEmpty) {
-        print(value.docs.first.data());
-
-        notificationModel = NotificationModel.fromJson(value.docs.first.data());
-      } else {
-        notificationModel = NotificationModel(id: "", message: "Notification setup is pending", subject: "setup notification", type: "");
-      }
-    });
-    return notificationModel;
+    final QuerySnapshot<Map<String, dynamic>> value =
+        await fireStore.collection(CollectionName.dynamicNotification).where('type', isEqualTo: type).limit(1).get();
+    if (value.docs.isEmpty) return null;
+    return NotificationModel.fromJson(value.docs.first.data());
   }
 
   static Future<bool?> deleteUser() async {
@@ -1969,11 +1965,20 @@ class FireStoreUtils {
     // Opening a second conversation must not leave the previous listener
     // running on the old thread.
     orderChatSeenSubscription?.cancel();
+    orderChatSeenSubscription = null;
+    final String me = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (me.isEmpty) return;
+    // The messages addressed to this driver: exactly what the inbox badge
+    // counts (unreadOrderChatCount). Equality filters only - the old
+    // `senderId != me` + `seen == false` needs a composite index (none is
+    // deployed, so the listener failed) and, since the customer's store chat
+    // shares this thread, would also mark the customer's messages to the
+    // store seen.
     orderChatSeenSubscription = fireStore
         .collection(CollectionName.chat)
         .doc(orderId)
         .collection("thread")
-        .where('senderId', isNotEqualTo: FireStoreUtils.getCurrentUid())
+        .where('receiverId', isEqualTo: me)
         .where('seen', isEqualTo: false)
         .snapshots()
         .listen((querySnapshot) async {
@@ -1987,5 +1992,51 @@ class FireStoreUtils {
     }, onError: (error) {
       log(error.toString());
     });
+    _orderChatSeenOrderId = orderId;
   }
+
+  static String? _orderChatSeenOrderId;
+
+  /// Stops marking [orderId]'s messages seen once its conversation is closed.
+  /// The listener used to run on after the chat screen was left, so every
+  /// later message in that conversation was marked seen at once and never
+  /// showed as unread in the inbox.
+  static void stopSeenChatForOrder({required String orderId}) {
+    if (_orderChatSeenOrderId != orderId) return;
+    orderChatSeenSubscription?.cancel();
+    orderChatSeenSubscription = null;
+    _orderChatSeenOrderId = null;
+  }
+
+  /// Live unread count of one order conversation for the signed-in user
+  /// (`.claude/CUSTOMER-NOTIFICATIONS.md` section 2): messages in
+  /// `chat/{orderId}/thread` with `receiverId == me` and `seen == false`,
+  /// at most [ChatUnread.queryLimit] documents (the badge shows `99+` above
+  /// [ChatUnread.displayCap]). Equality filters only: no composite index.
+  static Stream<int> unreadOrderChatCount(String orderId) {
+    final String id = orderId.trim();
+    final String me = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (id.isEmpty || me.isEmpty) return Stream<int>.value(0);
+    return fireStore
+        .collection(CollectionName.chat)
+        .doc(id)
+        .collection("thread")
+        .where('receiverId', isEqualTo: me)
+        .where('seen', isEqualTo: false)
+        .limit(ChatUnread.queryLimit)
+        .snapshots()
+        .map((QuerySnapshot<Map<String, dynamic>> s) => s.docs.where((d) => ChatUnread.isUnreadFor(d.data(), me)).length);
+  }
+
+  // ── Customer Notification Center (`.claude/CUSTOMER-NOTIFICATIONS.md` §1) ──
+
+  static CollectionReference<Map<String, dynamic>> _customerNotifications(String customerId) =>
+      fireStore.collection(CollectionName.users).doc(customerId).collection(CollectionName.userNotifications);
+
+  /// A new, unique id for `users/{customerId}/notifications` (no write).
+  static String newCustomerNotificationId(String customerId) => _customerNotifications(customerId).doc().id;
+
+  /// Writes the customer's notification record `users/{customerId}/notifications/{id}`.
+  static Future<void> setCustomerNotification(String customerId, String id, Map<String, dynamic> document) =>
+      _customerNotifications(customerId).doc(id).set(document);
 }

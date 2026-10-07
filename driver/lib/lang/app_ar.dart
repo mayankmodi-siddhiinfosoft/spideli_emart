@@ -457,4 +457,5 @@ const Map<String, String> lnAr = {
   "Parcel": "طرد",
   "Rental": "تأجير",
   "Driver": "السائق",
+  "unread messages": "رسائل غير مقروءة",
 };

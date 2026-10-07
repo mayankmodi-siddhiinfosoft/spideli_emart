@@ -3,15 +3,20 @@ import 'dart:convert';
 import 'dart:developer';
 
 import 'package:customer/firebase_options.dart';
+import 'package:customer/models/customer_notification_model.dart';
 import 'package:customer/screen_ui/help_support_screen/help_support_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/chat_screens/driver_inbox_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/chat_screens/restaurant_inbox_screen.dart';
 import 'package:customer/screen_ui/on_demand_service/provider_inbox_screen.dart';
 import 'package:customer/screen_ui/on_demand_service/worker_inbox_screen.dart';
+import 'package:customer/service/customer_notification_service.dart';
+import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/service/push_message.dart';
+import 'package:customer/utils/customer_notification_record.dart';
 import 'package:customer/utils/delivery_code_push.dart';
 import 'package:customer/utils/on_demand_booking_opener.dart';
 import 'package:customer/utils/on_demand_push.dart';
+import 'package:customer/utils/order_notification_opener.dart';
 import 'package:customer/utils/push_tap.dart';
 import 'package:customer/utils/push_token.dart';
 import 'package:customer/utils/push_token_sync.dart';
@@ -27,15 +32,21 @@ import 'package:get/get.dart';
 /// Registered once, from `main()` (it used to be registered only when the app
 /// had been opened from a notification, and as a closure, which the plugin
 /// cannot call from its background isolate). A notification message is shown
-/// by the system on its own; this only has to start Firebase for the isolate.
+/// by the system on its own; this starts Firebase for the isolate and records
+/// the push in the Notification Center when its sender did not
+/// (`.claude/CUSTOMER-NOTIFICATIONS.md` §1, fallback).
 @pragma('vm:entry-point')
 Future<void> firebaseMessageBackgroundHandle(RemoteMessage message) async {
   try {
     if (Firebase.apps.isEmpty) await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    FireStoreUtils.ensureInitialized();
   } catch (e) {
     log('push: background Firebase init failed (${e.runtimeType})');
+    return;
   }
   log('push: background message ${PushTap.field(message.data, 'type')}');
+  // The signed-in user is restored asynchronously in a fresh isolate.
+  await CustomerNotificationService.recordPush(message, waitForAuth: true);
 }
 
 class NotificationService {
@@ -126,7 +137,10 @@ class NotificationService {
   static void _listen() {
     _onMessageSubscription ??= FirebaseMessaging.onMessage.listen(_onForegroundMessage, onError: (Object e) => log('push: onMessage error (${e.runtimeType})'));
     _onOpenedSubscription ??= FirebaseMessaging.onMessageOpenedApp.listen(
-      (RemoteMessage message) => unawaited(routeTap(message.data)),
+      (RemoteMessage message) {
+        unawaited(CustomerNotificationService.recordPush(message));
+        unawaited(routeTap(message.data));
+      },
       onError: (Object e) => log('push: onMessageOpenedApp error (${e.runtimeType})'),
     );
   }
@@ -136,6 +150,8 @@ class NotificationService {
   /// codes only: order, ride and chat pushes were silently dropped). iOS
   /// already presents it (presentation options above).
   static void _onForegroundMessage(RemoteMessage message) {
+    // Every platform: the Notification Center keeps it (when the sender did not).
+    unawaited(CustomerNotificationService.recordPush(message));
     if (!_isAndroid) return;
     unawaited(display(message));
   }
@@ -144,6 +160,7 @@ class NotificationService {
     try {
       final RemoteMessage? initial = await FirebaseMessaging.instance.getInitialMessage();
       if (initial != null) {
+        unawaited(CustomerNotificationService.recordPush(initial));
         await routeTap(initial.data, coldStart: true);
         return;
       }
@@ -237,6 +254,30 @@ class NotificationService {
       }
     } catch (e) {
       log('push: tap routing failed (${e.runtimeType})');
+    }
+  }
+
+  /// A tap on a Notification Center row (already marked read): routed like
+  /// the push it was ([routeTap]); an order / ride / parcel / rental /
+  /// booking update, which a push tap only opens the app for, opens that
+  /// order's or booking's details.
+  /// Anything else leaves the customer on the list. Never throws.
+  static Future<void> openNotification(CustomerNotificationModel notification) async {
+    try {
+      final Map<String, dynamic> data = notification.routeData;
+      if (PushTap.field(data, 'type') == DeliveryCodePush.type || PushTap.targetOf(data) != null) {
+        await routeTap(data);
+        return;
+      }
+      final String orderId = notification.orderId.isNotEmpty ? notification.orderId : CustomerNotificationRecord.orderIdOf(data);
+      final String category = CustomerNotificationRecord.normalizeCategory(notification.category);
+      // A booking the push router has no target for (a table booking, an
+      // on-demand event it does not know) opens its details too.
+      if (orderId.isNotEmpty && (category == CustomerNotificationRecord.categoryOrder || category == CustomerNotificationRecord.categoryBooking)) {
+        await OrderNotificationOpener.open(orderId);
+      }
+    } catch (e) {
+      log('push: notification center tap failed (${e.runtimeType})');
     }
   }
 

@@ -1,4 +1,5 @@
 import 'package:customer/constant/constant.dart';
+import 'package:customer/screen_ui/notification_center/notification_bell.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
@@ -39,6 +40,7 @@ class HomeParcelScreen extends StatelessWidget {
             Get.offAll(const ServiceListScreen());
           },
           hero: const _ParcelHero(),
+          actions: const [NotificationBell(color: Colors.white)],
           heroOverlap: const _TrackParcelCard(),
           slivers: [
             if (loading)

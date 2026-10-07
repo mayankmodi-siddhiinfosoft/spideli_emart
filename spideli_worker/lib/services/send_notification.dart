@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:spideliworker/constant/constants.dart';
 import 'package:spideliworker/model/notification_model.dart';
 import 'package:spideliworker/model/user.dart';
+import 'package:spideliworker/services/customer_notification.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/services/push_message.dart';
 
@@ -25,6 +26,11 @@ import 'package:spideliworker/services/push_message.dart';
 /// Both return true only when the push was accepted, and log the HTTP status
 /// and FCM error code on failure -- never a token, an access token or the
 /// message text.
+///
+/// A push to a customer whose id is given (`customerId`) is also recorded in
+/// the customer's Notification Center (`users/{customerId}/notifications/{id}`,
+/// `.claude/CUSTOMER-NOTIFICATIONS.md` 1) and its data carries
+/// `notificationId` -- see [_recordForCustomer].
 class SendNotification {
   SendNotification._();
 
@@ -97,45 +103,102 @@ class SendNotification {
   }
 
   /// A job-status push from the `dynamic_notification` template [type].
-  static Future<bool> sendFcmMessage(String type, String token, Map<String, dynamic>? payload, {PushRecipient recipient = PushRecipient.customer}) async {
-    if (!isUsableFcmToken(token)) {
+  /// [customerId]: the recipient customer, for the Notification Center record.
+  static Future<bool> sendFcmMessage(String type, String token, Map<String, dynamic>? payload, {PushRecipient recipient = PushRecipient.customer, String? customerId}) async {
+    // A known customer without a usable token still gets the Notification
+    // Center record (no push); anyone else: nothing to do.
+    final bool customerKnown = recipient == PushRecipient.customer && (customerId ?? '').trim().isNotEmpty;
+    if (!isUsableFcmToken(token) && !customerKnown) {
       debugPrint('push "$type" skipped: the recipient has no FCM token');
       return false;
     }
     try {
       final NotificationModel? template = await FireStoreUtils.getNotificationContent(type);
-      return await _send(
-        token: token,
-        title: template?.subject ?? '',
-        body: template?.message ?? '',
+      final String title = template?.subject ?? '';
+      final String body = template?.message ?? '';
+      final Map<String, String> data = _recordForCustomer(
+        recipient: recipient,
+        customerId: customerId,
+        title: title,
+        body: body,
         data: fcmDataPayload(payload, fallbackType: type),
         kind: type,
-        recipient: recipient,
       );
+      if (!isUsableFcmToken(token)) {
+        debugPrint('push "$type" skipped: the recipient has no FCM token (recorded only)');
+        return false;
+      }
+      return await _send(token: token, title: title, body: body, data: data, kind: type, recipient: recipient);
     } catch (e) {
       debugPrint('push "$type" not sent: $e');
       return false;
     }
   }
 
-  /// A chat message push.
-  static Future<bool> sendChatFcmMessage(String title, String message, String token, Map<String, dynamic>? payload, {PushRecipient recipient = PushRecipient.customer}) async {
-    if (!isUsableFcmToken(token)) {
+  /// A chat message push. [customerId]: the recipient customer, for the
+  /// Notification Center record (also written when the customer has no usable
+  /// token; a `notificationId` already in [payload] is reused). [record]
+  /// false: a retry of a push already recorded - the record is not written
+  /// again (a second `set` would reset its `read` and `createdAt`).
+  static Future<bool> sendChatFcmMessage(String title, String message, String token, Map<String, dynamic>? payload, {PushRecipient recipient = PushRecipient.customer, String? customerId, bool record = true}) async {
+    final bool customerKnown = record && recipient == PushRecipient.customer && (customerId ?? '').trim().isNotEmpty;
+    if (!isUsableFcmToken(token) && !customerKnown) {
       debugPrint('chat push skipped: the recipient has no FCM token');
       return false;
     }
     try {
-      return await _send(
-        token: token,
-        title: title,
-        body: message,
-        data: fcmDataPayload(payload, fallbackType: 'orderChat'),
-        kind: 'chat',
-        recipient: recipient,
-      );
+      final Map<String, String> payloadData = fcmDataPayload(payload, fallbackType: 'orderChat');
+      final Map<String, String> data = record
+          ? _recordForCustomer(
+              recipient: recipient,
+              customerId: customerId,
+              title: title,
+              body: message,
+              data: payloadData,
+              kind: chatPushKind,
+            )
+          : payloadData;
+      if (!isUsableFcmToken(token)) {
+        debugPrint('chat push skipped: the recipient has no FCM token (recorded only)');
+        return false;
+      }
+      return await _send(token: token, title: title, body: message, data: data, kind: chatPushKind, recipient: recipient);
     } catch (e) {
       debugPrint('chat push not sent: $e');
       return false;
+    }
+  }
+
+  /// Records a push to a customer in their Notification Center
+  /// (`users/{customerId}/notifications/{id}`: the push's title, body, type,
+  /// category, order, status and data, `read` false, `source` worker) and
+  /// returns [data] with `notificationId` added, so the customer app knows it
+  /// is stored. Best effort: the write is not awaited (Firestore queues it
+  /// offline) and a failure is only logged; the push goes out either way.
+  /// Anything else (another recipient, no customer id, an empty push) is
+  /// returned unchanged.
+  static Map<String, String> _recordForCustomer({
+    required PushRecipient recipient,
+    required String? customerId,
+    required String title,
+    required String body,
+    required Map<String, String> data,
+    required String kind,
+  }) {
+    if (!shouldRecordCustomerNotification(recipient: recipient, customerId: customerId, title: title, body: body)) return data;
+    try {
+      final String id = existingNotificationId(data) ?? FireStoreUtils.newCustomerNotificationId(customerId!);
+      final Map<String, String> sent = withNotificationId(data, id);
+      final Map<String, dynamic> record = customerNotificationRecord(id: id, title: title, body: body, kind: kind, data: sent);
+      unawaited(
+        FireStoreUtils.recordCustomerNotification(customerId!, id, record).catchError((Object e) {
+          debugPrint('push "$kind": customer notification not recorded: $e');
+        }),
+      );
+      return sent;
+    } catch (e) {
+      debugPrint('push "$kind": customer notification not recorded: $e');
+      return data;
     }
   }
 

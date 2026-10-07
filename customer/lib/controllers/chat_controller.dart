@@ -83,7 +83,12 @@ class ChatController extends GetxController {
   }
 
   Future<void> setSeen() async {
-    FireStoreUtils.setSeenChatForOrder(orderId: threadId);
+    // Left before the receiver lookup finished: onClose already ran, so a
+    // listener started now would never be stopped.
+    if (isClosed) return;
+    // Only the messages of the peer this chat is with: the store and driver
+    // (provider and worker) chats of one order share the thread.
+    FireStoreUtils.setSeenChatForOrder(orderId: threadId, senderId: receivedId.value);
   }
 
   @override

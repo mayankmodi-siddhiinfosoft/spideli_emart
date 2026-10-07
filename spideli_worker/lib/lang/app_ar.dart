@@ -49,4 +49,5 @@ const Map<String, String> lnAr = {
   "Assigned": "مُسند",
   "In progress": "قيد التنفيذ",
   "Completed": "مكتمل",
+  "{0} unread messages": "{0} رسائل غير مقروءة",
 };

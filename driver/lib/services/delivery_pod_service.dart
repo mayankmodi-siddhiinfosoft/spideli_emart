@@ -10,7 +10,6 @@ import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/delivery_pod_rules.dart';
 import 'package:driver/utils/fire_store_utils.dart';
-import 'package:flutter/foundation.dart';
 
 /// The device could not reach Firestore (transactions need the server).
 class PodOfflineException implements Exception {
@@ -266,22 +265,16 @@ abstract final class DeliveryPodService {
   }
 
   /// Push to the customer: the order has arrived, the code is in the app.
-  /// Never contains the code. Silent when the customer has no token.
+  /// Never contains the code. No push when the customer has no token; the
+  /// customer's Notification Center records it either way.
   static Future<void> notifyCustomer(OrderModel order) async {
-    try {
-      String token = '';
-      final String? customerId = order.authorID ?? order.author?.id;
-      if (customerId != null && customerId.isNotEmpty) {
-        final UserModel? customer = await FireStoreUtils.getUserProfile(customerId);
-        token = customer?.fcmToken ?? '';
-      }
-      if (token.isEmpty) token = order.author?.fcmToken ?? '';
-      if (token.isEmpty) return;
-      // Wording from the `delivery_otp` dynamic_notification template.
-      await SendNotification.sendFcmMessage('delivery_otp', token, {'type': 'delivery_otp', 'orderId': order.id ?? ''});
-    } catch (e) {
-      debugPrint('DeliveryPodService.notifyCustomer $e');
-    }
+    // Wording from the `delivery_otp` dynamic_notification template; the
+    // customer's live token (SendNotification.customerToken). Never throws.
+    await SendNotification.notifyCustomer('delivery_otp',
+        customerId: order.authorID ?? order.author?.id,
+        embeddedToken: order.author?.fcmToken,
+        payload: {'type': 'delivery_otp', 'orderId': order.id ?? ''},
+        status: order.status);
   }
 
   /// `pod.deliveredBy` from the signed-in driver.

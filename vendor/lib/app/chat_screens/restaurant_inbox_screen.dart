@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:vendor/constant/collection_name.dart';
 import 'package:vendor/app/chat_screens/chat_screen.dart';
+import 'package:vendor/app/chat_screens/widgets/chat_unread_badge.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/models/inbox_model.dart';
@@ -35,8 +36,11 @@ class RestaurantInboxScreen extends StatelessWidget {
           final data = documentSnapshots[index].data() as Map<String, dynamic>?;
           InboxModel inboxModel = InboxModel.fromJson(data!);
 
+          // getUserById, not getUserProfile: getUserProfile also makes the user
+          // it reads the session's user (Constant.userModel), so every row
+          // drawn here made the store "signed in" as that customer.
           return FutureBuilder<UserModel?>(
-            future: FireStoreUtils.getUserProfile(inboxModel.receiverId == FireStoreUtils.getCurrentUid() ? inboxModel.senderId! : inboxModel.receiverId!),
+            future: FireStoreUtils.getUserById(inboxModel.receiverId == FireStoreUtils.getCurrentUid() ? inboxModel.senderId! : inboxModel.receiverId!),
             builder: (context, snapshot) {
               if (!snapshot.hasData || snapshot.hasError || snapshot.connectionState == ConnectionState.waiting) {
                 return snapshot.connectionState == ConnectionState.waiting ? const _InboxRowSkeleton() : const SizedBox();
@@ -71,6 +75,9 @@ class RestaurantInboxScreen extends StatelessWidget {
                     date: Constant.timestampToDate(inboxModel.createdAt!),
                     subtitle: "${"Order".tr} ${Constant.orderId(orderId: inboxModel.orderId.toString())}",
                     subtitleIcon: Icons.receipt_long_outlined,
+                    // Messages the store received in this conversation and
+                    // has not opened yet (lib/utils/chat_unread.dart).
+                    unreadBadge: ChatUnreadBadge(threadId: inboxModel.orderId ?? '', receiverId: FireStoreUtils.getCurrentUid()),
                     showDivider: index < documentSnapshots.length - 1,
                   ),
                 );
@@ -101,6 +108,7 @@ class _ConversationRow extends StatelessWidget {
   final String date;
   final String subtitle;
   final IconData subtitleIcon;
+  final Widget? unreadBadge;
   final bool showDivider;
 
   const _ConversationRow({
@@ -110,6 +118,7 @@ class _ConversationRow extends StatelessWidget {
     required this.date,
     required this.subtitle,
     required this.subtitleIcon,
+    this.unreadBadge,
     required this.showDivider,
   });
 
@@ -156,6 +165,7 @@ class _ConversationRow extends StatelessWidget {
                             Expanded(
                               child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySm.withColor(c.textSecondary)),
                             ),
+                            if (unreadBadge != null) ...[const DsGap(DsSpace.xs), unreadBadge!],
                             Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                           ],
                         ),

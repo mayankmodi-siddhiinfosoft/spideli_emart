@@ -311,8 +311,8 @@ class CabHomeController extends GetxController {
 
       ShowToastDialog.closeLoader();
 
-      final String customerToken = await SendNotification.customerToken(customerId: order.authorID ?? order.author?.id, embeddedToken: order.author?.fcmToken);
-      await SendNotification.sendFcmMessage(Constant.driverAcceptedNotification, customerToken, {'orderId': order.id});
+      await SendNotification.notifyCustomer(Constant.driverAcceptedNotification,
+          customerId: order.authorID ?? order.author?.id, embeddedToken: order.author?.fcmToken, payload: {'orderId': order.id}, status: order.status);
     } catch (e, s) {
       ShowToastDialog.closeLoader();
       debugPrint("Error in acceptOrder: $e");

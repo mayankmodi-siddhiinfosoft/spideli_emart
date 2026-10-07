@@ -203,4 +203,5 @@ const Map<String, String> trFR = {
   "Amount": "Montant",
   "Takeaway": "À emporter",
   "Deliver to door": "Livraison à domicile",
+  "@count unread messages": "@count messages non lus",
 };

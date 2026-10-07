@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:developer';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
+import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/send_notification.dart';
 import 'package:vendor/models/conversation_model.dart';
 import 'package:vendor/models/inbox_model.dart';
@@ -66,8 +67,30 @@ class ChatController extends GetxController {
     isLoading.value = false;
   }
 
+  /// Marks the store side's unread messages of this conversation seen while
+  /// it is open (the same messages the inbox badge counts,
+  /// `lib/utils/chat_unread.dart`): an admin conversation's messages from
+  /// `admin`, any other conversation's messages whose receiver is the store
+  /// side ([senderId], the store user the screen was opened for; the
+  /// signed-in user when it is missing). Stopped in [onClose].
   Future<void> setSeen() async {
-    FireStoreUtils.setSeenChatForOrder(orderId: orderId.value);
+    // Left before the receiver lookup finished: onClose already ran, so a
+    // listener started now would never be stopped.
+    if (isClosed) return;
+    if (receivedId.value == 'admin' || chatType.value == 'admin') {
+      FireStoreUtils.setSeenChatForOrder(orderId: orderId.value, senderId: Constant.adminType);
+    } else {
+      final String me = senderId.value.trim().isNotEmpty ? senderId.value.trim() : FireStoreUtils.getCurrentUid();
+      FireStoreUtils.setSeenChatForOrder(orderId: orderId.value, receiverId: me);
+    }
+  }
+
+  @override
+  void onClose() {
+    // The listener used to outlive the screen, so messages that arrived after
+    // the store left the conversation were marked seen at once.
+    FireStoreUtils.stopSeenChatForOrder();
+    super.onClose();
   }
 
   Future<void> sendMessage(String message, Url? url, String videoThumbnail, String messageType) async {

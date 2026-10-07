@@ -20,6 +20,7 @@ import 'package:customer/screen_ui/multi_vendor_service/home_screen/restaurant_l
 import 'package:customer/screen_ui/multi_vendor_service/home_screen/view_all_category_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/restaurant_details_screen/restaurant_details_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/search_screen/search_screen.dart';
+import 'package:customer/screen_ui/notification_center/notification_bell.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/themes/ds/ds.dart';
@@ -69,6 +70,7 @@ class HomeECommerceScreen extends StatelessWidget {
           },
           onRefresh: controller.getData,
           actions: [
+            const NotificationBell(color: Colors.white),
             Obx(
               () => DsIconButton(
                 semanticLabel: 'Cart'.tr,

@@ -5,6 +5,7 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/models/section_model.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/screen_ui/location_enable_screens/address_list_screen.dart';
+import 'package:customer/screen_ui/notification_center/notification_bell.dart';
 import 'package:customer/screen_ui/service_home_screen/more_services_sheet.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/home_services.dart';
@@ -173,6 +174,8 @@ class _HomeHeader extends StatelessWidget {
                     ],
                   ),
                 ),
+                // Notification Center (hidden while signed out).
+                const NotificationBell(color: Colors.white),
               ],
             ),
           ),

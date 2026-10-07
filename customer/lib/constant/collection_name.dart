@@ -21,6 +21,10 @@ class CollectionName {
   static const String giftPurchases = "gift_purchases";
   static const String bannerItems = "banner_items";
   static const String notifications = "notifications";
+
+  /// The customer's Notification Center: `users/{customerId}/notifications/{id}`
+  /// (`.claude/CUSTOMER-NOTIFICATIONS.md` §1).
+  static const String userNotifications = "notifications";
   static const String payouts = "payouts";
   static const String vendorOrders = "vendor_orders";
 

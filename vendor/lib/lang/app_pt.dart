@@ -63,4 +63,5 @@ const Map<String, String> ptPO = {
   "Amount": "Valor",
   "Takeaway": "Para viagem",
   "Deliver to door": "Entrega na porta",
+  "@count unread messages": "@count mensagens não lidas",
 };

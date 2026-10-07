@@ -6,13 +6,16 @@ import 'package:driver/models/inbox_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/widget/chat_unread_badge.dart';
 import 'package:driver/widget/firebase_pagination/src/firestore_pagination.dart';
 import 'package:driver/widget/firebase_pagination/src/models/view_type.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 /// Driver inbox (archetype J): one card per order conversation, with the
-/// customer's avatar, the order id and when it was last touched.
+/// customer's avatar, the order id, when it was last touched and a live
+/// badge with the number of unread messages in that conversation
+/// ([ChatUnreadBadge]; opening the chat marks them seen).
 class DriverInboxScreen extends StatelessWidget {
   const DriverInboxScreen({super.key});
 
@@ -69,6 +72,7 @@ class DriverInboxScreen extends StatelessWidget {
                           imageUrl: customerData?.profilePictureURL ?? '',
                           time: Constant.timestampToDate(inboxModel.createdAt!),
                           orderLabel: "${"Order".tr} ${Constant.orderId(orderId: inboxModel.orderId.toString())}",
+                          orderId: inboxModel.orderId ?? '',
                           onTap: () async {
                             ShowToastDialog.showLoader("Please wait".tr);
                             UserModel? driverData = await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid());
@@ -126,9 +130,10 @@ class _InboxCard extends StatelessWidget {
   final String imageUrl;
   final String time;
   final String orderLabel;
+  final String orderId;
   final VoidCallback onTap;
 
-  const _InboxCard({required this.name, required this.imageUrl, required this.time, required this.orderLabel, required this.onTap});
+  const _InboxCard({required this.name, required this.imageUrl, required this.time, required this.orderLabel, required this.orderId, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -164,12 +169,19 @@ class _InboxCard extends StatelessWidget {
                   ],
                 ),
                 const DsGap(DsSpace.xs),
-                Text(
-                  orderLabel,
-                  textAlign: TextAlign.start,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: t.bodySm.tabular,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        orderLabel,
+                        textAlign: TextAlign.start,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.bodySm.tabular,
+                      ),
+                    ),
+                    ChatUnreadBadge(orderId: orderId),
+                  ],
                 ),
               ],
             ),

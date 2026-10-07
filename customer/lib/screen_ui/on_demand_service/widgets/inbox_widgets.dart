@@ -1,4 +1,5 @@
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/widget/live_unread_badge.dart';
 import 'package:flutter/material.dart';
 
 /// Chat-inbox row shared by the provider and worker inboxes (archetype J).
@@ -9,7 +10,15 @@ class InboxRow extends StatelessWidget {
   final String orderLabel;
   final VoidCallback onTap;
 
-  const InboxRow({super.key, required this.name, required this.imageUrl, required this.time, required this.orderLabel, required this.onTap});
+  /// The conversation's thread (`chat/{threadId}`): its unread messages show
+  /// as a live badge. Null: no badge.
+  final String? threadId;
+
+  /// The other party of the conversation: only their unread messages count
+  /// (the thread is shared with the order's other chat).
+  final String? peerId;
+
+  const InboxRow({super.key, required this.name, required this.imageUrl, required this.time, required this.orderLabel, required this.onTap, this.threadId, this.peerId});
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +58,7 @@ class InboxRow extends StatelessWidget {
               ),
             ),
             const DsGap(DsSpace.sm),
+            LiveUnreadBadge.orderChat(threadId, peerId),
             Icon(Icons.chevron_right_rounded, color: c.textMuted, size: 20),
           ],
         ),

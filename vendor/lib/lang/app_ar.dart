@@ -967,4 +967,5 @@ const Map<String, String> lnAr = {
   "Each amount is the order's total, in the currency it was charged in.": "كل مبلغ هو إجمالي الطلب، بالعملة التي دُفع بها.",
   "Date & time": "التاريخ والوقت",
   "Status": "الحالة",
+  "@count unread messages": "@count رسائل غير مقروءة",
 };

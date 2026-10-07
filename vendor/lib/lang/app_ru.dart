@@ -63,4 +63,5 @@ const Map<String, String> ruRU = {
   "Amount": "Сумма",
   "Takeaway": "Навынос",
   "Deliver to door": "Доставка до двери",
+  "@count unread messages": "Непрочитанных сообщений: @count",
 };

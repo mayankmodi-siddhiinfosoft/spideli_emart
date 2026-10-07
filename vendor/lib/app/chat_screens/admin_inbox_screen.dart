@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:vendor/app/chat_screens/chat_screen.dart';
+import 'package:vendor/app/chat_screens/widgets/chat_unread_badge.dart';
 import 'package:vendor/constant/collection_name.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
@@ -105,7 +106,15 @@ class AdminInboxScreen extends StatelessWidget {
                                 style: t.bodySm.withColor(c.textSecondary),
                               ),
                               const DsGap(DsSpace.sm),
-                              DsBadge(label: 'Admin'.tr, tone: DsTone.info, icon: Icons.campaign_outlined, small: true),
+                              Row(
+                                children: [
+                                  DsBadge(label: 'Admin'.tr, tone: DsTone.info, icon: Icons.campaign_outlined, small: true),
+                                  const Spacer(),
+                                  // Messages from admin not opened yet
+                                  // (lib/utils/chat_unread.dart).
+                                  ChatUnreadBadge(threadId: inboxModel.orderId ?? '', senderId: Constant.adminType),
+                                ],
+                              ),
                             ],
                           ),
                         ),

@@ -29,6 +29,14 @@ class ChatController extends GetxController {
     super.onInit();
   }
 
+  @override
+  void onClose() {
+    // Messages that arrive after the conversation is closed stay unread (the
+    // inbox badge counts them).
+    FireStoreUtils.stopSeenChatForOrder();
+    super.onClose();
+  }
+
   RxBool isLoading = true.obs;
   RxString orderId = "".obs;
   RxString receivedId = "".obs;
@@ -73,7 +81,8 @@ class ChatController extends GetxController {
 
   Future<void> setSeen() async {
     // `doc("")` is not a legal Firestore path and throws.
-    if (orderId.value.isEmpty) return;
+    // Closed while the receiver was being read: no listener left running.
+    if (orderId.value.isEmpty || isClosed) return;
     FireStoreUtils.setSeenChatForOrder(orderId: orderId.value);
   }
 
@@ -142,7 +151,10 @@ class ChatController extends GetxController {
       }
       final String token = receiverUser.value?.fcmToken ?? '';
       log("chat push :: to=${receiverUser.value?.fullName()} :: token=${isUsableFcmToken(token) ? 'set' : 'none'} :: ${inboxModel.type} :: ${inboxModel.chatType}");
-      if (!isUsableFcmToken(token)) return;
+      final PushApp recipient = _recipientApp(receiverUser.value);
+      // No usable token: no push, but a known customer still gets the
+      // message in their Notification Center (sendChatFcmMessage records it).
+      if (!isUsableFcmToken(token) && (receiverUser.value == null || recipient != PushApp.customer)) return;
 
       // Title is who sent it: the recipient used to see their own name.
       final String title = senderName.value.trim().isNotEmpty ? senderName.value : receivedName.value;
@@ -157,7 +169,9 @@ class ChatController extends GetxController {
           'senderId': FireStoreUtils.getCurrentUid(),
           'senderName': senderName.value,
         },
-        recipient: _recipientApp(receiverUser.value),
+        recipient: recipient,
+        // A customer also finds the message in their Notification Center.
+        recipientId: receivedId.value,
       );
     } catch (e) {
       // A chat message must never fail because the push could not be sent.

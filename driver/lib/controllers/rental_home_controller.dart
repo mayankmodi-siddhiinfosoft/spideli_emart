@@ -131,8 +131,11 @@ class RentalHomeController extends GetxController {
       return;
     }
     Map<String, dynamic> payLoad = <String, dynamic>{"type": "rental_order", "orderId": parcelBookingData.id};
-    unawaited(SendNotification.customerToken(customerId: parcelBookingData.authorID ?? parcelBookingData.author?.id, embeddedToken: parcelBookingData.author?.fcmToken)
-        .then((String token) => SendNotification.sendFcmMessage(Constant.rentalCompleted, token, payLoad)));
+    unawaited(SendNotification.notifyCustomer(Constant.rentalCompleted,
+        customerId: parcelBookingData.authorID ?? parcelBookingData.author?.id,
+        embeddedToken: parcelBookingData.author?.fcmToken,
+        payload: payLoad,
+        status: parcelBookingData.status));
     FireStoreUtils.getRentalFirstOrderOrNOt(parcelBookingData).then((value) async {
       if (value == true) {
         await FireStoreUtils.updateRentalReferralAmount(parcelBookingData);

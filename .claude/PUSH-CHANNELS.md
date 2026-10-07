@@ -226,7 +226,9 @@ Every push goes through `driver/lib/constant/send_notification.dart`
 
 Data: `{type, orderId}` (the caller's `type`, e.g. `parcel_order` /
 `rental_order`, else the template type) for order pushes; `{type: "delivery_otp", orderId}`;
-`{type: "orderChat", chatType: "driver", orderId, senderId}` for chat. Values
+`{type: "orderChat", chatType: "driver", orderId, senderId}` for chat. Every push to the customer also
+carries `notificationId` (its `users/{customerId}/notifications/{id}` record,
+`.claude/CUSTOMER-NOTIFICATIONS.md`) unless that write failed. Values
 are strings only (nulls dropped, maps/lists JSON-encoded). Legacy path: project
 id from `Firebase.app().options.projectId` (falls back to settings `senderId`),
 `android.priority: high`, `apns-priority: 10`, `aps.content-available: 1`, the
@@ -314,7 +316,7 @@ on the order.
 
 | Push (template `type` / kind) | Recipient | Android channel | Android sound | APNs sound |
 |---|---|---|---|---|
-| `restaurant_accepted` (accept, assign, ship), `restaurant_rejected`, `restaurant_cancelled`, `takeaway_completed`, "Order Delivered" (no template, `type: store_completed`) | customer, fresh `users/{order.authorID}`, falls back to `order.author.fcmToken` | `high_importance_channel` | `default` | `default` |
+| `restaurant_accepted` (accept, assign, ship), `restaurant_rejected`, `restaurant_cancelled`, `takeaway_completed`, courier order delivered (template `driver_completed`, data `type: store_completed`) | customer, fresh `users/{order.authorID}`, falls back to `order.author.fcmToken` | `high_importance_channel` | `default` | `default` |
 | `dinein_accepted`, `dinein_canceled` | customer (same lookup on the booking) | `high_importance_channel` | `default` | `default` |
 | `delivery_otp` (POD, `pod_otp_service.dart`) | customer (fresh lookup there) | `high_importance_channel` | `default` | `default` |
 | chat (`chat`; data `type: orderChat`, `chatType: vendor`) | customer `users/{receivedId}` (a driver recipient gets the driver channel) | `high_importance_channel` | `default` | `default` |
@@ -322,7 +324,11 @@ on the order.
 | `driver_cancelled` (order rejected / cancelled while assigned) | driver `users/{driverID}` | `driver_notifications_channel` | `default` | `default` |
 
 Data: string-only, always `type` (the caller's, or the template type) and
-`orderId`; chat adds `chatType`, `senderId`. Legacy path: FCM v1 at
+`orderId`; chat adds `chatType`, `senderId`. Every push to a customer also
+writes `users/{customerId}/notifications/{id}` (Notification Center,
+`.claude/CUSTOMER-NOTIFICATIONS.md`) and carries `notificationId: <id>` in its
+data (`SendNotification._recordForCustomer`, best effort, not awaited).
+Legacy path: FCM v1 at
 `projects/{Firebase options projectId}` (`spideli-870b0`; settings `senderId` is
 only the fallback), `android.priority: high` + `notification.channel_id` /
 `sound`, `apns-priority: 10`, `aps.sound`, `aps.content-available: 1`; the
@@ -398,7 +404,11 @@ The channel is chosen in `spideli_provider/lib/services/push_message.dart`
 
 Data: `{type: "provider_order", orderId}` for booking status and assignments;
 `{type: "orderChat" | "admin", chatType, orderId, senderId, senderName}` for
-chat. Values are always strings (nulls dropped, maps/lists JSON-encoded, FCM's
+chat. A push to a customer whose uid is known is first stored at
+`users/{customerId}/notifications/{id}` (`source: provider`, category `booking`
+or `chat`; .claude/CUSTOMER-NOTIFICATIONS.md) and its data then carries
+`notificationId` (left out when that write is refused, so the customer app
+stores its own copy). Values are always strings (nulls dropped, maps/lists JSON-encoded, FCM's
 reserved keys dropped) and `type` is always present. Title and body are cut to
 200 / 1000 characters. The legacy message also carries `android.priority: high`,
 `apns-priority: 10` and `aps.content-available: 1`; the server path sends

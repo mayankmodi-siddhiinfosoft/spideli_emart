@@ -434,7 +434,7 @@ class HomeScreen extends StatelessWidget {
         }
       });
     }
-    SendNotification.sendFcmMessage(customerNotification, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id);
+    SendNotification.sendFcmMessage(customerNotification, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id, orderStatus: orderModel.status);
 
     if (failed.isNotEmpty) {
       ShowToastDialog.showToast("The order was updated, but these steps did not finish: @steps. Please check your connection or contact support.".trParams({'steps': failed.toSet().join(', ')}));
@@ -1497,14 +1497,17 @@ class HomeScreen extends StatelessWidget {
       }
 
       if (notificationType != null) {
-        SendNotification.sendFcmMessage(notificationType, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id);
+        SendNotification.sendFcmMessage(notificationType, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id, orderStatus: orderModel.status);
       } else {
-        SendNotification.sendOneNotification(
-          token: orderModel.author?.fcmToken ?? '',
-          title: "Order Delivered".tr,
-          body: "Your order has been delivered successfully".tr,
-          payload: {'type': 'store_completed', 'orderId': orderModel.id},
+        // Title and body from the `driver_completed` template (the customer's
+        // "order delivered" notification), never text written in the app;
+        // the data keeps type store_completed.
+        SendNotification.sendFcmMessage(
+          Constant.orderDeliveredTemplate,
+          orderModel.author?.fcmToken ?? '',
+          {'type': 'store_completed', 'orderId': orderModel.id},
           recipientId: orderModel.authorID ?? orderModel.author?.id,
+          orderStatus: orderModel.status,
         );
       }
       ShowToastDialog.closeLoader();
@@ -1526,7 +1529,7 @@ class HomeScreen extends StatelessWidget {
     await AudioPlayerService.playSound(false);
     await FireStoreUtils.updateOrder(orderModel);
     await FireStoreUtils.restaurantVendorWalletSet(orderModel);
-    SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id);
+    SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id, orderStatus: orderModel.status);
     ShowToastDialog.closeLoader();
   }
 
@@ -1617,7 +1620,7 @@ class HomeScreen extends StatelessWidget {
                             await FireStoreUtils.releaseDriverOrder(previousDriverId, orderModel.id);
                           }
                           await FireStoreUtils.restaurantVendorWalletSet(orderModel);
-                          SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id);
+                          SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id, orderStatus: orderModel.status);
                           SendNotification.sendFcmMessage(Constant.newDeliveryOrder, orderModel.driver?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.driverID ?? orderModel.driver?.id, recipient: PushRecipient.driver);
                         } else {
                           // Drops the unsaved delivery man and status from the card.
@@ -1830,7 +1833,7 @@ class HomeScreen extends StatelessWidget {
                     await AudioPlayerService.playSound(false);
                     await FireStoreUtils.updateOrder(orderModel);
                     await FireStoreUtils.restaurantVendorWalletSet(orderModel);
-                    SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id);
+                    SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id, orderStatus: orderModel.status);
 
                     ShowToastDialog.closeLoader();
                     Get.back();

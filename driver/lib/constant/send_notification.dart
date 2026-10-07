@@ -7,8 +7,10 @@ import 'package:driver/models/notification_model.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/models/vendor_model.dart';
+import 'package:driver/services/customer_notification.dart';
 import 'package:driver/services/push_message.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' show FieldValue;
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:googleapis_auth/auth_io.dart';
@@ -31,6 +33,14 @@ export 'package:driver/services/push_message.dart' show PushRecipient;
 ///
 /// Every method returns true only when FCM (or the function) accepted the
 /// message. Tokens and access tokens are never logged.
+///
+/// Customer Notification Center (`.claude/CUSTOMER-NOTIFICATIONS.md` §1):
+/// a push to the customer app that names its `customerId` also writes
+/// `users/{customerId}/notifications/{id}` with the same title and body, and
+/// the push data carries `notificationId: <id>`. Best effort: a failed write
+/// never blocks the push. The record is written even when the customer has
+/// no usable token (the push is skipped, the Notification Center still shows
+/// it).
 class SendNotification {
   SendNotification._();
 
@@ -149,12 +159,36 @@ class SendNotification {
     return PushMessage.isUsableToken(embedded) ? embedded : '';
   }
 
+  /// A templated push ([type]) to an order's customer, by their live token
+  /// ([customerToken]), recorded in their Notification Center with [status]
+  /// (the order's status after the event). Never throws.
+  static Future<bool> notifyCustomer(
+    String type, {
+    required String? customerId,
+    String? embeddedToken,
+    Map<String, dynamic>? payload,
+    String? status,
+  }) async {
+    try {
+      final String token = await customerToken(customerId: customerId, embeddedToken: embeddedToken);
+      return await sendFcmMessage(type, token, payload, customerId: customerId, status: status);
+    } catch (e) {
+      log("Push '$type' to the customer failed: $e");
+      return false;
+    }
+  }
+
   /// `driver_accepted` for a delivery order, to its customer and its store.
   static Future<void> notifyOrderAccepted(OrderModel order) async {
     try {
       final Map<String, dynamic> payload = <String, dynamic>{'orderId': order.id};
-      final String customer = await customerToken(customerId: order.authorID ?? order.author?.id, embeddedToken: order.author?.fcmToken);
-      await sendFcmMessage(Constant.driverAcceptedNotification, customer, payload);
+      await notifyCustomer(Constant.driverAcceptedNotification,
+          customerId: order.authorID ?? order.author?.id,
+          embeddedToken: order.author?.fcmToken,
+          payload: payload,
+          // The order passed in was read before the accept, so its status
+          // is the old one.
+          status: Constant.driverAccepted);
       final String store = await storeToken(vendor: order.vendor, vendorId: order.vendorID);
       await sendFcmMessage(Constant.driverAcceptedNotification, store, payload, recipient: PushRecipient.store);
     } catch (e) {
@@ -166,78 +200,175 @@ class SendNotification {
 
   /// A templated push (`dynamic_notification` where `type` == [type]).
   /// [recipient] picks the receiving app's channel; the store gets
-  /// [PushRecipient.store].
+  /// [PushRecipient.store]. [customerId] (customer recipient only) records
+  /// it in that customer's Notification Center with [status].
+  /// Nothing is sent or recorded when the template is missing: the app has
+  /// no notification text of its own.
   static Future<bool> sendFcmMessage(
     String type,
     String token,
     Map<String, dynamic>? payload, {
     PushRecipient recipient = PushRecipient.customer,
+    String? customerId,
+    String? status,
   }) async {
-    if (!PushMessage.isUsableToken(token)) {
+    final bool usable = PushMessage.isUsableToken(token);
+    final bool mayRecord = recipient == PushRecipient.customer && (customerId ?? '').trim().isNotEmpty;
+    if (!usable && !mayRecord) {
       log("Push '$type' skipped: the recipient has no FCM token.");
       return false;
     }
     try {
       final NotificationModel? template = await FireStoreUtils.getNotificationContent(type);
-      return await _deliver(
-        token: token,
-        title: template?.subject ?? '',
-        body: template?.message ?? '',
-        data: PushMessage.stringData(payload, type: type),
+      if (template == null) {
+        log("Push '$type' not sent: no dynamic_notification template for it.");
+        return false;
+      }
+      final String title = template.subject ?? '';
+      final String body = template.message ?? '';
+      final Map<String, String> data = await _recordForCustomer(
         recipient: recipient,
-        kind: type,
+        customerId: customerId,
+        title: title,
+        body: body,
+        type: type,
+        data: PushMessage.stringData(payload, type: type),
+        status: status,
       );
+      if (!usable) {
+        log("Push '$type' skipped: the recipient has no FCM token.");
+        return false;
+      }
+      return await _deliver(token: token, title: title, body: body, data: data, recipient: recipient, kind: type);
     } catch (e) {
       log("Push '$type' failed: $e");
       return false;
     }
   }
 
-  /// A push with its own text (the delivery-code push).
+  /// A push with its own text. [customerId] (customer recipient only)
+  /// records it in that customer's Notification Center with [status].
   static Future<bool> sendOneNotification({
     required String token,
     required String title,
     required String body,
     required Map<String, dynamic> payload,
     PushRecipient recipient = PushRecipient.customer,
+    String? customerId,
+    String? status,
   }) async {
     final Map<String, String> data = PushMessage.stringData(payload);
-    if (!PushMessage.isUsableToken(token)) {
+    final bool usable = PushMessage.isUsableToken(token);
+    final bool mayRecord = recipient == PushRecipient.customer && (customerId ?? '').trim().isNotEmpty;
+    if (!usable && !mayRecord) {
       log("Push '${data['type'] ?? ''}' skipped: the recipient has no FCM token.");
       return false;
     }
     try {
-      return await _deliver(token: token, title: title, body: body, data: data, recipient: recipient);
+      final Map<String, String> sent = await _recordForCustomer(
+        recipient: recipient,
+        customerId: customerId,
+        title: title,
+        body: body,
+        type: data['type'] ?? '',
+        data: data,
+        status: status,
+      );
+      if (!usable) {
+        log("Push '${data['type'] ?? ''}' skipped: the recipient has no FCM token.");
+        return false;
+      }
+      return await _deliver(token: token, title: title, body: body, data: sent, recipient: recipient);
     } catch (e) {
       log("Push '${data['type'] ?? ''}' failed: $e");
       return false;
     }
   }
 
-  /// A chat message. Every driver chat is with a customer.
+  /// A chat message. Every driver chat is with a customer; [customerId]
+  /// records it in that customer's Notification Center.
   static Future<bool> sendChatFcmMessage(
     String title,
     String message,
     String token,
     Map<String, dynamic>? payload, {
     PushRecipient recipient = PushRecipient.customer,
+    String? customerId,
   }) async {
-    if (!PushMessage.isUsableToken(token)) {
+    final bool usable = PushMessage.isUsableToken(token);
+    final bool mayRecord = recipient == PushRecipient.customer && (customerId ?? '').trim().isNotEmpty;
+    if (!usable && !mayRecord) {
       log("Chat push skipped: the recipient has no FCM token.");
       return false;
     }
     try {
-      return await _deliver(
-        token: token,
+      final Map<String, String> data = await _recordForCustomer(
+        recipient: recipient,
+        customerId: customerId,
         title: title,
         body: message,
+        type: '',
         data: PushMessage.stringData(payload, type: 'orderChat'),
-        recipient: recipient,
-        kind: 'chat',
       );
+      if (!usable) {
+        log("Chat push skipped: the recipient has no FCM token.");
+        return false;
+      }
+      return await _deliver(token: token, title: title, body: message, data: data, recipient: recipient, kind: 'chat');
     } catch (e) {
       log("Chat push failed: $e");
       return false;
+    }
+  }
+
+  // ── Customer Notification Center ──────────────────────────────────────────
+
+  static const Duration _recordTimeout = Duration(seconds: 8);
+
+  /// Writes `users/{customerId}/notifications/{id}` for a push to the
+  /// customer app and returns [data] with `notificationId`. Returns [data]
+  /// unchanged when there is nothing to record, and without the id when the
+  /// write failed (the customer app then stores the notification itself).
+  /// A slow write (offline) keeps the id: Firestore delivers it later.
+  /// Known limit: if that pending write is refused once it reaches the server,
+  /// the customer has a push carrying an id with no document and the customer
+  /// app's fallback skips it, so that one entry is lost. Dropping the id on
+  /// timeout would instead store it twice (`msg_<id>` + this record).
+  static Future<Map<String, String>> _recordForCustomer({
+    required PushRecipient recipient,
+    required String? customerId,
+    required String title,
+    required String body,
+    required String type,
+    required Map<String, String> data,
+    String? status,
+  }) async {
+    if (!CustomerNotification.shouldRecord(
+        toCustomer: recipient == PushRecipient.customer, customerId: customerId, title: title, body: body)) {
+      return data;
+    }
+    final String customer = customerId!.trim();
+    Map<String, String> sent = data;
+    try {
+      final String id = FireStoreUtils.newCustomerNotificationId(customer);
+      sent = CustomerNotification.withId(data, id);
+      final Map<String, dynamic> document = CustomerNotification.document(
+        id: id,
+        title: title,
+        body: body,
+        type: type,
+        data: sent,
+        status: status,
+        createdAt: FieldValue.serverTimestamp(),
+      );
+      await FireStoreUtils.setCustomerNotification(customer, id, document).timeout(_recordTimeout);
+      return sent;
+    } on TimeoutException {
+      log("Notification record for '${sent['type'] ?? type}' still pending; push sent with its id.");
+      return sent;
+    } catch (e) {
+      log("Notification record for '${data['type'] ?? type}' not written: $e");
+      return CustomerNotification.withoutId(data);
     }
   }
 

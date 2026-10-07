@@ -5,6 +5,7 @@ import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/ui/chat_screen/chat_screen.dart';
+import 'package:spideliprovider/ui/chat_screen/unread_chat_badge.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:spideliprovider/widgets/firebase_pagination/firebase_pagination.dart';
 import 'package:spideliprovider/widgets/firebase_pagination/src/firestore_pagination.dart';
@@ -12,8 +13,21 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
-class InboxScreen extends StatelessWidget {
+class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
+
+  @override
+  State<InboxScreen> createState() => _InboxScreenState();
+}
+
+class _InboxScreenState extends State<InboxScreen> {
+  /// One profile read per conversation partner for the life of the screen.
+  /// The inbox is live: every update rebuilds the rows, and a new future each
+  /// time put each row back on its skeleton, which unmounted its unread badge
+  /// and re-opened its listener (the count flashed 0).
+  final Map<String, Future<User?>> _profiles = {};
+
+  Future<User?> _profile(String id) => _profiles.putIfAbsent(id, () => FireStoreUtils.getCurrentUser(id));
 
   @override
   Widget build(BuildContext context) {
@@ -38,9 +52,11 @@ class InboxScreen extends StatelessWidget {
           InboxModel inboxModel = InboxModel.fromJson(data!);
 
           return FutureBuilder<User?>(
-            future: FireStoreUtils.getCurrentUser(inboxModel.receiverId == FireStoreUtils.getCurrentUid() ? inboxModel.senderId! : inboxModel.receiverId!),
+            future: _profile(inboxModel.receiverId == FireStoreUtils.getCurrentUid() ? inboxModel.senderId! : inboxModel.receiverId!),
             builder: (context, snapshot) {
-              if (!snapshot.hasData || snapshot.hasError || snapshot.connectionState == ConnectionState.waiting) {
+              // Skeleton only until the first profile: a refetch keeps the row
+              // (and its badge listener) mounted.
+              if (!snapshot.hasData || snapshot.hasError) {
                 // Keep the row height while the customer profile resolves.
                 return const _InboxRowSkeleton();
               } else {
@@ -111,6 +127,8 @@ class InboxScreen extends StatelessWidget {
                             ),
                           ),
                           const DsGap(DsSpace.sm),
+                          // Unread messages addressed to me in this conversation (live).
+                          UnreadChatBadge.orderChat(inboxModel.orderId ?? ''),
                           Icon(Icons.chevron_right_rounded, color: c.textMuted),
                         ],
                       ),

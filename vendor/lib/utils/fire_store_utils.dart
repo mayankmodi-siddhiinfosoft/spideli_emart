@@ -64,6 +64,8 @@ import 'package:vendor/models/zone_model.dart';
 import 'package:vendor/service/audio_player_service.dart';
 import 'package:vendor/themes/app_them_data.dart';
 import 'package:vendor/utils/cancel_reasons.dart';
+import 'package:vendor/utils/chat_unread.dart';
+import 'package:vendor/utils/customer_notification.dart';
 import 'package:vendor/utils/preferences.dart';
 import 'package:vendor/utils/push_payload.dart';
 import 'package:vendor/utils/store_credit_once.dart';
@@ -2552,30 +2554,88 @@ class FireStoreUtils {
     return employeeList;
   }
 
-  static late StreamSubscription<QuerySnapshot> orderChatSeenSubscription;
+  static StreamSubscription<QuerySnapshot>? orderChatSeenSubscription;
 
-  static void setSeenChatForOrder({required String orderId}) {
-    orderChatSeenSubscription = fireStore
-        .collection(CollectionName.chat)
-        .doc(orderId)
-        .collection("thread")
-        .where('senderId', isNotEqualTo: FireStoreUtils.getCurrentUid())
-        .where('seen', isEqualTo: false)
-        .snapshots()
-        .listen(
-          (querySnapshot) async {
-            for (final doc in querySnapshot.docs) {
-              try {
-                await doc.reference.update({'seen': true});
-              } catch (e) {
-                log(e.toString());
-              }
-            }
-          },
-          onError: (error) {
-            log(error.toString());
-          },
-        );
+  /// Marks the store side's unread messages of one conversation seen, live,
+  /// while the conversation is open (stopped by [stopSeenChatForOrder] when
+  /// the chat screen closes).
+  ///
+  /// The messages are `chat/{orderId}/thread` where [receiverId] (the store
+  /// side of the conversation) is the receiver, or - for an admin
+  /// conversation - where [senderId] (`admin`) is the sender, and `seen` is
+  /// false: exactly what the inbox badge counts ([unreadChatCount]). Equality
+  /// filters only: the old `senderId != me && seen == false` query needs a
+  /// composite index. The old listener was also never cancelled, so every
+  /// conversation opened once kept marking new messages seen in the
+  /// background and its inbox badge could never show them.
+  static void setSeenChatForOrder({required String orderId, String? receiverId, String? senderId}) {
+    stopSeenChatForOrder();
+    final String threadId = orderId.trim();
+    final String receiver = (receiverId ?? '').trim();
+    final String sender = (senderId ?? '').trim();
+    if (threadId.isEmpty || (receiver.isEmpty && sender.isEmpty)) return;
+    orderChatSeenSubscription = _unreadChatQuery(threadId: threadId, receiverId: receiver, senderId: sender).snapshots().listen(
+      (querySnapshot) async {
+        if (querySnapshot.docs.isEmpty) return;
+        try {
+          final WriteBatch batch = fireStore.batch();
+          for (final doc in querySnapshot.docs) {
+            batch.update(doc.reference, {'seen': true});
+          }
+          await batch.commit();
+        } catch (e) {
+          log("marking chat $threadId seen failed: $e");
+        }
+      },
+      onError: (error) {
+        log("chat $threadId seen listener: $error");
+      },
+    );
+  }
+
+  /// Stops [setSeenChatForOrder]'s listener (the chat screen closed).
+  static void stopSeenChatForOrder() {
+    orderChatSeenSubscription?.cancel();
+    orderChatSeenSubscription = null;
+  }
+
+  /// Unread messages of one conversation for the store side, live, capped at
+  /// [ChatUnread.queryLimit] (see `lib/utils/chat_unread.dart`). Pass
+  /// [receiverId] (the store side's user id) for a customer / driver
+  /// conversation, [senderId] (`admin`) for an admin one.
+  static Stream<int> unreadChatCount({required String threadId, String? receiverId, String? senderId}) {
+    final String id = threadId.trim();
+    final String receiver = (receiverId ?? '').trim();
+    final String sender = (senderId ?? '').trim();
+    if (id.isEmpty || (receiver.isEmpty && sender.isEmpty)) return Stream<int>.value(0);
+    return _unreadChatQuery(threadId: id, receiverId: receiver, senderId: sender).limit(ChatUnread.queryLimit).snapshots().map((snapshot) => snapshot.docs.length);
+  }
+
+  static Query<Map<String, dynamic>> _unreadChatQuery({required String threadId, required String receiverId, required String senderId}) {
+    Query<Map<String, dynamic>> query = fireStore.collection(CollectionName.chat).doc(threadId).collection("thread");
+    if (receiverId.isNotEmpty) query = query.where('receiverId', isEqualTo: receiverId);
+    if (senderId.isNotEmpty) query = query.where('senderId', isEqualTo: senderId);
+    return query.where('seen', isEqualTo: false);
+  }
+
+  // ── Customer Notification Center (.claude/CUSTOMER-NOTIFICATIONS.md §1) ──
+
+  /// A new id for `users/{customerId}/notifications/{id}` (generated locally,
+  /// no read).
+  static String newCustomerNotificationId(String customerId) =>
+      fireStore.collection(CollectionName.users).doc(customerId.trim()).collection(CustomerNotification.collection).doc().id;
+
+  /// Writes the customer's Notification Center entry [id]; false when the
+  /// write was refused. Best effort: a failure is logged and never thrown (the
+  /// push and the store's action never depend on it).
+  static Future<bool> addCustomerNotification({required String customerId, required String id, required Map<String, dynamic> document}) async {
+    try {
+      await fireStore.collection(CollectionName.users).doc(customerId.trim()).collection(CustomerNotification.collection).doc(id).set(document);
+      return true;
+    } catch (e) {
+      log("customer notification $id for user $customerId not saved: $e");
+      return false;
+    }
   }
 
   static Future<InboxModel> addInbox(InboxModel inboxModel) async {

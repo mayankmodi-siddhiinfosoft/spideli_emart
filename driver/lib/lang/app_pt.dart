@@ -457,4 +457,5 @@ const Map<String, String> ptPO = {
   "Parcel": "Encomenda",
   "Rental": "Aluguel",
   "Driver": "Motorista",
+  "unread messages": "mensagens não lidas",
 };

@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:spideliworker/constant/constants.dart';
 import 'package:spideliworker/model/conversation_model.dart';
 import 'package:spideliworker/model/inbox_model.dart';
 import 'package:spideliworker/model/user.dart';
 import 'package:spideliworker/constant/show_toast_dialog.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/utils/args.dart';
+import 'package:spideliworker/services/customer_notification.dart';
 import 'package:spideliworker/services/push_message.dart';
 import 'package:spideliworker/services/send_notification.dart';
 import 'package:spideliworker/main.dart';
@@ -72,10 +74,26 @@ class ChatController extends GetxController {
     isLoading.value = false;
   }
 
+  /// Marks the messages addressed to this worker seen while the chat is open
+  /// (the inbox unread badge then clears); cancelled in [onClose], so a
+  /// message that arrives after the worker left stays unread.
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _seenSubscription;
+
   Future<void> setSeen() async {
-    // `doc("")` is not a legal Firestore path and throws.
-    if (orderId.value.isEmpty) return;
-    FireStoreUtils.setSeenChatForOrder(orderId: orderId.value);
+    // `doc("")` is not a legal Firestore path and throws. Closed: the worker
+    // left before the receiver lookup finished and onClose already ran, so a
+    // listener started now would never be cancelled.
+    if (isClosed || orderId.value.isEmpty) return;
+    await _seenSubscription?.cancel();
+    if (isClosed) return;
+    _seenSubscription = FireStoreUtils.markOrderChatSeen(orderId: orderId.value);
+  }
+
+  @override
+  void onClose() {
+    _seenSubscription?.cancel();
+    _seenSubscription = null;
+    super.onClose();
   }
 
   Future<void> sendMessage(String message, Url? url, String videoThumbnail, String messageType) async {
@@ -146,28 +164,37 @@ class ChatController extends GetxController {
       }
       String token = receiverUser.value?.fcmToken ?? '';
       log("chat push :: token=${isUsableFcmToken(token) ? 'set' : 'none'} :: ${inboxModel.type} :: ${inboxModel.chatType}");
-      if (!isUsableFcmToken(token)) return;
 
       // Title is who sent it (this worker): the recipient used to see their
       // own name when the chat was opened without a sender name (from a push).
       final String me = senderName.value.trim().isNotEmpty ? senderName.value : (MyAppState.currentUser?.fullName().trim() ?? '');
       final String title = me.isNotEmpty ? me : "New message".tr;
+      // The worker's order chat (chatType `worker`) is with the booking's
+      // customer: that push is also recorded in their Notification Center.
+      final bool toCustomer = inboxModel.type == 'orderChat' && inboxModel.chatType == userRoleWorker && canLookUp;
+      // No usable token: no push, but the customer still gets the record.
+      if (!isUsableFcmToken(token) && !toCustomer) return;
       final Map<String, dynamic> payload = {
+        // One Notification Center record per message: the retry below with a
+        // fresh token reuses this id and does not write the record again.
+        if (toCustomer) notificationIdKey: const Uuid().v4(),
         'type': inboxModel.type,
         'chatType': inboxModel.chatType,
         'orderId': orderId.value,
         'senderId': FireStoreUtils.getCurrentUid(),
         'senderName': me,
       };
-      final bool sent = await SendNotification.sendChatFcmMessage(title, conversationModel.message.toString(), token, payload);
-      if (!sent && !reread && canLookUp) {
+      final String? customerId = toCustomer ? receivedId.value : null;
+      final bool sent = await SendNotification.sendChatFcmMessage(title, conversationModel.message.toString(), token, payload, customerId: customerId);
+      if (!sent && !reread && canLookUp && isUsableFcmToken(token)) {
         // The token read when the chat was opened may have rotated since:
         // read the recipient again and retry once with a changed token.
         receiverUser.value = await FireStoreUtils.getChatUser(receivedId.value);
         final String fresh = receiverUser.value?.fcmToken ?? '';
         if (isUsableFcmToken(fresh) && fresh.trim() != token.trim()) {
           token = fresh;
-          await SendNotification.sendChatFcmMessage(title, conversationModel.message.toString(), token, payload);
+          // Already recorded by the first attempt: push only.
+          await SendNotification.sendChatFcmMessage(title, conversationModel.message.toString(), token, payload, customerId: customerId, record: false);
         }
       }
     } catch (e) {

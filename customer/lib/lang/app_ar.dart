@@ -883,4 +883,15 @@ const Map<String, String> arAR = {
   "Mail": "بريد",
   "Rental": "تأجير",
   "Booking": "حجز",
+
+  // Notification Center and unread badges (.claude/CUSTOMER-NOTIFICATIONS.md).
+  "Notifications": "الإشعارات",
+  "No notifications yet": "لا توجد إشعارات بعد",
+  "Order updates, messages and alerts will appear here.": "ستظهر هنا تحديثات الطلبات والرسائل والتنبيهات.",
+  "Just now": "الآن",
+  "@n min ago": "منذ @n دقيقة",
+  "@n h ago": "منذ @n ساعة",
+  "Yesterday": "أمس",
+  "@n unread": "@n غير مقروءة",
+  "@n unread notifications": "@n إشعارات غير مقروءة",
 };

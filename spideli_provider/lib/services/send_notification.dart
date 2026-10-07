@@ -7,6 +7,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:googleapis_auth/auth_io.dart';
 import 'package:http/http.dart' as http;
 import 'package:spideliprovider/model/notification_model.dart';
+import 'package:spideliprovider/services/customer_notification.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/services/push_message.dart';
 
@@ -26,6 +27,11 @@ import '../constant/constants.dart';
 /// app's Android channel at high priority, and an APNs sound. A send returns
 /// true only when FCM (or the function) accepted it; failures are logged with
 /// the status and error code, never with a token or credential.
+///
+/// Every push to a customer whose uid is known is also stored at
+/// `users/{customerId}/notifications/{id}` for the customer's Notification
+/// Center, and its data then carries `notificationId`
+/// (.claude/CUSTOMER-NOTIFICATIONS.md; best effort, never blocks the push).
 class SendNotification {
   static const List<String> _scopes = ['https://www.googleapis.com/auth/firebase.messaging'];
   static const Duration _httpTimeout = Duration(seconds: 20);
@@ -134,7 +140,10 @@ class SendNotification {
     try {
       final PushApp app = recipient ?? recipientForKind(type);
       final String target = await _currentToken(app, recipientId, fallback: token);
-      if (!isUsableFcmToken(target)) {
+      // A customer with no usable token still gets the Notification Center
+      // entry (below); anyone else: nothing to do.
+      final bool customerKnown = app == PushApp.customer && (recipientId ?? '').trim().isNotEmpty;
+      if (!isUsableFcmToken(target) && !customerKnown) {
         log("Push '$type' not sent: the recipient has no FCM token.");
         return false;
       }
@@ -145,14 +154,21 @@ class SendNotification {
         log("Push '$type' not sent: no notification template.");
         return false;
       }
-      return await _send(
-        token: target,
-        title: template.subject ?? '',
-        body: template.message ?? '',
-        payload: payload,
+      final String title = template.subject ?? '';
+      final String body = template.message ?? '';
+      final Map<String, String> data = await _recordForCustomer(
+        data: buildPushData(payload, kind: type),
+        title: title,
+        body: body,
         kind: type,
         recipient: app,
+        recipientId: recipientId,
       );
+      if (!isUsableFcmToken(target)) {
+        log("Push '$type' not sent: the recipient has no FCM token (Notification Center entry only).");
+        return false;
+      }
+      return await _send(token: target, title: title, body: body, data: data, kind: type, recipient: app);
     } catch (e) {
       log("Push '$type' not sent: $e");
       return false;
@@ -176,29 +192,59 @@ class SendNotification {
   }
 
   /// A chat message to the holder of [token]; [recipient] is the app on the
-  /// other side of the thread (a customer or a worker).
-  static Future<bool> sendChatFcmMessage(String title, String message, String token, Map<String, dynamic>? payload, {PushApp recipient = PushApp.customer}) async {
-    if (!isUsableFcmToken(token)) {
-      log("Chat push not sent: the recipient has no FCM token.");
-      return false;
-    }
+  /// other side of the thread (a customer or a worker). [recipientId] is the
+  /// recipient's uid: a customer's gets the message in their Notification
+  /// Center.
+  static Future<bool> sendChatFcmMessage(String title, String message, String token, Map<String, dynamic>? payload, {PushApp recipient = PushApp.customer, String? recipientId}) async {
     try {
-      return await _send(token: token, title: title, body: message, payload: payload, kind: 'chat', recipient: recipient);
+      // Recorded for a customer even without a usable token (no push then).
+      final Map<String, String> data = await _recordForCustomer(
+        data: buildPushData(payload, kind: 'chat'),
+        title: title,
+        body: message,
+        kind: 'chat',
+        recipient: recipient,
+        recipientId: recipientId,
+      );
+      if (!isUsableFcmToken(token)) {
+        log("Chat push not sent: the recipient has no FCM token.");
+        return false;
+      }
+      return await _send(token: token, title: title, body: message, data: data, kind: 'chat', recipient: recipient);
     } catch (e) {
       log("Chat push not sent: $e");
       return false;
     }
   }
 
+  /// A push to a customer is also stored in their Notification Center
+  /// (.claude/CUSTOMER-NOTIFICATIONS.md), with the same text and data,
+  /// whether or not a push follows; the push then names the record so the
+  /// customer app does not store it twice. Returns [data] (with the id when
+  /// recorded).
+  static Future<Map<String, String>> _recordForCustomer({
+    required Map<String, String> data,
+    required String title,
+    required String body,
+    required String kind,
+    required PushApp recipient,
+    String? recipientId,
+  }) async {
+    if (shouldRecordCustomerNotification(recipient: recipient, customerId: recipientId ?? '', title: title, body: body)) {
+      final String? notificationId = await FireStoreUtils.recordCustomerNotification(customerId: recipientId!, title: title, body: body, kind: kind, data: data);
+      if (notificationId != null) data[notificationIdDataKey] = notificationId;
+    }
+    return data;
+  }
+
   static Future<bool> _send({
     required String token,
     required String title,
     required String body,
-    required Map<String, dynamic>? payload,
+    required Map<String, String> data,
     required String kind,
     required PushApp recipient,
   }) async {
-    final Map<String, String> data = buildPushData(payload, kind: kind);
     final PushRoute route = pushRouteFor(recipient);
     await _ensureSettings();
     if (useServerPush) {

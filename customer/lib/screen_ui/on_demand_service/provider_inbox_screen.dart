@@ -33,8 +33,11 @@ class ProviderInboxScreen extends StatelessWidget {
           final data = documentSnapshots[index].data() as Map<String, dynamic>?;
           InboxModel inboxModel = InboxModel.fromJson(data!);
 
+          // The other party: the thread is shared with the order's other chat,
+          // so the badge counts only this peer's messages.
+          final String peerId = inboxModel.receiverId == FireStoreUtils.getCurrentUid() ? (inboxModel.senderId ?? '') : (inboxModel.receiverId ?? '');
           return FutureBuilder<UserModel?>(
-            future: FireStoreUtils.getUserProfile(inboxModel.receiverId == FireStoreUtils.getCurrentUid() ? (inboxModel.senderId ?? '') : (inboxModel.receiverId ?? '')),
+            future: FireStoreUtils.getUserProfile(peerId),
             builder: (context, snapshot) {
               if (!snapshot.hasData || snapshot.hasError || snapshot.connectionState == ConnectionState.waiting) {
                 return const InboxRowSkeleton();
@@ -43,6 +46,9 @@ class ProviderInboxScreen extends StatelessWidget {
                 return DsFadeSlideIn(
                   index: index,
                   child: InboxRow(
+                    // The thread the chat screen opens and marks seen (ChatController.threadId).
+                    threadId: inboxModel.orderId,
+                    peerId: peerId,
                     name: "${restaurant?.fullName()}",
                     imageUrl: restaurant?.profilePictureURL ?? '',
                     time: Constant.timestampToDate(inboxModel.createdAt!),

@@ -457,4 +457,5 @@ const Map<String, String> deGR = {
   "Parcel": "Paket",
   "Rental": "Vermietung",
   "Driver": "Fahrer",
+  "unread messages": "ungelesene Nachrichten",
 };

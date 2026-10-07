@@ -457,4 +457,5 @@ const Map<String, String> trFR = {
   "Parcel": "Colis",
   "Rental": "Location",
   "Driver": "Chauffeur",
+  "unread messages": "messages non lus",
 };

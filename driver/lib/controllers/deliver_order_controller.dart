@@ -172,9 +172,11 @@ class DeliverOrderController extends GetxController {
       }
     });
 
-    final String customerToken =
-        await SendNotification.customerToken(customerId: orderModel.value.authorID ?? orderModel.value.author?.id, embeddedToken: orderModel.value.author?.fcmToken);
-    await SendNotification.sendFcmMessage(Constant.driverCompleted, customerToken, {'orderId': orderModel.value.id});
+    await SendNotification.notifyCustomer(Constant.driverCompleted,
+        customerId: orderModel.value.authorID ?? orderModel.value.author?.id,
+        embeddedToken: orderModel.value.author?.fcmToken,
+        payload: {'orderId': orderModel.value.id},
+        status: orderModel.value.status);
     ShowToastDialog.closeLoader();
     Get.back(result: true);
   }

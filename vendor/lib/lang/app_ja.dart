@@ -63,4 +63,5 @@ const Map<String, String> jaJP = {
   "Amount": "金額",
   "Takeaway": "テイクアウト",
   "Deliver to door": "玄関まで配達",
+  "@count unread messages": "未読メッセージ @count 件",
 };

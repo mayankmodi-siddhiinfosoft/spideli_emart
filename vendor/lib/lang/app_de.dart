@@ -63,4 +63,5 @@ const Map<String, String> deGR = {
   "Amount": "Betrag",
   "Takeaway": "Zum Mitnehmen",
   "Deliver to door": "Lieferung an die Tür",
+  "@count unread messages": "@count ungelesene Nachrichten",
 };

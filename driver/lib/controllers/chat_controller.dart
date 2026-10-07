@@ -65,9 +65,21 @@ class ChatController extends GetxController {
     isLoading.value = false;
   }
 
+  /// Marks the customer's messages in this conversation seen while it is
+  /// open (live), which clears its unread badge in the inbox.
   Future<void> setSeen() async {
-    if (orderId.value.isEmpty) return;
+    // Left before the receiver lookup finished: onClose already ran, so a
+    // listener started now would never be stopped.
+    if (isClosed || orderId.value.isEmpty) return;
     FireStoreUtils.setSeenChatForOrder(orderId: orderId.value);
+  }
+
+  @override
+  void onClose() {
+    // Leaving the conversation stops the seen listener: new messages must
+    // count as unread again.
+    if (orderId.value.isNotEmpty) FireStoreUtils.stopSeenChatForOrder(orderId: orderId.value);
+    super.onClose();
   }
 
   Future<void> sendMessage(String message, Url? url, String videoThumbnail, String messageType) async {
@@ -123,7 +135,8 @@ class ChatController extends GetxController {
   ///
   /// The recipient's token is the live one on their user document, falling
   /// back to the token the opening screen passed in. With no token at all the
-  /// message is still stored and the push is skipped silently.
+  /// message is still stored and the push is skipped silently. The customer
+  /// ([receivedId]) also gets it in their Notification Center.
   Future<void> sendChatPush(String message, String type, String chatType) async {
     String recipientToken = (receiverUser.value?.fcmToken ?? '').trim();
     if (recipientToken.isEmpty && receivedId.value.isNotEmpty) {
@@ -133,7 +146,6 @@ class ChatController extends GetxController {
       recipientToken = (receiverUser.value?.fcmToken ?? '').trim();
     }
     if (recipientToken.isEmpty) recipientToken = token.value.trim();
-    if (recipientToken.isEmpty) return;
 
     try {
       await SendNotification.sendChatFcmMessage(
@@ -146,6 +158,7 @@ class ChatController extends GetxController {
           'orderId': orderId.value,
           'senderId': senderId.value,
         },
+        customerId: receivedId.value,
       );
     } catch (e) {
       log("ChatController.sendChatPush failed: $e");

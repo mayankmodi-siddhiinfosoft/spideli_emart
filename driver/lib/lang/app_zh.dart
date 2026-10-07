@@ -457,4 +457,5 @@ const Map<String, String> zhCH = {
   "Parcel": "包裹",
   "Rental": "租赁",
   "Driver": "司机",
+  "unread messages": "条未读消息",
 };

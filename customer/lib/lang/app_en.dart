@@ -898,4 +898,15 @@ const Map<String, String> enUS = {
   "Mail": "Mail",
   "Rental": "Rental",
   "Booking": "Booking",
+
+  // Notification Center and unread badges (.claude/CUSTOMER-NOTIFICATIONS.md).
+  "Notifications": "Notifications",
+  "No notifications yet": "No notifications yet",
+  "Order updates, messages and alerts will appear here.": "Order updates, messages and alerts will appear here.",
+  "Just now": "Just now",
+  "@n min ago": "@n min ago",
+  "@n h ago": "@n h ago",
+  "Yesterday": "Yesterday",
+  "@n unread": "@n unread",
+  "@n unread notifications": "@n unread notifications",
 };
