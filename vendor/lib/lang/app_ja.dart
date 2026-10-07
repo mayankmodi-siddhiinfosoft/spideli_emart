@@ -26,4 +26,8 @@ const Map<String, String> jaJP = {
   "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "お使いの@phoneの端末は、アプリを閉じると通知を受け取れなくします。このアプリの自動起動をオンにし、バッテリー使用を「制限なし」に設定すると、更新を見逃しません。",
   "Not now": "後で",
   "Open settings": "設定を開く",
+  "Scheduled": "予約",
+  "No scheduled orders": "予約注文はありません",
+  "Orders placed for a later time wait here and move to New when it is time to prepare them.": "後の時間に指定された注文はここで待機し、準備の時間になると新規に移動します。",
+  "Available at @time": "@time から対応可能",
 };

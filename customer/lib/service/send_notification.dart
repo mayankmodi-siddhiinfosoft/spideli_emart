@@ -108,9 +108,31 @@ class SendNotification {
     final Map<String, String> data = PushPayload.stringData(payload, type: kind == 'chat' ? null : kind, spec: spec);
     try {
       if (useServerPush) {
-        return await _sendViaServer(token: token, title: title, body: body, data: data, kind: kind, spec: spec, label: label);
+        return await _sendViaServer(request: PushPayload.serverRequest(token: token, title: title, body: body, data: data, spec: spec, kind: kind), label: label);
       }
-      return await _sendViaFcm(token: token, title: title, body: body, data: data, spec: spec, label: label);
+      return await _sendViaFcm(message: PushPayload.fcmV1Message(token: token, title: title, body: body, data: data, spec: spec), label: label);
+    } catch (e) {
+      log('push "$label" failed (${e.runtimeType})');
+      return false;
+    }
+  }
+
+  /// A DATA-ONLY push to [token]: nothing is shown or sounded on the
+  /// receiving device, its app gets [payload] (high priority on Android, an
+  /// APNs background push on iOS). Used for a scheduled order, which the store
+  /// app turns into a local alarm for the order's time.
+  static Future<bool> sendDataMessage({required String token, required Map<String, dynamic> payload, String? kind}) async {
+    final String label = kind ?? payload['type']?.toString() ?? 'data';
+    if (!PushPayload.isUsableToken(token)) {
+      log('push "$label" not sent: the recipient has no FCM token');
+      return false;
+    }
+    final Map<String, String> data = PushPayload.stringData(payload, type: kind);
+    try {
+      if (useServerPush) {
+        return await _sendViaServer(request: PushPayload.serverDataRequest(token: token, data: data, kind: kind), label: label);
+      }
+      return await _sendViaFcm(message: PushPayload.fcmV1DataMessage(token: token, data: data), label: label);
     } catch (e) {
       log('push "$label" failed (${e.runtimeType})');
       return false;
@@ -125,14 +147,9 @@ class SendNotification {
     }
   }
 
-  static Future<bool> _sendViaFcm({
-    required String token,
-    required String title,
-    required String body,
-    required Map<String, String> data,
-    required PushChannelSpec spec,
-    required String label,
-  }) async {
+  /// Posts one FCM v1 [message] (`PushPayload.fcmV1Message` or
+  /// `PushPayload.fcmV1DataMessage`).
+  static Future<bool> _sendViaFcm({required Map<String, dynamic> message, required String label}) async {
     // The project id the app was built with. Settings hold the project
     // NUMBER as `senderId`; it is only the fallback.
     final String projectId = PushPayload.projectId(firebaseProjectId: _firebaseProjectId(), settingsSenderId: Constant.senderId);
@@ -140,7 +157,7 @@ class SendNotification {
       log('push "$label" not sent: no Firebase project id');
       return false;
     }
-    final String requestBody = jsonEncode({'message': PushPayload.fcmV1Message(token: token, title: title, body: body, data: data, spec: spec)});
+    final String requestBody = jsonEncode({'message': message});
     Future<http.Response> post(String accessToken) => http
         .post(PushPayload.fcmSendUri(projectId), headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $accessToken'}, body: requestBody)
         .timeout(_timeout);
@@ -163,21 +180,15 @@ class SendNotification {
     return false;
   }
 
-  static Future<bool> _sendViaServer({
-    required String token,
-    required String title,
-    required String body,
-    required Map<String, String> data,
-    required PushChannelSpec spec,
-    required String label,
-    String? kind,
-  }) async {
+  /// Posts one `sendPush` [request] (`PushPayload.serverRequest` or
+  /// `PushPayload.serverDataRequest`).
+  static Future<bool> _sendViaServer({required Map<String, dynamic> request, required String label}) async {
     final auth.User? user = auth.FirebaseAuth.instance.currentUser;
     if (user == null) {
       log('push "$label" not sent: no signed-in user for the server path');
       return false;
     }
-    final String requestBody = jsonEncode(PushPayload.serverRequest(token: token, title: title, body: body, data: data, spec: spec, kind: kind));
+    final String requestBody = jsonEncode(request);
     Future<http.Response> post(bool refreshIdToken) async {
       final String? idToken = await user.getIdToken(refreshIdToken);
       return http

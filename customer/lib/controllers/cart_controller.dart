@@ -636,10 +636,19 @@ class CartController extends GetxController {
     await FireStoreUtils.setOrder(orderModel).then((value) async {
       await FireStoreUtils.getUserProfile(orderModel.vendor!.author.toString()).then((value) async {
         if (value != null) {
-          // To the store owner, on the store's loud new-order channel. The
-          // data carries `type` (the template type) and the order id.
-          if (orderModel.scheduleTime != null) {
-            await SendNotification.sendFcmMessage(Constant.scheduleOrder, value.fcmToken ?? '', {'orderId': orderModel.id}, recipient: PushRecipient.store);
+          // To the store owner. An order for a later time is a SILENT
+          // data-only push: nothing rings now, the store app sets an alarm
+          // for the scheduled time instead (and lists the order under
+          // Scheduled). Anything else - including a scheduled time that has
+          // already passed - is the normal loud new-order push, whose data
+          // carries `type` (the template type) and the order id.
+          final DateTime? scheduleAt = orderModel.scheduleTime?.toDate();
+          if (PushPayload.isFutureSchedule(scheduleAt, DateTime.now())) {
+            await SendNotification.sendDataMessage(
+              token: value.fcmToken ?? '',
+              payload: PushPayload.scheduledOrderData(orderId: orderModel.id.toString(), scheduleAt: scheduleAt!),
+              kind: PushPayload.scheduledOrderType,
+            );
           } else {
             await SendNotification.sendFcmMessage(Constant.orderPlacedNotification, value.fcmToken ?? '', {'orderId': orderModel.id}, recipient: PushRecipient.store);
           }

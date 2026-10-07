@@ -943,4 +943,8 @@ const Map<String, String> enUS = {
   "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.",
   "Not now": "Not now",
   "Open settings": "Open settings",
+  "Scheduled": "Scheduled",
+  "No scheduled orders": "No scheduled orders",
+  "Orders placed for a later time wait here and move to New when it is time to prepare them.": "Orders placed for a later time wait here and move to New when it is time to prepare them.",
+  "Available at @time": "Available at @time",
 };

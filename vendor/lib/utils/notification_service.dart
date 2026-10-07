@@ -17,6 +17,8 @@ import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/preferences.dart';
 import 'package:vendor/utils/push_payload.dart';
 import 'package:vendor/utils/fcm_token_reset.dart';
+import 'package:vendor/utils/scheduled_order.dart';
+import 'package:vendor/utils/scheduled_order_alarms.dart';
 
 /// Runs for a message that arrives while the app is in the background or
 /// closed. Registered once from `main()` so it is always installed (report
@@ -25,7 +27,8 @@ import 'package:vendor/utils/fcm_token_reset.dart';
 /// A message with a `notification` block is shown by the system on the
 /// channel it names (or the manifest default, `new_order`). A data-only
 /// message that carries a title or body was never shown at all; it is shown
-/// here.
+/// here. A silent scheduled-order push (`type: scheduled_order`) shows
+/// nothing: it sets the order's alarm for its time.
 @pragma('vm:entry-point')
 Future<void> firebaseMessageBackgroundHandle(RemoteMessage message) async {
   try {
@@ -36,6 +39,10 @@ Future<void> firebaseMessageBackgroundHandle(RemoteMessage message) async {
     log("background Firebase init failed: $e");
   }
   log("BackGround Message :: ${message.messageId}");
+  if (ScheduledOrderPush.isScheduledOrder(message.data)) {
+    await ScheduledOrderAlarms.handleBackgroundPush(message.data);
+    return;
+  }
   if (message.notification == null && NotificationService.hasDisplayableData(message.data)) {
     await NotificationService.display(message);
   }
@@ -102,6 +109,7 @@ class NotificationService {
     // Channels first: a push can only ring on a channel that exists.
     await _guard('channels', createChannels);
     await _guard('local notifications', _initLocalNotifications);
+    await _guard('scheduled order alarms', () async => ScheduledOrderAlarms.start());
     if (Platform.isIOS) {
       // iOS shows a `notification` message in the foreground only with
       // these options; Android needs the local notification in [display].
@@ -193,6 +201,10 @@ class NotificationService {
 
   static Future<void> _onForegroundMessage(RemoteMessage message) async {
     log("::::::::::::onMessage::::::::::::::::: ${message.messageId}");
+    if (ScheduledOrderPush.isScheduledOrder(message.data)) {
+      await ScheduledOrderAlarms.handleForegroundPush(message.data);
+      return;
+    }
     final bool hasNotification = message.notification != null;
     if (!hasNotification && !hasDisplayableData(message.data)) return;
     // iOS already presents a `notification` message in the foreground
@@ -355,6 +367,39 @@ class NotificationService {
 
   // ── Display ──
 
+  /// The local-notification plugin (also used by [ScheduledOrderAlarms]).
+  static FlutterLocalNotificationsPlugin get plugin => _plugin;
+
+  /// Makes the plugin and the channels usable in this isolate. In the main
+  /// isolate [initInfo] already did it; in the background isolate (FCM
+  /// handler) the plugin and channels of the main isolate are not there.
+  static Future<void> ensureLocalReady() async {
+    if (_localReady) return;
+    await createChannels();
+    await _plugin.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings('@drawable/ic_stat_notification'), iOS: DarwinInitializationSettings(requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false)));
+    _localReady = true;
+  }
+
+  /// A new-order alert: the loud `new_order` channel with the order tone on
+  /// Android, the order tone on iOS. Used for a scheduled order's alarm.
+  static NotificationDetails orderAlertDetails() {
+    return NotificationDetails(
+      android: AndroidNotificationDetails(
+        _orderChannel.id,
+        _orderChannel.name,
+        channelDescription: _orderChannel.description,
+        importance: _orderChannel.importance,
+        priority: Priority.max,
+        playSound: true,
+        sound: _orderChannel.sound,
+        enableVibration: true,
+        category: AndroidNotificationCategory.alarm,
+        ticker: 'ticker',
+      ),
+      iOS: const DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true, sound: PushPayload.storeOrderApnsSound),
+    );
+  }
+
   /// True for the pushes that must be loud: a new order or booking.
   static bool isOrderAlert(RemoteMessage message) {
     final String channelId = (message.notification?.android?.channelId ?? message.data['channelId'] ?? message.data['android_channel_id'] ?? '').toString();
@@ -372,13 +417,7 @@ class NotificationService {
   /// importance; everything else on the general channel.
   static Future<void> display(RemoteMessage message) async {
     try {
-      if (!_localReady) {
-        // Background isolate: the plugin and channels of the main isolate are
-        // not there.
-        await createChannels();
-        await _plugin.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings('@drawable/ic_stat_notification'), iOS: DarwinInitializationSettings(requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false)));
-        _localReady = true;
-      }
+      await ensureLocalReady();
       final bool orderAlert = isOrderAlert(message);
       final AndroidNotificationChannel channel = orderAlert ? _orderChannel : _generalChannel;
       final String? title = message.notification?.title ?? message.data['title']?.toString();

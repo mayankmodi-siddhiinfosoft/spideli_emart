@@ -937,4 +937,8 @@ const Map<String, String> lnAr = {
   "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "يمنع هاتف @phone التطبيقات من تلقي الإشعارات بعد إغلاقها. فعّل التشغيل التلقائي لهذا التطبيق واضبط استخدام البطارية على بلا قيود حتى لا تفوتك أي تحديثات.",
   "Not now": "ليس الآن",
   "Open settings": "فتح الإعدادات",
+  "Scheduled": "مجدولة",
+  "No scheduled orders": "لا توجد طلبات مجدولة",
+  "Orders placed for a later time wait here and move to New when it is time to prepare them.": "الطلبات المحددة لوقت لاحق تنتظر هنا وتنتقل إلى جديد عندما يحين وقت تحضيرها.",
+  "Available at @time": "متاح في @time",
 };

@@ -26,4 +26,8 @@ const Map<String, String> zhCH = {
   "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "您的 @phone 手机会阻止应用在关闭后接收通知。请为此应用开启自启动，并将电池用量设为无限制，以免错过任何更新。",
   "Not now": "以后再说",
   "Open settings": "打开设置",
+  "Scheduled": "已预约",
+  "No scheduled orders": "没有预约订单",
+  "Orders placed for a later time wait here and move to New when it is time to prepare them.": "预约到稍后时间的订单会在这里等待，到准备时间后移至新订单。",
+  "Available at @time": "@time 起可处理",
 };

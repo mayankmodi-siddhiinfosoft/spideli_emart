@@ -26,4 +26,8 @@ const Map<String, String> deGR = {
   "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Ihr @phone-Telefon verhindert, dass Apps nach dem Schließen Benachrichtigungen erhalten. Aktivieren Sie Autostart für diese App und stellen Sie die Akkunutzung auf Keine Einschränkungen, damit Sie nichts verpassen.",
   "Not now": "Nicht jetzt",
   "Open settings": "Einstellungen öffnen",
+  "Scheduled": "Geplant",
+  "No scheduled orders": "Keine geplanten Bestellungen",
+  "Orders placed for a later time wait here and move to New when it is time to prepare them.": "Bestellungen für einen späteren Zeitpunkt warten hier und erscheinen bei den neuen Bestellungen, sobald sie vorbereitet werden müssen.",
+  "Available at @time": "Verfügbar ab @time",
 };

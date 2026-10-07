@@ -11,6 +11,8 @@ import 'package:vendor/models/vendor_model.dart';
 import 'package:vendor/service/audio_player_service.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/region_service.dart';
+import 'package:vendor/utils/scheduled_order.dart';
+import 'package:vendor/utils/scheduled_order_alarms.dart';
 
 class HomeController extends GetxController {
   RxBool isLoading = true.obs;
@@ -40,27 +42,56 @@ class HomeController extends GetxController {
   /// background) without waiting for the next Firestore change.
   static AppLifecycleListener? _lifecycle;
 
+  /// The controller whose lists the live listener fills.
+  static HomeController? _listening;
+
+  /// Fires when the next scheduled order becomes due, to move it from
+  /// Scheduled to New (and ring) without waiting for a Firestore change.
+  static Timer? _dueTimer;
+
   /// Stops the order listener and the alert, e.g. on sign-out.
   static Future<void> stopOrderAlerts() async {
     await _orderSubscription?.cancel();
     _orderSubscription = null;
+    _listening = null;
+    _dueTimer?.cancel();
+    _dueTimer = null;
     _ordersWaiting = false;
     await AudioPlayerService.playSound(false);
+    await ScheduledOrderAlarms.cancelAll();
   }
 
   @override
   void onInit() {
     getUserProfile();
+    ScheduledOrderAlarms.start();
     _lifecycle ??= AppLifecycleListener(
       onResume: () {
-        if (_ordersWaiting) AudioPlayerService.playSound(true);
+        // Split again first: a scheduled order may have become due while
+        // the app was away (timers do not run while it is suspended).
+        final HomeController? listening = _listening;
+        if (listening != null) {
+          unawaited(listening._applyOrderAlerts());
+        } else if (_ordersWaiting) {
+          AudioPlayerService.playSound(true);
+        }
       },
     );
     super.onInit();
   }
 
   RxList<OrderModel> allOrderList = <OrderModel>[].obs;
+
+  /// "New": orders the store can accept or reject now. An order for a later
+  /// time joins it when it is due ([ScheduledOrderRule]); only these ring.
   RxList<OrderModel> newOrderList = <OrderModel>[].obs;
+
+  /// "Scheduled": `Order Placed` orders waiting for their time, soonest
+  /// first. No Accept / Reject and no ring until they are due.
+  RxList<OrderModel> scheduledOrderList = <OrderModel>[].obs;
+
+  /// When the soonest scheduled order becomes due.
+  DateTime? _nextDueAt;
   /// "Preparing": accepted by the store, waiting for / assigned to a driver.
   RxList<OrderModel> preparingOrderList = <OrderModel>[].obs;
 
@@ -139,10 +170,24 @@ class HomeController extends GetxController {
     _splitIntoTabs();
   }
 
+  /// When the store can act on [order]: its scheduled time minus the
+  /// admin's lead time; null for an order with no scheduled time.
+  static DateTime? dueAtOf(OrderModel order) => ScheduledOrderRule.dueAt(order.scheduleTime?.toDate(), lead: Constant.scheduleLeadTime);
+
   void _splitIntoTabs() {
-    // Tabs (spec: New | Preparing | Ready | Completed, then Rejected and
-    // Cancelled), mapped onto the existing statuses.
-    newOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderPlaced).toList();
+    // Tabs (spec: New | Scheduled | Preparing | Ready | Completed, then
+    // Rejected and Cancelled), mapped onto the existing statuses. An "Order
+    // Placed" order is New, or Scheduled while its time has not come.
+    final ScheduledSplit<OrderModel> placed = ScheduledOrderRule.split<OrderModel>(
+      allOrderList,
+      status: (o) => o.status,
+      scheduleTime: (o) => o.scheduleTime?.toDate(),
+      now: DateTime.now(),
+      lead: Constant.scheduleLeadTime,
+    );
+    newOrderList.value = placed.actionable;
+    scheduledOrderList.value = placed.scheduled;
+    _nextDueAt = placed.nextDueAt;
     preparingOrderList.value = allOrderList.where((p0) => preparingStatuses.contains(p0.status)).toList();
     readyOrderList.value = allOrderList.where((p0) => readyStatuses.contains(p0.status)).toList();
     completedOrderList.value = allOrderList.where((p0) => p0.status == Constant.orderCompleted).toList();
@@ -166,14 +211,48 @@ class HomeController extends GetxController {
           log("Skipping unreadable order ${element.id}: $e");
         }
       }
-      _splitIntoTabs();
-      _ordersWaiting = newOrderList.isNotEmpty;
-      if (newOrderList.isNotEmpty == true) {
-        await AudioPlayerService.playSound(true);
-      }
-      if (newOrderList.isEmpty == true) {
-        await AudioPlayerService.playSound(false);
-      }
+      await _applyOrderAlerts();
+    });
+    _listening = this;
+  }
+
+  /// After every change of the order list, when a scheduled order becomes
+  /// due, and on returning to the foreground: split the tabs, ring while an
+  /// order waits in New, and keep the scheduled orders' alarms in step.
+  ///
+  /// A scheduled order alerts once when it becomes due: in the app when the
+  /// app is in the foreground, otherwise by its local alarm, so the in-app
+  /// alert stays quiet for it until the app is opened
+  /// ([ScheduledOrderAlarms.coversInBackground]).
+  Future<void> _applyOrderAlerts() async {
+    _splitIntoTabs();
+    _armDueTimer(_nextDueAt);
+    _ordersWaiting = newOrderList.isNotEmpty;
+    final bool ring = newOrderList.any((o) => !ScheduledOrderAlarms.coversInBackground(o.id));
+    await AudioPlayerService.playSound(ring);
+    final DateTime now = DateTime.now();
+    final Set<String> endedBeforeDue = {
+      for (final OrderModel o in allOrderList)
+        if (o.id != null && o.status != Constant.orderPlaced && (dueAtOf(o)?.isAfter(now) ?? false)) o.id!,
+    };
+    await ScheduledOrderAlarms.syncListed(
+      waiting: {
+        for (final OrderModel o in scheduledOrderList)
+          if (o.id != null) o.id!: dueAtOf(o)!,
+      },
+      endedBeforeDue: endedBeforeDue,
+    );
+  }
+
+  void _armDueTimer(DateTime? nextDueAt) {
+    _dueTimer?.cancel();
+    _dueTimer = null;
+    if (nextDueAt == null) return;
+    Duration wait = nextDueAt.difference(DateTime.now());
+    if (wait.isNegative) wait = Duration.zero;
+    // Just past the due time, so the order counts as due when split again.
+    _dueTimer = Timer(wait + const Duration(milliseconds: 500), () {
+      if (identical(_listening, this)) unawaited(_applyOrderAlerts());
     });
   }
 }

@@ -26,4 +26,8 @@ const Map<String, String> hiIN = {
   "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "आपका @phone फ़ोन ऐप बंद करने के बाद उसे सूचनाएँ प्राप्त करने से रोकता है। इस ऐप के लिए Autostart चालू करें और बैटरी उपयोग को कोई प्रतिबंध नहीं पर सेट करें, ताकि कोई अपडेट न छूटे।",
   "Not now": "अभी नहीं",
   "Open settings": "सेटिंग्स खोलें",
+  "Scheduled": "निर्धारित",
+  "No scheduled orders": "कोई निर्धारित ऑर्डर नहीं",
+  "Orders placed for a later time wait here and move to New when it is time to prepare them.": "बाद के समय के लिए दिए गए ऑर्डर यहाँ रहते हैं और तैयारी का समय होने पर नए ऑर्डर में आ जाते हैं।",
+  "Available at @time": "@time से उपलब्ध",
 };

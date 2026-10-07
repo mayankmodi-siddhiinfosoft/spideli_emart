@@ -51,6 +51,16 @@ import 'package:vendor/widget/wholesale_tag.dart';
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
+  // Order tabs, in order.
+  static const int newTab = 0;
+  static const int scheduledTab = 1;
+  static const int preparingTab = 2;
+  static const int readyTab = 3;
+  static const int completedTab = 4;
+  static const int rejectedTab = 5;
+  static const int cancelledTab = 6;
+  static const int tabCount = 7;
+
   @override
   Widget build(BuildContext context) {
     final themeController = Get.find<ThemeController>();
@@ -68,13 +78,16 @@ class HomeScreen extends StatelessWidget {
         // Read every list here, inside the GetX builder, so the screen rebuilds
         // whenever orders change (tab bodies are built lazily, outside it).
         final List<OrderModel> newOrders = controller.newOrderList.toList();
+        final List<OrderModel> scheduledOrders = controller.scheduledOrderList.toList();
         final List<OrderModel> preparingOrders = controller.preparingOrderList.toList();
         final List<OrderModel> readyOrders = controller.readyOrderList.toList();
         final List<OrderModel> completedOrders = controller.completedOrderList.toList();
         final List<OrderModel> rejectedOrders = controller.rejectedOrderList.toList();
         final List<OrderModel> cancelledOrders = controller.cancelledOrderList.toList();
+        // One count per tab, in tab order (HomeScreen.newTab ...).
         final List<int> counts = [
           newOrders.length,
+          scheduledOrders.length,
           preparingOrders.length,
           readyOrders.length,
           completedOrders.length,
@@ -127,6 +140,17 @@ class HomeScreen extends StatelessWidget {
                 emptyMessage: "New orders appear here as soon as customers place them.".tr,
                 itemBuilder: (context, orderModel) => newOrderWidget(isDark, context, orderModel, controller),
               ),
+              // Orders for a later time: the same card, with no Accept /
+              // Reject until they are due and move to New.
+              _ordersTab(
+                storageKey: 'orders-scheduled',
+                orders: scheduledOrders,
+                emptyIcon: Icons.event_outlined,
+                emptyTitle: "No scheduled orders".tr,
+                emptyMessage: "Orders placed for a later time wait here and move to New when it is time to prepare them.".tr,
+                emptyTone: DsTone.neutral,
+                itemBuilder: (context, orderModel) => newOrderWidget(isDark, context, orderModel, controller, availableAt: HomeController.dueAtOf(orderModel)),
+              ),
               // Preparing and Ready both use the card of the former "Accepted"
               // tab, so every action it offered stays available.
               _ordersTab(
@@ -178,7 +202,7 @@ class HomeScreen extends StatelessWidget {
         }
 
         return DefaultTabController(
-          length: 6,
+          length: tabCount,
           child: AnnotatedRegion<SystemUiOverlayStyle>(
             value: SystemUiOverlayStyle.light,
             child: Scaffold(
@@ -316,7 +340,7 @@ class HomeScreen extends StatelessWidget {
   static void _showEndedOrder(HomeController controller, OrderModel orderModel, TabController? tabs) {
     try {
       controller.showEndedOrder(orderModel);
-      final int tab = orderModel.status == Constant.orderRejected ? 4 : 5;
+      final int tab = orderModel.status == Constant.orderRejected ? rejectedTab : cancelledTab;
       controller.selectedTabIndex.value = tab;
       if (tabs != null && tab < tabs.length) tabs.animateTo(tab);
     } catch (e) {
@@ -425,7 +449,10 @@ class HomeScreen extends StatelessWidget {
     return false;
   }
 
-  Widget newOrderWidget(isDark, BuildContext context, OrderModel orderModel, HomeController controller) {
+  /// The card of an order waiting for the store. With [availableAt] (an
+  /// order for a later time, in the Scheduled tab) it has no Accept / Reject,
+  /// only when it becomes available.
+  Widget newOrderWidget(isDark, BuildContext context, OrderModel orderModel, HomeController controller, {DateTime? availableAt}) {
     // Amounts of an order are shown in the currency it was charged in.
     final CurrencyModel? orderCurrency = RegionService.currencyForOrder(orderModel.regionId);
     // Reset
@@ -534,7 +561,13 @@ class HomeScreen extends StatelessWidget {
           },
         );
       },
-      actions: Constant.getEmployeeRolePermission(module: "Manage Order") == true
+      highlight: availableAt == null ? null : false,
+      actions: availableAt != null
+          ? _WaitingNote(
+              icon: Icons.event_available_outlined,
+              label: "Available at @time".trParams({'time': Constant.timestampToDateTime(Timestamp.fromDate(availableAt))}),
+            )
+          : Constant.getEmployeeRolePermission(module: "Manage Order") == true
           ? Row(
               children: [
                 Expanded(
@@ -1078,10 +1111,13 @@ class HomeScreen extends StatelessWidget {
     required bool showRatings,
     required VoidCallback onViewRemarks,
     Widget? actions,
+    bool? highlight,
   }) {
     final c = context.dsColors;
     final t = context.dsText;
-    final bool isNew = orderModel.status == Constant.orderPlaced;
+    // A new order stands out (brand border, pulsing status); a scheduled one
+    // does not until it is due.
+    final bool isNew = highlight ?? orderModel.status == Constant.orderPlaced;
     final List<CartProductModel> products = orderModel.products!;
     return DsCard(
       padding: EdgeInsets.zero,
@@ -1928,11 +1964,12 @@ class _KpiStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.6);
-    const List<(IconData, String)> items = [
-      (Icons.notifications_active_outlined, "New"),
-      (Icons.soup_kitchen_outlined, "Preparing"),
-      (Icons.delivery_dining_outlined, "Ready"),
-      (Icons.task_alt_rounded, "Completed"),
+    // (icon, label, tab): [counts] is per tab.
+    const List<(IconData, String, int)> items = [
+      (Icons.notifications_active_outlined, "New", HomeScreen.newTab),
+      (Icons.soup_kitchen_outlined, "Preparing", HomeScreen.preparingTab),
+      (Icons.delivery_dining_outlined, "Ready", HomeScreen.readyTab),
+      (Icons.task_alt_rounded, "Completed", HomeScreen.completedTab),
     ];
     return DsAdaptiveGrid(
       minItemWidth: 148 * scale,
@@ -1943,11 +1980,11 @@ class _KpiStrip extends StatelessWidget {
           _KpiTile(
             icon: items[i].$1,
             label: items[i].$2.tr,
-            count: counts[i],
-            live: i == 0 && counts[i] > 0,
+            count: counts[items[i].$3],
+            live: items[i].$3 == HomeScreen.newTab && counts[items[i].$3] > 0,
             onTap: () {
-              DefaultTabController.maybeOf(context)?.animateTo(i);
-              onSelect(i);
+              DefaultTabController.maybeOf(context)?.animateTo(items[i].$3);
+              onSelect(items[i].$3);
             },
           ),
       ],
@@ -2074,7 +2111,7 @@ class _OrderTabsHeader extends SliverPersistentHeaderDelegate {
     final c = context.dsColors;
     final l = context.dsLayout;
     final double inset = l.horizontalInsetFor(DsLayout.wideMax);
-    final labels = ["New", "Preparing", "Ready", "Completed", "Rejected", "Cancelled"];
+    final labels = ["New", "Scheduled", "Preparing", "Ready", "Completed", "Rejected", "Cancelled"];
     return AnimatedContainer(
       duration: DsMotion.of(context, DsMotion.fast),
       decoration: BoxDecoration(
@@ -2227,7 +2264,8 @@ class _StatusTrack extends StatelessWidget {
 /// this order yet (report #5: never a button that silently does nothing).
 class _WaitingNote extends StatelessWidget {
   final String label;
-  const _WaitingNote({required this.label});
+  final IconData icon;
+  const _WaitingNote({required this.label, this.icon = Icons.hourglass_bottom_rounded});
 
   @override
   Widget build(BuildContext context) {
@@ -2239,7 +2277,7 @@ class _WaitingNote extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.hourglass_bottom_rounded, size: 16, color: c.textMuted),
+          Icon(icon, size: 16, color: c.textMuted),
           DsGap.sm,
           Flexible(child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: DsTypography.labelSm.copyWith(color: c.textSecondary))),
         ],

@@ -69,7 +69,8 @@ The channel is chosen in `customer/lib/service/push_message.dart`
 
 | Push (template `type` / kind) | Recipient (token) | Android channel | Android sound | APNs sound |
 |---|---|---|---|---|
-| `order_placed`, `schedule_order` (cart) | store owner, `users/{vendor.author}.fcmToken` | `new_order` | `order_alert` | `order_alert.caf` |
+| `order_placed` (cart, including a scheduled time that has already passed) | store owner, `users/{vendor.author}.fcmToken` | `new_order` | `order_alert` | `order_alert.caf` |
+| `scheduled_order` (cart, scheduled time still ahead): **data-only**, nothing shown or sounded | store owner (same token) | none | none | none (`content-available: 1`) |
 | `dinein_placed` | store owner, `users/{vendor.author}.fcmToken`, falls back to `vendors/{id}.fcmToken` | `new_order` | `order_alert` | `order_alert.caf` |
 | chat to a store (`chat`) | store (`users/{id}`, read when the chat opens) | `general` | `default` | `default` |
 | chat to a driver (`chat`) | driver (same) | `driver_notifications_channel` | `default` | `default` |
@@ -79,7 +80,11 @@ The channel is chosen in `customer/lib/service/push_message.dart`
 
 Data (strings only: nulls dropped, maps/lists JSON-encoded, reserved keys
 dropped): always `type` (the caller's, else the template type) and the order
-id: `{type: "order_placed" | "schedule_order" | "dinein_placed", orderId}`,
+id: `{type: "order_placed" | "dinein_placed", orderId}`; a scheduled order is
+`{type: "scheduled_order", orderId, scheduleAt: "<epoch ms>"}` sent DATA-ONLY
+(`SendNotification.sendDataMessage`: legacy `android.priority: high`, APNs
+`apns-priority: 5`, `apns-push-type: background`, `aps.content-available: 1`,
+no `notification`; server path: no `title` / `body` / channel),
 `{type: "provider_order", orderId}` for bookings, `{type: "orderChat", chatType,
 orderId, senderId, senderName}` for chat. When a channel is named it is also
 sent as data `channelId` (the store uses it to pick its foreground channel).
@@ -284,6 +289,15 @@ owner's app replaces its token on its next start. Server path
   - `type` = `admin_chat`, or `chatType` = `admin`: Help & Support.
   - anything else, or no signed-in user: nothing (no crash on missing keys).
     After a cold start the screen opens once the dashboard is up.
+- **Scheduled orders** (`vendor/lib/utils/scheduled_order.dart`,
+  `scheduled_order_alarms.dart`): the silent `{type: "scheduled_order", orderId,
+  scheduleAt}` push shows nothing; the store sets a local notification on
+  `new_order` (template `schedule_order` text, id = FNV-1a of the order id) for
+  the due time (`scheduleAt` minus `settings/scheduleOrderNotification` lead
+  time), from the background handler, `onMessage` and the order listener; it is
+  cancelled when the order leaves `Order Placed` first. The order sits in the
+  Scheduled tab until due, then moves to New and alerts once (in-app when the
+  app is in the foreground, else the local notification).
 - **Foreground:** Android posts a local notification on `new_order` for order
   alerts (by `type`, or the push's channel id) and on `general` otherwise; iOS
   shows the push itself (presentation options), no local notification (no

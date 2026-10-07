@@ -106,8 +106,25 @@ class FireStoreUtils {
     return FirebaseAuth.instance.currentUser!.uid;
   }
 
+  static bool _ready = false;
+
+  /// True once [fireStore] is set in this isolate. The FCM background
+  /// handler runs in its own isolate on Android, where `main()` never ran.
+  static bool get isReady => _ready;
+
   void init(FirebaseApp app, {String? databaseId}) {
     fireStore = FirebaseFirestore.instanceFor(app: app, databaseId: databaseId);
+    _ready = true;
+  }
+
+  /// [init] with the database of [currentEnv] (default, or the named
+  /// `staging` database).
+  void initForEnv(FirebaseApp app) {
+    if (currentEnv == FirebaseEnv.defaultDb) {
+      init(app);
+    } else {
+      init(app, databaseId: 'staging'); // pass databaseId if named DB
+    }
   }
 
   static Future<bool> isLogin() async {

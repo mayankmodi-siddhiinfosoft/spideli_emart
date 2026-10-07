@@ -26,4 +26,8 @@ const Map<String, String> ptPO = {
   "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Seu telefone @phone impede que os apps recebam notificações depois de fechados. Ative o Início automático para este app e defina o uso da bateria como Sem restrições para não perder nenhuma atualização.",
   "Not now": "Agora não",
   "Open settings": "Abrir configurações",
+  "Scheduled": "Agendados",
+  "No scheduled orders": "Nenhum pedido agendado",
+  "Orders placed for a later time wait here and move to New when it is time to prepare them.": "Pedidos feitos para mais tarde aguardam aqui e passam para Novos quando chegar a hora de prepará-los.",
+  "Available at @time": "Disponível em @time",
 };

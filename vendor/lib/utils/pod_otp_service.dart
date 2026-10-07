@@ -3,7 +3,6 @@ import 'dart:developer';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
-import 'package:get/get.dart';
 import 'package:vendor/constant/collection_name.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/send_notification.dart';

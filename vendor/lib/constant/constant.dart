@@ -30,6 +30,7 @@ import 'package:vendor/models/user_model.dart';
 import 'package:vendor/models/zone_model.dart';
 import 'package:vendor/themes/app_them_data.dart';
 import 'package:vendor/utils/preferences.dart';
+import 'package:vendor/utils/scheduled_order.dart';
 import 'package:vendor/widget/permission_dialog.dart';
 import 'package:video_player/video_player.dart';
 import 'package:vendor/themes/ds/components/ds_feedback.dart';
@@ -534,24 +535,15 @@ class Constant {
     }
   }
 
-  static DateTime checkScheduleTime({required DateTime scheduleDate}) {
-    final int parsedTime = int.tryParse(scheduleOrderTime) ?? 0;
+  /// The admin's lead time for scheduled orders
+  /// (`settings/scheduleOrderNotification`): the store can act on a scheduled
+  /// order this long before its time.
+  static Duration get scheduleLeadTime => ScheduledOrderRule.leadTime(scheduleOrderTime, scheduleOrderTimeType);
 
-    Duration duration;
-    switch (scheduleOrderTimeType) {
-      case 'minute':
-        duration = Duration(minutes: parsedTime);
-        break;
-      case 'hour':
-        duration = Duration(hours: parsedTime);
-        break;
-      case 'day':
-        duration = Duration(days: parsedTime);
-        break;
-      default:
-        duration = Duration(minutes: 1);
-    }
-    return scheduleDate.subtract(duration);
+  /// When the store can accept an order scheduled for [scheduleDate] (and
+  /// when it moves from Scheduled to New): [scheduleLeadTime] before it.
+  static DateTime checkScheduleTime({required DateTime scheduleDate}) {
+    return scheduleDate.subtract(scheduleLeadTime);
   }
 
   static String getTaxDisplayText(List<TaxModel>? taxes, {CurrencyModel? currency}) {

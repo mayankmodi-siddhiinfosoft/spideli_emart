@@ -166,4 +166,8 @@ const Map<String, String> trFR = {
   "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Votre téléphone @phone empêche les applications de recevoir des notifications après leur fermeture. Activez le démarrage automatique (Autostart) pour cette application et réglez sa batterie sur « Aucune restriction » pour ne rien manquer.",
   "Not now": "Plus tard",
   "Open settings": "Ouvrir les paramètres",
+  "Scheduled": "Programmées",
+  "No scheduled orders": "Aucune commande programmée",
+  "Orders placed for a later time wait here and move to New when it is time to prepare them.": "Les commandes passées pour plus tard attendent ici et rejoignent les nouvelles commandes quand il est temps de les préparer.",
+  "Available at @time": "Disponible le @time",
 };

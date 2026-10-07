@@ -26,4 +26,8 @@ const Map<String, String> ruRU = {
   "Your @phone phone stops apps from receiving notifications after you close them. Turn on Autostart for this app, and set its battery use to No restrictions, so you never miss an update.": "Ваш телефон @phone не даёт приложениям получать уведомления после закрытия. Включите автозапуск для этого приложения и установите для батареи режим «Без ограничений», чтобы ничего не пропустить.",
   "Not now": "Не сейчас",
   "Open settings": "Открыть настройки",
+  "Scheduled": "Запланированные",
+  "No scheduled orders": "Нет запланированных заказов",
+  "Orders placed for a later time wait here and move to New when it is time to prepare them.": "Заказы на более позднее время ждут здесь и переходят в новые, когда придёт время их готовить.",
+  "Available at @time": "Доступен с @time",
 };
