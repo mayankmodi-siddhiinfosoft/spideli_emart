@@ -168,7 +168,7 @@ class HomeScreen extends StatelessWidget {
                                   )
                                 : _externalMapPanel(context, controller),
                           ),
-                          controller.currentOrder.value.id != null && controller.currentOrder.value.status == Constant.driverPending
+                          controller.isAwaitingAccept(controller.currentOrder.value)
                               ? showDriverBottomSheet(context, controller)
                               : Container(),
                           controller.currentOrder.value.id != null &&
@@ -188,7 +188,7 @@ class HomeScreen extends StatelessWidget {
   /// An order the driver is working (not a pending request) is on screen.
   static bool _hasAssignedOrder(HomeController controller) {
     final order = controller.currentOrder.value;
-    return order.id != null && order.status != Constant.driverPending;
+    return order.id != null && !controller.isAwaitingAccept(order);
   }
 
   /// A number from a record field that may be null, empty, a string or a num.
@@ -257,7 +257,7 @@ class HomeScreen extends StatelessWidget {
                           latitude: order.address?.location?.latitude ?? 0.0,
                           longLatitude: order.address?.location?.longitude ?? 0.0,
                           address: order.address?.getFullAddress());
-                    } else if (order.status == Constant.orderShipped || order.status == Constant.driverAccepted || order.status == Constant.driverPending) {
+                    } else if (order.status == Constant.orderShipped || order.status == Constant.driverAccepted || controller.isAwaitingAccept(order)) {
                       Utils.redirectMap(
                           name: order.vendor?.title ?? '',
                           latitude: order.vendor?.latitude ?? 0.0,

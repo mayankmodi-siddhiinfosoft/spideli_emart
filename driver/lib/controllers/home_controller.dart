@@ -28,6 +28,7 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart' as location;
 
 import '../models/order_model.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class HomeController extends GetxController {
   RxBool isLoading = true.obs;
@@ -336,6 +337,15 @@ class HomeController extends GetxController {
     return false;
   }
 
+  /// The order waits for this driver's Accept / Reject (see
+  /// [AssignedDeliveryOrders.awaitsDriver]): shown, routed and rung like a
+  /// `Driver Pending` request.
+  bool isAwaitingAccept(OrderModel order) {
+    if (order.id == null) return false;
+    final String? uid = driverModel.value.id ?? FirebaseAuth.instance.currentUser?.uid;
+    return AssignedDeliveryOrders.awaitsDriver(order, uid);
+  }
+
   bool _outOfRegion(OrderModel order, UserModel driver) {
     // Zone-bound (spec 9.1): never offer a request from another region. A
     // hand assignment that names this driver is not an offer and is kept.
@@ -444,7 +454,7 @@ class HomeController extends GetxController {
         getDirections();
       }
     }
-    if (currentOrder.value.status == Constant.driverPending) {
+    if (isAwaitingAccept(currentOrder.value)) {
       await AudioPlayerService.playSound(true);
     } else {
       await AudioPlayerService.playSound(false);
@@ -540,7 +550,7 @@ class HomeController extends GetxController {
     LatLng? origin;
     LatLng? destination;
 
-    switch (order.status) {
+    switch (isAwaitingAccept(order) ? Constant.driverPending : order.status) {
       // Driver Accepted is also on the way to the store (it had no route).
       case Constant.driverAccepted:
       case Constant.orderShipped:
@@ -583,7 +593,7 @@ class HomeController extends GetxController {
     markers.remove("Driver");
 
     final LatLng? storePoint = _toLatLng(order.vendor?.latitude, order.vendor?.longitude);
-    if (storePoint != null && (order.status == Constant.orderShipped || order.status == Constant.driverAccepted || order.status == Constant.driverPending)) {
+    if (storePoint != null && (order.status == Constant.orderShipped || order.status == Constant.driverAccepted || isAwaitingAccept(order))) {
       markers['Departure'] = Marker(
         markerId: const MarkerId('Departure'),
         infoWindow: const InfoWindow(title: "Departure"),
@@ -593,7 +603,7 @@ class HomeController extends GetxController {
     }
 
     final LatLng? dropPoint = _toLatLng(order.address?.location?.latitude, order.address?.location?.longitude);
-    if (dropPoint != null && (order.status == Constant.orderInTransit || order.status == Constant.driverPending)) {
+    if (dropPoint != null && (order.status == Constant.orderInTransit || isAwaitingAccept(order))) {
       markers['Destination'] = Marker(
         markerId: const MarkerId('Destination'),
         infoWindow: const InfoWindow(title: "Destination"),
@@ -668,7 +678,7 @@ class HomeController extends GetxController {
       CameraUpdate.newCameraPosition(
         CameraPosition(
           target: source,
-          zoom: currentOrder.value.id == null || currentOrder.value.status == Constant.driverPending ? 16 : 20,
+          zoom: currentOrder.value.id == null || isAwaitingAccept(currentOrder.value) ? 16 : 20,
           bearing: double.parse(driverModel.value.rotation.toString()),
         ),
       ),
@@ -822,7 +832,7 @@ class HomeController extends GetxController {
   void getOSMPolyline() async {
     try {
       if (currentOrder.value.id != null) {
-        if (currentOrder.value.status != Constant.driverPending) {
+        if (!isAwaitingAccept(currentOrder.value)) {
           print("Order Status :: ${currentOrder.value.status} :: OrderId :: ${currentOrder.value.id}} ::");
           if (currentOrder.value.status == Constant.orderShipped || currentOrder.value.status == Constant.driverAccepted) {
             current.value = location.LatLng(driverModel.value.location!.latitude ?? 0.0, driverModel.value.location!.longitude ?? 0.0);

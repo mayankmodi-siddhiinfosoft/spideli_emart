@@ -60,8 +60,18 @@ abstract final class AssignedDeliveryOrders {
   /// pending order that names ANOTHER driver is that driver's hand
   /// assignment, not an offer: accepting it took their job.
   static bool isOfferFor(OrderModel order, String? uid) {
-    if (order.id == null || order.status != Constant.driverPending) return false;
+    if (order.id == null || !awaitsDriver(order, uid)) return false;
     return !_rejectedBy(order, uid) && !_otherDriver(order, uid);
+  }
+
+  /// The order waits for this driver to accept or reject it: `Driver Pending`
+  /// (dispatched or hand-assigned), or a hand assignment that left the order
+  /// at the store's `Order Accepted` with this driver named (`driverID`). The
+  /// admin panel assigns that way: the driver used to get no button at all,
+  /// because `Order Accepted` was neither an offer nor a job in progress.
+  static bool awaitsDriver(OrderModel order, String? uid) {
+    if (order.status == Constant.driverPending) return true;
+    return order.status == Constant.orderAccepted && isNamedFor(order, uid);
   }
 
   /// A `Driver Pending` order that names this driver (`driverID == uid`) — a
