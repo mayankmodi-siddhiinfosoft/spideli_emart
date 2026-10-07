@@ -1,3 +1,4 @@
+import '../utils/booking_status_tabs.dart';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:get/get.dart';
@@ -7,7 +8,7 @@ import '../models/parcel_order_model.dart';
 import '../models/wallet_transaction_model.dart';
 import '../screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import '../service/fire_store_utils.dart';
-import '../service/parcel_shipping_service.dart';
+import '../service/parcel_cancellation.dart';
 import '../themes/show_toast_dialog.dart';
 import '../widget/cancel_reason_sheet.dart';
 
@@ -54,17 +55,19 @@ class ParcelMyBookingController extends GetxController {
   List<ParcelOrderModel> getOrdersForTab(String tab) {
     switch (tab) {
       case "New":
-        // Quote requests (route not served) wait here until priced and paid.
-        return parcelOrder.where((order) => ["Order Placed", ParcelShipping.quoteRequestedStatus].contains(order.status)).toList();
+        // Quote requests (route not served) wait here until priced and paid,
+        // and a parcel stays here while the dispatch looks for a driver
+        // ("Driver Pending", or "Driver Rejected" which re-dispatches).
+        return parcelOrder.where((order) => BookingStatusTabs.parcelNew.contains(order.status)).toList();
 
       case "In Transit":
-        return parcelOrder.where((order) => ["Order Accepted", "Driver Accepted", "Driver Pending", "Order Shipped", "In Transit"].contains(order.status)).toList();
+        return parcelOrder.where((order) => BookingStatusTabs.parcelInTransit.contains(order.status)).toList();
 
       case "Delivered":
-        return parcelOrder.where((order) => ["Order Completed"].contains(order.status)).toList();
+        return parcelOrder.where((order) => BookingStatusTabs.completed.contains(order.status)).toList();
 
       case "Cancelled":
-        return parcelOrder.where((order) => ["Order Rejected", "Order Cancelled", "Driver Rejected"].contains(order.status)).toList();
+        return parcelOrder.where((order) => BookingStatusTabs.cancelled.contains(order.status)).toList();
 
       default:
         return [];
@@ -79,57 +82,39 @@ class ParcelMyBookingController extends GetxController {
     return DateFormat("dd MMM yyyy, hh:mm a").format(dateTime);
   }
 
+  /// Same rule, same write and same refund as the order screen
+  /// ([ParcelCancellation]): a transaction that updates only the status, the
+  /// reason and the tracking event.
   Future<void> cancelParcelOrder(ParcelOrderModel order) async {
+    final String? orderId = order.id;
+    if (orderId == null) return;
     // Mandatory reason (CANCEL-REASON-CONTRACT): backing out changes nothing.
     final reason = await CancelReasonSheet.show(title: "Why are you cancelling this parcel?".tr);
     if (reason == null) return;
     try {
       isLoading.value = true;
 
-      // Re-read: the parcel may have been collected / dropped off meanwhile.
-      final ParcelOrderModel? fresh = order.id == null ? null : await ParcelShippingService.findOrder(order.id!);
-      if (fresh != null) {
-        order.status = fresh.status;
-        order.parcelStatus = fresh.parcelStatus;
-      }
-      if (order.status != Constant.orderPlaced || !ParcelShipping.beforeHandOver(order.parcelStatus)) {
-        ShowToastDialog.showToast("You can only cancel before pickup.".tr);
+      final ParcelCancelResult result = await ParcelCancellation.cancel(orderId, reason.toFields());
+      if (!result.ok) {
+        ShowToastDialog.showToast(result.error!);
         return;
       }
-
       order.status = Constant.orderCancelled;
       reason.applyTo(order);
-      // Status and the reason fields in the same write.
-      await FireStoreUtils.parcelOrderPlace(order, extra: reason.toFields());
-      if (order.isTrackable) {
-        await ParcelShippingService.append(order.id!, ParcelShippingService.event(ParcelShipping.cancelled), order: order).catchError((_) {});
-      }
 
-      listenParcelOrders();
-
-      if (order.paymentMethod?.toLowerCase() != "cod") {
-        double totalTax = 0.0;
-
-        final taxSettings = order.taxSetting ?? [];
-
-        for (var element in taxSettings) {
-          totalTax += Constant.calculateTax(amount: (double.parse(order.subTotal.toString()) - double.parse(order.discount.toString())).toString(), taxModel: element);
-        }
-
-        double subTotal = double.parse(order.subTotal.toString()) - double.parse(order.discount.toString());
-        double refundAmount = subTotal + totalTax + order.scopeTaxAmount;
-
+      final double refund = ParcelCancellation.refundAmount(result.before!);
+      if (refund > 0) {
         WalletTransactionModel walletTransaction = WalletTransactionModel(
           id: Constant.getUuid(),
-          amount: refundAmount,
+          amount: refund,
           date: Timestamp.now(),
           paymentMethod: PaymentGateway.wallet.name,
           transactionUser: "customer",
           userId: FireStoreUtils.getCurrentUid(),
           isTopup: true,
           // refund
-          orderId: order.id,
-          regionId: order.regionId,
+          orderId: orderId,
+          regionId: result.before!.regionId,
           note: "Refund for cancelled parcel order",
           paymentStatus: "success",
           serviceType: Constant.parcelServiceType,
@@ -139,9 +124,10 @@ class ParcelMyBookingController extends GetxController {
         await FireStoreUtils.setWalletTransaction(walletTransaction);
 
         // Update wallet balance
-        await FireStoreUtils.updateUserWallet(amount: refundAmount.toString(), userId: FireStoreUtils.getCurrentUid());
+        await FireStoreUtils.updateUserWallet(amount: refund.toString(), userId: FireStoreUtils.getCurrentUid());
       }
 
+      listenParcelOrders();
       ShowToastDialog.showToast("Order cancelled successfully".tr);
     } catch (e) {
       ShowToastDialog.showToast("${'Failed to cancel order:'.tr} $e".tr);

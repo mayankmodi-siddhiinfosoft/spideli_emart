@@ -45,6 +45,20 @@ class ParcelPricingSettings {
   /// parcel checkout does, not added to the customer's price.
   final bool commissionAsExtra;
 
+  /// Client doc point 42 ("the price does not change whether or not dimensions
+  /// are given"): `settings/ParcelPricing.volumetricDivisor`, in cm3 per kg.
+  /// A parcel is charged on the GREATER of its actual weight and its
+  /// volumetric weight `L x W x H / volumetricDivisor` - the courier rule,
+  /// applied to whatever the configured pricing charges by weight (the
+  /// same-city weight categories, the rate tables, the carriers' per-kg rate).
+  ///
+  /// Absent = [defaultVolumetricDivisor] (5000, the usual courier divisor),
+  /// so dimensions count from today; `0` (or less) switches volumetric weight
+  /// off and dimensions are recorded only, as before.
+  final double volumetricDivisor;
+
+  static const double defaultVolumetricDivisor = 5000;
+
   const ParcelPricingSettings({
     this.intercityTax = 5000,
     this.intercountryTax = 5000,
@@ -53,11 +67,13 @@ class ParcelPricingSettings {
     this.roundingStepKg = 0.5,
     this.currencyNote,
     this.commissionAsExtra = false,
+    this.volumetricDivisor = defaultVolumetricDivisor,
   });
 
   factory ParcelPricingSettings.fromJson(Map<String, dynamic>? json) {
     if (json == null) return const ParcelPricingSettings();
     final double step = _num(json['roundingStepKg']) ?? 0.5;
+    final double divisor = _num(json['volumetricDivisor']) ?? defaultVolumetricDivisor;
     return ParcelPricingSettings(
       intercityTax: _num(json['intercityTax']) ?? 5000,
       intercountryTax: _num(json['intercountryTax']) ?? 5000,
@@ -66,8 +82,12 @@ class ParcelPricingSettings {
       roundingStepKg: step > 0 ? step : 0.5,
       currencyNote: json['currencyNote']?.toString(),
       commissionAsExtra: json['commissionAsExtra'] == true,
+      volumetricDivisor: divisor > 0 ? divisor : 0,
     );
   }
+
+  /// Volumetric weight is part of the price.
+  bool get usesVolumetricWeight => volumetricDivisor > 0;
 
   double taxFor(String scope) {
     if (scope == ParcelScope.intercity) return intercityTax;
@@ -160,6 +180,32 @@ class ParcelRateCard {
       ParcelRateCard(baseCharge: _num(json['baseCharge']), perKmCharge: _num(json['perKmCharge']), perKgCharge: _num(json['perKgCharge']), minimumCharge: _num(json['minimumCharge']));
 
   bool get isSet => baseCharge != null || perKmCharge != null || perKgCharge != null || minimumCharge != null;
+
+  /// `delivery_carriers.regionPricing` (doc point 43, panel 6 October):
+  /// `{ "<regionId>": { baseCharge, perKmCharge, perKgCharge, minimumCharge } }`.
+  /// Entries that are not maps, or that set no charge, are left out.
+  static Map<String, ParcelRateCard> parseRegionPricing(dynamic raw) {
+    if (raw is! Map) return const <String, ParcelRateCard>{};
+    final Map<String, ParcelRateCard> out = <String, ParcelRateCard>{};
+    raw.forEach((key, value) {
+      final String id = key.toString().trim();
+      if (id.isEmpty || value is! Map) return;
+      final ParcelRateCard card = ParcelRateCard.fromJson(Map<String, dynamic>.from(value));
+      if (card.isSet) out[id] = card;
+    });
+    return out;
+  }
+
+  /// The card a carrier charges in [regionId]: `regionPricing[regionId]`, the
+  /// source of truth since 6 October; the flat fields ([flat]) only when
+  /// `regionPricing` is empty or has no entry for that region (or the region
+  /// is unknown). The flat fields now hold the FIRST region's price, so they
+  /// are wrong for a carrier charging differently in two regions.
+  static ParcelRateCard forRegion({required ParcelRateCard flat, required Map<String, ParcelRateCard> regionPricing, String? regionId}) {
+    final String id = (regionId ?? '').trim();
+    if (id.isEmpty || regionPricing.isEmpty) return flat;
+    return regionPricing[id] ?? flat;
+  }
 }
 
 /// A place on a route (`origin` / `destination` on the order).
@@ -330,6 +376,52 @@ class ParcelPricing {
     return quote;
   }
 
+  /// Volumetric weight in kg of an `l x w x h` cm parcel: `l * w * h /
+  /// divisor`. Null when a side is missing or not positive (nothing to price
+  /// on) or when the divisor switches it off.
+  static double? volumetricKg({num? lengthCm, num? widthCm, num? heightCm, required double divisor}) {
+    if (divisor <= 0) return null;
+    final List<num?> sides = [lengthCm, widthCm, heightCm];
+    if (sides.any((v) => v == null || v <= 0 || !v.isFinite)) return null;
+    final double kg = lengthCm! * widthCm! * heightCm! / divisor;
+    return _round3(kg);
+  }
+
+  /// The weight a parcel is charged on: the greater of [actualKg] and
+  /// [volumetricKg] (either may be unknown). 0 when neither is known.
+  static double chargeableKg({double? actualKg, double? volumetricKg}) {
+    final double a = (actualKg != null && actualKg > 0) ? actualKg : 0;
+    final double v = (volumetricKg != null && volumetricKg > 0) ? volumetricKg : 0;
+    return a > v ? a : v;
+  }
+
+  /// Same-city weight category for a parcel charged on [kg]: [selected] while
+  /// it covers [kg] (its title's upper limit, [categoryMaxKg]), else the
+  /// LIGHTEST category whose upper limit does, else the heaviest one. Never
+  /// lighter than what the customer picked; categories whose title holds no
+  /// number are only ever kept when selected.
+  static T categoryFor<T>({required List<T> categories, required T selected, required double kg, required String? Function(T) titleOf}) {
+    final double? selectedMax = categoryMaxKg(titleOf(selected));
+    if (kg <= 0 || selectedMax == null || selectedMax + _eps >= kg) return selected;
+    T? best;
+    double bestMax = double.infinity;
+    T heaviest = selected;
+    double heaviestMax = selectedMax;
+    for (final T c in categories) {
+      final double? max = categoryMaxKg(titleOf(c));
+      if (max == null) continue;
+      if (max > heaviestMax) {
+        heaviest = c;
+        heaviestMax = max;
+      }
+      if (max + _eps >= kg && max < bestMax) {
+        best = c;
+        bestMax = max;
+      }
+    }
+    return best ?? heaviest;
+  }
+
   /// The existing eMart same-city price (distance x weight-category charge).
   static ParcelQuote cityDefault({required double distance, required double weightCategoryCharge}) =>
       ParcelQuote(carrierPrice: distance * weightCategoryCharge, source: ParcelPriceSource.defaultSetting);
@@ -373,4 +465,6 @@ class ParcelPricing {
   }
 
   static double _round2(double v) => (v * 100).roundToDouble() / 100;
+
+  static double _round3(double v) => (v * 1000).roundToDouble() / 1000;
 }

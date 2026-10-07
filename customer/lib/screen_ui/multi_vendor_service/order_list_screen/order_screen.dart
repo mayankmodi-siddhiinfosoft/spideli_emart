@@ -1,3 +1,4 @@
+import 'package:customer/utils/booking_status_tabs.dart';
 import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/widget/pod_info_view.dart';
 import 'package:customer/constant/constant.dart';
@@ -247,7 +248,7 @@ class _OrderCard extends StatelessWidget {
                         children: [
                           Expanded(child: Text(orderModel.vendor!.title.toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.titleSm)),
                           const DsGap(DsSpace.sm),
-                          DsStatusChip(label: status, status: status, pulse: status == Constant.orderShipped || status == Constant.orderInTransit),
+                          DsStatusChip(label: BookingStatusTabs.label(status), status: status, pulse: status == Constant.orderShipped || status == Constant.orderInTransit),
                         ],
                       ),
                       const DsGap(DsSpace.xxs),

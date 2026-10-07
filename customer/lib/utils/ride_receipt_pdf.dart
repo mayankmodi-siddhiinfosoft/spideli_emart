@@ -1,3 +1,5 @@
+import 'package:customer/utils/booking_status_tabs.dart';
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/cab_order_details_controller.dart';
 import 'package:customer/controllers/rental_order_details_controller.dart';
@@ -23,13 +25,18 @@ class RideReceiptPdf {
     await RegionService.ensureLoaded();
     final CabOrderModel order = c.cabOrder.value;
     final bool intercity = order.rideType == 'intercity';
-    final UserModel? driver = order.driver ?? (c.driverUser.value.id != null ? c.driverUser.value : null);
+    // No driver while the dispatch is still looking for one: a driver who was
+    // only offered the ride (also one cancelled meanwhile), or who declined
+    // it, is not its driver.
+    final UserModel? driver = !BookingStatusTabs.driverAccepted(order.status, order.driverId, order.driver?.id)
+        ? null
+        : order.driver ?? (c.driverUser.value.id != null ? c.driverUser.value : null);
     final double platformFee = double.tryParse(order.platformFee ?? '') ?? 0;
 
     final List<MapEntry<String, String>> route = [
-      MapEntry('Pickup'.tr, order.sourceLocationName ?? '-'),
-      for (final (int i, Map<String, dynamic> stop) in order.orderedStops.indexed) MapEntry('${'Stop'.tr} ${i + 1}', stop['address']?.toString() ?? ''),
-      MapEntry('Destination'.tr, order.destinationLocationName ?? '-'),
+      MapEntry('Pickup'.tr, displayAddress(order.sourceLocationName, fallback: '-')),
+      for (final (int i, Map<String, dynamic> stop) in order.orderedStops.indexed) MapEntry('${'Stop'.tr} ${i + 1}', displayAddress(stop['address'], fallback: '-')),
+      MapEntry('Destination'.tr, displayAddress(order.destinationLocationName, fallback: '-')),
       if ((order.distance ?? '').isNotEmpty) MapEntry('Distance'.tr, '${(double.tryParse(order.distance!) ?? 0).toStringAsFixed(2)} ${'KM'.tr}'),
       if ((order.duration ?? '').isNotEmpty) MapEntry('Duration'.tr, order.duration!),
       if (order.roundTrip == true) MapEntry('Round trip'.tr, 'Yes'.tr),
@@ -74,13 +81,13 @@ class RideReceiptPdf {
   static Future<ReceiptData> fromRentalOrder(RentalOrderDetailsController c) async {
     await RegionService.ensureLoaded();
     final RentalOrderModel order = c.order.value;
-    final UserModel? driver = order.driver ?? c.driverUser.value;
+    final UserModel? driver = !BookingStatusTabs.driverAccepted(order.status, order.driverId, order.driver?.id) ? null : order.driver ?? c.driverUser.value;
     final double platformFee = double.tryParse(order.platformFee ?? '') ?? 0;
     final double extras = c.extraKilometerCharge.value + c.extraMinutesCharge.value;
     final package = order.rentalPackageModel;
 
     final List<MapEntry<String, String>> rental = [
-      MapEntry('Pickup'.tr, order.sourceLocationName ?? '-'),
+      MapEntry('Pickup'.tr, displayAddress(order.sourceLocationName, fallback: '-')),
       if (order.bookingDateTime != null) MapEntry('Booking date'.tr, _dateFormat.format(order.bookingDateTime!.toDate())),
       if (order.startTime != null) MapEntry('Start'.tr, _dateFormat.format(order.startTime!.toDate())),
       if (order.endTime != null) MapEntry('End'.tr, _dateFormat.format(order.endTime!.toDate())),

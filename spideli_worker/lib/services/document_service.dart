@@ -34,19 +34,35 @@ class DocumentService {
     }
   }
 
-  /// Admin-configured worker document types; a built-in identity document
-  /// when none is configured (spec 3.6: "Identity document").
-  static Future<List<DocumentModel>> getDocumentTypes() async {
-    final List<DocumentModel> list = [];
+  /// Admin-configured worker document types (`documents` with
+  /// `type == "worker"` and `enable == true`). Report Doc 36/41: uploads are
+  /// made only against these ids; when the admin has created none the list is
+  /// empty and the Documents screen shows an empty state -- there is no
+  /// built-in fallback key any more. Null when the read failed (offline,
+  /// rules): the screen then offers a retry instead of claiming that none
+  /// are configured.
+  static Future<List<DocumentModel>?> getDocumentTypes() async {
     try {
       final snap = await _db.collection(DOCUMENTS).where('type', isEqualTo: workerType).where('enable', isEqualTo: true).get();
-      for (final doc in snap.docs) {
-        list.add(DocumentModel.fromJson(doc.data(), docId: doc.id));
-      }
+      return documentTypesFrom(snap.docs.map((doc) => MapEntry(doc.id, doc.data())));
     } catch (e) {
       log('DocumentService document types failed: $e');
+      return null;
     }
-    if (list.isEmpty) list.add(DocumentModel.identityDocument());
+  }
+
+  /// Pure part of [getDocumentTypes]: builds the types from `(docId, data)`
+  /// pairs, skipping any without an id or not an enabled worker type (the
+  /// query already filters; this keeps a stray row from becoming an upload
+  /// key).
+  static List<DocumentModel> documentTypesFrom(Iterable<MapEntry<String, Map<String, dynamic>>> docs) {
+    final List<DocumentModel> list = [];
+    for (final doc in docs) {
+      if (doc.value['type']?.toString() != workerType || doc.value['enable'] != true) continue;
+      final type = DocumentModel.fromJson(doc.value, docId: doc.key);
+      if ((type.id ?? '').isEmpty) continue;
+      list.add(type);
+    }
     return list;
   }
 
@@ -80,7 +96,10 @@ class DocumentService {
   /// Overall status: any rejected > any expired > any not submitted > any
   /// pending > approved. `isDocumentVerify == true` on the worker (admin
   /// approval) counts as approved unless a document is rejected or expired.
+  /// With no document type configured nothing has been verified: approved
+  /// only when the admin set `isDocumentVerify`, otherwise not submitted.
   static VerificationStatus overallStatus(List<DocumentModel> types, WorkerDocumentModel? uploaded, {bool? isDocumentVerify}) {
+    if (types.isEmpty) return isDocumentVerify == true ? VerificationStatus.approved : VerificationStatus.notSubmitted;
     final statuses = types.map((t) => statusOf(uploaded?.documentFor(t.id))).toList();
     VerificationStatus result;
     if (statuses.contains(VerificationStatus.rejected)) {
@@ -98,6 +117,27 @@ class DocumentService {
       return VerificationStatus.approved;
     }
     return result;
+  }
+
+  /// Whether the worker may see the active jobs, start one and go online
+  /// (spec 3.6). Verification off: always. Verification on: when the
+  /// [overallStatus] is approved, or when the admin's worker document types
+  /// were read and there are none -- there is then nothing the worker could
+  /// upload and nothing the panel could approve, so the gate does not lock
+  /// the worker out for good (the displayed status stays "not submitted" and
+  /// nothing is written). The admin must create a `documents` type with
+  /// `type == "worker"` for the requirement to bite. A failed type read
+  /// ([typesLoadFailed]) keeps the gate closed until a retry succeeds.
+  static bool canReceiveJobs({
+    required bool verificationRequired,
+    required List<DocumentModel> types,
+    required bool typesLoadFailed,
+    WorkerDocumentModel? uploaded,
+    bool? isDocumentVerify,
+  }) {
+    if (!verificationRequired) return true;
+    if (types.isEmpty && !typesLoadFailed) return true;
+    return overallStatus(types, uploaded, isDocumentVerify: isDocumentVerify) == VerificationStatus.approved;
   }
 
   static Future<String> uploadFile(File file, String uid) async {

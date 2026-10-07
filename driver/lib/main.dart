@@ -7,6 +7,7 @@ import 'package:driver/controllers/global_setting_controller.dart';
 import 'package:driver/firebase_options.dart';
 import 'package:driver/models/language_model.dart';
 import 'package:driver/services/audio_player_service.dart';
+import 'package:driver/services/incoming_offer_service.dart';
 import 'package:driver/services/localization_service.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/easy_loading_config.dart';
@@ -36,7 +37,8 @@ void main() async {
     FirebaseMessaging.instance.onTokenRefresh.listen((t) => debugPrint('PUSH_DEBUG token=$t'));
     FirebaseMessaging.instance.getToken().then((t) => debugPrint('PUSH_DEBUG token=$t'), onError: (Object e) => debugPrint('PUSH_DEBUG token error: $e'));
   }
-  // Both Android channels exist before any push can arrive: one that arrives
+  // Every Android channel (general, jobs, and the dispatch Cloud Functions'
+  // `spideli`, spec §5A) exists before any push can arrive: one that arrives
   // first is posted on a silent fallback channel the SDK makes (report #19).
   await NotificationService.createChannels();
 
@@ -85,6 +87,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.paused) {
       AudioPlayerService.initAudio();
+    }
+    // Dispatch offers recorded by the background push isolate meanwhile
+    // (their countdown starts at the push), and offers whose window ran out
+    // while the app was away (rejected automatically, D3).
+    if (state == AppLifecycleState.resumed) {
+      IncomingOfferService.onAppResumed();
     }
   }
 

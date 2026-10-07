@@ -152,6 +152,40 @@ void main() {
     });
   });
 
+  group('dispatch states (DRIVER_DISPATCH_DOCUMENTATION.md §5C/§5D)', () {
+    test('the driver -> store leg is drawn until pickup ("In Transit")', () {
+      for (final String status in [
+        Constant.orderPlaced,
+        Constant.orderAccepted,
+        Constant.driverPending,
+        Constant.driverRejected,
+        Constant.driverAccepted,
+        // deliveryDispatch moves an accepted order straight on to Order Shipped.
+        Constant.orderShipped,
+      ]) {
+        expect(LiveTrackingController.isBeforePickup(status), isTrue, reason: status);
+      }
+      expect(LiveTrackingController.isBeforePickup(Constant.orderInTransit), isFalse);
+    });
+
+    test('a store saved without coordinates gets no pin (02#2)', () async {
+      final c = LiveTrackingController();
+      c.orderModel.value = OrderModel(
+        id: 'order-2',
+        status: Constant.orderShipped,
+        vendor: VendorModel(),
+        address: ShippingAddress(location: UserLocation(latitude: homeLat, longitude: homeLng)),
+      );
+
+      c.applyOrder();
+      await settle();
+
+      expect(LiveTrackingController.hasPoint(c.source.value), isFalse);
+      expect(c.osmMarkers.length, 1);
+      expect(c.trackedPoints, [location.LatLng(homeLat, homeLng)]);
+    });
+  });
+
   group('boundsOf', () {
     test('covers every tracked point', () {
       final bounds = LiveTrackingController.boundsOf([

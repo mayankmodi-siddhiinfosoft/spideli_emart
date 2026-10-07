@@ -6,6 +6,7 @@ import '../models/rating_model.dart';
 import '../models/rental_order_model.dart';
 import '../models/user_model.dart';
 import '../service/fire_store_utils.dart';
+import '../utils/review_totals.dart';
 import '../constant/constant.dart';
 import '../themes/show_toast_dialog.dart';
 
@@ -23,9 +24,6 @@ class RentalReviewController extends GetxController {
   /// Driver (to be reviewed)
   final Rx<UserModel?> driverUser = Rx<UserModel?>(null);
 
-  /// Review stats
-  final RxInt futureCount = 0.obs;
-  final RxInt futureSum = 0.obs;
 
   @override
   void onInit() {
@@ -47,21 +45,11 @@ class RentalReviewController extends GetxController {
       }
     });
 
+    // The driver, for the screen only: their totals are updated field-level
+    // when the review is saved (FireStoreUtils.addDriverReviewTotals).
     await FireStoreUtils.getUserProfile(order.value?.driverId ?? '').then((value) {
       if (value != null) {
         driverUser.value = value;
-
-        final int userReviewsCount = int.tryParse(driverUser.value!.reviewsCount?.toString() ?? "0") ?? 0;
-        final int userReviewsSum = int.tryParse(driverUser.value!.reviewsSum?.toString() ?? "0") ?? 0;
-
-        if (ratingModel.value != null) {
-          final int oldRating = ratingModel.value?.rating?.toInt() ?? 0;
-          futureCount.value = userReviewsCount - 1;
-          futureSum.value = userReviewsSum - oldRating;
-        } else {
-          futureCount.value = userReviewsCount;
-          futureSum.value = userReviewsSum;
-        }
       }
     });
 
@@ -77,13 +65,14 @@ class RentalReviewController extends GetxController {
 
     ShowToastDialog.showLoader("Submit in...".tr);
 
-    final user = await FireStoreUtils.getUserProfile(order.value?.driverId ?? '');
-
-    if (user != null) {
-      user.reviewsCount = (futureCount.value + 1).toString();
-      user.reviewsSum = (futureSum.value + ratings.value.toInt()).toString();
-    }
-    if (ratingModel.value != null) {
+    // Only the change this review makes to the driver's totals is written
+    // (reviewsCount / reviewsSum, in a transaction), never the driver's whole
+    // document: a copy of it would put back the dispatch's offers
+    // (`orderRequestData`), the driver's active jobs (`inProgressOrderID`)
+    // and their position as they were before this write.
+    final bool isUpdate = ratingModel.value != null;
+    final totals = UserReviewTotals.delta(rating: ratings.value.toInt(), previousRating: isUpdate ? (ratingModel.value?.rating?.toInt() ?? 0) : null);
+    if (isUpdate) {
       /// Update existing review
       final updatedRating = RatingModel(
         id: ratingModel.value!.id,
@@ -100,9 +89,6 @@ class RentalReviewController extends GetxController {
       );
 
       await FireStoreUtils.updateReviewById(updatedRating);
-      if (user != null) {
-        await FireStoreUtils.updateUser(user);
-      }
     } else {
       /// New review
       final docRef = FireStoreUtils.fireStore.collection(CollectionName.itemsReview).doc();
@@ -120,10 +106,9 @@ class RentalReviewController extends GetxController {
       );
 
       await FireStoreUtils.updateReviewById(newRating);
-      if (user != null) {
-        await FireStoreUtils.updateUser(user);
-      }
     }
+
+    await FireStoreUtils.addDriverReviewTotals(order.value?.driverId, countDelta: totals.countDelta, sumDelta: totals.sumDelta);
 
     ShowToastDialog.closeLoader();
     Get.back(result: true);

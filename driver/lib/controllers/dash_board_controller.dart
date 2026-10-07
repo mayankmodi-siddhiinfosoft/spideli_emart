@@ -10,10 +10,10 @@ import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/controllers/cab_dashboard_controller.dart';
 import 'package:driver/controllers/parcel_dashboard_controller.dart';
 import 'package:driver/controllers/rental_dashboard_controller.dart';
-import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/driver_assignment_watcher.dart';
 import 'package:driver/services/driver_job_queue_service.dart';
+import 'package:driver/services/incoming_offer_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/notification_service.dart';
 import 'package:driver/utils/region_service.dart';
@@ -107,6 +107,7 @@ class DriverSessions {
     await NotificationService.onSignOut(clearStoredToken: false);
     DriverAssignmentWatcher.stop();
     DriverJobQueueService.reset();
+    IncomingOfferService.stop();
     await FirebaseAuth.instance.signOut();
     Get.offAll(const LoginScreen());
     ShowToastDialog.showToast("This account no longer exists. Please contact the administrator.".tr);
@@ -127,8 +128,11 @@ class DashBoardController extends GetxController {
   void onInit() {
     // TODO: implement onInit
 
+    // No app-side dispatch trigger here (D1): the dispatch Cloud Functions
+    // offer every order themselves. `updateDriverOrder()` rewrote each
+    // waiting vendor order from this phone and reverted the ones the
+    // function had just dispatched.
     getUser();
-    updateDriverOrder();
     getTheme();
     super.onInit();
   }
@@ -157,6 +161,10 @@ class DashBoardController extends GetxController {
           // Jobs ASSIGNED to this driver, picked up from the records alone (panel
           // report 01 §4: a hand assignment may now come without any push).
           DriverAssignmentWatcher.onDriverSnapshot(userModel.value);
+          // Offers dispatched to this driver: the incoming-order dialog (D3).
+          IncomingOfferService.onDriverSnapshot(userModel.value);
+          // Topics follow the live record (doc 21: zone / region / service changes).
+          NotificationService.syncDriverTopics(userModel.value);
         }
       },
       onError: (Object e) => log("DashBoardController users listener: $e"),
@@ -224,36 +232,6 @@ class DashBoardController extends GetxController {
       final themeController = Get.find<ThemeController>();
       themeController.isDark.value = value;
     }
-  }
-
-  Future<void> updateDriverOrder() async {
-    Timestamp startTimestamp = Timestamp.now();
-    DateTime currentDate = startTimestamp.toDate();
-    currentDate = currentDate.subtract(const Duration(hours: 3));
-    startTimestamp = Timestamp.fromDate(currentDate);
-
-    List<OrderModel> orders = [];
-
-    await FireStoreUtils.fireStore
-        .collection(CollectionName.vendorOrders)
-        .where('status', whereIn: [Constant.orderAccepted, Constant.orderRejected])
-        .where('createdAt', isGreaterThan: startTimestamp)
-        .get()
-        .then((value) async {
-          await Future.forEach(value.docs, (QueryDocumentSnapshot<Map<String, dynamic>> element) {
-            try {
-              orders.add(OrderModel.fromJson(element.data()));
-            } catch (e, s) {
-              print('watchOrdersStatus parse error ${element.id}$e $s');
-            }
-          });
-        });
-
-    orders.forEach((element) async {
-      OrderModel orderModel = element;
-      orderModel.triggerDelivery = Timestamp.now();
-      await FireStoreUtils.setOrder(orderModel);
-    });
   }
 
   Location location = Location();

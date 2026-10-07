@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   const keys = <String>[
     'This store has not set its location yet',
+    'This store has not set its location yet, so it cannot deliver. Please choose TakeAway.',
     'Your order has arrived',
     'Open the app for your delivery code',
     'Your delivery code',
@@ -58,6 +59,32 @@ void main() {
     'This parcel has already been handed over and can no longer be cancelled.',
     'Your driver cancelled — finding another driver',
     'Please wait',
+    'Ride not found',
+    'A driver has already accepted this ride',
+    'This booking can no longer be cancelled',
+    'Failed to cancel booking',
+    'Cancel Booking',
+    // Doc 42 (dimensions priced) and point 54 (receiver SMS).
+    'Please enter the length, width and height, or leave all three empty',
+    'A bulky parcel is charged on its size (L x W x H) when that weighs more than the parcel itself.',
+    'Charged weight',
+    'Notify receiver via SMS that a parcel has been sent',
+    'The receiver gets a text message when the parcel is sent.',
+    'Free',
+    'Receiver SMS',
+    "Please select the receiver's country code",
+    'Please enter a valid receiver mobile number',
+    // Driver dispatch states and the cancellations that race them.
+    'Looking for a driver',
+    'No driver is assigned to this order yet.',
+    'This parcel order is no longer active',
+    'A driver has already accepted this parcel',
+    'Booking not found',
+    'This ride is no longer active',
+    'Your ride was cancelled',
+    'This booking can no longer be negotiated',
+    'This price proposal has changed. Please check the latest status.',
+    'This counter-offer has expired: the driver who made it is no longer on your booking.',
   ];
   const maps = <String, Map<String, String>>{'en_US': enUS, 'ar_AR': arAR};
   final placeholder = RegExp(r'@\w+');

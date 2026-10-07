@@ -55,7 +55,10 @@ class ParcelSearchScreen extends StatelessWidget {
                                           final lat = firstPlace.coordinates.latitude;
                                           final lng = firstPlace.coordinates.longitude;
 
-                                          controller.sourceTextEditController.value.text = AddressFormat.clean(result.address);
+                                          // No address for the point (the geocoder answers '' then):
+                                          // its coordinates, never a placeholder word.
+                                          controller.sourceTextEditController.value.text = AddressFormat.orPlaceholder(result.address,
+                                              placeholder: '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}');
                                           controller.departureLatLongOsm.value = latlong.LatLng(lat, lng);
                                         }
                                       } else {
@@ -104,7 +107,8 @@ class ParcelSearchScreen extends StatelessWidget {
                                           final lng = firstPlace.coordinates.longitude;
                                           // ignore: unused_local_variable
                                           final address = firstPlace.address;
-                                          controller.destinationTextEditController.value.text = AddressFormat.clean(result.address);
+                                          controller.destinationTextEditController.value.text = AddressFormat.orPlaceholder(result.address,
+                                              placeholder: '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}');
                                           controller.destinationLatLongOsm.value = latlong.LatLng(lat, lng);
                                         }
                                       } else {

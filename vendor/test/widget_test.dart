@@ -63,6 +63,12 @@ void main() {
     expect(DsTone.fromStatus('restaurant_rejected'), DsTone.danger);
     expect(DsTone.fromStatus('pending'), DsTone.warning);
     expect(DsTone.fromStatus('In Transit'), DsTone.info);
+    // Dispatch states: waiting for a driver, never shown as rejected.
+    expect(DsTone.fromStatus('Driver Pending'), DsTone.warning);
+    expect(DsTone.fromStatus('Driver Rejected'), DsTone.warning);
+    expect(DsTone.fromStatus('Driver Accepted'), DsTone.success);
+    expect(DsTone.fromStatus('Order Shipped'), DsTone.info);
+    expect(DsTone.fromStatus('Order Rejected'), DsTone.danger);
   });
 
   test('DsLayout.fromWidth picks the breakpoint', () {

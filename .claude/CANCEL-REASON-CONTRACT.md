@@ -38,6 +38,59 @@ dispatch. That keeps the existing shape:
 `driverRejections: [{ driverId, reason, code, at, afterAccept }]` (arrayUnion)
 plus `rejectedByDrivers`. The reason is still mandatory.
 
+### Driver passes vs. final cancellations (dispatch, 7 Oct 2026)
+
+The Cloud Functions dispatch every order (`.claude/DRIVER-DISPATCH-CONTRACT.md`).
+A driver never ends an order; everything a driver does to an offer is a
+**pass**, and a pass **never writes the final fields** above (`cancelReason`,
+`cancelReasonCode`, `cancelledBy`, `cancelledByName`, `cancelledAt`,
+`cancelAction`).
+
+| Driver action | Order write | Reason |
+|---|---|---|
+| **Reject** an offer (dialog or module card) | `status: "Driver Rejected"`, `rejectedByDrivers` arrayUnion own uid, `driverId: null`, `driverID: null` | **mandatory**: `driverRejections` arrayUnion `{driverId, reason, code, at, afterAccept: false}`. Backing out of the sheet writes nothing |
+| **Timeout** (the countdown ran out, or the app opened after it did) | the same status / `rejectedByDrivers` / null driver fields | **none**: no `driverRejections` entry, the reason sheet never opens |
+| Automatic decline of a ride outside the driver's region | the same | none |
+| **Pass** on an open parcel / rental in the search list (`Order Placed`, nobody named) | `rejectedByDrivers` arrayUnion own uid only; status unchanged | mandatory, `driverRejections` |
+| **Hand back** an accepted ride or rental before pickup | `Driver Rejected`, `rejectedByDrivers` arrayUnion own uid, both driver fields null, `driver` deleted | mandatory, `driverRejections` with `afterAccept: true` |
+
+`rejectedByDrivers` is the functions' exclusion list: a driver in it is never
+offered that order again. Only its own uid is ever added by a driver (rules
+draft); the customer and the store never write it, nor `driverRejections`.
+
+### Customer cancels
+
+Customer cancels are **transaction field updates** on the live order (never a
+whole model): `status`, the final fields above, and nothing else except:
+parcels also `parcelStatus` / `trackingEvents` (`Cancelled` event); and, from a
+status where no driver has accepted yet, `driverId: null` and `driverID: null`
+(the driver the dispatch was only offering it to comes off the order).
+
+| Service | Customer may cancel at | Status written |
+|---|---|---|
+| Ride | `Order Placed`, `Driver Pending`, `Driver Rejected`, `Order Accepted` with no driver | `Order Rejected` |
+| Rental | `Order Placed`, `Driver Pending`, `Driver Rejected`, `Driver Accepted` | `Order Cancelled` |
+| Parcel | `Order Placed`, `Quote Requested`, `Driver Pending`, `Driver Rejected`, while the parcel is still with the sender (`parcelStatus` empty, `Created`, `Paid`, `Waiting drop-off`) | `Order Cancelled` |
+
+The **parcel refund** (paid online only) is the full charged total, **minus
+`smsCharge` once the server has sent a receiver SMS** (`smsSent` holds a sent
+event); while nothing was sent, the SMS fee is refunded too
+(`.claude/PARCEL-SMS-CONTRACT.md` section 2).
+
+A booking the dispatch auto-cancels (no driver accepted in time) is ended by
+the Cloud Function. The functions are asked to write the final fields too
+(`cancelledBy: "admin"` or `"system"`); the customer app reads any value and
+shows "Your ride was cancelled" with the reason when there is one.
+
+### Store app
+
+The store's reject and cancel write the reason fields **in the same
+transaction as the status**, and only if the order's status (and its delivery
+man) is unchanged since the reason sheet opened; otherwise nothing is written
+and the store is told the order was updated meanwhile. The store never writes
+`rejectedByDrivers`, `driverRejections` or `pod`, and writes `driverId` /
+`driverID` only to name its own delivery man (self delivery).
+
 ## What the Order Details screen shows
 Every order/booking/ride/parcel details screen, in every app, for a cancelled or
 rejected record shows one clear block:

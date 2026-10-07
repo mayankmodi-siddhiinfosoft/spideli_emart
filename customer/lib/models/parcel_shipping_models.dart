@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/utils/parcel_pricing.dart';
 
 double? _d(dynamic v) {
@@ -45,7 +46,8 @@ class PickupPointModel {
 
   bool get hasLocation => latitude != null && longitude != null && !(latitude == 0 && longitude == 0);
 
-  String get subtitle => [quarter, town].where((e) => e.isNotEmpty).join(', ');
+  /// Quarter and town for display, through the shared address rule (02#18).
+  String get subtitle => formatAddressLine([quarter, town]);
 
   factory PickupPointModel.fromJson(String id, Map<String, dynamic> json) {
     double? lat;
@@ -110,7 +112,13 @@ class DeliveryCarrierModel {
   final String deliveryTimeUnit;
   final String conditions;
   final double? rating;
+  /// The flat `baseCharge` / `perKmCharge` / `perKgCharge` / `minimumCharge`.
+  /// Since 6 October they hold the FIRST region's price: price through
+  /// [rateCardFor], never this directly.
   final ParcelRateCard rateCard;
+
+  /// `regionPricing`: the carrier's price per region (doc point 43).
+  final Map<String, ParcelRateCard> regionPricing;
   final ParcelRateTable? rateTable;
 
   DeliveryCarrierModel({
@@ -127,6 +135,7 @@ class DeliveryCarrierModel {
     this.conditions = '',
     this.rating,
     this.rateCard = const ParcelRateCard(),
+    this.regionPricing = const <String, ParcelRateCard>{},
     this.rateTable,
   });
 
@@ -149,6 +158,7 @@ class DeliveryCarrierModel {
       conditions: _s(json['conditions']),
       rating: rating,
       rateCard: ParcelRateCard.fromJson(json),
+      regionPricing: ParcelRateCard.parseRegionPricing(json['regionPricing']),
       rateTable: ParcelRateTable.fromJson(json['rateTable']),
     );
   }
@@ -165,6 +175,10 @@ class DeliveryCarrierModel {
     if (maxWeight != null && maxWeight! > 0 && maxWeight! < weightKg) return false;
     return true;
   }
+
+  /// The rate card for a shipment from [regionId] (the region of the
+  /// sender's address): `regionPricing[regionId]`, else the flat fields.
+  ParcelRateCard rateCardFor(String? regionId) => ParcelRateCard.forRegion(flat: rateCard, regionPricing: regionPricing, regionId: regionId);
 
   String get estimatedTime {
     String n(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString();

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/rating_model.dart';
+import 'package:customer/utils/booking_status_tabs.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
@@ -57,19 +58,25 @@ class CabOrderDetailsController extends GetxController {
   }
 
   Future<void> fetchDriverDetails() async {
-    if (cabOrder.value.driverId != null) {
-      await FireStoreUtils.getUserProfile(cabOrder.value.driverId ?? '').then((value) {
-        if (value != null) {
-          driverUser.value = value;
-        }
-      });
-
-      await FireStoreUtils.getReviewsbyID(cabOrder.value.id.toString()).then((value) {
-        if (value != null) {
-          ratingModel.value = value;
-        }
-      });
+    // Only a driver who accepted the ride: at "Driver Pending" the dispatch
+    // has written the id of a driver who was only OFFERED it, and a decline
+    // ("Driver Rejected") nulls it. Neither may reach the receipt - nor the
+    // offered driver of a ride cancelled before anyone accepted it.
+    if (!BookingStatusTabs.hasAssignedDriver(cabOrder.value.status, cabOrder.value.driverId, acceptedDriverId: cabOrder.value.driver?.id)) {
+      driverUser.value = UserModel();
+      return;
     }
+    await FireStoreUtils.getUserProfile(cabOrder.value.driverId!).then((value) {
+      if (value != null) {
+        driverUser.value = value;
+      }
+    });
+
+    await FireStoreUtils.getReviewsbyID(cabOrder.value.id.toString()).then((value) {
+      if (value != null) {
+        ratingModel.value = value;
+      }
+    });
   }
 
   void calculateTotalAmount() {

@@ -131,4 +131,9 @@ const Map<String, String> enUS = {
   "Assigned": "Assigned",
   "In progress": "In progress",
   "{0} unread messages": "{0} unread messages",
+  "No documents to upload yet": "No documents to upload yet",
+  "The administrator has not set up any worker documents. They will appear here when available.": "The administrator has not set up any worker documents. They will appear here when available.",
+  "Could not load the documents to upload": "Could not load the documents to upload",
+  "Check your connection and try again.": "Check your connection and try again.",
+  "Retry": "Retry",
 };

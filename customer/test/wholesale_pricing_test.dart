@@ -884,5 +884,36 @@ void main() {
       expect(mixed(businessOnly: true).activeWholesaleTiers, isEmpty);
       expect(wholesaleOnly(businessOnly: false).hiddenForCustomer, isTrue);
     });
+
+    // The cart keeps each line's tiers in a LOCAL snapshot (sqflite), taken
+    // when the line was added. A customer who has since lost the approval - or
+    // another account on the same phone - must still pay retail at checkout.
+    test('a cart line saved with tiers charges retail once the customer is not approved', () {
+      CartProductModel line(int quantity) => CartProductModel(
+        id: 'p1',
+        price: '4000',
+        discountPrice: '0',
+        quantity: quantity,
+        lineMeta: CartLineMeta(tiers: clientTiers(), saleType: ProductModel.saleTypeBoth, minOrderQty: 1, fulfilment: const ['delivery', 'takeaway']),
+      );
+
+      Constant.userModel = approvedBusinessCustomer();
+      expect(line(120).chargedUnitPrice, 2500);
+      expect(line(120).toOrderLine().isWholesale, isTrue);
+
+      for (final UserModel who in [customer(), customer(accountType: 'business', status: 'pending'), customer(accountType: 'personal', status: 'approved')]) {
+        Constant.userModel = who;
+        WholesaleEntitlement.invalidate();
+        expect(line(120).activeTiers, isEmpty);
+        expect(line(120).chargedUnitPrice, 4000);
+        final CartProductModel written = line(500).toOrderLine();
+        expect(written.price, '4000');
+        expect(written.isWholesale, isFalse);
+        expect(written.wholesaleMinQty, '');
+      }
+
+      Constant.userModel = null;
+      expect(line(500).chargedUnitPrice, 4000);
+    });
   });
 }

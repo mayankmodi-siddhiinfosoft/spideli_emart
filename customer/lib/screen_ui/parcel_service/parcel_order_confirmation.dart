@@ -44,9 +44,9 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                         senderName: controller.parcelOrder.value.sender?.name ?? '',
                         senderAddress: controller.parcelOrder.value.sender?.address ?? '',
                         senderPhone: controller.parcelOrder.value.sender?.phone ?? '',
-                        receiverName: controller.parcelOrder.value.receiver?.name ?? '',
+                        receiverName: controller.parcelOrder.value.receiverNameDisplay,
                         receiverAddress: controller.parcelOrder.value.receiver?.address ?? '',
-                        receiverPhone: controller.parcelOrder.value.receiver?.phone ?? '',
+                        receiverPhone: controller.parcelOrder.value.receiverPhoneDisplay,
                       ),
                     ),
                     const DsGap(DsSpace.lg),
@@ -150,6 +150,28 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                           ],
                         ),
                       ),
+                      // Point 54: the sender may pay for the receiver to be told by SMS.
+                      if (controller.canOfferReceiverSms) ...[
+                        const DsGap(DsSpace.lg),
+                        ParcelCard(
+                          child: CheckboxListTile(
+                            key: const ValueKey('parcel-receiver-sms'),
+                            contentPadding: EdgeInsets.zero,
+                            value: controller.notifyReceiverBySms.value,
+                            activeColor: context.dsColors.brand,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            onChanged: (v) => controller.setNotifyReceiverBySms(v ?? false),
+                            // The wording of the message itself is the
+                            // admin's (settings/SMSGateway.templates), so the
+                            // subtitle promises no content.
+                            title: Text(
+                              "${'Notify receiver via SMS that a parcel has been sent'.tr} (${controller.parcelSmsFee.value > 0 ? '+${Constant.amountShow(amount: controller.parcelSmsFee.value.toString(), currency: controller.parcelCurrency)}' : 'Free'.tr})",
+                              style: t.bodyStrong,
+                            ),
+                            subtitle: Text("The receiver gets a text message when the parcel is sent.".tr, style: t.caption),
+                          ),
+                        ),
+                      ],
                       const DsGap(DsSpace.xl),
                       ParcelCard(
                         child: Column(
@@ -169,6 +191,8 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                             // Fixed intercity / intercountry tax: outside VAT and coupons.
                             if (controller.scopeTax > 0)
                               ParcelSummaryRow(label: "Fixed tax".tr, value: Constant.amountShow(amount: controller.scopeTax.toString(), currency: controller.parcelCurrency)),
+                            if (controller.smsCharge > 0)
+                              ParcelSummaryRow(label: "Receiver SMS".tr, value: Constant.amountShow(amount: controller.smsCharge.toString(), currency: controller.parcelCurrency)),
                             if (Constant.platformFeeModel?.enable == true)
                               ParcelSummaryRow(label: "Platform fee".tr, value: Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: controller.parcelCurrency)),
 

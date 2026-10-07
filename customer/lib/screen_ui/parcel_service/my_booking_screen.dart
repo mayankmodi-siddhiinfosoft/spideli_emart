@@ -1,3 +1,5 @@
+import 'package:customer/utils/booking_status_tabs.dart';
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/screen_ui/auth_screens/login_screen.dart';
 import 'package:customer/screen_ui/parcel_service/parcel_order_details.dart';
@@ -113,7 +115,7 @@ class _BookingCard extends StatelessWidget {
     return DsCard.outlined(
       margin: const EdgeInsets.only(bottom: DsSpace.md),
       padding: const EdgeInsets.all(DsSpace.lg),
-      semanticLabel: order.sender?.address ?? '',
+      semanticLabel: displayAddress(order.sender?.address),
       onTap: () {
         Get.to(() => const ParcelOrderDetails(), arguments: order);
       },
@@ -131,7 +133,7 @@ class _BookingCard extends StatelessWidget {
               Expanded(child: Text(dateLabel, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.caption)),
               if (order.status != null) ...[
                 const DsGap(DsSpace.sm),
-                DsStatusChip(label: order.status!.tr, status: order.status),
+                DsStatusChip(label: BookingStatusTabs.label(order.status), status: order.status),
               ],
             ],
           ),
@@ -167,15 +169,17 @@ class _RouteBlock extends StatelessWidget {
               ParcelPartyBlock(
                 title: "Pickup Address (Sender):".tr,
                 name: order.sender?.name ?? '',
-                address: order.sender?.address ?? '',
+                address: displayAddress(order.sender?.address),
                 phone: order.sender?.phone ?? '',
               ),
               const DsGap(DsSpace.lg),
+              // The flat receiver fields first (an order placed on the
+              // website may carry only those), as on the order screen.
               ParcelPartyBlock(
                 title: "Delivery Address (Receiver):".tr,
-                name: order.receiver?.name ?? '',
-                address: order.receiver?.address ?? '',
-                phone: order.receiver?.phone ?? '',
+                name: order.receiverNameDisplay,
+                address: displayAddress(order.receiver?.address),
+                phone: order.receiverPhoneDisplay,
               ),
               ],
             ),

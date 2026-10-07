@@ -46,7 +46,7 @@ class CabOrderListController extends GetxController {
         return cabOrder.where((order) => ["Order Completed"].contains(order.status)).toList();
 
       case "Cancelled":
-        return cabOrder.where((order) => ["Order Rejected", "Order Cancelled", "Driver Rejected"].contains(order.status)).toList();
+        return cabOrder.where((order) => ["Order Rejected", "Order Cancelled"].contains(order.status)).toList();
 
       default:
         return [];

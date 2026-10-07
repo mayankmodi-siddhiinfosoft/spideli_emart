@@ -1,3 +1,4 @@
+import 'package:customer/utils/booking_status_tabs.dart';
 import 'dart:async';
 
 import 'package:customer/utils/rental_proposal_service.dart';
@@ -131,7 +132,7 @@ class MyRentalBookingController extends GetxController {
     );
     if (selectedPaymentMethod.value == PaymentGateway.cod.name) {
       selectedOrder.value.paymentMethod = selectedPaymentMethod.value;
-      await FireStoreUtils.rentalOrderPlace(selectedOrder.value).then((value) {
+      await FireStoreUtils.updateRentalPayment(selectedOrder.value).then((value) {
         ShowToastDialog.showToast("Payment method changed".tr);
         Get.back();
         Get.back();
@@ -162,7 +163,7 @@ class MyRentalBookingController extends GetxController {
         });
       }
 
-      await FireStoreUtils.rentalOrderPlace(selectedOrder.value).then((value) {
+      await FireStoreUtils.updateRentalPayment(selectedOrder.value).then((value) {
         ShowToastDialog.showToast("Payment successfully".tr);
         Get.back();
         Get.back();
@@ -174,16 +175,17 @@ class MyRentalBookingController extends GetxController {
   List<RentalOrderModel> getOrdersForTab(String tab) {
     switch (tab) {
       case "New":
-        return rentalOrders.where((order) => ["Order Placed", "Order Accepted", "Driver Pending"].contains(order.status)).toList();
+        // "Driver Rejected" re-triggers the dispatch: still waiting for a driver.
+        return rentalOrders.where((order) => BookingStatusTabs.rentalNew.contains(order.status)).toList();
 
       case "On Going":
-        return rentalOrders.where((order) => ["Driver Accepted", "Order Shipped", "In Transit"].contains(order.status)).toList();
+        return rentalOrders.where((order) => BookingStatusTabs.onGoing.contains(order.status)).toList();
 
       case "Completed":
-        return rentalOrders.where((order) => ["Order Completed"].contains(order.status)).toList();
+        return rentalOrders.where((order) => BookingStatusTabs.completed.contains(order.status)).toList();
 
       case "Cancelled":
-        return rentalOrders.where((order) => ["Order Rejected", "Order Cancelled", "Driver Rejected"].contains(order.status)).toList();
+        return rentalOrders.where((order) => BookingStatusTabs.cancelled.contains(order.status)).toList();
 
       default:
         return [];

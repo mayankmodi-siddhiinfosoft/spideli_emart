@@ -5,6 +5,7 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/models/order_model.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/service/fire_store_utils.dart';
+import 'package:customer/utils/booking_status_tabs.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -117,8 +118,12 @@ class LiveTrackingController extends GetxController {
         // callback, completion included). Resubscribe only when the driver
         // actually changes, so an ordinary order write no longer restarts the
         // driver stream.
+        // A driver only once one accepted: at "Driver Pending" `driverID` is
+        // the driver who was only offered the order, and a decline ("Driver
+        // Rejected") or a release sets it to null.
         final String driverId = (orderModel.value.driverID ?? '').trim();
-        if (driverId.isNotEmpty && driverId != _driverSubId) {
+        final bool hasDriver = BookingStatusTabs.hasAssignedDriver(orderModel.value.status, driverId, acceptedDriverId: orderModel.value.driver?.id);
+        if (hasDriver && driverId != _driverSubId) {
           _driverSubId = driverId;
           driverSub?.cancel();
           driverSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(driverId).snapshots().listen((driverSnap) {
@@ -126,6 +131,14 @@ class LiveTrackingController extends GetxController {
             driverUserModel.value = UserModel.fromJson(driverSnap.data()!);
             updateLiveTracking();
           });
+        } else if (!hasDriver && _driverSubId != null) {
+          // The driver left the order: stop following them and take their
+          // marker off the map.
+          driverSub?.cancel();
+          driverSub = null;
+          _driverSubId = null;
+          driverUserModel.value = UserModel();
+          updateLiveTracking();
         }
 
         if (orderModel.value.status == Constant.orderCompleted) {
@@ -141,7 +154,10 @@ class LiveTrackingController extends GetxController {
   /// The store and the delivery address come from the order, so they are known
   /// before (and independently of) any driver.
   void applyOrder() {
-    source.value = location.LatLng(orderModel.value.vendor?.latitude ?? 0.0, orderModel.value.vendor?.longitude ?? 0.0);
+    // A store saved without coordinates (02#2: "" in Firestore) has no pin and
+    // no "driver -> store" leg: 0,0 is this model's "not set" ([hasPoint]).
+    final vendor = orderModel.value.vendor;
+    source.value = vendor != null && vendor.hasPosition ? location.LatLng(vendor.latitude!, vendor.longitude!) : const location.LatLng(0, 0);
     destination.value = location.LatLng(orderModel.value.address?.location?.latitude ?? 0.0, orderModel.value.address?.location?.longitude ?? 0.0);
     updateLiveTracking();
   }
@@ -151,8 +167,10 @@ class LiveTrackingController extends GetxController {
 
     // Before pickup the leg that matters is driver → store; afterwards it is
     // driver → customer. Both ends are still marked either way so the map is
-    // never empty.
-    final bool beforePickup = orderModel.value.status == Constant.orderPlaced || orderModel.value.status == Constant.orderAccepted;
+    // never empty. Pickup is "In Transit" (written by the driver at the
+    // store): deliveryDispatch moves an accepted order to "Order Shipped"
+    // while the driver is still on the way to the store.
+    final bool beforePickup = isBeforePickup(orderModel.value.status);
     final location.LatLng legEnd = beforePickup ? source.value : destination.value;
 
     await drawMarkers();
@@ -162,6 +180,10 @@ class LiveTrackingController extends GetxController {
     // stop them being drawn, so it is loaded last and failures are swallowed.
     await loadRoute(driverCurrent.value, legEnd);
   }
+
+  /// Every status before the driver has the order in hand: placed, accepted,
+  /// the dispatch states and "Order Shipped" (set as soon as a driver accepts).
+  static bool isBeforePickup(String? status) => status != Constant.orderInTransit && status != Constant.orderCompleted;
 
   /// Every point the map should be able to show, in drawing order.
   List<location.LatLng> get trackedPoints => [

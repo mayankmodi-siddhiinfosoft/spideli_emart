@@ -52,6 +52,16 @@ class ParcelLabels {
 
   static double n(dynamic v) => v is num ? v.toDouble() : (double.tryParse(v?.toString() ?? '') ?? 0);
 
+  /// The chargeable weight of [b] (`priceBreakdown`) when it is MORE than the
+  /// parcel's actual weight - i.e. the volumetric weight decided the price -
+  /// else null.
+  static String? chargedKg(Map<String, dynamic>? b) {
+    if (b == null) return null;
+    final double charged = n(b['chargeableKg']);
+    if (charged <= 0 || charged <= n(b['actualKg'])) return null;
+    return charged == charged.roundToDouble() ? charged.toInt().toString() : charged.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '');
+  }
+
   /// Lines of `priceBreakdown` (zero lines skipped except the carrier price).
   static List<MapEntry<String, double>> breakdownLines(Map<String, dynamic> b) => [
     MapEntry('Carrier price'.tr, n(b['carrierPrice'])),
@@ -321,6 +331,9 @@ class ParcelShippingSummaryCard extends StatelessWidget {
               pair("Carrier".tr, order.carrierName ?? (order.quoteRequested == true ? "To be assigned".tr : "Spideli drivers".tr)),
               if ((order.parcelWeight ?? '').isNotEmpty) pair("Weight".tr, order.parcelWeight!),
               if (dims != null) pair("Dimensions".tr, "${dims['l'] ?? 0} x ${dims['w'] ?? 0} x ${dims['h'] ?? 0} cm"),
+              // Doc point 42: the weight the price was computed on, when the
+              // size outweighed the parcel.
+              if (ParcelLabels.chargedKg(order.priceBreakdown) != null) pair("Charged weight".tr, "${ParcelLabels.chargedKg(order.priceBreakdown)} kg"),
               if ((order.declaredValue ?? '').isNotEmpty) pair("Declared value".tr, order.declaredValue!),
               if ((order.contentDescription ?? '').isNotEmpty) pair("Content".tr, order.contentDescription!),
               if ((order.receiver?.email ?? '').isNotEmpty) pair("Receiver email".tr, order.receiver!.email!),

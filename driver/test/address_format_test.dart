@@ -55,7 +55,7 @@ void main() {
   group('02#18 — the panel rule (spideliFormatAddress)', () {
     test('part splits an already-joined value and drops baked-in nulls', () {
       expect(AddressFormat.part('18, null, Yaoundé, Région du Centre, null, Cameroun'), '18, Yaoundé, Région du Centre, Cameroun');
-      expect(AddressFormat.part('null, , nil, undefined, -'), isNull);
+      expect(AddressFormat.part('null, , nil, undefined'), isNull);
       expect(AddressFormat.part('  '), isNull);
     });
 
@@ -69,8 +69,25 @@ void main() {
       expect(AddressFormat.clean('Nullarbor Road, NULL, Annullata Street'), 'Nullarbor Road, Annullata Street');
     });
 
-    test('drops "-" and "undefined" segments', () {
-      expect(AddressFormat.join(['12 Rue A, -', 'undefined', 'Douala']), '12 Rue A, Douala');
+    test('drops "undefined" segments and nothing the panel rule keeps', () {
+      expect(AddressFormat.join(['12 Rue A', 'undefined', 'Douala']), '12 Rue A, Douala');
+      // The panel drops null / undefined / nil / empty only: a "-" survives.
+      expect(AddressFormat.join(['12 Rue A, -', 'Douala']), '12 Rue A, -, Douala');
+    });
+
+    test('the report example, before -> after', () {
+      // before: what the old join printed for these fields
+      //   "null,18, null, Yaoundé, Région du Centre, null, Cameroun null"
+      final Map<String, dynamic> stored = {
+        'address': null,
+        'locality': '18, null, Yaoundé, Région du Centre, null, Cameroun',
+        'landmark': null,
+      };
+      expect(AddressFormat.fromMap(stored), '18, Yaoundé, Région du Centre, Cameroun');
+      expect(AddressFormat.fromMap({'address': 'NULL', 'locality': 'Undefined', 'landmark': ' nil '}), '');
+      expect(AddressFormat.fromMap(null), '');
+      expect(AddressFormat.fromMap('not a map'), '');
+      expect(AddressFormat.fromMap({'address': 'Nullarbor Road', 'landmark': 'nullarbor road'}), 'Nullarbor Road');
     });
 
     test('drops a whole field repeating ANY earlier field, case-insensitively', () {

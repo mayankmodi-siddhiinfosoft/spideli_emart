@@ -5,9 +5,9 @@ import 'package:driver/constant/send_notification.dart';
 import 'package:driver/models/parcel_order_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/models/wallet_transaction_model.dart';
-import 'package:driver/services/parcel_sms_outbox.dart';
 import 'package:driver/app/wallet_screen/payment_list_screen.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/parcel_amounts.dart';
 import 'package:flutter/foundation.dart';
 
 /// Parcel tracking statuses (PARCEL-CONTRACT.md, spec 7.5) — `parcel_orders.parcelStatus`.
@@ -282,24 +282,11 @@ class ParcelTrackingService {
     if (o.status == Constant.driverAccepted && ParcelTrackingStatus.rank(status) >= 2 && !isDriverFinalStep(o, status)) {
       data['status'] = Constant.orderInTransit;
     }
-    // The receiver's SMS request, when one is due, is committed with the status itself:
-    // no message can be queued for a status write that failed.
-    final ParcelSmsRequest? sms = await ParcelSmsOutbox.requestFor(o, status);
-    if (sms == null) {
-      await _doc(o.id!).update(data);
-    } else {
-      final WriteBatch batch = FireStoreUtils.fireStore.batch();
-      batch.update(_doc(o.id!), data);
-      ParcelSmsOutbox.addToBatch(batch, sms);
-      // The SMS must never cost the driver the status write: a refused outbox
-      // (rules) falls back to the plain update, with no message queued.
-      try {
-        await batch.commit();
-      } catch (e) {
-        debugPrint('ParcelSmsOutbox: batch refused ($e) — writing $status without the SMS request');
-        await _doc(o.id!).update(data);
-      }
-    }
+    // Field update only: the receiver's SMS is sent by the server trigger on
+    // `parcel_orders` (sendReceiverSms / smsSent / settings/SMSGateway
+    // templates, decision D5). The app never composes SMS wording, never
+    // queues a message and never writes `smsSent`.
+    await _doc(o.id!).update(data);
     o.parcelStatus = status;
     if (data['status'] != null) o.status = data['status'];
   }
@@ -372,6 +359,16 @@ class ParcelTrackingService {
     });
   }
 
+  /// The parcel leaves the signed-in driver's `inProgressOrderID` (spec §4:
+  /// accepted and active only; the dispatch Cloud Function reads it as
+  /// "busy"). Field-level, never fatal.
+  static Future<void> _releaseFromDriver(String orderId) async {
+    final String uid = FireStoreUtils.getCurrentUid();
+    await FireStoreUtils.updateUserFields(uid, {
+      'inProgressOrderID': FieldValue.arrayRemove([orderId]),
+    });
+  }
+
   /// The existing eMart completion: `Order Completed`, wallet credit, commission, customer notification and
   /// referral — at most once per order (a stale list, a second screen or a retry cannot pay twice).
   static Future<void> completeOrder(ParcelOrderModel o) async {
@@ -380,12 +377,18 @@ class ParcelTrackingService {
       final fresh = await getById(o.id!);
       if (fresh?.status == Constant.orderCompleted) {
         o.status = Constant.orderCompleted;
+        await _releaseFromDriver(o.id!);
         return;
+      }
+      // Cancelled or returned meanwhile: not this driver's active job either.
+      if (fresh == null || _isCancelled(fresh) || fresh.parcelStatus == ParcelTrackingStatus.returned) {
+        await _releaseFromDriver(o.id!);
       }
       throw 'This parcel can no longer be completed.';
     }
     o.status = Constant.orderCompleted;
     o.driverCredited = true;
+    await _releaseFromDriver(o.id!);
     await _updateWalletAmount(o);
     try {
       final Map<String, dynamic> payLoad = <String, dynamic>{"type": "parcel_order", "orderId": o.id};
@@ -489,6 +492,55 @@ class ParcelTrackingService {
       await FireStoreUtils.setWalletTransaction(taxTransaction).then((value) async {
         if (value == true) {
           await FireStoreUtils.updateUserWallet(amount: "-${scopeTax.toString()}", userId: walletUserId);
+        }
+      });
+    }
+
+    // Likewise the receiver-SMS fee (point 54): collected in cash with the
+    // total, never the driver's.
+    final double smsCharge = orderModel.smsChargeAmount;
+    if (isCod && smsCharge > 0) {
+      WalletTransactionModel smsTransaction = WalletTransactionModel(
+          id: Constant.getUuid(),
+          amount: smsCharge,
+          date: Timestamp.now(),
+          paymentMethod: paymentMethod,
+          transactionUser: "driver",
+          userId: walletUserId,
+          isTopup: false,
+          orderId: orderModel.id,
+          note: "Parcel receiver SMS fee deducted",
+          paymentStatus: "success");
+
+      await FireStoreUtils.setWalletTransaction(smsTransaction).then((value) async {
+        if (value == true) {
+          await FireStoreUtils.updateUserWallet(amount: "-${smsCharge.toString()}", userId: walletUserId);
+        }
+      });
+    }
+
+    // And the platform fee with its taxes: the customer's total includes them
+    // (ParcelAmounts), so the cash the driver collects does too, and they are
+    // the platform's — as for a delivery order, where the cash total the
+    // driver owes back includes the platform fee.
+    final ParcelAmounts amounts = ParcelAmounts.of(orderModel);
+    final double platformFeeShare = amounts.platformFee + amounts.platformTax;
+    if (isCod && platformFeeShare > 0) {
+      WalletTransactionModel feeTransaction = WalletTransactionModel(
+          id: Constant.getUuid(),
+          amount: platformFeeShare,
+          date: Timestamp.now(),
+          paymentMethod: paymentMethod,
+          transactionUser: "driver",
+          userId: walletUserId,
+          isTopup: false,
+          orderId: orderModel.id,
+          note: "Parcel platform fee deducted",
+          paymentStatus: "success");
+
+      await FireStoreUtils.setWalletTransaction(feeTransaction).then((value) async {
+        if (value == true) {
+          await FireStoreUtils.updateUserWallet(amount: "-${platformFeeShare.toString()}", userId: walletUserId);
         }
       });
     }

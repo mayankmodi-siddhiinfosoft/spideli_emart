@@ -1,4 +1,5 @@
 import 'package:driver/utils/address_format.dart';
+import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/cab_screen/widget/cab_ride_extras.dart';
 import 'package:driver/app/chat_screens/chat_screen.dart';
@@ -38,7 +39,7 @@ class CabHomeScreen extends StatelessWidget {
               // The verification gate never hides a ride already being worked
               // (assigned or accepted earlier), nor a pending ride assigned to
               // this driver: it replaced the whole screen.
-              : !controller.shouldShowOrderSheet && !controller.showRequestSheet && Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false
+              : !controller.shouldShowOrderSheet && !controller.showRequestSheet && DocumentVerification.isPending(Constant.userModel)
               ? Obx(() {
                   // The isDark read is what re-runs this branch on theme change.
                   themeController.isDark.value;

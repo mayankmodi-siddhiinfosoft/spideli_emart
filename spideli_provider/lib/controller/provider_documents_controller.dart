@@ -16,11 +16,15 @@ import 'package:spideliprovider/services/region_service.dart';
 ///
 /// Reuses the eMart document system the driver and store apps already use:
 /// types from `documents` (`type == "provider"`, `enable == true`), uploads in
-/// `documents_verify/{uid}.documents[]` with `status` "uploaded" (= pending
-/// review), which the admin panel turns into "approved" / "rejected". The two
-/// documents the spec requires are added when the panel has not configured
-/// them, and mirrored on the user doc (`commercialRegister`,
-/// `commercialRegisterFile`, `uniqueIdNumber`, `uniqueIdNumberFile`).
+/// `documents_verify/{uid}` = `{id, type: "provider", documents: [...]}` with
+/// `status` "uploaded" (= pending review), which the admin panel turns into
+/// "approved" / "rejected". Every upload uses the admin type's id (report
+/// Doc 36/41); a type asking for a reference number also mirrors it on the
+/// user doc (`commercialRegister` / `uniqueIdNumber` + `...File`).
+///
+/// Uploads stored earlier under the old invented ids (`commercialRegister`,
+/// `uniqueIdNumber`) are left untouched -- they are not shown against an
+/// admin type, so the provider uploads that type again.
 class ProviderDocumentsController extends GetxController {
   static const String documentsCollection = 'documents';
   static const String documentsVerifyCollection = 'documents_verify';
@@ -29,6 +33,11 @@ class ProviderDocumentsController extends GetxController {
   RxBool isLoading = true.obs;
   Rx<User?> user = Rx<User?>(null);
   RxList<DocumentType> types = <DocumentType>[].obs;
+
+  /// The admin's document types, the user or the uploads could not be read
+  /// (offline, rules): the screen offers a retry instead of claiming none are
+  /// configured or showing statuses it does not know.
+  RxBool typesLoadFailed = false.obs;
   RxMap<String, UploadedDocument> uploads = <String, UploadedDocument>{}.obs;
 
   Rx<TextEditingController> companyName = TextEditingController().obs;
@@ -44,6 +53,7 @@ class ProviderDocumentsController extends GetxController {
 
   Future<void> load() async {
     isLoading.value = true;
+    typesLoadFailed.value = false;
     try {
       await RegionService.ensureLoaded();
       final User? current = await FireStoreUtils.getCurrentUser(uid);
@@ -51,19 +61,16 @@ class ProviderDocumentsController extends GetxController {
       companyName.value.text = current?.companyName ?? '';
       selectedRegionId.value = current?.regionId ?? '';
 
-      final List<DocumentType> list = [];
+      List<DocumentType> list = [];
       try {
-        final snap = await FireStoreUtils.firestore.collection(documentsCollection).where('type', isEqualTo: documentOwnerType).get();
-        for (final doc in snap.docs) {
-          final t = DocumentType.fromJson(doc.data(), docId: doc.id);
-          if (t.enable && t.id.isNotEmpty) list.add(t);
-        }
+        final snap = await FireStoreUtils.firestore.collection(documentsCollection).where('type', isEqualTo: documentOwnerType).where('enable', isEqualTo: true).get();
+        list = DocumentType.enabledFrom(snap.docs.map((d) => MapEntry(d.id, d.data())));
+        // Offline, get() does not throw: it answers from the cache, empty
+        // when the types were never read on this device.
+        if (DocumentType.unreadable(isEmpty: snap.docs.isEmpty, isFromCache: snap.metadata.isFromCache)) typesLoadFailed.value = true;
       } catch (e) {
         log("Provider document types not loaded: $e");
-      }
-      if (!list.any(DocumentType.coversCommercialRegister)) list.insert(0, DocumentType.commercialRegister());
-      if (!list.any(DocumentType.coversUniqueIdNumber)) {
-        list.insert(list.first.id == DocumentType.commercialRegisterId ? 1 : 0, DocumentType.uniqueIdNumber());
+        typesLoadFailed.value = true;
       }
       types.value = list;
 
@@ -76,20 +83,15 @@ class ProviderDocumentsController extends GetxController {
           if (d.documentId.isNotEmpty) map[d.documentId] = d;
         }
       }
-      // Built-in documents uploaded before (or by the panel) on the user doc only.
-      _fillFromUser(map, DocumentType.commercialRegisterId, current?.commercialRegisterFile, current?.commercialRegister);
-      _fillFromUser(map, DocumentType.uniqueIdNumberId, current?.uniqueIdNumberFile, current?.uniqueIdNumber);
       uploads.value = map;
     } catch (e, s) {
+      // The user or the uploads could not be read (offline, not cached): the
+      // statuses on screen would be wrong, so the screen offers a retry.
       log("Provider documents not loaded: $e", stackTrace: s);
+      typesLoadFailed.value = true;
     }
     isLoading.value = false;
     update();
-  }
-
-  void _fillFromUser(Map<String, UploadedDocument> map, String id, String? file, String? number) {
-    if (map.containsKey(id) || (file ?? '').isEmpty) return;
-    map[id] = UploadedDocument(documentId: id, frontImage: file, number: number, status: 'uploaded');
   }
 
   UploadedDocument? uploadFor(DocumentType type) => uploads[type.id];
@@ -175,11 +177,13 @@ class ProviderDocumentsController extends GetxController {
         tx.set(docRef, {'id': uid, 'type': documentOwnerType, 'documents': list}, SetOptions(merge: true));
       });
 
-      if (type.isBuiltIn) {
-        await FireStoreUtils.writeUserFields(uid, {
-          if (entry.number != null) type.userField!: entry.number,
-          if ((entry.frontImage ?? '').isNotEmpty) '${type.userField!}File': entry.frontImage,
-        });
+      final String? field = type.userField;
+      if (field != null) {
+        final Map<String, dynamic> mirror = {
+          if (entry.number != null) field: entry.number,
+          if ((entry.frontImage ?? '').isNotEmpty) '${field}File': entry.frontImage,
+        };
+        if (mirror.isNotEmpty) await FireStoreUtils.writeUserFields(uid, mirror);
       }
       uploads[type.id] = entry;
       update();

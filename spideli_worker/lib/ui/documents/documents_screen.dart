@@ -70,7 +70,27 @@ class DocumentsScreen extends StatelessWidget {
           child: ListView(
             padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.xxxl),
             children: DsFadeSlideIn.stagger([
-              VerificationSummaryCard(status: overall, required: controller.verificationRequired.value, dark: dark),
+              // Report Doc 36/41: no admin-created worker document type ->
+              // nothing to upload against, so an empty state instead of a
+              // built-in document.
+              if (types.isEmpty && controller.typesLoadFailed.value)
+                DsEmptyState(
+                  icon: Icons.cloud_off_outlined,
+                  tone: DsTone.warning,
+                  title: "Could not load the documents to upload".tr,
+                  message: "Check your connection and try again.".tr,
+                  actionLabel: "Retry".tr,
+                  actionIcon: Icons.refresh_rounded,
+                  onAction: controller.load,
+                )
+              else if (types.isEmpty && overall != VerificationStatus.approved)
+                DsEmptyState(
+                  icon: Icons.description_outlined,
+                  title: "No documents to upload yet".tr,
+                  message: "The administrator has not set up any worker documents. They will appear here when available.".tr,
+                )
+              else
+                VerificationSummaryCard(status: overall, required: controller.verificationRequired.value, dark: dark),
               if (types.isNotEmpty) ...[
                 const DsGap(DsSpace.lg),
                 DsProgressBar(

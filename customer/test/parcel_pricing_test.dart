@@ -89,4 +89,98 @@ void main() {
     expect(ParcelPricing.categoryMaxKg('Small parcel'), isNull);
     expect(ParcelPricing.categoryMaxKg(null), isNull);
   });
+
+  // Client doc point 42: the price did not change whether or not dimensions
+  // were given. A parcel is now charged on the greater of its weight and its
+  // volumetric weight (L x W x H / settings/ParcelPricing.volumetricDivisor).
+  group('dimensions move the price (doc 42)', () {
+    test('volumetricDivisor: 5000 when absent, configurable, 0 switches it off', () {
+      expect(const ParcelPricingSettings().volumetricDivisor, 5000);
+      expect(ParcelPricingSettings.fromJson({}).volumetricDivisor, 5000);
+      expect(ParcelPricingSettings.fromJson({'volumetricDivisor': '6000'}).volumetricDivisor, 6000);
+      expect(ParcelPricingSettings.fromJson({'volumetricDivisor': 0}).usesVolumetricWeight, isFalse);
+      expect(ParcelPricingSettings.fromJson({'volumetricDivisor': -1}).usesVolumetricWeight, isFalse);
+    });
+
+    test('volumetric weight needs all three sides', () {
+      expect(ParcelPricing.volumetricKg(lengthCm: 50, widthCm: 40, heightCm: 30, divisor: 5000), 12);
+      expect(ParcelPricing.volumetricKg(lengthCm: 10, widthCm: 10, heightCm: 10, divisor: 5000), 0.2);
+      expect(ParcelPricing.volumetricKg(lengthCm: 50, widthCm: 40, heightCm: null, divisor: 5000), isNull);
+      expect(ParcelPricing.volumetricKg(lengthCm: 50, widthCm: 0, heightCm: 30, divisor: 5000), isNull);
+      expect(ParcelPricing.volumetricKg(lengthCm: 50, widthCm: 40, heightCm: 30, divisor: 0), isNull);
+    });
+
+    test('charged on the greater of actual and volumetric weight', () {
+      expect(ParcelPricing.chargeableKg(actualKg: 1.5, volumetricKg: 12), 12);
+      expect(ParcelPricing.chargeableKg(actualKg: 20, volumetricKg: 12), 20);
+      expect(ParcelPricing.chargeableKg(actualKg: 1.5, volumetricKg: null), 1.5);
+      expect(ParcelPricing.chargeableKg(actualKg: null, volumetricKg: null), 0);
+    });
+
+    test('the same 1.5 kg parcel costs more on a rate table once it is bulky', () {
+      double priced({double? volumetricKg}) => ParcelPricing.intercity(
+        table: table,
+        origin: const ParcelPlace(city: 'Douala'),
+        destination: const ParcelPlace(city: 'Bangangte'),
+        weightKg: ParcelPricing.chargeableKg(actualKg: 1.5, volumetricKg: volumetricKg),
+      )!.total;
+      expect(priced(), 7550); // 2.1-5 kg band 2,550 + 5,000 tax
+      // 40 x 30 x 30 cm = 7.2 kg volumetric: the 5.1-10 kg band.
+      expect(priced(volumetricKg: ParcelPricing.volumetricKg(lengthCm: 40, widthCm: 30, heightCm: 30, divisor: 5000)), 8050);
+      // 50 x 40 x 30 cm = 12 kg: the last band + 2 extra kg.
+      expect(priced(volumetricKg: ParcelPricing.volumetricKg(lengthCm: 50, widthCm: 40, heightCm: 30, divisor: 5000)), 10050);
+      // A small box changes nothing: the weight is the greater.
+      expect(priced(volumetricKg: ParcelPricing.volumetricKg(lengthCm: 10, widthCm: 10, heightCm: 10, divisor: 5000)), 7550);
+    });
+
+    test('a per-kg rate card charges the volumetric weight', () {
+      const card = ParcelRateCard(baseCharge: 500, perKgCharge: 100);
+      final double kg = ParcelPricing.chargeableKg(actualKg: 2, volumetricKg: ParcelPricing.volumetricKg(lengthCm: 50, widthCm: 40, heightCm: 30, divisor: 5000));
+      expect(ParcelPricing.rateCard(card: card, scope: ParcelScope.city, distanceKm: 0, weightKg: kg)!.carrierPrice, 1700);
+    });
+
+    test('same city: the weight category moves up to the one covering the charged weight', () {
+      const List<String> categories = ['Upto 2 kg', 'Upto 5 kg', '5 - 10 kg', 'Above 20 kg'];
+      String pick(String selected, double kg) => ParcelPricing.categoryFor<String>(categories: categories, selected: selected, kg: kg, titleOf: (t) => t);
+      expect(pick('Upto 2 kg', 1.5), 'Upto 2 kg');
+      expect(pick('Upto 2 kg', 4), 'Upto 5 kg');
+      expect(pick('Upto 2 kg', 12), 'Above 20 kg');
+      expect(pick('Upto 2 kg', 50), 'Above 20 kg');
+      // Never lower than what the customer picked.
+      expect(pick('5 - 10 kg', 1), '5 - 10 kg');
+      // Nothing to compare against: the pick stands.
+      expect(ParcelPricing.categoryFor<String>(categories: const ['Small parcel', 'Upto 5 kg'], selected: 'Small parcel', kg: 30, titleOf: (t) => t), 'Small parcel');
+    });
+  });
+
+  // Client doc point 43: delivery_carriers.regionPricing is the source of
+  // truth; the flat fields hold the FIRST region's price.
+  group('carrier price per region (doc 43)', () {
+    final Map<String, dynamic> carrier = {
+      'baseCharge': 1000,
+      'perKmCharge': 100,
+      'regionPricing': {
+        'centre': {'baseCharge': 1000, 'perKmCharge': 100},
+        'littoral': {'baseCharge': 1500, 'perKmCharge': 200, 'minimumCharge': 5000},
+        'broken': 'not a map',
+      },
+    };
+    final ParcelRateCard flat = ParcelRateCard.fromJson(carrier);
+    final Map<String, ParcelRateCard> regions = ParcelRateCard.parseRegionPricing(carrier['regionPricing']);
+
+    test('the region of the order picks its own price', () {
+      final ParcelRateCard card = ParcelRateCard.forRegion(flat: flat, regionPricing: regions, regionId: 'littoral');
+      expect(card.baseCharge, 1500);
+      expect(ParcelPricing.rateCard(card: card, scope: ParcelScope.city, distanceKm: 10, weightKg: 1)!.carrierPrice, 5000);
+      expect(ParcelPricing.rateCard(card: card, scope: ParcelScope.city, distanceKm: 30, weightKg: 1)!.carrierPrice, 7500);
+    });
+
+    test('the flat fields only when the region has no entry, is unknown, or regionPricing is empty', () {
+      expect(ParcelRateCard.forRegion(flat: flat, regionPricing: regions, regionId: 'nord').baseCharge, 1000);
+      expect(ParcelRateCard.forRegion(flat: flat, regionPricing: regions, regionId: null).baseCharge, 1000);
+      expect(ParcelRateCard.forRegion(flat: flat, regionPricing: const {}, regionId: 'littoral').baseCharge, 1000);
+      expect(regions.containsKey('broken'), isFalse);
+      expect(ParcelRateCard.parseRegionPricing(null), isEmpty);
+    });
+  });
 }

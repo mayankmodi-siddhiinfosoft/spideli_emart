@@ -65,6 +65,10 @@ void main() {
     expect(DsTone.fromStatus('Order Cancelled'), DsTone.danger);
     expect(DsTone.fromStatus('pending'), DsTone.warning);
     expect(DsTone.fromStatus('In Transit'), DsTone.info);
+    // Dispatch states are "waiting for a driver", never the danger tone.
+    expect(DsTone.fromStatus('Driver Rejected'), DsTone.warning);
+    expect(DsTone.fromStatus('Driver Pending'), DsTone.warning);
+    expect(DsTone.fromStatus('Driver Accepted'), DsTone.success);
   });
 
   test('DsSection.fromServiceFlag maps section flags', () {

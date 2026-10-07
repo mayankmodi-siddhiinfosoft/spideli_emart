@@ -77,9 +77,11 @@ import '../models/worker_model.dart';
 import '../screen_ui/multi_vendor_service/chat_screens/chat_video_container.dart';
 import '../themes/app_them_data.dart';
 import '../themes/show_toast_dialog.dart';
+import '../utils/address_format.dart';
 import '../utils/preferences.dart';
 import '../utils/push_token.dart';
 import '../utils/region_service.dart';
+import '../utils/review_totals.dart';
 import '../widget/geoflutterfire/src/geoflutterfire.dart';
 import '../widget/geoflutterfire/src/models/point.dart';
 import 'package:http/http.dart' as http;
@@ -219,6 +221,12 @@ class FireStoreUtils {
   /// was still '') wiped the good one, and a review or a profile edit put a
   /// stale token back over a refreshed one. [includeFcmToken] is for a new
   /// document (sign-up).
+  ///
+  /// Someone else's live state is never written either: a driver's job
+  /// arrays (`inProgressOrderID`, `orderRequestData`, `ordercabRequestData` -
+  /// owned by the dispatch Cloud Functions and the driver's accept / reject)
+  /// and their position (`location`, `rotation`, `g`), which a copy read
+  /// before the write would roll back.
   static Map<String, dynamic> _userWriteData(UserModel userModel, {bool includeFcmToken = false}) {
     final data = userModel.toJson()..remove('wallet_amount');
     if (!includeFcmToken) data.remove('fcmToken');
@@ -228,6 +236,7 @@ class FireStoreUtils {
         'active', 'isActive', 'role', 'isDocumentVerify', 'isAutoVerify', 'isOwner', 'ownerId',
         'subscriptionPlanId', 'subscriptionExpiryDate', 'subscription_plan', 'adminCommission',
         'salary', 'userBankDetails', 'vendorID', 'zoneId', 'sectionIds',
+        'inProgressOrderID', 'orderRequestData', 'ordercabRequestData', 'location', 'rotation', 'g',
       ]) {
         data.remove(key);
       }
@@ -989,6 +998,33 @@ class FireStoreUtils {
     return _addReviewTotals(CollectionName.vendors, vendorId, countDelta: countDelta, sumDelta: sumDelta);
   }
 
+  /// Adds a customer's rating to a driver's review totals
+  /// (`users/{driverId}.reviewsCount` / `reviewsSum`): those two fields only,
+  /// re-read and written in one transaction ([UserReviewTotals.applied]).
+  /// The cab, parcel and rental reviews used to write back the driver's whole
+  /// document as read when the review was submitted, which put back stale
+  /// `orderRequestData` / `inProgressOrderID` arrays (an offer or an accepted
+  /// job the dispatch or the driver added meanwhile disappeared) and an old
+  /// `location`. Not `FieldValue.increment`: user totals are stored as
+  /// strings, which an increment would replace by the bare delta.
+  static Future<bool> addDriverReviewTotals(String? driverId, {required num countDelta, required num sumDelta}) async {
+    final String docId = (driverId ?? '').trim();
+    if (docId.isEmpty) return false;
+    if (countDelta == 0 && sumDelta == 0) return true;
+    final ref = fireStore.collection(CollectionName.users).doc(docId);
+    try {
+      return await fireStore.runTransaction<bool>((tx) async {
+        final snap = await tx.get(ref);
+        if (!snap.exists) return false;
+        tx.update(ref, UserReviewTotals.applied(snap.data(), countDelta: countDelta, sumDelta: sumDelta));
+        return true;
+      });
+    } catch (e) {
+      log('Failed to update the review totals of users/$docId: $e');
+      return false;
+    }
+  }
+
   static Future<bool> _addReviewTotals(String collection, String? id, {required num countDelta, required num sumDelta}) async {
     final String docId = (id ?? '').trim();
     if (docId.isEmpty) return false;
@@ -1429,12 +1465,31 @@ class FireStoreUtils {
     }
   }
 
+  /// Stores saved with "" for `latitude` (report 02#2: three live stores, ""
+  /// for both coordinates) that pass the list's own filters - see
+  /// [VendorModel.matchesListFilters]. They have no geohash, so the radius
+  /// queries below can never return them; [VendorModel.withUnplacedLast] adds
+  /// them after the nearby stores. One single-field equality query (no
+  /// composite index), a handful of documents platform-wide; any failure
+  /// gives an empty list, never a broken store list.
+  static Future<List<VendorModel>> vendorsWithoutPosition({String? sectionId, String? zoneId, String? categoryId, bool dineInOnly = false}) async {
+    try {
+      final snapshot = await fireStore.collection(CollectionName.vendors).where('latitude', isEqualTo: '').get();
+      return [
+        for (final doc in snapshot.docs)
+          if (VendorModel.matchesListFilters(doc.data(), sectionId: sectionId, zoneId: zoneId, categoryId: categoryId, dineInOnly: dineInOnly)) VendorModel.fromJson(doc.data()),
+      ].where((v) => !v.hasPosition).toList();
+    } catch (e) {
+      log("vendorsWithoutPosition failed: $e");
+      return [];
+    }
+  }
+
   static StreamController<List<VendorModel>>? getNearestVendorByCategoryController;
 
   static Stream<List<VendorModel>> getAllNearestRestaurantByCategoryId({bool? isDining, required String categoryId, bool ecommarce = false}) async* {
     try {
       getNearestVendorByCategoryController = StreamController<List<VendorModel>>.broadcast();
-      List<VendorModel> vendorList = [];
       Query<Map<String, dynamic>> query;
       if (ecommarce == true) {
         query =
@@ -1458,11 +1513,17 @@ class FireStoreUtils {
           .collection(collectionRef: query)
           .within(center: center, radius: double.parse(Constant.sectionConstantModel!.nearByRadius.toString()), field: field, strictMode: true);
 
+      // Report 02#2: stores without a position, listed after the nearby ones.
+      final Future<List<VendorModel>> unplaced = vendorsWithoutPosition(
+        zoneId: ecommarce == true ? null : Constant.selectedZone!.id.toString(),
+        categoryId: categoryId,
+        dineInOnly: isDining == true,
+      );
+
       stream.listen((List<DocumentSnapshot> documentList) async {
-        vendorList.clear();
-        for (var document in documentList) {
-          final data = document.data() as Map<String, dynamic>;
-          VendorModel vendorModel = VendorModel.fromJson(data);
+        final List<VendorModel> nearby = [for (final document in documentList) VendorModel.fromJson(document.data() as Map<String, dynamic>)];
+        final List<VendorModel> vendorList = [];
+        for (final VendorModel vendorModel in VendorModel.withUnplacedLast(nearby, await unplaced)) {
           if ((Constant.isSubscriptionModelApplied == true || vendorModel.adminCommission?.isEnabled == true) && vendorModel.subscriptionPlan != null) {
             if (vendorModel.subscriptionTotalOrders == "-1") {
               vendorList.add(vendorModel);
@@ -1491,7 +1552,6 @@ class FireStoreUtils {
   static Stream<List<VendorModel>> getAllNearestRestaurant({bool? isDining, bool ecommarce = false}) async* {
     try {
       getNearestVendorController = StreamController<List<VendorModel>>.broadcast();
-      List<VendorModel> vendorList = [];
       Query<Map<String, dynamic>> query;
       if (ecommarce == true) {
         query =
@@ -1516,11 +1576,17 @@ class FireStoreUtils {
           .collection(collectionRef: query)
           .within(center: center, radius: double.parse(Constant.sectionConstantModel!.nearByRadius.toString()), field: field, strictMode: true);
 
+      // Report 02#2: stores without a position, listed after the nearby ones.
+      final Future<List<VendorModel>> unplaced = vendorsWithoutPosition(
+        sectionId: Constant.sectionConstantModel!.id,
+        zoneId: ecommarce == true ? null : Constant.selectedZone?.id.toString() ?? '',
+        dineInOnly: isDining == true,
+      );
+
       stream.listen((List<DocumentSnapshot> documentList) async {
-        vendorList.clear();
-        for (var document in documentList) {
-          final data = document.data() as Map<String, dynamic>;
-          VendorModel vendorModel = VendorModel.fromJson(data);
+        final List<VendorModel> nearby = [for (final document in documentList) VendorModel.fromJson(document.data() as Map<String, dynamic>)];
+        final List<VendorModel> vendorList = [];
+        for (final VendorModel vendorModel in VendorModel.withUnplacedLast(nearby, await unplaced)) {
           if ((Constant.isSubscriptionModelApplied == true || Constant.sectionConstantModel!.adminCommision?.isEnabled == true) && vendorModel.subscriptionPlan != null) {
             if (vendorModel.subscriptionTotalOrders == "-1") {
               vendorList.add(vendorModel);
@@ -1683,11 +1749,18 @@ class FireStoreUtils {
               .within(center: center, radius: double.parse(Constant.sectionConstantModel!.nearByRadius.toString()), field: field, strictMode: true)
               .first; // Fetch the data once as a Future
 
-      if (documentList.isNotEmpty) {
-        for (var document in documentList) {
-          final data = document.data() as Map<String, dynamic>;
-          VendorModel vendorModel = VendorModel.fromJson(data);
+      // Report 02#2: stores without a position, listed after the nearby ones.
+      final List<VendorModel> listed = VendorModel.withUnplacedLast(
+        [for (final document in documentList) VendorModel.fromJson(document.data() as Map<String, dynamic>)],
+        await vendorsWithoutPosition(
+          sectionId: Constant.sectionConstantModel!.id,
+          zoneId: ecommarce == true ? null : Constant.selectedZone!.id.toString(),
+          categoryId: categoryId,
+        ),
+      );
 
+      if (listed.isNotEmpty) {
+        for (final VendorModel vendorModel in listed) {
           if (Constant.isSubscriptionModelApplied == true || Constant.sectionConstantModel?.adminCommision?.isEnabled == true) {
             if (vendorModel.subscriptionPlan != null && Constant.isExpire(vendorModel) == false) {
               if (vendorModel.subscriptionTotalOrders == "-1") {
@@ -2139,8 +2212,8 @@ class FireStoreUtils {
       newString = newString.replaceAll("{rideid}", orderModel.id.toString());
       newString = newString.replaceAll("{date}", DateFormat('dd-MM-yyyy').format(orderModel.createdAt!.toDate()));
       newString = newString.replaceAll("{time}", DateFormat('hh:mm a').format(orderModel.createdAt!.toDate()));
-      newString = newString.replaceAll("{pickuplocation}", orderModel.sourceLocationName.toString());
-      newString = newString.replaceAll("{dropofflocation}", orderModel.destinationLocationName.toString());
+      newString = newString.replaceAll("{pickuplocation}", displayAddress(orderModel.sourceLocationName));
+      newString = newString.replaceAll("{dropofflocation}", displayAddress(orderModel.destinationLocationName));
       newString = newString.replaceAll("{drivername}", orderModel.driver?.fullName() ?? '');
       newString = newString.replaceAll("{vehicle}", "${vType.toString()} | ${brand.toString()} | ${carModel.toString()}");
       newString = newString.replaceAll("{carnumber}", plate.toString());
@@ -2160,7 +2233,7 @@ class FireStoreUtils {
       newString = newString.replaceAll("{passengername}", orderModel.author?.fullName() ?? '');
       newString = newString.replaceAll("{date}", DateFormat('dd-MM-yyyy').format(orderModel.createdAt!.toDate()));
       newString = newString.replaceAll("{time}", DateFormat('hh:mm a').format(orderModel.createdAt!.toDate()));
-      newString = newString.replaceAll("{pickuplocation}", orderModel.sourceLocationName.toString());
+      newString = newString.replaceAll("{pickuplocation}", displayAddress(orderModel.sourceLocationName));
 
       String subjectNewString = emailTemplateModel.subject.toString();
       await Constant.sendMail(subject: subjectNewString, isAdmin: emailTemplateModel.isSendToAdmin, body: newString, recipients: [Constant.userModel!.email]);
@@ -2219,19 +2292,50 @@ class FireStoreUtils {
   // These three create AND update their documents, so they write known fields
   // only: fields owned by the Driver app / admin panel (e.g. `regionId`)
   // survive a customer-side update.
-  static Future cabOrderPlace(CabOrderModel orderModel) async {
-    await fireStore.collection(CollectionName.rides).doc(orderModel.id).setKnownFields(orderModel.toJson());
+  /// Drops [orderId] from the signed-in customer's `inProgressOrderID` (a
+  /// field update, so nothing else on the user document is rewritten).
+  static Future<void> removeInProgressOrder(String orderId) async {
+    final String uid = auth.FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty || orderId.isEmpty) return;
+    try {
+      await fireStore.collection(CollectionName.users).doc(uid).update({
+        'inProgressOrderID': FieldValue.arrayRemove([orderId]),
+      });
+      Constant.userModel?.inProgressOrderID?.remove(orderId);
+    } catch (e) {
+      log('removeInProgressOrder failed: $e');
+    }
   }
 
-  /// [extra] fields go out in the same write (e.g. the cancellation contract
-  /// fields with a server timestamp alongside the status change).
-  static Future parcelOrderPlace(ParcelOrderModel orderModel, {Map<String, dynamic>? extra}) async {
-    await fireStore.collection(CollectionName.parcelOrders).doc(orderModel.id).setKnownFields({...orderModel.toJson(), ...?extra});
+  /// The customer's payment choice on a ride after it was created (method
+  /// change, payment). Only the payment fields are written: the ride's
+  /// `status`, `driverId` / `driverID` and `rejectedByDrivers` belong to the
+  /// dispatch Cloud Function and the Driver app, and a whole-model write from
+  /// the screen's copy could put back a stale status ("Order Placed"
+  /// re-triggers `cabDispatch`), a driver who has since declined, or drop a
+  /// driver from the dispatch's exclusion list.
+  static Future<void> updateRidePayment(CabOrderModel orderModel) => _updateBookingPayment(CollectionName.rides, orderModel.id, paymentMethod: orderModel.paymentMethod, paymentStatus: orderModel.paymentStatus, regionId: orderModel.regionId);
+
+  /// [updateRidePayment] for `rental_orders`.
+  static Future<void> updateRentalPayment(RentalOrderModel orderModel) => _updateBookingPayment(CollectionName.rentalOrders, orderModel.id, paymentMethod: orderModel.paymentMethod, paymentStatus: orderModel.paymentStatus, regionId: orderModel.regionId);
+
+  static Future<void> _updateBookingPayment(String collection, String? orderId, {String? paymentMethod, bool? paymentStatus, String? regionId}) async {
+    if (orderId == null || orderId.isEmpty) throw StateError('booking id is empty');
+    await fireStore.collection(collection).doc(orderId).update({
+      'paymentMethod': paymentMethod,
+      if (paymentStatus != null) 'paymentStatus': paymentStatus,
+      // Fill-only on the model side (`regionId ??= driver's region`): an
+      // existing region is written back unchanged, a missing one is not
+      // written at all.
+      if (regionId != null && regionId.isNotEmpty) 'regionId': regionId,
+    });
   }
 
-  static Future rentalOrderPlace(RentalOrderModel orderModel) async {
-    await fireStore.collection(CollectionName.rentalOrders).doc(orderModel.id).setKnownFields(orderModel.toJson());
-  }
+  // Parcel orders are created / paid through ParcelShippingService.save and
+  // cancelled through ParcelCancellation (field updates): there is no
+  // whole-model parcel write here, so nothing the dispatch, the driver or the
+  // SMS trigger wrote can be replaced by a stale copy.
+
 
   /// `rides` / `rental_orders`.`regionId` is resolved through the DRIVER
   /// (admin spec §1) — never through the store, and never through the pickup
@@ -2848,22 +2952,6 @@ class FireStoreUtils {
       }
       return null;
     });
-  }
-
-  static Future<void> updateCabOrder(CabOrderModel orderModel) async {
-    if (orderModel.id!.isEmpty) {
-      throw Exception("Order ID cannot be empty");
-    }
-
-    try {
-      // Known fields only, like the other ride writes: the Driver app's
-      // `regionId` (and anything else the app does not model) survives.
-      final docRef = fireStore.collection(CollectionName.rides).doc(orderModel.id);
-      await docRef.setKnownFields(orderModel.toJson());
-    } catch (e) {
-      print("Error updating OnDemand order: $e");
-      rethrow;
-    }
   }
 
   static Future<List<RentalVehicleType>> getRentalVehicleType() async {

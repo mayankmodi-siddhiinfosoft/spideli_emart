@@ -18,6 +18,7 @@ import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/themes/custom_dialog_box.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
+import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -175,8 +176,8 @@ class DrawerView extends StatelessWidget {
                       onlineLabel: 'Available Status'.tr,
                       offlineLabel: 'Available Status'.tr,
                       onChanged: (value) async {
-                        if (Constant.userModel?.isAutoVerify == false) {
-                          if (controller.userModel.value.isDocumentVerify == true) {
+                        if (DocumentVerification.checksDocuments(controller.userModel.value)) {
+                          if (!DocumentVerification.isPending(controller.userModel.value)) {
                             // Spec 3.6: expired / rejected documents block going online.
                             if (value == true) {
                               final blockReason = await FireStoreUtils.documentBlockReason();

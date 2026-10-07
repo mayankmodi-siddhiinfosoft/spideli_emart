@@ -16,7 +16,7 @@ Keep the summary table in sync with the sections.
 |---|---|---|---|
 | customer | `high_importance_channel` (everything) | `high_importance_channel` | `default` |
 | store (vendor) | `new_order` (new orders and bookings), `general` (everything else) | `new_order` | `order_alert` on `new_order` (iOS `order_alert.caf`), `default` on `general` |
-| driver | `driver_jobs` (new / assigned job, loud) and `driver_notifications_channel` (everything else) | `driver_notifications_channel` | `default` |
+| driver | `spideli` (dispatch offers from the Cloud Functions), `driver_jobs` (assigned job, loud) and `driver_notifications_channel` (everything else) | `driver_notifications_channel` | `default` |
 | provider | `01` "Bookings and messages" (everything) | `01` | `default` |
 | worker | `01` "Jobs and messages" (everything) | `01` | `default` |
 
@@ -154,26 +154,37 @@ chatType: "worker", orderId, senderId, senderName}` for chat. Every message also
 
 ### Receives
 
-- **Channels** (both created in `main()` before `runApp` by
+- **Channels** (all three created in `main()` before `runApp` by
   `NotificationService.createChannels`, `driver/lib/utils/notification_service.dart`;
   ids in `driver/lib/services/push_message.dart` `PushChannels`):
+  - `spideli`, "Spideli Order Notifications": importance max, default sound,
+    vibration (`DRIVER_DISPATCH_DOCUMENTATION.md` §5A). The channel the
+    dispatch Cloud Functions name for an offer (section "Cloud Functions"
+    below). Created alongside the other two, never instead of them.
   - `driver_jobs`, "New jobs": importance max, default sound played on the
     ringtone stream (`AudioAttributesUsage.notificationRingtone`), vibration,
-    lights. For a NEW or ASSIGNED job (delivery, ride, parcel, rental). New id,
-    so every device gets it with these settings.
+    lights. For an ASSIGNED job (a store's own delivery man, a hand
+    assignment; delivery, ride, parcel, rental). Dispatch offers use `spideli`.
+    New id, so every device gets it with these settings.
   - `driver_notifications_channel`, "Driver Notifications": importance high,
     default sound, vibration. Everything else (chat, cancellations, updates).
     It is the manifest `com.google.firebase.messaging.default_notification_channel_id`,
     so a push with no channel id, or an id the device does not have (an older
     driver build has no `driver_jobs`), lands on it - still heads-up and audible.
 - **Senders to the driver:**
-  - a job (`new_delivery_order`, `assign_order`, or kinds `driver_job`,
-    `order_available`, `job_assigned`, `job_queue`, `new_ride`, `new_parcel`,
-    `new_rental`): `channel_id: "driver_jobs"`, `sound: "default"`,
+  - a dispatch offer: **only the Cloud Functions** `deliveryDispatch`,
+    `parcelDispatch`, `cabDispatch`, `rentalDispatch` (decision D1),
+    `android.notification.channelId: "spideli"`, `sound: "default"`,
+    `apns.payload.aps.sound: "default"`, data below. No app offers a job to a
+    platform driver any more: the customer app's `new_ride` / `new_parcel` /
+    `new_rental` pushes and the store app's `order_available` broadcast are
+    removed. (The driver app still files those four kinds on `driver_jobs` if
+    an older build sends one.)
+  - an assigned job (`new_delivery_order` from the store to its own delivery
+    man, `assign_order`, or kinds `driver_job`, `job_assigned`, `job_queue`):
+    `channel_id: "driver_jobs"`, `sound: "default"`,
     `apns.payload.aps.sound: "default"`. (`driver_notifications_channel` also
-    works, less loud. The server contract's `driver_job` profile currently uses
-    `driver_notifications_channel`; switching it to `driver_jobs` is a
-    one-line follow-up in `functions/src/payload.ts`.)
+    works, less loud.)
   - anything else (chat, `customer_cancelled`, `driver_cancelled`, ...):
     `channel_id: "driver_notifications_channel"`, `sound: "default"`.
   - Always send a `notification` block (title/body): a data-only push is
@@ -190,17 +201,51 @@ chatType: "worker", orderId, senderId, senderName}` for chat. Every message also
 - **Topics** (active drivers only, unsubscribed on sign-out): `driver`,
   `driver_<serviceType>`, `section_<id>`, `zone_<id>`, `region_<id>`,
   `company_<ownerId>`, `carrier_<id>`.
-- **Data the driver routes on** (all strings; `NotificationService.handleMessageClick`):
+- **The dispatch push** (Cloud Functions, `DRIVER_DISPATCH_DOCUMENTATION.md`
+  §3). Data (strings): `click_action: "FLUTTER_NOTIFICATION_CLICK"`,
+  `type` = `order` (delivery / e-commerce, `vendor_orders`) | `parcel`
+  (`parcel_orders`) | `cab` (`rides`) | `rental` (`rental_orders`), `orderId`
+  (and `id`, the same), `status: "Driver Pending"`, `sound: "default"`;
+  `android.priority: high` + `notification.channelId: "spideli"`,
+  `apns-priority: 10`, `aps.sound: "default"`, `contentAvailable`. The app
+  takes a push as an offer when `type` is one of the four, an order id is
+  present, and `click_action` is `FLUTTER_NOTIFICATION_CLICK` or `status` is
+  `Driver Pending` (`DispatchPush.parse`). Then:
+  - foreground (`onMessage`): the order is read from Firestore and, while it
+    is still `Driver Pending` for this driver, the global incoming-order dialog
+    opens over any screen with Accept / Reject and the
+    `settings/DriverNearBy.driverOrderAcceptRejectDuration` countdown (default
+    120 s); Android also posts the push on `spideli`;
+  - background / terminated: the system shows it on `spideli`; the background
+    handler records the offer's start time per order id; a tap (or the launch
+    tap, once the dashboard is up) opens the same dialog, or the module's job
+    screen when the order is no longer pending for this driver;
+  - an offer whose countdown ran out is rejected automatically, once, without
+    a reason.
+  Offers are also found from Firestore without any push (live listeners), so
+  a missed push still shows the dialog. Full contract:
+  `.claude/DRIVER-DISPATCH-CONTRACT.md`.
+- **Data the driver routes on** (all strings; `NotificationService._routeTap`,
+  `handleMessageClick`):
+  - `type` = `order` | `parcel` | `cab` | `rental` + `orderId` (or `id`): the
+    incoming-order dialog (above), else that module's job screen.
   - `type` = `orderChat` + `orderId` + `senderId` (customer id): opens that chat; without them, the inbox.
   - `type` = `admin_chat`: Help & Support (drawer 7).
-  - `type` in the job set above, or `order`, `new_order`, `vendor_order`,
+  - `type` in the job set above, or `new_order`, `vendor_order`,
     `parcel_order`, `rental_order`, `cab_order`: the home of the driver's module.
   - anything else: opens the app (no crash on missing / non-string keys, or when signed out).
 - Foreground: Android posts a local notification on the channel the sender
-  named (if it is one of the two above), else `driver_jobs` for a job type,
-  else `driver_notifications_channel`. iOS shows the push itself
+  named (if it is one of the three above), else `spideli` for a dispatch offer,
+  else `driver_jobs` for a job type, else `driver_notifications_channel`
+  (`PushChannels.driverChannelFor`). iOS shows the push itself
   (presentation options alert/badge/sound), no local copy (no duplicate).
   A tap that launched the app is handled after the splash has navigated.
+- **A hand assignment found without a push** (the admin panel may assign a
+  driver who has no `fcmToken`; `driver_assignment_watcher.dart`): the local
+  alert on `driver_jobs` takes its title and body from the
+  `dynamic_notification` template `job_assigned`, falling back to
+  `new_delivery_order`; with neither there is no system notification, only an
+  in-app toast. No notification text lives in the app.
 - iOS: `AppDelegate` sets `UNUserNotificationCenter.current().delegate = self`
   (so flutter_local_notifications gets its foreground presentation and taps
   alongside firebase_messaging) and calls `registerForRemoteNotifications()`.
@@ -323,6 +368,11 @@ on the order.
 | `new_delivery_order` (store assigns its own delivery man) | driver, fresh `users/{order.driverID}` | `driver_jobs` (older driver builds fall back to `driver_notifications_channel`) | `default` | `default` |
 | `driver_cancelled` (order rejected / cancelled while assigned) | driver `users/{driverID}` | `driver_notifications_channel` | `default` | `default` |
 
+Removed (D1): the store app notifies no platform driver.
+`deliveryDispatch` offers the order and pushes the chosen driver on `spideli`
+when the store accepts it (`Order Accepted`) and again after a
+`Driver Rejected`.
+
 Data: string-only, always `type` (the caller's, or the template type) and
 `orderId`; chat adds `chatType`, `senderId`. Every push to a customer also
 writes `users/{customerId}/notifications/{id}` (Notification Center,
@@ -423,13 +473,28 @@ account's `project_id`, then `settings/notification_setting.senderId`.
 
 ---
 
-## Cloud Functions (`functions/`, codebase `push`)
+## Cloud Functions (deployed separately; their source is not in this repository)
 
 ### Sends
 
 | Push (`data.type`) | Recipient (token) | Android channel | Android sound | APNs sound |
 |---|---|---|---|---|
 | `scheduled_order_due` (`scheduledOrderNotifier`, every minute: a scheduled order became due) | store owner, current `users/{order.vendor.author}.fcmToken` (no `vendor.author`: `vendors/{vendorID}.author`) | `new_order` | `order_alert` | `order_alert.caf` (`apns-priority: 10`) |
+| `order` (`deliveryDispatch`: `vendor_orders` became `Order Accepted` or `Driver Rejected`) | the chosen driver, `users/{driverId}.fcmToken` | `spideli` | `default` | `default` (`apns-priority: 10`) |
+| `parcel` (`parcelDispatch`: `parcel_orders` `Order Placed` / `Driver Rejected`) | the chosen driver | `spideli` | `default` | `default` |
+| `cab` (`cabDispatch`: `rides` `Order Placed` / `Driver Rejected`) | the chosen driver | `spideli` | `default` | `default` |
+| `rental` (`rentalDispatch`: `rental_orders` `Order Placed` / `Driver Rejected`) | the chosen driver | `spideli` | `default` | `default` |
+
+**Dispatch pushes** (`DRIVER_DISPATCH_DOCUMENTATION.md`): data
+`{click_action: "FLUTTER_NOTIFICATION_CLICK", id, orderId, type, status:
+"Driver Pending", sound: "default"}`, a `notification` block, high priority on
+both platforms. Before the push the function writes the order
+`status: "Driver Pending"`, `driverId` = `driverID` = the driver, and
+`users/{driver}.orderRequestData` arrayUnion the id. The driver app's answers
+(accept / reject / timeout writes per collection) and the requests to the
+function owners (`dispatchedAt`, a server-side timeout, exclusions, template
+text) are in `.claude/DRIVER-DISPATCH-CONTRACT.md`. They are the only pushes
+that offer a job to a platform driver.
 
 Data `{type: "scheduled_order_due", orderId}` (strings). Text: the
 `dynamic_notification` template `schedule_order` (`subject` / `message`); when
@@ -439,4 +504,4 @@ customer app for a future scheduled order) is set `true` with
 `scheduledNotificationAt` in a transaction before the push; an order that left
 `Order Placed` first is marked with `scheduledNotificationSkipped` and never
 pushed. Errors are logged without tokens; an `UNREGISTERED` token is only
-logged. Deploy and details: `functions/README.md`.
+logged.

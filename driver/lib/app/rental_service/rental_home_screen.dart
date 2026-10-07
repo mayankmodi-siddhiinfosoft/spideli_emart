@@ -1,4 +1,5 @@
 import 'package:driver/utils/address_format.dart';
+import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/rental_service/rental_booking_search_screen.dart';
@@ -10,7 +11,10 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/rental_dashboard_controller.dart';
 import 'package:driver/controllers/rental_home_controller.dart';
 import 'package:driver/models/rental_order_model.dart';
+import 'package:driver/app/incoming_offer/incoming_offer_dialog.dart';
+import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/services/driver_job_queue_service.dart';
+import 'package:driver/services/incoming_offer_service.dart';
 import 'package:driver/themes/custom_dialog_box.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
@@ -37,12 +41,16 @@ class RentalHomeScreen extends StatelessWidget {
       return GetX(
           init: RentalHomeController(),
           builder: (controller) {
-            final bool verified = !(Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false);
+            final bool verified = !DocumentVerification.isPending(Constant.userModel);
             // New bookings (the queue banner, 'Search new ride' and the
             // empty-state search, whose Accept takes a booking) are for a
             // verified driver who is online. Assigned bookings are listed and
             // workable whatever this says.
             final bool canTakeNewWork = verified && controller.userModel.value.isActive == true;
+            // Bookings dispatched to this driver and waiting for Accept /
+            // Reject (D2 / D3): listed above the accepted bookings, whatever
+            // the verification and online state (they name this driver).
+            final bool hasOffers = IncomingOfferService.offersOf(DispatchKind.rental).isNotEmpty;
             return DsScaffold(
               body: controller.isLoading.value
                   ? const DsSkeletonList(itemCount: 3, leading: false, trailing: false)
@@ -50,7 +58,7 @@ class RentalHomeScreen extends StatelessWidget {
                   // receiving new bookings; bookings already assigned to this
                   // driver are listed either way (both used to replace the
                   // list and every action on it).
-                  : controller.rentalBookingData.isEmpty && Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false
+                  : controller.rentalBookingData.isEmpty && !hasOffers && DocumentVerification.isPending(Constant.userModel)
                       ? _centered(
                           DsEmptyState(
                             tone: DsTone.warning,
@@ -65,7 +73,7 @@ class RentalHomeScreen extends StatelessWidget {
                             },
                           ),
                         )
-                      : controller.rentalBookingData.isEmpty && controller.userModel.value.isActive == false
+                      : controller.rentalBookingData.isEmpty && !hasOffers && controller.userModel.value.isActive == false
                           ? _centered(
                               DsEmptyState(
                                 tone: DsTone.neutral,
@@ -74,7 +82,7 @@ class RentalHomeScreen extends StatelessWidget {
                                 message: 'Switch to online mode to accept and deliver rental orders.'.tr,
                               ),
                             )
-                          : controller.rentalBookingData.isEmpty
+                          : controller.rentalBookingData.isEmpty && !hasOffers
                               ? Column(
                                   children: [
                                     _walletAlert(context, controller),
@@ -124,12 +132,15 @@ class RentalHomeScreen extends StatelessWidget {
                                           },
                                           child: ListView.builder(
                                             shrinkWrap: true,
-                                            itemCount: controller.rentalBookingData.length,
+                                            itemCount: controller.rentalBookingData.length + 1,
                                             padding: EdgeInsets.zero,
                                             itemBuilder: (context, index) {
-                                              RentalOrderModel rentalBookingData = controller.rentalBookingData[index];
+                                              if (index == 0) {
+                                                return const PendingOfferCards(kind: DispatchKind.rental, padding: EdgeInsets.only(bottom: DsSpace.sm));
+                                              }
+                                              RentalOrderModel rentalBookingData = controller.rentalBookingData[index - 1];
                                               return DsFadeSlideIn(
-                                                index: index,
+                                                index: index - 1,
                                                 child: _bookingCard(context, controller, rentalBookingData),
                                               );
                                             },
@@ -562,6 +573,7 @@ class RentalHomeScreen extends StatelessWidget {
             ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
             return;
           }
+          await controller.releaseBooking(rentalBookingData.id);
           Map<String, dynamic> payLoad = <String, dynamic>{"type": "rental_order", "orderId": rentalBookingData.id};
           SendNotification.notifyCustomer(Constant.rentalCompleted,
               customerId: rentalBookingData.authorID ?? rentalBookingData.author?.id,

@@ -82,6 +82,41 @@ class ParcelOrderModel with CancellationFields {
   /// revenue charged on top of the payable total. Kept OUT of [subTotal] so
   /// VAT, % coupons, commission and the driver's credit never apply to it.
   num? parcelScopeTax;
+
+  /// Point 54 (BUG-REPORT-01-APP.md section 4 "Parcel receiver SMS"): the
+  /// sender opted in to the receiver being told by SMS that a parcel was sent
+  /// to them. Written by checkout on every new order: `true` / `false`.
+  bool? sendReceiverSms;
+
+  /// The fee charged for that SMS (`regions/{regionId}.parcelSmsFee` of the
+  /// sender's region at checkout, 50 when unset), `0` when [sendReceiverSms]
+  /// is off. Added to the payable total
+  /// like [parcelScopeTax]: outside VAT, coupons and the driver's credit.
+  num? smsCharge;
+
+  /// The receiver as flat fields (app-spec-parcel-sms.md "parcel_orders - new
+  /// fields"), written at creation next to the [receiver] map: the name, the
+  /// national number (digits, no country code) and the dialling code
+  /// ("+237") apart. The website / panel may write only these. Emitted only
+  /// when set, so no later write can clear them.
+  String? receiverName;
+  String? receiverPhone;
+  String? receiverCountryCode;
+
+  /// The receiver asked not to be texted (written by the server; the app
+  /// writes `false` once, at creation - see ParcelShippingService.save).
+  bool? smsOptOut;
+
+  /// The receiver texts the server-side trigger actually sent, one key per
+  /// event (`{placed: true, atPickupPoint: true}`, app-spec-parcel-sms.md).
+  /// Read only: never written by the app (not in [toJson] / [shippingJson]).
+  Map<String, dynamic>? smsSent;
+
+  /// Whether at least one receiver text went out for this order ([smsSent]
+  /// holds an event marked sent). Whether "placed" is texted depends on the
+  /// admin's `eventsEnabled`, the receiver's opt-out and the gateway, so the
+  /// fee is only spent once this says so.
+  bool get receiverSmsWasSent => smsSent?.values.any((v) => v == true || v is Timestamp) ?? false;
   bool? quoteRequested;
   num? manualPrice;
   String? parcelStatus;
@@ -97,6 +132,27 @@ class ParcelOrderModel with CancellationFields {
 
   /// Fixed scope tax added to the payable total (0 when none).
   double get scopeTaxAmount => (parcelScopeTax ?? 0).toDouble();
+
+  /// Receiver-SMS fee added to the payable total (0 when not opted in).
+  double get smsChargeAmount => sendReceiverSms == true ? (smsCharge ?? 0).toDouble() : 0;
+
+  /// The receiver's name for display: the flat field, else the map's.
+  String get receiverNameDisplay {
+    final String flat = (receiverName ?? '').trim();
+    return flat.isNotEmpty ? flat : (receiver?.name ?? '').trim();
+  }
+
+  /// The receiver's phone for display: "+237 677123456" from the flat fields
+  /// when both exist (an order written by the website / panel), else the
+  /// map's own text ("(+237) 677123456").
+  String get receiverPhoneDisplay {
+    final String phone = (receiverPhone ?? '').trim();
+    final String code = (receiverCountryCode ?? '').trim();
+    if (phone.isNotEmpty && code.isNotEmpty) return '$code $phone';
+    final String mapPhone = (receiver?.phone ?? '').trim();
+    if (mapPhone.isNotEmpty) return mapPhone;
+    return phone;
+  }
 
   /// Either leg goes through a pickup point: the sender pays, no cash.
   bool get usesPickupPoint => pickupMethod == ParcelShipping.pickupPoint || deliveryMethod == ParcelShipping.pickupPoint;
@@ -224,6 +280,13 @@ class ParcelOrderModel with CancellationFields {
     carrierName = _str(json['carrierName']);
     priceBreakdown = json['priceBreakdown'] is Map ? Map<String, dynamic>.from(json['priceBreakdown']) : null;
     parcelScopeTax = json['parcelScopeTax'] is num ? json['parcelScopeTax'] : num.tryParse(json['parcelScopeTax']?.toString() ?? '');
+    sendReceiverSms = json['sendReceiverSms'] is bool ? json['sendReceiverSms'] : null;
+    smsCharge = json['smsCharge'] is num ? json['smsCharge'] : num.tryParse(json['smsCharge']?.toString() ?? '');
+    receiverName = _str(json['receiverName']);
+    receiverPhone = _str(json['receiverPhone']);
+    receiverCountryCode = _str(json['receiverCountryCode']);
+    smsOptOut = json['smsOptOut'] is bool ? json['smsOptOut'] : null;
+    smsSent = json['smsSent'] is Map ? Map<String, dynamic>.from(json['smsSent']) : null;
     quoteRequested = json['quoteRequested'] == true;
     manualPrice = json['manualPrice'] is num ? json['manualPrice'] : num.tryParse(json['manualPrice']?.toString() ?? '');
     parcelStatus = _str(json['parcelStatus']);
@@ -266,6 +329,14 @@ class ParcelOrderModel with CancellationFields {
       'carrierName': carrierName,
       'priceBreakdown': priceBreakdown,
       'parcelScopeTax': parcelScopeTax,
+      // Absent on a model read from an order written before point 54: then
+      // nothing is written (null is dropped below), so no update clears it.
+      'sendReceiverSms': sendReceiverSms,
+      'smsCharge': smsCharge,
+      'receiverName': (receiverName ?? '').trim().isEmpty ? null : receiverName!.trim(),
+      'receiverPhone': (receiverPhone ?? '').trim().isEmpty ? null : receiverPhone!.trim(),
+      'receiverCountryCode': (receiverCountryCode ?? '').trim().isEmpty ? null : receiverCountryCode!.trim(),
+      // `smsOptOut` is deliberately absent: the server owns it after creation.
       if (quoteRequested == true) 'quoteRequested': true,
     };
     data.removeWhere((key, value) => value == null);
@@ -291,7 +362,8 @@ class ParcelOrderModel with CancellationFields {
     data['paymentCollectByReceiver'] = paymentCollectByReceiver;
     data['driverId'] = driverId;
     data['adminCommissionType'] = adminCommissionType;
-    data['rejectedByDrivers'] = rejectedByDrivers;
+    // `rejectedByDrivers` is read only: the parcelDispatch Cloud Function's
+    // exclusion list, which the Driver app appends to on a reject / timeout.
     data['adminCommission'] = adminCommission;
     data['parcelImages'] = parcelImages;
     data['parcelWeight'] = parcelWeight;

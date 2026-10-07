@@ -2,6 +2,10 @@ rules_version = '2';
 
 // =============================================================================
 // Spideli (spideli-870b0) - Firestore security rules - DRAFT, 3 Oct 2026
+// (updated 7 Oct 2026: Cloud Function driver dispatch guards on the four
+// order collections, parcel SMS fields, parcel_sms_outbox closed, carrier
+// regionPricing - .claude/DRIVER-DISPATCH-CONTRACT.md,
+// .claude/PARCEL-SMS-CONTRACT.md, .claude/COMPANY-CARRIER-LINK.md)
 //
 // NOT DEPLOYED, and deliberately not referenced by any firebase.json (a
 // `firebase deploy` from this repo can never replace the live rules).
@@ -11,15 +15,18 @@ rules_version = '2';
 //      anywhere (e.g. match /{document=**} { allow read, write: if
 //      request.auth != null; }) silently cancels every restriction below.
 //   2. Confirm how each web panel signs in to Firebase (see isAdmin()).
-//   3. Run the emulator tests (functions/rules-test, `npm test`), extend them
-//      with whatever the merge added, and only then paste into the console.
+//   3. Test in the emulator / Rules Playground (the old functions/rules-test
+//      suite is no longer in this repository - see the doc, section 6), and
+//      only then paste into the console.
 //
 // What this adds: a field-protection layer on users/{uid} (role, wallet shape,
 // business approval, subscription, verification, ownership) and on
 // providers_workers/{uid} (provider link, activation, salary, verification),
 // admin detection, order_pod access, an OTP-bypass guard on vendor_orders.pod,
-// ledger rules for wallet rows, read-only settings, and the server-only
-// push_rate_limits. Everything marked TODO keeps "signed-in may read/write"
+// the driver-dispatch guards on vendor_orders / rides / parcel_orders /
+// rental_orders (who may name, accept, pass on or release a driver), the
+// server-owned parcel SMS fields, ledger rules for wallet rows, read-only
+// settings, and the server-only push_rate_limits and parcel_sms_outbox. Everything marked TODO keeps "signed-in may read/write"
 // (today's behaviour as far as we can tell) because the apps' use of it was
 // not fully reasoned about.
 // =============================================================================
@@ -124,11 +131,29 @@ service cloud.firestore {
 
     // Unchanged, withdrawn, or (re)submitted as a pending request - what the
     // customer app (BusinessAccount.submit) and the website write. Never
-    // 'approved' / 'rejected' / review fields. accountType alone grants nothing
-    // without an approved profile, so it is left to the account.
+    // 'approved' / 'rejected' / review fields.
     function businessOk() {
       let bp = val(newU(), 'businessProfile');
       return bp == val(oldU(), 'businessProfile') || bp == null || pendingProfile(bp);
+    }
+
+    // Compared the way the apps and the website compare them (trimmed, lower
+    // case): 'Business' / ' approved ' grant exactly what 'business' does.
+    function isBusinessType(m) { return string(txt(m, 'accountType')).trim().lower() == 'business'; }
+    function approvedProfile(bp) { return bp is map && string(bp.get('status', '')).trim().lower() == 'approved'; }
+
+    // BUG-REPORT-01-APP section 4 ("Firestore rules - now urgent"): the
+    // wholesale gate is accountType == 'business' AND an approved profile.
+    // The account may change its accountType - the customer app's
+    // BusinessAccount.submit writes 'business' with a PENDING profile, and
+    // leaving 'business' is always allowed - but it may never turn itself
+    // (back) into a business account while the profile it ends up with is
+    // approved: that would re-open a discount the admin closed by changing
+    // the account type. Only the admin sets both.
+    function accountTypeOk() {
+      return sameTxt('accountType')
+        || !isBusinessType(newU())
+        || !approvedProfile(val(newU(), 'businessProfile'));
     }
 
     // ----- platform subscription on the account -----
@@ -296,6 +321,7 @@ service cloud.firestore {
         && (!('vendorID' in ch) || vendorIdOk())
         && (!ch.hasAny(planKeys()) || !planChanged(customerSide) || planWriteOk(customerSide))
         && (!('businessProfile' in ch) || businessOk())
+        && (!('accountType' in ch) || accountTypeOk())
         // wallet_amount: KNOWN GAP. Top-ups, refunds, gift cards, earnings and
         // wallet payments all move the account's own balance from the phone
         // today, so a rule cannot tell a real credit from a forged one. Once
@@ -360,6 +386,13 @@ service cloud.firestore {
     // Ratings (customer -> driver/provider, driver -> customer), order
     // assignment lists, credits. Customer app strips the privileged keys before
     // writing someone else's profile; the driver app writes a fresh copy back.
+    // TODO (dispatch, D1): orderRequestData / inProgressOrderID /
+    // ordercabRequestData of ANOTHER account are still free. Since 7 Oct no
+    // app adds an offer to another driver (the dispatch Cloud Functions do,
+    // with the Admin SDK); the cross-user writers left are the store freeing
+    // or assigning its own delivery men (storeManagerOf) and the admin. They
+    // can be narrowed to those once the panels' writers are checked
+    // (DRIVER-DISPATCH-CONTRACT.md section 7).
     function plainOtherEditOk(ch) { return privilegedSame(ch) && identitySame(ch) && walletSameOrPayer(ch); }
 
     // What no manager may change on its staff either.
@@ -624,11 +657,180 @@ service cloud.firestore {
         || isAdmin();
     }
 
+    // =========================================================================
+    // Driver dispatch - .claude/DRIVER-DISPATCH-CONTRACT.md
+    // =========================================================================
+    // deliveryDispatch / parcelDispatch / cabDispatch / rentalDispatch (Cloud
+    // Functions, Admin SDK - rules do not apply to them) offer an order to ONE
+    // driver: status 'Driver Pending', driverId = driverID = that driver. No
+    // app dispatches (decision D1). What a client may do with the dispatch
+    // fields of vendor_orders, rides, parcel_orders and rental_orders:
+    //   - the offered / named driver: accept ('Driver Accepted', itself in
+    //     both fields), reject / time out / hand back ('Driver Rejected', both
+    //     fields null, itself added to rejectedByDrivers);
+    //   - any driver: accept an order that names nobody only where the app's
+    //     legacy / open-search paths do (unnamedAcceptStatuses), and never
+    //     one it passed on before; pass on an open order (rejectedByDrivers
+    //     arrayUnion of its own uid only);
+    //   - the customer (authorID): clear the offered driver when cancelling
+    //     before any driver accepted;
+    //   - the store (owner / employee), vendor_orders only: name or clear its
+    //     OWN delivery men (users.vendorID == the order's vendorID).
+    // Nobody but the admin writes 'Driver Pending'. Every check is skipped
+    // unless one of status / driverId / driverID / rejectedByDrivers changed,
+    // and isAdmin() is evaluated last, so an ordinary write reads nothing.
+
+    function ordStatus(m) { return txt(m, 'status'); }
+    function rejectedList(m) { return m.get('rejectedByDrivers', []) is list ? m.get('rejectedByDrivers', []) : []; }
+
+    // The dispatch fields of an order, read once per request (normalised:
+    // absent, null and '' are the same "nobody").
+    function ordView(m) {
+      return {'id': txt(m, 'driverId'), 'ID': txt(m, 'driverID'), 's': txt(m, 'status'), 'author': txt(m, 'authorID'), 'rej': rejectedList(m)};
+    }
+    function namesMe(v, me) { return v.id == me || v.ID == me; }
+    function namesNobody(v) { return v.id == '' && v.ID == ''; }
+
+    // rejectedByDrivers only grows, and only by the caller's own uid.
+    function rejectedListOk(ch, o, n, me) {
+      return !('rejectedByDrivers' in ch)
+        || (n.rej.toSet().hasAll(o.rej) && n.rej.toSet().difference(o.rej.toSet()).hasOnly([me]));
+    }
+
+    // An order that names nobody and that a driver may still take: a legacy
+    // offer held in orderRequestData ('Driver Pending'), the parcel / rental
+    // open search ('Order Placed'), a legacy ride request ('Order Placed' /
+    // 'Order Accepted'). DispatchOrderRules.acceptCheck in the driver app.
+    function unnamedAcceptStatuses(coll) {
+      return coll == 'vendor_orders' ? ['Driver Pending']
+        : (coll == 'rides' ? ['Driver Pending', 'Order Placed', 'Order Accepted'] : ['Driver Pending', 'Order Placed']);
+    }
+
+    // D2 accept: the caller in both fields; the order was offered / handed to
+    // the caller, or named nobody (see above) and was not passed on by the
+    // caller; never after a reject / timeout or once it ended.
+    function acceptOk(coll, o, n, me) {
+      return n.id == me && n.ID == me
+        && !(o.s in ['Driver Rejected', 'Order Completed', 'Order Cancelled', 'Order Rejected'])
+        && (namesMe(o, me)
+            || (namesNobody(o) && !(me in o.rej) && o.s in unnamedAcceptStatuses(coll)));
+    }
+
+    // D2 reject / timeout, and a driver handing back a job it accepted
+    // (rental / ride before pickup): back to dispatch with nobody named and
+    // the caller in rejectedByDrivers, from an order the caller was offered
+    // or held (or a legacy unnamed request).
+    function rejectOk(o, n, me) {
+      return namesNobody(n) && me in n.rej
+        && o.s in ['Driver Pending', 'Order Placed', 'Order Accepted', 'Driver Accepted']
+        && (namesMe(o, me) || (namesNobody(o) && o.s != 'Driver Accepted'));
+    }
+
+    // Nobody but the admin (and the Cloud Functions) writes 'Driver Pending'.
+    function dispatchStatusOk(coll, ch, o, n, me) {
+      return !('status' in ch)
+        || !(n.s in ['Driver Pending', 'Driver Accepted', 'Driver Rejected'])
+        || (n.s == 'Driver Accepted' && acceptOk(coll, o, n, me))
+        || (n.s == 'Driver Rejected' && rejectOk(o, n, me));
+    }
+
+    // A store's own delivery man (users.vendorID == the store), or nobody.
+    function staffOfStore(id, storeId) {
+      return id == '' || (exists(userDoc(id)) && txt(get(userDoc(id)).data, 'vendorID') == storeId);
+    }
+
+    function storeDeliveryManOk(n) {
+      let store = txt(resource.data, 'vendorID');
+      return managesStore(store) && staffOfStore(n.ID, store) && staffOfStore(n.id, store);
+    }
+
+    function driverIdsOk(coll, ch, o, n, me) {
+      return !ch.hasAny(['driverId', 'driverID'])
+        // absent / null / '' rewritten as one another (a model write-back)
+        || (n.id == o.id && n.ID == o.ID)
+        // the driver the order names: accept, fill the other spelling,
+        // reject, time out, hand back
+        || (namesMe(o, me) && n.id in ['', me] && n.ID in ['', me])
+        // an order naming nobody, taken by the caller (acceptOk checks the rest)
+        || (namesNobody(o) && n.id == me && n.ID == me && n.s == 'Driver Accepted')
+        // the customer's cancel before any driver accepted
+        // (BookingStatusTabs.offeredDriverCleared in the customer app)
+        || (namesNobody(n) && o.author == me
+            && o.s in ['Order Placed', 'Driver Pending', 'Driver Rejected', 'Quote Requested']
+            && n.s in ['Order Cancelled', 'Order Rejected'])
+        // the store's own delivery men (self delivery, reassign, release)
+        || (coll == 'vendor_orders' && storeDeliveryManOk(n));
+    }
+
+    function dispatchFieldsOk(coll, ch, o, n, me) {
+      return rejectedListOk(ch, o, n, me) && driverIdsOk(coll, ch, o, n, me) && dispatchStatusOk(coll, ch, o, n, me);
+    }
+
+    function dispatchUpdateOk(coll) {
+      let ch = request.resource.data.diff(resource.data).affectedKeys();
+      return !ch.hasAny(['status', 'driverId', 'driverID', 'rejectedByDrivers'])
+        || dispatchFieldsOk(coll, ch, ordView(resource.data), ordView(request.resource.data), uid());
+    }
+
     match /vendor_orders/{orderId} {
       allow read: if signedIn();
       allow create: if signedIn() && (podStatus(request.resource.data) != 'verified' || isAdmin());
-      allow update: if signedIn() && podTransitionOk(orderId);
+      allow update: if signedIn() && podTransitionOk(orderId) && (dispatchUpdateOk('vendor_orders') || isAdmin());
       allow delete: if signedIn(); // TODO
+    }
+
+    // TODO (create / delete): still open to signed-in accounts, as before.
+    match /rides/{id} {
+      allow read, create, delete: if signedIn();
+      allow update: if signedIn() && (dispatchUpdateOk('rides') || isAdmin());
+    }
+
+    match /rental_orders/{id} {
+      allow read, create, delete: if signedIn();
+      allow update: if signedIn() && (dispatchUpdateOk('rental_orders') || isAdmin());
+    }
+
+    // =========================================================================
+    // parcel_orders - dispatch guards above, plus the receiver SMS fields
+    // (.claude/PARCEL-SMS-CONTRACT.md). smsSent belongs to the server-side
+    // SMS trigger; smsOptOut is written false once by the customer app at
+    // creation and afterwards only by the server / admin; the opt-in
+    // (sendReceiverSms, smsCharge) and the flat receiver fields are written
+    // at creation, and changed later only by the order's author while paying
+    // a priced quote ('Quote Requested').
+    // =========================================================================
+
+    function smsShapeOk(d) {
+      return (val(d, 'sendReceiverSms') == null || d.sendReceiverSms is bool)
+        && (val(d, 'smsCharge') == null || (d.smsCharge is number && d.smsCharge >= 0));
+    }
+
+    function parcelSmsCreateOk() {
+      let d = request.resource.data;
+      return val(d, 'smsSent') == null
+        && (val(d, 'smsOptOut') == null || d.smsOptOut == false)
+        && smsShapeOk(d);
+    }
+
+    function parcelSmsUpdateOk() {
+      let ch = request.resource.data.diff(resource.data).affectedKeys();
+      return !ch.hasAny(['smsSent', 'smsOptOut', 'sendReceiverSms', 'smsCharge', 'receiverName', 'receiverPhone', 'receiverCountryCode'])
+        || (!ch.hasAny(['smsSent', 'smsOptOut'])
+            && txt(resource.data, 'authorID') == uid()
+            && ordStatus(resource.data) == 'Quote Requested'
+            && smsShapeOk(request.resource.data));
+    }
+
+    // TODO (delete): open to signed-in accounts, as before. TODO (driver
+    // writes): the driver app updates only status, driverId, driverID,
+    // driver, rejectedByDrivers, driverRejections, receiverPickupDateTime,
+    // regionId, parcelStatus, trackingEvents, deliveryProof, driverCredited
+    // (checked 7 Oct) - turn that into an allowlist once the panel's and the
+    // pickup points' writers are known.
+    match /parcel_orders/{id} {
+      allow read, delete: if signedIn();
+      allow create: if signedIn() && (parcelSmsCreateOk() || isAdmin());
+      allow update: if signedIn() && ((dispatchUpdateOk('parcel_orders') && parcelSmsUpdateOk()) || isAdmin());
     }
 
     // =========================================================================
@@ -677,21 +879,19 @@ service cloud.firestore {
     }
 
     // =========================================================================
-    // parcel_sms_outbox - PARCEL-SMS-OUTBOX.md section 6.6
+    // parcel_sms_outbox - RETIRED (.claude/PARCEL-SMS-OUTBOX.md, decision D5).
+    // No app writes or reads it any more: the receiver SMS is sent by the
+    // server-side trigger on parcel_orders (.claude/PARCEL-SMS-CONTRACT.md).
+    // Server only; the admin keeps access through the wildcard at the end.
     // =========================================================================
-    // Apps create one request per order+status and `get` it first as the
-    // duplicate check. An existing request is not readable by clients (it holds
-    // the receiver's number and the pickup code); the apps treat that
-    // permission error exactly like "already queued" (requestFor() catches and
-    // returns null), so the outcome is unchanged.
     match /parcel_sms_outbox/{msgId} {
-      allow get: if signedIn() && (resource == null || isAdmin());
-      allow list: if isAdmin();
-      allow create: if signedIn()
-        && request.resource.data.get('id', msgId) == msgId
-        && request.resource.data.get('sendState', '') == 'pending'
-        && !request.resource.data.keys().hasAny(['sentAt', 'error']);
-      allow update, delete: if isAdmin();
+      allow read, write: if false;
+    }
+
+    // sms_log (app-spec-parcel-sms.md): written by the SMS trigger, read by
+    // the admin panel. No app touches it.
+    match /sms_log/{id} {
+      allow read, write: if false;
     }
 
     // =========================================================================
@@ -727,7 +927,11 @@ service cloud.firestore {
     }
 
     // Driver app (company account) maintains its own carrier's commercial
-    // fields only (DeliveryCarrierModel.editableFields); the panel owns the rest.
+    // fields only (DeliveryCarrierModel.editableFields) and its per-region
+    // prices (regionPricing.<regionId>.<charge>, report Doc 43); the panel owns
+    // the rest, including the link users/{companyId}.carrierId
+    // (.claude/COMPANY-CARRIER-LINK.md). The fallbacks after the explicit link
+    // are the owner fields the app also reads (CarrierDispatchService.myCarrier).
     function linkedCarrier(carrierId) {
       return (hasProfile() && txt(myProfile(), 'carrierId') == carrierId)
         || txt(resource.data, 'ownerId') == uid()
@@ -737,13 +941,29 @@ service cloud.firestore {
         || txt(resource.data, 'driverId') == uid();
     }
 
+    function mapOrEmpty(v) { return v is map ? v : {}; }
+    function listOrEmpty(v) { return v is list ? v : []; }
+
+    // regionPricing: only entries of regions the carrier serves (regionIds,
+    // set by the admin) may change; a region the admin removed keeps its
+    // entry untouched. The app never writes the map whole (field paths
+    // regionPricing.<regionId>.<charge>).
+    function regionPricingOk(ch) {
+      return !('regionPricing' in ch)
+        || (request.resource.data.regionPricing is map
+            && request.resource.data.regionPricing.diff(mapOrEmpty(resource.data.get('regionPricing', {}))).affectedKeys()
+                 .hasOnly(listOrEmpty(resource.data.get('regionIds', []))));
+    }
+
     match /delivery_carriers/{carrierId} {
       allow read: if signedIn();
       allow update: if signedIn() && (isAdmin() || (linkedCarrier(carrierId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'countryCode', 'phone', 'conditions',
           'baseCharge', 'perKmCharge', 'perKgCharge', 'minimumCharge',
-          'maxWeight', 'minDeliveryTime', 'maxDeliveryTime', 'deliveryTimeUnit'])));
+          'maxWeight', 'minDeliveryTime', 'maxDeliveryTime', 'deliveryTimeUnit',
+          'regionPricing'])
+        && regionPricingOk(request.resource.data.diff(resource.data).affectedKeys())));
       allow create, delete: if isAdmin();
     }
 
@@ -801,10 +1021,8 @@ service cloud.firestore {
     match /providers_services/{id} { allow read: if true; allow write: if signedIn(); }
     match /providers_coupons/{id} { allow read: if true; allow write: if signedIn(); }
 
-    // Orders and bookings (vendor_orders is above).
-    match /rides/{id} { allow read, write: if signedIn(); }
-    match /parcel_orders/{id} { allow read, write: if signedIn(); }
-    match /rental_orders/{id} { allow read, write: if signedIn(); }
+    // Orders and bookings (vendor_orders, rides, parcel_orders and
+    // rental_orders are above, with the driver-dispatch guards).
     match /provider_orders/{id} { allow read, write: if signedIn(); }
     match /booked_table/{id} { allow read, write: if signedIn(); }
 

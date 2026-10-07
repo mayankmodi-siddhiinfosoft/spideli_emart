@@ -1,3 +1,5 @@
+import 'package:customer/utils/booking_status_tabs.dart';
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/utils/order_receipt_pdf.dart';
 import 'package:customer/utils/ride_receipt_pdf.dart';
@@ -9,6 +11,7 @@ import 'package:customer/screen_ui/multi_vendor_service/wallet_screen/wallet_scr
 import 'package:customer/screen_ui/rental_service/rental_review_screen.dart';
 import 'package:customer/screen_ui/rental_service/widget/rental_common_widgets.dart';
 import 'package:customer/screen_ui/rental_service/widget/rental_proposal_widgets.dart';
+import 'package:customer/utils/rental_proposal_service.dart';
 import 'package:customer/screen_ui/widgets/order_ui.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
@@ -41,7 +44,7 @@ class RentalOrderDetailsScreen extends StatelessWidget {
         final carModel = vehicle?['carModel']?.toString() ?? '';
         final plate = vehicle?['carPlateNumber']?.toString() ?? '';
         final bool showPay = controller.order.value.status == Constant.orderInTransit && controller.order.value.paymentStatus == false;
-        final bool showCancel = controller.order.value.status == Constant.orderPlaced || controller.order.value.status == Constant.driverAccepted;
+        final bool showCancel = RentalBookingCancellation.isCancellable(controller.order.value.status);
         return DsScaffold(
           appBar: DsAppBar(
             title: "Order Details".tr,
@@ -73,7 +76,7 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                           OrderIdHeader(
                             title: 'Booking Id :'.tr,
                             id: controller.order.value.id.toString(),
-                            statusLabel: controller.order.value.status,
+                            statusLabel: BookingStatusTabs.label(controller.order.value.status),
                             status: controller.order.value.status,
                             copySemanticLabel: "Booking ID copied to clipboard".tr,
                             onCopy: () {
@@ -91,7 +94,7 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(controller.order.value.sourceLocationName ?? "-", style: t.titleSm),
+                                    Text(displayAddress(controller.order.value.sourceLocationName, fallback: "-"), style: t.titleSm),
                                     if (controller.order.value.bookingDateTime != null)
                                       Padding(
                                         padding: const EdgeInsets.only(top: DsSpace.xxs),
@@ -128,7 +131,10 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                         ),
                       ),
                     const DsGap(DsSpace.lg),
-                    if (controller.order.value.driver != null) ...[
+                    // No driver card while the dispatch is still looking (a driver who was
+                    // only offered the booking, or one who declined, is not its driver).
+                    if (controller.order.value.driver != null &&
+                        BookingStatusTabs.driverAccepted(controller.order.value.status, controller.order.value.driverId, controller.order.value.driver?.id)) ...[
                       RentalInfoCard(
                         title: "About Driver".tr,
                         icon: Icons.badge_outlined,
@@ -177,7 +183,9 @@ class RentalOrderDetailsScreen extends StatelessWidget {
 
                                     // If review was submitted successfully
                                     if (result == true) {
-                                      await controller.fetchDriverDetails();
+                                      // The driver's rating changed: re-read
+                                      // their profile, not only the review.
+                                      await controller.fetchDriverDetails(force: true);
                                     }
                                   },
                                 ),
@@ -363,7 +371,7 @@ class RentalOrderDetailsScreen extends StatelessWidget {
                       if (showCancel)
                         Expanded(
                           child: DsButton.dangerTonal(
-                            label: "Cancel Booking",
+                            label: "Cancel Booking".tr,
                             icon: Icons.cancel_outlined,
                             size: DsButtonSize.lg,
                             expand: true,

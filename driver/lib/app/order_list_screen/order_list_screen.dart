@@ -2,6 +2,7 @@ import 'package:driver/app/widgets/cancellation_block.dart';
 import 'package:driver/app/widgets/order_ui.dart';
 import 'package:driver/app/widgets/pod_block.dart';
 import 'package:driver/utils/address_format.dart';
+import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/app/order_list_screen/order_details_screen.dart';
 import 'package:driver/constant/constant.dart';
@@ -31,7 +32,7 @@ class OrderListScreen extends StatelessWidget {
           builder: (controller) {
             final bool isLoading = controller.isLoading.value;
             final List<OrderModel> orders = controller.orderList.toList();
-            final bool documentsPending = Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false;
+            final bool documentsPending = DocumentVerification.isPending(Constant.userModel);
 
             return DsScaffold(
               body: documentsPending

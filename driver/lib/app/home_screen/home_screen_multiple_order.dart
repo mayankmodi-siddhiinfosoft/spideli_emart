@@ -35,7 +35,6 @@ class HomeScreenMultipleOrder extends StatelessWidget {
           // empty setting, and the whole screen (both tabs) was an error.
           final bool walletTooLow = Constant.userModel?.vendorID?.isEmpty == true &&
               (double.tryParse('${controller.driverModel.value.walletAmount ?? 0}') ?? 0) < (double.tryParse(Constant.minimumDepositToRideAccept) ?? 0);
-          final String? uid = controller.driverModel.value.id;
           final Map<String, OrderModel> orders = Map<String, OrderModel>.from(controller.orders);
           final bool ordersLoaded = controller.ordersLoaded.value;
           final UserModel driver = controller.driverModel.value;
@@ -48,12 +47,11 @@ class HomeScreenMultipleOrder extends StatelessWidget {
               HomeScreenMultipleOrderController.offersToShow(requests: controller.newOrder.toList(), orders: orders, ordersLoaded: ordersLoaded, driver: driver);
           // Only what the driver can still act on: a finished, cancelled or
           // reassigned id left in `inProgressOrderID` is not an active order.
-          final List<dynamic> activeOrders = controller.activeOrder.where((id) {
-            final OrderModel? order = orders[id.toString()];
-            if (order == null) return !ordersLoaded;
-            return AssignedDeliveryOrders.isWorkableFor(order, uid) ||
-                (AssignedDeliveryOrders.isOfferFor(order, uid) && AssignedDeliveryOrders.isNamedFor(order, uid));
-          }).toList();
+          // A driver with no "New" tab also sees here the hand assignments by
+          // name that wait in `orderRequestData` (report 01 §4: an admin
+          // assignment learnt from the order record alone).
+          final List<dynamic> activeOrders = HomeScreenMultipleOrderController.activeToShow(
+              inProgress: controller.activeOrder.toList(), requests: controller.newOrder.toList(), orders: orders, ordersLoaded: ordersLoaded, driver: driver);
           // The verification gate is about receiving offers; it never hides an
           // order that is already assigned to this driver. With an assigned
           // order on hand an unverified driver keeps the Active tab only:

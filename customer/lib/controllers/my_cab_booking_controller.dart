@@ -1,3 +1,4 @@
+import 'package:customer/utils/booking_status_tabs.dart';
 import 'package:customer/utils/region_service.dart';
 import 'dart:convert';
 import 'dart:developer';
@@ -94,16 +95,17 @@ class MyCabBookingController extends GetxController {
   List<CabOrderModel> getOrdersForTab(String tab) {
     switch (tab) {
       case "New":
-        return cabOrder.where((order) => ["Order Placed", "Driver Pending"].contains(order.status)).toList();
+        // "Driver Rejected" re-triggers the dispatch: still waiting for a driver.
+        return cabOrder.where((order) => BookingStatusTabs.rideNew.contains(order.status)).toList();
 
       case "On Going":
-        return cabOrder.where((order) => ["Driver Accepted", "Order Shipped", "In Transit"].contains(order.status)).toList();
+        return cabOrder.where((order) => BookingStatusTabs.onGoing.contains(order.status)).toList();
 
       case "Completed":
-        return cabOrder.where((order) => ["Order Completed"].contains(order.status)).toList();
+        return cabOrder.where((order) => BookingStatusTabs.completed.contains(order.status)).toList();
 
       case "Cancelled":
-        return cabOrder.where((order) => ["Order Rejected", "Order Cancelled", "Driver Rejected"].contains(order.status)).toList();
+        return cabOrder.where((order) => BookingStatusTabs.cancelled.contains(order.status)).toList();
 
       default:
         return [];
@@ -211,7 +213,7 @@ class MyCabBookingController extends GetxController {
   Future<void> completeOrder() async {
     if (selectedPaymentMethod.value == PaymentGateway.cod.name) {
       selectedOrder.value.paymentMethod = selectedPaymentMethod.value;
-      await FireStoreUtils.cabOrderPlace(selectedOrder.value).then((value) {
+      await FireStoreUtils.updateRidePayment(selectedOrder.value).then((value) {
         ShowToastDialog.showToast("Payment method changed".tr);
         Get.back();
       });
@@ -241,7 +243,7 @@ class MyCabBookingController extends GetxController {
         });
       }
       selectedOrder.value.paymentStatus = true;
-      await FireStoreUtils.cabOrderPlace(selectedOrder.value).then((value) {
+      await FireStoreUtils.updateRidePayment(selectedOrder.value).then((value) {
         ShowToastDialog.showToast("Payment successfully".tr);
         Get.back();
       });

@@ -23,6 +23,7 @@ import 'package:spideliprovider/ui/booking_list/assign_worker_list.dart';
 import 'package:spideliprovider/ui/booking_list/verify_otp_screen.dart';
 import 'package:spideliprovider/ui/chat_screen/chat_screen.dart';
 import 'package:spideliprovider/utils/booking_receipt_pdf.dart';
+import 'package:spideliprovider/utils/booking_response.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:spideliprovider/widgets/common_ui.dart';
 import 'package:spideliprovider/widgets/order_ui.dart';
@@ -359,21 +360,23 @@ class BookingDetailsScreen extends StatelessWidget {
                                     ),
                                   ],
                                 ),
-                                const DsGap(DsSpace.xs),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Icon(Icons.location_on_outlined, size: 14, color: c.iconDefault),
-                                    const DsGap(DsSpace.xs),
-                                    Expanded(
-                                      child: Text(
-                                        formatAddressText(controller.worker.value.address),
-                                        maxLines: 5,
-                                        style: t.bodySecondary,
+                                if (formatAddressText(controller.worker.value.address).isNotEmpty) ...[
+                                  const DsGap(DsSpace.xs),
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(Icons.location_on_outlined, size: 14, color: c.iconDefault),
+                                      const DsGap(DsSpace.xs),
+                                      Expanded(
+                                        child: Text(
+                                          formatAddressText(controller.worker.value.address),
+                                          maxLines: 5,
+                                          style: t.bodySecondary,
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
+                                    ],
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -410,8 +413,8 @@ class BookingDetailsScreen extends StatelessWidget {
         DsSectionHeader(
           title: 'About Customer'.tr,
           icon: Icons.person_outline_rounded,
-          actionLabel: onProviderOrder.status == ORDER_STATUS_ACCEPTED ? 'Get Direction'.tr : null,
-          onAction: onProviderOrder.status == ORDER_STATUS_ACCEPTED
+          actionLabel: onProviderOrder.status == ORDER_STATUS_ACCEPTED && onProviderOrder.address?.location != null ? 'Get Direction'.tr : null,
+          onAction: onProviderOrder.status == ORDER_STATUS_ACCEPTED && onProviderOrder.address?.location != null
               ? () async {
                   final directions = MapLauncher.directions(
                     LocationCoords(onProviderOrder.address!.location!.latitude, onProviderOrder.address!.location!.longitude, title: onProviderOrder.address!.getFullAddress()),
@@ -448,21 +451,23 @@ class BookingDetailsScreen extends StatelessWidget {
                           onProviderOrder.author.fullName().toString(),
                           style: t.titleSm,
                         ),
-                        const DsGap(DsSpace.xs),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(Icons.location_on_outlined, size: 15, color: c.iconDefault),
-                            const DsGap(DsSpace.xs),
-                            Expanded(
-                              child: Text(
-                                onProviderOrder.address?.getFullAddress() ?? "",
-                                maxLines: 5,
-                                style: t.bodySecondary,
+                        if ((onProviderOrder.address?.getFullAddress() ?? '').isNotEmpty) ...[
+                          const DsGap(DsSpace.xs),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.location_on_outlined, size: 15, color: c.iconDefault),
+                              const DsGap(DsSpace.xs),
+                              Expanded(
+                                child: Text(
+                                  onProviderOrder.address!.getFullAddress(),
+                                  maxLines: 5,
+                                  style: t.bodySecondary,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -933,14 +938,23 @@ class BookingDetailsScreen extends StatelessWidget {
                 final reason = await CancelReasonSheet.show(title: "Why are you declining this booking?".tr);
                 if (reason == null) return;
                 ShowToastDialog.showLoader('Please wait...');
+                // Only while the booking is still "Order Placed": a customer
+                // who cancelled while the sheet was open keeps their status
+                // and reason, and is not refunded twice.
+                final String? foundStatus;
                 try {
-                  await FireStoreUtils.updateOrderFields(onProviderOrder.id, {
+                  foundStatus = await FireStoreUtils.updatePlacedBooking(onProviderOrder.id, {
                     'status': ORDER_STATUS_REJECTED,
                     ...reason.toFields(action: 'rejected', byName: MyAppState.currentUser?.fullName()),
                   });
                 } catch (e) {
                   ShowToastDialog.closeLoader();
                   ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+                  return;
+                }
+                if (foundStatus != null) {
+                  ShowToastDialog.closeLoader();
+                  ShowToastDialog.showToast(bookingNoLongerPendingMessage(foundStatus).tr);
                   return;
                 }
                 onProviderOrder.status = ORDER_STATUS_REJECTED;
@@ -1136,9 +1150,28 @@ class BookingDetailsScreen extends StatelessWidget {
       onPrimary: () async {
         Navigator.of(context).pop();
         ShowToastDialog.showLoader('Please wait...');
+        final Timestamp newScheduleDateTime = Timestamp.fromDate(controller.selectedDateTime.value);
+        // Only while the booking is still "Order Placed": a booking the
+        // customer cancelled (and was refunded for) while this dialog was open
+        // is never flipped back to accepted, and the provider is not paid.
+        final String? foundStatus;
+        try {
+          foundStatus = await FireStoreUtils.updatePlacedBooking(onProviderOrder.id, {
+            'status': ORDER_STATUS_ACCEPTED,
+            'newScheduleDateTime': newScheduleDateTime,
+          });
+        } catch (e) {
+          ShowToastDialog.closeLoader();
+          ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+          return;
+        }
+        if (foundStatus != null) {
+          ShowToastDialog.closeLoader();
+          ShowToastDialog.showToast(bookingNoLongerPendingMessage(foundStatus).tr);
+          return;
+        }
         onProviderOrder.status = ORDER_STATUS_ACCEPTED;
-        onProviderOrder.newScheduleDateTime = Timestamp.fromDate(controller.selectedDateTime.value);
-        await FireStoreUtils.updateOrder(onProviderOrder);
+        onProviderOrder.newScheduleDateTime = newScheduleDateTime;
         await FireStoreUtils.providerWalletSet(onProviderOrder, onProviderOrder.provider.priceUnit == "Fixed" ? true : false);
         String subscriptionTotalOrders = (int.parse(MyAppState.currentUser?.subscriptionTotalOrders ?? '1') - 1).toString();
         if ((isSubscriptionModelApplied == true || selectedSectionModel?.adminCommision?.enable == true) && MyAppState.currentUser!.subscriptionPlan != null) {

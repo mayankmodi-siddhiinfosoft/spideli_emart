@@ -25,14 +25,20 @@ class CancelReasonResult {
       ? CancelReasonResult(reason: otherText.trim(), code: CancelReasonOption.otherCode)
       : CancelReasonResult(reason: option.label, code: option.code);
 
-  /// Fields for a driver passing on / handing back a ride or rental.
+  /// Fields for a driver passing on / handing back a delivery order, ride or
+  /// rental.
   ///
-  /// The booking stays open to other drivers, so the reason is appended to a
-  /// per-driver `driverRejections` list rather than written to the booking's
-  /// own cancelReason / cancelledBy (those would otherwise stay on a booking
-  /// another driver later completes). [afterAccept] marks a driver who had
-  /// accepted and then cancelled, so the customer app can say "your driver
-  /// cancelled - finding another driver".
+  /// Every one of those sends the record back to dispatch (`Driver Rejected`,
+  /// or a rental back to `Order Placed`): it is not a final cancellation, so
+  /// the reason is appended to a per-driver `driverRejections` list rather
+  /// than written to the record's own `cancelReason` / `cancelledBy` /
+  /// `cancelledAt` / `cancelAction` (`.claude/CANCEL-REASON-CONTRACT.md`).
+  /// Those would stay on a record another driver later completes, and the
+  /// apps read `cancelAction` first, so a later cancellation by the store or
+  /// the admin (which writes the four report fields only) would read
+  /// "Rejected by ...". [afterAccept] marks a driver who had accepted and then
+  /// cancelled, so the customer app can say "your driver cancelled - finding
+  /// another driver".
   Map<String, dynamic> toFields(String? driverId, {bool afterAccept = false}) => {
         'driverRejections': FieldValue.arrayUnion([
           {

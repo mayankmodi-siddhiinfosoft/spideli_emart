@@ -253,4 +253,15 @@ const Map<String, String> enUS = {
   "Hourly": "Hourly",
   "Page": "Page",
   "Unread messages": "Unread messages",
+  // Documents: admin-defined provider document types only (report Doc 36/41).
+  "Upload each document requested by the administrator. Rejected or expired documents can be uploaded again.": "Upload each document requested by the administrator. Rejected or expired documents can be uploaded again.",
+  "Could not load the documents to upload": "Could not load the documents to upload",
+  "Check your connection and try again.": "Check your connection and try again.",
+  "Retry": "Retry",
+  "No documents to upload yet": "No documents to upload yet",
+  "The administrator has not set up the documents a service provider must provide. Pull down to refresh later.": "The administrator has not set up the documents a service provider must provide. Pull down to refresh later.",
+  // Accept / Decline of a booking someone already answered.
+  "This booking was already cancelled": "This booking was already cancelled",
+  "This booking was already declined": "This booking was already declined",
+  "This booking was already accepted": "This booking was already accepted",
 };

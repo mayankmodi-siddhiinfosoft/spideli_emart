@@ -5,6 +5,7 @@ import '../constant/constant.dart';
 import '../models/parcel_category.dart';
 import '../models/parcel_order_model.dart';
 import '../utils/fire_store_utils.dart';
+import '../utils/parcel_amounts.dart';
 
 class ParcelOrderDetailsController extends GetxController {
   Rx<ParcelOrderModel> parcelOrder = ParcelOrderModel().obs;
@@ -28,25 +29,37 @@ class ParcelOrderDetailsController extends GetxController {
   RxDouble totalAmount = 0.0.obs;
   RxDouble adminCommission = 0.0.obs;
 
+  /// Bill lines the customer paid on top of the taxed fare (all 0 when
+  /// absent): the platform fee and its taxes, the fixed intercity /
+  /// intercountry tax and the receiver-SMS fee (point 54).
+  RxDouble platformFee = 0.0.obs;
+  RxDouble platformTaxAmount = 0.0.obs;
+  RxDouble scopeTax = 0.0.obs;
+  RxDouble smsCharge = 0.0.obs;
+
+  /// The bill exactly as the customer was charged ([ParcelAmounts]), so the
+  /// "Order Total" — the cash a driver collects — reconciles with the lines
+  /// shown. Tolerant of a record without `subTotal`, taxes or commission.
   void calculateTotalAmount() {
-    taxAmount = 0.0.obs;
-    discount = 0.0.obs;
-    subTotal.value = double.parse(parcelOrder.value.subTotal.toString());
-    discount.value = double.parse(parcelOrder.value.discount ?? '0.0');
+    final ParcelAmounts amounts = ParcelAmounts.of(parcelOrder.value);
+    subTotal.value = amounts.subTotal;
+    discount.value = amounts.discount;
+    taxAmount.value = amounts.orderTax;
+    platformFee.value = amounts.platformFee;
+    platformTaxAmount.value = amounts.platformTax;
+    scopeTax.value = amounts.scopeTax;
+    smsCharge.value = amounts.smsCharge;
 
-    for (var element in parcelOrder.value.taxSetting!) {
-      taxAmount.value = (taxAmount.value + Constant.calculateTax(amount: (subTotal.value - discount.value).toString(), taxModel: element));
-    }
-
-    if (parcelOrder.value.adminCommission!.isNotEmpty) {
+    adminCommission.value = 0.0;
+    final String commission = (parcelOrder.value.adminCommission ?? '').trim();
+    if (commission.isNotEmpty && double.tryParse(commission) != null) {
       adminCommission.value = Constant.calculateAdminCommission(
-          amount: (subTotal.value - discount.value).toString(),
+          amount: (amounts.subTotal - amounts.discount).toString(),
           adminCommissionType: parcelOrder.value.adminCommissionType.toString(),
-          adminCommission: parcelOrder.value.adminCommission ?? '0');
+          adminCommission: commission);
     }
 
-
-    totalAmount.value = (subTotal.value - discount.value) + taxAmount.value + (parcelOrder.value.parcelScopeTax ?? 0).toDouble();
+    totalAmount.value = amounts.total;
     update();
   }
 

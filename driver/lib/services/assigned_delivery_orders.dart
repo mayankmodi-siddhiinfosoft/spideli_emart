@@ -6,6 +6,7 @@ import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 
 /// Which delivery orders (`vendor_orders`) a driver can act on, decided from
@@ -106,52 +107,70 @@ abstract final class AssignedDeliveryOrders {
 
   static DocumentReference<Map<String, dynamic>> _orderRef(String orderId) => FireStoreUtils.fireStore.collection(CollectionName.vendorOrders).doc(orderId);
 
-  /// Accepts the delivery offer [orderId] for [driver], re-checked against
-  /// the live order first: the screen may show an id that is no longer an
-  /// offer (cancelled while still offered, handed to another driver, already
-  /// taken), and accepting it brought a cancelled order back or took another
-  /// driver's job.
+  static OrderModel? _parse(Map<String, dynamic>? data) {
+    if (data == null) return null;
+    try {
+      return OrderModel.fromJson(data);
+    } catch (e) {
+      log("AssignedDeliveryOrders: an order could not be read: $e");
+      return null;
+    }
+  }
+
+  /// Accepts the delivery offer [orderId] for [driver] (D2), in a transaction
+  /// that first re-checks the live order ([DispatchOrderRules.acceptCheck]):
+  /// only a `Driver Pending` order that names this driver (`driverID` or
+  /// `driverId`), the admin's `Order Accepted` + `driverID` hand assignment,
+  /// or a legacy offer that names nobody and that the driver holds
+  /// ([heldAsRequest]; by default: the id is on the driver's record). A
+  /// cancelled order, one handed to another driver or one whose window is
+  /// over is never taken, whatever the screen still shows.
   ///
-  /// The order is written first (`status`, `driverID`, `driver` only), then
-  /// the driver's arrays with `arrayUnion` / `arrayRemove`, never the whole
-  /// user document from a local copy. Both are ordinary writes rather than a
-  /// transaction on purpose: a transaction's write reaches the listeners
-  /// without the local pending write, and `DriverAssignmentWatcher` then
-  /// announces the driver's own accept as "a job has been assigned to you".
+  /// The order gets `Driver Accepted` with this driver in both fields and
+  /// `driver` (known fields only); then the driver's arrays move field-level:
+  /// `inProgressOrderID` arrayUnion, `orderRequestData` arrayRemove. The
+  /// Cloud Function then advances the order to `Order Shipped` itself: a
+  /// retried tap afterwards finds it [OfferAnswer.held] and writes nothing.
   ///
   /// [OfferAnswer.gone] drops the id from `orderRequestData`.
-  static Future<({OfferAnswer answer, OrderModel? order})> acceptOffer(String orderId, UserModel driver) async {
-    final String? uid = driver.id;
-    if (uid == null || orderId.isEmpty) return (answer: OfferAnswer.failed, order: null);
-    final OrderModel? live;
+  static Future<({OfferAnswer answer, OrderModel? order})> acceptOffer(String orderId, UserModel driver, {bool? heldAsRequest}) async {
+    final String uid = driver.id ?? '';
+    if (uid.isEmpty || orderId.isEmpty) return (answer: OfferAnswer.failed, order: null);
+    final bool held = heldAsRequest ?? [...?driver.orderRequestData, ...?driver.inProgressOrderID].any((id) => id.toString() == orderId);
+    final DocumentReference<Map<String, dynamic>> ref = _orderRef(orderId);
+    final ({AcceptCheck check, Map<String, dynamic>? data}) outcome;
     try {
-      final DocumentSnapshot<Map<String, dynamic>> snap = await _orderRef(orderId).get();
-      final Map<String, dynamic>? data = snap.data();
-      live = snap.exists && data != null ? OrderModel.fromJson(data) : null;
+      outcome = await FireStoreUtils.fireStore.runTransaction<({AcceptCheck check, Map<String, dynamic>? data})>((tx) async {
+        final DocumentSnapshot<Map<String, dynamic>> snap = await tx.get(ref);
+        final Map<String, dynamic>? data = snap.exists ? snap.data() : null;
+        final AcceptCheck check = DispatchOrderRules.acceptCheck(DispatchKind.delivery, data, uid, heldAsRequest: held);
+        if (check == AcceptCheck.ok) {
+          final Map<String, dynamic> fields = DispatchOrderRules.acceptFields(uid, driver.toJson());
+          tx.set(ref, fields, SetOptions(mergeFields: fields.keys.map((key) => FieldPath([key])).toList()));
+        }
+        return (check: check, data: data);
+      });
     } catch (e) {
-      log("AssignedDeliveryOrders.acceptOffer($orderId): the order could not be read: $e");
+      log("AssignedDeliveryOrders.acceptOffer($orderId) failed: $e");
       return (answer: OfferAnswer.failed, order: null);
     }
-    // Already this driver's (a retried tap, a second device): only make sure
-    // the driver's record holds it.
-    if (live != null && isWorkableFor(live, uid) && isNamedFor(live, uid)) {
-      await _holdAccepted(uid, orderId);
-      return (answer: OfferAnswer.held, order: live);
+    final OrderModel? live = _parse(outcome.data);
+    switch (outcome.check) {
+      case AcceptCheck.ok:
+        await _holdAccepted(uid, orderId);
+        return (answer: OfferAnswer.done, order: live);
+      case AcceptCheck.held:
+        // Already this driver's (a retried tap, a second device, or the
+        // Cloud Function already moved it on): only make sure the driver's
+        // record holds it.
+        await _holdAccepted(uid, orderId);
+        return (answer: OfferAnswer.held, order: live);
+      case AcceptCheck.gone:
+        await FireStoreUtils.updateUserFields(uid, {
+          'orderRequestData': FieldValue.arrayRemove([orderId])
+        });
+        return (answer: OfferAnswer.gone, order: live);
     }
-    if (live == null || !isOfferFor(live, uid)) {
-      await FireStoreUtils.updateUserFields(uid, {
-        'orderRequestData': FieldValue.arrayRemove([orderId])
-      });
-      return (answer: OfferAnswer.gone, order: live);
-    }
-    final bool written = await FireStoreUtils.updateVendorOrderFields(orderId, {
-      'status': Constant.driverAccepted,
-      'driverID': uid,
-      'driver': driver.toJson(),
-    });
-    if (!written) return (answer: OfferAnswer.failed, order: live);
-    await _holdAccepted(uid, orderId);
-    return (answer: OfferAnswer.done, order: live);
   }
 
   static Future<bool> _holdAccepted(String uid, String orderId) => FireStoreUtils.updateUserFields(uid, {
@@ -159,29 +178,39 @@ abstract final class AssignedDeliveryOrders {
         'orderRequestData': FieldValue.arrayRemove([orderId]),
       });
 
-  /// Rejects the delivery offer [orderId] for [uid] in a transaction that
-  /// first re-checks the live order ([isOfferFor]): a rejection used to write
-  /// "Driver Rejected" unconditionally, sending a cancelled order back to
-  /// dispatch or killing a job another driver was already working.
-  /// [reasonFields] is the mandatory reason (`CancelReasonResult.toFields`).
+  /// Rejects the delivery offer [orderId] for [uid] (D2) in a transaction that
+  /// first re-checks the live order: a manual reject answers an offer
+  /// ([isOfferFor]), a [timeout] only a `Driver Pending` order that still names
+  /// this driver ([DispatchOrderRules.isPendingFor]). A rejection used to
+  /// write "Driver Rejected" unconditionally, sending a cancelled order back
+  /// to dispatch or killing a job another driver was already working.
+  ///
+  /// The order goes back to dispatch: `Driver Rejected`, this driver in
+  /// `rejectedByDrivers`, `driverId` and `driverID` set to null. A manual
+  /// reject also appends its mandatory reason ([reasonFields],
+  /// `CancelReasonResult.toFields`) to `driverRejections`; a timeout and the
+  /// automatic out-of-region decline write no reason.
   ///
   /// Afterwards the id leaves the driver's arrays, field-level: on
-  /// [OfferAnswer.done] both `orderRequestData` and `inProgressOrderID`, on
-  /// [OfferAnswer.gone] `orderRequestData` only.
-  static Future<OfferAnswer> rejectOffer(String orderId, String uid, Map<String, dynamic> reasonFields) async {
+  /// [OfferAnswer.done] both `orderRequestData` and `inProgressOrderID` (a
+  /// store's own assignment is held there), on [OfferAnswer.gone]
+  /// `orderRequestData` only.
+  static Future<OfferAnswer> rejectOffer(String orderId, String uid, {Map<String, dynamic>? reasonFields, bool timeout = false}) async {
     if (orderId.isEmpty || uid.isEmpty) return OfferAnswer.failed;
     final DocumentReference<Map<String, dynamic>> ref = _orderRef(orderId);
     final OfferAnswer answer;
     try {
       answer = await FireStoreUtils.fireStore.runTransaction<OfferAnswer>((tx) async {
         final DocumentSnapshot<Map<String, dynamic>> snap = await tx.get(ref);
-        final Map<String, dynamic>? data = snap.data();
-        if (!snap.exists || data == null || !isOfferFor(OrderModel.fromJson(data), uid)) return OfferAnswer.gone;
-        final Map<String, dynamic> fields = {
-          'status': Constant.driverRejected,
-          'rejectedByDrivers': FieldValue.arrayUnion([uid]),
-          ...reasonFields,
-        };
+        final Map<String, dynamic>? data = snap.exists ? snap.data() : null;
+        if (data == null) return OfferAnswer.gone;
+        if (timeout) {
+          if (!DispatchOrderRules.isPendingFor(data, uid)) return OfferAnswer.gone;
+        } else {
+          final OrderModel? order = _parse(data);
+          if (order == null || !isOfferFor(order, uid) || DispatchOrderRules.namesOther(data, uid)) return OfferAnswer.gone;
+        }
+        final Map<String, dynamic> fields = DispatchOrderRules.rejectFields(uid, reasonFields: timeout ? null : reasonFields);
         tx.set(ref, fields, SetOptions(mergeFields: fields.keys.map((key) => FieldPath([key])).toList()));
         return OfferAnswer.done;
       });
@@ -214,6 +243,10 @@ enum OfferAnswer {
   /// The order could not be read or written (offline, rules). Nothing
   /// changed; the driver can try again.
   failed,
+
+  /// Accept only: refused for a reason the driver can act on (a rental whose
+  /// price proposal is still open). Nothing was written.
+  blocked,
 }
 
 /// One live query over a set of order ids in [collection] (`whereIn` on the

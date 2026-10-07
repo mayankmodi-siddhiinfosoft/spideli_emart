@@ -55,10 +55,18 @@ class LocationController extends GetxController {
     }
   }
 
+  /// The point [selectedPlaceAddress] was geocoded for: Confirm returns that
+  /// placemark only with that same point, never another point's address.
+  LatLng? _addressFor;
+
+  /// Geocodes [latLng]; an answer that arrives after the user moved to
+  /// another point is dropped (the move geocodes its own point).
   Future<void> getAddressFromLatLng(LatLng latLng) async {
     try {
       List<Placemark> placemarks =
       await Geocoding().placemarkFromCoordinates(latLng.latitude, latLng.longitude);
+      if (selectedLocation.value != latLng) return;
+      _addressFor = latLng;
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks.first;
         selectedPlaceAddress.value = place;
@@ -72,6 +80,8 @@ class LocationController extends GetxController {
       }
     } catch (e) {
       log("Error getting address: $e");
+      if (selectedLocation.value != latLng) return;
+      _addressFor = latLng;
       selectedPlaceAddress.value = null;
       address.value = "Error getting address".tr;
     }
@@ -101,7 +111,7 @@ class LocationController extends GetxController {
       return;
     }
     SelectedLocationModel selectedLocationModel = SelectedLocationModel(
-      address: selectedPlaceAddress.value,
+      address: _addressFor == selectedLocation.value ? selectedPlaceAddress.value : null,
       latLng: selectedLocation.value,
     );
     Get.back(result: selectedLocationModel);

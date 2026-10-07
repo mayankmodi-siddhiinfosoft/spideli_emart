@@ -4,6 +4,7 @@ import 'package:customer/models/user_model.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/utils/utils.dart';
 import 'package:customer/widget/osm_map/map_picker_page.dart';
 import 'package:customer/widget/place_picker/location_picker_screen.dart';
@@ -150,11 +151,18 @@ class EnterManuallyLocationScreen extends StatelessWidget {
                     size: DsButtonSize.lg,
                     expand: true,
                     onPressed: () async {
+                      // Saved through the shared address rule (report 02#18): a
+                      // "null" / "undefined" / empty comma segment is never
+                      // written into address, locality or landmark, and a field
+                      // holding nothing else counts as empty.
+                      final String house = cleanAddressPart(controller.houseBuildingTextEditingController.value.text);
+                      final String locality = cleanAddressPart(controller.localityEditingController.value.text);
+                      final String landmark = cleanAddressPart(controller.landmarkEditingController.value.text);
                       if (controller.location.value.latitude == null || controller.location.value.longitude == null) {
                         ShowToastDialog.showToast("Please select Location".tr);
-                      } else if (controller.houseBuildingTextEditingController.value.text.isEmpty) {
+                      } else if (house.isEmpty) {
                         ShowToastDialog.showToast("Please Enter Flat / House / Floor / Building".tr);
-                      } else if (controller.localityEditingController.value.text.isEmpty) {
+                      } else if (locality.isEmpty) {
                         ShowToastDialog.showToast("Please Enter Area / Sector / Locality".tr);
                       } else {
                         ShowToastDialog.showLoader("Please wait...".tr);
@@ -162,9 +170,9 @@ class EnterManuallyLocationScreen extends StatelessWidget {
                         //Common values
                         controller.shippingModel.value.location = controller.location.value;
                         controller.shippingModel.value.addressAs = controller.selectedSaveAs.value;
-                        controller.shippingModel.value.address = controller.houseBuildingTextEditingController.value.text;
-                        controller.shippingModel.value.locality = controller.localityEditingController.value.text;
-                        controller.shippingModel.value.landmark = controller.landmarkEditingController.value.text;
+                        controller.shippingModel.value.address = house;
+                        controller.shippingModel.value.locality = locality;
+                        controller.shippingModel.value.landmark = landmark;
 
                         if (controller.mode.value == "Edit") {
                           //Edit Mode

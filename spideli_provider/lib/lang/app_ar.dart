@@ -49,4 +49,17 @@ const Map<String, String> lnAr = {
   "Rejected": "مرفوض",
   "Cancelled": "ملغى",
   "Unread messages": "رسائل غير مقروءة",
+  // Documents: admin-defined provider document types only (report Doc 36/41).
+  "Upload each document requested by the administrator. Rejected or expired documents can be uploaded again.": "ارفع كل مستند يطلبه المسؤول. يمكن رفع المستندات المرفوضة أو منتهية الصلاحية مرة أخرى.",
+  "Could not load the documents to upload": "تعذر تحميل المستندات المطلوب رفعها",
+  "Check your connection and try again.": "تحقق من اتصالك وحاول مرة أخرى.",
+  "Retry": "إعادة المحاولة",
+  "No documents to upload yet": "لا توجد مستندات لرفعها بعد",
+  "The administrator has not set up the documents a service provider must provide. Pull down to refresh later.": "لم يحدد المسؤول بعد المستندات التي يجب على مقدم الخدمة تقديمها. اسحب للأسفل للتحديث لاحقاً.",
+  // Accept / Decline of a booking someone already answered.
+  "This booking was already cancelled": "تم إلغاء هذا الحجز بالفعل",
+  "This booking was already declined": "تم رفض هذا الحجز بالفعل",
+  "This booking was already accepted": "تم قبول هذا الحجز بالفعل",
+  // Location picker (report 02#27).
+  "Could not read the selected location": "تعذّر قراءة الموقع المحدد",
 };

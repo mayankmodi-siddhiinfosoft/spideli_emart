@@ -1,3 +1,4 @@
+import 'package:customer/utils/address_format.dart';
 import 'dart:convert';
 import 'package:customer/widget/osm_map/place_model.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -35,7 +36,8 @@ class OSMMapController extends GetxController {
   void selectSearchResult(Map<String, dynamic> place) {
     final lat = double.parse(place['lat']);
     final lon = double.parse(place['lon']);
-    final address = place['display_name'];
+    // Nominatim's own text; cleaned like every other address (report 02#18).
+    final String address = displayAddress(place['display_name'], fallback: 'Unknown location');
 
     // Store only the selected place
     pickedPlace.value = PlaceModel(
@@ -60,7 +62,7 @@ class OSMMapController extends GetxController {
 
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
-      return data['display_name'] ?? 'Unknown location';
+      return displayAddress(data['display_name'], fallback: 'Unknown location');
     } else {
       return 'Unknown location';
     }

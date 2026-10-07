@@ -13,10 +13,14 @@ import 'package:driver/controllers/signup_controller.dart';
 import 'package:driver/firebase_options.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/carrier_dispatch_service.dart';
+import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/services/driver_assignment_watcher.dart';
 import 'package:driver/services/driver_job_queue_service.dart';
+import 'package:driver/services/incoming_offer_service.dart';
+import 'package:driver/services/offer_seen_store.dart';
 import 'package:driver/services/push_message.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -34,9 +38,18 @@ bool get _isIOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 /// initialises Firebase itself.
 ///
 /// A message with a `notification` block is shown by the system (on the
-/// channel the sender named, else the manifest default channel). A data-only
-/// message is not shown by anyone, so on Android it is posted here when it
-/// carries a title or body.
+/// channel the sender named — the dispatch Cloud Function names `spideli` —
+/// else the manifest default channel); it is never posted a second time here.
+/// A data-only message is not shown by anyone, so on Android it is posted
+/// here when it carries a title or body.
+///
+/// A dispatch offer (DispatchPush) is also recorded per order id at its
+/// sentTime — or at its receipt, when the sentTime lies further back than a
+/// delivery takes (a device clock ahead of the server, [OfferTiming.pushStart])
+/// — in [OfferSeenStore] (SharedPreferences opened directly:
+/// `Preferences.initPref` never runs in this isolate), so the incoming-offer
+/// countdown starts at the push, and an offer whose window ran out while the
+/// app was closed is rejected when it opens (D3).
 @pragma('vm:entry-point')
 Future<void> firebaseMessageBackgroundHandle(RemoteMessage message) async {
   try {
@@ -45,6 +58,10 @@ Future<void> firebaseMessageBackgroundHandle(RemoteMessage message) async {
     }
   } catch (e) {
     log("Background push: Firebase init failed: $e");
+  }
+  final DispatchPush? dispatch = DispatchPush.parse(message.data, sentTime: message.sentTime);
+  if (dispatch != null) {
+    await OfferSeenStore.record(dispatch.orderId, OfferTiming.pushStart(sentTime: message.sentTime, receivedAt: DateTime.now()), push: true);
   }
   if (message.notification == null && _isAndroid) {
     await NotificationService.showDataOnly(message);
@@ -73,6 +90,11 @@ class NotificationService {
   /// job. Importance max, played on the ringtone stream.
   static const String jobChannelId = PushChannels.driverJob;
 
+  /// The dispatch Cloud Functions' channel (DRIVER_DISPATCH_DOCUMENTATION.md
+  /// §5A): an offer to accept or reject. Importance max, default sound,
+  /// vibration.
+  static const String dispatchChannelId = PushChannels.dispatch;
+
   static const AndroidNotificationChannel _generalChannel = AndroidNotificationChannel(
     generalChannelId,
     'Driver Notifications',
@@ -93,10 +115,29 @@ class NotificationService {
     audioAttributesUsage: AudioAttributesUsage.notificationRingtone,
   );
 
-  static AndroidNotificationChannel _channel(String id) => id == jobChannelId ? _jobChannel : _generalChannel;
+  static const AndroidNotificationChannel _dispatchChannel = AndroidNotificationChannel(
+    dispatchChannelId,
+    'Spideli Order Notifications',
+    description: 'New delivery, parcel, ride and rental orders to accept or reject',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+  );
 
-  /// Creates both channels. Safe to call repeatedly: Android keeps a channel
-  /// the user already has (including any sound or importance they changed).
+  static AndroidNotificationChannel _channel(String id) {
+    switch (id) {
+      case jobChannelId:
+        return _jobChannel;
+      case dispatchChannelId:
+        return _dispatchChannel;
+      default:
+        return _generalChannel;
+    }
+  }
+
+  /// Creates every channel (general, jobs, dispatch). Safe to call
+  /// repeatedly: Android keeps a channel the user already has (including any
+  /// sound or importance they changed).
   static Future<void> createChannels() async {
     if (!_isAndroid) return;
     try {
@@ -104,6 +145,7 @@ class NotificationService {
           FlutterLocalNotificationsPlugin().resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       await android?.createNotificationChannel(_generalChannel);
       await android?.createNotificationChannel(_jobChannel);
+      await android?.createNotificationChannel(_dispatchChannel);
     } catch (e) {
       log("createNotificationChannel failed: $e");
     }
@@ -181,14 +223,14 @@ class NotificationService {
     try {
       // App opened from a terminated state by tapping a push.
       final RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-      if (initialMessage != null) _queueTap(initialMessage.data);
+      if (initialMessage != null) _queueTap(_withSentTime(initialMessage));
     } catch (e) {
       log("getInitialMessage failed: $e");
     }
 
     // App in the background, push tapped.
     _onOpenedSub ??= FirebaseMessaging.onMessageOpenedApp.listen(
-      (RemoteMessage message) => _routeTap(message.data),
+      (RemoteMessage message) => _routeTap(_withSentTime(message)),
       onError: (Object e) => log("onMessageOpenedApp failed: $e"),
     );
 
@@ -200,9 +242,17 @@ class NotificationService {
   }
 
   void _onForegroundMessage(RemoteMessage message) {
+    // A dispatch offer (spec §5B): the order is read from Firestore and, while
+    // it is still Driver Pending for this driver, the incoming-order dialog
+    // opens over whatever screen is up — on both platforms.
+    final DispatchPush? dispatch = DispatchPush.parse(message.data, sentTime: message.sentTime);
+    if (dispatch != null) {
+      unawaited(IncomingOfferService.onDispatchPush(dispatch).catchError((Object e) => log("Dispatch push failed: $e")));
+    }
     // FCM never displays a push while the app is in the foreground on
-    // Android, so it is posted locally. iOS already shows it (presentation
-    // options above): a local copy there would show it twice.
+    // Android, so it is posted locally (a dispatch offer on `spideli`, D4).
+    // iOS already shows it (presentation options above): a local copy there
+    // would show it twice.
     if (!_isAndroid) return;
     display(message);
   }
@@ -261,21 +311,105 @@ class NotificationService {
   /// of section / zone / region) can take them off again.
   static final Set<String> _topics = <String>{};
 
-  static StreamSubscription<String>? _tokenRefreshSub;
+  /// Topics an EARLIER run of the app subscribed this device to and this run
+  /// has not re-subscribed or dropped yet. Persisted with [_topics]
+  /// ([_topicsPrefKey]) so a zone / region / service that changed while the
+  /// app was closed is still unsubscribed at the next start, instead of the
+  /// device staying on the old topics for good. Loaded on first use.
+  static Set<String>? _previousTopics;
 
-  /// FCM topic names only accept `[a-zA-Z0-9-_.~%]`.
-  static String _topic(String prefix, String value) {
-    final String safe = value.trim().replaceAll(RegExp(r'[^a-zA-Z0-9\-_.~%]'), '_');
-    return safe.isEmpty ? '' : '${prefix}_$safe';
+  static const String _topicsPrefKey = 'driverPushTopics';
+
+  static Set<String> _previous() {
+    if (_previousTopics != null) return _previousTopics!;
+    try {
+      _previousTopics = (Preferences.pref.getStringList(_topicsPrefKey) ?? const <String>[]).toSet();
+    } catch (e) {
+      log("reading stored push topics failed: $e");
+      _previousTopics = <String>{};
+    }
+    return _previousTopics!;
   }
 
+  /// Stores every topic this device may be subscribed to.
+  static void _persistTopics() {
+    try {
+      unawaited(Preferences.pref.setStringList(_topicsPrefKey, {..._topics, ..._previous()}.toList()));
+    } catch (e) {
+      log("storing push topics failed: $e");
+    }
+  }
+
+  /// Unsubscribes every held topic (this run's or an earlier one's) that is
+  /// not in [wanted]. Not awaited: offline, an unsubscribe can wait a long
+  /// time and FCM finishes it on its own.
+  static void _dropTopicsNotIn(Set<String> wanted) {
+    for (final String topic in {..._topics, ..._previous()}.difference(wanted)) {
+      unawaited(_unsubscribe(topic));
+    }
+  }
+
+  static StreamSubscription<String>? _tokenRefreshSub;
+
+  /// Topic subscribe / unsubscribe calls in flight, so the stream of user
+  /// snapshots (one per location update) never stacks the same call.
+  static final Set<String> _topicCalls = <String>{};
+
   static Future<void> _subscribe(String topic) async {
-    if (topic.isEmpty || _topics.contains(topic)) return;
+    if (topic.isEmpty || _topics.contains(topic) || !_topicCalls.add(topic)) return;
     try {
       await FirebaseMessaging.instance.subscribeToTopic(topic);
       _topics.add(topic);
+      _previous().remove(topic);
+      _persistTopics();
     } catch (e) {
       log("subscribeToTopic $topic failed: $e");
+    } finally {
+      _topicCalls.remove(topic);
+    }
+  }
+
+  static Future<void> _unsubscribe(String topic) async {
+    if ((!_topics.contains(topic) && !_previous().contains(topic)) || !_topicCalls.add(topic)) return;
+    try {
+      await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
+      _topics.remove(topic);
+      _previous().remove(topic);
+      _persistTopics();
+    } catch (e) {
+      log("unsubscribeFromTopic $topic failed: $e");
+    } finally {
+      _topicCalls.remove(topic);
+    }
+  }
+
+  static Set<String> _topicsFor(UserModel driver, {bool? active}) => PushTopics.forDriver(
+        active: active ?? driver.active == true,
+        isOwner: driver.isOwner == true,
+        // Stored values and the modules they name (spec aliases).
+        serviceTypes: {...?driver.serviceTypes, ...driver.serviceModules},
+        sectionIds: driver.sectionIds,
+        zoneId: driver.zoneId,
+        zoneIds: driver.zoneIds,
+        regionId: driver.regionId,
+        ownerId: driver.ownerId,
+        carrierId: driver.carrierId,
+      );
+
+  /// Keeps the topics in step with the LIVE driver record (doc 21): called
+  /// from every dashboard's `users/{me}` listener, so an account approved,
+  /// a zone / region / service changed or a driver moved to a company while
+  /// the app is open is addressed by its new topics at once (they used to be
+  /// subscribed only at start-up / sign-in), and a topic the driver no longer
+  /// belongs to is dropped - including one subscribed by an earlier run of
+  /// the app ([_previousTopics]). Cheap when nothing changed: no FCM call.
+  static void syncDriverTopics(UserModel? driver) {
+    final String uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (driver == null || uid.isEmpty || driver.id != uid) return;
+    final Set<String> wanted = _topicsFor(driver);
+    _dropTopicsNotIn(wanted);
+    for (final String topic in wanted.difference(_topics)) {
+      unawaited(_subscribe(topic));
     }
   }
 
@@ -339,24 +473,18 @@ class NotificationService {
 
   /// Subscribes the driver to every topic the server can address them by, so a
   /// "a job is available" push reaches them without the server having to hold
-  /// a token list (client point 19).
-  ///
-  /// Topics: `driver`, `driver_<serviceType>`, `section_<sectionId>`,
-  /// `zone_<zoneId>`, `region_<regionId>` and, for a fleet driver,
-  /// `company_<ownerId>`.
+  /// a token list (client point 19). The set is [PushTopics.forDriver]:
+  /// `driver`, `driver_<serviceType>`, `section_<sectionId>`, `zone_<id>` for
+  /// every zone, `region_<regionId>`, `company_<ownerId>`, `carrier_<id>`
+  /// (a company account: `company_` / `carrier_` only). Topics an earlier run
+  /// subscribed that the account no longer belongs to are dropped.
   static Future<void> subscribeDriverTopics(UserModel? driver) async {
     if (driver == null) return;
-    await _subscribe("driver");
-    for (final String service in driver.serviceTypes ?? const <String>[]) {
-      await _subscribe(_topic('driver', service));
+    final Set<String> wanted = _topicsFor(driver, active: true);
+    _dropTopicsNotIn(wanted);
+    for (final String topic in wanted) {
+      await _subscribe(topic);
     }
-    for (final String sectionId in driver.sectionIds ?? const <String>[]) {
-      await _subscribe(_topic('section', sectionId));
-    }
-    await _subscribe(_topic('zone', driver.zoneId ?? ''));
-    await _subscribe(_topic('region', driver.regionId ?? ''));
-    await _subscribe(_topic('company', driver.ownerId ?? ''));
-    await _subscribe(_topic('carrier', driver.carrierId ?? ''));
   }
 
   /// This device's token without the long APNs wait (sign-out must not hang).
@@ -386,8 +514,10 @@ class NotificationService {
     // In parallel and bounded: with Play services slow or offline an
     // unsubscribe can wait indefinitely ("Will retry"), which used to hang
     // the log-out. FCM finishes pending topic operations on its own later.
-    final List<String> topics = _topics.toList();
+    final List<String> topics = {..._topics, ..._previous()}.toList();
     _topics.clear();
+    _previous().clear();
+    _persistTopics();
     try {
       await Future.wait(topics.map((String topic) async {
         try {
@@ -421,6 +551,7 @@ class NotificationService {
     Constant.userModel?.fcmToken = '';
     DriverJobQueueService.reset();
     DriverAssignmentWatcher.stop();
+    IncomingOfferService.stop();
     CarrierDispatchService.clearCache();
   }
 
@@ -462,13 +593,14 @@ class NotificationService {
       final String channelId = PushChannels.driverChannelFor(
         type: message.data['type']?.toString(),
         requestedChannelId: message.notification?.android?.channelId,
+        data: message.data,
       );
       await flutterLocalNotificationsPlugin.show(
         id: _notificationId(message),
         title: title,
         body: body,
         notificationDetails: _details(channelId),
-        payload: jsonEncode(message.data),
+        payload: jsonEncode(_withSentTime(message)),
       );
     } catch (e) {
       log("Notification display error: $e");
@@ -483,13 +615,13 @@ class NotificationService {
       final String body = (message.data['body'] ?? '').toString();
       if (title.isEmpty && body.isEmpty) return;
       await createChannels();
-      final String channelId = PushChannels.driverChannelFor(type: message.data['type']?.toString());
+      final String channelId = PushChannels.driverChannelFor(type: message.data['type']?.toString(), data: message.data);
       await FlutterLocalNotificationsPlugin().show(
         id: _notificationId(message),
         title: title,
         body: body,
         notificationDetails: _details(channelId),
-        payload: jsonEncode(message.data),
+        payload: jsonEncode(_withSentTime(message)),
       );
     } catch (e) {
       log("Background data push display failed: $e");
@@ -500,6 +632,15 @@ class NotificationService {
 
   static Map<String, dynamic>? _pendingTap;
   static bool _appRouted = false;
+
+  /// Key under which a tapped push's sentTime travels with its data until the
+  /// tap is routed (a terminated launch is routed after the splash).
+  static const String _sentTimeKey = '__sentTime';
+
+  static Map<String, dynamic> _withSentTime(RemoteMessage message) => <String, dynamic>{
+        ...message.data,
+        if (message.sentTime != null) _sentTimeKey: message.sentTime!.millisecondsSinceEpoch,
+      };
 
   static Map<String, dynamic>? _decodePayload(String? payload) {
     if (payload == null || payload.isEmpty) return null;
@@ -526,6 +667,7 @@ class NotificationService {
   /// Called by the splash once it has navigated.
   static void onAppRouted() {
     _appRouted = true;
+    IncomingOfferService.onAppReady();
     final Map<String, dynamic>? pending = _pendingTap;
     _pendingTap = null;
     if (pending != null) {
@@ -535,8 +677,22 @@ class NotificationService {
 
   static void _routeTap(Map<String, dynamic>? data) {
     if (data == null || data.isEmpty) return;
-    String field(String key) => (data[key] ?? '').toString();
-    handleMessageClick(type: field('type'), role: field('chatType'), orderId: field('orderId'), senderId: field('senderId'))
+    String field(String key) => (data[key] ?? '').toString().trim();
+    final String orderId = field('orderId').isNotEmpty ? field('orderId') : field('id');
+    // A push about an order of a dispatched service (data.type order /
+    // parcel / cab / rental): the incoming-order dialog while the order is
+    // still Driver Pending for this driver, else that module's job screen.
+    // Never Get.offAll, which reset the navigation and showed no dialog.
+    final DispatchKind? kind = DispatchKind.fromPushType(field('type'));
+    if (kind != null && orderId.isNotEmpty && !orderId.contains('/')) {
+      final dynamic sentMs = data[_sentTimeKey];
+      final DateTime? sentTime = sentMs is int ? DateTime.fromMillisecondsSinceEpoch(sentMs) : null;
+      final bool isDispatch = DispatchPush.parse(data, sentTime: sentTime) != null;
+      IncomingOfferService.onDispatchPush(DispatchPush(kind, orderId, sentTime: sentTime), tapped: true, isDispatch: isDispatch)
+          .catchError((Object e) => log("Notification tap failed: $e"));
+      return;
+    }
+    handleMessageClick(type: field('type'), role: field('chatType'), orderId: orderId, senderId: field('senderId'))
         .catchError((Object e) => log("Notification tap failed: $e"));
   }
 

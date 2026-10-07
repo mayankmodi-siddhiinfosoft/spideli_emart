@@ -88,15 +88,14 @@ class MapPickerPage extends StatelessWidget {
                       itemCount: controller.searchResults.length,
                       itemBuilder: (context, index) {
                         final place = controller.searchResults[index];
+                        final String name = place is Map ? AddressFormat.clean(place['display_name']) : '';
                         return ListTile(
-                          title: Text(place['display_name']),
+                          title: Text(name),
                           onTap: () {
-                            controller.selectSearchResult(place);
-                            final lat = double.parse(place['lat']);
-                            final lon = double.parse(place['lon']);
-                            final pos = LatLng(lat, lon);
-                            controller.mapController.move(pos, 15);
-                            searchController.text = place['display_name'];
+                            final picked = controller.selectSearchResult(place);
+                            if (picked == null) return;
+                            controller.mapController.move(picked.coordinates, 15);
+                            searchController.text = picked.address;
                           },
                         );
                       },

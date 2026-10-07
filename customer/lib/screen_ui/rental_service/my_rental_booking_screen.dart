@@ -1,9 +1,12 @@
+import 'package:customer/utils/booking_status_tabs.dart';
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/models/rental_order_model.dart';
 import 'package:customer/screen_ui/auth_screens/login_screen.dart';
 import 'package:customer/screen_ui/rental_service/rental_order_details_screen.dart';
 import 'package:customer/screen_ui/rental_service/widget/rental_proposal_widgets.dart';
+import 'package:customer/utils/rental_proposal_service.dart';
 import 'package:customer/screen_ui/widgets/order_ui.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/order_history_export.dart';
@@ -111,11 +114,11 @@ class _RentalBookingCard extends StatelessWidget {
     final c = context.dsColors;
     final t = context.dsText;
     final bool canPay = order.status == Constant.orderInTransit && order.paymentStatus == false;
-    final bool canCancel = order.status == Constant.orderPlaced || order.status == Constant.driverAccepted;
+    final bool canCancel = RentalBookingCancellation.isCancellable(order.status);
     return DsCard.outlined(
       margin: const EdgeInsets.only(bottom: DsSpace.md),
       padding: const EdgeInsets.all(DsSpace.lg),
-      semanticLabel: order.sourceLocationName ?? "-",
+      semanticLabel: displayAddress(order.sourceLocationName, fallback: "-"),
       onTap: () {
         Get.to(() => RentalOrderDetailsScreen(), arguments: order);
       },
@@ -141,7 +144,7 @@ class _RentalBookingCard extends StatelessWidget {
                         Expanded(
                           //text wraps if too long
                           child: Text(
-                            order.sourceLocationName ?? "-",
+                            displayAddress(order.sourceLocationName, fallback: "-"),
                             style: t.titleSm,
                             overflow: TextOverflow.ellipsis, //safe cutoff
                             maxLines: 2,
@@ -149,7 +152,7 @@ class _RentalBookingCard extends StatelessWidget {
                         ),
                         if (order.status != null) ...[
                           const DsGap(DsSpace.sm),
-                          DsStatusChip(label: order.status ?? '', status: order.status),
+                          DsStatusChip(label: BookingStatusTabs.label(order.status), status: order.status),
                         ],
                       ],
                     ),
@@ -239,7 +242,7 @@ class _RentalBookingCard extends StatelessWidget {
                 if (canCancel)
                   Expanded(
                     child: DsButton.dangerTonal(
-                      label: "Cancel Booking",
+                      label: "Cancel Booking".tr,
                       icon: Icons.cancel_outlined,
                       expand: true,
                       onPressed: onCancel,

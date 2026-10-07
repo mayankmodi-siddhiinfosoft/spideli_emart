@@ -45,6 +45,7 @@ import 'package:spideliprovider/services/customer_notification.dart';
 import 'package:spideliprovider/services/notification_service.dart';
 import 'package:spideliprovider/services/push_message.dart';
 import 'package:spideliprovider/services/region_service.dart';
+import 'package:spideliprovider/utils/booking_response.dart';
 import 'package:spideliprovider/utils/login_validation.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -602,6 +603,23 @@ class FireStoreUtils {
   /// together with its cancel-reason contract fields, in one write).
   static Future<void> updateOrderFields(String orderId, Map<String, dynamic> data) async {
     await firestore.collection(PROVIDER_ORDER).doc(orderId).set(data, SetOptions(mergeFields: data.keys.map((key) => FieldPath([key])).toList()));
+  }
+
+  /// Provider Accept / Decline: writes [fields] (top-level keys) in a
+  /// transaction, and only while the booking is still "Order Placed"
+  /// ([providerCanRespondToBooking]). Returns null when written; otherwise
+  /// nothing is written and the status found is returned ('' when the
+  /// booking is gone), so the caller pays / refunds nothing. A failed
+  /// transaction (offline) throws.
+  static Future<String?> updatePlacedBooking(String orderId, Map<String, dynamic> fields) async {
+    final DocumentReference<Map<String, dynamic>> ref = firestore.collection(PROVIDER_ORDER).doc(orderId);
+    return firestore.runTransaction<String?>((Transaction transaction) async {
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await transaction.get(ref);
+      final String status = snapshot.data()?['status']?.toString() ?? '';
+      if (!snapshot.exists || !providerCanRespondToBooking(status)) return status;
+      transaction.update(ref, fields);
+      return null;
+    });
   }
 
   static Future<NotificationModel?> getNotificationContent(String type) async {

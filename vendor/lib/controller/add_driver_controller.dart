@@ -187,7 +187,12 @@ class AddDriverController extends GetxController {
     driverModel.value.role = Constant.userRoleDriver;
     driverModel.value.active = true;
     driverModel.value.isActive = false;
-    driverModel.value.isDocumentVerify = true;
+    // Report Doc 37: only the administrator sets `isDocumentVerify: true`,
+    // once every required document is approved. A new delivery man has
+    // uploaded nothing yet. The driver app does not hold a store's own
+    // delivery man on "verification pending" (`DocumentVerification.isPending`
+    // exempts a `vendorID`), so he can still go online and be assigned.
+    driverModel.value.isDocumentVerify = false;
     driverModel.value.zoneId = vendorModel.value.zoneId;
     driverModel.value.vendorID = Constant.userModel?.vendorID;
     driverModel.value.isAutoVerify = Constant.userModel?.isAutoVerify;

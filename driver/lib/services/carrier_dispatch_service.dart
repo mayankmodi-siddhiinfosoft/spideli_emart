@@ -122,14 +122,28 @@ class CarrierDispatchService {
   /// flag, the code, the regions and the identification documents — all the
   /// admin's — can never be written from here. Known-fields merge: every other
   /// field of the document is left exactly as the panel stored it.
-  static Future<bool> saveCarrierSettings(DeliveryCarrierModel carrier, Map<String, dynamic> changes) async {
+  ///
+  /// [regionChanges] (report Doc 43): regionId -> {charge -> value} for a
+  /// carrier priced per region, merged into `regionPricing` field by field
+  /// ([DeliveryCarrierModel.regionPricingUpdate]); the first region is
+  /// mirrored to the flat charges, as the panel does.
+  static Future<bool> saveCarrierSettings(DeliveryCarrierModel carrier, Map<String, dynamic> changes, {Map<String, Map<String, num?>> regionChanges = const {}}) async {
     final Map<String, dynamic> data = {
       for (final entry in changes.entries)
         if (DeliveryCarrierModel.editableFields.contains(entry.key)) entry.key: entry.value,
     };
+    final List<List<String>> paths = [for (final key in data.keys) [key]];
+    final regional = carrier.regionPricingUpdate(regionChanges);
+    data.addAll(regional.data);
+    for (final path in regional.paths) {
+      if (!paths.any((p) => p.join('\u0000') == path.join('\u0000'))) paths.add(path);
+    }
     if (data.isEmpty) return true;
     try {
-      await FireStoreUtils.fireStore.collection(collectionName).doc(carrier.id).setKnownFields(data);
+      await FireStoreUtils.fireStore
+          .collection(collectionName)
+          .doc(carrier.id)
+          .set(data, SetOptions(mergeFields: paths.map((p) => FieldPath(p)).toList()));
       _cache.remove(carrier.id);
       return true;
     } catch (e) {

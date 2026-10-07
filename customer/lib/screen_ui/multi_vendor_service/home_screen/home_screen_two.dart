@@ -303,23 +303,23 @@ class _HomeTwoHeaderBar extends StatelessWidget {
                             });
                           }
                         } catch (e) {
-                          await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
-                            Placemark placeMark = valuePlaceMaker[0];
-                            shippingAddress.addressAs = "Home";
-                            shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
-                            // Placemark fields are nullable: interpolating one that the geocoder did
-                            // not return printed the four characters "null" into the stored address
-                            // (report #17). Same fields, same order, through formatAddressLine.
-                            String currentLocation = formatAddressLine([
-                              placeMark.name,
-                              placeMark.subLocality,
-                              placeMark.locality,
-                              placeMark.administrativeArea,
-                              placeMark.postalCode,
-                              placeMark.country,
-                            ]);
-                            shippingAddress.locality = currentLocation;
-                          });
+                          // The geocoder may return nothing (no locality, rural point) or fail
+                          // offline: never index [0] of its result, never throw out of here (02#27).
+                          final Placemark? placeMark = await Utils.firstPlacemark(19.228825, 72.854118);
+                          shippingAddress.addressAs = "Home";
+                          shippingAddress.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
+                          // Placemark fields are nullable: interpolating one that the geocoder did
+                          // not return printed the four characters "null" into the stored address
+                          // (report #17). Same fields, same order, through formatAddressLine.
+                          String currentLocation = placeMark == null ? '' : formatAddressLine([
+                            placeMark.name,
+                            placeMark.subLocality,
+                            placeMark.locality,
+                            placeMark.administrativeArea,
+                            placeMark.postalCode,
+                            placeMark.country,
+                          ]);
+                          shippingAddress.locality = currentLocation;
 
                           Constant.selectedLocation = shippingAddress;
                           ShowToastDialog.closeLoader();

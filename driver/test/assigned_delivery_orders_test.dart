@@ -3,6 +3,7 @@ import 'package:driver/controllers/home_screen_multiple_order_controller.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/assigned_delivery_orders.dart';
+import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Which delivery orders a driver can act on — "drivers cannot perform any
@@ -110,6 +111,74 @@ void main() {
       final UserModel storeDriver = UserModel(id: me, vendorID: 'store-1', isDocumentVerify: false, isAutoVerify: false);
       expect(HomeScreenMultipleOrderController.documentsPending(storeDriver), isFalse);
       expect(HomeScreenMultipleOrderController.canTakeOffers(storeDriver), isFalse);
+    });
+  });
+
+  group('multiple-order Active tab (report 01 §4: an assignment learnt from the order alone)', () {
+    OrderModel job(String id, String status, {String? driverID}) => OrderModel(id: id, status: status, driverID: driverID, rejectedByDrivers: []);
+
+    final Map<String, OrderModel> orders = {
+      'working': job('working', Constant.orderInTransit, driverID: me),
+      'adminHand': job('adminHand', Constant.orderAccepted, driverID: me),
+      'pendingHand': job('pendingHand', Constant.driverPending, driverID: me),
+      'dispatched': job('dispatched', Constant.driverPending),
+      'otherDriver': job('otherDriver', Constant.driverPending, driverID: other),
+      'done': job('done', Constant.orderCompleted, driverID: me),
+    };
+    const List<dynamic> requests = ['adminHand', 'pendingHand', 'dispatched', 'otherDriver', 'done'];
+
+    List<dynamic> active(UserModel driver, {List<dynamic> inProgress = const ['working', 'done'], bool loaded = true}) =>
+        HomeScreenMultipleOrderController.activeToShow(inProgress: inProgress, requests: requests, orders: orders, ordersLoaded: loaded, driver: driver);
+
+    test("a store's own delivery man (no New tab) sees a hand assignment waiting in orderRequestData", () {
+      final UserModel storeDriver = UserModel(id: me, vendorID: 'store-1', isDocumentVerify: true);
+      expect(HomeScreenMultipleOrderController.canTakeOffers(storeDriver), isFalse);
+      expect(active(storeDriver), ['working', 'adminHand', 'pendingHand']);
+    });
+
+    test('a freelance driver whose documents are pending sees it too (the gate never hides an assignment)', () {
+      final UserModel unverified = UserModel(id: me, vendorID: '', isDocumentVerify: false, isAutoVerify: false);
+      expect(active(unverified, inProgress: const []), ['adminHand', 'pendingHand']);
+    });
+
+    test('a driver with a New tab gets it there, not twice', () {
+      final UserModel freelance = UserModel(id: me, vendorID: '', isDocumentVerify: true);
+      expect(HomeScreenMultipleOrderController.canTakeOffers(freelance), isTrue);
+      expect(active(freelance), ['working']);
+      expect(HomeScreenMultipleOrderController.offersToShow(requests: requests, orders: orders, ordersLoaded: true, driver: freelance),
+          ['adminHand', 'pendingHand', 'dispatched']);
+    });
+
+    test('an id held in both arrays is listed once; an unloaded in-progress id waits as a skeleton', () {
+      final UserModel storeDriver = UserModel(id: me, vendorID: 'store-1', isDocumentVerify: true);
+      expect(active(storeDriver, inProgress: const ['adminHand', 'later'], loaded: false), ['adminHand', 'later', 'pendingHand']);
+    });
+  });
+
+  group('delivery accept / reject on the live order (D2, run inside the transactions)', () {
+    Map<String, dynamic> live(String status, {String? driverID, String? driverId, List<String>? rejected}) =>
+        {'id': 'o1', 'status': status, 'driverID': ?driverID, 'driverId': ?driverId, 'rejectedByDrivers': ?rejected};
+
+    test('a Cloud Function offer naming this driver is accepted; one re-dispatched to another is not', () {
+      expect(DispatchOrderRules.acceptCheck(DispatchKind.delivery, live(Constant.driverPending, driverID: me, driverId: me), me), AcceptCheck.ok);
+      expect(DispatchOrderRules.acceptCheck(DispatchKind.delivery, live(Constant.driverPending, driverID: other, driverId: other), me), AcceptCheck.gone);
+    });
+
+    test('the function already moved it to Order Shipped: held, never written back to Driver Accepted', () {
+      expect(DispatchOrderRules.acceptCheck(DispatchKind.delivery, live(Constant.orderShipped, driverID: me, driverId: me), me), AcceptCheck.held);
+    });
+
+    test("a store's own assignment (Driver Pending + driverID, held in inProgressOrderID) is accepted", () {
+      expect(DispatchOrderRules.acceptCheck(DispatchKind.delivery, live(Constant.driverPending, driverID: me), me, heldAsRequest: true), AcceptCheck.ok);
+    });
+
+    test('a reject or a timeout sends the order back to dispatch with both driver fields null', () {
+      final Map<String, dynamic> fields = DispatchOrderRules.rejectFields(me);
+      expect(fields['status'], Constant.driverRejected);
+      expect(fields.containsKey('driverID') && fields['driverID'] == null, isTrue);
+      expect(fields.containsKey('driverId') && fields['driverId'] == null, isTrue);
+      expect(DispatchOrderRules.canReject(DispatchKind.delivery, live(Constant.driverPending, driverID: me), me, timeout: true), isTrue);
+      expect(DispatchOrderRules.canReject(DispatchKind.delivery, live(Constant.orderCancelled, driverID: me), me, timeout: true), isFalse);
     });
   });
 }

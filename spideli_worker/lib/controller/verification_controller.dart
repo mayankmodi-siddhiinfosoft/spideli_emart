@@ -17,6 +17,10 @@ class VerificationController extends GetxController {
   /// `settings/document_verification_settings.isWorkerVerification`.
   RxBool verificationRequired = false.obs;
   RxList<DocumentModel> documentTypes = <DocumentModel>[].obs;
+
+  /// The admin's document types could not be read (offline, rules): the
+  /// Documents screen offers a retry instead of saying none are configured.
+  RxBool typesLoadFailed = false.obs;
   Rxn<WorkerDocumentModel> uploaded = Rxn<WorkerDocumentModel>();
   Rxn<bool> isDocumentVerify = Rxn<bool>();
 
@@ -28,8 +32,16 @@ class VerificationController extends GetxController {
   VerificationStatus get overallStatus => DocumentService.overallStatus(documentTypes, uploaded.value, isDocumentVerify: isDocumentVerify.value);
 
   /// Unverified workers do not see or accept jobs. When verification is not
-  /// switched on by the admin, today's behaviour: always true.
-  bool get canReceiveJobs => !verificationRequired.value || overallStatus == VerificationStatus.approved;
+  /// switched on by the admin, today's behaviour: always true. With
+  /// verification on but no worker document type configured, not blocked
+  /// (see [DocumentService.canReceiveJobs]).
+  bool get canReceiveJobs => DocumentService.canReceiveJobs(
+        verificationRequired: verificationRequired.value,
+        types: documentTypes,
+        typesLoadFailed: typesLoadFailed.value,
+        uploaded: uploaded.value,
+        isDocumentVerify: isDocumentVerify.value,
+      );
 
   VerificationStatus statusOf(DocumentModel type) => DocumentService.statusOf(uploaded.value?.documentFor(type.id));
 
@@ -52,7 +64,9 @@ class VerificationController extends GetxController {
       RegionService.resolveWorkerRegion(_uid, workerDocRegionId: MyAppState.currentUser?.regionId),
     ]);
     verificationRequired.value = results[0] as bool;
-    documentTypes.value = results[1] as List<DocumentModel>;
+    final List<DocumentModel>? types = results[1] as List<DocumentModel>?;
+    typesLoadFailed.value = types == null;
+    documentTypes.value = types ?? <DocumentModel>[];
 
     _documentsSub?.cancel();
     _documentsSub = DocumentService.watchWorkerDocuments(_uid).listen((value) {

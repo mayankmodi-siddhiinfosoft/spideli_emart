@@ -59,6 +59,10 @@ class OrderController extends GetxController {
     Constant.orderInTransit,
   };
 
+  /// The "In Progress" tab: everything [activeStatuses] holds once the store
+  /// has accepted the order (so not "Order Placed").
+  static final Set<String> inProgressStatuses = activeStatuses.difference({Constant.orderPlaced});
+
   @override
   void onInit() {
     // TODO: implement onInit
@@ -134,11 +138,11 @@ class OrderController extends GetxController {
     deliveredList.value = OrderHistoryLimit.limitOrderHistory(visible, (OrderModel o) => o.status == Constant.orderCompleted);
     cancelledList.value = OrderHistoryLimit.limitOrderHistory(visible, (OrderModel o) => o.status == Constant.orderCancelled);
     rejectedList.value = OrderHistoryLimit.limitOrderHistory(visible, (OrderModel o) => o.status == Constant.orderRejected);
-    inProgressList.value = OrderHistoryLimit.limitOrderHistory(
-      visible,
-      (OrderModel o) =>
-          o.status == Constant.orderAccepted || o.status == Constant.driverPending || o.status == Constant.orderShipped || o.status == Constant.orderInTransit,
-    );
+    // Every live dispatch state: the store accepted it, a driver is being
+    // offered it ("Driver Pending"), declined it so the next one is being
+    // looked for ("Driver Rejected"), or accepted it ("Driver Accepted", until
+    // deliveryDispatch moves it on to "Order Shipped").
+    inProgressList.value = OrderHistoryLimit.limitOrderHistory(visible, (OrderModel o) => inProgressStatuses.contains(o.status));
     // "All" is exactly the allowance, so the tabs and the combined list can
     // never contradict each other.
     allList.value = visible.visible;

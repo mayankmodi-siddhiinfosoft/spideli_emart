@@ -11,6 +11,7 @@ import 'package:driver/models/user_model.dart';
 import 'package:driver/services/parcel_tracking_service.dart';
 import 'package:flutter/material.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/parcel_amounts.dart';
 import 'package:get/get.dart';
 
 class ParcelHomeController extends GetxController {
@@ -174,19 +175,15 @@ class ParcelHomeController extends GetxController {
     await getParcelList();
   }
 
+  /// The total the customer was charged, which is what the driver collects
+  /// on a cash parcel ([ParcelAmounts]: platform fee and its taxes, the fixed
+  /// tax and the receiver-SMS fee included). Tolerant: this runs while the job
+  /// card is built, and a parcel without `subTotal` / `taxSetting` (or with an
+  /// empty discount) used to throw there, replacing the card and its Pickup /
+  /// Deliver buttons.
   String calculateParcelTotalAmountBooking(ParcelOrderModel parcelBookingData) {
-    // Read with tryParse / `?? []`: this runs while the job card is built, and
-    // a parcel without `subTotal` / `taxSetting` (or with an empty discount)
-    // threw there, replacing the card and its Pickup / Deliver buttons.
     final int digits = int.tryParse('${Constant.currencyModel?.decimalDigits}') ?? 2;
-    final double subTotal = double.tryParse('${parcelBookingData.subTotal ?? ''}') ?? 0.0;
-    final double discount = double.tryParse(parcelBookingData.discount ?? '') ?? 0.0;
-    double taxAmount = 0.0;
-    for (var element in parcelBookingData.taxSetting ?? const []) {
-      taxAmount = double.parse((taxAmount + Constant.calculateTax(amount: (subTotal - discount).toString(), taxModel: element)).toStringAsFixed(digits));
-    }
-
-    // Fixed intercity/intercountry tax is added on top of the taxed amount.
-    return ((subTotal - discount) + taxAmount + (parcelBookingData.parcelScopeTax ?? 0).toDouble()).toStringAsFixed(digits);
+    return ParcelAmounts.of(parcelBookingData).totalText(digits);
   }
+
 }

@@ -1,8 +1,10 @@
 import 'dart:developer';
 
+import 'package:customer/utils/booking_status_tabs.dart';
 import 'package:customer/constant/collection_name.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/cab_order_model.dart';
+import 'package:customer/models/cancellation_fields.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -157,6 +159,25 @@ class CabRideCancellation {
       status == Constant.driverRejected ||
       (status == Constant.orderAccepted && (driverId == null || driverId.isEmpty));
 
+  /// Why a ride in [status] can no longer be cancelled: it already ended
+  /// (cancelled, rejected - e.g. auto-cancelled by the dispatch when no driver
+  /// accepted it - or completed), or a driver has it.
+  static String refusal(String? status) {
+    if (status == Constant.orderCancelled || status == Constant.orderRejected || status == Constant.orderCompleted) return "This ride is no longer active".tr;
+    return "A driver has already accepted this ride".tr;
+  }
+
+  /// The toast when a ride the customer is waiting on ends without them
+  /// (the dispatch's auto-cancel after `orderAutoCancelDuration`, or the
+  /// panel): who ended it and why, from the cancellation fields
+  /// (CANCEL-REASON-CONTRACT); never a fixed push text.
+  static String endedMessage(CabOrderModel ride) {
+    final CancellationSummary? summary = CancellationSummary.of(status: ride.status, fields: ride);
+    if (summary == null) return "This ride is no longer active".tr;
+    final String head = CancellationSummary.partyLabel(ride.cancelledBy) != null ? summary.headline : "Your ride was cancelled".tr;
+    return summary.hasReason ? '$head: ${summary.reason}' : head;
+  }
+
   /// Returns null on success, else a message for the customer.
   static Future<String?> cancel(String rideId, Map<String, dynamic> reasonFields) async {
     final ref = FireStoreUtils.fireStore.collection(CollectionName.rides).doc(rideId);
@@ -166,9 +187,10 @@ class CabRideCancellation {
         final data = snap.data();
         if (data == null) return "Ride not found".tr;
         if (!isCancellable(data['status']?.toString(), data['driverId']?.toString())) {
-          return "A driver has already accepted this ride".tr;
+          return refusal(data['status']?.toString());
         }
-        tx.update(ref, {'status': Constant.orderRejected, ...reasonFields});
+        // The driver the dispatch was only offering it to comes off the ride.
+        tx.update(ref, {'status': Constant.orderRejected, ...BookingStatusTabs.offeredDriverCleared(data['status']?.toString()), ...reasonFields});
         return null;
       });
     } catch (e) {

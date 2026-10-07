@@ -1,6 +1,7 @@
 import 'package:driver/constant/constant.dart';
 import 'package:driver/models/cab_order_model.dart';
 import 'package:driver/themes/ds/ds.dart';
+import 'package:driver/utils/address_format.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -115,7 +116,8 @@ class CabRideExtras extends StatelessWidget {
                   const DsGap(DsSpace.md),
                   Expanded(
                     child: Text(
-                      stop['address']?.toString() ?? '',
+                      // 02#18: a geocoded stop can carry a baked-in "null" part.
+                      AddressFormat.clean(stop['address']),
                       style: reached ? t.body.withColor(c.textMuted).strike : t.body.withColor(c.textPrimary),
                     ),
                   ),

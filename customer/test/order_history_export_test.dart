@@ -106,9 +106,12 @@ void main() {
       expect(s.totals.single.orderCount, 2);
     });
 
-    test('booking histories void what their Cancelled tab lists, Driver Rejected included; My Order keeps the receipt rule', () {
+    test('booking histories void what their Cancelled tab lists; a dispatched Driver Rejected is back with dispatch, never voided; My Order keeps the receipt rule', () {
       for (final OrderHistoryKind kind in [OrderHistoryKind.rides, OrderHistoryKind.parcels, OrderHistoryKind.rentals, OrderHistoryKind.onDemand]) {
-        expect(OrderHistoryExport.isVoided(kind, 'Driver Rejected'), isTrue, reason: '$kind');
+        // provider_orders are not dispatched: their Booking History files
+        // "Driver Rejected" under Cancelled, and the PDF follows it.
+        expect(OrderHistoryExport.isVoided(kind, 'Driver Rejected'), kind == OrderHistoryKind.onDemand, reason: '$kind');
+        expect(OrderHistoryExport.isVoided(kind, 'Driver Pending'), isFalse, reason: '$kind');
         expect(OrderHistoryExport.isVoided(kind, 'Order Cancelled'), isTrue, reason: '$kind');
         expect(OrderHistoryExport.isVoided(kind, 'Order Rejected'), isTrue, reason: '$kind');
         expect(OrderHistoryExport.isVoided(kind, 'Order Completed'), isFalse, reason: '$kind');
@@ -117,13 +120,18 @@ void main() {
       expect(OrderHistoryExport.isVoided(OrderHistoryKind.shopping, 'Driver Rejected'), isFalse);
       expect(OrderHistoryExport.isVoided(OrderHistoryKind.shopping, 'Order Rejected'), isTrue);
 
-      // The explicit flag wins over the status: a Driver Rejected ride is not totalled.
+      expect(OrderHistoryExport.bookingCancelledStatuses, {'Order Rejected', 'Order Cancelled'});
+      expect(OrderHistoryExport.onDemandCancelledStatuses, {'Order Rejected', 'Order Cancelled', 'Driver Rejected'});
+
+      // A Driver Rejected ride, parcel or rental is waiting for the next
+      // driver: it is totalled like any live booking.
       final OrderExportSummary s = OrderHistoryExport.summarize([
         row(DateTime(2026, 9, 1), 10, usd),
-        OrderExportRow(createdAt: DateTime(2026, 9, 2), orderId: 'r', type: 'Ride', status: 'Driver Rejected', amount: 7, currency: usd, voided: OrderHistoryExport.isVoided(OrderHistoryKind.rides, 'Driver Rejected')),
+        for (final OrderHistoryKind kind in [OrderHistoryKind.rides, OrderHistoryKind.parcels, OrderHistoryKind.rentals])
+          OrderExportRow(createdAt: DateTime(2026, 9, 2), orderId: '$kind', type: 'Booking', status: 'Driver Rejected', amount: 7, currency: usd, voided: OrderHistoryExport.isVoided(kind, 'Driver Rejected')),
       ]);
-      expect(s.voidedCount, 1);
-      expect(s.totals.single.amount, 10);
+      expect(s.voidedCount, 0);
+      expect(s.totals.single.amount, 31);
     });
 
     test('two currency documents of the same currency share one total line', () {

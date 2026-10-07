@@ -6,6 +6,7 @@ import 'package:driver/controllers/owner_home_controller.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
+import 'package:driver/utils/document_verification.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'driver_order_list.dart';
@@ -33,7 +34,7 @@ class OwnerHomeScreen extends StatelessWidget {
                       padding: EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.lg),
                       child: DsSkeletonDashboard(tiles: 4),
                     )
-                  : Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false
+                  : DocumentVerification.isPending(Constant.userModel)
                       ? Padding(
                           padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
                           child: Center(
@@ -196,7 +197,7 @@ class OwnerHomeScreen extends StatelessWidget {
                             ),
                           ),
                         ),
-              floatingActionButton: (Constant.userModel?.isDocumentVerify == true && Constant.userModel?.isAutoVerify == false) || Constant.userModel?.isAutoVerify == true
+              floatingActionButton: Constant.userModel != null && !DocumentVerification.isPending(Constant.userModel)
                   ? FloatingActionButton.extended(
                       onPressed: () {
                         Get.to(DriverCreateScreen())!.then((value) {

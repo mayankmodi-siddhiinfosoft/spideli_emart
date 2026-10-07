@@ -368,6 +368,7 @@ class _JobCard extends StatelessWidget {
     final c = context.dsColors;
     final t = context.dsText;
     final String amount = amountShow(amount: _total.toString(), currency: RegionService.currencyForRegion(order.regionId));
+    final String fullAddress = order.address?.getFullAddress() ?? '';
     return DsCard.outlined(
       margin: const EdgeInsets.only(bottom: DsSpace.lg),
       padding: const EdgeInsets.all(DsSpace.md),
@@ -420,13 +421,16 @@ class _JobCard extends StatelessWidget {
           decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brMd),
           child: Column(
             children: [
-              _row(context, Icons.location_on_outlined, "Address  ", order.address?.getFullAddress() ?? "", divider: false),
+              // Report 02#18: an address with nothing left after the "null"
+              // rule is hidden rather than shown as an empty row.
+              if (fullAddress.isNotEmpty) _row(context, Icons.location_on_outlined, "Address  ", fullAddress, divider: false),
               _row(
                   context,
                   Icons.event_outlined,
                   "Date & Time",
                   DateFormat('dd-MMM-yyyy hh:mm a')
-                      .format(order.newScheduleDateTime == null ? order.scheduleDateTime!.toDate() : order.newScheduleDateTime!.toDate())),
+                      .format(order.newScheduleDateTime == null ? order.scheduleDateTime!.toDate() : order.newScheduleDateTime!.toDate()),
+                  divider: fullAddress.isNotEmpty),
               _row(context, Icons.person_outline, "Customer", order.author.fullName().toString()),
               if (order.provider.priceUnit == "Hourly" && order.startTime != null)
                 _row(context, Icons.play_circle_outline, "Start Time", DateFormat('dd-MMM-yyyy hh:mm a').format(order.startTime!.toDate())),

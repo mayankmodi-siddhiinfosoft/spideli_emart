@@ -105,9 +105,11 @@ class ParcelOrderDetails extends StatelessWidget {
                               _PartyBlock(
                                 kind: DsStopKind.drop,
                                 title: "Delivery Address (Receiver):".tr,
-                                name: controller.parcelOrder.value.receiver?.name ?? '',
+                                // Flat receiver fields first (an order the
+                                // website / panel wrote may carry only these).
+                                name: controller.parcelOrder.value.receiverNameDisplay,
                                 address: AddressFormat.clean(controller.parcelOrder.value.receiver?.address),
-                                phone: controller.parcelOrder.value.receiver?.phone ?? '',
+                                phone: controller.parcelOrder.value.receiverPhoneDisplay,
                                 showConnector: false,
                               ),
                               const DsDivider(spacing: DsSpace.lg),
@@ -261,21 +263,65 @@ class ParcelOrderDetails extends StatelessWidget {
                               ),
 
                               // Tax List
-                              ...List.generate(controller.parcelOrder.value.taxSetting!.length, (index) {
+                              ...(controller.parcelOrder.value.taxSetting ?? const []).map((tax) {
                                 return OrderMoneyRow(
-                                  label:
-                                      "${controller.parcelOrder.value.taxSetting![index].title} ${controller.parcelOrder.value.taxSetting![index].type == 'fix' ? '' : '(${controller.parcelOrder.value.taxSetting![index].tax}%)'}",
+                                  label: "${tax.title} ${tax.type == 'fix' ? '' : '(${tax.tax}%)'}",
                                   value: Constant.amountShow(
                                     currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId),
                                     amount: Constant.getTaxValue(
-                                      amount: ((double.tryParse(controller.parcelOrder.value.subTotal.toString()) ?? 0.0) -
-                                              (double.tryParse(controller.parcelOrder.value.discount.toString()) ?? 0.0))
-                                          .toString(),
-                                      taxModel: controller.parcelOrder.value.taxSetting![index],
+                                      amount: (controller.subTotal.value - controller.discount.value).toString(),
+                                      taxModel: tax,
                                     ).toString(),
                                   ),
                                 );
                               }),
+
+                              // Platform fee and its taxes: part of what the
+                              // customer paid (and of the cash collected).
+                              if (controller.platformFee.value > 0) ...[
+                                OrderMoneyRow(
+                                  label: "Platform fee".tr,
+                                  value: Constant.amountShow(
+                                      currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId),
+                                      amount: controller.platformFee.value.toString()),
+                                ),
+                                // Its taxes only when they were charged
+                                // (ParcelAmounts: not when the checkout's
+                                // platform fee setting was off).
+                                if (controller.platformTaxAmount.value > 0)
+                                  ...(controller.parcelOrder.value.platformTax ?? const []).where((tax) => tax.enable == true).map((tax) {
+                                    return OrderMoneyRow(
+                                      label: "${tax.title} ${'Tax on Platform Fee'.tr}",
+                                      value: Constant.amountShow(
+                                        currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId),
+                                        amount: Constant.getTaxValue(amount: controller.platformFee.value.toString(), taxModel: tax).toString(),
+                                      ),
+                                    );
+                                  }),
+                              ],
+
+                              // Fixed intercity / intercountry tax (outside
+                              // VAT and coupons).
+                              if (controller.scopeTax.value > 0)
+                                OrderMoneyRow(
+                                  label: "Fixed tax".tr,
+                                  value: Constant.amountShow(
+                                      currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId),
+                                      amount: controller.scopeTax.value.toString()),
+                                ),
+
+                              // Receiver SMS (point 54): its fee, outside VAT
+                              // and coupons — or "Free" when the sender's
+                              // region charges nothing for it.
+                              if (controller.parcelOrder.value.sendReceiverSms == true)
+                                OrderMoneyRow(
+                                  label: "Receiver SMS".tr,
+                                  value: controller.smsCharge.value > 0
+                                      ? Constant.amountShow(
+                                          currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId),
+                                          amount: controller.smsCharge.value.toString())
+                                      : "Free".tr,
+                                ),
 
                               // Total
                               OrderTotalRow(

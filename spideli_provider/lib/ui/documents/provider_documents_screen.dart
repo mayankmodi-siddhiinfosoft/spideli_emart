@@ -73,11 +73,37 @@ class ProviderDocumentsScreen extends StatelessWidget {
                           DsSectionHeader(
                             title: 'Documents'.tr,
                             icon: Icons.folder_copy_outlined,
-                            subtitle: 'A service provider needs a commercial register and a unique identification number. Rejected or expired documents can be uploaded again.'.tr,
+                            subtitle: 'Upload each document requested by the administrator. Rejected or expired documents can be uploaded again.'.tr,
                             padding: EdgeInsets.zero,
                           ),
                           const DsGap(DsSpace.md),
-                          ...controller.types.map((type) => _documentTile(context, controller, type)),
+                          // Report Doc 36/41: only the admin's document types,
+                          // never fields invented by the app. A failed load
+                          // shows the retry, never statuses it could not read.
+                          if (controller.types.isEmpty || controller.typesLoadFailed.value)
+                            DsCard.outlined(
+                              padding: const EdgeInsets.all(DsSpace.lg),
+                              child: controller.typesLoadFailed.value
+                                  ? DsEmptyState(
+                                      compact: true,
+                                      icon: Icons.cloud_off_outlined,
+                                      tone: DsTone.warning,
+                                      title: 'Could not load the documents to upload'.tr,
+                                      message: 'Check your connection and try again.'.tr,
+                                      actionLabel: 'Retry'.tr,
+                                      actionIcon: Icons.refresh_rounded,
+                                      onAction: controller.load,
+                                    )
+                                  : DsEmptyState(
+                                      compact: true,
+                                      icon: Icons.folder_off_outlined,
+                                      tone: DsTone.neutral,
+                                      title: 'No documents to upload yet'.tr,
+                                      message: 'The administrator has not set up the documents a service provider must provide. Pull down to refresh later.'.tr,
+                                    ),
+                            )
+                          else
+                            ...controller.types.map((type) => _documentTile(context, controller, type)),
                           if (pendingMode) ...[
                             const DsGap(DsSpace.xxl),
                             DsButton.secondary(
@@ -126,9 +152,13 @@ class ProviderDocumentsScreen extends StatelessWidget {
         message = 'A document has expired. Upload a valid one.'.tr;
         break;
       case DocumentStatus.notSubmitted:
-        message = 'Upload the required documents to get verified.'.tr;
+        message = controller.types.isEmpty ? 'No documents to upload yet'.tr : 'Upload the required documents to get verified.'.tr;
         break;
     }
+    // Statuses come from what was read: say so when the read failed instead
+    // of "no documents" or a progress it does not know.
+    final bool loadFailed = controller.typesLoadFailed.value && status != DocumentStatus.approved;
+    if (loadFailed) message = 'Could not load the documents to upload'.tr;
     final DsTone tone = documentStatusTone(status);
     final int total = controller.types.length;
     final int approved = controller.types.where((t) => controller.statusFor(t) == DocumentStatus.approved).length;
@@ -155,7 +185,7 @@ class ProviderDocumentsScreen extends StatelessWidget {
               ),
             ],
           ),
-          if (total > 0) ...[const DsGap(DsSpace.lg), DsProgressBar(value: approved / total, tone: tone, label: '${'Verification'.tr} · $approved/$total', showPercent: true)],
+          if (total > 0 && !loadFailed) ...[const DsGap(DsSpace.lg), DsProgressBar(value: approved / total, tone: tone, label: '${'Verification'.tr} · $approved/$total', showPercent: true)],
         ],
       ),
     );
@@ -337,7 +367,7 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
   File? _back;
   DateTime? _expiry;
 
-  bool get _needsFront => widget.type.frontSide || !widget.type.backSide;
+  bool get _needsFront => widget.type.needsFront;
 
   @override
   void initState() {
@@ -374,7 +404,7 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
 
   Future<void> _submit() async {
     final type = widget.type;
-    if (type.isBuiltIn && _number.text.trim().isEmpty) {
+    if (type.needsNumber && _number.text.trim().isEmpty) {
       ShowToastDialog.showToast('Please enter the number'.tr);
       return;
     }
@@ -480,9 +510,9 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
                   icon: status == DocumentStatus.approved ? Icons.verified_rounded : Icons.info_outline_rounded,
                 ),
                 const DsGap(DsSpace.xl),
-                if (widget.type.isBuiltIn) ...[
+                if (widget.type.needsNumber) ...[
                   DsTextField(
-                    label: widget.type.id == DocumentType.commercialRegisterId ? 'Commercial register number'.tr : 'Unique identification number'.tr,
+                    label: widget.type.userField == DocumentType.commercialRegisterField ? 'Commercial register number'.tr : 'Unique identification number'.tr,
                     controller: _number,
                     enabled: editable,
                     prefixIcon: Icons.numbers_rounded,

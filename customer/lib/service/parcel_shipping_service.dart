@@ -7,7 +7,6 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/models/parcel_order_model.dart';
 import 'package:customer/models/parcel_shipping_models.dart';
 import 'package:customer/service/fire_store_utils.dart';
-import 'package:customer/service/parcel_sms_outbox.dart';
 import 'package:customer/utils/parcel_pricing.dart';
 import 'package:intl/intl.dart';
 
@@ -207,6 +206,12 @@ class ParcelShippingService {
   /// Creates the order (one write, first events included) or, for a priced
   /// quote being paid ([isNew] false), updates its known fields and appends
   /// [events] with arrayUnion. `parcelStatus` = the last event.
+  ///
+  /// The receiver SMS is not the app's job: the server-side trigger on
+  /// `parcel_orders` reads `sendReceiverSms` / `receiverPhone` /
+  /// `receiverCountryCode` and owns `smsSent`. A known-fields write never
+  /// touches a field it does not carry, so `smsSent`, `smsOptOut` and the flat
+  /// receiver fields the server or panel wrote survive a quote payment.
   static Future<void> save(ParcelOrderModel order, List<ParcelTrackingEvent> events, {required bool isNew}) async {
     final ref = _orders.doc(order.id);
     final Map<String, dynamic> data = order.toJson();
@@ -217,55 +222,25 @@ class ParcelShippingService {
       data['parcelStatus'] = events.last.status;
       data['trackingEvents'] = events.map((e) => e.toJson()).toList();
     }
-    // The receiver's SMS request, when one is due, is committed with the status itself.
-    final ParcelSmsRequest? sms = events.isEmpty ? null : await ParcelSmsOutbox.requestFor(order, events.last.status);
-    Future<void> writeOrder() async {
-      await ref.setKnownFields(data);
-      if (!isNew && statusUpdate != null) await ref.update(statusUpdate);
-    }
-
-    if (sms == null) {
-      await writeOrder();
-    } else {
-      final WriteBatch batch = _db.batch();
-      batch.set(ref, data, SetOptions(mergeFields: data.keys.map((key) => FieldPath([key])).toList()));
-      if (!isNew && statusUpdate != null) batch.update(ref, statusUpdate);
-      ParcelSmsOutbox.addToBatch(batch, sms);
-      // The SMS must never cost the order its write: a refused outbox (rules)
-      // falls back to the plain writes, with no message queued.
-      try {
-        await batch.commit();
-      } catch (e) {
-        log('ParcelSmsOutbox: batch refused ($e) — saving the order without the SMS request');
-        await writeOrder();
-      }
-    }
+    // Creation only: the receiver has not opted out. Never written again by
+    // the app (it is not in toJson), so a later opt-out recorded by the server
+    // is never reset.
+    if (isNew) data['smsOptOut'] = false;
+    await ref.setKnownFields(data);
+    if (!isNew && statusUpdate != null) await ref.update(statusUpdate);
     if (events.isNotEmpty) {
       order.parcelStatus = events.last.status;
       order.trackingEvents = [...order.trackingEvents, ...events];
     }
+    if (isNew) order.smsOptOut = false;
   }
 
-  /// Appends one event (e.g. `Cancelled`) without touching other fields. Pass
-  /// [order] so the receiver's SMS request (when the gateway asks for this
-  /// status) is committed in the same batch as the status.
-  static Future<void> append(String orderId, ParcelTrackingEvent e, {ParcelOrderModel? order}) async {
-    final Map<String, dynamic> update = {'parcelStatus': e.status, 'trackingEvents': FieldValue.arrayUnion([e.toJson()])};
-    final ParcelSmsRequest? sms = order == null ? null : await ParcelSmsOutbox.requestFor(order, e.status);
-    if (sms == null) {
-      await _orders.doc(orderId).update(update);
-      return;
-    }
-    final WriteBatch batch = _db.batch();
-    batch.update(_orders.doc(orderId), update);
-    ParcelSmsOutbox.addToBatch(batch, sms);
-    // The SMS must never cost the event its write: a refused outbox (rules)
-    // falls back to the plain update, with no message queued.
-    try {
-      await batch.commit();
-    } catch (e) {
-      log('ParcelSmsOutbox: batch refused ($e) — appending the event without the SMS request');
-      await _orders.doc(orderId).update(update);
-    }
+  /// Appends one event (e.g. `Cancelled`) without touching other fields.
+  static Future<void> append(String orderId, ParcelTrackingEvent e) async {
+    await _orders.doc(orderId).update(appendFields(e));
   }
+
+  /// The fields [append] writes, for a caller that writes them inside its own
+  /// transaction (the customer's cancel).
+  static Map<String, dynamic> appendFields(ParcelTrackingEvent e) => {'parcelStatus': e.status, 'trackingEvents': FieldValue.arrayUnion([e.toJson()])};
 }

@@ -23,6 +23,7 @@ import 'package:customer/models/payment_model/xendit.dart';
 import 'package:customer/models/rating_model.dart';
 import 'package:customer/models/rental_order_model.dart';
 import 'package:customer/constant/collection_name.dart';
+import 'package:customer/utils/booking_status_tabs.dart';
 import 'package:customer/utils/rental_proposal_service.dart';
 import 'package:customer/widget/cancel_reason_sheet.dart';
 import 'package:customer/models/wallet_transaction_model.dart';
@@ -92,24 +93,28 @@ class RentalOrderDetailsController extends GetxController {
 
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _orderSubscription;
 
-  /// While the booking is still "Order Placed" (the price-proposal negotiation
-  /// happens then, spec 4.9) the screen follows the live document so the
-  /// driver's answer and the agreed `subTotal` show up. Once the booking leaves
-  /// that status the last snapshot is applied and the screen stops following
-  /// (today's behaviour afterwards: no payment flow runs while "Order Placed").
+  /// While no driver has taken the booking (Order Placed, or the dispatch's
+  /// Driver Pending / Driver Rejected - [RentalProposalService.openBookingStatuses];
+  /// the price-proposal negotiation happens then, spec 4.9) the screen follows
+  /// the live document so the driver's answer and the agreed `subTotal` show
+  /// up. Once a driver accepts (or the booking is cancelled) the last snapshot
+  /// is applied and the screen stops following (no payment flow runs while the
+  /// booking is open, so nothing local is overwritten).
   void _listenWhileOpen() {
     final id = order.value.id;
-    if (id == null || order.value.status != Constant.orderPlaced) return;
+    if (id == null || !RentalProposalService.isOpenBooking(order.value.status)) return;
     _orderSubscription = FireStoreUtils.fireStore.collection(CollectionName.rentalOrders).doc(id).snapshots().listen((snap) {
       final data = snap.data();
-      if (data == null || order.value.status != Constant.orderPlaced) return;
+      if (data == null || !RentalProposalService.isOpenBooking(order.value.status)) return;
       order.value = RentalOrderModel.fromJson(data);
       calculateTotalAmount();
-      if (order.value.status != Constant.orderPlaced) {
+      if (!RentalProposalService.isOpenBooking(order.value.status)) {
         _orderSubscription?.cancel();
         _orderSubscription = null;
-        fetchDriverDetails();
       }
+      // The driver only once one has accepted; a driver who was only offered
+      // the booking (Driver Pending) is not its driver.
+      fetchDriverDetails();
     });
   }
 
@@ -132,9 +137,23 @@ class RentalOrderDetailsController extends GetxController {
   /// History amounts of this booking.
   CurrencyModel? get bookingCurrency => RegionService.currencyForRecord(bookingRegionId);
 
-  Future<void> fetchDriverDetails() async {
-    if (order.value.driverId != null) {
-      await FireStoreUtils.getUserProfile(order.value.driverId ?? '').then((value) {
+  /// The booking's driver, region and the customer's review of them.
+  /// [force] re-reads the driver's profile even when it is already loaded:
+  /// after a review its rating changed (the screen calls it with `true`).
+  /// The review itself is always re-read.
+  Future<void> fetchDriverDetails({bool force = false}) async {
+    final String? driverId = order.value.driverId;
+    if (!BookingStatusTabs.hasAssignedDriver(order.value.status, driverId, acceptedDriverId: order.value.driver?.id)) {
+      // No driver on the booking (yet, or any more): a driver who was only
+      // offered it, who declined, or who was only offered a booking that was
+      // then cancelled, must not feed the region, currency or receipt.
+      driverUser.value = null;
+      return;
+    }
+    // The same driver is already loaded (the live listener's last snapshot
+    // after getData()): their profile and the region are not read twice.
+    if (force || driverUser.value == null || driverUser.value!.id != driverId) {
+      await FireStoreUtils.getUserProfile(driverId!).then((value) {
         if (value != null) {
           driverUser.value = value;
         }
@@ -146,16 +165,16 @@ class RentalOrderDetailsController extends GetxController {
       order.value.regionId = await FireStoreUtils.ensureRideRegion(
         collection: CollectionName.rentalOrders,
         orderId: order.value.id,
-        driverId: order.value.driverId,
+        driverId: driverId,
         currentRegionId: order.value.regionId,
       );
-
-      await FireStoreUtils.getReviewsbyID(order.value.id.toString()).then((value) {
-        if (value != null) {
-          ratingModel.value = value;
-        }
-      });
     }
+
+    await FireStoreUtils.getReviewsbyID(order.value.id.toString()).then((value) {
+      if (value != null) {
+        ratingModel.value = value;
+      }
+    });
   }
 
   String getExtraKm() {
@@ -241,7 +260,7 @@ class RentalOrderDetailsController extends GetxController {
   Future<void> completeOrder() async {
     if (selectedPaymentMethod.value == PaymentGateway.cod.name) {
       order.value.paymentMethod = selectedPaymentMethod.value;
-      await FireStoreUtils.rentalOrderPlace(order.value).then((value) {
+      await FireStoreUtils.updateRentalPayment(order.value).then((value) {
         ShowToastDialog.showToast("Payment method changed".tr);
         Get.back();
         Get.back();
@@ -274,7 +293,7 @@ class RentalOrderDetailsController extends GetxController {
         });
       }
 
-      await FireStoreUtils.rentalOrderPlace(order.value).then((value) {
+      await FireStoreUtils.updateRentalPayment(order.value).then((value) {
         ShowToastDialog.showToast("Payment successfully".tr);
         Get.back();
         Get.back();

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:vendor/models/vendor_model.dart';
 
 class ZoneModel {
   List<GeoPoint>? area;
@@ -27,10 +28,10 @@ class ZoneModel {
     }
 
     publish = json['publish'];
-    latitude = json['latitude'];
+    latitude = VendorModel.parseCoordinate(json['latitude']);
     name = json['name'];
     id = json['id'];
-    longitude = json['longitude'];
+    longitude = VendorModel.parseCoordinate(json['longitude']);
     sectionId = json['sectionId'];
     final dynamic region = json['regionId'];
     regionId = (region == null || region.toString().isEmpty) ? null : region.toString();

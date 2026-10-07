@@ -333,9 +333,9 @@ class OwnerOrderListScreen extends StatelessWidget {
                               context,
                               kind: DsStopKind.drop,
                               title: "Delivery Address (Receiver):".tr,
-                              name: order.receiver?.name ?? '',
+                              name: order.receiverNameDisplay,
                               address: AddressFormat.clean(order.receiver?.address),
-                              phone: order.receiver?.phone ?? '',
+                              phone: order.receiverPhoneDisplay,
                             ),
                           ],
                         ),
@@ -634,7 +634,7 @@ class OwnerOrderListScreen extends StatelessWidget {
                             ),
                             const DsGap(DsSpace.sm),
                             // ── Delivery address ─────────────
-                            if (order.address != null)
+                            if ((order.address?.getFullAddress() ?? '').isNotEmpty)
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -642,7 +642,7 @@ class OwnerOrderListScreen extends StatelessWidget {
                                   const DsGap(DsSpace.xs),
                                   Expanded(
                                     child: Text(
-                                      AddressFormat.clean(order.address?.address),
+                                      order.address?.getFullAddress() ?? '',
                                       style: t.bodySecondary,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,

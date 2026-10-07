@@ -199,19 +199,31 @@ class CabOrderModel with CancellationFields {
   Map<String, dynamic>? get lastDriverRejection => (driverRejections?.isNotEmpty ?? false) ? driverRejections!.last : null;
 
   /// The assigned driver cancelled after accepting and the ride went back to
-  /// dispatch (not a final cancellation): `status == "Driver Rejected"` and
-  /// the LAST `driverRejections` entry has `afterAccept == true`.
-  bool get isDriverCancelledRedispatch => status == 'Driver Rejected' && lastDriverRejection?['afterAccept'] == true;
+  /// dispatch (not a final cancellation): `status == "Driver Rejected"`, the
+  /// LAST `driverRejections` entry has `afterAccept == true`, and that driver
+  /// is still the latest one the dispatch excluded (`rejectedByDrivers`).
+  ///
+  /// A later driver's silent timeout also writes "Driver Rejected" and adds
+  /// them to `rejectedByDrivers`, but with no `driverRejections` entry: the
+  /// earlier driver's cancellation is then no longer what just happened, and
+  /// is not shown again. A ride written before `rejectedByDrivers` existed
+  /// (empty list) has no timeouts recorded either, so the entry decides.
+  bool get isDriverCancelledRedispatch {
+    if (status != 'Driver Rejected') return false;
+    final Map<String, dynamic>? last = lastDriverRejection;
+    if (last == null || last['afterAccept'] != true) return false;
+    final List<dynamic> excluded = rejectedByDrivers ?? const [];
+    if (excluded.isEmpty) return true;
+    return excluded.last?.toString() == last['driverId']?.toString();
+  }
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
     data['status'] = status;
-    // if (rejectedByDrivers != null) {
-    //   data['rejectedByDrivers'] = rejectedByDrivers!.map((v) => v.toJson()).toList();
-    // }
-    if (rejectedByDrivers != null) {
-      data['rejectedByDrivers'] = rejectedByDrivers;
-    }
+    // `rejectedByDrivers` is never written by the customer app: it is the
+    // dispatch Cloud Function's exclusion list (the Driver app adds itself on
+    // a reject or timeout), and a write from a stale copy would drop a driver
+    // who declined and let the ride be offered to them again. It is read only.
     data['couponId'] = couponId;
     data['scheduleDateTime'] = scheduleDateTime;
     data['duration'] = duration;

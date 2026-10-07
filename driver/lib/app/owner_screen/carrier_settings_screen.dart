@@ -22,6 +22,9 @@ class CarrierSettingsScreen extends StatelessWidget {
         final bool linked = controller.carrier.value != null;
         final bool verified = controller.isVerified.value;
         final String carrierId = controller.carrierId.value;
+        final List<String> pricedRegions = controller.pricedRegionIds.toList();
+        final Map<String, String> regionLabels = Map<String, String>.from(controller.regionLabels);
+        final Map<String, String> errors = Map<String, String>.from(controller.errors);
 
         return DsScaffold(
           title: 'Carrier Settings'.tr,
@@ -107,16 +110,37 @@ class CarrierSettingsScreen extends StatelessWidget {
                               ],
                             ),
                             const DsGap(DsSpace.lg),
-                            DsFormSection(
-                              title: "Pricing".tr,
-                              icon: Icons.payments_outlined,
-                              children: [
-                                _numberField(controller, 'baseCharge', 'Base Charge'.tr, 'e.g. 500'),
-                                _numberField(controller, 'perKmCharge', 'Charge per km'.tr, 'e.g. 75'),
-                                _numberField(controller, 'perKgCharge', 'Charge per kg'.tr, 'e.g. 200'),
-                                _numberField(controller, 'minimumCharge', 'Minimum Charge'.tr, 'e.g. 1000', last: true),
-                              ],
-                            ),
+                            if (pricedRegions.isEmpty)
+                              DsFormSection(
+                                title: "Pricing".tr,
+                                icon: Icons.payments_outlined,
+                                children: [
+                                  _numberField(controller, 'baseCharge', 'Base Charge'.tr, 'e.g. 500'),
+                                  _numberField(controller, 'perKmCharge', 'Charge per km'.tr, 'e.g. 75'),
+                                  _numberField(controller, 'perKgCharge', 'Charge per kg'.tr, 'e.g. 200'),
+                                  _numberField(controller, 'minimumCharge', 'Minimum Charge'.tr, 'e.g. 1000', last: true),
+                                ],
+                              )
+                            else
+                              // Report Doc 43: one price list per region served.
+                              DsFormSection(
+                                title: "Pricing per region".tr,
+                                subtitle: "Each region you serve has its own prices.".tr,
+                                icon: Icons.payments_outlined,
+                                children: [
+                                  for (final regionId in pricedRegions) ...[
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: DsSpace.sm),
+                                      child: Text(regionLabels[regionId] ?? regionId, style: context.dsText.titleSm),
+                                    ),
+                                    _regionField(controller, errors, regionId, 'baseCharge', 'Base Charge'.tr, 'e.g. 500'),
+                                    _regionField(controller, errors, regionId, 'perKmCharge', 'Charge per km'.tr, 'e.g. 75'),
+                                    _regionField(controller, errors, regionId, 'perKgCharge', 'Charge per kg'.tr, 'e.g. 200'),
+                                    _regionField(controller, errors, regionId, 'minimumCharge', 'Minimum Charge'.tr, 'e.g. 1000',
+                                        last: regionId == pricedRegions.last),
+                                  ],
+                                ],
+                              ),
                             const DsGap(DsSpace.lg),
                             DsFormSection(
                               title: "Service".tr,
@@ -201,6 +225,20 @@ class CarrierSettingsScreen extends StatelessWidget {
       hint: hint,
       controller: controller.controllerFor(field),
       errorText: controller.errors[field],
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+      textInputAction: TextInputAction.next,
+      bottomSpacing: last ? 0 : DsSpace.lg,
+    );
+  }
+
+  static Widget _regionField(CarrierSettingsController controller, Map<String, String> errors, String regionId, String field, String label, String hint,
+      {bool last = false}) {
+    return DsTextField(
+      label: label,
+      hint: hint,
+      controller: controller.regionControllerFor(regionId, field),
+      errorText: errors[CarrierSettingsController.regionKey(regionId, field)],
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
       textInputAction: TextInputAction.next,

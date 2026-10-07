@@ -2,6 +2,7 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/models/parcel_order_model.dart';
 import 'package:driver/services/parcel_tracking_service.dart';
 import 'package:driver/themes/ds/ds.dart';
+import 'package:driver/utils/address_format.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -39,7 +40,8 @@ class ParcelShipmentInfoCard extends StatelessWidget {
 
   static String _place(Map<String, dynamic>? m) {
     if (m == null) return '';
-    return [m['city'], m['country']].where((e) => e != null && e.toString().isNotEmpty).join(', ');
+    // 02#18: a "null" city / country is dropped, never printed.
+    return AddressFormat.join([m['city'], m['country']]);
   }
 
   @override

@@ -191,7 +191,7 @@ class OwnerOrderListController extends GetxController {
         return cabOrders.where((o) => o.status == "Order Completed").toList();
       case "Cancelled":
         return cabOrders
-            .where((o) => ["Order Rejected", "Order Cancelled", "Driver Rejected"].contains(o.status))
+            .where((o) => ["Order Rejected", "Order Cancelled"].contains(o.status))
             .toList();
       default:
         return [];
@@ -206,7 +206,7 @@ class OwnerOrderListController extends GetxController {
         return parcelOrders.where((o) => o.status == "Order Completed").toList();
       case "Cancelled":
         return parcelOrders
-            .where((o) => ["Order Rejected", "Order Cancelled", "Driver Rejected"].contains(o.status))
+            .where((o) => ["Order Rejected", "Order Cancelled"].contains(o.status))
             .toList();
       default:
         return [];
@@ -221,7 +221,7 @@ class OwnerOrderListController extends GetxController {
         return rentalOrders.where((o) => o.status == "Order Completed").toList();
       case "Cancelled":
         return rentalOrders
-            .where((o) => ["Order Rejected", "Order Cancelled", "Driver Rejected"].contains(o.status))
+            .where((o) => ["Order Rejected", "Order Cancelled"].contains(o.status))
             .toList();
       default:
         return [];
@@ -236,7 +236,7 @@ class OwnerOrderListController extends GetxController {
         return vendorOrders.where((o) => o.status == "Order Completed").toList();
       case "Cancelled":
         return vendorOrders
-            .where((o) => ["Order Rejected", "Order Cancelled", "Driver Rejected"].contains(o.status))
+            .where((o) => ["Order Rejected", "Order Cancelled"].contains(o.status))
             .toList();
       default:
         return [];

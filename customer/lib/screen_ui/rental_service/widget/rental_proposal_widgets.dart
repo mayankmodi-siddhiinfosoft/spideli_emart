@@ -127,7 +127,13 @@ class RentalProposalCard extends StatelessWidget {
     final c = context.dsColors;
     final t = context.dsText;
     final status = order.proposalStatus;
-    final open = order.status == Constant.orderPlaced;
+    // Negotiable until a driver takes the booking (the dispatch states included).
+    final open = RentalProposalService.isOpenBooking(order.status);
+    // A counter is accepted only from the driver the booking is offered to
+    // now; any open counter may be declined (that clears one whose driver
+    // has left the booking).
+    final canAcceptCounter = RentalProposalService.canAcceptCounter(status: order.status, driverId: order.driverId, proposal: order.priceProposal);
+    final canRejectCounter = RentalProposalService.canRejectCounter(status: order.status, proposal: order.priceProposal);
     final listed = num.tryParse(order.listedPrice ?? '') ?? (status == 'accepted' ? null : num.tryParse(order.subTotal ?? ''));
     final (statusText, statusTone) = _statusOf(status);
 
@@ -165,7 +171,11 @@ class RentalProposalCard extends StatelessWidget {
           if (status == 'countered' || (status == 'rejected' && order.counterAmount != null)) row("Counter-offer".tr, _money(order.counterAmount), color: c.warningStrong),
           if (status == 'accepted') row("Agreed price".tr, _money(num.tryParse(order.subTotal ?? '')), color: c.successStrong),
           if (status == 'accepted') Text("You will pay the agreed price.".tr, style: t.caption),
-          if (status == 'countered' && open) ...[
+          if (canRejectCounter && !canAcceptCounter) ...[
+            const DsGap(DsSpace.sm),
+            Text("This counter-offer has expired: the driver who made it is no longer on your booking.".tr, style: t.caption),
+          ],
+          if (canRejectCounter) ...[
             const DsGap(DsSpace.lg),
             Row(
               children: [
@@ -176,14 +186,16 @@ class RentalProposalCard extends StatelessWidget {
                     onPressed: () => _run(() => RentalProposalService.rejectCounter(order.id!), "Counter-offer rejected".tr),
                   ),
                 ),
-                const DsGap(DsSpace.md),
-                Expanded(
-                  child: DsButton.primary(
-                    label: "${'Accept'.tr} ${_money(order.counterAmount)}",
-                    expand: true,
-                    onPressed: () => _run(() => RentalProposalService.acceptCounter(order.id!), "Counter-offer accepted".tr),
+                if (canAcceptCounter) ...[
+                  const DsGap(DsSpace.md),
+                  Expanded(
+                    child: DsButton.primary(
+                      label: "${'Accept'.tr} ${_money(order.counterAmount)}",
+                      expand: true,
+                      onPressed: () => _run(() => RentalProposalService.acceptCounter(order.id!), "Counter-offer accepted".tr),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ],

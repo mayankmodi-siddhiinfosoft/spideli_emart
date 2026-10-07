@@ -2,13 +2,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:get/get.dart';
 
 /// A document type configured in the admin panel (`documents` collection,
-/// same shape the driver and store apps read), filtered on `type == "provider"`.
+/// same shape the driver and store apps read), filtered on `type == "provider"`
+/// and `enable == true`.
 ///
-/// The spec (3.6 / 10) requires a commercial register and a unique
-/// identification number from every service provider. When the admin panel has
-/// not configured them, [commercialRegister] / [uniqueIdNumber] supply them; their uploads go
-/// to the same `documents_verify` doc and are mirrored on the user doc
-/// (`commercialRegister*`, `uniqueIdNumber*`, like delivery carriers).
+/// Report Doc 36/41: uploads are recorded against the admin type's Firestore
+/// id only. The app used to invent two types of its own, with the ids
+/// `commercialRegister` / `uniqueIdNumber`, whenever the panel had none it
+/// recognised; those uploads matched no type and were invisible to the admin.
+/// There are no built-in types any more -- when the admin has configured none,
+/// the documents screen says so.
+///
+/// An admin type whose title names the commercial register or the unique
+/// identification number also asks for the reference number, which is kept on
+/// the user doc as before ([userField] = number, `<userField>File` = file URL;
+/// the booking receipt prints it).
 class DocumentType {
   String id;
   String title;
@@ -17,45 +24,62 @@ class DocumentType {
   bool hasExpiry;
   bool enable;
 
-  /// Built-in type the spec requires; [userField] names the user doc fields
-  /// (`<userField>` = number, `<userField>File` = file URL).
+  /// User doc field that mirrors this type's reference number, or null when
+  /// the type has none.
   String? userField;
 
   DocumentType({required this.id, required this.title, this.frontSide = true, this.backSide = false, this.hasExpiry = false, this.enable = true, this.userField});
 
-  bool get isBuiltIn => userField != null;
+  /// Whether the upload form asks for (and requires) a reference number.
+  bool get needsNumber => userField != null;
+
+  /// Front image is asked for when the type says so, and also when it sets
+  /// neither side (a type must take at least one image).
+  bool get needsFront => frontSide || !backSide;
 
   factory DocumentType.fromJson(Map<String, dynamic> json, {String? docId}) {
+    final String title = json['title']?.toString() ?? '';
     return DocumentType(
-      id: (json['id']?.toString().isNotEmpty == true) ? json['id'].toString() : (docId ?? ''),
-      title: json['title']?.toString() ?? '',
+      // The Firestore document id is what the panel matches uploads on.
+      id: (docId != null && docId.isNotEmpty) ? docId : (json['id']?.toString() ?? ''),
+      title: title,
       frontSide: json['frontSide'] == true,
       backSide: json['backSide'] == true,
       hasExpiry: json['expireAt'] == true,
-      enable: json['enable'] != false,
+      enable: json['enable'] == true,
+      userField: userFieldForTitle(title),
     );
   }
 
-  static const String commercialRegisterId = 'commercialRegister';
-  static const String uniqueIdNumberId = 'uniqueIdNumber';
+  /// User doc fields the spec (3.6 / 10) keeps the provider's reference
+  /// numbers in.
+  static const String commercialRegisterField = 'commercialRegister';
+  static const String uniqueIdNumberField = 'uniqueIdNumber';
 
-  static DocumentType commercialRegister() =>
-      DocumentType(id: commercialRegisterId, title: 'Commercial register'.tr, frontSide: true, userField: 'commercialRegister');
-
-  static DocumentType uniqueIdNumber() =>
-      DocumentType(id: uniqueIdNumberId, title: 'Unique identification number'.tr, frontSide: true, userField: 'uniqueIdNumber');
-
-  /// Whether an admin-configured type already covers a required one (matched
-  /// on its title, French or English).
-  static bool coversCommercialRegister(DocumentType t) {
-    final s = t.title.toLowerCase();
-    return s.contains('commercial') || s.contains('commerce') || s.contains('rccm') || s.contains('trade regist');
+  /// [commercialRegisterField] / [uniqueIdNumberField] when an admin type's
+  /// title (French or English) names one of them, else null.
+  static String? userFieldForTitle(String title) {
+    final s = title.toLowerCase();
+    if (s.contains('commercial') || s.contains('commerce') || s.contains('rccm') || s.contains('trade regist')) return commercialRegisterField;
+    if (s.contains('unique') || s.contains('identifiant') || s.contains('niu') || s.contains('identification number') || s.contains('tax id')) return uniqueIdNumberField;
+    return null;
   }
 
-  static bool coversUniqueIdNumber(DocumentType t) {
-    final s = t.title.toLowerCase();
-    return s.contains('unique') || s.contains('identifiant') || s.contains('niu') || s.contains('identification number') || s.contains('tax id');
+  /// The enabled provider types of a `documents` query, in a stable order
+  /// (by title), without duplicates or types lacking an id.
+  static List<DocumentType> enabledFrom(Iterable<MapEntry<String, Map<String, dynamic>>> docs) {
+    final Map<String, DocumentType> byId = {};
+    for (final doc in docs) {
+      final t = DocumentType.fromJson(doc.value, docId: doc.key);
+      if (t.enable && t.id.isNotEmpty) byId[t.id] = t;
+    }
+    return byId.values.toList()..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
   }
+
+  /// An empty `documents` answer served from the cache means the types were
+  /// not read (offline on a device that never loaded them; get() does not
+  /// throw then), not that the admin set up none.
+  static bool unreadable({required bool isEmpty, required bool isFromCache}) => isEmpty && isFromCache;
 }
 
 /// Verification statuses (spec 3.6).

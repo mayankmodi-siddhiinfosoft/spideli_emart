@@ -34,6 +34,20 @@ class CarrierSettingsController extends GetxController {
 
   TextEditingController controllerFor(String field) => fields[field]!;
 
+  /// Report Doc 43: a carrier serving named regions is priced per region.
+  /// One input per region and charge, keyed [regionKey]; prefilled from
+  /// `regionPricing`, the flat charge only as a fallback.
+  final Map<String, TextEditingController> regionFields = {};
+  final RxList<String> pricedRegionIds = <String>[].obs;
+  final RxMap<String, String> regionLabels = <String, String>{}.obs;
+
+  static String regionKey(String regionId, String field) => '$regionId|$field';
+
+  TextEditingController regionControllerFor(String regionId, String field) =>
+      regionFields.putIfAbsent(regionKey(regionId, field), () => TextEditingController());
+
+  bool get pricedPerRegion => pricedRegionIds.isNotEmpty;
+
   /// Dial code, e.g. `+237`, as the panel stores it.
   final RxString countryCode = ''.obs;
 
@@ -59,6 +73,9 @@ class CarrierSettingsController extends GetxController {
   @override
   void onClose() {
     for (final c in fields.values) {
+      c.dispose();
+    }
+    for (final c in regionFields.values) {
       c.dispose();
     }
     super.onClose();
@@ -87,6 +104,13 @@ class CarrierSettingsController extends GetxController {
       code.value = found.text('code');
       await RegionService.ensureLoaded();
       regionNames.value = found.regionIds.map((id) => RegionService.regionById(id)?.name ?? id).toList();
+      regionLabels.value = {for (final id in found.regionIds) id: RegionService.regionById(id)?.name ?? id};
+      for (final regionId in found.regionIds) {
+        for (final field in DeliveryCarrierModel.chargeFields) {
+          regionControllerFor(regionId, field).text = DeliveryCarrierModel.formatNumber(found.chargeFor(regionId, field));
+        }
+      }
+      pricedRegionIds.value = found.regionIds;
       identification.value = {
         for (final f in const ['operatingLicence', 'commercialRegister', 'uniqueIdNumber']) f: found.text(f),
       };
@@ -140,6 +164,9 @@ class CarrierSettingsController extends GetxController {
     values[DeliveryCarrierModel.unitField] = deliveryTimeUnit.value.trim();
 
     for (final field in DeliveryCarrierModel.numberFields) {
+      // Per-region carriers price in [regionFields]; their flat charges are
+      // the panel's copy of the first region and are not edited directly.
+      if (pricedPerRegion && DeliveryCarrierModel.chargeFields.contains(field)) continue;
       final String text = fields[field]!.text.trim();
       if (text.isEmpty) {
         values[field] = null; // "not set", never zero.
@@ -152,6 +179,25 @@ class CarrierSettingsController extends GetxController {
         found[field] = "This value cannot be negative".tr;
       } else {
         values[field] = n;
+      }
+    }
+
+    for (final regionId in pricedRegionIds) {
+      for (final field in DeliveryCarrierModel.chargeFields) {
+        final String text = regionControllerFor(regionId, field).text.trim();
+        final String key = regionKey(regionId, field);
+        if (text.isEmpty) {
+          values[key] = null;
+          continue;
+        }
+        final num? n = DeliveryCarrierModel.parseNumber(text);
+        if (n == null) {
+          found[key] = "Enter a valid number".tr;
+        } else if (n < 0) {
+          found[key] = "This value cannot be negative".tr;
+        } else {
+          values[key] = n;
+        }
       }
     }
 
@@ -172,6 +218,7 @@ class CarrierSettingsController extends GetxController {
     final Map<String, dynamic> changes = {};
     for (final entry in values.entries) {
       final String field = entry.key;
+      if (field.contains('|')) continue; // regional prices: [_regionChanges]
       if (DeliveryCarrierModel.numberFields.contains(field)) {
         final num? after = entry.value as num?;
         // Numerically equal = untouched, even when the panel stored the number
@@ -196,6 +243,22 @@ class CarrierSettingsController extends GetxController {
     return changes;
   }
 
+  /// The regional prices that differ from what the company was shown
+  /// (`regionPricing`, else the flat fallback): regionId -> {charge: value}.
+  Map<String, Map<String, num?>> _regionChanges(DeliveryCarrierModel carrier, Map<String, dynamic> values) {
+    final Map<String, Map<String, num?>> changes = {};
+    for (final regionId in pricedRegionIds) {
+      for (final field in DeliveryCarrierModel.chargeFields) {
+        final String key = regionKey(regionId, field);
+        if (!values.containsKey(key)) continue;
+        final num? after = values[key] as num?;
+        if (carrier.chargeFor(regionId, field) == after) continue;
+        (changes[regionId] ??= {})[field] = after;
+      }
+    }
+    return changes;
+  }
+
   Future<void> save() async {
     final DeliveryCarrierModel? current = carrier.value;
     if (current == null) {
@@ -208,13 +271,14 @@ class CarrierSettingsController extends GetxController {
       return;
     }
     final Map<String, dynamic> changes = _changes(current, values);
-    if (changes.isEmpty) {
+    final Map<String, Map<String, num?>> regionChanges = _regionChanges(current, values);
+    if (changes.isEmpty && regionChanges.isEmpty) {
       ShowToastDialog.showToast("Nothing to save".tr);
       return;
     }
     isSaving.value = true;
     ShowToastDialog.showLoader("Please wait".tr);
-    final bool ok = await CarrierDispatchService.saveCarrierSettings(current, changes);
+    final bool ok = await CarrierDispatchService.saveCarrierSettings(current, changes, regionChanges: regionChanges);
     ShowToastDialog.closeLoader();
     isSaving.value = false;
     if (!ok) {

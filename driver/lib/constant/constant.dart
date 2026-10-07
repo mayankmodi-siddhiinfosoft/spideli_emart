@@ -47,16 +47,28 @@ class Constant {
   static bool singleOrderReceive = false;
   static bool enableOTPTripStartForRental = true;
   static String driverLocationUpdate = '50';
+
+  /// `settings/DriverNearBy.driverOrderAcceptRejectDuration`: the seconds a
+  /// driver has to answer an offer the dispatch Cloud Function sent
+  /// (DRIVER_DISPATCH_DOCUMENTATION.md §6). 120 when missing, unreadable or
+  /// not positive (DispatchSettings.acceptRejectSeconds). Live: a panel change
+  /// applies to the next offer without a restart.
+  static int driverOrderAcceptRejectDuration = 120;
   static String minimumDepositToRideAccept = '0.0';
   static String ownerMinimumDepositToRideAccept = '0.0';
   static String minimumAmountToWithdrawal = '0.0';
 
-  static bool isDriverVerification = false;
-  static bool isOwnerVerification = false;
+  /// `settings/document_verification_settings`. Null until loaded (or when
+  /// the admin never saved it): treated as "verification on" — see
+  /// DocumentVerification.
+  static bool? isDriverVerification;
+  static bool? isOwnerVerification;
   static bool enableOTPTripStart = false;
 
-  static String parcelRadius = '0.0';
-  static String rentalRadius = '0.0';
+  /// Search radii (km) of the parcel / rental search screens. The spec
+  /// default is 50 (DRIVER_DISPATCH_DOCUMENTATION.md §6).
+  static String parcelRadius = '50';
+  static String rentalRadius = '50';
 
   static String mapAPIKey = "AIzaSyBhZufLHi10nF6KpZtqXlmJ84QMStjBmRo";
   static String placeHolderImage = "";

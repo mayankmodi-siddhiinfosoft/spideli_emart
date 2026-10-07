@@ -9,6 +9,7 @@ import 'package:customer/models/order_model.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/models/vendor_model.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/booking_status_tabs.dart';
 import 'package:customer/utils/order_receipt_pdf.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:flutter/material.dart';
@@ -104,7 +105,7 @@ class OrderDetailsScreen extends StatelessWidget {
                           title: 'Order'.tr,
                           id: order.id.toString(),
                           subtitle: Constant.timestampToDateTime(order.createdAt!),
-                          statusLabel: status.tr,
+                          statusLabel: BookingStatusTabs.label(status),
                           status: status,
                           pulse: status == Constant.orderShipped || status == Constant.orderInTransit,
                         ),
@@ -160,14 +161,16 @@ class OrderDetailsScreen extends StatelessWidget {
                                       steps: [
                                         DsTimelineStep(
                                           title: "${order.vendor!.title}",
-                                          subtitle: "${order.vendor!.location}",
+                                          // '' (no usable address) hides the line (02#18).
+                                          subtitle: order.vendor!.locationText.isEmpty ? null : order.vendor!.locationText,
                                           state: DsStepState.done,
                                           icon: Icons.storefront_rounded,
                                           content: _ContactActions(order: order, status: status),
                                         ),
                                         DsTimelineStep(
-                                          title: "${order.address!.addressAs}",
-                                          subtitle: order.address!.getFullAddress(),
+                                          // An address saved without a label has no `addressAs`: never "null" (02#18).
+                                          title: (order.address?.addressAs ?? '').trim().isEmpty ? 'Delivery Address'.tr : order.address!.addressAs!.trim(),
+                                          subtitle: order.address!.getFullAddress().isEmpty ? null : order.address!.getFullAddress(),
                                           state: status == Constant.orderCompleted
                                               ? DsStepState.done
                                               : status == Constant.orderRejected || status == Constant.orderCancelled
@@ -455,8 +458,7 @@ class _VendorRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text("${order.vendor!.title}", style: t.titleSm.withColor(c.brandStrong)),
-              const DsGap(DsSpace.xxs),
-              Text("${order.vendor!.location}", style: t.bodySm),
+              if (order.vendor!.locationText.isNotEmpty) ...[const DsGap(DsSpace.xxs), Text(order.vendor!.locationText, style: t.bodySm)],
             ],
           ),
         ),
@@ -523,6 +525,9 @@ class _ContactActions extends StatelessWidget {
   }
 }
 
+/// The statuses where `driverID` is the driver delivering the order.
+const Set<String> _driverOnOrderStatuses = {Constant.driverAccepted, Constant.orderShipped, Constant.orderInTransit, Constant.orderCompleted};
+
 /// Delivered note / preparation note / driver card, under the journey.
 class _DriverBlock extends StatelessWidget {
   final OrderModel order;
@@ -546,7 +551,9 @@ class _DriverBlock extends StatelessWidget {
           ),
         ],
       );
-    } else if (status == Constant.orderAccepted || status == Constant.driverPending) {
+    } else if (status == Constant.orderAccepted || BookingStatusTabs.isWaitingForDriver(status)) {
+      // Preparing, or the dispatch is offering the order to a driver / looking
+      // for the next one after a decline ("Driver Rejected"): no driver yet.
       body = Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -560,10 +567,12 @@ class _DriverBlock extends StatelessWidget {
           ),
         ],
       );
-    } else if (order.driver != null) {
+    } else if (order.driver != null && (order.driverID ?? '').isNotEmpty && _driverOnOrderStatuses.contains(status)) {
+      // Only a driver who is on the order now: a driver who declined or was
+      // released has `driverID` null while the old `driver` snapshot remains.
       body = Row(
         children: [
-          DsAvatar(imageUrl: order.author!.profilePictureURL.toString(), name: order.driver!.fullName(), size: 44, ring: true),
+          DsAvatar(imageUrl: order.driver!.profilePictureURL ?? '', name: order.driver!.fullName(), size: 44, ring: true),
           const DsGap(DsSpace.md),
           Expanded(
             child: Column(
@@ -588,24 +597,33 @@ class _DriverBlock extends StatelessWidget {
             variant: DsIconButtonVariant.outlined,
             child: SvgPicture.asset("assets/icons/ic_wechat.svg", width: 20, height: 20),
             onPressed: () async {
+              final String driverId = (order.driverID ?? '').trim();
+              if (driverId.isEmpty) {
+                ShowToastDialog.showToast("No driver is assigned to this order yet.".tr);
+                return;
+              }
               ShowToastDialog.showLoader("Please wait...".tr);
 
               UserModel? customer = await FireStoreUtils.getUserProfile(order.authorID.toString());
-              UserModel? restaurantUser = await FireStoreUtils.getUserProfile(order.driverID.toString());
+              UserModel? restaurantUser = await FireStoreUtils.getUserProfile(driverId);
 
               ShowToastDialog.closeLoader();
+              if (customer == null || restaurantUser == null) {
+                ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+                return;
+              }
 
               Get.to(
                 const ChatScreen(),
                 arguments: {
-                  "senderName": customer!.fullName(),
-                  "receivedName": restaurantUser?.fullName(),
+                  "senderName": customer.fullName(),
+                  "receivedName": restaurantUser.fullName(),
                   "orderId": order.id,
-                  "receivedId": restaurantUser?.id,
+                  "receivedId": restaurantUser.id,
                   "senderId": customer.id,
                   "senderProfileUrl": customer.profilePictureURL,
-                  "receivedProfileUrl": restaurantUser?.profilePictureURL,
-                  "token": restaurantUser?.fcmToken,
+                  "receivedProfileUrl": restaurantUser.profilePictureURL,
+                  "token": restaurantUser.fcmToken,
                   "chatType": Constant.userRoleDriver,
                 },
               );

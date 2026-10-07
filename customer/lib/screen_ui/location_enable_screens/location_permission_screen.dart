@@ -68,51 +68,57 @@ class LocationPermissionScreen extends StatelessWidget {
                           try {
                             await Geolocator.requestPermission();
                             Position newLocalData = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-                            await Geocoding().placemarkFromCoordinates(newLocalData.latitude, newLocalData.longitude).then((valuePlaceMaker) {
-                              Placemark placeMark = valuePlaceMaker[0];
-                              addressModel.addressAs = "Home";
-                              addressModel.location = UserLocation(latitude: newLocalData.latitude, longitude: newLocalData.longitude);
-                              // Placemark fields are nullable: interpolating one that the geocoder did
-                              // not return printed the four characters "null" into the stored address
-                              // (report #17). Same fields, same order, through formatAddressLine.
-                              String currentLocation = formatAddressLine([
-                                placeMark.name,
-                                placeMark.subLocality,
-                                placeMark.locality,
-                                placeMark.administrativeArea,
-                                placeMark.postalCode,
-                                placeMark.country,
-                              ]);
-                              addressModel.locality = currentLocation;
-                            });
+                            // The geocoder may return nothing (no locality, rural point) or fail
+                            // offline: never index [0] of its result, never throw out of here (02#27).
+                            final Placemark? placeMark = await Utils.firstPlacemark(newLocalData.latitude, newLocalData.longitude);
+                            addressModel.addressAs = "Home";
+                            addressModel.location = UserLocation(latitude: newLocalData.latitude, longitude: newLocalData.longitude);
+                            // Placemark fields are nullable: interpolating one that the geocoder did
+                            // not return printed the four characters "null" into the stored address
+                            // (report #17). Same fields, same order, through formatAddressLine.
+                            String currentLocation = placeMark == null ? '' : formatAddressLine([
+                              placeMark.name,
+                              placeMark.subLocality,
+                              placeMark.locality,
+                              placeMark.administrativeArea,
+                              placeMark.postalCode,
+                              placeMark.country,
+                            ]);
+                            addressModel.locality = currentLocation;
 
                             Constant.selectedLocation = addressModel;
-                            Constant.currentLocation = await Utils.getCurrentLocation();
+                            // The fix just taken; a second request could only fail differently.
+                            Constant.currentLocation = newLocalData;
 
                             ShowToastDialog.closeLoader();
 
                             Get.offAll(const ServiceListScreen());
                           } catch (e) {
-                            await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
-                              Placemark placeMark = valuePlaceMaker[0];
-                              addressModel.addressAs = "Home";
-                              addressModel.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
-                              // Placemark fields are nullable: interpolating one that the geocoder did
-                              // not return printed the four characters "null" into the stored address
-                              // (report #17). Same fields, same order, through formatAddressLine.
-                              String currentLocation = formatAddressLine([
-                                placeMark.name,
-                                placeMark.subLocality,
-                                placeMark.locality,
-                                placeMark.administrativeArea,
-                                placeMark.postalCode,
-                                placeMark.country,
-                              ]);
-                              addressModel.locality = currentLocation;
-                            });
+                            // The geocoder may return nothing (no locality, rural point) or fail
+                            // offline: never index [0] of its result, never throw out of here (02#27).
+                            final Placemark? placeMark = await Utils.firstPlacemark(19.228825, 72.854118);
+                            addressModel.addressAs = "Home";
+                            addressModel.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
+                            // Placemark fields are nullable: interpolating one that the geocoder did
+                            // not return printed the four characters "null" into the stored address
+                            // (report #17). Same fields, same order, through formatAddressLine.
+                            String currentLocation = placeMark == null ? '' : formatAddressLine([
+                              placeMark.name,
+                              placeMark.subLocality,
+                              placeMark.locality,
+                              placeMark.administrativeArea,
+                              placeMark.postalCode,
+                              placeMark.country,
+                            ]);
+                            addressModel.locality = currentLocation;
 
                             Constant.selectedLocation = addressModel;
-                            Constant.currentLocation = await Utils.getCurrentLocation();
+                            // Permission refused for good throws here: the loader must still close.
+                            try {
+                              Constant.currentLocation = await Utils.getCurrentLocation();
+                            } catch (_) {
+                              Constant.currentLocation = null;
+                            }
 
                             ShowToastDialog.closeLoader();
 
@@ -167,23 +173,23 @@ class LocationPermissionScreen extends StatelessWidget {
                               });
                             }
                           } catch (e) {
-                            await Geocoding().placemarkFromCoordinates(19.228825, 72.854118).then((valuePlaceMaker) {
-                              Placemark placeMark = valuePlaceMaker[0];
-                              addressModel.addressAs = "Home";
-                              addressModel.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
-                              // Placemark fields are nullable: interpolating one that the geocoder did
-                              // not return printed the four characters "null" into the stored address
-                              // (report #17). Same fields, same order, through formatAddressLine.
-                              String currentLocation = formatAddressLine([
-                                placeMark.name,
-                                placeMark.subLocality,
-                                placeMark.locality,
-                                placeMark.administrativeArea,
-                                placeMark.postalCode,
-                                placeMark.country,
-                              ]);
-                              addressModel.locality = currentLocation;
-                            });
+                            // The geocoder may return nothing (no locality, rural point) or fail
+                            // offline: never index [0] of its result, never throw out of here (02#27).
+                            final Placemark? placeMark = await Utils.firstPlacemark(19.228825, 72.854118);
+                            addressModel.addressAs = "Home";
+                            addressModel.location = UserLocation(latitude: 19.228825, longitude: 72.854118);
+                            // Placemark fields are nullable: interpolating one that the geocoder did
+                            // not return printed the four characters "null" into the stored address
+                            // (report #17). Same fields, same order, through formatAddressLine.
+                            String currentLocation = placeMark == null ? '' : formatAddressLine([
+                              placeMark.name,
+                              placeMark.subLocality,
+                              placeMark.locality,
+                              placeMark.administrativeArea,
+                              placeMark.postalCode,
+                              placeMark.country,
+                            ]);
+                            addressModel.locality = currentLocation;
 
                             Constant.selectedLocation = addressModel;
                             ShowToastDialog.closeLoader();

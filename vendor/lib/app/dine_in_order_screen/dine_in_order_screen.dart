@@ -323,7 +323,15 @@ class DineInOrderScreen extends StatelessWidget {
                             code: rejection.code,
                             byName: isBlankText(controller.vendorModel.value.title) ? orderModel.vendor?.title : controller.vendorModel.value.title,
                           );
-                          await FireStoreUtils.setBookedOrder(orderModel);
+                          final bool? isRejected = await FireStoreUtils.setBookedOrder(orderModel);
+                          if (isRejected != true) {
+                            // Not saved: the guest is not told, and the card
+                            // goes back to what is stored.
+                            ShowToastDialog.closeLoader();
+                            ShowToastDialog.showToast("Could not update this booking. Please check your connection and try again.".tr);
+                            await controller.getDineBooking();
+                            return;
+                          }
                           SendNotification.sendFcmMessage(Constant.dineInCanceled, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id, orderStatus: orderModel.status);
                           controller.getDineBooking();
                           ShowToastDialog.closeLoader();

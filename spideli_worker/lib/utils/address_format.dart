@@ -1,54 +1,57 @@
-/// The one place this app turns address parts into a line of text.
-///
-/// Bug #17 (1 October): addresses rendered as "123 Yaounde St, null, Tsinga".
-/// Two things produce that. `AddressModel.getFullAddress()` interpolated
-/// `locality` with no guard, so a missing locality printed the four characters
-/// `null`; and the reverse-geocoded strings this app and the panels store are
-/// themselves built by interpolating `Placemark` fields, so the word `null`
-/// often sits *inside* one stored component.
-///
-/// [formatAddressParts] therefore splits every part on its own separators as
-/// well, drops the pieces that carry no information -- empty, whitespace-only,
-/// or the literal `null` / `nil` / `undefined` -- and rejoins what is left, so
-/// the separators collapse instead of leaving ", ," or a trailing comma. A
-/// part repeating an earlier part's text is dropped. Returns '' when nothing
-/// is left, so the caller can hide the row. Storage is untouched.
-///
-/// ```dart
-/// formatAddressParts(['123 Yaounde St', 'null, Tsinga', '  ']); // 123 Yaounde St, Tsinga
-/// ```
-String formatAddressParts(List<Object?> parts, {String separator = ', '}) {
-  final List<String> clean = <String>[];
-  // Panel rule (spideliFormatAddress): the same text is often stored in two
-  // fields, so a part whose cleaned text (case-insensitive) was already used
-  // is skipped whole. Individual segments are never de-duplicated.
+// The one place this app turns address parts into a line of text.
+//
+// Report 02#18 (01#17): addresses rendered as "123 Yaounde St, null, Tsinga".
+// A field that exists but holds `null` was interpolated as the word "null",
+// and reverse-geocoded `locality` strings reach Firestore with "null" already
+// baked in ("18, null, Yaoundé, Région du Centre, null, Cameroun").
+//
+// This is a line-for-line port of the web panels' `spideliCleanAddressPart`
+// / `spideliFormatAddress`, so the apps and the panels show the same text:
+// * a part that is null, empty, or whose comma segment is the literal
+//   `null` / `undefined` / `nil` (any case) is dropped -- whole segments only,
+//   so "Nullarbor Road" and "Annullata Street" survive;
+// * a part whose cleaned text repeats an earlier part (case-insensitively) is
+//   dropped -- the same text is often stored in two fields;
+// * '' when nothing is left, so the caller can hide the row.
+// Storage is untouched.
+//
+// ```dart
+// formatAddressParts(['123 Yaounde St', 'null, Tsinga', '  ']); // 123 Yaounde St, Tsinga
+// ```
+
+/// `spideliCleanAddressPart`: trims [value], splits it on commas, drops the
+/// empty and placeholder segments and rejoins the rest with ", ".
+String cleanAddressPart(Object? value) {
+  if (value == null) return '';
+  final String text = value.toString().trim();
+  if (text.isEmpty) return '';
+  return text.split(',').map((String p) => p.trim()).where((String p) {
+    final String l = p.toLowerCase();
+    return p.isNotEmpty && l != 'null' && l != 'undefined' && l != 'nil';
+  }).join(', ');
+}
+
+/// `spideliFormatAddress` over a list of parts (in display order): each part
+/// is cleaned with [cleanAddressPart], empty and repeated parts are skipped,
+/// the rest joined with ", ".
+String formatAddressParts(List<Object?> parts) {
   final Set<String> seen = <String>{};
+  final List<String> out = <String>[];
   for (final Object? part in parts) {
-    if (part == null) continue;
-    final List<String> pieces = <String>[];
-    for (final String piece in part.toString().split(',')) {
-      final String value = piece.replaceAll(RegExp(r'\s+'), ' ').trim();
-      if (value.isEmpty) continue;
-      if (_isPlaceholder(value)) continue;
-      pieces.add(value);
-    }
-    if (pieces.isEmpty) continue;
-    if (!seen.add(pieces.join(', ').toLowerCase())) continue;
-    clean.addAll(pieces);
+    final String cleaned = cleanAddressPart(part);
+    if (cleaned.isEmpty) continue;
+    if (!seen.add(cleaned.toLowerCase())) continue;
+    out.add(cleaned);
   }
-  return clean.join(separator);
+  return out.join(', ');
+}
+
+/// `spideliFormatAddress(address, keys)` for a stored address map; [keys]
+/// defaults to the panels' `address`, `locality`, `landmark`.
+String formatAddressMap(Map<String, dynamic>? address, {List<String> keys = const <String>['address', 'locality', 'landmark']}) {
+  if (address == null) return '';
+  return formatAddressParts(keys.map((String key) => address[key]).toList());
 }
 
 /// [formatAddressParts] for a single, already-joined address string.
-String formatAddressText(Object? address, {String separator = ', '}) => formatAddressParts(<Object?>[address], separator: separator);
-
-bool _isPlaceholder(String value) {
-  switch (value.toLowerCase()) {
-    case 'null':
-    case 'nil':
-    case 'undefined':
-      return true;
-    default:
-      return false;
-  }
-}
+String formatAddressText(Object? address) => formatAddressParts(<Object?>[address]);

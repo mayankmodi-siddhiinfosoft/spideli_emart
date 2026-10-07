@@ -1666,6 +1666,18 @@ links.
 > walk-in is a different thing, and that should be a decision rather than an
 > oversight.
 
+> **Update 7 Oct 2026: the customer app now matches.** It applies the same
+> blanket rule (`accountType == "business"` **and** `businessProfile.status ==
+> "approved"`) and ORs the store's
+> per-product `wholesaleBusinessOnly` on top, so the flag can only tighten.
+> For a customer without an approved business account a **wholesale-only**
+> product is hidden from every listing and refused on a direct link; a
+> **mixed** product stays visible at retail with the tiers, tier price, badge,
+> ladder and pack minimum withheld
+> (`customer/lib/models/product_model.dart`). The phone is no longer the way
+> around the rule. The rules draft also stops an account turning itself into
+> an approved business account (`firestore.rules.draft`, `accountTypeOk`).
+
 > ⚠️ **Live since 30 September, never exercised signed in.** 26 assertions
 > pass (13 client, 13 server) and every affected page renders, but no real
 > approved account has been through it. The step that matters: have the admin

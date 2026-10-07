@@ -184,6 +184,38 @@ class VendorModel {
   /// than the word "null", and baked-in "null" pieces are dropped (02#18).
   String get locationText => formatAddressLine([location]);
 
+  /// Whether the raw store document [data] passes the same filters a store
+  /// list's Firestore query applies (`section_id`, `zoneId`, `categoryID`
+  /// array-contains, `enabledDiveInFuture`). Used for stores read outside the
+  /// radius query - see [withUnplacedLast]. A null filter is not applied.
+  static bool matchesListFilters(Map<String, dynamic> data, {String? sectionId, String? zoneId, String? categoryId, bool dineInOnly = false}) {
+    if (sectionId != null && data['section_id']?.toString() != sectionId) return false;
+    if (zoneId != null && data['zoneId']?.toString() != zoneId) return false;
+    if (categoryId != null) {
+      final Object? categories = data['categoryID'];
+      final bool inCategory = categories is Iterable ? categories.any((c) => c?.toString() == categoryId) : categories?.toString() == categoryId;
+      if (!inCategory) return false;
+    }
+    if (dineInOnly && data['enabledDiveInFuture'] != true) return false;
+    return true;
+  }
+
+  /// [nearby] (the radius query's result, nearest first) followed by every
+  /// store of [unplaced] that has no position and is not listed already.
+  ///
+  /// Report 02#2: three live stores hold "" for both coordinates, so they have
+  /// no geohash and the radius query can never return them - they used to go
+  /// missing from every store list without a trace. They now stay listed,
+  /// last and without a distance.
+  static List<VendorModel> withUnplacedLast(List<VendorModel> nearby, List<VendorModel> unplaced) {
+    final Set<String?> listed = {for (final VendorModel v in nearby) v.id};
+    return [
+      ...nearby,
+      for (final VendorModel v in unplaced)
+        if (!v.hasPosition && listed.add(v.id)) v,
+    ];
+  }
+
   /// The store's position from `latitude` / `longitude` (strings or numbers,
   /// as the panels write them), else `coordinates`, else `g.geopoint`; null
   /// when none of them is a real point. Never throws: `double.parse("")` used

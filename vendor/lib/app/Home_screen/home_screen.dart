@@ -38,6 +38,7 @@ import 'package:vendor/utils/cancellation.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/push_payload.dart';
 import 'package:vendor/utils/region_service.dart';
+import 'package:vendor/utils/store_order_write.dart';
 import 'package:vendor/widget/cancel_reason_sheet.dart';
 import 'package:vendor/widget/cancellation_block.dart';
 import 'package:vendor/widget/delivery_otp_sheet.dart';
@@ -441,17 +442,40 @@ class HomeScreen extends StatelessWidget {
     }
   }
 
-  /// The reason sheet keeps the order open for a while: if someone else
-  /// (customer, driver, admin) changed its status meanwhile, the store's
-  /// action - and its refund - must not run on top of theirs. Closes the
-  /// loader and says so when that happened. A failed read does not block.
-  static Future<bool> _unchangedSinceShown(OrderModel orderModel, HomeController controller) async {
-    final OrderModel? fresh = await FireStoreUtils.getOrderByOrderId(orderModel.id.toString());
-    if (fresh == null || fresh.status == orderModel.status) return true;
+  /// A guarded order write ([FireStoreUtils.updateOrderIf]) that did not
+  /// happen: closes the loader, says why - someone else (another device of the
+  /// store, the customer, an administrator, the dispatch Function or a driver)
+  /// changed the order meanwhile, or the write could not be made - and
+  /// reloads the orders so the card shows the order as it is now. Nothing
+  /// that follows the write (refund, wallet, pushes) runs.
+  static Future<void> _orderNotWritten(OrderWriteOutcome outcome, HomeController controller, {String? failureMessage}) async {
     ShowToastDialog.closeLoader();
-    ShowToastDialog.showToast("This order was updated meanwhile and is now: @status".trParams({'status': fresh.status.toString().tr}));
-    await controller.getOrder();
-    return false;
+    if (outcome.changedMeanwhile) {
+      ShowToastDialog.showToast("This order was updated meanwhile and is now: @status".trParams({'status': outcome.storedStatus.tr}));
+    } else {
+      ShowToastDialog.showToast(failureMessage ?? "Could not update this order. Please check your connection and try again.".tr);
+    }
+    try {
+      await controller.getOrder();
+    } catch (e) {
+      log("Reloading the orders after a refused write failed: $e");
+    }
+  }
+
+  /// One order of the store's plan is used up - only once the order really
+  /// was accepted (a refused or abandoned accept used to cost one too).
+  static Future<void> _consumePlanOrder(HomeController controller) async {
+    try {
+      if ((Constant.isSubscriptionModelApplied == true || Constant.vendorAdminCommission?.isEnabled == true) && controller.vendermodel.value.subscriptionPlan != null) {
+        final int? left = int.tryParse((controller.vendermodel.value.subscriptionTotalOrders ?? '').trim());
+        if (left != null && left != -1) {
+          controller.vendermodel.value.subscriptionTotalOrders = (left - 1).toString();
+          await FireStoreUtils.updateVendor(controller.vendermodel.value);
+        }
+      }
+    } catch (e) {
+      log("Counting the accepted order against the plan failed: $e");
+    }
   }
 
   /// The card of an order waiting for the store. With [availableAt] (an
@@ -588,21 +612,34 @@ class HomeScreen extends StatelessWidget {
                       // Captured now: the card leaves this tab once the order is rejected.
                       final TabController? tabs = context.mounted ? DefaultTabController.maybeOf(context) : null;
                       ShowToastDialog.showLoader('Please wait...'.tr);
-                      if (!await _unchangedSinceShown(orderModel, controller)) return;
                       await AudioPlayerService.playSound(false);
-                      orderModel.status = Constant.orderRejected;
-                      // Written in the same updateOrder as the status change.
-                      orderModel.markEndedByVendor(action: CancelAction.rejected, reason: rejection.reason, code: rejection.code, byName: _storeName(orderModel, controller));
-                      final bool isRejected = await FireStoreUtils.updateOrder(orderModel);
-                      if (!isRejected) {
+                      // The reason sheet kept the order open for a while: the
+                      // rejection is written only if the order is still in
+                      // the status the store was shown, checked and written in
+                      // one transaction, and only the status and the reason
+                      // fields are written.
+                      final String shownStatus = orderModel.status ?? '';
+                      final OrderModel ended = OrderModel(status: Constant.orderRejected)
+                        ..markEndedByVendor(action: CancelAction.rejected, reason: rejection.reason, code: rejection.code, byName: _storeName(orderModel, controller));
+                      final OrderWriteOutcome outcome = await FireStoreUtils.updateOrderIf(
+                        orderModel.id,
+                        allowed: (stored) => StoreOrderWrite.unchangedSince(stored, status: shownStatus),
+                        fields: ended.endedByVendorFields(),
+                      );
+                      if (!outcome.written) {
                         // Nothing else - no cashback release, driver release,
                         // refund, reversal or notification - for an order that
-                        // is still live.
-                        ShowToastDialog.closeLoader();
-                        ShowToastDialog.showToast("Could not update this order. Please check your connection and try again.".tr);
-                        await controller.getOrder();
+                        // is still live or that someone else ended.
+                        await _orderNotWritten(outcome, controller);
                         return;
                       }
+                      orderModel.status = Constant.orderRejected;
+                      orderModel.markEndedByVendor(action: CancelAction.rejected, reason: rejection.reason, code: rejection.code, byName: _storeName(orderModel, controller));
+                      orderModel.stampCancelledAtOnServer = false;
+                      // The delivery man freed afterwards is the one the order
+                      // named when it was rejected, not the card's copy.
+                      final String storedDriverId = StoreOrderWrite.driverIdOf(outcome.stored);
+                      orderModel.driverID = storedDriverId.isEmpty ? null : storedDriverId;
                       // The order is rejected. The loader stays up through the
                       // money steps (cashback, refund, credit reversal); then it
                       // closes and the order shows in Rejected, while the
@@ -661,13 +698,8 @@ class HomeScreen extends StatelessWidget {
                                   },
                                 );
                               } else {
-                                if ((Constant.isSubscriptionModelApplied == true || Constant.vendorAdminCommission?.isEnabled == true) &&
-                                    controller.vendermodel.value.subscriptionPlan != null) {
-                                  if (controller.vendermodel.value.subscriptionTotalOrders != '-1' && controller.vendermodel.value.subscriptionTotalOrders != null) {
-                                    controller.vendermodel.value.subscriptionTotalOrders = (int.parse(controller.vendermodel.value.subscriptionTotalOrders!) - 1).toString();
-                                    await FireStoreUtils.updateVendor(controller.vendermodel.value);
-                                  }
-                                }
+                                // The plan's order is counted once the order
+                                // is actually accepted (the assign dialog).
                                 if (Constant.isSelfDeliveryFeature == true && controller.vendermodel.value.isSelfDelivery == true && orderModel.takeAway == false) {
                                   // ignore: use_build_context_synchronously
                                   await openAssignDriverDialog(context, controller, orderModel, isDark == true);
@@ -750,13 +782,9 @@ class HomeScreen extends StatelessWidget {
                                     },
                                   );
                                 } else {
-                                  if ((Constant.isSubscriptionModelApplied == true || Constant.vendorAdminCommission?.isEnabled == true) &&
-                                      controller.vendermodel.value.subscriptionPlan != null) {
-                                    if (controller.vendermodel.value.subscriptionTotalOrders != '-1' && controller.vendermodel.value.subscriptionTotalOrders != null) {
-                                      controller.vendermodel.value.subscriptionTotalOrders = (int.parse(controller.vendermodel.value.subscriptionTotalOrders!) - 1).toString();
-                                      await FireStoreUtils.updateVendor(controller.vendermodel.value);
-                                    }
-                                  }
+                                  // The plan's order is counted once the order
+                                  // is actually accepted ([acceptOrder] / the
+                                  // assign dialog).
                                   if (Constant.isSelfDeliveryFeature == true && controller.vendermodel.value.isSelfDelivery == true && orderModel.takeAway == false) {
                                     // ignore: use_build_context_synchronously
                                     await openAssignDriverDialog(context, controller, orderModel, isDark == true);
@@ -897,19 +925,33 @@ class HomeScreen extends StatelessWidget {
                 // Captured now: the card leaves this tab once the order is cancelled.
                 final TabController? tabs = context.mounted ? DefaultTabController.maybeOf(context) : null;
                 ShowToastDialog.showLoader('Please wait...'.tr);
-                if (!await _unchangedSinceShown(orderModel, controller)) return;
-                orderModel.status = Constant.orderCancelled;
-                // Written in the same updateOrder as the status change.
-                orderModel.markEndedByVendor(action: CancelAction.cancelled, reason: cancellation.reason, code: cancellation.code, byName: _storeName(orderModel, controller));
-                final bool isCancelled = await FireStoreUtils.updateOrder(orderModel);
-                if (!isCancelled) {
+                // Checked and written in one transaction: only while the order
+                // is still in the status the store was shown, and only the
+                // status and the reason fields - a re-dispatch meanwhile can
+                // no longer make the store free the wrong delivery man.
+                final String shownStatus = orderModel.status ?? '';
+                final OrderModel ended = OrderModel(status: Constant.orderCancelled)
+                  ..markEndedByVendor(action: CancelAction.cancelled, reason: cancellation.reason, code: cancellation.code, byName: _storeName(orderModel, controller));
+                final OrderWriteOutcome outcome = await FireStoreUtils.updateOrderIf(
+                  orderModel.id,
+                  allowed: (stored) => StoreOrderWrite.unchangedSince(stored, status: shownStatus),
+                  fields: ended.endedByVendorFields(),
+                );
+                if (!outcome.written) {
                   // Nothing else - no cashback release, driver release, refund
-                  // or reversal - for an order that is still live.
-                  ShowToastDialog.closeLoader();
-                  ShowToastDialog.showToast("Could not update this order. Please check your connection and try again.".tr);
-                  await controller.getOrder();
+                  // or reversal - for an order that is still live or that
+                  // someone else ended.
+                  await _orderNotWritten(outcome, controller);
                   return;
                 }
+                orderModel.status = Constant.orderCancelled;
+                orderModel.markEndedByVendor(action: CancelAction.cancelled, reason: cancellation.reason, code: cancellation.code, byName: _storeName(orderModel, controller));
+                orderModel.stampCancelledAtOnServer = false;
+                // The delivery man freed and told is the one the order named
+                // when it was cancelled (a platform driver offered or holding
+                // it, or the store's own), read in the same transaction.
+                final String storedDriverId = StoreOrderWrite.driverIdOf(outcome.stored);
+                orderModel.driverID = storedDriverId.isEmpty ? null : storedDriverId;
                 // The order is cancelled. The loader stays up through the money
                 // steps only (cashback, refund, credit reversal - a missing
                 // discount / delivery charge / tip no longer throws in the
@@ -1365,6 +1407,9 @@ class HomeScreen extends StatelessWidget {
     final bool storeDelivers = Constant.isSelfDeliveryFeature == true && controller.vendermodel.value.isSelfDelivery == true;
     final bool hasDriver = (orderModel.driverID ?? '').isNotEmpty;
     final String status = orderModel.status.toString();
+    // Whether a delivery man actually has the order: the dispatch Function
+    // writes `driverID` with a mere offer ("Driver Pending") too.
+    final bool withDeliveryMan = StoreOrderWrite.isWithDeliveryMan(status, orderModel.driverID);
     // Which action, and whether the customer's code is needed, is the scope
     // rule of POD-OTP-CONTRACT (PodScope, unit tested).
     final StoreCompletion completion = PodScope.storeCompletion(
@@ -1402,19 +1447,26 @@ class HomeScreen extends StatelessWidget {
 
       // Self delivery not handed over yet (or handed over with no driver on
       // the order): assign from the card itself instead of having to open
-      // the order (report #9).
+      // the order (report #9). Always "Assign": an order whose delivery man
+      // has it is "Mark as Completed" above, and a driver id on any other
+      // order is only the dispatch's offer to a platform driver - nobody has
+      // it yet (it said "Reassign Delivery Man" then).
       case StoreCompletion.assignDriver:
         return DsButton.primary(
-          label: hasDriver ? "Reassign Delivery Man".tr : "Assign Delivery Man".tr,
+          label: "Assign Delivery Man".tr,
           icon: Icons.delivery_dining_rounded,
           onPressed: () => openAssignDriverDialog(context, controller, orderModel, isDark),
         );
 
-      // A platform driver is carrying it: nothing for the store to do, so say
-      // who the order is waiting for.
+      // A platform driver carries it: nothing for the store to do, so say
+      // who the order is waiting for. An offer still open ("Driver Pending")
+      // or passed on ("Driver Rejected") is waiting for a driver, even though
+      // the dispatch writes `driverID` with the offer.
       case StoreCompletion.waitForDriver:
         return _WaitingNote(
-          label: hasDriver ? "${"With the delivery man".tr} · ${status.tr}" : "${"Waiting for a delivery partner".tr} · ${status.tr}",
+          label: withDeliveryMan
+              ? "${"With the delivery man".tr} · ${status.tr}"
+              : "${"Waiting for a delivery partner".tr} · ${status.tr}",
         );
 
       // Completed / cancelled / rejected meanwhile: nothing to complete.
@@ -1434,14 +1486,14 @@ class HomeScreen extends StatelessWidget {
     await completeOrder(orderModel, controller, notificationType: notificationType);
   }
 
-  /// Marks [orderModel] delivered: credits the cashback, writes the order,
-  /// credits the store (idempotent), frees the store's delivery man and tells
-  /// the customer. Every failure is surfaced - this handler used to be the one
-  /// that silently did nothing.
   /// Orders whose completion is running, so a double tap (or the code flow
   /// and a second tap) cannot run it twice at once.
   static final Set<String> _completing = {};
 
+  /// Marks [orderModel] delivered: writes the order, then credits the
+  /// cashback and the store (each once per order), frees the delivery man and
+  /// tells the customer. Every failure is surfaced - this handler used to be
+  /// the one that silently did nothing.
   Future<void> completeOrder(OrderModel orderModel, HomeController controller, {String? notificationType}) async {
     final String key = orderModel.id ?? '';
     if (_completing.contains(key)) return;
@@ -1455,9 +1507,24 @@ class HomeScreen extends StatelessWidget {
 
   Future<void> _completeOrder(OrderModel orderModel, HomeController controller, {String? notificationType}) async {
     ShowToastDialog.showLoader('Please wait...'.tr);
-    final String? previousStatus = orderModel.status;
+    await AudioPlayerService.playSound(false);
+    // Like every other store transition, a transaction that re-reads the
+    // order, goes ahead only while it is still live (not completed, cancelled
+    // or rejected meanwhile) and writes the status alone. The whole card copy
+    // used to be written back - its delivery man, remarks and all - over what
+    // the dispatch Function or a driver had written since the card was drawn.
+    final OrderWriteOutcome outcome = await FireStoreUtils.updateOrderIf(orderModel.id, allowed: StoreOrderWrite.canComplete, fields: StoreOrderWrite.completeFields());
+    if (!outcome.written) {
+      // Not completed: no cashback, store credit, release or push.
+      await _orderNotWritten(outcome, controller);
+      return;
+    }
+    orderModel.status = Constant.orderCompleted;
+    // The order is completed from here on (the card moves to Completed): a
+    // payment step that fails is reported as such, not as "could not
+    // complete", and the rest still runs.
+    String? paymentError;
     try {
-      orderModel.status = Constant.orderCompleted;
       // One cashback row per order (`cashback_<orderId>`, shared with the
       // Driver app), written together with the wallet balance in one
       // transaction that first checks the row: a retried completion, or both
@@ -1478,57 +1545,74 @@ class HomeScreen extends StatelessWidget {
         );
         await WalletOnce.pay(rowId: transactionModel.id!, row: transactionModel.toJson(), userId: orderModel.author?.id, amount: cashback);
       }
-      await AudioPlayerService.playSound(false);
-      final bool isUpdated = await FireStoreUtils.updateOrder(orderModel);
-      if (isUpdated == false) {
-        orderModel.status = previousStatus;
-        ShowToastDialog.closeLoader();
-        ShowToastDialog.showToast("Could not update this order. Please check your connection and try again.".tr);
-        return;
-      }
       // Last completion path that never credited the store
       // (APP-SPEC-STORE.md §2). Idempotent: an order already
       // credited on Accept / Shipped is skipped.
       await FireStoreUtils.restaurantVendorWalletSet(orderModel);
-
-      // The store's own delivery man is free for the next order.
-      if ((orderModel.driverID ?? '').isNotEmpty) {
-        await FireStoreUtils.releaseDriverOrder(orderModel.driverID, orderModel.id);
-      }
-
-      if (notificationType != null) {
-        SendNotification.sendFcmMessage(notificationType, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id, orderStatus: orderModel.status);
-      } else {
-        // Title and body from the `driver_completed` template (the customer's
-        // "order delivered" notification), never text written in the app;
-        // the data keeps type store_completed.
-        SendNotification.sendFcmMessage(
-          Constant.orderDeliveredTemplate,
-          orderModel.author?.fcmToken ?? '',
-          {'type': 'store_completed', 'orderId': orderModel.id},
-          recipientId: orderModel.authorID ?? orderModel.author?.id,
-          orderStatus: orderModel.status,
-        );
-      }
-      ShowToastDialog.closeLoader();
-      ShowToastDialog.showToast("Order marked as completed".tr);
     } catch (e) {
-      // The old handler swallowed everything; a failure is now visible.
-      // Retryable: the cashback and the store credit are once per order.
-      if (orderModel.status == Constant.orderCompleted && previousStatus != Constant.orderCompleted) orderModel.status = previousStatus;
-      ShowToastDialog.closeLoader();
-      ShowToastDialog.showToast("${"Could not complete this order".tr}: $e");
+      log("Completed order ${orderModel.id}: crediting it failed: $e");
+      paymentError = e.toString();
     }
+
+    // The delivery man the order named when it was completed - read in the
+    // same transaction, not the card's copy, which may still name a driver
+    // the order was offered to before - is free for the next order, and an
+    // offer still open for him is withdrawn.
+    final String storedDriverId = StoreOrderWrite.driverIdOf(outcome.stored);
+    if (storedDriverId.isNotEmpty) {
+      await FireStoreUtils.releaseDriverOrder(storedDriverId, orderModel.id);
+    }
+
+    if (notificationType != null) {
+      SendNotification.sendFcmMessage(notificationType, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id, orderStatus: orderModel.status);
+    } else {
+      // Title and body from the `driver_completed` template (the customer's
+      // "order delivered" notification), never text written in the app;
+      // the data keeps type store_completed.
+      SendNotification.sendFcmMessage(
+        Constant.orderDeliveredTemplate,
+        orderModel.author?.fcmToken ?? '',
+        {'type': 'store_completed', 'orderId': orderModel.id},
+        recipientId: orderModel.authorID ?? orderModel.author?.id,
+        orderStatus: orderModel.status,
+      );
+    }
+    ShowToastDialog.closeLoader();
+    ShowToastDialog.showToast(paymentError == null ? "Order marked as completed".tr : "${"The order is completed, but a payment could not be recorded".tr}: $paymentError");
   }
 
   /// Accepts an order without a delivery man (the store, or a platform driver,
   /// takes it from here).
+  ///
+  /// "Order Accepted" is what starts the `deliveryDispatch` Cloud Function,
+  /// which finds, offers the order to and notifies a platform driver
+  /// (DRIVER_DISPATCH_DOCUMENTATION.md §1) - the app notifies no driver
+  /// itself. The accept is a transaction that goes ahead only while the order
+  /// is still "Order Placed", and writes only the status (and the preparation
+  /// time): a second device, or a card that was out of date, can no longer put
+  /// "Order Accepted" with no driver over an offer the Function already made
+  /// (or an order a driver already took), which dropped that driver and
+  /// dispatched the order a second time.
   Future<void> acceptOrder(HomeController controller, OrderModel orderModel) async {
     ShowToastDialog.showLoader('Please wait...'.tr);
-    orderModel.status = Constant.orderAccepted;
     await AudioPlayerService.playSound(false);
-    await FireStoreUtils.updateOrder(orderModel);
-    await FireStoreUtils.restaurantVendorWalletSet(orderModel);
+    final OrderWriteOutcome outcome = await FireStoreUtils.updateOrderIf(
+      orderModel.id,
+      allowed: StoreOrderWrite.canAccept,
+      fields: StoreOrderWrite.acceptFields(estimatedTimeToPrepare: orderModel.estimatedTimeToPrepare),
+    );
+    if (!outcome.written) {
+      // Not accepted: no plan order used, no store credit, no customer push.
+      await _orderNotWritten(outcome, controller);
+      return;
+    }
+    orderModel.status = Constant.orderAccepted;
+    await _consumePlanOrder(controller);
+    try {
+      await FireStoreUtils.restaurantVendorWalletSet(orderModel);
+    } catch (e) {
+      log("Crediting the store for accepted order ${orderModel.id} failed: $e");
+    }
     SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id, orderStatus: orderModel.status);
     ShowToastDialog.closeLoader();
   }
@@ -1593,41 +1677,67 @@ class HomeScreen extends StatelessWidget {
                         ShowToastDialog.showLoader('Please wait...'.tr);
                         await AudioPlayerService.playSound(false);
 
-                        final String? previousDriverId = orderModel.driverID;
-                        orderModel.notes = "";
-                        orderModel.driverID = controller.selectDriverUser.value.id;
-                        orderModel.driver = controller.selectDriverUser.value;
+                        final UserModel chosen = controller.selectDriverUser.value;
+                        final String chosenId = chosen.id.toString();
+                        // From the new order card this is the store accepting
+                        // the order (only while it is still "Order Placed");
+                        // from a card it is working on, a reassignment (only
+                        // while the order is still as shown, with the same
+                        // delivery man). Checked and written in one
+                        // transaction, and only status, driverID, driver (and
+                        // the preparation time) are written - never the
+                        // customer's remarks or anything the dispatch wrote.
+                        final String shownStatus = orderModel.status ?? '';
+                        final bool firstAccept = shownStatus == Constant.orderPlaced;
+                        final OrderWriteOutcome outcome = await FireStoreUtils.updateOrderIf(
+                          orderModel.id,
+                          allowed: (stored) => firstAccept ? StoreOrderWrite.canAccept(stored) : StoreOrderWrite.unchangedSince(stored, status: shownStatus, driverId: orderModel.driverID ?? ''),
+                          fields: StoreOrderWrite.assignFields(driverId: chosenId, driver: chosen.toJson(), estimatedTimeToPrepare: firstAccept ? orderModel.estimatedTimeToPrepare : null),
+                        );
+                        if (!outcome.written) {
+                          // Nothing is credited, counted or sent for an order
+                          // that was not assigned.
+                          await _orderNotWritten(outcome, controller, failureMessage: "Could not assign this order. Please try again.".tr);
+                          return;
+                        }
+
+                        // The delivery man the order named until now - read in
+                        // the same transaction, not the card's copy.
+                        final String previousDriverId = StoreOrderWrite.driverIdOf(outcome.stored);
+                        orderModel.driverID = chosenId;
+                        orderModel.driver = chosen;
                         orderModel.status = Constant.orderInTransit;
                         // The list is null on a driver who has never had an
                         // order, and `?.add` silently did nothing then.
-                        controller.selectDriverUser.value.inProgressOrderID ??= [];
-                        if (controller.selectDriverUser.value.inProgressOrderID!.contains(orderModel.id) == false) {
-                          controller.selectDriverUser.value.inProgressOrderID!.add(orderModel.id);
+                        chosen.inProgressOrderID ??= [];
+                        if (chosen.inProgressOrderID!.contains(orderModel.id) == false) {
+                          chosen.inProgressOrderID!.add(orderModel.id);
                         }
 
-                        final bool isAssigned = await FireStoreUtils.updateOrder(orderModel);
-                        if (isAssigned) {
-                          // Only the driver's order list: the store's copy of
-                          // the rest of their profile may be out of date.
-                          await FireStoreUtils.addDriverOrder(controller.selectDriverUser.value.id, orderModel.id);
-                          // Reassignment: the delivery man who had it is freed,
-                          // otherwise the order stayed on their list for ever
-                          // and they counted as "Occupied". Only now that the
-                          // order names the new one: freed earlier, it still
-                          // named him, so his app's assignment watcher put it
-                          // straight back on his list.
-                          if ((previousDriverId ?? '').isNotEmpty && previousDriverId != controller.selectDriverUser.value.id) {
-                            await FireStoreUtils.releaseDriverOrder(previousDriverId, orderModel.id);
-                          }
-                          await FireStoreUtils.restaurantVendorWalletSet(orderModel);
-                          SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id, orderStatus: orderModel.status);
-                          SendNotification.sendFcmMessage(Constant.newDeliveryOrder, orderModel.driver?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.driverID ?? orderModel.driver?.id, recipient: PushRecipient.driver);
-                        } else {
-                          // Drops the unsaved delivery man and status from the card.
-                          await controller.getOrder();
+                        // Only the driver's order list: the store's copy of
+                        // the rest of their profile may be out of date.
+                        await FireStoreUtils.addDriverOrder(chosenId, orderModel.id);
+                        // Reassignment: the delivery man who had it is freed,
+                        // otherwise the order stayed on their list for ever
+                        // and they counted as "Occupied". Only now that the
+                        // order names the new one: freed earlier, it still
+                        // named him, so his app's assignment watcher put it
+                        // straight back on his list. A platform driver the
+                        // order had been offered to loses the offer the same
+                        // way (orderRequestData).
+                        if (previousDriverId.isNotEmpty && previousDriverId != chosenId) {
+                          await FireStoreUtils.releaseDriverOrder(previousDriverId, orderModel.id);
                         }
+                        if (firstAccept) await _consumePlanOrder(controller);
+                        try {
+                          await FireStoreUtils.restaurantVendorWalletSet(orderModel);
+                        } catch (e) {
+                          log("Crediting the store for assigned order ${orderModel.id} failed: $e");
+                        }
+                        SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id, orderStatus: orderModel.status);
+                        SendNotification.sendFcmMessage(Constant.newDeliveryOrder, chosen.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: chosenId, recipient: PushRecipient.driver);
                         ShowToastDialog.closeLoader();
-                        ShowToastDialog.showToast(isAssigned ? "Order assigned to the delivery man".tr : "Could not assign this order. Please try again.".tr);
+                        ShowToastDialog.showToast("Order assigned to the delivery man".tr);
                       } else {
                         ShowToastDialog.showToast("Please select the delivery man".tr);
                       }
@@ -1762,12 +1872,8 @@ class HomeScreen extends StatelessWidget {
                 label: "Shipped order".tr,
                 onPressed: () async {
                   if (controller.estimatedTimeController.value.text.isNotEmpty) {
-                    if ((Constant.isSubscriptionModelApplied == true || Constant.vendorAdminCommission?.isEnabled == true) && controller.vendermodel.value.subscriptionPlan != null) {
-                      if (controller.vendermodel.value.subscriptionTotalOrders != '-1' && controller.vendermodel.value.subscriptionTotalOrders != null) {
-                        controller.vendermodel.value.subscriptionTotalOrders = (int.parse(controller.vendermodel.value.subscriptionTotalOrders!) - 1).toString();
-                        await FireStoreUtils.updateVendor(controller.vendermodel.value);
-                      }
-                    }
+                    // The plan's order is counted once the order is actually
+                    // accepted ([acceptOrder] / the assign dialog).
                     orderModel.estimatedTimeToPrepare = controller.estimatedTimeController.value.text;
                     // Closes this dialog (and only this dialog) before the next
                     // step runs.
@@ -1827,12 +1933,28 @@ class HomeScreen extends StatelessWidget {
                     ShowToastDialog.showToast("Please enter courier tracking id".tr);
                   } else {
                     ShowToastDialog.showLoader('Please wait...'.tr);
-                    orderModel.courierCompanyName = controller.courierCompanyName.value.text;
-                    orderModel.courierTrackingId = controller.courierCompanyTrackingId.value.text;
-                    orderModel.status = Constant.orderShipped;
                     await AudioPlayerService.playSound(false);
-                    await FireStoreUtils.updateOrder(orderModel);
-                    await FireStoreUtils.restaurantVendorWalletSet(orderModel);
+                    // Accepting by shipping: like [acceptOrder], only while the
+                    // order is still "Order Placed", and only the fields this
+                    // step sets.
+                    final OrderWriteOutcome outcome = await FireStoreUtils.updateOrderIf(
+                      orderModel.id,
+                      allowed: StoreOrderWrite.canAccept,
+                      fields: StoreOrderWrite.courierFields(companyName: controller.courierCompanyName.value.text, trackingId: controller.courierCompanyTrackingId.value.text),
+                    );
+                    if (!outcome.written) {
+                      Get.back();
+                      await _orderNotWritten(outcome, controller);
+                      return;
+                    }
+                    orderModel.courierCompanyName = controller.courierCompanyName.value.text.trim();
+                    orderModel.courierTrackingId = controller.courierCompanyTrackingId.value.text.trim();
+                    orderModel.status = Constant.orderShipped;
+                    try {
+                      await FireStoreUtils.restaurantVendorWalletSet(orderModel);
+                    } catch (e) {
+                      log("Crediting the store for shipped order ${orderModel.id} failed: $e");
+                    }
                     SendNotification.sendFcmMessage(Constant.restaurantAccepted, orderModel.author?.fcmToken ?? '', {'orderId': orderModel.id}, recipientId: orderModel.authorID ?? orderModel.author?.id, orderStatus: orderModel.status);
 
                     ShowToastDialog.closeLoader();

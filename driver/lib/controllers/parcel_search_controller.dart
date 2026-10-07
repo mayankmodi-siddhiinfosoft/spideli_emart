@@ -1,13 +1,18 @@
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/constant.dart';
-import 'package:driver/constant/send_notification.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/parcel_category.dart';
 import 'package:driver/models/parcel_order_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/services/carrier_dispatch_service.dart';
+import 'package:driver/services/dispatch_navigation.dart';
+import 'package:driver/services/dispatch_offer_rules.dart';
+import 'package:driver/services/dispatch_offer_service.dart';
 import 'package:driver/services/parcel_dispatch_service.dart';
+import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/parcel_amounts.dart';
 import 'package:driver/widget/geoflutterfire/src/geoflutterfire.dart';
 import 'package:driver/widget/geoflutterfire/src/models/point.dart';
 import 'package:flutter/material.dart';
@@ -72,13 +77,24 @@ class ParcelSearchController extends GetxController {
     );
   }
 
+  /// Takes a parcel from the open search list through the shared dispatch
+  /// service (D2), in a transaction: only while it is still `Order Placed`
+  /// with no driver named, or `Driver Pending` for this driver. The
+  /// `parcelDispatch` Cloud Function may have offered it to another driver
+  /// since the list was read; taking it then stole that driver's offer. Known
+  /// fields only (`Driver Accepted`, `driverId` / `driverID` / `driver`,
+  /// `receiverPickupDateTime`) — the whole stale model used to be written
+  /// back, over `rejectedByDrivers`, the cancellation fields and the
+  /// server-owned SMS fields. Then the driver's record field-level
+  /// (`inProgressOrderID` arrayUnion, `orderRequestData` arrayRemove), and
+  /// the customer's `parcel_accepted` push.
   Future<void> acceptParcelBooking(ParcelOrderModel parcelBookingData) async {
     // A new parcel ('Order Placed' from the search) is only for a verified
     // driver who is online; the home screen hides the way here otherwise, and
     // this is the same rule where the write happens. Parcels already assigned
     // never come through here.
     final UserModel? me = Constant.userModel;
-    final bool verified = !(me?.isDocumentVerify == false && me?.isAutoVerify == false);
+    final bool verified = !DocumentVerification.isPending(me);
     if (me == null || !verified) {
       ShowToastDialog.showToast("Document verification is pending. Please proceed to set up your document verification.".tr);
       return;
@@ -87,60 +103,37 @@ class ParcelSearchController extends GetxController {
       ShowToastDialog.showToast("Switch to online mode to accept and deliver parcel orders.".tr);
       return;
     }
-    try {
-      ShowToastDialog.showLoader("Accepting order...".tr);
-
-      // Update section model to match this order's section (multi-section support)
-      final sid = parcelBookingData.sectionId;
-      if (sid != null && sid.isNotEmpty) {
-        final s = await FireStoreUtils.getSectionBySectionId(sid);
-        if (s != null) Constant.sectionModels[sid] = s;
-      }
-      parcelBookingData.status = Constant.driverAccepted;
-      parcelBookingData.driver = Constant.userModel;
-      parcelBookingData.driverId = Constant.userModel!.id;
-      parcelBookingData.receiverPickupDateTime = Timestamp.fromDate(DateTime.now());
-
-      final result = await FireStoreUtils.setParcelOrder(parcelBookingData);
-      ShowToastDialog.closeLoader();
-
-      if (result == true) {
-        // Try to send FCM but don't fail the accept flow if it errors
-        try {
-          final payLoad = <String, dynamic>{"type": "parcel_order", "orderId": parcelBookingData.id};
-          await SendNotification.notifyCustomer(Constant.parcelAccepted,
-              customerId: parcelBookingData.authorID ?? parcelBookingData.author?.id,
-              embeddedToken: parcelBookingData.author?.fcmToken,
-              payload: payLoad,
-              status: parcelBookingData.status);
-        } catch (e) {
-          // FCM failure should not block order acceptance
-          print("FCM send failed: $e");
-        }
+    final String? orderId = parcelBookingData.id;
+    if (orderId == null || orderId.isEmpty) return;
+    // The search screen, taken before the write: the incoming-order dialog
+    // may open above it meanwhile, and Get.back() would pop that instead.
+    final Route<dynamic>? searchRoute = DispatchNavigation.ownRoute();
+    ShowToastDialog.showLoader("Accepting order...".tr);
+    final DispatchResult result = await DispatchOfferService.accept(DispatchKind.parcel, orderId, me, fromOpenSearch: true);
+    ShowToastDialog.closeLoader();
+    switch (result.answer) {
+      case OfferAnswer.done:
+      case OfferAnswer.held:
         ShowToastDialog.showToast("Order accepted successfully".tr);
-        Get.back(result: true);
-      } else {
-        ShowToastDialog.showToast("Failed to accept order. Please try again.".tr);
-      }
-    } catch (e) {
-      ShowToastDialog.closeLoader();
-      ShowToastDialog.showToast("Error accepting order: $e".tr);
-      print("acceptParcelBooking error: $e");
+        DispatchNavigation.closeRoute(searchRoute, result: true);
+      case OfferAnswer.gone:
+        ShowToastDialog.showToast("This order is no longer available.".tr);
+        parcelList.removeWhere((order) => order.id == orderId);
+        update();
+      case OfferAnswer.blocked:
+      case OfferAnswer.failed:
+        ShowToastDialog.showToast((result.message ?? "Failed to accept order. Please try again.").tr);
     }
   }
 
+  /// The total the customer was charged ([ParcelAmounts]: platform fee and
+  /// its taxes, the fixed tax and the receiver-SMS fee included) — what the
+  /// driver collects on a cash parcel. Tolerant of missing fields.
   String calculateParcelTotalAmountBooking(ParcelOrderModel parcelBookingData) {
-    String subTotal = parcelBookingData.subTotal.toString();
-    String discount = parcelBookingData.discount ?? "0.0";
-    String taxAmount = "0.0";
-    for (var element in parcelBookingData.taxSetting!) {
-      taxAmount = (double.parse(taxAmount) + Constant.calculateTax(amount: (double.parse(subTotal) - double.parse(discount)).toString(), taxModel: element))
-          .toStringAsFixed(int.tryParse(Constant.currencyModel!.decimalDigits.toString()) ?? 2);
-    }
-
-    // Fixed intercity/intercountry tax is added on top of the taxed amount.
-    return ((double.parse(subTotal) - (double.parse(discount))) + double.parse(taxAmount) + (parcelBookingData.parcelScopeTax ?? 0).toDouble()).toStringAsFixed(int.tryParse(Constant.currencyModel!.decimalDigits.toString()) ?? 2);
+    final int digits = int.tryParse('${Constant.currencyModel?.decimalDigits}') ?? 2;
+    return ParcelAmounts.of(parcelBookingData).totalText(digits);
   }
+
 
   Future<List<ParcelOrderModel>> searchParcelsOnce({
     required double srcLat,
@@ -171,9 +164,14 @@ class ParcelSearchController extends GetxController {
     // Zone / date / destination are decided in memory as before; region and
     // carrier need a lookup, so the pass is a loop rather than a `where`.
     final List<ParcelOrderModel> result = [];
+    final String me = driverModel.value.id ?? '';
     for (final doc in docs) {
       final data = doc.data() as Map<String, dynamic>;
       if (!_matchesSearchInput(data, date: date, destLat: destLat, destLng: destLng)) continue;
+
+      // A parcel this driver already passed on is not offered again (the
+      // dispatch Cloud Function excludes `rejectedByDrivers` the same way).
+      if (DispatchOrderRules.rejectedBy(data, me)) continue;
 
       // Zone-bound (spec 9.1), scope-aware (admin spec §11/§12): a same-city
       // parcel keeps today's rule; an intercity / intercountry parcel is also

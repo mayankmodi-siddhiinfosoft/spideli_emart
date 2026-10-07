@@ -1,3 +1,5 @@
+import 'package:customer/utils/booking_status_tabs.dart';
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/utils/order_receipt_pdf.dart';
 import 'package:customer/utils/ride_receipt_pdf.dart';
@@ -67,7 +69,8 @@ class CabOrderDetails extends StatelessWidget {
                       _RouteMap(controller: controller),
                       // Stops, passengers, instructions, rider (spec 4.8).
                       CabRideExtrasView(order: order),
-                      if (order.driver != null) ...[const DsGap(DsSpace.lg), _DriverCard(controller: controller)],
+                      // No driver card while the dispatch is still looking for one.
+                      if (order.driver != null && BookingStatusTabs.driverAccepted(order.status, order.driverId, order.driver?.id)) ...[const DsGap(DsSpace.lg), _DriverCard(controller: controller)],
                       const DsGap(DsSpace.lg),
                       _TripMetrics(controller: controller),
                       const DsGap(DsSpace.lg),
@@ -173,7 +176,7 @@ class _RideHero extends StatelessWidget {
                     title: 'Order Id:'.tr,
                     id: order.id.toString(),
                     subtitle: "${'Booking Date:'.tr} ${controller.formatDate(order.scheduleDateTime!)}".tr,
-                    statusLabel: status,
+                    statusLabel: BookingStatusTabs.label(status),
                     status: order.status,
                     pulse: order.status == Constant.orderInTransit,
                   ),
@@ -182,7 +185,7 @@ class _RideHero extends StatelessWidget {
             ),
             const DsGap(DsSpace.lg),
             DsCard.outlined(
-              child: CabRouteRail(source: order.sourceLocationName.toString(), destination: order.destinationLocationName.toString()),
+              child: CabRouteRail(source: displayAddress(order.sourceLocationName, fallback: "-"), destination: displayAddress(order.destinationLocationName, fallback: "-")),
             ),
           ],
         );

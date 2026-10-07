@@ -42,7 +42,7 @@ class DriverListScreen extends StatelessWidget {
                 top: DsSpace.sm,
                 sliver: SliverToBoxAdapter(child: DsSkeletonList(itemCount: 6, padding: EdgeInsets.zero)),
               )
-            else if (Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isDocumentVerify == false)
+            else if (Constant.userModel?.isAutoVerify == false && Constant.userModel?.isDocumentVerify == false)
               SliverFillRemaining(
                 hasScrollBody: false,
                 child: DsEmptyState(

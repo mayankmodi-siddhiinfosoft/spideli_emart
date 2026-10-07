@@ -1,3 +1,4 @@
+import 'package:customer/utils/address_format.dart';
 import 'dart:developer';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -31,9 +32,12 @@ class ParcelAmounts {
   /// Fixed intercity / intercountry tax, outside VAT and coupons.
   final double scopeTax;
 
-  ParcelAmounts(this.subTotal, this.discount, this.platformFee, this.taxes, [this.scopeTax = 0]);
+  /// Receiver-SMS fee (point 54), outside VAT and coupons.
+  final double smsCharge;
 
-  double get total => subTotal - discount + platformFee + taxes + scopeTax;
+  ParcelAmounts(this.subTotal, this.discount, this.platformFee, this.taxes, [this.scopeTax = 0, this.smsCharge = 0]);
+
+  double get total => subTotal - discount + platformFee + taxes + scopeTax + smsCharge;
 
   factory ParcelAmounts.of(ParcelOrderModel o) {
     final double sub = double.tryParse(o.subTotal ?? '') ?? 0;
@@ -48,7 +52,7 @@ class ParcelAmounts {
         tax += Constant.calculateTax(amount: fee.toString(), taxModel: t);
       }
     }
-    return ParcelAmounts(sub, disc, fee, tax, o.scopeTaxAmount);
+    return ParcelAmounts(sub, disc, fee, tax, o.scopeTaxAmount, o.smsChargeAmount);
   }
 }
 
@@ -302,12 +306,12 @@ class ParcelReceiptPdf {
 
     // Parties.
     line('Sender'.tr, heading);
-    for (final s in [o.sender?.name, o.sender?.phone, o.sender?.email, o.sender?.address]) {
+    for (final s in [o.sender?.name, o.sender?.phone, o.sender?.email, displayAddress(o.sender?.address)]) {
       if ((s ?? '').trim().isNotEmpty) line(s!, body);
     }
     y += 4;
     line('Receiver'.tr, heading);
-    for (final s in [o.receiver?.name, o.receiver?.phone, o.receiver?.email, o.receiver?.address]) {
+    for (final s in [o.receiverNameDisplay, o.receiverPhoneDisplay, o.receiver?.email, displayAddress(o.receiver?.address)]) {
       if ((s ?? '').trim().isNotEmpty) line(s!, body);
     }
     y += 4;
@@ -339,6 +343,8 @@ class ParcelReceiptPdf {
       money('Delivery charge'.tr, a.subTotal);
       if (a.scopeTax > 0) money('Fixed tax'.tr, a.scopeTax);
     }
+    // Point 54: not a `priceBreakdown` line, so shown whatever priced the order.
+    if (a.smsCharge > 0) money('Receiver SMS'.tr, a.smsCharge);
     if (a.discount > 0) money('Discount'.tr, -a.discount);
     if (a.platformFee > 0) money('Platform fee'.tr, a.platformFee);
     if (a.taxes > 0) money('Taxes'.tr, a.taxes);

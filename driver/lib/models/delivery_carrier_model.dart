@@ -15,6 +15,17 @@
 /// ([editableFields]), always under those exact keys. Everything the admin
 /// verifies ([readOnlyFields]) is shown, never written.
 ///
+/// Report Doc 43: pricing is per region. `regionPricing` is the source of
+/// truth:
+///
+/// ```
+/// regionPricing: { "<regionId>": { baseCharge, perKmCharge, perKgCharge, minimumCharge } }
+/// ```
+///
+/// The flat charges still exist but carry the FIRST region's price (or the
+/// one "everywhere" price of a carrier with no `regionIds`). [chargeFor]
+/// reads the region first and the flat field only as a fallback.
+///
 /// Older app builds wrote `rates`, `deliveryTimes`, `contactName` and `email`,
 /// which the panel never reads. They are read **only** to pre-fill an empty
 /// field ([legacyPrefill]) and are never written back.
@@ -85,6 +96,63 @@ class DeliveryCarrierModel {
     if (v == null) return '';
     if (v == v.roundToDouble()) return v.toInt().toString();
     return v.toString();
+  }
+
+  static const String regionPricingField = 'regionPricing';
+
+  /// `regionPricing` as stored: regionId -> {charge field: value}. Entries
+  /// that are not maps are ignored.
+  Map<String, Map<String, dynamic>> get regionPricing {
+    final dynamic v = raw[regionPricingField];
+    if (v is! Map) return const {};
+    return {
+      for (final entry in v.entries)
+        if (entry.value is Map && entry.key.toString().isNotEmpty) entry.key.toString(): Map<String, dynamic>.from(entry.value as Map),
+    };
+  }
+
+  /// The price of [field] in [regionId] from `regionPricing`, or null.
+  num? regionCharge(String regionId, String field) => parseNumber(regionPricing[regionId]?[field]);
+
+  /// The price of [field] for an order of [regionId]: `regionPricing` first,
+  /// the flat field as the fallback (no region, or no entry for it).
+  num? chargeFor(String? regionId, String field) {
+    final String region = (regionId ?? '').trim();
+    if (region.isNotEmpty) {
+      final num? regional = regionCharge(region, field);
+      if (regional != null) return regional;
+    }
+    return number(field);
+  }
+
+  /// True when the carrier is priced per region (it serves named regions).
+  /// A carrier with no `regionIds` serves everywhere at the flat price.
+  bool get pricedPerRegion => regionIds.isNotEmpty;
+
+  /// The write for changed regional prices: [changes] is regionId ->
+  /// {charge field -> new value (null = not set)}. Regions the carrier does
+  /// not serve and non-charge fields are dropped. The FIRST region's values
+  /// are mirrored to the flat fields, as the panel does. `paths` are the
+  /// exact field paths to merge, so no other price is touched.
+  ({Map<String, dynamic> data, List<List<String>> paths}) regionPricingUpdate(Map<String, Map<String, num?>> changes) {
+    final List<String> served = regionIds;
+    final Map<String, dynamic> nested = {};
+    final Map<String, dynamic> data = {};
+    final List<List<String>> paths = [];
+    for (final region in changes.entries) {
+      if (!served.contains(region.key)) continue;
+      for (final field in region.value.entries) {
+        if (!chargeFields.contains(field.key)) continue;
+        (nested[region.key] ??= <String, dynamic>{})[field.key] = field.value;
+        paths.add([regionPricingField, region.key, field.key]);
+        if (region.key == served.first) {
+          data[field.key] = field.value;
+          paths.add([field.key]);
+        }
+      }
+    }
+    if (nested.isNotEmpty) data[regionPricingField] = nested;
+    return (data: data, paths: paths);
   }
 
   List<String> get regionIds {

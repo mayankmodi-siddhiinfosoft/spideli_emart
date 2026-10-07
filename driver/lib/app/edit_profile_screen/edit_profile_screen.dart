@@ -2,12 +2,18 @@ import 'dart:io';
 
 import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/edit_profile_controller.dart';
+import 'package:driver/app/chat_screens/full_screen_image_viewer.dart';
+import 'package:driver/constant/show_toast_dialog.dart';
+import 'package:driver/models/user_model.dart';
 import 'package:driver/models/zone_model.dart';
 import 'package:driver/themes/ds/ds.dart';
+import 'package:driver/utils/company_profile.dart';
 import 'package:driver/utils/network_image_widget.dart';
+import 'package:driver/widget/zone_multi_select.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Archetype K – profile: an identity hero (avatar + name) over grouped form
 /// sections, with Save pinned in a sticky bar.
@@ -26,12 +32,20 @@ class EditProfileScreen extends StatelessWidget {
           final String profileImage = controller.profileImage.value;
           final bool hasLocalImage = profileImage.isNotEmpty && Constant().hasValidUrl(profileImage) == false;
           final String remoteImage = controller.userModel.value.profilePictureURL.toString();
-          final bool hideZone = controller.userModel.value.isOwner == true ||
+          // A company picks several zones in its own section below.
+          final bool hideZone = controller.userModel.value.isCompany ||
               (controller.userModel.value.vendorID != null && controller.userModel.value.vendorID!.isNotEmpty);
           final bool zoneLocked = controller.userModel.value.ownerId != null && controller.userModel.value.ownerId!.isNotEmpty;
           final ZoneModel selectedZone = controller.selectedZone.value;
           final List<ZoneModel> zones = controller.zoneList.toList();
           final String fullName = "${controller.firstNameController.value.text} ${controller.lastNameController.value.text}".trim();
+          // Report Doc 38 / 43: a delivery company sees and keeps its own
+          // company details and zones here.
+          final bool isCompany = controller.userModel.value.isCompany;
+          final UserModel profile = controller.userModel.value;
+          final Map<String, String> pendingFiles = Map<String, String>.from(controller.pendingCompanyFiles);
+          final List<String> companyZoneIds = controller.companyZoneIds.toList();
+          final List<ZoneModel> companyZoneChoices = isCompany ? controller.companyZoneChoices : const <ZoneModel>[];
 
           return DsScaffold(
             title: "Edit Profile".tr,
@@ -126,6 +140,73 @@ class EditProfileScreen extends StatelessWidget {
                           ),
                         ],
                       ),
+                      if (isCompany) ...[
+                        const DsGap(DsSpace.lg),
+                        DsFormSection(
+                          title: "Company details".tr,
+                          subtitle: "Registered numbers and documents are checked by the administrator. Contact them to change one.".tr,
+                          icon: Icons.apartment_rounded,
+                          children: [
+                            DsTextField(
+                              label: 'Company Name'.tr,
+                              controller: controller.companyFields['companyName'],
+                              hint: 'Enter Company Name'.tr,
+                              requiredMark: true,
+                              textCapitalization: TextCapitalization.words,
+                            ),
+                            DsTextField(
+                              label: 'Company Address'.tr,
+                              controller: controller.companyFields['companyAddress'],
+                              hint: 'Enter Company Address'.tr,
+                              requiredMark: true,
+                              prefixIcon: Icons.location_on_outlined,
+                              minLines: 1,
+                              maxLines: 3,
+                            ),
+                            for (final field in CompanyProfile.numberFields)
+                              DsTextField(
+                                label: CompanyProfile.labels[field]!.tr,
+                                controller: controller.companyFields[field],
+                                hint: CompanyProfile.labels[field]!.tr,
+                                enabled: !controller.numberLocked(field),
+                                bottomSpacing: field == CompanyProfile.numberFields.last ? 0 : DsSpace.lg,
+                              ),
+                          ],
+                        ),
+                        const DsGap(DsSpace.lg),
+                        DsFormSection(
+                          title: "Company documents".tr,
+                          icon: Icons.folder_open_rounded,
+                          children: [
+                            for (final field in CompanyProfile.fileFields)
+                              _CompanyDocumentRow(
+                                title: CompanyProfile.labels[field]!.tr,
+                                storedUrl: CompanyProfile.valueOf(profile, field),
+                                pickedPath: pendingFiles[field],
+                                onPick: (source) => controller.pickCompanyFile(field, source),
+                              ),
+                          ],
+                        ),
+                        const DsGap(DsSpace.lg),
+                        DsFormSection(
+                          title: "Zones you serve".tr,
+                          icon: Icons.map_outlined,
+                          children: [
+                            if (companyZoneChoices.isEmpty)
+                              DsInlineAlert(
+                                tone: DsTone.warning,
+                                icon: Icons.map_outlined,
+                                message: "No zone is available in this management zone yet.".tr,
+                              )
+                            else
+                              ZoneMultiSelect(
+                                zones: companyZoneChoices,
+                                selectedIds: companyZoneIds,
+                                onToggle: controller.toggleCompanyZone,
+                              ),
+                          ],
+                        ),
+                      ],
                       if (hideZone)
                         const SizedBox()
                       else ...[
@@ -323,6 +404,96 @@ class _PickerTile extends StatelessWidget {
           DsIconWell(icon: icon, tone: DsTone.brand, size: 48, circle: true),
           const DsGap(DsSpace.md),
           Text(label, style: t.bodyStrong),
+        ],
+      ),
+    );
+  }
+}
+
+/// One company document (report Doc 38): opens what is on file, or takes a
+/// photo / picture for a document that is missing. A stored document is
+/// replaced only through the administrator.
+class _CompanyDocumentRow extends StatelessWidget {
+  final String title;
+  final String storedUrl;
+  final String? pickedPath;
+  final ValueChanged<ImageSource> onPick;
+
+  const _CompanyDocumentRow({required this.title, required this.storedUrl, required this.pickedPath, required this.onPick});
+
+  /// The stored URL is used exactly as saved: a Firebase Storage URL is
+  /// already encoded, and encoding it again breaks its token.
+  static Future<void> open(String url) async {
+    final Uri? uri = CompanyProfile.fileUri(url);
+    if (uri == null) {
+      ShowToastDialog.showToast("This document cannot be opened.".tr);
+      return;
+    }
+    if (CompanyProfile.isImage(url)) {
+      Get.to(() => FullScreenImageViewer(imageUrl: url));
+      return;
+    }
+    bool opened = false;
+    try {
+      opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (!opened) ShowToastDialog.showToast("This document cannot be opened.".tr);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final bool onFile = CompanyProfile.fileUri(storedUrl) != null;
+    final bool picked = (pickedPath ?? '').isNotEmpty;
+    final String status = onFile
+        ? 'Document on file'.tr
+        : picked
+            ? "${pickedPath!.split('/').last} · ${'Saved when you tap Save'.tr}"
+            : 'Not uploaded'.tr;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpace.sm),
+      child: Row(
+        children: [
+          DsIconWell(
+            icon: onFile || picked ? Icons.check_circle_outline_rounded : Icons.upload_file_rounded,
+            tone: onFile ? DsTone.success : (picked ? DsTone.info : DsTone.warning),
+            size: 40,
+          ),
+          const DsGap(DsSpace.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: t.bodyStrong),
+                Text(
+                  status,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.caption.withColor(onFile ? c.successStrong : c.textMuted),
+                ),
+              ],
+            ),
+          ),
+          if (onFile)
+            DsButton.secondary(
+              label: 'View'.tr,
+              icon: Icons.visibility_outlined,
+              size: DsButtonSize.sm,
+              onPressed: () => open(storedUrl),
+            )
+          else
+            PopupMenuButton<ImageSource>(
+              icon: Icon(Icons.add_a_photo_outlined, color: c.brand),
+              tooltip: "Upload".tr,
+              onSelected: onPick,
+              itemBuilder: (_) => [
+                PopupMenuItem(value: ImageSource.camera, child: Text("Camera".tr)),
+                PopupMenuItem(value: ImageSource.gallery, child: Text("Gallery".tr)),
+              ],
+            ),
         ],
       ),
     );

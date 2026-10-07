@@ -44,7 +44,6 @@ class CollectionName {
   static const String vehicleType = "vehicle_type";
   static const String sections = "sections";
   static const String parcelCoupons = 'parcel_coupons';
-  static const String parcelSmsOutbox = 'parcel_sms_outbox';
   static const String parcelOrders = "parcel_orders";
   static const String pickupPoints = "pickup_points";
   static const String parcelCategory = 'parcel_categories';

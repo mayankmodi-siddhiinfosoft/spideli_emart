@@ -50,4 +50,9 @@ const Map<String, String> lnAr = {
   "In progress": "قيد التنفيذ",
   "Completed": "مكتمل",
   "{0} unread messages": "{0} رسائل غير مقروءة",
+  "No documents to upload yet": "لا توجد مستندات لتحميلها بعد",
+  "The administrator has not set up any worker documents. They will appear here when available.": "لم يقم المسؤول بإعداد أي مستندات للعامل بعد. ستظهر هنا عندما تصبح متاحة.",
+  "Could not load the documents to upload": "تعذر تحميل المستندات المطلوب رفعها",
+  "Check your connection and try again.": "تحقق من اتصالك وحاول مرة أخرى.",
+  "Retry": "إعادة المحاولة",
 };

@@ -9,8 +9,10 @@ import 'package:vendor/constant/constant.dart';
 import 'package:vendor/controller/order_details_controller.dart';
 import 'package:vendor/models/cart_product_model.dart';
 import 'package:vendor/models/order_model.dart';
+import 'package:vendor/models/user_model.dart';
 import 'package:vendor/utils/cancellation.dart';
 import 'package:vendor/utils/pod_otp.dart';
+import 'package:vendor/utils/store_order_write.dart';
 import 'package:vendor/widget/cancellation_block.dart';
 import 'package:vendor/widget/pod_block.dart';
 import 'package:vendor/widget/wholesale_tag.dart';
@@ -231,34 +233,42 @@ class OrderDetailsScreen extends StatelessWidget {
         );
 
         // ---------------- Delivery man ----------------
-        final bool showDriver =
-            controller.orderModel.value.takeAway != true &&
-            controller.orderModel.value.isPosOrder == false &&
-            (controller.orderModel.value.status == Constant.orderCompleted || controller.orderModel.value.status == Constant.orderInTransit);
+        // Shown once someone has the order: the store's own delivery man, or
+        // a platform driver who accepted the dispatch offer ("Driver
+        // Accepted", then "Order Shipped" - DRIVER_DISPATCH_DOCUMENTATION.md
+        // §5C) - and after delivery. Not while the offer is only pending.
+        final UserModel? deliveryMan = controller.deliveryMan.value;
+        final bool showDriver = StoreOrderWrite.showsDeliveryMan(
+          status: order.status,
+          driverId: (order.driverID ?? '').trim().isNotEmpty ? order.driverID : deliveryMan?.id,
+          takeAway: order.takeAway == true,
+          isPosOrder: order.isPosOrder == true,
+        );
         final Widget? driver = showDriver
             ? DsCard(
                 child: Row(
                   children: [
-                    DsAvatar(imageUrl: controller.orderModel.value.driver?.profilePictureURL ?? '', name: controller.orderModel.value.driver?.fullName(), size: 44, fallbackIcon: Icons.delivery_dining_rounded),
+                    DsAvatar(imageUrl: deliveryMan?.profilePictureURL ?? '', name: deliveryMan?.fullName(), size: 44, fallbackIcon: Icons.delivery_dining_rounded),
                     DsGap.md,
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(controller.orderModel.value.driver?.fullName() ?? '', style: t.bodyStrong),
-                          Text(controller.orderModel.value.driver?.email ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySm),
+                          Text(deliveryMan?.fullName().trim() ?? '', style: t.bodyStrong),
+                          Text(deliveryMan?.email ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySm),
                         ],
                       ),
                     ),
-                    DsIconButton(
-                      semanticLabel: "Call".tr,
-                      variant: DsIconButtonVariant.brand,
-                      size: 48,
-                      onPressed: () {
-                        Constant.makePhoneCall(controller.orderModel.value.driver?.phoneNumber ?? '');
-                      },
-                      child: SvgPicture.asset("assets/icons/ic_phone_call.svg", width: 22, height: 22, colorFilter: ColorFilter.mode(c.brandStrong, BlendMode.srcIn)),
-                    ),
+                    if ((deliveryMan?.phoneNumber ?? '').trim().isNotEmpty)
+                      DsIconButton(
+                        semanticLabel: "Call".tr,
+                        variant: DsIconButtonVariant.brand,
+                        size: 48,
+                        onPressed: () {
+                          Constant.makePhoneCall(deliveryMan?.phoneNumber ?? '');
+                        },
+                        child: SvgPicture.asset("assets/icons/ic_phone_call.svg", width: 22, height: 22, colorFilter: ColorFilter.mode(c.brandStrong, BlendMode.srcIn)),
+                      ),
                   ],
                 ),
               )

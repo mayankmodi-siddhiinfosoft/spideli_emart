@@ -12,6 +12,7 @@ import 'package:vendor/app/subscription_plan_screen/subscription_plan_screen.dar
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/models/user_model.dart';
+import 'package:vendor/utils/account_verification.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/notification_service.dart';
 
@@ -71,12 +72,15 @@ class SignupController extends GetxController {
       userModel.value.active = Constant.autoApproveVendor == true ? true : false;
       userModel.value.countryCode = countryCodeEditingController.value.text;
       userModel.value.countryISOCode = countryISOCodeEditingController.value.text;
-      userModel.value.isDocumentVerify = Constant.isStoreVerification == true ? false : true;
       userModel.value.createdAt = Timestamp.now();
       userModel.value.appIdentifier = Platform.isAndroid ? 'android' : 'ios';
-      userModel.value.isAutoVerify = Constant.isStoreVerification == false ? true : false;
+      // Report Doc 37: never "verified" before the administrator approved
+      // anything; verification switched off is `isAutoVerify`.
+      final verification = AccountVerification.newStoreOwner(storeVerificationOn: Constant.isStoreVerification);
+      userModel.value.isDocumentVerify = verification.isDocumentVerify;
+      userModel.value.isAutoVerify = verification.isAutoVerify;
 
-      await FireStoreUtils.updateUser(userModel.value).then((value) async {
+      await FireStoreUtils.updateUser(userModel.value, isNew: true).then((value) async {
         // Once the profile exists: the token is saved field by field.
         unawaited(NotificationService.syncToken());
         if (Constant.autoApproveVendor == true) {
@@ -122,15 +126,17 @@ class SignupController extends GetxController {
           userModel.value.phoneNumber = phoneNUmberEditingController.value.text.toString();
           userModel.value.role = Constant.userRoleVendor;
           userModel.value.active = Constant.autoApproveVendor == true ? true : false;
-          userModel.value.isDocumentVerify = Constant.isStoreVerification == true ? false : true;
           userModel.value.countryCode = countryCodeEditingController.value.text;
           userModel.value.countryISOCode = countryISOCodeEditingController.value.text;
           userModel.value.appIdentifier = Platform.isAndroid ? 'android' : 'ios';
           userModel.value.createdAt = Timestamp.now();
           userModel.value.provider = 'email';
-          userModel.value.isAutoVerify = Constant.isStoreVerification == false ? true : false;
+          // Report Doc 37: see the branch above.
+          final verification = AccountVerification.newStoreOwner(storeVerificationOn: Constant.isStoreVerification);
+          userModel.value.isDocumentVerify = verification.isDocumentVerify;
+          userModel.value.isAutoVerify = verification.isAutoVerify;
 
-          await FireStoreUtils.updateUser(userModel.value).then((value) async {
+          await FireStoreUtils.updateUser(userModel.value, isNew: true).then((value) async {
             // Once the profile exists: the token is saved field by field.
             unawaited(NotificationService.syncToken());
             if (Constant.autoApproveVendor == true) {

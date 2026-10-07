@@ -78,6 +78,62 @@ class ParcelOrderModel {
   /// Fixed intercity / intercountry tax the customer paid on top of subTotal (platform revenue, never credited).
   num? parcelScopeTax;
 
+  /// Point 54 (BUG-REPORT-01-APP.md §4): the sender paid for the receiver to
+  /// be told by SMS (`sendReceiverSms`), and `smsCharge` is that fee
+  /// (`regions/{regionId}.parcelSmsFee` at checkout). Part of what the
+  /// customer pays, outside VAT, coupons and the driver's credit - like
+  /// [parcelScopeTax]. Read-only here.
+  bool? sendReceiverSms;
+  num? smsCharge;
+
+  /// The receiver-SMS fee in the order total: 0 unless opted in.
+  double get smsChargeAmount => sendReceiverSms == true ? (smsCharge ?? 0).toDouble() : 0;
+
+  /// `priceBreakdown.total`: what the customer's checkout charged (written
+  /// by the customer app when the order is placed or a quote is paid, the
+  /// receiver-SMS fee included). Null when absent or not a number. Read-only
+  /// here (never written back by toJson()); `ParcelAmounts` reconciles its
+  /// lines with it.
+  num? chargedTotal;
+
+  /// The receiver as flat fields (app-spec-parcel-sms.md, "parcel_orders -
+  /// new fields"): the name, the national number (digits, no country code)
+  /// and the dialling code ("+237") apart. Written at creation by the
+  /// customer app / website next to the [receiver] map; a panel-created order
+  /// may carry only these. Read-only here, like [sendReceiverSms]: never
+  /// written back by toJson(), and neither are the server-owned `smsSent` /
+  /// `smsOptOut` (not modelled at all).
+  String? receiverName;
+  String? receiverPhone;
+  String? receiverCountryCode;
+
+  /// The receiver's name for display: the flat field, else the map's.
+  String get receiverNameDisplay {
+    final String flat = (receiverName ?? '').trim();
+    return flat.isNotEmpty ? flat : (receiver?.name ?? '').trim();
+  }
+
+  /// The receiver's phone for display: "+237 677123456" from the flat fields
+  /// when both are there, else the map's own text ("(+237) 677123456"), else
+  /// the bare flat number.
+  String get receiverPhoneDisplay {
+    final String phone = (receiverPhone ?? '').trim();
+    final String code = (receiverCountryCode ?? '').trim();
+    if (phone.isNotEmpty && code.isNotEmpty) return '$code $phone';
+    final String mapPhone = (receiver?.phone ?? '').trim();
+    if (mapPhone.isNotEmpty) return mapPhone;
+    return phone;
+  }
+
+  /// [receiverPhoneDisplay] as a number to dial: digits only, keeping a
+  /// leading "+" ("(+237) 677 12 34 56" -> "+237677123456"). '' when none.
+  String get receiverDialNumber {
+    final String shown = receiverPhoneDisplay;
+    final String digits = shown.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) return '';
+    return shown.contains('+') ? '+$digits' : digits;
+  }
+
   /// Set (in a transaction) when the driver completion / wallet credit was claimed — at most once per order.
   bool? driverCredited;
   String? parcelStatus;
@@ -208,6 +264,14 @@ class ParcelOrderModel {
     quoteRequested = json['quoteRequested'] is bool ? json['quoteRequested'] as bool : null;
     manualPrice = json['manualPrice'] is num ? json['manualPrice'] as num : num.tryParse('${json['manualPrice']}');
     parcelScopeTax = json['parcelScopeTax'] is num ? json['parcelScopeTax'] as num : num.tryParse('${json['parcelScopeTax']}');
+    sendReceiverSms = json['sendReceiverSms'] is bool ? json['sendReceiverSms'] as bool : null;
+    smsCharge = json['smsCharge'] is num ? json['smsCharge'] as num : num.tryParse('${json['smsCharge']}');
+    final dynamic breakdown = json['priceBreakdown'];
+    final dynamic charged = breakdown is Map ? breakdown['total'] : null;
+    chargedTotal = charged is num ? charged : num.tryParse('${charged ?? ''}'.trim());
+    receiverName = str(json['receiverName']);
+    receiverPhone = str(json['receiverPhone']);
+    receiverCountryCode = str(json['receiverCountryCode']);
     driverCredited = json['driverCredited'] == true;
     parcelStatus = str(json['parcelStatus']);
     deliveryProof = map(json['deliveryProof']);

@@ -95,7 +95,7 @@ class CartScreen extends StatelessWidget {
                                     children: [
                                       Icon(Icons.near_me_outlined, size: 20, color: c.brandStrong),
                                       const DsGap(DsSpace.sm),
-                                      Expanded(child: Text(controller.selectedAddress.value.addressAs.toString(), style: t.label.withColor(c.brandStrong))),
+                                      Expanded(child: Text((controller.selectedAddress.value.addressAs ?? '').trim().isEmpty ? 'Delivery Address'.tr : controller.selectedAddress.value.addressAs!.trim(), style: t.label.withColor(c.brandStrong))),
                                       Icon(Icons.expand_more_rounded, color: c.iconDefault),
                                     ],
                                   ),
@@ -185,7 +185,7 @@ class CartScreen extends StatelessWidget {
                                                 // Next cheaper tier, so the customer sees when the price
                                                 // switches - the same helper the product page's note uses.
                                                 final next = LinePrice.nextTier(
-                                                  tiers: cartProductModel.lineMeta?.tiers ?? const [],
+                                                  tiers: cartProductModel.activeTiers,
                                                   quantity: cartProductModel.quantity ?? 0,
                                                   currentUnit: cartProductModel.chargedUnitPrice,
                                                 );

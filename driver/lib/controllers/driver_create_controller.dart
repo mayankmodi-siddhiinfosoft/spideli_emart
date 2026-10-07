@@ -10,6 +10,8 @@ import 'package:driver/models/section_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/models/vehicle_type.dart';
 import 'package:driver/models/zone_model.dart';
+import 'package:driver/utils/company_profile.dart';
+import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -40,8 +42,9 @@ class DriverCreateController extends GetxController {
   /// Every published zone, before the owner's region filter.
   RxList<ZoneModel> allZoneList = <ZoneModel>[].obs;
 
-  /// Zones offered in the picker: the ones serving the company's management
-  /// zone (client point 16). No region on the company = every zone.
+  /// Zones offered in the picker: the zones the company chose to serve
+  /// (report Doc 43); for a company that has not chosen any yet, the ones
+  /// serving its management zone (client point 16), or every zone.
   RxList<ZoneModel> zoneList = <ZoneModel>[].obs;
   Rx<ZoneModel> selectedZone = ZoneModel().obs;
 
@@ -164,15 +167,15 @@ class DriverCreateController extends GetxController {
     }
   }
 
-  /// Client point 16: a fleet driver works in a zone of the company's own
-  /// management zone. A zone with no region data serves every region.
+  /// Report Doc 43: the company assigns each driver ONE zone, out of the
+  /// zones it serves (`zoneIds`). A company without `zoneIds` keeps the older
+  /// rule (client point 16): a zone of its management zone.
   void _filterZones() {
-    final String regionId = (Constant.userModel?.regionId ?? '').trim();
-    if (regionId.isEmpty) {
-      zoneList.value = allZoneList.toList();
-    } else {
-      zoneList.value = allZoneList.where((zone) => zone.belongsToRegion(regionId)).toList();
-    }
+    zoneList.value = CompanyZones.forDriverPicker(
+      allZones: allZoneList.toList(),
+      companyZoneIds: CompanyZones.normalize(Constant.userModel?.zoneIds ?? const []),
+      regionId: Constant.userModel?.regionId,
+    );
     if (selectedZone.value.id != null && !zoneList.any((zone) => zone.id == selectedZone.value.id)) {
       selectedZone.value = ZoneModel();
     }
@@ -313,6 +316,9 @@ class DriverCreateController extends GetxController {
         return;
       }
       driverModel.value.id = credential.user!.uid;
+      // The admin's verification setting decides the new driver's
+      // `isAutoVerify` for good: read it now, not from the background load.
+      await FireStoreUtils.loadDocumentVerificationSettings();
       _applyCommonFields();
       driverModel.value.vehicleDetails = _buildVehicleDetails({});
 
@@ -390,8 +396,18 @@ class DriverCreateController extends GetxController {
     driverModel.value.phoneNumber = phoneNUmberEditingController.value.text;
     driverModel.value.role = Constant.userRoleDriver;
     driverModel.value.active = true;
-    if (isNew) driverModel.value.isActive = false;
-    driverModel.value.isDocumentVerify = true;
+    if (isNew) {
+      driverModel.value.isActive = false;
+      // Report Doc 37: a driver a company creates is NOT verified — it used to
+      // be stamped `isDocumentVerify: true` on create and on every edit, with
+      // nothing uploaded. Only the administrator sets it true; with driver
+      // verification off in the panel the driver is auto-verified instead.
+      // An edit leaves both flags as they are (updateUser never writes
+      // `isDocumentVerify` back).
+      final flags = DocumentVerification.initialFlags(isCompany: false);
+      driverModel.value.isDocumentVerify = flags.isDocumentVerify;
+      driverModel.value.isAutoVerify = flags.isAutoVerify;
+    }
     driverModel.value.countryCode = countryCodeEditingController.value.text;
     driverModel.value.countryISOCode = countryISOCodeEditingController.value.text;
     driverModel.value.createdAt ??= Timestamp.now();

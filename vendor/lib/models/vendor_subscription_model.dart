@@ -76,7 +76,7 @@ class VendorSubscriptionModel {
       return text.isEmpty ? null : text;
     }
     if (value is Map) {
-      final String text = formatAddress([value['address'], value['locality'], value['landmark']]);
+      final String text = spideliFormatAddress(value);
       return text.isEmpty ? null : text;
     }
     return null;

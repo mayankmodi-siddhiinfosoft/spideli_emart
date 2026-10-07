@@ -7,7 +7,9 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/driver_assignment_watcher.dart';
+import 'package:driver/utils/notification_service.dart';
 import 'package:driver/services/driver_job_queue_service.dart';
+import 'package:driver/services/incoming_offer_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/utils/preferences.dart';
@@ -60,6 +62,10 @@ class ParcelDashboardController extends GetxController {
           // Jobs ASSIGNED to this driver, picked up from the records alone (panel
           // report 01 §4: a hand assignment may now come without any push).
           DriverAssignmentWatcher.onDriverSnapshot(userModel.value);
+          // Offers dispatched to this driver: the incoming-order dialog (D3).
+          IncomingOfferService.onDriverSnapshot(userModel.value);
+          // Topics follow the live record (doc 21: zone / region / service changes).
+          NotificationService.syncDriverTopics(userModel.value);
           // Preload all registered sections into cache
           for (final sid in userModel.value.sectionIds ?? <String>[]) {
             if (!Constant.sectionModels.containsKey(sid)) {

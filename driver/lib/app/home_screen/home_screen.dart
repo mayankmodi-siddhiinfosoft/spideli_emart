@@ -1,3 +1,4 @@
+import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/chat_screens/chat_screen.dart';
@@ -52,8 +53,7 @@ class HomeScreen extends StatelessWidget {
                 // to replace the whole screen, assigned order included.
                 : !_hasAssignedOrder(controller) &&
                         controller.driverModel.value.vendorID?.isEmpty == true &&
-                        controller.driverModel.value.isDocumentVerify == false &&
-                        controller.driverModel.value.isAutoVerify == false
+                        DocumentVerification.isPending(controller.driverModel.value)
                     ? Center(
                         child: DsEmptyState(
                           icon: Icons.assignment_outlined,

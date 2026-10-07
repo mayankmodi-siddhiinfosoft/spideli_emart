@@ -77,12 +77,26 @@ class RentalProposalService {
     });
   }
 
+  /// The uid a counter-offer is made for: the driver the booking is offered
+  /// to (a company answering for its driver counters for that driver), else
+  /// the signed-in driver (an open booking from the search).
+  static String counteredByFor(Map<String, dynamic> order, String me) {
+    final String onBooking = (order['driverId'] ?? order['driverID'] ?? '').toString().trim();
+    return onBooking.isNotEmpty ? onBooking : me;
+  }
+
+  /// Counter-offer. `counteredBy` names the driver it was made for: the
+  /// customer app accepts a counter only while the booking is still offered
+  /// to that driver (`Driver Pending`, customer RentalProposalService
+  /// .canAcceptCounter), and that driver's incoming offer waits for the
+  /// customer instead of timing out.
   static Future<String?> counter(String orderId, {required num amount, String? message}) {
     return _respond(orderId, (order, proposal) {
       final now = Timestamp.now();
       proposal
         ..['status'] = 'countered'
         ..['counterAmount'] = amount
+        ..['counteredBy'] = counteredByFor(order, FireStoreUtils.getCurrentUid())
         ..['respondedBy'] = 'driver'
         ..['respondedAt'] = now
         ..['history'] = _history(proposal, {

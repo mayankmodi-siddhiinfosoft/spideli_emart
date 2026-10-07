@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/constant.dart';
@@ -85,32 +86,41 @@ class DetailsUploadController extends GetxController {
     }
   }
 
+  /// Uploads the images and saves the record. The caller has opened the
+  /// loader: every way out of here closes it - a failed image upload or a
+  /// failed `documents_verify` read throws, and the spinner used to stay.
   Future<void> uploadDocument() async {
-    String frontImageFileName = File(frontImage.value).path.split('/').last;
-    String backImageFileName = File(backImage.value).path.split('/').last;
+    bool saved = false;
+    try {
+      String frontImageFileName = File(frontImage.value).path.split('/').last;
+      String backImageFileName = File(backImage.value).path.split('/').last;
 
-    if (frontImage.value.isNotEmpty && Constant().hasValidUrl(frontImage.value) == false) {
-      frontImage.value = await Constant.uploadUserImageToFireStorage(File(frontImage.value), "driverDocument/${FireStoreUtils.getCurrentUid()}", frontImageFileName);
-    }
-
-    if (backImage.value.isNotEmpty && Constant().hasValidUrl(backImage.value) == false) {
-      backImage.value = await Constant.uploadUserImageToFireStorage(File(backImage.value), "driverDocument/${FireStoreUtils.getCurrentUid()}", backImageFileName);
-    }
-    documents.value.frontImage = frontImage.value;
-    documents.value.backImage = backImage.value;
-    documents.value.documentId = documentModel.value.id;
-    documents.value.status = "uploaded";
-    // A re-upload starts a new review: the previous rejection reason goes.
-    documents.value.clearReview();
-    if (expiryDate.value != null) documents.value.expiryDate = Timestamp.fromDate(expiryDate.value!);
-
-    await FireStoreUtils.uploadDriverDocument(documents.value).then((value) {
-      if (value) {
-        ShowToastDialog.closeLoader();
-        ShowToastDialog.showToast("Document upload successfully".tr);
-
-        Get.back(result: true);
+      if (frontImage.value.isNotEmpty && Constant().hasValidUrl(frontImage.value) == false) {
+        frontImage.value = await Constant.uploadUserImageToFireStorage(File(frontImage.value), "driverDocument/${FireStoreUtils.getCurrentUid()}", frontImageFileName);
       }
-    });
+
+      if (backImage.value.isNotEmpty && Constant().hasValidUrl(backImage.value) == false) {
+        backImage.value = await Constant.uploadUserImageToFireStorage(File(backImage.value), "driverDocument/${FireStoreUtils.getCurrentUid()}", backImageFileName);
+      }
+      documents.value.frontImage = frontImage.value;
+      documents.value.backImage = backImage.value;
+      documents.value.documentId = documentModel.value.id;
+      documents.value.status = "uploaded";
+      // A re-upload starts a new review: the previous rejection reason goes.
+      documents.value.clearReview();
+      if (expiryDate.value != null) documents.value.expiryDate = Timestamp.fromDate(expiryDate.value!);
+
+      saved = await FireStoreUtils.uploadDriverDocument(documents.value);
+    } catch (e) {
+      log("uploadDocument failed: $e");
+      saved = false;
+    }
+    ShowToastDialog.closeLoader();
+    if (saved) {
+      ShowToastDialog.showToast("Document upload successfully".tr);
+      Get.back(result: true);
+    } else {
+      ShowToastDialog.showToast("The document could not be uploaded. Please try again.".tr);
+    }
   }
 }

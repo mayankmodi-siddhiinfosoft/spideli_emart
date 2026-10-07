@@ -94,16 +94,13 @@ class MapPickerPage extends StatelessWidget {
                         final place = controller.searchResults[index];
                         return ListTile(
                           title: Text(
-                            place['display_name'],
+                            place.address,
                             style: TextStyle(color: Colors.black),
                           ),
                           onTap: () {
                             controller.selectSearchResult(place);
-                            final lat = double.parse(place['lat']);
-                            final lon = double.parse(place['lon']);
-                            final pos = LatLng(lat, lon);
-                            controller.mapController.move(pos, 15);
-                            searchController.text = place['display_name'];
+                            controller.mapController.move(place.coordinates, 15);
+                            searchController.text = place.address;
                           },
                         );
                       },
@@ -136,7 +133,10 @@ class MapPickerPage extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2.0),
                   child: Text(
-                    "${controller.pickedPlace.value!.address}\n(${controller.pickedPlace.value!.coordinates.latitude.toStringAsFixed(5)}, ${controller.pickedPlace.value!.coordinates.longitude.toStringAsFixed(5)})",
+                    [
+                      if (controller.pickedPlace.value!.address.isNotEmpty) controller.pickedPlace.value!.address,
+                      "(${controller.pickedPlace.value!.coordinates.latitude.toStringAsFixed(5)}, ${controller.pickedPlace.value!.coordinates.longitude.toStringAsFixed(5)})",
+                    ].join('\n'),
                     style: const TextStyle(fontSize: 13, color: Colors.black),
                   ),
                 ),

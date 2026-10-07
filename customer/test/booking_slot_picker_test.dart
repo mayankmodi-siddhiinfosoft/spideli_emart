@@ -12,8 +12,8 @@ import 'package:get/get.dart';
 /// GetMaterialApp, the app's delegates, theme and outer wrapper, a read-only
 /// DsTextField - including the French locales the client's phone uses.
 void main() {
-  Widget app({Locale locale = const Locale('en', 'US')}) {
-    final controller = TextEditingController();
+  Widget app({Locale locale = const Locale('en', 'US'), TextEditingController? field, ValueChanged<DateTime>? onPicked}) {
+    final controller = field ?? TextEditingController();
     return GetMaterialApp(
       locale: locale,
       fallbackLocale: const Locale('en', 'US'),
@@ -33,7 +33,7 @@ void main() {
                 context: context,
                 title: 'Booking Date & Slot',
                 minDateTime: DateTime.now(),
-                onPicked: (_) {},
+                onPicked: onPicked ?? (_) {},
               ),
             ),
           ),
@@ -52,4 +52,35 @@ void main() {
       expect(find.byType(BottomPicker<DateTime>), findsOneWidget);
     });
   }
+
+  // Report 02#28: the slot must also COME BACK - the picked value fills the
+  // field (what the booking controller's setDateTime does) and the sheet
+  // closes, so Confirm no longer says "Please select time slot".
+  testWidgets('submitting the picker fills the field and closes the sheet', (tester) async {
+    final field = TextEditingController();
+    final DateTime opened = DateTime.now();
+    DateTime? picked;
+    await tester.pumpWidget(app(
+      field: field,
+      onPicked: (value) {
+        picked = value;
+        field.text = '${value.day}-${value.month}-${value.year} ${value.hour}:${value.minute}';
+      },
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DsTextField));
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomPicker<DateTime>), findsOneWidget);
+
+    // The sheet's own submit button (BottomPickerButton, deprecated as a
+    // public type, so found by name).
+    await tester.tap(find.byWidgetPredicate((w) => w.runtimeType.toString() == 'BottomPickerButton'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(picked, isNotNull);
+    expect(picked!.isBefore(opened.subtract(const Duration(minutes: 1))), isFalse);
+    expect(field.text, isNotEmpty);
+    expect(find.byType(BottomPicker<DateTime>), findsNothing);
+  });
 }

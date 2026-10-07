@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:customer/models/product_model.dart' show ProductModel, WholesaleTier, parseWholesaleBool, parseWholesaleString;
 import 'package:customer/models/tax_model.dart';
+import 'package:customer/utils/wholesale_entitlement.dart';
 
 class CartProductModel {
   String? id;
@@ -145,7 +146,21 @@ class CartProductModel {
   /// the highest tier whose minQty <= quantity, only when its price is lower
   /// than [retailUnitPrice] - the customer always pays the lower price.
   /// Each cart line (product or product variant) is priced on its own.
-  LinePrice get linePrice => LinePrice.resolve(retail: retailUnitPrice, tiers: lineMeta?.tiers ?? const <WholesaleTier>[], quantity: quantity ?? 0);
+  LinePrice get linePrice => LinePrice.resolve(retail: retailUnitPrice, tiers: activeTiers, quantity: quantity ?? 0);
+
+  /// The tiers this line may be priced at for the customer signed in NOW.
+  ///
+  /// [lineMeta] is a LOCAL snapshot (sqflite) taken when the line was added,
+  /// so it can carry the tiers of an account that has since lost its approval,
+  /// or of another account signed in on the same phone. Wholesale is for
+  /// approved business accounts only (BUG-REPORT-01-APP.md section 4), so the
+  /// session's entitlement is checked here on every read: no approval, no
+  /// tier, at any quantity - the cart and the order line both charge retail.
+  List<WholesaleTier> get activeTiers {
+    final List<WholesaleTier> tiers = lineMeta?.tiers ?? const <WholesaleTier>[];
+    if (tiers.isEmpty || !WholesaleEntitlement.mayBuyWholesale) return const <WholesaleTier>[];
+    return tiers;
+  }
 
   /// Unit price charged for this cart line right now.
   double get chargedUnitPrice => linePrice.unit;

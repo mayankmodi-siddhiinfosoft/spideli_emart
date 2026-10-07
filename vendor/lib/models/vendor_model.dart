@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:vendor/models/admin_commission_model.dart';
 import 'package:vendor/models/subscription_plan_model.dart';
+import 'package:vendor/widget/geoflutterfire/src/models/point.dart';
 
 class VendorModel {
   String? author;
@@ -185,6 +186,21 @@ class VendorModel {
     return parsed;
   }
 
+  /// A coordinate as the panels store it: a string, full precision.
+  static String coordinateText(double value) => value.toString();
+
+  /// Fills every position field from ONE place pick (report 02#2): the
+  /// address text (`location`), `latitude` / `longitude`, the `coordinates`
+  /// GeoPoint and GeoFirestore's `g`, so they can never disagree. There is no
+  /// other way the Store app sets them.
+  void setPosition({required String address, required double latitude, required double longitude}) {
+    location = address;
+    this.latitude = latitude;
+    this.longitude = longitude;
+    coordinates = GeoPoint(latitude, longitude);
+    g = G(geohash: GeoFirePoint(latitude, longitude).hash, geopoint: GeoPoint(latitude, longitude));
+  }
+
   /// True when the store has a usable map position.
   bool get hasLocation => latitude != null && longitude != null;
 
@@ -224,7 +240,9 @@ class VendorModel {
     data['createdAt'] = createdAt;
     // Only a known position is written: a store saved with `""` keeps it on
     // unrelated saves (merge-fields), instead of being rewritten as null.
-    if (longitude != null) data['longitude'] = longitude;
+    // Written as strings, the shape the panels write and every store carries
+    // (report 02#2); every app reads both.
+    if (longitude != null) data['longitude'] = coordinateText(longitude!);
     data['enabledDiveInFuture'] = enabledDiveInFuture;
     data['restaurantCost'] = restaurantCost;
     if (deliveryCharge != null) {
@@ -245,7 +263,7 @@ class VendorModel {
     data['photos'] = photos;
     data['title'] = title;
     data['categoryTitle'] = categoryTitle;
-    if (latitude != null) data['latitude'] = latitude;
+    if (latitude != null) data['latitude'] = coordinateText(latitude!);
     data['isSelfDelivery'] = isSelfDelivery ?? false;
     data['packagingCharge'] = packagingCharge;
     if (regionId != null) {

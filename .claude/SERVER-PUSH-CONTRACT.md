@@ -4,6 +4,12 @@
 changes for the apps until `settings/notification_setting.serverPushUrl` is set
 (section 7).
 
+> **7 Oct 2026:** the `functions/` folder this contract cites has been removed
+> from the repository by its owner; the file references below describe that
+> earlier source. The apps' server path is unchanged (inert while
+> `serverPushUrl` is unset). The driver dispatch pushes come from separate
+> Cloud Functions (`.claude/DRIVER-DISPATCH-CONTRACT.md`, channel `spideli`).
+
 **Why.** All five apps read `settings/notification_setting.serviceJson` (a
 Firebase Storage URL of a Firebase Admin SDK service-account key), download the
 private key, and mint OAuth tokens on the phone to call FCM HTTP v1. Anyone who
@@ -133,7 +139,8 @@ The sender passes the receiving app's values in `android` / `apns`:
 | customer | everything | `high_importance_channel` | `default` | `default` |
 | store (vendor) | new order / booking: `order_placed`, `schedule_order`, `new_order`, `dinein_placed` | `new_order` | `order_alert` | `order_alert.caf` (in the store's Runner bundle) |
 | store (vendor) | everything else (chat, `driver_accepted`, ...) | `general` | `default` | `default` |
-| driver | new / assigned job: `new_delivery_order`, `assign_order`, and kinds `driver_job`, `order_available`, `job_assigned`, `job_queue`, `new_ride`, `new_parcel`, `new_rental` | `driver_jobs` | `default` | `default` |
+| driver | dispatch offer (only the dispatch Cloud Functions send it; `data.type` `order` / `parcel` / `cab` / `rental`) | `spideli` | `default` | `default` |
+| driver | assigned job: `new_delivery_order`, `assign_order`, and kinds `driver_job`, `job_assigned`, `job_queue` (the kinds `order_available`, `new_ride`, `new_parcel`, `new_rental` stay in the driver-job profile for older builds; since 7 Oct no app sends them, decision D1) | `driver_jobs` | `default` | `default` |
 | driver | everything else (chat, `customer_cancelled`, `driver_cancelled`, ...) | `driver_notifications_channel` | `default` | `default` |
 | provider | everything | `01` | `default` | `default` |
 | worker | everything | `01` | `default` | `default` |
@@ -427,9 +434,12 @@ Each one needs to move to a server and be **rotated**:
   server-side with only publishable keys on the device. Rotate every secret
   key once moved.
 - **SMS gateway:** `settings/SMSGateway` API key (OBITSMS). The customer app
-  reads the whole document (`customer/lib/service/parcel_sms_outbox.dart`), so
-  clients can read the key. Keep it in a document clients cannot read; Laravel
-  reads it server-side.
+  reads the document for `isEnabled` only (`customer/lib/service/parcel_receiver_sms.dart`;
+  the outbox reader `parcel_sms_outbox.dart` is gone), but a client read
+  returns the whole document, so the key is still readable by any client.
+  Keep the key in a document clients cannot read (Laravel and the SMS trigger
+  read it server-side); the apps need only `isEnabled` from the
+  client-readable one.
 - **OpenAI:** `settings/openai_settings`. The store app reads only `status`,
   but if the document also holds an API key, clients can read it. Move the key.
 - **Google Maps keys** (`settings/googleMapKey`, the AndroidManifests, and

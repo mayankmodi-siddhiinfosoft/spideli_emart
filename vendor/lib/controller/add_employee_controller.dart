@@ -8,6 +8,7 @@ import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/models/employee_role_model.dart';
 import 'package:vendor/models/user_model.dart';
+import 'package:vendor/utils/account_verification.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 
 class AddEmployeeController extends GetxController {
@@ -89,11 +90,10 @@ class AddEmployeeController extends GetxController {
           employeeModel.value.role = Constant.userRoleEmployee;
           employeeModel.value.fcmToken = '';
           employeeModel.value.active = true;
-          employeeModel.value.isDocumentVerify = Constant.userModel?.isAutoVerify == true
-              ? true
-              : Constant.userModel?.isDocumentVerify == true
-              ? true
-              : false;
+          // Report Doc 37: an employee is never reviewed by the
+          // administrator, so is not marked verified (it used to copy the
+          // owner's verdict, or true when the owner needs no verification).
+          employeeModel.value.isDocumentVerify = AccountVerification.newEmployeeDocumentVerify;
           employeeModel.value.countryCode = countryCodeEditingController.value.text.trim();
           employeeModel.value.countryISOCode = countryISOCodeEditingController.value.text.trim();
           employeeModel.value.createdAt = Timestamp.now();

@@ -327,7 +327,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                         return;
                       }
                       final directions = MapLauncher.directions(
-                        LocationCoords(location.latitude, location.longitude, title: onProviderOrder.address?.getFullAddress()),
+                        LocationCoords(location.latitude, location.longitude, title: (onProviderOrder.address?.getFullAddress() ?? '').isEmpty ? null : onProviderOrder.address!.getFullAddress()),
                         mode: TravelMode.driving,
                       );
                       // map_launcher 6: getSupportedMaps also returns browser-only maps, so check isInstalled to keep the old "installed" check.
@@ -362,21 +362,25 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(onProviderOrder.author.fullName().toString(), style: t.titleSm),
-                        const DsGap(DsSpace.sm),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(Icons.location_on_outlined, size: 16, color: c.textMuted),
-                            const DsGap(DsSpace.xs),
-                            Expanded(
-                              child: Text(
-                                onProviderOrder.address?.getFullAddress() ?? "",
-                                maxLines: 5,
-                                style: t.bodySecondary,
+                        // Report 02#18: hidden when nothing is left after the
+                        // "null" rule.
+                        if ((onProviderOrder.address?.getFullAddress() ?? '').isNotEmpty) ...[
+                          const DsGap(DsSpace.sm),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.location_on_outlined, size: 16, color: c.textMuted),
+                              const DsGap(DsSpace.xs),
+                              Expanded(
+                                child: Text(
+                                  onProviderOrder.address!.getFullAddress(),
+                                  maxLines: 5,
+                                  style: t.bodySecondary,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),

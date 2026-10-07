@@ -419,11 +419,16 @@ class ProductListScreen extends StatelessWidget {
                   size: DsButtonSize.sm,
                   color: c.dangerStrong,
                   onPressed: () async {
+                    // Point 58: never delete a catalog item on a single tap.
+                    final ProductModel product = controller.productList[index];
+                    if (!await DsDialog.confirm(title: "Are you sure you want to delete this product?".tr, confirmLabel: "Delete".tr, destructive: true)) return;
                     ShowToastDialog.showLoader("Please wait..".tr);
-                    await FireStoreUtils.deleteProduct(controller.productList[index]).then((value) {
-                      controller.getProduct();
-                      ShowToastDialog.closeLoader();
-                    });
+                    // The product, then (in the background) the images the
+                    // app uploaded for it. A failure is said, not hidden.
+                    final bool deleted = await FireStoreUtils.deleteProduct(product);
+                    ShowToastDialog.closeLoader();
+                    if (!deleted) ShowToastDialog.showToast("Could not delete this product. Please check your connection and try again.".tr);
+                    await controller.getProduct();
                   },
                 ),
                 const Spacer(),

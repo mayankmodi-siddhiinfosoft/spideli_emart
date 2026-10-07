@@ -39,7 +39,6 @@ import 'package:driver/models/payment_model/xendit.dart';
 import 'package:driver/models/referral_model.dart';
 import 'package:driver/models/rental_order_model.dart';
 import 'package:driver/models/section_model.dart';
-import 'package:driver/models/tax_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/models/vehicle_type.dart';
 import 'package:driver/models/vendor_model.dart';
@@ -47,7 +46,9 @@ import 'package:driver/models/wallet_transaction_model.dart';
 import 'package:driver/models/withdraw_method_model.dart';
 import 'package:driver/models/withdrawal_model.dart';
 import 'package:driver/models/zone_model.dart';
+import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/services/audio_player_service.dart';
+import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/utils/cancel_reason_list.dart';
 import 'package:driver/utils/preferences.dart';
@@ -55,7 +56,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
@@ -216,6 +216,21 @@ class FireStoreUtils {
       // save wrote back the value its copy was loaded with, which put a driver
       // who had gone online since back offline.
       if (!isNew) data.remove('isActive');
+      // Report Doc 37: `isDocumentVerify` is the administrator's verdict. A new
+      // account starts at `false`; afterwards this app never writes it, so a
+      // copy loaded before an approval (or a revocation) cannot overwrite it.
+      if (!isNew) data.remove('isDocumentVerify');
+      // Dispatch spec §4: `orderRequestData` (offers the Cloud Function added),
+      // `inProgressOrderID` (accepted jobs) and the legacy ride request move
+      // only by field-level arrayUnion / arrayRemove. A profile, bank,
+      // vehicle, section or sign-in save wrote back the arrays its copy was
+      // loaded with, dropping an offer or a job added meanwhile; the position
+      // is written by the location stream alone.
+      if (!isNew) {
+        for (final String key in const ['orderRequestData', 'inProgressOrderID', 'ordercabRequestData', 'location', 'rotation']) {
+          data.remove(key);
+        }
+      }
 
       await docRef.set(data, SetOptions(merge: true));
       if (isNew) await _openWallet(docRef);
@@ -238,10 +253,6 @@ class FireStoreUtils {
           'rideType': FieldValue.delete(),
         });
       }
-      // An offer that is stored but could not be read is kept.
-      if (userModel.orderCabRequestData == null && !userModel.cabRequestUnreadable) {
-        deletes['ordercabRequestData'] = FieldValue.delete();
-      }
       await docRef.update(deletes);
 
       if (userModel.id == getCurrentUid()) {
@@ -256,15 +267,22 @@ class FireStoreUtils {
     }
   }
 
-  /// `wallet_amount: 0` on a user document that has no balance yet, in a
-  /// transaction: one that already has a balance is never reset.
+  /// A new account's starting fields, in a transaction that only fills what
+  /// is absent (an existing value is never reset): `wallet_amount: 0`, and,
+  /// for a driver, the two dispatch arrays (`orderRequestData`,
+  /// `inProgressOrderID`, dispatch spec §4) as empty lists.
   static Future<void> _openWallet(DocumentReference<Map<String, dynamic>> ref) async {
     try {
       await fireStore.runTransaction<void>((transaction) async {
         final DocumentSnapshot<Map<String, dynamic>> snap = await transaction.get(ref);
-        if (snap.exists && snap.data()?['wallet_amount'] == null) {
-          transaction.update(ref, {'wallet_amount': 0});
-        }
+        final Map<String, dynamic>? data = snap.data();
+        if (!snap.exists || data == null) return;
+        final Map<String, dynamic> missing = {
+          if (data['wallet_amount'] == null) 'wallet_amount': 0,
+          if (data['role'] == Constant.userRoleDriver && data['orderRequestData'] is! List) 'orderRequestData': <String>[],
+          if (data['role'] == Constant.userRoleDriver && data['inProgressOrderID'] is! List) 'inProgressOrderID': <String>[],
+        };
+        if (missing.isNotEmpty) transaction.update(ref, missing);
       });
     } catch (e) {
       log("opening the wallet of ${ref.id} failed: $e");
@@ -350,6 +368,25 @@ class FireStoreUtils {
     );
   }
 
+  /// `settings/document_verification_settings` into
+  /// [Constant.isDriverVerification] / [Constant.isOwnerVerification].
+  /// Tolerant: a missing document or field leaves the setting unknown (null);
+  /// a failed read keeps what was loaded before. Awaited by sign-up and by a
+  /// company creating a driver before the new account's flags are set
+  /// ([DocumentVerification.initialFlags]): [getSettings] runs in the
+  /// background and may not have finished by then.
+  static Future<void> loadDocumentVerificationSettings() async {
+    try {
+      final value = await fireStore.collection(CollectionName.settings).doc("document_verification_settings").get();
+      final dynamic driver = value.data()?['isDriverVerification'];
+      final dynamic owner = value.data()?['isOwnerVerification'];
+      Constant.isDriverVerification = driver is bool ? driver : null;
+      Constant.isOwnerVerification = owner is bool ? owner : null;
+    } catch (e) {
+      log("document_verification_settings read failed: $e");
+    }
+  }
+
   static Future<void> getSettings() async {
     listenNotificationSettings();
     try {
@@ -411,29 +448,63 @@ class FireStoreUtils {
         Constant.placeHolderImage = value.data()!['image'];
       });
 
-      await fireStore.collection(CollectionName.settings).doc("document_verification_settings").get().then((value) {
-        Constant.isDriverVerification = value.data()!['isDriverVerification'];
-        Constant.isOwnerVerification = value.data()!['isOwnerVerification'];
-      });
+      await loadDocumentVerificationSettings();
 
-      await fireStore.collection(CollectionName.settings).doc("DriverNearBy").get().then((value) {
-        Constant.minimumDepositToRideAccept = value.data()!['minimumDepositToRideAccept'];
-        Constant.ownerMinimumDepositToRideAccept = value.data()!['ownerMinimumDepositToRideAccept'];
-        Constant.minimumAmountToWithdrawal = value.data()!['minimumAmountToWithdrawal'];
-        Constant.driverLocationUpdate = value.data()!['driverLocationUpdate'];
-        Constant.singleOrderReceive = value.data()!['singleOrderReceive'];
-        Constant.selectedMapType = value.data()!["selectedMapType"];
-        Constant.mapType = value.data()!["mapType"];
-        Constant.autoApproveDriver = value.data()!["auto_approve_driver"];
-        Constant.enableOTPTripStart = value.data()!["enableOTPTripStart"];
-        Constant.enableOTPTripStartForRental = value.data()!["enableOTPTripStartForRental"];
-        Constant.parcelRadius = value.data()!["parcelRadius"];
-        Constant.rentalRadius = value.data()!["rentalRadius"];
-        log("Constant.singleOrderReceive :: ${Constant.singleOrderReceive}");
-      });
+      await listenDriverNearBy();
     } catch (e) {
       log(e.toString());
     }
+  }
+
+  static StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _driverNearBySub;
+
+  /// `settings/DriverNearBy` (dispatch spec §6): read once (awaited — the
+  /// dashboards pick their home screen by `singleOrderReceive`), then kept
+  /// live, so a panel change (the offer window, a deposit) applies without
+  /// a restart.
+  static Future<void> listenDriverNearBy() async {
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> value = await fireStore.collection(CollectionName.settings).doc("DriverNearBy").get();
+      applyDriverNearBy(value.data() ?? const <String, dynamic>{});
+    } catch (e) {
+      log("DriverNearBy read failed: $e");
+    }
+    _driverNearBySub ??= fireStore.collection(CollectionName.settings).doc("DriverNearBy").snapshots().listen(
+      (event) {
+        if (event.exists) applyDriverNearBy(event.data() ?? const <String, dynamic>{});
+      },
+      onError: (Object e) => log("DriverNearBy listener failed: $e"),
+    );
+  }
+
+  /// Each key read on its own and tolerantly (a number may be stored as a
+  /// number or as text, a flag as a bool, text or 1 / 0), with the spec's
+  /// defaults: one value of an unexpected type used to throw and abort every
+  /// key after it — `singleOrderReceive` then stayed false, which also picks
+  /// the delivery home screen.
+  static void applyDriverNearBy(Map<String, dynamic> data) {
+    void read(String key, void Function(dynamic value) apply) {
+      try {
+        apply(data[key]);
+      } catch (e) {
+        log("DriverNearBy.$key could not be read: $e");
+      }
+    }
+
+    read('minimumDepositToRideAccept', (v) => Constant.minimumDepositToRideAccept = DispatchSettings.amount(v, '0'));
+    read('ownerMinimumDepositToRideAccept', (v) => Constant.ownerMinimumDepositToRideAccept = DispatchSettings.amount(v, '0'));
+    read('minimumAmountToWithdrawal', (v) => Constant.minimumAmountToWithdrawal = DispatchSettings.amount(v, '0'));
+    read('driverLocationUpdate', (v) => Constant.driverLocationUpdate = DispatchSettings.amount(v, '50'));
+    read('singleOrderReceive', (v) => Constant.singleOrderReceive = DispatchSettings.flag(v));
+    read('driverOrderAcceptRejectDuration', (v) => Constant.driverOrderAcceptRejectDuration = DispatchSettings.acceptRejectSeconds(v));
+    read('selectedMapType', (v) => Constant.selectedMapType = DispatchSettings.text(v, 'google'));
+    read('mapType', (v) => Constant.mapType = DispatchSettings.text(v, 'inappmap'));
+    read('auto_approve_driver', (v) => Constant.autoApproveDriver = v == null ? null : DispatchSettings.flag(v));
+    read('enableOTPTripStart', (v) => Constant.enableOTPTripStart = DispatchSettings.flag(v, fallback: false));
+    read('enableOTPTripStartForRental', (v) => Constant.enableOTPTripStartForRental = DispatchSettings.flag(v, fallback: true));
+    read('parcelRadius', (v) => Constant.parcelRadius = DispatchSettings.amount(v, '50'));
+    read('rentalRadius', (v) => Constant.rentalRadius = DispatchSettings.amount(v, '50'));
+    log("Constant.singleOrderReceive :: ${Constant.singleOrderReceive}, offer window ${Constant.driverOrderAcceptRejectDuration}s");
   }
 
   static Future<List<ZoneModel>?> getZone() async {
@@ -723,20 +794,9 @@ class FireStoreUtils {
     return deliveryCharge;
   }
 
-  static Future<List<TaxModel>?> getTaxList() async {
-    List<TaxModel> taxList = [];
-    List<Placemark> placeMarks = await Geocoding().placemarkFromCoordinates(Constant.selectedLocation.location!.latitude!, Constant.selectedLocation.location!.longitude!);
-    await fireStore.collection(CollectionName.tax).where('country', isEqualTo: placeMarks.first.country).where('enable', isEqualTo: true).get().then((value) {
-      for (var element in value.docs) {
-        TaxModel taxModel = TaxModel.fromJson(element.data());
-        taxList.add(taxModel);
-      }
-    }).catchError((error) {
-      log(error.toString());
-    });
-
-    return taxList;
-  }
+  // `getTaxList()` (tax by the reverse-geocoded country of
+  // `Constant.selectedLocation`) is gone: nothing called it, and it read
+  // `location!` and `placeMarks.first` unguarded (report 02#27 / 02#18).
 
   static Future<bool?> setOrder(OrderModel orderModel) async {
     bool isAdded = false;
@@ -749,18 +809,11 @@ class FireStoreUtils {
     return isAdded;
   }
 
-  static Future<bool?> setParcelOrder(ParcelOrderModel orderModel) async {
-    bool isAdded = false;
-    // merge: a save from the app must not delete fields it does not model
-    // (regionId and other panel / customer-app fields).
-    await fireStore.collection(CollectionName.parcelOrders).doc(orderModel.id).set(orderModel.toJson(), SetOptions(merge: true)).then((value) {
-      isAdded = true;
-    }).catchError((error) {
-      log("Failed to update user: $error");
-      isAdded = false;
-    });
-    return isAdded;
-  }
+  // No whole-model write of a `parcel_orders` record exists in this app
+  // (decision D5): every parcel write is a field update
+  // (DispatchOfferService, ParcelTrackingService), so the server-owned
+  // receiver / SMS fields (`receiver*`, `sendReceiverSms`, `smsCharge`,
+  // `smsSent`, `smsOptOut`) and `rejectedByDrivers` are never rolled back.
 
   static Future<bool> setCabOrder(CabOrderModel orderModel) async {
     log("setCabOrder :: ${orderModel.toJson()}");
@@ -1022,7 +1075,7 @@ class FireStoreUtils {
   static List<String> documentTypesForCurrentUser() {
     final UserModel? me = Constant.userModel;
     final List<String> types = [me?.isOwner == true ? "owner" : "driver"];
-    final List<String> services = me?.serviceTypes ?? const <String>[];
+    final List<String> services = me?.serviceModules ?? const <String>[];
     if (services.contains('cab-service') || services.contains('rental-service')) {
       types.add("vehicle");
     }
@@ -1181,8 +1234,18 @@ class FireStoreUtils {
     return downloadUrl.toString();
   }
 
+  /// The holder `type` of `documents_verify/{uid}` — the panel's types are
+  /// "driver" | "vendor" | "owner" | "provider" | "worker" (report §3 02#26).
+  /// A delivery company is an owner: its record was filed as "driver".
+  static String documentHolderType(UserModel? user) => user?.isOwner == true ? "owner" : "driver";
+
+  /// Uploads one document against the id of an admin-defined type from the
+  /// `documents` collection (report Doc 36 / 41) — [documents.documentId] is
+  /// always a `documents/{id}`, never a hard-coded key.
   static Future<bool> uploadDriverDocument(Documents documents) async {
     bool isAdded = false;
+    final String holderType = documentHolderType(Constant.userModel);
+    if ((documents.documentId ?? '').trim().isEmpty) return false;
     DriverDocumentModel driverDocumentModel = DriverDocumentModel();
     List<Documents> documentsList = [];
     await fireStore.collection(CollectionName.documentsVerify).doc(getCurrentUid()).get().then((value) async {
@@ -1194,13 +1257,13 @@ class FireStoreUtils {
           documentsList.add(documents);
 
           driverDocumentModel.id = getCurrentUid();
-          driverDocumentModel.type = "driver";
+          driverDocumentModel.type = holderType;
           driverDocumentModel.documents = documentsList;
         } else {
           var index = newDriverDocumentModel.documents!.indexWhere((element) => element.documentId == documents.documentId);
 
           driverDocumentModel.id = getCurrentUid();
-          driverDocumentModel.type = "driver";
+          driverDocumentModel.type = holderType;
           documentsList.removeAt(index);
           documentsList.insert(index, documents);
           driverDocumentModel.documents = documentsList;
@@ -1209,7 +1272,7 @@ class FireStoreUtils {
       } else {
         documentsList.add(documents);
         driverDocumentModel.id = getCurrentUid();
-        driverDocumentModel.type = "driver";
+        driverDocumentModel.type = holderType;
         driverDocumentModel.documents = documentsList;
       }
     });
@@ -1596,26 +1659,18 @@ class FireStoreUtils {
   }
 
   /// Zone-bound dispatch (spec 9.1): declines a `vendor_orders` request that
-  /// belongs to another region, exactly like the driver's own "Reject"
-  /// (status "Driver Rejected" + rejectedByDrivers) so dispatch moves on, and
-  /// removes it from the driver's pending requests. Known-fields writes only.
+  /// belongs to another region, exactly like the driver's own "Reject" but
+  /// without a reason (D2: `Driver Rejected`, this driver in
+  /// `rejectedByDrivers`, `driverId` / `driverID` null) so dispatch moves on,
+  /// in the same transaction that first re-checks the live order, and removes
+  /// it from the driver's pending requests.
   static final Set<String> _declinedVendorOrders = {};
 
   static Future<void> declineOutOfRegionVendorOrder(String orderId, String driverId) async {
     if (!_declinedVendorOrders.add(orderId)) return;
     log("Declining order $orderId: not in the driver's region");
-    try {
-      await fireStore.collection(CollectionName.vendorOrders).doc(orderId).setKnownFields({
-        'status': Constant.driverRejected,
-        'rejectedByDrivers': FieldValue.arrayUnion([driverId]),
-      });
-      await fireStore.collection(CollectionName.users).doc(driverId).setKnownFields({
-        'orderRequestData': FieldValue.arrayRemove([orderId]),
-      });
-    } catch (e) {
-      _declinedVendorOrders.remove(orderId);
-      log("declineOutOfRegionVendorOrder failed: $e");
-    }
+    final OfferAnswer answer = await AssignedDeliveryOrders.rejectOffer(orderId, driverId);
+    if (answer == OfferAnswer.failed) _declinedVendorOrders.remove(orderId);
   }
 
   /// The driver's position, and nothing else: `location` and `rotation`,
@@ -1631,10 +1686,13 @@ class FireStoreUtils {
   /// stub, and that stub locked the phone number out of login and sign-up.
   /// The missing document fails with `not-found`, which is ignored.
   static Future<bool> updateUserLocation(String userId, {double? latitude, double? longitude, double? heading}) async {
+    // Dispatch spec §4: `location` always holds numeric coordinates. A fix
+    // without them is skipped rather than written as {latitude: null, ...}.
+    if (latitude == null || longitude == null || !latitude.isFinite || !longitude.isFinite) return false;
     try {
       await fireStore.collection(CollectionName.users).doc(userId).update({
         'location': UserLocation(latitude: latitude, longitude: longitude).toJson(),
-        if (heading != null) 'rotation': heading,
+        if (heading != null && heading.isFinite) 'rotation': heading,
       });
       return true;
     } on FirebaseException catch (e) {

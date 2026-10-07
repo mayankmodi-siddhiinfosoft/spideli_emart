@@ -14,8 +14,10 @@ import 'package:vendor/models/cart_product_model.dart';
 import 'package:vendor/models/currency_model.dart';
 import 'package:vendor/models/order_model.dart';
 import 'package:vendor/models/tax_model.dart';
+import 'package:vendor/models/user_model.dart';
 import 'package:vendor/themes/app_them_data.dart';
 import 'package:vendor/utils/address_format.dart';
+import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/order_receipt_pdf.dart';
 import 'package:vendor/utils/region_service.dart';
 
@@ -44,6 +46,31 @@ class OrderDetailsController extends GetxController {
     }
 
     isLoading.value = false;
+    await loadDeliveryMan();
+  }
+
+  /// The delivery man shown in "Delivery Man Information": the order's own
+  /// snapshot (`driver`), else - an order a platform driver took through the
+  /// dispatch carries only `driverID` - his user record.
+  Rxn<UserModel> deliveryMan = Rxn<UserModel>();
+
+  Future<void> loadDeliveryMan() async {
+    final OrderModel order = orderModel.value;
+    final UserModel? snapshot = order.driver;
+    final String driverId = (order.driverID ?? '').trim();
+    final bool noDriverId = driverId.isEmpty || driverId.toLowerCase() == 'null';
+    // The snapshot is used when it is of the delivery man the order names
+    // (one left from an earlier delivery man is not).
+    final String snapshotId = (snapshot?.id ?? '').trim();
+    final bool snapshotFits = snapshot != null && snapshot.fullName().trim().isNotEmpty && (noDriverId || snapshotId.isEmpty || snapshotId == driverId);
+    deliveryMan.value = snapshotFits ? snapshot : null;
+    if (snapshotFits || noDriverId) return;
+    try {
+      final UserModel? user = await FireStoreUtils.getUserById(driverId);
+      if (user != null && orderModel.value.id == order.id) deliveryMan.value = user;
+    } catch (e) {
+      log("Loading the delivery man $driverId of order ${order.id} failed: $e");
+    }
   }
 
   RxDouble packagingCharge = 0.0.obs;
@@ -922,29 +949,33 @@ class OrderDetailsController extends GetxController {
         width: 1, // Spacer column
       ),
     ]);
-    bytes += generator.row([
-      PosColumn(
-        // The ShippingAddress object was interpolated straight into the line,
-        // which printed "Instance of 'ShippingAddress'"; the formatter also
-        // keeps "null" parts off the printed bill (report #17).
-        text: '${'Bill Address:'.tr} ${orderModel.value.address?.getFullAddress() ?? ''}',
-        width: 5,
-        styles: const PosStyles(align: PosAlign.left, height: PosTextSize.size1, width: PosTextSize.size1),
-      ),
-      PosColumn(
-        text: '',
-        width: 1, // Spacer column
-      ),
-      PosColumn(
-        text: '',
-        width: 5,
-        styles: const PosStyles(align: PosAlign.right, height: PosTextSize.size1, width: PosTextSize.size1, bold: true),
-      ),
-      PosColumn(
-        text: '',
-        width: 1, // Spacer column
-      ),
-    ]);
+    // The ShippingAddress object was interpolated straight into the line,
+    // which printed "Instance of 'ShippingAddress'"; the formatter also keeps
+    // "null" parts off the printed bill, and an order with no usable address
+    // (takeaway, POS) prints no address row at all (report 02#18).
+    final String billAddress = orderModel.value.address?.getFullAddress() ?? '';
+    if (billAddress.isNotEmpty) {
+      bytes += generator.row([
+        PosColumn(
+          text: '${'Bill Address:'.tr} $billAddress',
+          width: 5,
+          styles: const PosStyles(align: PosAlign.left, height: PosTextSize.size1, width: PosTextSize.size1),
+        ),
+        PosColumn(
+          text: '',
+          width: 1, // Spacer column
+        ),
+        PosColumn(
+          text: '',
+          width: 5,
+          styles: const PosStyles(align: PosAlign.right, height: PosTextSize.size1, width: PosTextSize.size1, bold: true),
+        ),
+        PosColumn(
+          text: '',
+          width: 1, // Spacer column
+        ),
+      ]);
+    }
     bytes += generator.row([
       PosColumn(
         text: '${'Bill By:'.tr} ${orderModel.value.vendor!.authorName}'.tr,

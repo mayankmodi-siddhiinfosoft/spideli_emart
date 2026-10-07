@@ -20,6 +20,7 @@ import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/ui/booking_list/assign_worker_list.dart';
 import 'package:spideliprovider/ui/booking_list/booking_details_screen.dart';
 import 'package:spideliprovider/ui/booking_list/verify_otp_screen.dart';
+import 'package:spideliprovider/utils/booking_response.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:spideliprovider/widgets/common_ui.dart';
 import 'package:spideliprovider/widgets/order_ui.dart';
@@ -336,13 +337,16 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
             padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.xs),
             child: Column(
               children: [
-                _detailRow(
-                  context,
-                  icon: Icons.place_outlined,
-                  label: "Address  ".tr,
-                  value: onProviderOrder.address?.getFullAddress() ?? "",
-                ),
-                _detailDivider(context),
+                // Report 02#18: no address left after cleaning -> no row.
+                if ((onProviderOrder.address?.getFullAddress() ?? '').isNotEmpty) ...[
+                  _detailRow(
+                    context,
+                    icon: Icons.place_outlined,
+                    label: "Address  ".tr,
+                    value: onProviderOrder.address!.getFullAddress(),
+                  ),
+                  _detailDivider(context),
+                ],
                 _detailRow(
                   context,
                   icon: Icons.schedule_rounded,
@@ -522,14 +526,23 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
                 final reason = await CancelReasonSheet.show(title: "Why are you declining this booking?".tr);
                 if (reason == null) return;
                 ShowToastDialog.showLoader('Please wait...');
+                // Only while the booking is still "Order Placed": a customer
+                // who cancelled while the sheet was open keeps their status
+                // and reason, and is not refunded twice.
+                final String? foundStatus;
                 try {
-                  await FireStoreUtils.updateOrderFields(onProviderOrder.id, {
+                  foundStatus = await FireStoreUtils.updatePlacedBooking(onProviderOrder.id, {
                     'status': ORDER_STATUS_REJECTED,
                     ...reason.toFields(action: 'rejected', byName: MyAppState.currentUser?.fullName()),
                   });
                 } catch (e) {
                   ShowToastDialog.closeLoader();
                   ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+                  return;
+                }
+                if (foundStatus != null) {
+                  ShowToastDialog.closeLoader();
+                  ShowToastDialog.showToast(bookingNoLongerPendingMessage(foundStatus).tr);
                   return;
                 }
                 onProviderOrder.status = ORDER_STATUS_REJECTED;
@@ -731,9 +744,28 @@ class _BookingListScreenState extends State<BookingListScreen> with TickerProvid
       onPrimary: () async {
         Navigator.of(context).pop();
         ShowToastDialog.showLoader('Please wait...');
+        final Timestamp newScheduleDateTime = Timestamp.fromDate(selectedDateTime);
+        // Only while the booking is still "Order Placed": a booking the
+        // customer cancelled (and was refunded for) while this dialog was open
+        // is never flipped back to accepted, and the provider is not paid.
+        final String? foundStatus;
+        try {
+          foundStatus = await FireStoreUtils.updatePlacedBooking(onProviderOrder.id, {
+            'status': ORDER_STATUS_ACCEPTED,
+            'newScheduleDateTime': newScheduleDateTime,
+          });
+        } catch (e) {
+          ShowToastDialog.closeLoader();
+          ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+          return;
+        }
+        if (foundStatus != null) {
+          ShowToastDialog.closeLoader();
+          ShowToastDialog.showToast(bookingNoLongerPendingMessage(foundStatus).tr);
+          return;
+        }
         onProviderOrder.status = ORDER_STATUS_ACCEPTED;
-        onProviderOrder.newScheduleDateTime = Timestamp.fromDate(selectedDateTime);
-        await FireStoreUtils.updateOrder(onProviderOrder);
+        onProviderOrder.newScheduleDateTime = newScheduleDateTime;
 
         await FireStoreUtils.providerWalletSet(onProviderOrder, onProviderOrder.provider.priceUnit == "Fixed" ? true : false);
         MyAppState.currentUser = await FireStoreUtils.getCurrentUser(FireStoreUtils.getCurrentUid());

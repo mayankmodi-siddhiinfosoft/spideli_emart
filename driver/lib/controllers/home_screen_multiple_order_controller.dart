@@ -4,12 +4,14 @@ import 'dart:developer';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
-import 'package:driver/constant/send_notification.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/services/audio_player_service.dart';
+import 'package:driver/services/dispatch_offer_rules.dart';
+import 'package:driver/services/dispatch_offer_service.dart';
+import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/widget/cancel_reason_sheet.dart';
@@ -69,7 +71,7 @@ class HomeScreenMultipleOrderController extends GetxController {
   /// auto-verified). They keep their assigned (Active) jobs but are offered
   /// nothing new: no "New" tab, no alert, and [acceptOrder] refuses.
   static bool documentsPending(UserModel driver) =>
-      driver.vendorID?.isEmpty == true && driver.isDocumentVerify == false && driver.isAutoVerify == false;
+      driver.vendorID?.isEmpty == true && DocumentVerification.isPending(driver);
 
   /// Who gets the "New" tab: a freelance driver who may take offers.
   static bool canTakeOffers(UserModel driver) => driver.vendorID?.isEmpty == true && !documentsPending(driver);
@@ -95,6 +97,41 @@ class HomeScreenMultipleOrderController extends GetxController {
       if (order == null) return !ordersLoaded;
       return AssignedDeliveryOrders.isOfferFor(order, driver.id) && !_outOfRegionOffer(order, driver);
     }).toList();
+  }
+
+  /// The "Active" tab: the [inProgress] ids this driver can still act on (a
+  /// job being worked, or a hand assignment by name still waiting for their
+  /// Accept / Reject), then - for a driver with no "New" tab
+  /// ([canTakeOffers] false: a store's own delivery man, or a freelance
+  /// driver whose documents are pending) - the hand assignments by name that
+  /// wait in [requests]. `DriverAssignmentWatcher` puts an admin hand
+  /// assignment found only on the order (`Driver Pending` / `Order Accepted`
+  /// + `driverID`, possibly with no push) into `orderRequestData`; without
+  /// a "New" tab nothing showed it. Each id once; an id whose order has not
+  /// loaded yet is kept (a skeleton card) until it does.
+  static List<dynamic> activeToShow({
+    required List<dynamic> inProgress,
+    required List<dynamic> requests,
+    required Map<String, OrderModel> orders,
+    required bool ordersLoaded,
+    required UserModel driver,
+  }) {
+    final String? uid = driver.id;
+    bool namedRequest(OrderModel order) => AssignedDeliveryOrders.isOfferFor(order, uid) && AssignedDeliveryOrders.isNamedFor(order, uid);
+    final Set<String> seen = {};
+    final List<dynamic> out = [];
+    for (final dynamic id in inProgress) {
+      final OrderModel? order = orders[id.toString()];
+      final bool keep = order == null ? !ordersLoaded : AssignedDeliveryOrders.isWorkableFor(order, uid) || namedRequest(order);
+      if (keep && seen.add(id.toString())) out.add(id);
+    }
+    if (!canTakeOffers(driver)) {
+      for (final dynamic id in requests) {
+        final OrderModel? order = orders[id.toString()];
+        if (order != null && namedRequest(order) && seen.add(id.toString())) out.add(id);
+      }
+    }
+    return out;
   }
 
   /// Declines out-of-region offers and rings only for offers the "New" tab
@@ -182,19 +219,19 @@ class HomeScreenMultipleOrderController extends GetxController {
     try {
       await AudioPlayerService.playSound(false);
       ShowToastDialog.showLoader("Please wait".tr);
-      final result = await AssignedDeliveryOrders.acceptOffer(orderId, driver);
+      // The shared dispatch service (D2); it also tells the customer and the
+      // store (templated pushes).
+      final DispatchResult result = await DispatchOfferService.accept(DispatchKind.delivery, orderId, driver);
       ShowToastDialog.closeLoader();
       switch (result.answer) {
         case OfferAnswer.done:
-          final OrderModel notified = result.order ?? offer;
-          // Customer and store, each on its app's channel, by their live tokens.
-          await SendNotification.notifyOrderAccepted(notified);
         case OfferAnswer.held:
           break;
         case OfferAnswer.gone:
           ShowToastDialog.showToast("This order is no longer available.".tr);
+        case OfferAnswer.blocked:
         case OfferAnswer.failed:
-          ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+          ShowToastDialog.showToast((result.message ?? "Something went wrong. Please try again.").tr);
       }
     } finally {
       _answering.remove(orderId);
@@ -203,7 +240,8 @@ class HomeScreenMultipleOrderController extends GetxController {
 
   /// Driver passes on one of the offers in the list. A reason is mandatory
   /// and nothing changes until one is given. The order goes back to dispatch
-  /// (status "Driver Rejected", this driver in `rejectedByDrivers`) and the
+  /// (D2: status "Driver Rejected", this driver in `rejectedByDrivers`,
+  /// `driverId` / `driverID` null) and the
   /// reason is appended to `driverRejections` — in a transaction that first
   /// re-checks the live order ([AssignedDeliveryOrders.rejectOffer]), so a
   /// cancelled order or another driver's job is never sent back to dispatch.
@@ -222,7 +260,7 @@ class HomeScreenMultipleOrderController extends GetxController {
     try {
       ShowToastDialog.showLoader("Please wait".tr);
       await AudioPlayerService.playSound(false);
-      final OfferAnswer answer = await AssignedDeliveryOrders.rejectOffer(orderId, driverId, reason.toFields(driverId));
+      final OfferAnswer answer = (await DispatchOfferService.reject(DispatchKind.delivery, orderId, driverId, reasonFields: reason.toFields(driverId))).answer;
       ShowToastDialog.closeLoader();
       if (answer == OfferAnswer.failed) {
         ShowToastDialog.showToast("Something went wrong. Please try again.".tr);

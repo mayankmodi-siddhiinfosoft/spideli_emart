@@ -1,3 +1,6 @@
+import 'dart:developer';
+
+import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/themes/app_them_data.dart';
 import 'package:spideliprovider/themes/responsive.dart';
 import 'package:spideliprovider/themes/round_button_fill.dart';
@@ -95,17 +98,30 @@ class LocationPickerScreen extends StatelessWidget {
                             mode: Mode.overlay,
                             language: "en",
                           );
-                          if (p != null) {
-                            final detail = await _places.getDetailsByPlaceId(p.placeId!);
-                            final lat = detail.result.geometry!.location.lat;
-                            final lng = detail.result.geometry!.location.lng;
-                            final LatLng pos = LatLng(lat, lng);
-                            controller.selectedLocation.value = pos;
-                            controller.mapController?.animateCamera(
-                              CameraUpdate.newLatLngZoom(pos, 15),
-                            );
-                            controller.getAddressFromLatLng(pos);
+                          if (p == null) return;
+                          // Read the location only once Place Details found
+                          // one: a non-OK answer has no `result` (parsing it
+                          // throws) and a place may have no geometry.
+                          LatLng? pos;
+                          try {
+                            final String placeId = p.placeId ?? '';
+                            if (placeId.isNotEmpty) {
+                              final detail = await _places.getDetailsByPlaceId(placeId);
+                              final location = detail.isOkay ? detail.result.geometry?.location : null;
+                              if (location != null) pos = LatLng(location.lat, location.lng);
+                            }
+                          } catch (e) {
+                            log("Place details failed: $e");
                           }
+                          if (pos == null) {
+                            ShowToastDialog.showToast("Could not read the selected location".tr);
+                            return;
+                          }
+                          controller.selectedLocation.value = pos;
+                          controller.mapController?.animateCamera(
+                            CameraUpdate.newLatLngZoom(pos, 15),
+                          );
+                          controller.getAddressFromLatLng(pos);
                         },
                         child: Container(
                           width: Responsive.width(100, context),

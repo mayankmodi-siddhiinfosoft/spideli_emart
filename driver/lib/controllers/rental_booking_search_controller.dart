@@ -1,4 +1,9 @@
+import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/region_service.dart';
+import 'package:driver/services/assigned_delivery_orders.dart';
+import 'package:driver/services/dispatch_navigation.dart';
+import 'package:driver/services/dispatch_offer_rules.dart';
+import 'package:driver/services/dispatch_offer_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
@@ -9,6 +14,7 @@ import 'package:driver/widget/geoflutterfire/src/geoflutterfire.dart';
 import 'package:driver/widget/geoflutterfire/src/models/point.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/widget/cancel_reason_sheet.dart';
+import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 
 class RentalBookingSearchController extends GetxController {
@@ -43,37 +49,56 @@ class RentalBookingSearchController extends GetxController {
   RxList<RentalOrderModel> rentalBookingData = <RentalOrderModel>[].obs;
 
   /// Driver passes on a booking request: a reason is mandatory (spec 9.1).
-  /// Known-fields write: rejectedByDrivers + this driver's reason in driverRejections.
+  /// A booking the `rentalDispatch` Cloud Function offered to this driver is
+  /// rejected (D2: back to dispatch, `driverId` / `driverID` null, this driver
+  /// in `rejectedByDrivers`, the reason in `driverRejections`, the id out of
+  /// `orderRequestData`); an open booking nobody was offered yet is only
+  /// passed (`rejectedByDrivers` + reason, status unchanged — dispatch already
+  /// skips `rejectedByDrivers`). Both re-check the live booking first.
   Future<void> rejectBooking(RentalOrderModel order) async {
-    if (order.id == null) return;
+    final String? id = order.id;
+    if (id == null) return;
     final reason = await CancelReasonSheet.show(title: "Why are you rejecting this booking?".tr);
     if (reason == null) return;
+    final String uid = FireStoreUtils.getCurrentUid();
+    // The search screen, taken before the write (see [acceptBooking]).
+    final Route<dynamic>? searchRoute = DispatchNavigation.ownRoute();
     ShowToastDialog.showLoader("Rejecting booking...".tr);
-    final ok = await FireStoreUtils.updateRentalFields(order.id!, {
-      'rejectedByDrivers': FieldValue.arrayUnion([FireStoreUtils.getCurrentUid()]),
-      ...reason.toFields(FireStoreUtils.getCurrentUid()),
-    });
+    final DispatchResult result = await DispatchOfferService.rejectOrPassOpen(DispatchKind.rental, id, uid, reason.toFields(uid));
     ShowToastDialog.closeLoader();
-    if (!ok) {
-      ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
-      return;
+    switch (result.answer) {
+      case OfferAnswer.done:
+        DispatchNavigation.closeRoute(searchRoute, result: true);
+        ShowToastDialog.showToast("Booking rejected successfully".tr);
+      case OfferAnswer.gone:
+        ShowToastDialog.showToast("This order is no longer available.".tr);
+      case OfferAnswer.held:
+      case OfferAnswer.blocked:
+      case OfferAnswer.failed:
+        ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+        return;
     }
-    Get.back(result: true);
-    ShowToastDialog.showToast("Booking rejected successfully".tr);
     getRentalSearchBooking();
   }
 
-  /// Driver accepts a booking request. Known-fields write; stamps the driver's
-  /// region when the booking has none (spec 18.12). A booking whose price
-  /// proposal is still open must be answered first (spec 4.9).
+  /// Driver accepts a booking request through the shared dispatch service
+  /// (D2), in a transaction: only while it is still `Order Placed` with no
+  /// driver, or `Driver Pending` for this driver — `rentalDispatch` may have
+  /// offered it to another driver since the list was read. Known fields
+  /// (`Driver Accepted`, `driverId` / `driverID` / `driver`, the driver's
+  /// region when the booking has none, spec 18.12), then the driver's record
+  /// (`inProgressOrderID` arrayUnion, `orderRequestData` arrayRemove). A
+  /// booking whose price proposal is still open must be answered first (spec
+  /// 4.9), checked again on the live booking.
   Future<void> acceptBooking(RentalOrderModel order) async {
-    if (order.id == null) return;
+    final String? id = order.id;
+    if (id == null) return;
     // A new booking ('Order Placed' from the search) is only for a verified
     // driver who is online; the home screen hides the search otherwise, and
     // this is the same rule where the write happens. Bookings already
     // assigned never come through here.
     final UserModel? me = Constant.userModel;
-    final bool verified = !(me?.isDocumentVerify == false && me?.isAutoVerify == false);
+    final bool verified = !DocumentVerification.isPending(me);
     if (me == null || !verified) {
       ShowToastDialog.showToast("Document verification is pending. Please proceed to set up your document verification.".tr);
       return;
@@ -91,29 +116,24 @@ class RentalBookingSearchController extends GetxController {
       ShowToastDialog.showToast("Waiting for the customer to answer your counter-offer".tr);
       return;
     }
+    // The search screen, taken before the write: the incoming-order dialog
+    // may open above it meanwhile, and Get.back() would pop that instead.
+    final Route<dynamic>? searchRoute = DispatchNavigation.ownRoute();
     ShowToastDialog.showLoader("Accepting booking...".tr);
-    // Update section model for this order's section (multi-section support)
-    final sid = order.sectionId;
-    if (sid != null && sid.isNotEmpty) {
-      await FireStoreUtils.getSectionBySectionId(sid).then((s) {
-        if (s != null) Constant.sectionModels[sid] = s;
-      });
-    }
-    final driver = Constant.userModel;
-    final regionId = (order.regionId == null || order.regionId!.isEmpty) ? await RegionService.regionIdToStamp(driver) : null;
-    final ok = await FireStoreUtils.updateRentalFields(order.id!, {
-      'status': Constant.driverAccepted,
-      'driverId': FireStoreUtils.getCurrentUid(),
-      if (driver != null) 'driver': driver.toJson(),
-      if (regionId != null && regionId.isNotEmpty) 'regionId': regionId,
-    });
+    final DispatchResult result = await DispatchOfferService.accept(DispatchKind.rental, id, me, fromOpenSearch: true);
     ShowToastDialog.closeLoader();
-    if (!ok) {
-      ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
-      return;
+    switch (result.answer) {
+      case OfferAnswer.done:
+      case OfferAnswer.held:
+        DispatchNavigation.closeRoute(searchRoute, result: true);
+        ShowToastDialog.showToast("Booking accepted successfully".tr);
+      case OfferAnswer.gone:
+        ShowToastDialog.showToast("This order is no longer available.".tr);
+        getRentalSearchBooking();
+      case OfferAnswer.blocked:
+      case OfferAnswer.failed:
+        ShowToastDialog.showToast((result.message ?? "Something went wrong. Please try again.").tr);
     }
-    Get.back(result: true);
-    ShowToastDialog.showToast("Booking accepted successfully".tr);
   }
 
   Future<void> getRentalSearchBooking() async {

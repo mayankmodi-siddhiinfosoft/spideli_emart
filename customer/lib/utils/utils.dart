@@ -45,6 +45,19 @@ class Utils {
     return await Geolocator.getCurrentPosition();
   }
 
+  /// The first place the device geocoder knows at [lat],[lng], or null when it
+  /// returns nothing (a point with no locality, rural or regional) or fails
+  /// (offline, service unavailable). Never throws, so a location handler can
+  /// always finish - and close its loader - whatever the geocoder does (02#27).
+  static Future<Placemark?> firstPlacemark(double lat, double lng) async {
+    try {
+      final List<Placemark> placemarks = await Geocoding().placemarkFromCoordinates(lat, lng);
+      return placemarks.isNotEmpty ? placemarks.first : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   static Future<String> getAddressFromCoordinates(double lat, double lng) async {
     try {
       List<Placemark> placemarks = await Geocoding().placemarkFromCoordinates(lat, lng);

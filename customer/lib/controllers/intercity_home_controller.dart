@@ -1,5 +1,7 @@
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/models/currency_model.dart';
 import 'package:customer/utils/region_service.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
@@ -145,7 +147,8 @@ class IntercityHomeController extends GetxController with CabRideOptions {
 
     await getPaymentSettings(regionId: rideRegionId);
 
-    FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen((userSnapshot) async {
+    await _userSub?.cancel();
+    _userSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).snapshots().listen((userSnapshot) async {
       if (!userSnapshot.exists) return;
 
       userModel.value = UserModel.fromJson(userSnapshot.data()!);
@@ -153,65 +156,24 @@ class IntercityHomeController extends GetxController with CabRideOptions {
       if (userModel.value.inProgressOrderID != null && userModel.value.inProgressOrderID!.isNotEmpty) {
         String? validRideId;
 
-        for (String id in userModel.value.inProgressOrderID!) {
+        for (final dynamic raw in userModel.value.inProgressOrderID!) {
+          final String id = (raw ?? '').toString();
+          // A ride that ended without a trip is being dropped from the list.
+          if (id.isEmpty || id == _endedRideId) continue;
           final rideDoc = await FireStoreUtils.fireStore.collection(CollectionName.rides).doc(id).get();
 
           if (rideDoc.exists && (rideDoc.data()?['rideType'] ?? '').toString().toLowerCase() == "intercity") {
-            validRideId = userModel.value.inProgressOrderID!.first!;
+            // The matching ride, not simply the first id of the list.
+            validRideId = id;
             break;
           }
         }
 
-        FireStoreUtils.fireStore.collection(CollectionName.rides).doc(validRideId).snapshots().listen((rideSnapshot) async {
-          if (!rideSnapshot.exists) return;
-
-          final rideData = rideSnapshot.data()!;
-          currentOrder.value = CabOrderModel.fromJson(rideData);
-          final status = currentOrder.value.status;
-
-          if (status == Constant.driverAccepted || status == Constant.orderInTransit) {
-            // A driver is on the ride: make sure `rides.regionId` holds the
-            // DRIVER's region, filling it only when the Driver app left it
-            // empty (never replacing one that is already there).
-            currentOrder.value.regionId = await FireStoreUtils.ensureRideRegion(
-              collection: CollectionName.rides,
-              orderId: currentOrder.value.id,
-              driverId: currentOrder.value.driverId,
-              currentRegionId: currentOrder.value.regionId,
-            );
-            // An assigned-but-empty driverId is not an assignment: `doc('')`
-            // throws ArgumentError from inside this ride listener, and
-            // `doc(null)` would quietly follow a brand new auto-id document.
-            final String rideDriverId = (currentOrder.value.driverId ?? '').trim();
-            if (rideDriverId.isNotEmpty) {
-              FireStoreUtils.fireStore.collection(CollectionName.users).doc(rideDriverId).snapshots().listen((event) async {
-                if (event.exists && event.data() != null) {
-                  UserModel driverModel0 = UserModel.fromJson(event.data()!);
-                  driverModel.value = driverModel0;
-                  await refreshPaymentRegion();
-                  await updateDriverRoute(driverModel0);
-                }
-              });
-            }
-          }
-
-          print("Current Ride Status: $status");
-          if (status == Constant.orderPlaced || status == Constant.driverPending || status == Constant.driverRejected || (status == Constant.orderAccepted && currentOrder.value.driverId == null)) {
-            bottomSheetType.value = 'waitingForDriver';
-          } else if (status == Constant.driverAccepted || status == Constant.orderInTransit) {
-            bottomSheetType.value = 'driverDetails';
-            sourceTextEditController.value.text = currentOrder.value.sourceLocationName ?? '';
-            destinationTextEditController.value.text = currentOrder.value.destinationLocationName ?? '';
-            selectedPaymentMethod.value = currentOrder.value.paymentMethod ?? '';
-            calculateTotalAmountAfterAccept();
-          } else if (status == Constant.orderCompleted) {
-            userModel.value.inProgressOrderID!.remove(validRideId);
-            await FireStoreUtils.updateUser(userModel.value);
-            bottomSheetType.value = 'location';
-            Get.back();
-          }
-        });
+        // No intercity ride among them: follow nothing (never `doc(null)`, which
+        // is a brand new auto-id document).
+        _followRide(validRideId);
       } else {
+        _followRide(null);
         bottomSheetType.value = 'location';
         if (Constant.currentLocation != null) {
           setDepartureMarker(Constant.currentLocation!.latitude, Constant.currentLocation!.longitude);
@@ -222,6 +184,130 @@ class IntercityHomeController extends GetxController with CabRideOptions {
 
     final coupons = await FireStoreUtils.getCabCoupon();
     cabCouponList.value = coupons;
+  }
+
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userSub;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _rideSub;
+  String? _rideSubId;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _rideDriverSub;
+  String? _rideDriverSubId;
+
+  /// The ride that ended without a trip and is being dropped from
+  /// `inProgressOrderID` (handled once).
+  String? _endedRideId;
+
+  /// Follows one ride document (null: none). Re-following the same id is a
+  /// no-op, so a change to the user document does not stack listeners.
+  void _followRide(String? rideId) {
+    if (rideId != null && rideId == _rideSubId && _rideSub != null) return;
+    _rideSub?.cancel();
+    _rideSub = null;
+    _rideSubId = rideId;
+    if (rideId == null) {
+      _followRideDriver(null);
+      return;
+    }
+    _rideSub = FireStoreUtils.fireStore.collection(CollectionName.rides).doc(rideId).snapshots().listen((rideSnapshot) async {
+      if (!rideSnapshot.exists) return;
+
+      final rideData = rideSnapshot.data()!;
+      currentOrder.value = CabOrderModel.fromJson(rideData);
+      final status = currentOrder.value.status;
+
+      if (status == Constant.driverAccepted || status == Constant.orderInTransit) {
+        // A driver is on the ride: make sure `rides.regionId` holds the
+        // DRIVER's region, filling it only when the Driver app left it
+        // empty (never replacing one that is already there).
+        currentOrder.value.regionId = await FireStoreUtils.ensureRideRegion(
+          collection: CollectionName.rides,
+          orderId: currentOrder.value.id,
+          driverId: currentOrder.value.driverId,
+          currentRegionId: currentOrder.value.regionId,
+        );
+        // An assigned-but-empty driverId is not an assignment: `doc('')`
+        // throws ArgumentError from inside this ride listener, and
+        // `doc(null)` would quietly follow a brand new auto-id document.
+        _followRideDriver((currentOrder.value.driverId ?? '').trim());
+      } else {
+        // Back with the dispatch ("Driver Rejected" nulls driverId) or over:
+        // the previous driver is no longer followed.
+        _followRideDriver(null);
+      }
+
+      print("Current Ride Status: $status");
+      if (status == Constant.orderPlaced || status == Constant.driverPending || status == Constant.driverRejected || (status == Constant.orderAccepted && currentOrder.value.driverId == null)) {
+        bottomSheetType.value = 'waitingForDriver';
+      } else if (status == Constant.driverAccepted || status == Constant.orderInTransit) {
+        bottomSheetType.value = 'driverDetails';
+        sourceTextEditController.value.text = displayAddress(currentOrder.value.sourceLocationName);
+        destinationTextEditController.value.text = displayAddress(currentOrder.value.destinationLocationName);
+        selectedPaymentMethod.value = currentOrder.value.paymentMethod ?? '';
+        calculateTotalAmountAfterAccept();
+      } else if (status == Constant.orderCompleted) {
+        userModel.value.inProgressOrderID!.remove(rideId);
+        await FireStoreUtils.updateUser(userModel.value);
+        bottomSheetType.value = 'location';
+        Get.back();
+      } else if (status == Constant.orderCancelled || status == Constant.orderRejected) {
+        await _rideEnded(rideId);
+      }
+    });
+  }
+
+  /// Follows the accepted driver's position (null / '': none).
+  void _followRideDriver(String? driverId) {
+    final String id = (driverId ?? '').trim();
+    if (id.isNotEmpty && id == _rideDriverSubId && _rideDriverSub != null) return;
+    _rideDriverSub?.cancel();
+    _rideDriverSub = null;
+    _rideDriverSubId = id.isEmpty ? null : id;
+    if (id.isEmpty) return;
+    _rideDriverSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(id).snapshots().listen((event) async {
+      if (event.exists && event.data() != null) {
+        UserModel driverModel0 = UserModel.fromJson(event.data()!);
+        driverModel.value = driverModel0;
+        await refreshPaymentRegion();
+        await updateDriverRoute(driverModel0);
+      }
+    });
+  }
+
+  /// The ride ended without a trip while the customer was waiting on it: the
+  /// dispatch auto-cancelled it (no driver accepted it within
+  /// `orderAutoCancelDuration`) or the panel cancelled / rejected it. Leaves
+  /// the "Waiting for driver" sheet and drops the ride from
+  /// `inProgressOrderID`, so the screen no longer attaches to it.
+  Future<void> _rideEnded(String rideId) async {
+    if (_endedRideId == rideId) return;
+    _endedRideId = rideId;
+    _followRide(null);
+    final CabOrderModel ended = currentOrder.value;
+    // The customer's own cancel resets the screen and says so itself.
+    if (ended.cancelledBy != 'customer') {
+      ShowToastDialog.showToast(CabRideCancellation.endedMessage(ended));
+      resetRideOptions();
+      polyLines.clear();
+      markers.clear();
+      osmMarker.clear();
+      routePoints.clear();
+      sourceTextEditController.value.clear();
+      destinationTextEditController.value.clear();
+      departureLatLong.value = const LatLng(0.0, 0.0);
+      destinationLatLong.value = const LatLng(0.0, 0.0);
+      departureLatLongOsm.value = latlong.LatLng(0.0, 0.0);
+      destinationLatLongOsm.value = latlong.LatLng(0.0, 0.0);
+      bottomSheetType.value = 'location';
+    }
+    userModel.value.inProgressOrderID?.remove(rideId);
+    await FireStoreUtils.removeInProgressOrder(rideId);
+  }
+
+  @override
+  void onClose() {
+    _userSub?.cancel();
+    _rideSub?.cancel();
+    _rideDriverSub?.cancel();
+    super.onClose();
   }
 
   Future<void> updateDriverRoute(UserModel driverModel) async {
@@ -456,7 +542,7 @@ class IntercityHomeController extends GetxController with CabRideOptions {
   Future<void> completeOrder() async {
     if (selectedPaymentMethod.value == PaymentGateway.cod.name) {
       currentOrder.value.paymentMethod = selectedPaymentMethod.value;
-      await FireStoreUtils.cabOrderPlace(currentOrder.value).then((value) {
+      await FireStoreUtils.updateRidePayment(currentOrder.value).then((value) {
         ShowToastDialog.showToast("Payment method changed".tr);
         Get.back();
         Get.back();
@@ -493,7 +579,7 @@ class IntercityHomeController extends GetxController with CabRideOptions {
         });
       }
 
-      await FireStoreUtils.cabOrderPlace(currentOrder.value).then((value) {
+      await FireStoreUtils.updateRidePayment(currentOrder.value).then((value) {
         ShowToastDialog.showToast("Payment successfully".tr);
         Get.back();
       });

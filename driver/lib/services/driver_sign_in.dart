@@ -114,10 +114,11 @@ class DriverSignIn {
   static void openDashboard(UserModel userModel) {
     if (userModel.isOwner == true) {
       Get.offAll(OwnerDashboardScreen());
-    } else if ((userModel.serviceTypes?.length ?? 0) > 1) {
+    } else if (userModel.serviceModules.length > 1) {
       Get.offAll(const MultiServiceDashboardScreen());
     } else {
-      switch (userModel.serviceTypes?.firstOrNull) {
+      // Read through the spec's aliases (`parcel-service` is the parcel module).
+      switch (userModel.serviceModules.firstOrNull) {
         case 'cab-service':
           Get.offAll(const CabDashboardScreen());
           break;

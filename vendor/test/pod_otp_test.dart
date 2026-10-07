@@ -207,8 +207,22 @@ void main() {
 
     test('self delivery and e-commerce with a delivery man still need the delivery code', () {
       expect(scope(storeDelivers: true, hasDriver: true, handedOver: true, status: app.Constant.orderInTransit), StoreCompletion.deliveryCode);
-      expect(scope(isEcommerce: true, hasDriver: true), StoreCompletion.deliveryCode);
+      expect(scope(isEcommerce: true, hasDriver: true, status: app.Constant.orderShipped), StoreCompletion.deliveryCode);
+      expect(scope(isEcommerce: true, hasDriver: true, status: app.Constant.orderInTransit), StoreCompletion.deliveryCode);
       expect(PodScope.needsCode(StoreCompletion.deliveryCode), isTrue);
+    });
+
+    test('an e-commerce order the dispatch is still working on is no courier shipment and no delivery yet', () {
+      // Accepted on the store panel, offered to a driver (who is written on
+      // the order with the offer), passed on, or just taken.
+      for (final String status in [app.Constant.orderAccepted, app.Constant.driverPending, app.Constant.driverRejected, app.Constant.driverAccepted]) {
+        for (final bool driver in [false, true]) {
+          expect(scope(isEcommerce: true, status: status, hasDriver: driver, handedOver: status == app.Constant.driverAccepted), StoreCompletion.waitForDriver, reason: '$status driver=$driver');
+        }
+        // A self-delivery store can still give it to its own delivery man.
+        expect(scope(isEcommerce: true, storeDelivers: true, status: status), StoreCompletion.assignDriver, reason: status);
+      }
+      expect(scope(isEcommerce: true, storeDelivers: true, status: app.Constant.driverPending, hasDriver: true), StoreCompletion.assignDriver);
     });
 
     test('e-commerce courier shipments stay exempt', () {

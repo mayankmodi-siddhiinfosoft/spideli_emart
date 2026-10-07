@@ -223,6 +223,21 @@ class OrderModel {
     stampCancelledAtOnServer = true;
   }
 
+  /// What a store cancel / reject writes, and nothing else: the new status
+  /// and the contract's reason fields (`cancelledAt` stamped by the server
+  /// after [markEndedByVendor]). A field update rather than the whole order,
+  /// so it cannot roll back what the dispatch Function or a driver wrote
+  /// meanwhile (`driverID`, `driverId`, `rejectedByDrivers`, ...).
+  Map<String, dynamic> endedByVendorFields() => {
+    'status': status,
+    if (cancelReason != null) 'cancelReason': cancelReason,
+    if (cancelReasonCode != null) 'cancelReasonCode': cancelReasonCode,
+    if (cancelledBy != null) 'cancelledBy': cancelledBy,
+    if (cancelledByName != null) 'cancelledByName': cancelledByName,
+    if (cancelAction != null) 'cancelAction': cancelAction,
+    if (stampCancelledAtOnServer) 'cancelledAt': FieldValue.serverTimestamp() else if (cancelledAt != null) 'cancelledAt': cancelledAt,
+  };
+
   /// The contract's block for this order, for the cards and details screen.
   CancellationDetails get cancellation => CancellationDetails.of(
     status: status,

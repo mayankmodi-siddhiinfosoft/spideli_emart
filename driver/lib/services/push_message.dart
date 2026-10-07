@@ -7,6 +7,8 @@ library;
 
 import 'dart:convert';
 
+import 'package:driver/services/dispatch_offer_rules.dart';
+
 /// The app a push is addressed to. The Android channel in the message must be
 /// one the RECEIVING app creates, or Android posts it on that app's manifest
 /// default channel (or a silent "Miscellaneous" fallback).
@@ -65,6 +67,11 @@ class PushChannels {
   /// Driver: a new or assigned job (importance max, ringtone stream).
   static const String driverJob = 'driver_jobs';
 
+  /// Driver: an offer from the dispatch Cloud Functions
+  /// (DRIVER_DISPATCH_DOCUMENTATION.md §5A — "Spideli Order Notifications",
+  /// importance max, default sound, vibration).
+  static const String dispatch = 'spideli';
+
   /// spideli_provider/lib/services/notification_service.dart.
   static const String provider = '01';
 
@@ -114,10 +121,14 @@ class PushChannels {
 
   /// Channel the driver app shows an incoming push on (foreground display):
   /// the channel the sender named when it is one of the driver's, otherwise
-  /// the job channel for a job type, otherwise the general driver channel.
-  static String driverChannelFor({String? type, String? requestedChannelId}) {
+  /// [dispatch] for a dispatch offer ([DispatchPush.parse] on [data]: type
+  /// order / parcel / cab / rental with an order id and the dispatch
+  /// markers), otherwise the job channel for a job type, otherwise the
+  /// general driver channel.
+  static String driverChannelFor({String? type, String? requestedChannelId, Map<String, dynamic>? data}) {
     final String requested = (requestedChannelId ?? '').trim();
-    if (requested == driver || requested == driverJob) return requested;
+    if (requested == driver || requested == driverJob || requested == dispatch) return requested;
+    if (DispatchPush.parse(data) != null) return dispatch;
     if (driverJobTypes.contains((type ?? '').trim())) return driverJob;
     return driver;
   }
@@ -336,5 +347,55 @@ class CachedAccessToken {
   bool isFresh(DateTime now, {Duration margin = const Duration(minutes: 5)}) {
     if (value.isEmpty) return false;
     return now.toUtc().isBefore(expiresAt.toUtc().subtract(margin));
+  }
+}
+
+/// The FCM topics a driver's device should be subscribed to (client point
+/// 19 / doc 21): `driver`, `driver_<serviceType>`, `section_<id>`,
+/// `zone_<id>` (every zone the driver serves, not only the first),
+/// `region_<id>`, `company_<ownerId>` and `carrier_<id>`. None for an
+/// account that is not [active] (not approved / disabled by the admin).
+///
+/// A company account ([isOwner]) takes no job itself - its drivers do - so
+/// it gets only `company_<ownerId>` / `carrier_<id>`, never the `driver`,
+/// `driver_<service>`, section, zone (a company now stores several) or
+/// region topics that announce jobs it cannot act on.
+///
+/// FCM topic names only accept `[a-zA-Z0-9-_.~%]`; anything else becomes `_`,
+/// and a blank value gives no topic.
+abstract final class PushTopics {
+  static String topic(String prefix, String value) {
+    final String safe = value.trim().replaceAll(RegExp(r'[^a-zA-Z0-9\-_.~%]'), '_');
+    return safe.isEmpty ? '' : '${prefix}_$safe';
+  }
+
+  static Set<String> forDriver({
+    required bool active,
+    Iterable<String>? serviceTypes,
+    Iterable<String>? sectionIds,
+    String? zoneId,
+    Iterable<String>? zoneIds,
+    String? regionId,
+    String? ownerId,
+    String? carrierId,
+    bool isOwner = false,
+  }) {
+    if (!active) return <String>{};
+    if (isOwner) return <String>{topic('company', ownerId ?? ''), topic('carrier', carrierId ?? '')}..remove('');
+    final Set<String> topics = <String>{'driver'};
+    for (final String service in serviceTypes ?? const <String>[]) {
+      topics.add(topic('driver', service));
+    }
+    for (final String sectionId in sectionIds ?? const <String>[]) {
+      topics.add(topic('section', sectionId));
+    }
+    for (final String zone in <String>[zoneId ?? '', ...?zoneIds]) {
+      topics.add(topic('zone', zone));
+    }
+    topics.add(topic('region', regionId ?? ''));
+    topics.add(topic('company', ownerId ?? ''));
+    topics.add(topic('carrier', carrierId ?? ''));
+    topics.remove('');
+    return topics;
   }
 }

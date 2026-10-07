@@ -11,6 +11,7 @@ import 'package:driver/models/section_model.dart';
 import 'package:driver/models/vehicle_type.dart';
 import 'package:driver/models/zone_model.dart';
 import 'package:driver/themes/ds/ds.dart';
+import 'package:driver/widget/zone_multi_select.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -48,6 +49,8 @@ class SignupScreen extends StatelessWidget {
           final RegionModel? selectedRegion = controller.selectedRegion.value;
           final List<ZoneModel> zones = controller.zoneList.toList();
           final ZoneModel selectedZone = controller.selectedZone.value;
+          final List<String> companyZoneIds = controller.selectedZoneIds.toList();
+          final Map<String, String> companyFiles = Map<String, String>.from(controller.companyFiles);
 
           final vehicleSections = role == "Individual"
               ? controller.selectedSections.where((s) => controller.sectionNeedsVehicle(s)).toList()
@@ -304,9 +307,34 @@ class SignupScreen extends StatelessWidget {
                   const DsGap(DsSpace.lg),
                 ],
 
-                if (role == "Company")
-                  const SizedBox()
-                else ...[
+                if (role == "Company") ...[
+                  // Report Doc 43: a company serves several zones.
+                  DsFormSection(
+                    title: "Zones you serve".tr,
+                    icon: Icons.map_outlined,
+                    children: [
+                      if (regions.isNotEmpty && selectedRegion == null)
+                        DsInlineAlert(
+                          tone: DsTone.info,
+                          icon: Icons.info_outline_rounded,
+                          message: "Select your management zone first to see the zones it covers.".tr,
+                        )
+                      else if (zones.isEmpty)
+                        DsInlineAlert(
+                          tone: DsTone.warning,
+                          icon: Icons.map_outlined,
+                          message: "No zone is available in this management zone yet.".tr,
+                        )
+                      else
+                        ZoneMultiSelect(
+                          zones: zones,
+                          selectedIds: companyZoneIds,
+                          onToggle: controller.toggleCompanyZone,
+                        ),
+                    ],
+                  ),
+                  const DsGap(DsSpace.lg),
+                ] else ...[
                   DsFormSection(
                     title: "Zone".tr,
                     icon: Icons.map_outlined,
@@ -352,6 +380,16 @@ class SignupScreen extends StatelessWidget {
                         textInputAction: TextInputAction.next,
                       ),
                       DsTextField(
+                        label: 'Company Address'.tr,
+                        controller: controller.companyAddressController.value,
+                        hint: 'Enter Company Address'.tr,
+                        prefixIcon: Icons.location_on_outlined,
+                        textInputAction: TextInputAction.next,
+                        textCapitalization: TextCapitalization.words,
+                        minLines: 1,
+                        maxLines: 3,
+                      ),
+                      DsTextField(
                         label: 'Operating Licence'.tr,
                         controller: controller.operatingLicenceController.value,
                         hint: 'Enter Operating Licence Number'.tr,
@@ -375,10 +413,11 @@ class SignupScreen extends StatelessWidget {
                   const DsGap(DsSpace.lg),
                   DsFormSection(
                     title: "Company documents".tr,
+                    subtitle: "All three documents are required.".tr,
                     icon: Icons.folder_open_rounded,
                     children: [
                       ...SignupController.companyFileFields.entries.map((entry) {
-                        final picked = controller.companyFiles[entry.key];
+                        final picked = companyFiles[entry.key];
                         return _CompanyFileRow(
                           title: entry.value.tr,
                           fileName: picked == null ? "Not uploaded".tr : picked.split('/').last,
@@ -472,13 +511,8 @@ class SignupScreen extends StatelessWidget {
                         ShowToastDialog.showToast("Please select zone".tr);
                       } else if (controller.selectedValue.value == "Individual" && !controller.zoneServesSelectedRegion) {
                         ShowToastDialog.showToast("The selected zone does not belong to the selected management zone.".tr);
-                      } else if (controller.isCompany && controller.companyNameController.value.text.trim().isEmpty) {
-                        ShowToastDialog.showToast("Please enter company name".tr);
-                      } else if (controller.isCompany &&
-                          (controller.operatingLicenceController.value.text.trim().isEmpty ||
-                              controller.commercialRegisterController.value.text.trim().isEmpty ||
-                              controller.uniqueIdNumberController.value.text.trim().isEmpty)) {
-                        ShowToastDialog.showToast("Please enter the operating licence, commercial register and unique identification number".tr);
+                      } else if (controller.companyValidationError() != null) {
+                        ShowToastDialog.showToast(controller.companyValidationError()!.tr);
                       } else {
                         controller.signUpWithEmailAndPassword();
                       }

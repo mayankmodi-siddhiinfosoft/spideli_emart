@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/models/admin_commission_model.dart';
 import 'package:vendor/models/subscription_plan_model.dart';
+import 'package:vendor/models/vendor_model.dart';
 import 'package:vendor/utils/address_format.dart';
 
 class UserModel {
@@ -246,9 +247,13 @@ class UserLocation {
 
   UserLocation({this.latitude, this.longitude});
 
+  /// Tolerant (report 02#2): the panels store coordinates as strings and an
+  /// integer-valued number arrives as an `int`; either used to throw here and
+  /// take the whole order or user down with it. Blank / `"null"` / garbage
+  /// reads as "not set".
   UserLocation.fromJson(Map<String, dynamic> json) {
-    latitude = json['latitude'];
-    longitude = json['longitude'];
+    latitude = VendorModel.parseCoordinate(json['latitude']);
+    longitude = VendorModel.parseCoordinate(json['longitude']);
   }
 
   Map<String, dynamic> toJson() {
@@ -294,11 +299,13 @@ class ShippingAddress {
     return data;
   }
 
-  /// The address on one line. Missing parts - including the ones stored as the
-  /// string "null" - are dropped together with their separator, so an address
-  /// never renders as "123 Yaounde St, null, Tsinga" (report #17).
+  /// The address on one line, by the panels' rule ([spideliFormatAddress],
+  /// report 02#18): missing parts - including "null" baked into a joined
+  /// `locality` - are dropped together with their separator, so an address
+  /// never renders as "123 Yaounde St, null, Tsinga". `''` when nothing is
+  /// left, so callers can hide the row.
   String getFullAddress() {
-    return formatAddress([address, locality, landmark]);
+    return spideliFormatAddress({'address': address, 'locality': locality, 'landmark': landmark});
   }
 }
 

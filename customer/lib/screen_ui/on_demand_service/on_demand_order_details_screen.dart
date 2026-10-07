@@ -1,3 +1,4 @@
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:dotted_border/dotted_border.dart';
@@ -197,7 +198,7 @@ class OnDemandOrderDetailsScreen extends StatelessWidget {
                                                   children: [
                                                     Icon(Icons.location_on_outlined, size: 15, color: context.dsColors.iconDefault),
                                                     const DsGap(DsSpace.xs),
-                                                    Expanded(child: Text(controller.worker.value?.address ?? '', style: t.bodySm)),
+                                                    Expanded(child: Text(displayAddress(controller.worker.value?.address), style: t.bodySm)),
                                                   ],
                                                 ),
                                               ],

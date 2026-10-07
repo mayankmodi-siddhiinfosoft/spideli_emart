@@ -1,3 +1,4 @@
+import 'package:customer/utils/address_format.dart';
 import 'package:country_code_picker/country_code_picker.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/cab_ride_options.dart';
@@ -418,7 +419,7 @@ class CabStopsEditor extends StatelessWidget {
                     _StopBadge(label: CabRideOptions.stopLabel(i)),
                     const DsGap(DsSpace.md),
                     Expanded(
-                      child: Text(stops[i].address, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodyStrong),
+                      child: Text(displayAddress(stops[i].address, fallback: '-'), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodyStrong),
                     ),
                     DsIconButton(icon: Icons.arrow_upward_rounded, semanticLabel: "Move up".tr, size: 32, onPressed: i == 0 ? null : () => controller.moveStop(i, -1)),
                     DsIconButton(icon: Icons.arrow_downward_rounded, semanticLabel: "Move down".tr, size: 32, onPressed: i == stops.length - 1 ? null : () => controller.moveStop(i, 1)),
@@ -652,7 +653,7 @@ class CabRideExtrasView extends StatelessWidget {
                     children: [
                       _StopBadge(label: CabRideOptions.stopLabel(i), reached: reached),
                       const DsGap(DsSpace.md),
-                      Expanded(child: Text(stops[i]['address']?.toString() ?? '', style: reached ? t.bodyStrong.withColor(c.textMuted).strike : t.bodyStrong)),
+                      Expanded(child: Text(displayAddress(stops[i]['address'], fallback: '-'), style: reached ? t.bodyStrong.withColor(c.textMuted).strike : t.bodyStrong)),
                     ],
                   ),
                 );
@@ -736,7 +737,7 @@ class CabStopsSummary extends StatelessWidget {
                   _StopBadge(label: CabRideOptions.stopLabel(i)),
                   const DsGap(DsSpace.md),
                   Expanded(
-                    child: Text(controller.stops[i].address, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodyStrong),
+                    child: Text(displayAddress(controller.stops[i].address, fallback: '-'), maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodyStrong),
                   ),
                 ],
               ),

@@ -161,10 +161,9 @@ class RentalOrderModel with CancellationFields {
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
     data['status'] = status;
-    if (rejectedByDrivers != null) {
-      // Entries are driver ids (strings); calling toJson() on them threw.
-      data['rejectedByDrivers'] = rejectedByDrivers;
-    }
+    // `rejectedByDrivers` is read only here: it is the dispatch Cloud
+    // Function's exclusion list (the Driver app adds itself on a reject or
+    // timeout); a write from a stale copy would drop a driver who declined.
     data['couponId'] = couponId;
     data['bookingDateTime'] = bookingDateTime;
     data['paymentStatus'] = paymentStatus;

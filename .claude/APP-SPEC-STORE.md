@@ -332,6 +332,23 @@ admin panel's decision (ADMIN §18). Pending or rejected buys nothing.
 >   different situation from a customer shopping online, and that should be a
 >   decision rather than an oversight.
 
+**What the customer app does with it (answered 7 Oct 2026).** The customer app
+now applies the same blanket rule as the website **and** honours this flag on
+top of it (`customer/lib/models/product_model.dart`,
+`wholesaleBlockedForCustomer`): wholesale is withheld from a customer unless
+`accountType == "business"` **and** `businessProfile.status == "approved"`;
+`wholesaleBusinessOnly` is ORed in, so it can only tighten, never grant. For a
+customer without an approved business account:
+
+| Product | What the app does |
+|---|---|
+| **wholesale only** (`saleType: "wholesale"` with usable tiers) | **hidden** from every listing, and refused on a direct link with a pointer to the business-account application |
+| **mixed** (retail and tiers) | **visible at retail**: the tiers, the tier price, the badge, the ladder and the pack minimum are withheld |
+
+So the flag **withholds the wholesale price** (and, for a wholesale-only
+product, hides the product); today it changes nothing beyond the blanket rule,
+exactly as on the website.
+
 ### How the rule is checked
 
 `applyWholesalePrice()`, `saleTypeMinimum()`, `enforceSaleTypeQuantity()` and
@@ -531,6 +548,33 @@ They are invisible to these screens by construction, with no filter needed.
 
 ---
 
+## 5a. What the store app does, for the panel to match (7 Oct 2026)
+
+- **Order writes are guarded transactions**
+  (`vendor/lib/utils/store_order_write.dart`): each re-reads the order and
+  writes only its own fields, so nothing the dispatch Cloud Function or a
+  driver wrote is overwritten. Accept only from `Order Placed`; own delivery
+  man (`In Transit`, `driverID` = `driverId` = him, his `driver` snapshot);
+  courier (`Order Shipped`) only from `Order Placed`; reject / cancel only
+  while the status is unchanged since the reason sheet opened, with the reason
+  fields in the same write; complete while the order is live. The store never
+  notifies or names a platform driver: `deliveryDispatch` does that on
+  `Order Accepted` (`.claude/DRIVER-DISPATCH-CONTRACT.md`).
+  `Driver Pending` / `Driver Rejected` show as **"Waiting for a delivery
+  partner"** (warning tone); "With the delivery man" only at
+  `Driver Accepted`, `Order Shipped`, `In Transit` with a driver set.
+- **Point 58, product deletion:** a confirmation dialog first; on confirm the
+  app deletes `vendor_products/{id}`, then (in the background) the product's
+  own photos under `profileImage/{uid}/` that nothing else uses (other
+  products of the owner's stores, store and profile pictures, exact URL
+  matches in `vendor_products` and `admin_products`). If any of those checks
+  cannot be read, no photo is deleted. Variant images (`images/{variantId}.png`)
+  and digital product files (`digitalProducts/...`) are left alone. The
+  Storage rules must let the uploader delete `profileImage/{uid}/...`.
+- **Doc 37:** the app never rewrites `isDocumentVerify` / `isAutoVerify` on an
+  existing user; only sign-up and the creation of a delivery man / employee
+  write the starting value.
+
 ## 6. Open questions
 
 **With the client:**
@@ -559,10 +603,11 @@ They are invisible to these screens by construction, with no filter needed.
       across the basket? The website applies it **per line** (§3).
 - [ ] Do the customer app and the admin panel need to show tiers, or is the
       website enough for now? (§3)
-- [ ] **`wholesaleBusinessOnly` has no documented behaviour.**
-      `APP-SPEC-STORE-APP.md` §5 names the field and says nothing about it; the
-      rule is only in `APP-SPEC-CUSTOMER-APP.md` §6. Does the app withhold the
-      price, or hide the product entirely? (§3)
+- [x] ~~**`wholesaleBusinessOnly` has no documented behaviour.**~~
+      **Answered 7 Oct:** the customer app withholds the wholesale price (a
+      mixed product stays at retail) and hides a wholesale-only product; the
+      flag is ORed with the platform rule (§3, "What the customer app does
+      with it").
 
 **Closed:** legacy wallet balances. The client said on 22 September that the
 current data is temporary and will be replaced, so **no migration is being

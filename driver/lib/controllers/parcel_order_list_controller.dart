@@ -55,7 +55,7 @@ class ParcelOrderListController extends GetxController {
         return parcelOrder.where((order) => ["Order Completed"].contains(order.status)).toList();
 
       case "Cancelled":
-        return parcelOrder.where((order) => ["Order Rejected", "Order Cancelled", "Driver Rejected"].contains(order.status)).toList();
+        return parcelOrder.where((order) => ["Order Rejected", "Order Cancelled"].contains(order.status)).toList();
 
       default:
         return [];

@@ -508,11 +508,24 @@ status written by a driver never passes through Laravel. A Cloud Function
 watching `parcel_orders` is the only candidate that fires whoever moved the
 parcel.
 
-> **App half built, 25 Sep.** Both apps now write one request document to
-> `parcel_sms_outbox` in the same batch as the tracking status, gated on
-> `settings/SMSGateway.isEnabled` and `.parcelEvents` (absent = inert). The
-> sender is still to be built: read pending, send via OBITSMS, stamp
-> `sendState`/`sentAt`/`error`. Contract: **`.claude/PARCEL-SMS-OUTBOX.md`**.
+> ~~**App half built, 25 Sep.** Both apps write one request document to
+> `parcel_sms_outbox`~~ **Retired 7 Oct (decision D5).** No app writes
+> `parcel_sms_outbox` any more, and no app composes SMS wording: it must be
+> admin-editable. The apps now record the sender's choice on `parcel_orders`
+> (`receiverName`, `receiverPhone` digits without the country code,
+> `receiverCountryCode` `"+237"`, `sendReceiverSms`, `smsCharge` from
+> `regions/{regionId}.parcelSmsFee` (default 50, 0 = free), `smsOptOut: false`)
+> and never write `smsSent`. The **server-side trigger on `parcel_orders`**
+> owns the wording (`settings/SMSGateway.templates`), the events
+> (`eventsEnabled`), send-once (`smsSent.<event>`) and `sms_log`. The apps read
+> `settings/SMSGateway.isEnabled` only, to show the checkbox. Contract:
+> **`.claude/PARCEL-SMS-CONTRACT.md`** (the old outbox design:
+> `.claude/PARCEL-SMS-OUTBOX.md`, kept as a record).
+>
+> **For this panel:** the parcel SMS fee is per region, in **Settings > Regions
+> > Edit Region** (`regions/{regionId}.parcelSmsFee`). The apps do not read
+> `settings/SMSGateway.parcelSmsFee`; keep the website and this panel on the
+> region field so web and app charge the same.
 
 ---
 
@@ -527,7 +540,13 @@ parcel.
 
 **With the app developer:**
 
-- [ ] Who owns the SMS trigger? (§17)
+- [x] ~~Who owns the SMS trigger? (§17)~~ **Not the apps** (7 Oct, D5): a
+      server-side trigger on `parcel_orders`. Who builds it, and pays the SMS
+      bill, is still open (`.claude/PARCEL-SMS-CONTRACT.md` §6).
+- [ ] Link a delivery company to its carrier: write
+      `users/{companyId}.carrierId` from the Owners or Carrier Management
+      screen, and show / edit the company's `zoneIds`
+      (`.claude/COMPANY-CARRIER-LINK.md`).
 - [ ] The automatic driver-notification queue (§14).
 - [ ] Crediting `vendors/{id}.wallet_amount` on order completion (§7).
 - [ ] The app must write `regionId` when it creates a ride or a rental order —

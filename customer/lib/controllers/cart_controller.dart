@@ -440,6 +440,12 @@ class CartController extends GetxController {
   /// reach their minimum quantity. Also refreshes each line's wholesale tiers.
   Future<bool> validateCartBeforePayment() async {
     final List<String> problems = [];
+    // Report 02#2: a store saved without a position is listed (last, no
+    // distance) but cannot be routed to - no driver can collect from it and
+    // tracking has no pickup point. It takes TakeAway orders only.
+    if (selectedFoodType.value == OrderTypeMode.delivery && vendorModel.value.id != null && !vendorModel.value.hasPosition) {
+      problems.add("This store has not set its location yet, so it cannot deliver. Please choose TakeAway.".tr);
+    }
     ShowToastDialog.showLoader("Please wait...".tr);
     try {
       for (final CartProductModel line in cartItem.toList()) {

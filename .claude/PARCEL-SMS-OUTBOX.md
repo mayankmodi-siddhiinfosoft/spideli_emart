@@ -1,4 +1,34 @@
-# Parcel SMS outbox — the app-side trigger
+# Parcel SMS outbox — the app-side trigger (RETIRED)
+
+> **RETIRED 7 Oct 2026 (decision D5). Superseded by
+> `.claude/PARCEL-SMS-CONTRACT.md`.** Kept only as a record of what was built
+> on 25 Sep and removed.
+>
+> - **No app writes or reads `parcel_sms_outbox` any more.** Customer app:
+>   `customer/lib/service/parcel_sms_outbox.dart` and
+>   `customer/test/parcel_sms_number_test.dart` are deleted; `save()` /
+>   `append()` queue nothing; the collection constant and the message-template
+>   translation keys are gone. Driver app:
+>   `driver/lib/services/parcel_sms_outbox.dart` is deleted;
+>   `ParcelTrackingService._writeStatus` writes `status` / `parcelStatus` /
+>   `trackingEvents` with `update()` only. Neither app reads
+>   `settings/SMSGateway.parcelEvents`; the driver app does not read
+>   `settings/SMSGateway` at all.
+> - **Why.** This design composed the SMS **wording in the app** (translation
+>   keys), so the client could not edit it without an app release, and it
+>   would have been a second trigger path next to the server trigger that
+>   `app-spec-parcel-sms.md` describes. The wording must be admin-editable
+>   (`settings/SMSGateway.templates`), the events switchable without a deploy
+>   (`eventsEnabled`), and send-once must be decided where the bill is paid:
+>   the server trigger works from `parcel_orders` itself (`sendReceiverSms`,
+>   `receiverPhone`, `receiverCountryCode`, `smsOptOut`) and records what it
+>   sent in `parcel_orders.smsSent` (one key per event) and `sms_log`.
+> - **Rules:** `firestore.rules.draft` now refuses every client access to
+>   `parcel_sms_outbox` (server only). Any documents already in the collection
+>   were written by test builds and can be ignored or deleted by the admin.
+>
+> Everything below describes the retired design. Do not build a sender for it.
+
 
 Answers the open question of **APP-SPEC-ADMIN §17** ("who owns the SMS trigger?")
 for the app half only. The panel's `SmsController` and `settings/SMSGateway`

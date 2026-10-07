@@ -41,6 +41,12 @@ class CancelReasonSheet {
       ),
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      // As the panels (report 02#15): no backdrop tap or swipe-down closes
+      // it. Only "Back" (or the system back) leaves, and that returns null:
+      // the caller then leaves the order untouched - nothing is ever saved
+      // without a reason.
+      isDismissible: false,
+      enableDrag: false,
     );
   }
 

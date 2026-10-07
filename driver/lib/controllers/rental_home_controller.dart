@@ -130,6 +130,7 @@ class RentalHomeController extends GetxController {
       ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
       return;
     }
+    await releaseBooking(parcelBookingData.id);
     Map<String, dynamic> payLoad = <String, dynamic>{"type": "rental_order", "orderId": parcelBookingData.id};
     unawaited(SendNotification.notifyCustomer(Constant.rentalCompleted,
         customerId: parcelBookingData.authorID ?? parcelBookingData.author?.id,
@@ -143,6 +144,17 @@ class RentalHomeController extends GetxController {
     });
     ShowToastDialog.showToast("Ride completed successfully".tr);
     ShowToastDialog.closeLoader();
+  }
+
+  /// A finished booking leaves `users/{me}.inProgressOrderID` (spec §4:
+  /// accepted and active only), field-level: the dispatch Cloud Function
+  /// reads that array as "busy" (`singleOrderReceive`).
+  Future<void> releaseBooking(String? bookingId) async {
+    final String uid = FireStoreUtils.getCurrentUid();
+    if (bookingId == null || bookingId.isEmpty) return;
+    await FireStoreUtils.updateUserFields(uid, {
+      'inProgressOrderID': FieldValue.arrayRemove([bookingId]),
+    });
   }
 
   RxDouble subTotal = 0.0.obs;

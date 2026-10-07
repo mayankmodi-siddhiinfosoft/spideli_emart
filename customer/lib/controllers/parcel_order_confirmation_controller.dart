@@ -47,6 +47,7 @@ import '../screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import '../screen_ui/parcel_service/order_successfully_placed.dart';
 import '../service/fire_store_utils.dart';
 import '../service/parcel_shipping_service.dart';
+import '../service/parcel_receiver_sms.dart';
 import '../utils/parcel_pricing.dart';
 import '../themes/app_them_data.dart';
 import '../themes/show_toast_dialog.dart';
@@ -63,6 +64,13 @@ class ParcelOrderConfirmationController extends GetxController {
     if (own != null && own.isNotEmpty) return own;
     return RegionService.regionAt(parcelOrder.value.senderLatLong?.latitude, parcelOrder.value.senderLatLong?.longitude);
   }
+
+  /// The region whose `parcelSmsFee` applies (point 54: the sender's region,
+  /// [parcelRegionId] - the same one the order, its currency and its payment
+  /// methods use). When the pickup point resolves to no single region it is
+  /// null and [ParcelReceiverSms.offer] charges the default fee (50), never
+  /// another region's fee in this order's currency.
+  String? get smsFeeRegionId => parcelRegionId;
 
   CurrencyModel? get parcelCurrency => RegionService.currencyForRecord(parcelRegionId);
 
@@ -82,6 +90,50 @@ class ParcelOrderConfirmationController extends GetxController {
 
   /// Fixed scope tax, added to the payable total after taxes / coupon.
   double get scopeTax => parcelOrder.value.scopeTaxAmount;
+
+  // ---- Point 54: "Notify the receiver by SMS" (BUG-REPORT-01-APP.md §4) ----
+
+  /// The sender ticked the opt-in.
+  final RxBool notifyReceiverBySms = false.obs;
+
+  /// `regions/{smsFeeRegionId}.parcelSmsFee` of the sender's region (50 when
+  /// unset, 0 = free), read at checkout.
+  final RxDouble parcelSmsFee = ParcelReceiverSms.defaultParcelSmsFee.obs;
+
+  /// The gateway is switched on (`settings/SMSGateway.isEnabled`): nothing is
+  /// offered - or charged - for a message that could never be sent.
+  final RxBool receiverSmsAvailable = false.obs;
+
+  /// The option is shown whenever the sender pays now: a new order, or a
+  /// quote the admin priced being paid (a quote REQUEST pays nothing yet, so
+  /// it is offered when that quote is paid). It also needs the gateway on and
+  /// the receiver's number with its country code (the flat fields booking
+  /// writes; a quote created before they existed has none and is not
+  /// offered). The wording is the admin's, never the app's.
+  bool get canOfferReceiverSms =>
+      receiverSmsAvailable.value &&
+      !isQuoteRequest &&
+      (parcelOrder.value.receiverPhone ?? '').trim().isNotEmpty &&
+      (parcelOrder.value.receiverCountryCode ?? '').trim().isNotEmpty;
+
+  /// The fee added to the total right now (0 when the box is not ticked).
+  double get smsCharge => canOfferReceiverSms && notifyReceiverBySms.value ? parcelSmsFee.value : 0;
+
+  void setNotifyReceiverBySms(bool value) {
+    notifyReceiverBySms.value = value;
+    calculatePrice();
+  }
+
+  Future<void> _loadReceiverSmsOffer() async {
+    try {
+      final offer = await ParcelReceiverSms.offer(regionId: smsFeeRegionId);
+      receiverSmsAvailable.value = offer.enabled;
+      parcelSmsFee.value = offer.fee;
+    } catch (e) {
+      receiverSmsAvailable.value = false;
+    }
+    calculatePrice();
+  }
   final RxList<XFile> images = <XFile>[].obs;
   final RxString paymentBy = "Receiver".obs;
 
@@ -122,6 +174,7 @@ class ParcelOrderConfirmationController extends GetxController {
     }
 
     userModel.value = Constant.userModel!;
+    await _loadReceiverSmsOffer();
     await fetchCoupons();
     await getPaymentSettings(regionId: parcelRegionId);
     isLoading.value = false;
@@ -155,7 +208,9 @@ class ParcelOrderConfirmationController extends GetxController {
 
     taxAmount.value = orderTaxAmount.value + platformTaxAmount.value;
 
-    totalAmount.value = (subTotal.value - discount.value) + double.parse(Constant.platformFeeModel?.fee ?? '0.0') + taxAmount.value + scopeTax;
+    // The receiver-SMS fee (point 54) sits with the scope tax: outside VAT,
+    // coupons and the driver's credit.
+    totalAmount.value = (subTotal.value - discount.value) + double.parse(Constant.platformFeeModel?.fee ?? '0.0') + taxAmount.value + scopeTax + smsCharge;
   }
 
   RxList<CouponModel> couponList = <CouponModel>[].obs;
@@ -221,6 +276,12 @@ class ParcelOrderConfirmationController extends GetxController {
       parcelOrder.value.senderZoneId = Constant.getZoneId(parcelOrder.value.senderLatLong!.latitude ?? 0.0, parcelOrder.value.senderLatLong!.longitude ?? 0.0);
       parcelOrder.value.regionId ??= parcelRegionId;
       parcelOrder.value.receiverZoneId = Constant.getZoneId(parcelOrder.value.receiverLatLong!.latitude ?? 0.0, parcelOrder.value.receiverLatLong!.longitude ?? 0.0);
+      // Point 54: written on every new order and on a quote payment,
+      // `smsCharge` 0 when not ticked (a quote request: false / 0 until it is
+      // priced and paid). The SMS itself is sent by the server-side trigger.
+      final bool sms = canOfferReceiverSms && notifyReceiverBySms.value;
+      parcelOrder.value.sendReceiverSms = sms;
+      parcelOrder.value.smsCharge = sms ? parcelSmsFee.value : 0;
 
       // ---- Shipping contract: codes, price breakdown, first tracking events.
       final ParcelOrderModel order = parcelOrder.value;
@@ -240,6 +301,8 @@ class ParcelOrderConfirmationController extends GetxController {
           'commission': 0,
           'options': 0,
           'total': totalAmount.value,
+          // Point 54: the receiver-SMS fee inside `total`.
+          'smsCharge': smsCharge,
           'currency': parcelCurrency?.code ?? '',
           'source': ParcelPriceSource.manual,
         };
@@ -247,6 +310,8 @@ class ParcelOrderConfirmationController extends GetxController {
         order.priceBreakdown ??= {'carrierPrice': subTotal.value, 'extraKgCharge': 0, 'fixedTax': scopeTax, 'commission': 0, 'options': 0, 'source': ParcelPriceSource.defaultSetting};
         // total = what the customer pays (after coupon, platform fee and taxes).
         order.priceBreakdown!['total'] = totalAmount.value;
+        // Point 54: the receiver-SMS fee inside `total`, so readers can account for it.
+        order.priceBreakdown!['smsCharge'] = smsCharge;
         order.priceBreakdown!['currency'] = parcelCurrency?.code ?? '';
       }
       final bool paidNow = !quoteRequest && paymentBy.value != "Receiver" && selectedPaymentMethod.value != PaymentGateway.cod.name;

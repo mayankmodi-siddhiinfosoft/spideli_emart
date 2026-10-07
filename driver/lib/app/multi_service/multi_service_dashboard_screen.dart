@@ -27,13 +27,14 @@ class MultiServiceDashboardScreen extends StatelessWidget {
   const MultiServiceDashboardScreen({super.key});
 
   /// Returns the ordered list of service type keys for this driver.
+  /// Read through the dispatch spec's aliases (`parcel-service` is the
+  /// parcel module, `ecommerce-service` the delivery one), each module once
+  /// — the same list DispatchNavigation picks a tab from.
   List<String> _serviceTypes() {
     final user = Constant.userModel;
     if (user == null) return ['delivery-service'];
-    if (user.serviceTypes != null && user.serviceTypes!.isNotEmpty) {
-      return user.serviceTypes!;
-    }
-    return [user.serviceTypes?.firstOrNull ?? 'delivery-service'];
+    final List<String> modules = user.serviceModules;
+    return modules.isNotEmpty ? modules : ['delivery-service'];
   }
 
   Widget _dashboardForService(String serviceType) {

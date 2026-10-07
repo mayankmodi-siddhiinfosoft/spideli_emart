@@ -112,7 +112,7 @@ class _ParcelScanResultScreenState extends State<ParcelScanResultScreen> {
                         DsRouteStop(kind: DsStopKind.drop, label: 'Delivery'.tr, address: AddressFormat.clean(_order.receiver?.address)),
                       ],
                     ),
-                    if (_order.receiver?.name != null) ...[
+                    if (_order.receiverNameDisplay.isNotEmpty || _order.receiverPhoneDisplay.isNotEmpty) ...[
                       const DsDivider(spacing: DsSpace.md),
                       Row(
                         children: [
@@ -120,7 +120,7 @@ class _ParcelScanResultScreenState extends State<ParcelScanResultScreen> {
                           const DsGap(DsSpace.sm),
                           Expanded(
                             child: Text(
-                              "${'Receiver'.tr}: ${_order.receiver!.name} ${_order.receiver?.phone ?? ''}",
+                              "${'Receiver'.tr}: ${[_order.receiverNameDisplay, _order.receiverPhoneDisplay].where((part) => part.isNotEmpty).join(' ')}",
                               style: t.bodyStrong,
                             ),
                           ),

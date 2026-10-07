@@ -260,6 +260,11 @@ class BookParcelScreen extends StatelessWidget {
             ),
           ],
         ),
+        // Doc point 42: the dimensions are priced (volumetric weight).
+        Padding(
+          padding: const EdgeInsets.only(bottom: DsSpace.md),
+          child: Text("A bulky parcel is charged on its size (L x W x H) when that weighs more than the parcel itself.".tr, style: context.dsText.caption),
+        ),
         DsTextField(
           hint: "Declared value (optional)".tr,
           controller: controller.declaredValueController.value,

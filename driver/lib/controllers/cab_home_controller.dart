@@ -7,7 +7,6 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/wallet_screen/payment_list_screen.dart';
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
-import 'package:driver/constant/send_notification.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/cab_order_model.dart';
 import 'package:driver/models/section_model.dart';
@@ -15,7 +14,11 @@ import 'package:driver/models/user_model.dart';
 import 'package:driver/models/wallet_transaction_model.dart';
 import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/services/audio_player_service.dart';
+import 'package:driver/services/dispatch_navigation.dart';
+import 'package:driver/services/dispatch_offer_rules.dart';
+import 'package:driver/services/dispatch_offer_service.dart';
 import 'package:driver/themes/app_them_data.dart';
+import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/widget/cancel_reason_sheet.dart';
@@ -107,7 +110,7 @@ class CabHomeController extends GetxController {
   /// this driver is never gated by it.
   bool get canTakeNewWork {
     final UserModel me = driverModel.value;
-    final bool verified = !(me.isDocumentVerify == false && me.isAutoVerify == false);
+    final bool verified = !DocumentVerification.isPending(me);
     return verified && me.isActive == true;
   }
 
@@ -120,7 +123,14 @@ class CabHomeController extends GetxController {
     return ride.id != null && (driverModel.value.inProgressOrderID ?? const []).contains(ride.id);
   }
 
-  bool _isPending(CabOrderModel ride) => ride.status == Constant.driverPending || ride.status == Constant.orderPlaced;
+  /// Statuses in which a ride on this screen waits for the driver's Accept /
+  /// Reject. `Order Accepted` is the admin panel's hand assignment (adopted
+  /// by DriverAssignmentWatcher): the driver has not accepted it yet - this
+  /// app's accept always writes `Driver Accepted` - so it is a request, never
+  /// a trip under way.
+  static const List<String> _pendingRideStatuses = [Constant.driverPending, Constant.orderPlaced, Constant.orderAccepted];
+
+  bool _isPending(CabOrderModel ride) => _pendingRideStatuses.contains(ride.status);
 
   /// A pending ride this driver may be shown with Accept / Reject: one
   /// assigned to them, or a new request while [canTakeNewWork].
@@ -267,6 +277,23 @@ class CabHomeController extends GetxController {
   Rx<UserModel> driverModel = UserModel().obs;
   Rx<UserModel> ownerModel = UserModel().obs;
 
+  /// The ride's id is on the driver's record as a request: a dispatch offer
+  /// (`orderRequestData`), the legacy `ordercabRequestData`, or a pending
+  /// ride an older build adopted into `inProgressOrderID`.
+  bool _heldAsRequest(String rideId) {
+    final UserModel me = driverModel.value;
+    return [...?me.orderRequestData, ...?me.inProgressOrderID].any((id) => id.toString() == rideId) || me.orderCabRequestData?.id == rideId;
+  }
+
+  /// Accepts the ride on screen through the shared dispatch service (D2): a
+  /// transaction re-checks the live ride (still pending for this driver, or
+  /// an unassigned legacy request they hold) and writes the known fields only
+  /// — `Driver Accepted`, `driverId` / `driverID` / `driver`, the driver's
+  /// region when the ride has none — then the driver's record field-level
+  /// (`inProgressOrderID` arrayUnion, `orderRequestData` arrayRemove, the
+  /// legacy request cleared). The whole ride used to be written back from
+  /// this screen's copy with no check, which could accept a ride already
+  /// cancelled or re-dispatched and overwrote `rejectedByDrivers`.
   Future<void> acceptOrder() async {
     final CabOrderModel accepted = currentOrder.value;
     final String? id = accepted.id;
@@ -275,7 +302,7 @@ class CabHomeController extends GetxController {
     // A new request needs a verified driver who is online; a ride already
     // assigned to this driver is always accepted.
     if (!_offerable(accepted)) {
-      final bool verified = !(driverModel.value.isDocumentVerify == false && driverModel.value.isAutoVerify == false);
+      final bool verified = !DocumentVerification.isPending(driverModel.value);
       ShowToastDialog.showToast(verified
           ? "Go online to get requests".tr
           : "Document verification is pending. Please proceed to set up your document verification.".tr);
@@ -284,40 +311,29 @@ class CabHomeController extends GetxController {
     try {
       await _stopAlert();
       ShowToastDialog.showLoader("Please wait".tr);
-
-      // Field-level: this ride joins `inProgressOrderID` and the request is
-      // cleared. The whole user document was written from this controller's
-      // copy, which rolled back any assignment or offer (a delivery order in
-      // the same array included) that landed since the last snapshot.
-      driverModel.value.inProgressOrderID ??= [];
-      if (!driverModel.value.inProgressOrderID!.contains(id)) driverModel.value.inProgressOrderID!.add(id);
-      driverModel.value.orderCabRequestData = null;
-      await FireStoreUtils.updateUserFields(uid, {
-        'inProgressOrderID': FieldValue.arrayUnion([id]),
-        'ordercabRequestData': FieldValue.delete(),
-      });
-
-      // The ride's own snapshot may have replaced [currentOrder] with a fresher
-      // copy of the same ride meanwhile; that one is written. Never another ride.
-      final CabOrderModel order = currentOrder.value.id == id ? currentOrder.value : accepted;
-      order.status = Constant.driverAccepted;
-      order.driverId = uid;
-      order.driver = driverModel.value;
-      // Spec 18.12: a ride carries the assigned driver's region.
-      if (order.regionId == null || order.regionId!.isEmpty) {
-        order.regionId = await RegionService.regionIdToStamp(driverModel.value);
-      }
-      await FireStoreUtils.setCabOrder(order);
-
+      final DispatchResult result = await DispatchOfferService.accept(DispatchKind.cab, id, driverModel.value, heldAsRequest: _heldAsRequest(id));
       ShowToastDialog.closeLoader();
-
-      await SendNotification.notifyCustomer(Constant.driverAcceptedNotification,
-          customerId: order.authorID ?? order.author?.id, embeddedToken: order.author?.fcmToken, payload: {'orderId': order.id}, status: order.status);
+      switch (result.answer) {
+        case OfferAnswer.done:
+        case OfferAnswer.held:
+          // The ride's own listener shows the trip.
+          break;
+        case OfferAnswer.gone:
+          ShowToastDialog.showToast("This order is no longer available.".tr);
+          if (currentOrder.value.id == id) {
+            _stopRide();
+            currentOrder.value = CabOrderModel();
+            await clearMap();
+          }
+        case OfferAnswer.blocked:
+        case OfferAnswer.failed:
+          ShowToastDialog.showToast((result.message ?? "Something went wrong. Please try again.").tr);
+      }
     } catch (e, s) {
       ShowToastDialog.closeLoader();
       debugPrint("Error in acceptOrder: $e");
       debugPrintStack(stackTrace: s);
-      ShowToastDialog.showToast("Something went wrong. Please try again.");
+      ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
     }
   }
 
@@ -325,68 +341,60 @@ class CabHomeController extends GetxController {
   /// [reason] is null only for the automatic out-of-region decline, which
   /// passes the declined request as [ride] and is [silent].
   ///
-  /// The user document gets field-level writes only: the request cleared and
-  /// this ride id dropped from `inProgressOrderID` ([_releaseRide]). It used
-  /// to write the whole user with `inProgressOrderID = []`, which also wiped
-  /// a delivery order held in the same array (a delivery + cab driver keeps
-  /// both modules alive) and rolled back any write since the last snapshot.
+  /// Through the shared dispatch service (D2): a transaction re-checks that
+  /// the ride is still pending for this driver (a cancelled or re-assigned
+  /// ride is never sent back to dispatch), then writes `Driver Rejected`,
+  /// this driver in `rejectedByDrivers`, `driverId` and `driverID` null and,
+  /// for a manual reject only, the reason in `driverRejections`. The driver's
+  /// record then loses the id field-level (`orderRequestData`, a legacy
+  /// `inProgressOrderID` entry, the legacy request). The write is awaited
+  /// and a failure is reported (it used to be fire-and-forget).
   Future<void> rejectOrder({CancelReasonResult? reason, bool silent = false, CabOrderModel? ride}) async {
     final CabOrderModel order = ride ?? currentOrder.value;
     final String? rideId = order.id;
-    if (rideId == null) return;
     final String? uid = driverModel.value.id;
+    if (rideId == null || uid == null) return;
     // Only a request on screen touches the screen, the map and the shared
     // alert sound. An automatic decline of a request never shown leaves them
     // alone: on the Delivery tab that sound may be a delivery offer ringing.
     final bool onScreen = currentOrder.value.id == rideId;
+    // A sheet / dialog open over the screen when the reject starts — taken
+    // now: the incoming-order dialog may open above it during the writes.
+    final top = silent ? null : DispatchNavigation.ownRoute();
+    final PopupRoute<dynamic>? overlay = top is PopupRoute ? top : null;
     try {
-      if (onScreen) {
-        await _stopAlert();
-
-        // 1️⃣ Immediately update local state (UI)
-        currentOrder.value.status = Constant.driverRejected;
-        currentOrder.value.rejectedByDrivers ??= [];
-        if (uid != null && !currentOrder.value.rejectedByDrivers!.contains(uid)) {
-          currentOrder.value.rejectedByDrivers!.add(uid);
-        }
-
-        // Immediately update UI so bottom sheet hides right away
-        currentOrder.refresh();
+      if (onScreen) await _stopAlert();
+      if (!silent) ShowToastDialog.showLoader("Please wait".tr);
+      final DispatchResult result = await DispatchOfferService.reject(DispatchKind.cab, rideId, uid,
+          reasonFields: reason?.toFields(uid), heldAsRequest: _heldAsRequest(rideId), cabRequestId: driverModel.value.orderCabRequestData?.id);
+      if (!silent) ShowToastDialog.closeLoader();
+      if (result.answer == OfferAnswer.failed) {
+        if (!silent) ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+        // A failed automatic decline may be tried again on the next snapshot.
+        if (silent) _declinedOutOfRegion.remove(rideId);
+        return;
       }
+      if (!silent && result.answer == OfferAnswer.gone) ShowToastDialog.showToast("This order is no longer available.".tr);
+      driverModel.value.inProgressOrderID?.remove(rideId);
+      driverModel.value.orderRequestData?.remove(rideId);
+      if (driverModel.value.orderCabRequestData?.id == rideId) driverModel.value.orderCabRequestData = null;
 
-      // 2️⃣ This request and this ride id only.
-      await _releaseRide(rideId, clearRequest: true);
-
-      // 3️⃣ Close a sheet / dialog still open over the screen (don’t wait
-      // for Firestore). Only when one IS open: the request card is part of
-      // the screen, and in multiple-order mode an unconditional Get.back()
-      // popped the route under it instead.
-      if (!silent && ((Get.isBottomSheetOpen ?? false) || (Get.isDialogOpen ?? false))) {
-        Get.back();
-      }
-
-      // 4️⃣ Clear map immediately
-      if (onScreen) await clearMap();
-
-      // 5️⃣ Update Firestore in background (no UI wait)
-      // Only the fields this rejection changes. Writing the cached ride back
-      // (the pending-request copy can be stale) overwrote rejectedByDrivers and
-      // lost other drivers' rejections, so they were offered the ride again.
-      unawaited(FireStoreUtils.updateRideFields(rideId, {
-        'status': Constant.driverRejected,
-        if (uid != null) 'rejectedByDrivers': FieldValue.arrayUnion([uid]),
-        if (reason != null) ...reason.toFields(uid),
-      }));
-
-      // 6️⃣ Reset local current order after short delay (unless another ride
-      // has taken the screen meanwhile).
-      if (onScreen) {
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (currentOrder.value.id == rideId) currentOrder.value = CabOrderModel();
-        });
+      // Close a sheet / dialog still open over the screen. Only when one IS
+      // open: the request card is part of the screen, and in multiple-order
+      // mode an unconditional Get.back() popped the route under it instead.
+      // That route itself, never the incoming-order dialog that may have
+      // opened above it meanwhile (Get.back() popped that one).
+      if (!silent) DispatchNavigation.closeRoute(overlay);
+      if (onScreen && currentOrder.value.id == rideId) {
+        _stopRide();
+        currentOrder.value = CabOrderModel();
+        await clearMap();
+        update();
       }
     } catch (e, s) {
-      print("rejectOrder() error: $e\n$s");
+      if (!silent) ShowToastDialog.closeLoader();
+      log("rejectOrder() error: $e\n$s");
+      if (!silent) ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
     }
   }
 
@@ -400,8 +408,9 @@ class CabHomeController extends GetxController {
   /// Driver cancels a ride he already accepted (before pickup). The ride goes
   /// back to dispatch exactly like a rejected request (status "Driver
   /// Rejected", driver added to rejectedByDrivers, driver cleared) so the
-  /// customer is re-matched instead of losing the booking; the reason is
-  /// recorded with cancelledBy "driver".
+  /// customer is re-matched instead of losing the booking; the reason goes to
+  /// `driverRejections` with `afterAccept: true` only (not a final
+  /// cancellation, `.claude/CANCEL-REASON-CONTRACT.md`).
   Future<void> cancelAcceptedRide() async {
     final order = currentOrder.value;
     if (order.id == null) return;
@@ -414,7 +423,9 @@ class CabHomeController extends GetxController {
       await FireStoreUtils.updateRideFields(order.id!, {
         'status': Constant.driverRejected,
         if (uid != null) 'rejectedByDrivers': FieldValue.arrayUnion([uid]),
+        // Both spellings (D2): the dispatch Cloud Function writes both.
         'driverId': null,
+        'driverID': null,
         'driver': FieldValue.delete(),
         ...reason.toFields(uid, afterAccept: true),
       });
@@ -490,11 +501,13 @@ class CabHomeController extends GetxController {
 
   bool get shouldShowOrderSheet {
     final status = currentOrder.value.status;
-    // orderPlaced & driverPending = waiting for accept/reject → don't show ride actions card
+    // orderPlaced, driverPending & orderAccepted (a hand assignment) = waiting
+    // for accept/reject → don't show ride actions card
     return currentOrder.value.id != null &&
         ![
           Constant.orderPlaced,
           Constant.driverPending,
+          Constant.orderAccepted,
           Constant.driverRejected,
           Constant.orderCompleted,
           Constant.orderCancelled,
@@ -619,16 +632,34 @@ class CabHomeController extends GetxController {
     }
   }
 
+  /// A pending ride dispatched to this driver: named (`driverId` /
+  /// `driverID`) in a pending status and not rejected by them.
+  bool _pendingForMe(CabOrderModel ride) {
+    final String? uid = driverModel.value.id;
+    if (uid == null || !_isPending(ride)) return false;
+    if ((ride.rejectedByDrivers ?? const []).map((e) => e.toString()).contains(uid)) return false;
+    return (ride.driverId ?? '').toString().trim() == uid;
+  }
+
+  /// The ride on screen, chosen from the driver's own record: a ride in
+  /// `inProgressOrderID` this driver can work, else a ride offer in
+  /// `orderRequestData` that is still pending for them (a dispatch offer:
+  /// shown with Accept / Reject and never put in `inProgressOrderID`, which
+  /// the dispatch Cloud Function reads as "accepted and active"), else the
+  /// legacy `ordercabRequestData` request.
   Future<void> getCurrentOrder() async {
     try {
       final List<dynamic> inProgress = driverModel.value.inProgressOrderID ?? const [];
-      _ridesWatch.watch(inProgress);
-      if (inProgress.isNotEmpty) {
+      final List<dynamic> requests = driverModel.value.orderRequestData ?? const [];
+      _ridesWatch.watch([...inProgress, ...requests]);
+      if (inProgress.isNotEmpty || requests.isNotEmpty) {
         // Until the statuses are known, keep whatever is on screen.
         if (!_ridesWatch.loaded) return;
         String? id;
         final CabOrderModel? current = _listeningRideId == null ? null : _rides[_listeningRideId];
         if (current != null && inProgress.contains(_listeningRideId) && _rideIsMine(current)) {
+          id = _listeningRideId;
+        } else if (current != null && requests.contains(_listeningRideId) && _pendingForMe(current)) {
           id = _listeningRideId;
         } else {
           for (final dynamic raw in inProgress) {
@@ -638,13 +669,22 @@ class CabHomeController extends GetxController {
               break;
             }
           }
+          if (id == null) {
+            for (final dynamic raw in requests) {
+              final CabOrderModel? ride = _rides[raw.toString()];
+              if (ride != null && _pendingForMe(ride)) {
+                id = raw.toString();
+                break;
+              }
+            }
+          }
         }
         if (id != null) {
           _listenToRide(id);
           return;
         }
-        // No ride in progress (the ids are delivery orders, or finished):
-        // fall through to a pending request, as when the array is empty.
+        // No ride in progress or offered (the ids are delivery orders, or
+        // finished): fall through to a legacy request, as when both are empty.
       }
 
       final pendingRequest = driverModel.value.orderCabRequestData;
@@ -705,11 +745,16 @@ class CabHomeController extends GetxController {
             update();
             return;
           }
-          // Handed to another driver, or sent back to dispatch: not this
-          // driver's ride any more, and never shown with live actions.
+          // Handed to another driver, or sent back to dispatch (by this
+          // driver, a timeout or another device): not this driver's ride any
+          // more, and never shown with live actions. A ride that was only an
+          // offer (not in progress, not the legacy request) and no longer
+          // names this driver is gone too.
           final String otherDriver = (incoming.driverId ?? '').toString().trim();
           final bool reassigned = otherDriver.isNotEmpty && otherDriver != driverModel.value.id;
-          if (reassigned || (incoming.status == Constant.driverRejected && (driverModel.value.inProgressOrderID ?? const []).contains(id))) {
+          final bool offerOnly = !(driverModel.value.inProgressOrderID ?? const []).contains(id) && driverModel.value.orderCabRequestData?.id != id;
+          final bool offerGone = offerOnly && _isPending(incoming) && !_pendingForMe(incoming);
+          if (reassigned || offerGone || incoming.status == Constant.driverRejected) {
             _stopRide();
             await _releaseRide(id);
             currentOrder.value = CabOrderModel();
@@ -799,8 +844,9 @@ class CabHomeController extends GetxController {
         await getGooglePolyline();
       }
     }
-    // Play alert sound for both "Order Placed" and "Driver Pending" — both need
-    // accept/reject — when the card is actually shown (see [showRequestSheet]).
+    // Play alert sound for every status that needs accept/reject ("Order
+    // Placed", "Driver Pending", a hand-assigned "Order Accepted") when the
+    // card is actually shown (see [showRequestSheet]).
     // Only the sound this screen started is stopped.
     if (showRequestSheet) {
       _ringing = true;

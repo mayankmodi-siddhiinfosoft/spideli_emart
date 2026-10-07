@@ -3,6 +3,7 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/models/admin_commission.dart';
 import 'package:driver/models/cab_order_model.dart';
 import 'package:driver/models/subscription_plan_model.dart';
+import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/utils/address_format.dart';
 
 class UserModel {
@@ -42,6 +43,11 @@ class UserModel {
   List<dynamic>? orderRequestData;
   String? vendorID;
   String? zoneId;
+
+  /// A delivery company's zones (report Doc 43): several, chosen at
+  /// registration / on the profile. [zoneId] stays the first of them for the
+  /// readers of the single field. Absent on drivers and older companies.
+  List<String>? zoneIds;
   num? rotation;
   String? appIdentifier;
   String? provider;
@@ -81,6 +87,10 @@ class UserModel {
   /// "individual" | "company" (spec 4.11). Absent = individual.
   String? driverType;
 
+  /// `isCompany: true` — how older records mark a company (report §3 02#8).
+  /// Read only, never written.
+  bool? legacyIsCompany;
+
   /// The delivery carrier (`delivery_carriers/{id}`) this driver is registered
   /// under — admin spec §11. Read only; the panel owns it. Absent = the driver
   /// belongs to no carrier and sees platform work exactly as before.
@@ -88,6 +98,10 @@ class UserModel {
 
   /// Company identification (spec 4.11), additive on the user doc.
   String? companyName;
+
+  /// Report Doc 38: the company's address, as typed at registration / on the
+  /// profile. Never saved before, so absent on every older company.
+  String? companyAddress;
   String? operatingLicence;
   String? commercialRegister;
   String? uniqueIdNumber;
@@ -118,6 +132,7 @@ class UserModel {
     this.orderRequestData,
     this.vendorID,
     this.zoneId,
+    this.zoneIds,
     this.rotation,
     this.appIdentifier,
     this.provider,
@@ -139,6 +154,7 @@ class UserModel {
     this.regionId,
     this.driverType,
     this.companyName,
+    this.companyAddress,
     this.operatingLicence,
     this.commercialRegister,
     this.uniqueIdNumber,
@@ -200,6 +216,7 @@ class UserModel {
     orderRequestData = json['orderRequestData'] is List ? List<dynamic>.from(json['orderRequestData']) : [];
     vendorID = _text(json['vendorID']) ?? '';
     zoneId = _text(json['zoneId']) ?? '';
+    zoneIds = json['zoneIds'] is Iterable ? _textList(json['zoneIds']) : null;
     rotation = _num(json['rotation']);
     appIdentifier = _text(json['appIdentifier']);
     provider = _text(json['provider']);
@@ -229,9 +246,11 @@ class UserModel {
     isAutoVerify = _bool(json['isAutoVerify']);
     regionId = _str(json['regionId']);
     driverType = _str(json['driverType']);
+    legacyIsCompany = _bool(json['isCompany']);
     // Carrier membership, read tolerantly: the panel may spell it either way.
     carrierId = _str(json['carrierId']) ?? _str(json['deliveryCarrierId']);
     companyName = _str(json['companyName']);
+    companyAddress = _str(json['companyAddress']);
     operatingLicence = _str(json['operatingLicence']);
     commercialRegister = _str(json['commercialRegister']);
     uniqueIdNumber = _str(json['uniqueIdNumber']);
@@ -296,7 +315,13 @@ class UserModel {
     return (text == null || text.isEmpty) ? null : text;
   }
 
-  bool get isCompany => driverType == 'company' || isOwner == true;
+  bool get isCompany => driverType == 'company' || isOwner == true || legacyIsCompany == true;
+
+  /// [serviceTypes] with the dispatch spec's aliases read as the module they
+  /// name (`parcel-service` -> `parcel_delivery`, `ecommerce-service` ->
+  /// `delivery-service`), each module once. For routing and watching only:
+  /// the stored values are never rewritten.
+  List<String> get serviceModules => DriverServiceTypes.normalizeAll(serviceTypes);
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
@@ -365,6 +390,8 @@ class UserModel {
     if (driverType != null) data['driverType'] = driverType;
     if (carrierId != null) data['carrierId'] = carrierId;
     if (companyName != null) data['companyName'] = companyName;
+    if (companyAddress != null) data['companyAddress'] = companyAddress;
+    if (zoneIds != null) data['zoneIds'] = zoneIds;
     if (operatingLicence != null) data['operatingLicence'] = operatingLicence;
     if (commercialRegister != null) data['commercialRegister'] = commercialRegister;
     if (uniqueIdNumber != null) data['uniqueIdNumber'] = uniqueIdNumber;
@@ -381,9 +408,16 @@ class UserLocation {
 
   UserLocation({this.latitude, this.longitude});
 
+  /// Numbers as stored by any writer: an integer (or numeric text) used to
+  /// throw on these `double?` fields, and the whole location was dropped.
   UserLocation.fromJson(Map<String, dynamic> json) {
-    latitude = json['latitude'];
-    longitude = json['longitude'];
+    latitude = _coordinate(json['latitude']);
+    longitude = _coordinate(json['longitude']);
+  }
+
+  static double? _coordinate(dynamic value) {
+    final num? n = value is num ? value : num.tryParse((value ?? '').toString().trim());
+    return n == null || !n.isFinite ? null : n.toDouble();
   }
 
   Map<String, dynamic> toJson() {

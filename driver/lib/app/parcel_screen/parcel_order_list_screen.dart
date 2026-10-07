@@ -175,9 +175,9 @@ class _ParcelHistoryCard extends StatelessWidget {
                 _StopLine(
                   isPickup: false,
                   title: "Delivery Address (Receiver):".tr,
-                  name: order.receiver?.name ?? '',
+                  name: order.receiverNameDisplay,
                   address: AddressFormat.clean(order.receiver?.address),
-                  phone: order.receiver?.phone ?? '',
+                  phone: order.receiverPhoneDisplay,
                   showConnector: false,
                 ),
                 if (cancellation != null) ...[

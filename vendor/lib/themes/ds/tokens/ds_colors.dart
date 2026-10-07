@@ -26,6 +26,10 @@ enum DsTone {
     final s = (status ?? '').toLowerCase();
     if (s.isEmpty) return DsTone.neutral;
     bool has(List<String> keys) => keys.any(s.contains);
+    // A delivery order the dispatch has offered to a driver, or that a
+    // driver passed on and is being offered to the next one, is waiting for a
+    // driver - not rejected (DRIVER_DISPATCH_DOCUMENTATION.md §2).
+    if (has(['driver rejected', 'driver pending', 'driver_rejected', 'driver_pending'])) return DsTone.warning;
     if (has(['reject', 'cancel', 'fail', 'expire', 'declin', 'block', 'suspend', 'denied', 'unpaid'])) {
       return DsTone.danger;
     }

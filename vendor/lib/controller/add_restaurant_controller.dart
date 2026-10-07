@@ -22,7 +22,6 @@ import 'package:vendor/utils/address_format.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/notification_service.dart';
 import 'package:vendor/utils/region_service.dart';
-import 'package:vendor/widget/geoflutterfire/src/geoflutterfire.dart';
 
 class AddRestaurantController extends GetxController {
   RxBool isLoading = true.obs;
@@ -343,10 +342,6 @@ class AddRestaurantController extends GetxController {
 
         vendorModel.value.categoryID = selectedCategories.map((e) => e.id ?? '').toList();
         vendorModel.value.categoryTitle = selectedCategories.map((e) => e.title ?? '').toList();
-        vendorModel.value.g = G(
-          geohash: Geoflutterfire().point(latitude: selectedLocation.value!.latitude, longitude: selectedLocation.value!.longitude).hash,
-          geopoint: GeoPoint(selectedLocation.value!.latitude, selectedLocation.value!.longitude),
-        );
         vendorModel.value.description = restaurantDescriptionController.value.text;
         vendorModel.value.phonenumber = mobileNumberController.value.text;
         vendorModel.value.filters = Filters.fromJson(filters);
@@ -354,10 +349,7 @@ class AddRestaurantController extends GetxController {
         // one place pick (report 02#2), so they can never disagree. The
         // `coordinates` GeoPoint used to be written back as loaded, keeping a
         // moved store's old position there.
-        vendorModel.value.location = addressController.value.text;
-        vendorModel.value.latitude = selectedLocation.value!.latitude;
-        vendorModel.value.longitude = selectedLocation.value!.longitude;
-        vendorModel.value.coordinates = GeoPoint(selectedLocation.value!.latitude, selectedLocation.value!.longitude);
+        vendorModel.value.setPosition(address: addressController.value.text, latitude: selectedLocation.value!.latitude, longitude: selectedLocation.value!.longitude);
         vendorModel.value.photos = images;
         vendorModel.value.sectionId = selectedSectionModel.value.id;
         if (images.isNotEmpty) {

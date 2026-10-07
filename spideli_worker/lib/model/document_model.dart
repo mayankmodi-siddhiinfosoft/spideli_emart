@@ -3,6 +3,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// A document type configured by the admin in the `documents` collection
 /// (same shape the Driver and Store apps read). Worker documents have
 /// `type == "worker"`. `expireAt` is a flag: the document has an expiry date.
+///
+/// Report Doc 36/41: an upload is matched to its type by [id], so the app
+/// only ever uploads against an admin-created type -- never a built-in key
+/// (the old `worker_identity_document` matched no type and was invisible in
+/// the panel).
 class DocumentModel {
   String? id;
   String? title;
@@ -13,21 +18,17 @@ class DocumentModel {
 
   DocumentModel({this.id, this.title, this.enable, this.frontSide, this.backSide, this.expireAt});
 
+  /// [id] is the type's Firestore document id ([docId]) -- what the panel
+  /// matches uploads on. A stored `id` field (possibly stale, e.g. copied
+  /// with a duplicated type) is only a fallback when no doc id is given.
   DocumentModel.fromJson(Map<String, dynamic> json, {String? docId}) {
-    id = (json['id']?.toString().isNotEmpty == true) ? json['id'].toString() : docId;
+    id = (docId != null && docId.isNotEmpty) ? docId : ((json['id']?.toString().isNotEmpty == true) ? json['id'].toString() : null);
     title = json['title']?.toString();
     enable = json['enable'] == true;
     frontSide = json['frontSide'] == true;
     backSide = json['backSide'] == true;
     expireAt = json['expireAt'] == true;
   }
-
-  /// Used only when the admin has not configured any "worker" document type:
-  /// spec 3.6 requires at least an identity document for a worker.
-  static const String identityDocumentId = 'worker_identity_document';
-
-  static DocumentModel identityDocument() =>
-      DocumentModel(id: identityDocumentId, title: 'Identity document', enable: true, frontSide: true, backSide: true, expireAt: true);
 }
 
 /// `documents_verify/{uid}` -- the documents one actor uploaded (same shape

@@ -19,6 +19,8 @@ import 'package:driver/models/section_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/models/vehicle_type.dart';
 import 'package:driver/models/zone_model.dart';
+import 'package:driver/utils/company_profile.dart';
+import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/notification_service.dart';
 import 'package:driver/utils/region_service.dart';
@@ -82,6 +84,9 @@ class SignupController extends GetxController {
 
   // ── Company identification (spec 4.11) ──────────────────────────────────────
   Rx<TextEditingController> companyNameController = TextEditingController().obs;
+
+  /// Report Doc 38: asked for and saved as `companyAddress` (it never was).
+  Rx<TextEditingController> companyAddressController = TextEditingController().obs;
   Rx<TextEditingController> operatingLicenceController = TextEditingController().obs;
   Rx<TextEditingController> commercialRegisterController = TextEditingController().obs;
   Rx<TextEditingController> uniqueIdNumberController = TextEditingController().obs;
@@ -90,13 +95,44 @@ class SignupController extends GetxController {
   /// the uploaded URL is written to.
   RxMap<String, String> companyFiles = <String, String>{}.obs;
 
-  static const Map<String, String> companyFileFields = {
-    'operatingLicenceFile': 'Operating licence',
-    'commercialRegisterFile': 'Commercial register',
-    'uniqueIdNumberFile': 'Unique identification number',
+  static final Map<String, String> companyFileFields = {
+    for (final field in CompanyProfile.fileFields) field: CompanyProfile.labels[field]!,
   };
 
   bool get isCompany => selectedValue.value == 'Company';
+
+  /// Report Doc 43: the zones a company serves (several), saved as `zoneIds`
+  /// with `zoneId` = the first one.
+  RxList<String> selectedZoneIds = <String>[].obs;
+
+  bool isCompanyZoneSelected(String? zoneId) => zoneId != null && selectedZoneIds.contains(zoneId);
+
+  void toggleCompanyZone(String? zoneId) {
+    if (zoneId == null || zoneId.isEmpty) return;
+    if (selectedZoneIds.contains(zoneId)) {
+      selectedZoneIds.remove(zoneId);
+    } else {
+      selectedZoneIds.add(zoneId);
+    }
+    update();
+  }
+
+  /// The first company-registration problem, or null when the company part
+  /// of the form is complete. The three documents are required: four of six
+  /// companies were saved without them because nothing asked (report Doc 38).
+  String? companyValidationError() {
+    if (!isCompany) return null;
+    if (companyNameController.value.text.trim().isEmpty) return "Please enter company name";
+    if (companyAddressController.value.text.trim().isEmpty) return "Please enter the company address";
+    if (operatingLicenceController.value.text.trim().isEmpty ||
+        commercialRegisterController.value.text.trim().isEmpty ||
+        uniqueIdNumberController.value.text.trim().isEmpty) {
+      return "Please enter the operating licence, commercial register and unique identification number";
+    }
+    if (CompanyProfile.missingFiles(companyFiles).isNotEmpty) return "Please add the three company documents";
+    if (zoneList.isNotEmpty && selectedZoneIds.isEmpty) return "Please select at least one zone";
+    return null;
+  }
 
   Future<void> pickCompanyFile(String field, ImageSource source) async {
     try {
@@ -109,28 +145,26 @@ class SignupController extends GetxController {
   }
 
   /// Uploads the picked company documents (after the account exists) and
-  /// writes their URLs on the user model.
-  Future<void> _uploadCompanyFiles(String uid) async {
+  /// writes their URLs on the user model. Returns the fields that could not
+  /// be uploaded: a failure used to be logged and forgotten, and the company
+  /// was saved without its documents with nobody told (report Doc 38).
+  Future<List<String>> _uploadCompanyFiles(String uid) async {
+    final List<String> failed = [];
     for (final entry in companyFiles.entries) {
       try {
         final file = File(entry.value);
         final url = await Constant.uploadUserImageToFireStorage(file, "driverDocument/$uid/company", "${entry.key}_${file.path.split('/').last}");
-        switch (entry.key) {
-          case 'operatingLicenceFile':
-            userModel.value.operatingLicenceFile = url;
-            break;
-          case 'commercialRegisterFile':
-            userModel.value.commercialRegisterFile = url;
-            break;
-          case 'uniqueIdNumberFile':
-            userModel.value.uniqueIdNumberFile = url;
-            break;
-        }
+        CompanyProfile.setValue(userModel.value, entry.key, url);
       } catch (e) {
         log("Company document upload failed (${entry.key}): $e");
+        failed.add(entry.key);
       }
     }
+    return failed;
   }
+
+  static const String _companyUploadFailed =
+      "Your account was created, but some company documents could not be uploaded. Please add them from your profile.";
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -215,6 +249,7 @@ class SignupController extends GetxController {
     if (selectedZone.value.id != null && !zoneList.any((zone) => zone.id == selectedZone.value.id)) {
       selectedZone.value = ZoneModel();
     }
+    selectedZoneIds.removeWhere((id) => !zoneList.any((zone) => zone.id == id));
   }
 
   /// Save-time guard: the chosen zone must serve the chosen region. The picker
@@ -303,6 +338,9 @@ class SignupController extends GetxController {
     }
     ShowToastDialog.showLoader("Please wait".tr);
     await _resolveRegionId();
+    // The admin's verification setting decides `isAutoVerify` for good: read
+    // it now rather than rely on the background settings load.
+    await FireStoreUtils.loadDocumentVerificationSettings();
 
     try {
       if (type.value == "google" || type.value == "apple" || type.value == "mobileNumber") {
@@ -314,13 +352,14 @@ class SignupController extends GetxController {
           return;
         }
         userModel.value.id = uid;
-        if (isCompany) await _uploadCompanyFiles(uid);
+        final List<String> failedFiles = isCompany ? await _uploadCompanyFiles(uid) : const [];
         final bool saved = await FireStoreUtils.updateUser(userModel.value, isNew: true);
         ShowToastDialog.closeLoader();
         if (!saved) {
           ShowToastDialog.showToast("Your account could not be saved. Please check your connection and try again.".tr);
           return;
         }
+        if (failedFiles.isNotEmpty) ShowToastDialog.showToast(_companyUploadFailed.tr);
         // The device token (field-level) and, once active, the topics: a new
         // driver used to get no push until the app was restarted.
         unawaited(NotificationService.syncSignedInDevice(userModel.value));
@@ -339,13 +378,14 @@ class SignupController extends GetxController {
       }
       userModel.value.id = credential.user!.uid;
       _populateUserModel();
-      if (isCompany) await _uploadCompanyFiles(credential.user!.uid);
+      final List<String> failedFiles = isCompany ? await _uploadCompanyFiles(credential.user!.uid) : const [];
       final bool saved = await FireStoreUtils.updateUser(userModel.value, isNew: true);
       ShowToastDialog.closeLoader();
       if (!saved) {
         ShowToastDialog.showToast("Your account was created but its details could not be saved. Please sign in and complete your profile.".tr);
         return;
       }
+      if (failedFiles.isNotEmpty) ShowToastDialog.showToast(_companyUploadFailed.tr);
       unawaited(NotificationService.syncSignedInDevice(userModel.value));
       _navigateAfterSignup(userModel.value);
     } on FirebaseAuthException catch (e) {
@@ -385,7 +425,7 @@ class SignupController extends GetxController {
   /// own region is used as the fallback so a record is never filed nowhere.
   Future<void> _resolveRegionId() async {
     if (selectedRegion.value?.id != null) return;
-    final String? zoneId = selectedZone.value.id;
+    final String? zoneId = isCompany ? CompanyZones.primary(selectedZoneIds) : selectedZone.value.id;
     if (zoneId == null || zoneId.isEmpty) return;
     final ZoneModel? zone = allZoneList.where((z) => z.id == zoneId).firstOrNull;
     final List<String> ids = zone?.regionIds ?? const <String>[];
@@ -404,27 +444,28 @@ class SignupController extends GetxController {
     userModel.value.role = Constant.userRoleDriver;
     userModel.value.isActive = false;
     userModel.value.active = Constant.autoApproveDriver == true ? true : false;
-    userModel.value.isDocumentVerify = selectedValue.value == "Company"
-        ? Constant.isOwnerVerification == true
-            ? false
-            : true
-        : Constant.isDriverVerification == true
-            ? false
-            : true;
     userModel.value.countryCode = countryCodeEditingController.value.text;
     userModel.value.countryISOCode = countryISOCodeEditingController.value.text;
     userModel.value.createdAt = Timestamp.now();
-    userModel.value.zoneId = selectedZone.value.id;
+    if (isCompany) {
+      // Report Doc 43: every zone the company serves, and the first one in
+      // `zoneId` for the readers of the single field.
+      final List<String> zones = CompanyZones.normalize(selectedZoneIds);
+      userModel.value.zoneIds = zones;
+      userModel.value.zoneId = CompanyZones.primary(zones);
+    } else {
+      userModel.value.zoneId = selectedZone.value.id;
+    }
     userModel.value.appIdentifier = Platform.isAndroid ? 'android' : 'ios';
     userModel.value.provider = type.value.isEmpty ? 'email' : type.value;
     userModel.value.isOwner = selectedValue.value == "Company" ? true : false;
-    userModel.value.isAutoVerify = selectedValue.value == "Company"
-        ? Constant.isOwnerVerification == false
-            ? true
-            : false
-        : Constant.isDriverVerification == false
-            ? true
-            : false;
+    // Report Doc 37: a new account is never verified by the app itself — only
+    // the administrator sets `isDocumentVerify` true, once every required
+    // document is approved. With verification switched off in the panel the
+    // account is auto-verified instead, which is what every gate reads.
+    final flags = DocumentVerification.initialFlags(isCompany: isCompany);
+    userModel.value.isDocumentVerify = flags.isDocumentVerify;
+    userModel.value.isAutoVerify = flags.isAutoVerify;
 
     // ── Section IDs ──────────────────────────────────────────────────────────
     userModel.value.sectionIds = selectedSections.map((s) => s.id).whereType<String>().toList();
@@ -435,6 +476,7 @@ class SignupController extends GetxController {
     if (isCompany) {
       String? text(Rx<TextEditingController> c) => c.value.text.trim().isEmpty ? null : c.value.text.trim();
       userModel.value.companyName = text(companyNameController);
+      userModel.value.companyAddress = text(companyAddressController);
       userModel.value.operatingLicence = text(operatingLicenceController);
       userModel.value.commercialRegister = text(commercialRegisterController);
       userModel.value.uniqueIdNumber = text(uniqueIdNumberController);
@@ -490,11 +532,12 @@ class SignupController extends GetxController {
   static void navigateByUserModel(UserModel user) {
     if (user.isOwner == true) {
       Get.offAll(OwnerDashboardScreen());
-    } else if ((user.serviceTypes?.length ?? 0) > 1) {
+    } else if (user.serviceModules.length > 1) {
       Get.offAll(const MultiServiceDashboardScreen());
     } else {
-      // firstOrNull: an empty list used to throw here.
-      _navigateByServiceType(user.serviceTypes?.firstOrNull ?? 'delivery-service');
+      // firstOrNull: an empty list used to throw here. Read through the
+      // spec's aliases (`parcel-service` is the parcel module).
+      _navigateByServiceType(user.serviceModules.firstOrNull ?? 'delivery-service');
     }
   }
 

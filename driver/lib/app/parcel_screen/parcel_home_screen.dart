@@ -1,3 +1,4 @@
+import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/utils/address_format.dart';
 import 'package:driver/app/parcel_screen/parcel_order_details.dart';
@@ -8,7 +9,10 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/parcel_dashboard_controller.dart';
 import 'package:driver/controllers/parcel_home_controller.dart';
 import 'package:driver/models/parcel_order_model.dart';
+import 'package:driver/app/incoming_offer/incoming_offer_dialog.dart';
+import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/services/driver_job_queue_service.dart';
+import 'package:driver/services/incoming_offer_service.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:flutter/material.dart';
@@ -35,15 +39,19 @@ class ParcelHomeScreen extends StatelessWidget {
           builder: (controller) {
             final c = context.dsColors;
             final t = context.dsText;
-            final bool isVerified = !(Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false);
+            final bool isVerified = !DocumentVerification.isPending(Constant.userModel);
             final bool isLoading = controller.isLoading.value;
-            final bool docsPending = Constant.userModel?.isDocumentVerify == false && Constant.userModel?.isAutoVerify == false;
+            final bool docsPending = DocumentVerification.isPending(Constant.userModel);
             final bool isOffline = controller.userModel.value.isActive == false;
             // New work (the queue banner, the parcel search and its Accept) is
             // for a verified driver who is online. Parcels already assigned are
             // listed and workable whatever this says.
             final bool canTakeNewWork = isVerified && controller.userModel.value.isActive == true;
             final List<ParcelOrderModel> orders = controller.parcelOrdersList.toList();
+            // Parcels dispatched to this driver and waiting for Accept /
+            // Reject (D2 / D3): listed above the assigned parcels, whatever
+            // the verification and online state (they name this driver).
+            final bool hasOffers = IncomingOfferService.offersOf(DispatchKind.parcel).isNotEmpty;
 
             Widget body;
             if (isLoading) {
@@ -53,7 +61,7 @@ class ParcelHomeScreen extends StatelessWidget {
             // either way — those two states replaced the list, and with it
             // every Pickup / Deliver button (an owner-created driver starts
             // offline).
-            } else if (docsPending && orders.isEmpty) {
+            } else if (docsPending && orders.isEmpty && !hasOffers) {
               body = DsEmptyState(
                 icon: Icons.assignment_outlined,
                 tone: DsTone.warning,
@@ -66,14 +74,14 @@ class ParcelHomeScreen extends StatelessWidget {
                   dashBoardController.drawerIndex.value = 4;
                 },
               );
-            } else if (isOffline && orders.isEmpty) {
+            } else if (isOffline && orders.isEmpty && !hasOffers) {
               body = DsEmptyState(
                 icon: Icons.wifi_tethering_off_rounded,
                 tone: DsTone.neutral,
                 title: 'You’re Currently Offline'.tr,
                 message: 'Switch to online mode to accept and deliver parcel orders.'.tr,
               );
-            } else if (orders.isEmpty) {
+            } else if (orders.isEmpty && !hasOffers) {
               body = Column(
                 children: [
                   Obx(() {
@@ -152,27 +160,33 @@ class ParcelHomeScreen extends StatelessWidget {
                       const DsSliverResponsive(
                         sliver: SliverToBoxAdapter(child: _NewParcelJobsBanner(gutter: false)),
                       ),
-                    DsSliverResponsive(
-                      top: DsSpace.lg,
-                      sliver: SliverToBoxAdapter(
-                        child: DsFadeSlideIn(
-                          child: Row(
-                            children: [
-                              DsSectionBadge(section: DsSection.parcel, label: "Parcel".tr),
-                              const DsGap(DsSpace.sm),
-                              Expanded(
-                                child: Text(
-                                  "${'Active parcels'.tr} · ${orders.length}",
-                                  style: t.labelSm,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                    if (hasOffers)
+                      const DsSliverResponsive(
+                        top: DsSpace.lg,
+                        sliver: SliverToBoxAdapter(child: PendingOfferCards(kind: DispatchKind.parcel)),
+                      ),
+                    if (orders.isNotEmpty)
+                      DsSliverResponsive(
+                        top: DsSpace.lg,
+                        sliver: SliverToBoxAdapter(
+                          child: DsFadeSlideIn(
+                            child: Row(
+                              children: [
+                                DsSectionBadge(section: DsSection.parcel, label: "Parcel".tr),
+                                const DsGap(DsSpace.sm),
+                                Expanded(
+                                  child: Text(
+                                    "${'Active parcels'.tr} · ${orders.length}",
+                                    style: t.labelSm,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
                     DsSliverResponsive(
                       top: DsSpace.md,
                       bottom: 96,
@@ -347,6 +361,13 @@ class _ParcelJobCard extends StatelessWidget {
                     DsRouteStop(kind: DsStopKind.drop, label: 'Delivery'.tr, address: AddressFormat.clean(order.receiver?.address)),
                   ],
                 ),
+                // The receiver (app-spec-parcel-sms.md "Show the receiver's
+                // details"): an accepted job only — this card never shows an
+                // offer. Flat fields first, with the dialling code.
+                if (order.receiverNameDisplay.isNotEmpty || order.receiverPhoneDisplay.isNotEmpty) ...[
+                  const DsGap(DsSpace.md),
+                  _ReceiverLine(order: order),
+                ],
               ],
             ),
           ),
@@ -417,6 +438,48 @@ class _ParcelJobCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The receiver of an accepted parcel: name and phone (with the dialling
+/// code), and a call button when there is a number to dial.
+class _ReceiverLine extends StatelessWidget {
+  final ParcelOrderModel order;
+
+  const _ReceiverLine({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    final String name = order.receiverNameDisplay;
+    final String phone = order.receiverPhoneDisplay;
+    final String dial = order.receiverDialNumber;
+    return Row(
+      children: [
+        Icon(Icons.person_outline_rounded, size: 18, color: c.iconDefault),
+        const DsGap(DsSpace.sm),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("Receiver".tr, style: t.overline),
+              if (name.isNotEmpty) Text(name, style: t.titleSm.w600, maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (phone.isNotEmpty) Text(phone, style: t.bodySm.tabular, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
+          ),
+        ),
+        if (dial.isNotEmpty) ...[
+          const DsGap(DsSpace.sm),
+          DsIconButton(
+            icon: Icons.call_outlined,
+            semanticLabel: "Call receiver".tr,
+            variant: DsIconButtonVariant.outlined,
+            onPressed: () => Constant.makePhoneCall(dial),
+          ),
+        ],
+      ],
     );
   }
 }

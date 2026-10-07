@@ -117,6 +117,45 @@ void main() {
       expect(PushChannels.driverChannelFor(type: 'x', requestedChannelId: 'high_importance_channel'), 'driver_notifications_channel');
     });
 
+    test('a dispatch offer is shown on the spideli channel (dispatch spec §5A, D4)', () {
+      expect(PushChannels.dispatch, 'spideli');
+      // The Cloud Function's payload names the channel itself...
+      expect(PushChannels.driverChannelFor(type: 'order', requestedChannelId: 'spideli'), 'spideli');
+      expect(PushChannels.driverChannelFor(type: 'chat', requestedChannelId: 'spideli'), 'spideli');
+      // ...and a dispatch offer without it is still routed there, for every service.
+      for (final String type in const ['order', 'parcel', 'cab', 'rental']) {
+        expect(
+          PushChannels.driverChannelFor(type: type, data: {'type': type, 'orderId': 'o1', 'click_action': 'FLUTTER_NOTIFICATION_CLICK'}),
+          'spideli',
+          reason: type,
+        );
+        expect(PushChannels.driverChannelFor(type: type, data: {'type': type, 'id': 'o1', 'status': 'Driver Pending'}), 'spideli', reason: '$type by id');
+      }
+      // The other two driver channels are unchanged.
+      expect(PushChannels.driverChannelFor(type: 'order'), 'driver_jobs');
+      expect(PushChannels.driverChannelFor(type: 'order', data: {'type': 'order'}), 'driver_jobs');
+      expect(PushChannels.driverChannelFor(type: 'parcel', data: {'type': 'parcel', 'orderId': 'p1'}), 'driver_notifications_channel');
+      expect(PushChannels.driverChannelFor(type: 'orderChat', requestedChannelId: 'driver_notifications_channel'), 'driver_notifications_channel');
+    });
+
+    test('the driver app creates the spideli channel at start-up, importance max', () {
+      final String source = File('lib/utils/notification_service.dart').readAsStringSync();
+      expect(source, contains('PushChannels.dispatch'));
+      expect(source, contains("'Spideli Order Notifications'"));
+      expect(source, contains('createNotificationChannel(_dispatchChannel)'));
+      final RegExpMatch? channel = RegExp(r'_dispatchChannel = AndroidNotificationChannel\(([^;]*)\);', dotAll: true).firstMatch(source);
+      expect(channel, isNotNull);
+      expect(channel!.group(1), contains('Importance.max'));
+      expect(channel.group(1), contains('playSound: true'));
+      expect(channel.group(1), contains('enableVibration: true'));
+      expect(File('lib/main.dart').readAsStringSync(), contains('NotificationService.createChannels()'));
+    });
+
+    test('a tap with click_action FLUTTER_NOTIFICATION_CLICK reaches the app', () {
+      final String xml = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+      expect(xml, contains('<action android:name="FLUTTER_NOTIFICATION_CLICK" />'));
+    });
+
     test('the driver manifest default is the general channel the app creates', () {
       final File manifest = File('android/app/src/main/AndroidManifest.xml');
       final String xml = manifest.readAsStringSync();

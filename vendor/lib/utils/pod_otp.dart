@@ -81,10 +81,27 @@ enum StoreCompletion {
 
 /// The scope rule as a pure function, so it is tested without a screen.
 abstract final class PodScope {
+  /// Statuses in which the `deliveryDispatch` Cloud Function (or the driver
+  /// it offered the order to) is working on a `vendor_orders` order:
+  /// accepted by the store, offered to a driver, passed on, or just taken
+  /// (the Function then advances it to "Order Shipped"). The dispatch writes
+  /// `driverID` with a mere offer, so a driver id alone does not mean a
+  /// delivery man has the order.
+  static const Set<String> dispatchStatuses = {Constant.orderAccepted, Constant.driverPending, Constant.driverRejected, Constant.driverAccepted};
+
   /// What the store can do with an order in [status].
   ///
+  /// [hasDriver]: the order names a delivery man (`driverID`).
   /// [storeDelivers]: the self-delivery feature is on and this store uses it.
   /// [handedOver]: the order is ready / accepted by the store's delivery man.
+  ///
+  /// An e-commerce order is a courier shipment ("Order Shipped" with no
+  /// delivery man) or a delivery only once it has left the store. In one of
+  /// the [dispatchStatuses] (accepted on the store panel, say) the dispatch is
+  /// still finding it a driver, so it is handled like any other delivery
+  /// order: waiting for the driver, or assigned to the store's own delivery
+  /// man. It used to offer "Mark Deliver" (no code) there, or "Mark as
+  /// Completed" as soon as a driver was merely offered it.
   static StoreCompletion storeCompletion({
     required String? status,
     required bool takeAway,
@@ -96,7 +113,7 @@ abstract final class PodScope {
   }) {
     if (PodRules.isCancelledStatus(status) || PodRules.isCompletedStatus(status)) return StoreCompletion.closed;
     if (takeAway) return isPosOrder ? StoreCompletion.pos : StoreCompletion.pickupCode;
-    if (isEcommerce) return hasDriver ? StoreCompletion.deliveryCode : StoreCompletion.courier;
+    if (isEcommerce && !dispatchStatuses.contains((status ?? '').trim())) return hasDriver ? StoreCompletion.deliveryCode : StoreCompletion.courier;
     if (storeDelivers) return hasDriver && handedOver ? StoreCompletion.deliveryCode : StoreCompletion.assignDriver;
     return StoreCompletion.waitForDriver;
   }

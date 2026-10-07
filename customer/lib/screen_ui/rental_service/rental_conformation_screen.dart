@@ -1,3 +1,4 @@
+import 'package:customer/utils/address_format.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/coupon_model.dart';
@@ -49,7 +50,7 @@ class RentalConformationScreen extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text("${controller.rentalOrderModel.value.sourceLocationName}", style: t.titleSm),
+                                Text(displayAddress(controller.rentalOrderModel.value.sourceLocationName, fallback: "-"), style: t.titleSm),
                                 const DsGap(DsSpace.xxs),
                                 Row(
                                   children: [

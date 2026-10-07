@@ -1,3 +1,4 @@
+import 'package:customer/utils/booking_status_tabs.dart';
 import 'package:customer/widget/cancellation_info_view.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/screen_ui/parcel_service/parcel_review_screen.dart';
@@ -116,9 +117,9 @@ class ParcelOrderDetails extends StatelessWidget {
                             senderName: controller.parcelOrder.value.sender?.name ?? '',
                             senderAddress: controller.parcelOrder.value.sender?.address ?? '',
                             senderPhone: controller.parcelOrder.value.sender?.phone ?? '',
-                            receiverName: controller.parcelOrder.value.receiver?.name ?? '',
+                            receiverName: controller.parcelOrder.value.receiverNameDisplay,
                             receiverAddress: controller.parcelOrder.value.receiver?.address ?? '',
-                            receiverPhone: controller.parcelOrder.value.receiver?.phone ?? '',
+                            receiverPhone: controller.parcelOrder.value.receiverPhoneDisplay,
                           ),
 
                           const DsDivider(spacing: DsSpace.xl),
@@ -189,7 +190,10 @@ class ParcelOrderDetails extends StatelessWidget {
                       ],
                     ),
                     const DsGap(DsSpace.lg),
-                    if (controller.parcelOrder.value.driver != null) ...[
+                    // No driver card while the dispatch is still looking (a driver who was
+                    // only offered the parcel, or one who declined, is not its driver).
+                    if (controller.parcelOrder.value.driver != null &&
+                        BookingStatusTabs.driverAccepted(controller.parcelOrder.value.status, controller.parcelOrder.value.driverId, controller.parcelOrder.value.driver?.id)) ...[
                       ParcelCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -209,7 +213,7 @@ class ParcelOrderDetails extends StatelessWidget {
                                 ),
                                 const DsGap(DsSpace.sm),
                                 DsBadge(
-                                  label: controller.driverUser.value!.averageRating.toStringAsFixed(1),
+                                  label: (controller.driverUser.value?.averageRating ?? 0).toStringAsFixed(1),
                                   tone: DsTone.warning,
                                   icon: Icons.star_rounded,
                                 ),
@@ -318,6 +322,20 @@ class ParcelOrderDetails extends StatelessWidget {
                                 amount: controller.parcelOrder.value.scopeTaxAmount.toString(),
                                 currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
                               ),
+                            ),
+
+                          // Receiver SMS (point 54): its fee, outside VAT and
+                          // coupons - or "Free" when the sender's region
+                          // charges nothing for it.
+                          if (controller.parcelOrder.value.sendReceiverSms == true)
+                            ParcelSummaryRow(
+                              label: "Receiver SMS".tr,
+                              value: controller.parcelOrder.value.smsChargeAmount > 0
+                                  ? Constant.amountShow(
+                                      amount: controller.parcelOrder.value.smsChargeAmount.toString(),
+                                      currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
+                                    )
+                                  : "Free".tr,
                             ),
 
                           // Tax List

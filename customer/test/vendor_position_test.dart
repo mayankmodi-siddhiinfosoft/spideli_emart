@@ -69,4 +69,41 @@ void main() {
       expect(Constant.vendorDistanceLabel(VendorModel.fromJson({'latitude': '', 'longitude': ''})), isNull);
     });
   });
+
+  // The radius query cannot return a store with no geohash; those stores are
+  // read separately and must pass the list's own filters, then come last.
+  group('stores without a position stay listed', () {
+    VendorModel store(String id, {String lat = '', String lng = ''}) => VendorModel.fromJson({'id': id, 'latitude': lat, 'longitude': lng});
+
+    test('appended after the nearby stores, without duplicates', () {
+      final nearby = [store('near1', lat: '3.84', lng: '11.50'), store('near2', lat: '3.85', lng: '11.51')];
+      final unplaced = [store('none1'), store('near1'), store('none1'), store('none2')];
+      expect(VendorModel.withUnplacedLast(nearby, unplaced).map((v) => v.id), ['near1', 'near2', 'none1', 'none2']);
+    });
+
+    test('a store that does have a position is left to the radius query', () {
+      expect(VendorModel.withUnplacedLast([], [store('far', lat: '48.85', lng: '2.35')]), isEmpty);
+    });
+
+    test('nothing nearby still lists the unplaced stores', () {
+      expect(VendorModel.withUnplacedLast([], [store('none1')]).map((v) => v.id), ['none1']);
+    });
+
+    test('held to the list filters: section, zone, category, dine-in', () {
+      final data = <String, dynamic>{
+        'section_id': 's1',
+        'zoneId': 'z1',
+        'categoryID': ['c1', 'c2'],
+        'enabledDiveInFuture': true,
+      };
+      expect(VendorModel.matchesListFilters(data, sectionId: 's1', zoneId: 'z1', categoryId: 'c2', dineInOnly: true), isTrue);
+      expect(VendorModel.matchesListFilters(data), isTrue);
+      expect(VendorModel.matchesListFilters(data, sectionId: 's2'), isFalse);
+      expect(VendorModel.matchesListFilters(data, zoneId: 'z2'), isFalse);
+      expect(VendorModel.matchesListFilters(data, zoneId: ''), isFalse);
+      expect(VendorModel.matchesListFilters(data, categoryId: 'c3'), isFalse);
+      expect(VendorModel.matchesListFilters({...data, 'enabledDiveInFuture': false}, dineInOnly: true), isFalse);
+      expect(VendorModel.matchesListFilters({'categoryID': 'c1'}, categoryId: 'c1'), isTrue);
+    });
+  });
 }

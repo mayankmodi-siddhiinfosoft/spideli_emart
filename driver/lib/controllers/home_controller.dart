@@ -5,11 +5,13 @@ import 'dart:developer';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
-import 'package:driver/constant/send_notification.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/services/audio_player_service.dart';
+import 'package:driver/services/dispatch_navigation.dart';
+import 'package:driver/services/dispatch_offer_rules.dart';
+import 'package:driver/services/dispatch_offer_service.dart';
 import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/utils/args.dart';
 import 'package:driver/utils/fire_store_utils.dart';
@@ -151,21 +153,20 @@ class HomeController extends GetxController {
     ShowToastDialog.showLoader("Please wait".tr);
     try {
       await AudioPlayerService.playSound(false);
-      // Re-checked against the live order, then the order and the driver's
-      // arrays are written field by field (never the whole user document).
-      final result = await AssignedDeliveryOrders.acceptOffer(orderId, driver);
+      // The shared dispatch service (D2): re-checked against the live order
+      // in a transaction, the order and the driver's arrays written field by
+      // field, and the customer and store told (templated pushes).
+      final DispatchResult result = await DispatchOfferService.accept(DispatchKind.delivery, orderId, driver);
       ShowToastDialog.closeLoader();
       switch (result.answer) {
         case OfferAnswer.done:
-          final OrderModel notified = result.order ?? order;
-          // Customer and store, each on its app's channel, by their live tokens.
-          unawaited(SendNotification.notifyOrderAccepted(notified));
         case OfferAnswer.held:
           break;
         case OfferAnswer.gone:
           ShowToastDialog.showToast("This order is no longer available.".tr);
+        case OfferAnswer.blocked:
         case OfferAnswer.failed:
-          ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
+          ShowToastDialog.showToast((result.message ?? "Something went wrong. Please try again.").tr);
       }
     } finally {
       _acceptingId = null;
@@ -175,11 +176,13 @@ class HomeController extends GetxController {
 
   /// Driver passes on the delivery offer on screen. A reason is mandatory
   /// and nothing changes until one is given. The order goes back to dispatch
-  /// (status "Driver Rejected", this driver in `rejectedByDrivers`) and the
-  /// reason is appended to `driverRejections`, after a re-check of the live
-  /// order. The driver's arrays are changed field by field: the whole user
-  /// document used to be written back from a copy taken BEFORE the reason
-  /// sheet opened, undoing every offer and assignment that arrived meanwhile.
+  /// (D2: status "Driver Rejected", this driver in `rejectedByDrivers`,
+  /// `driverId` / `driverID` null) and the reason is appended to
+  /// `driverRejections`, after a re-check of the live order
+  /// ([DispatchOfferService.reject]). The driver's arrays are changed field
+  /// by field: the whole user document used to be written back from a copy
+  /// taken BEFORE the reason sheet opened, undoing every offer and assignment
+  /// that arrived meanwhile.
   Future<void> rejectOrder() async {
     final String? uid = driverModel.value.id;
     final String? orderId = currentOrder.value.id;
@@ -199,11 +202,14 @@ class HomeController extends GetxController {
       return;
     }
 
+    // Multiple-order mode: this screen's own route, taken before the writes
+    // (the incoming-order dialog may open above it meanwhile).
+    final ownRoute = Constant.singleOrderReceive == false ? DispatchNavigation.ownRoute() : null;
     ShowToastDialog.showLoader("Please wait".tr);
     // 🔊 Stop any ongoing alert sound (if playing)
     await AudioPlayerService.playSound(false);
 
-    final OfferAnswer answer = await AssignedDeliveryOrders.rejectOffer(orderId, uid, reason.toFields(uid));
+    final OfferAnswer answer = (await DispatchOfferService.reject(DispatchKind.delivery, orderId, uid, reasonFields: reason.toFields(uid))).answer;
     if (answer == OfferAnswer.failed) {
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast("Something went wrong. Please try again.".tr);
@@ -228,7 +234,8 @@ class HomeController extends GetxController {
       ShowToastDialog.showToast("This order is no longer available.".tr);
     }
     if (Constant.singleOrderReceive == false) {
-      Get.back();
+      // This screen, not the incoming-order dialog Get.back() would pop.
+      DispatchNavigation.closeRoute(ownRoute);
     } else {
       await _selectOrder();
     }

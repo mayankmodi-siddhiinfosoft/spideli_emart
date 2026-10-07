@@ -1,3 +1,4 @@
+import 'package:customer/utils/booking_status_tabs.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/currency_model.dart';
 import 'package:customer/utils/order_receipt_pdf.dart';
@@ -175,16 +176,32 @@ class OrderHistoryExport {
     return [for (final e in indexed) e.value];
   }
 
-  /// The statuses the Ride, Parcel, Rental and Booking History screens file
-  /// under their Cancelled tab ("Driver Rejected" included). "My Order"
-  /// (shopping) keeps the receipts' rule instead.
-  static const Set<String> bookingCancelledStatuses = {Constant.orderRejected, Constant.orderCancelled, Constant.driverRejected};
+  /// The statuses the Ride, Parcel and Rental history screens file under
+  /// their Cancelled tab ([BookingStatusTabs.cancelled]). "Driver Rejected"
+  /// is not one: it sends the booking back to the dispatch Cloud Function,
+  /// which offers it to the next driver, so it is still a live booking and is
+  /// totalled. "My Order" (shopping) keeps the receipts' rule instead.
+  static const Set<String> bookingCancelledStatuses = BookingStatusTabs.cancelled;
+
+  /// The statuses the on-demand "Booking History" files under its Cancelled
+  /// tab. `provider_orders` are not dispatched by the Cloud Functions, so a
+  /// "Driver Rejected" there is not waiting for another driver: it stays
+  /// voided, as that screen lists it.
+  static const Set<String> onDemandCancelledStatuses = {Constant.orderRejected, Constant.orderCancelled, Constant.driverRejected};
 
   /// Whether an order of [kind] with [status] is listed as cancelled by its
   /// history screen - and so left out of the PDF totals.
   static bool isVoided(OrderHistoryKind kind, String? status) {
-    if (kind == OrderHistoryKind.shopping) return OrderReceiptPdf.isVoidedStatus(status);
-    return bookingCancelledStatuses.contains(status);
+    switch (kind) {
+      case OrderHistoryKind.shopping:
+        return OrderReceiptPdf.isVoidedStatus(status);
+      case OrderHistoryKind.onDemand:
+        return onDemandCancelledStatuses.contains(status);
+      case OrderHistoryKind.rides:
+      case OrderHistoryKind.parcels:
+      case OrderHistoryKind.rentals:
+        return bookingCancelledStatuses.contains(status);
+    }
   }
 
   /// Totals are grouped by how the currency prints (code, symbol, decimals,

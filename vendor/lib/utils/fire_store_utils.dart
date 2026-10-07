@@ -67,8 +67,10 @@ import 'package:vendor/utils/cancel_reasons.dart';
 import 'package:vendor/utils/chat_unread.dart';
 import 'package:vendor/utils/customer_notification.dart';
 import 'package:vendor/utils/preferences.dart';
+import 'package:vendor/utils/product_image_cleanup.dart';
 import 'package:vendor/utils/push_payload.dart';
 import 'package:vendor/utils/store_credit_once.dart';
+import 'package:vendor/utils/store_order_write.dart';
 import 'package:video_compress/video_compress.dart';
 
 enum FirebaseEnv { defaultDb, staging }
@@ -297,7 +299,14 @@ class FireStoreUtils {
   /// What a user save writes. Never the wallet (it only moves transactionally)
   /// and, once the user has a store, never the platform plan: that lives on the
   /// store, and the plan on the in-memory user is a copy of the store's.
-  static Map<String, dynamic> _userWriteData(UserModel userModel) {
+  ///
+  /// Report Doc 37: `isDocumentVerify` (and `isAutoVerify`) are the
+  /// administrator's verdict. Only a new account ([isNew]: sign-up, a new
+  /// delivery man or employee) gets its starting value from the app; an
+  /// existing user is never written with them, so a copy loaded before an
+  /// approval (or a revocation) cannot put the old verdict back.
+  @visibleForTesting
+  static Map<String, dynamic> userWriteData(UserModel userModel, {bool isNew = false}) {
     final data = userModel.toJson()..remove('wallet_amount');
     if ((userModel.vendorID ?? '').isNotEmpty) {
       data
@@ -305,10 +314,17 @@ class FireStoreUtils {
         ..remove('subscription_plan')
         ..remove('subscriptionExpiryDate');
     }
+    if (!isNew) {
+      data
+        ..remove('isDocumentVerify')
+        ..remove('isAutoVerify');
+    }
     return data;
   }
 
-  static Future<bool> updateUser(UserModel userModel) async {
+  /// Saves the signed-in user. [isNew] only from sign-up, where the document
+  /// is created ([userWriteData]).
+  static Future<bool> updateUser(UserModel userModel, {bool isNew = false}) async {
     bool isUpdate = false;
     await fireStore
         .collection(CollectionName.users)
@@ -317,7 +333,7 @@ class FireStoreUtils {
         // [saveDeviceFcmToken] / [clearDeviceFcmToken]. Writing it from this
         // in-memory copy put an old (or empty) token back over the one the
         // device had just saved, and that phone stopped receiving pushes.
-        .setKnownFields(_userWriteData(userModel)..remove('fcmToken'))
+        .setKnownFields(userWriteData(userModel, isNew: isNew)..remove('fcmToken'))
         .whenComplete(() async {
           Constant.userModel = userModel;
           if (userModel.employeePermissionId != null) {
@@ -340,7 +356,8 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.users)
         .doc(userModel.id)
-        .setKnownFields(_userWriteData(userModel))
+        // Creates the account: its starting verification state is written.
+        .setKnownFields(userWriteData(userModel, isNew: true))
         .whenComplete(() {
           isUpdate = true;
         })
@@ -750,13 +767,27 @@ class FireStoreUtils {
     return referralModel;
   }
 
+  /// The enabled taxes of [sectionId] in the country of ([lat], [lng]).
+  ///
+  /// Report 02#27 / 02#2: a point the geocoder has no placemark for (sea,
+  /// rural area, geocoder offline or failing) used to throw on
+  /// `placeMarks.first` - inside the store save (the store was not saved and
+  /// the loader stayed up) and the dashboard start. Now that is "no taxes
+  /// known", an empty list, as in the customer app.
   static Future<List<TaxModel>?> getTaxList(double lat, double lng, String sectionId) async {
     List<TaxModel> taxList = [];
-    List<Placemark> placeMarks = await Geocoding().placemarkFromCoordinates(lat, lng);
+    String? country;
+    try {
+      final List<Placemark> placeMarks = await Geocoding().placemarkFromCoordinates(lat, lng);
+      if (placeMarks.isNotEmpty) country = placeMarks.first.country;
+    } catch (e) {
+      log("getTaxList: reverse geocoding ($lat, $lng) failed: $e");
+    }
+    if (country == null || country.trim().isEmpty) return taxList;
 
     await fireStore
         .collection(CollectionName.tax)
-        .where('country', isEqualTo: placeMarks.first.country)
+        .where('country', isEqualTo: country)
         .where('sectionId', isEqualTo: sectionId)
         .where('enable', isEqualTo: true)
         .get()
@@ -909,6 +940,30 @@ class FireStoreUtils {
           isUpdate = false;
         });
     return isUpdate;
+  }
+
+  /// Updates only [fields] of the order [orderId], in a transaction that
+  /// re-reads it first and goes ahead only when [allowed] accepts the stored
+  /// order ([StoreOrderWrite] rules). The store's Accept / Assign / Reject /
+  /// Cancel / Complete go through here instead of [updateOrder]: the dispatch Cloud
+  /// Function and drivers write the same order (status, driverID / driverId),
+  /// and a whole-order write from a stale card put their changes back.
+  /// Never throws.
+  static Future<OrderWriteOutcome> updateOrderIf(String? orderId, {required bool Function(Map<String, dynamic>? stored) allowed, required Map<String, dynamic> fields}) async {
+    if ((orderId ?? '').trim().isEmpty || fields.isEmpty) return OrderWriteOutcome.failure();
+    try {
+      final DocumentReference<Map<String, dynamic>> ref = fireStore.collection(CollectionName.vendorOrders).doc(orderId!.trim());
+      return await fireStore.runTransaction<OrderWriteOutcome>((transaction) async {
+        final DocumentSnapshot<Map<String, dynamic>> snapshot = await transaction.get(ref);
+        final Map<String, dynamic>? stored = snapshot.exists ? snapshot.data() : null;
+        if (stored == null || !allowed(stored)) return OrderWriteOutcome.refused(stored);
+        transaction.update(ref, fields);
+        return OrderWriteOutcome.written(stored);
+      });
+    } catch (e, s) {
+      log("updateOrderIf $orderId failed: $e", stackTrace: s);
+      return OrderWriteOutcome.failure();
+    }
   }
 
   /// What an order has credited the store so far, net of earlier reversals,
@@ -1307,20 +1362,86 @@ class FireStoreUtils {
     return isUpdate;
   }
 
+  /// Point 58: deletes the product (`vendor_products/{id}`) and then, in the
+  /// background, the images the app uploaded for it ([deleteOwnProductImages]).
+  /// False when the product could not be deleted - the old `whenComplete`
+  /// reported success even then.
   static Future<bool> deleteProduct(ProductModel productModel) async {
-    bool isUpdate = false;
-    await fireStore
-        .collection(CollectionName.vendorProducts)
-        .doc(productModel.id)
-        .delete()
-        .whenComplete(() {
-          isUpdate = true;
-        })
-        .catchError((error) {
-          log("Failed to update user: $error");
-          isUpdate = false;
-        });
-    return isUpdate;
+    final String productId = (productModel.id ?? '').trim();
+    if (productId.isEmpty) return false;
+    try {
+      await fireStore.collection(CollectionName.vendorProducts).doc(productId).delete();
+    } catch (e) {
+      log("deleteProduct $productId failed: $e");
+      return false;
+    }
+    unawaited(deleteOwnProductImages(productModel));
+    return true;
+  }
+
+  /// Deletes from Firebase Storage the photos of the (already deleted)
+  /// [product] that this app uploaded for it ([ProductImageCleanup]): under
+  /// the upload folder of the signed-in user or the store's owner, and used by
+  /// nothing else - no other product of the owner's stores, no store photo,
+  /// no profile picture, no other product or admin catalogue item with the
+  /// same URL. If any of that cannot be read, nothing is deleted; a failed
+  /// deletion is only logged. Never throws.
+  static Future<void> deleteOwnProductImages(ProductModel product) async {
+    try {
+      final String productId = (product.id ?? '').trim();
+      final String storeId = (product.vendorID ?? '').trim();
+      final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      Map<String, dynamic>? store;
+      if (storeId.isNotEmpty) {
+        store = (await fireStore.collection(CollectionName.vendors).doc(storeId).get()).data();
+      }
+      final String ownerId = (store?['author'] ?? Constant.userModel?.id ?? '').toString().trim();
+      final List<String> candidates = ProductImageCleanup.ownUploads(photo: product.photo, photos: product.photos, uploaderIds: [currentUid, ownerId]);
+      if (candidates.isEmpty) return;
+
+      // Everything that may still show one of them.
+      final List<Object?> stillUsed = [];
+      final Set<String> storeIds = {if (storeId.isNotEmpty) storeId};
+      if (store != null) stillUsed.add(store);
+      if (ownerId.isNotEmpty) {
+        final stores = await fireStore.collection(CollectionName.vendors).where('author', isEqualTo: ownerId).get();
+        for (final doc in stores.docs) {
+          storeIds.add(doc.id);
+          stillUsed.add(doc.data());
+        }
+      }
+      for (final String id in storeIds) {
+        final products = await fireStore.collection(CollectionName.vendorProducts).where('vendorID', isEqualTo: id).get();
+        for (final doc in products.docs) {
+          if (doc.id != productId) stillUsed.add(doc.data());
+        }
+      }
+      for (final String uid in {currentUid, ownerId}) {
+        if (uid.isEmpty) continue;
+        final user = await fireStore.collection(CollectionName.users).doc(uid).get();
+        stillUsed.add(user.data()?['profilePictureURL']);
+      }
+      // The same URL anywhere else: an import into another store, the admin
+      // catalogue.
+      for (final String url in candidates) {
+        for (final String collection in [CollectionName.vendorProducts, CollectionName.adminProducts]) {
+          final byPhoto = await fireStore.collection(collection).where('photo', isEqualTo: url).limit(2).get();
+          final byPhotos = await fireStore.collection(collection).where('photos', arrayContains: url).limit(2).get();
+          if ([...byPhoto.docs, ...byPhotos.docs].any((doc) => collection != CollectionName.vendorProducts || doc.id != productId)) stillUsed.add(url);
+        }
+      }
+
+      final List<String> deletable = ProductImageCleanup.deletable(candidates, ProductImageCleanup.storageUrlsIn(stillUsed));
+      for (final String url in deletable) {
+        try {
+          await FirebaseStorage.instance.refFromURL(url).delete();
+        } catch (e) {
+          log("Deleting image of product $productId failed (kept): $e");
+        }
+      }
+    } catch (e) {
+      log("Images of product ${product.id} kept: could not check where they are used: $e");
+    }
   }
 
   static Future<List<WalletTransactionModel>?> getWalletTransaction() async {
@@ -1798,13 +1919,13 @@ class FireStoreUtils {
           documentsList.add(documents);
 
           driverDocumentModel.id = getCurrentUid();
-          driverDocumentModel.type = "restaurant";
+          driverDocumentModel.type = "vendor";
           driverDocumentModel.documents = documentsList;
         } else {
           var index = newDriverDocumentModel.documents!.indexWhere((element) => element.documentId == documents.documentId);
 
           driverDocumentModel.id = getCurrentUid();
-          driverDocumentModel.type = "restaurant";
+          driverDocumentModel.type = "vendor";
           documentsList.removeAt(index);
           documentsList.insert(index, documents);
           driverDocumentModel.documents = documentsList;
@@ -1813,7 +1934,7 @@ class FireStoreUtils {
       } else {
         documentsList.add(documents);
         driverDocumentModel.id = getCurrentUid();
-        driverDocumentModel.type = "restaurant";
+        driverDocumentModel.type = "vendor";
         driverDocumentModel.documents = documentsList;
       }
     });
