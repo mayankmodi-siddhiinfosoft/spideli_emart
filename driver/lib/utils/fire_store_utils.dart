@@ -170,18 +170,24 @@ class FireStoreUtils {
     }
   }
 
+  /// Drops null values, and nested maps that end up empty, before a write.
+  ///
+  /// It used to remove the empty maps from inside `map.forEach`, which throws
+  /// "Concurrent modification during iteration": a new company driver (empty
+  /// `vehicleDetails`) could not be saved ("The driver account was created
+  /// but its details could not be saved").
   static Map<String, dynamic> removeNulls(Map<String, dynamic> map) {
     map.removeWhere((key, value) => value == null);
-
+    final List<String> emptied = [];
     map.forEach((key, value) {
       if (value is Map<String, dynamic>) {
         removeNulls(value);
-        if (value.isEmpty) {
-          map.remove(key);
-        }
+        if (value.isEmpty) emptied.add(key);
       }
     });
-
+    for (final String key in emptied) {
+      map.remove(key);
+    }
     return map;
   }
 
