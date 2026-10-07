@@ -139,7 +139,9 @@ class _CancelReasonBodyState extends State<_CancelReasonBody> {
     final isDark = Get.find<ThemeController>().isDark.value;
     return SafeArea(
       child: Padding(
-        padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 16 + MediaQuery.of(context).viewInsets.bottom),
+        // Get.bottomSheet already lifts the sheet above the keyboard; adding the
+        // inset again pushed it up by twice the keyboard height.
+        padding: const EdgeInsets.all(16),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,

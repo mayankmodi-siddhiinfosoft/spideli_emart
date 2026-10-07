@@ -224,8 +224,15 @@ class DsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
     final mq = MediaQuery.of(context);
+    // Get.bottomSheet already pads its route by the keyboard height
+    // (GetModalBottomSheetRoute); padding again here lifted every sheet with
+    // a text field by twice the keyboard — the store's delivery-code field
+    // went off the top of the screen and the cancel-reason sheet jumped to
+    // the top. Only a sheet shown some other way (showModalBottomSheet,
+    // which does not pad) adds the inset itself.
+    final bool routeHandlesKeyboard = ModalRoute.of(context) is GetModalBottomSheetRoute;
     return Padding(
-      padding: EdgeInsets.only(bottom: mq.viewInsets.bottom),
+      padding: EdgeInsets.only(bottom: routeHandlesKeyboard ? 0 : mq.viewInsets.bottom),
       child: Align(
         alignment: Alignment.bottomCenter,
         heightFactor: 1,
