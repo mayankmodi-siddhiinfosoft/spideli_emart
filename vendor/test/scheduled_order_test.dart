@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
@@ -124,54 +122,49 @@ void main() {
     });
   });
 
-  group('ScheduledOrderRule.notificationId', () {
-    test('stable: the same order id gives the same id, every time', () {
-      expect(ScheduledOrderRule.notificationId('abc-123'), ScheduledOrderRule.notificationId('abc-123'));
-      // FNV-1a of a fixed string: a regression check that it never changes
-      // between releases (an alarm set by one build is replaced by the next).
-      expect(ScheduledOrderRule.notificationId(''), 0x811c9dc5 & 0x7fffffff);
-      expect(ScheduledOrderRule.notificationId('a'), 0xe40c292c & 0x7fffffff);
+  group('ScheduledOrderDuePush', () {
+    test('the Cloud Function\'s push: order id, and the server says it is due', () {
+      final Map<String, dynamic> data = {'type': 'scheduled_order_due', 'orderId': ' o-1 '};
+      expect(ScheduledOrderDuePush.orderIdOf(data), 'o-1');
+      expect(ScheduledOrderDuePush.isServerDue(data), isTrue);
     });
 
-    test('a positive 31-bit int, different for different orders', () {
-      final Set<int> ids = {};
-      for (int i = 0; i < 2000; i++) {
-        final int id = ScheduledOrderRule.notificationId('order-$i');
-        expect(id, greaterThan(0));
-        expect(id, lessThanOrEqualTo(0x7fffffff));
-        ids.add(id);
-      }
-      expect(ids.length, 2000);
-    });
-  });
-
-  group('ScheduledOrderPush', () {
-    final DateTime at = DateTime.utc(2026, 10, 8, 19, 30);
-
-    test('parses the customer app\'s data push', () {
-      final ScheduledOrderPush? push = ScheduledOrderPush.parse({'type': 'scheduled_order', 'orderId': 'o-1', 'scheduleAt': '${at.millisecondsSinceEpoch}'});
-      expect(push, isNotNull);
-      expect(push!.orderId, 'o-1');
-      expect(push.scheduleAt, at);
+    test('the schedule_order template type only re-splits (older customer builds sent it at placing time)', () {
+      final Map<String, dynamic> data = {'type': 'schedule_order', 'orderId': 'o-1'};
+      expect(ScheduledOrderDuePush.orderIdOf(data), 'o-1');
+      expect(ScheduledOrderDuePush.isServerDue(data), isFalse);
     });
 
     test('anything else or unusable is null, never a throw', () {
-      expect(ScheduledOrderPush.parse({'type': 'order_placed', 'orderId': 'o-1', 'scheduleAt': '1'}), isNull);
-      expect(ScheduledOrderPush.parse({'type': 'scheduled_order', 'scheduleAt': '${at.millisecondsSinceEpoch}'}), isNull);
-      expect(ScheduledOrderPush.parse({'type': 'scheduled_order', 'orderId': 'null', 'scheduleAt': '${at.millisecondsSinceEpoch}'}), isNull);
-      expect(ScheduledOrderPush.parse({'type': 'scheduled_order', 'orderId': 'o-1', 'scheduleAt': 'tomorrow'}), isNull);
-      expect(ScheduledOrderPush.parse({'type': 'scheduled_order', 'orderId': 'o-1'}), isNull);
-      expect(ScheduledOrderPush.parse({}), isNull);
+      expect(ScheduledOrderDuePush.orderIdOf({'type': 'order_placed', 'orderId': 'o-1'}), isNull);
+      expect(ScheduledOrderDuePush.orderIdOf({'type': 'scheduled_order', 'orderId': 'o-1'}), isNull);
+      expect(ScheduledOrderDuePush.orderIdOf({'type': 'scheduled_order_due'}), isNull);
+      expect(ScheduledOrderDuePush.orderIdOf({'type': 'scheduled_order_due', 'orderId': 'null'}), isNull);
+      expect(ScheduledOrderDuePush.orderIdOf({}), isNull);
+      expect(ScheduledOrderDuePush.isServerDue({'type': 'scheduled_order_due'}), isFalse);
     });
 
-    test('the push itself is not an order alert and is never displayed', () {
-      expect(PushPayload.isStoreOrderAlert(type: 'scheduled_order'), isFalse);
+    test('it rings on the order channel and a tap opens the store\'s orders', () {
+      expect(PushPayload.isStoreOrderAlert(type: 'scheduled_order_due'), isTrue);
+      expect(NotificationRouting.targetFor(type: 'scheduled_order_due'), NotificationTarget.orders);
+      expect(NotificationRouting.targetFor(type: 'schedule_order'), NotificationTarget.orders);
     });
+  });
 
-    test('the alarm\'s payload opens the store\'s orders when tapped', () {
-      final Map<String, dynamic> payload = jsonDecode(ScheduledOrderPush.payloadFor('o-1')) as Map<String, dynamic>;
-      expect(payload, {'type': 'schedule_order', 'orderId': 'o-1'});
-      expect(NotificationRouting.targetFor(type: payload['type'] as String), NotificationTarget.orders);
+  group('HomeController and the due push', () {
+    setUp(() => Get.testMode = true);
+
+    test('a scheduled order announced due by the server is New at once', () {
+      final HomeController controller = HomeController();
+      final DateTime later = DateTime.now().add(const Duration(minutes: 3));
+      controller.allOrderList.add(OrderModel(id: 'due-early', status: Constant.orderPlaced, scheduleTime: Timestamp.fromDate(later)));
+      controller.showEndedOrder(OrderModel(id: 'x', status: Constant.orderCancelled));
+      expect(controller.scheduledOrderList.map((o) => o.id), ['due-early']);
+
+      HomeController.onScheduledOrderPush('due-early', serverDue: true);
+      controller.showEndedOrder(OrderModel(id: 'x', status: Constant.orderCancelled));
+      expect(controller.newOrderList.map((o) => o.id), ['due-early']);
+      expect(controller.scheduledOrderList, isEmpty);
     });
   });
 }

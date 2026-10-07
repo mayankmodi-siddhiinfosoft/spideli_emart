@@ -200,56 +200,6 @@ abstract final class PushPayload {
     };
   }
 
-  // ── Scheduled orders (data-only) ──
-
-  /// `data.type` of the silent push that tells the store about an order for
-  /// a later time. The store app shows nothing for it; it sets a local alarm
-  /// for the order's time instead (`vendor/lib/utils/scheduled_order.dart`).
-  static const String scheduledOrderType = 'scheduled_order';
-
-  /// True when an order's [scheduleTime] is still ahead of [now]: the store
-  /// is told silently now and alerted at that time. A time that has already
-  /// passed (or none) is an immediate order: the normal `order_placed` push.
-  static bool isFutureSchedule(DateTime? scheduleTime, DateTime now) => scheduleTime != null && scheduleTime.isAfter(now);
-
-  /// Data of the silent scheduled-order push: `{type, orderId, scheduleAt}`,
-  /// `scheduleAt` in epoch milliseconds (a string, as FCM requires).
-  static Map<String, String> scheduledOrderData({required String orderId, required DateTime scheduleAt}) {
-    return {'type': scheduledOrderType, 'orderId': orderId, 'scheduleAt': scheduleAt.millisecondsSinceEpoch.toString()};
-  }
-
-  /// The `message` of a DATA-ONLY FCM v1 send: no `notification` block, so
-  /// nothing is shown or sounded on the receiving device; the receiving app's
-  /// handler gets the data. Android high priority (delivered at once, even in
-  /// Doze); APNs background push (`content-available: 1`, no alert / sound /
-  /// badge, `apns-priority: 5` and `apns-push-type: background`, which Apple
-  /// requires for a push that only has `content-available`).
-  static Map<String, dynamic> fcmV1DataMessage({required String token, required Map<String, String> data}) {
-    return {
-      'token': token.trim(),
-      'data': data,
-      'android': {'priority': 'high'},
-      'apns': {
-        'headers': {'apns-priority': '5', 'apns-push-type': 'background'},
-        'payload': {
-          'aps': {'content-available': 1},
-        },
-      },
-    };
-  }
-
-  /// The `sendPush` request of a data-only push: no `title`, no `body`, no
-  /// channel or sound, so the function sends exactly [fcmV1DataMessage]
-  /// (`.claude/SERVER-PUSH-CONTRACT.md` section 2, "A data-only request").
-  static Map<String, dynamic> serverDataRequest({required String token, required Map<String, String> data, String? kind}) {
-    final String k = kind?.trim() ?? '';
-    return {
-      'token': token.trim(),
-      'data': data,
-      if (k.isNotEmpty) 'kind': k,
-    };
-  }
-
   /// The request body of the `sendPush` function (`.claude/SERVER-PUSH-CONTRACT.md`):
   /// the same title, body, data and channel as the legacy message.
   static Map<String, dynamic> serverRequest({
@@ -340,4 +290,27 @@ class CachedAccessToken {
   static const Duration safetyMargin = Duration(minutes: 5);
 
   bool isUsable(DateTime nowUtc) => token.isNotEmpty && nowUtc.isBefore(expiry.subtract(safetyMargin));
+}
+
+/// Orders for a later time. The store is NOT told when such an order is
+/// placed: the `scheduledOrderNotifier` Cloud Function (`functions/`) pushes
+/// the store owner when the order becomes due (its scheduled time minus the
+/// admin lead time in `settings/scheduleOrderNotification`). It finds the
+/// orders by [sentField] == false, which the cart writes with the order.
+abstract final class ScheduledOrderNotice {
+  /// Order field the function queries and flips to true (once) when it has
+  /// notified the store.
+  static const String sentField = 'scheduledNotificationSent';
+
+  /// True when [scheduleTime] is still ahead of [now]: no push now, the
+  /// function notifies the store later. A time that has already passed (or
+  /// none) is an immediate order: today's `order_placed` push.
+  static bool isFutureSchedule(DateTime? scheduleTime, DateTime now) => scheduleTime != null && scheduleTime.isAfter(now);
+
+  /// Extra fields written with a new order (same write, no extra round trip):
+  /// `{scheduledNotificationSent: false}` for a future scheduled order,
+  /// nothing for an immediate one.
+  static Map<String, dynamic> orderFields({required DateTime? scheduleTime, required DateTime now}) {
+    return isFutureSchedule(scheduleTime, now) ? const {sentField: false} : const {};
+  }
 }

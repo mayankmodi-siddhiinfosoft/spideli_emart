@@ -12,7 +12,6 @@ import 'package:vendor/service/audio_player_service.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/region_service.dart';
 import 'package:vendor/utils/scheduled_order.dart';
-import 'package:vendor/utils/scheduled_order_alarms.dart';
 
 class HomeController extends GetxController {
   RxBool isLoading = true.obs;
@@ -49,6 +48,30 @@ class HomeController extends GetxController {
   /// Scheduled to New (and ring) without waiting for a Firestore change.
   static Timer? _dueTimer;
 
+  /// Scheduled orders the `scheduledOrderNotifier` Cloud Function has
+  /// announced as due (push `scheduled_order_due`). They are New at once,
+  /// even when this phone's clock is a little behind the server's.
+  static final Set<String> _dueByPush = {};
+
+  /// A scheduled-order push for [orderId] arrived in the foreground or was
+  /// tapped: split the tabs again right away, so a due order is in New (and
+  /// rings) without waiting for the due timer or the next Firestore change.
+  /// [serverDue] (the Cloud Function's `scheduled_order_due`) makes the order
+  /// New even before this phone's clock reaches its due time.
+  static void onScheduledOrderPush(String orderId, {required bool serverDue}) {
+    final String id = orderId.trim();
+    if (id.isEmpty) return;
+    if (serverDue) _dueByPush.add(id);
+    final HomeController? listening = _listening;
+    if (listening != null) unawaited(listening._applyOrderAlerts());
+  }
+
+  /// Asks the home screen to show its New tab (a tapped "order is due"
+  /// push). The screen listens while it is built.
+  static final RxInt newTabRequests = 0.obs;
+
+  static void requestNewTab() => newTabRequests.value++;
+
   /// Stops the order listener and the alert, e.g. on sign-out.
   static Future<void> stopOrderAlerts() async {
     await _orderSubscription?.cancel();
@@ -56,15 +79,14 @@ class HomeController extends GetxController {
     _listening = null;
     _dueTimer?.cancel();
     _dueTimer = null;
+    _dueByPush.clear();
     _ordersWaiting = false;
     await AudioPlayerService.playSound(false);
-    await ScheduledOrderAlarms.cancelAll();
   }
 
   @override
   void onInit() {
     getUserProfile();
-    ScheduledOrderAlarms.start();
     _lifecycle ??= AppLifecycleListener(
       onResume: () {
         // Split again first: a scheduled order may have become due while
@@ -181,7 +203,8 @@ class HomeController extends GetxController {
     final ScheduledSplit<OrderModel> placed = ScheduledOrderRule.split<OrderModel>(
       allOrderList,
       status: (o) => o.status,
-      scheduleTime: (o) => o.scheduleTime?.toDate(),
+      // Announced due by the server: no waiting time left.
+      scheduleTime: (o) => _dueByPush.contains(o.id) ? null : o.scheduleTime?.toDate(),
       now: DateTime.now(),
       lead: Constant.scheduleLeadTime,
     );
@@ -217,31 +240,15 @@ class HomeController extends GetxController {
   }
 
   /// After every change of the order list, when a scheduled order becomes
-  /// due, and on returning to the foreground: split the tabs, ring while an
-  /// order waits in New, and keep the scheduled orders' alarms in step.
-  ///
-  /// A scheduled order alerts once when it becomes due: in the app when the
-  /// app is in the foreground, otherwise by its local alarm, so the in-app
-  /// alert stays quiet for it until the app is opened
-  /// ([ScheduledOrderAlarms.coversInBackground]).
+  /// due (timer, or the Cloud Function's push), and on returning to the
+  /// foreground: split the tabs and ring while an order waits in New. With
+  /// the app in the background or closed, the store hears about a due
+  /// scheduled order from the `scheduledOrderNotifier` push instead.
   Future<void> _applyOrderAlerts() async {
     _splitIntoTabs();
     _armDueTimer(_nextDueAt);
     _ordersWaiting = newOrderList.isNotEmpty;
-    final bool ring = newOrderList.any((o) => !ScheduledOrderAlarms.coversInBackground(o.id));
-    await AudioPlayerService.playSound(ring);
-    final DateTime now = DateTime.now();
-    final Set<String> endedBeforeDue = {
-      for (final OrderModel o in allOrderList)
-        if (o.id != null && o.status != Constant.orderPlaced && (dueAtOf(o)?.isAfter(now) ?? false)) o.id!,
-    };
-    await ScheduledOrderAlarms.syncListed(
-      waiting: {
-        for (final OrderModel o in scheduledOrderList)
-          if (o.id != null) o.id!: dueAtOf(o)!,
-      },
-      endedBeforeDue: endedBeforeDue,
-    );
+    await AudioPlayerService.playSound(newOrderList.isNotEmpty);
   }
 
   void _armDueTimer(DateTime? nextDueAt) {

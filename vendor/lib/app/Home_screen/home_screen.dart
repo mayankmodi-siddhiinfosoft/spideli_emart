@@ -203,42 +203,46 @@ class HomeScreen extends StatelessWidget {
 
         return DefaultTabController(
           length: tabCount,
-          child: AnnotatedRegion<SystemUiOverlayStyle>(
-            value: SystemUiOverlayStyle.light,
-            child: Scaffold(
-              backgroundColor: c.background,
-              body: Column(
-                children: [
-                  // Status-bar strip: the hero scrolls away beneath it and the
-                  // pinned tab bar stops right under it.
-                  Container(height: MediaQuery.paddingOf(context).top, color: heroGradient.colors.first),
-                  Expanded(
-                    child: MediaQuery.removePadding(
-                      context: context,
-                      removeTop: true,
-                      child: NestedScrollView(
-                        headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                          SliverToBoxAdapter(child: header),
-                          if (canViewOrders)
-                            SliverOverlapAbsorber(
-                              handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
-                              sliver: SliverPersistentHeader(
-                                pinned: true,
-                                delegate: _OrderTabsHeader(
-                                  extent: tabsExtent,
-                                  counts: counts,
-                                  onTap: (value) {
-                                    controller.selectedTabIndex.value = value;
-                                  },
+          // Shows New when a tapped "scheduled order is due" push asks for it.
+          child: _NewTabOnRequest(
+            controller: controller,
+            child: AnnotatedRegion<SystemUiOverlayStyle>(
+              value: SystemUiOverlayStyle.light,
+              child: Scaffold(
+                backgroundColor: c.background,
+                body: Column(
+                  children: [
+                    // Status-bar strip: the hero scrolls away beneath it and the
+                    // pinned tab bar stops right under it.
+                    Container(height: MediaQuery.paddingOf(context).top, color: heroGradient.colors.first),
+                    Expanded(
+                      child: MediaQuery.removePadding(
+                        context: context,
+                        removeTop: true,
+                        child: NestedScrollView(
+                          headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                            SliverToBoxAdapter(child: header),
+                            if (canViewOrders)
+                              SliverOverlapAbsorber(
+                                handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+                                sliver: SliverPersistentHeader(
+                                  pinned: true,
+                                  delegate: _OrderTabsHeader(
+                                    extent: tabsExtent,
+                                    counts: counts,
+                                    onTap: (value) {
+                                      controller.selectedTabIndex.value = value;
+                                    },
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
-                        body: body,
+                          ],
+                          body: body,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -2473,4 +2477,40 @@ class _HomeSkeleton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Shows the New tab when [HomeController.requestNewTab] is called (a tapped
+/// "scheduled order is due" push) while the home screen is up. A freshly
+/// built home screen starts on New anyway.
+class _NewTabOnRequest extends StatefulWidget {
+  const _NewTabOnRequest({required this.controller, required this.child});
+
+  final HomeController controller;
+  final Widget child;
+
+  @override
+  State<_NewTabOnRequest> createState() => _NewTabOnRequestState();
+}
+
+class _NewTabOnRequestState extends State<_NewTabOnRequest> {
+  Worker? _worker;
+
+  @override
+  void initState() {
+    super.initState();
+    _worker = ever<int>(HomeController.newTabRequests, (_) {
+      if (!mounted) return;
+      widget.controller.selectedTabIndex.value = HomeScreen.newTab;
+      DefaultTabController.maybeOf(context)?.animateTo(HomeScreen.newTab);
+    });
+  }
+
+  @override
+  void dispose() {
+    _worker?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

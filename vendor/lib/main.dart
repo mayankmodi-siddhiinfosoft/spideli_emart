@@ -21,7 +21,11 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   FirebaseApp firebaseApp = await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  FireStoreUtils.instance.initForEnv(firebaseApp);
+  if (currentEnv == FirebaseEnv.defaultDb) {
+    FireStoreUtils.instance.init(firebaseApp);
+  } else {
+    FireStoreUtils.instance.init(firebaseApp, databaseId: 'staging'); // pass databaseId if named DB
+  }
   // Registered here, before any UI, so a push that arrives with the app closed
   // or in the background always reaches a handler (report #11).
   FirebaseMessaging.onBackgroundMessage(firebaseMessageBackgroundHandle);

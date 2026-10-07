@@ -1,13 +1,12 @@
-import 'dart:convert';
-
 /// Orders placed for a later time ("scheduled orders"). Pure: no Firebase, no
 /// Flutter, so every rule here is unit tested (test/scheduled_order_test.dart).
 ///
 /// A scheduled order stays quiet until it is due: it is listed under
 /// Scheduled with no Accept / Reject, nothing rings, and the customer app
-/// sends the store only a silent data push (`type: scheduled_order`). When it
-/// is due it moves to New and alerts the store once - in the app when the app
-/// is open, otherwise with a local notification set for that time.
+/// sends the store no push. When it is due it moves to New (the in-app due
+/// timer, or the push below) and the store is alerted: by the in-app ring,
+/// and by the `scheduledOrderNotifier` Cloud Function's push
+/// (`functions/`, type `scheduled_order_due`) on the `new_order` channel.
 ///
 /// "Due" is the scheduled time minus the admin's lead time
 /// (`settings/scheduleOrderNotification` `notifyTime` + `timeUnit`, the same
@@ -84,20 +83,6 @@ class ScheduledOrderRule {
     scheduled.sort((a, b) => a.$2.compareTo(b.$2));
     return ScheduledSplit<T>(actionable: actionable, scheduled: [for (final s in scheduled) s.$1], nextDueAt: scheduled.isEmpty ? null : scheduled.first.$2);
   }
-
-  /// Local notification id of an order's alarm: the same for the same order
-  /// id in every run and every isolate (FNV-1a, 31 bits, never 0), so
-  /// scheduling it again replaces the pending one and it fires once.
-  /// `String.hashCode` is not guaranteed to be stable across runs.
-  static int notificationId(String orderId) {
-    int hash = 0x811c9dc5;
-    for (final int unit in utf8.encode(orderId)) {
-      hash ^= unit;
-      hash = (hash * 0x01000193) & 0xffffffff;
-    }
-    final int id = hash & 0x7fffffff;
-    return id == 0 ? 1 : id;
-  }
 }
 
 /// [ScheduledOrderRule.split]'s result.
@@ -112,36 +97,34 @@ class ScheduledSplit<T> {
   const ScheduledSplit({required this.actionable, required this.scheduled, required this.nextDueAt});
 }
 
-/// The silent push the customer app sends the store owner for a scheduled
-/// order: `{type: "scheduled_order", orderId, scheduleAt: "<epoch ms>"}`.
-class ScheduledOrderPush {
-  final String orderId;
+/// The push the `scheduledOrderNotifier` Cloud Function sends the store owner
+/// when a scheduled order becomes due: `{type: "scheduled_order_due",
+/// orderId}` with a `notification` (template `schedule_order`) on the
+/// `new_order` channel.
+class ScheduledOrderDuePush {
+  ScheduledOrderDuePush._();
 
-  /// The order's scheduled time (not the due time: the store applies its
-  /// lead time itself).
-  final DateTime scheduleAt;
+  /// `data.type` of the Cloud Function's push.
+  static const String type = 'scheduled_order_due';
 
-  const ScheduledOrderPush({required this.orderId, required this.scheduleAt});
-
-  static const String type = 'scheduled_order';
-
-  /// The template (`dynamic_notification`) whose text the alarm shows.
+  /// The template (`dynamic_notification`) type of a scheduled order. Older
+  /// customer builds sent it when the order was PLACED, so it does not prove
+  /// that the order is due: it only makes the store split its tabs again.
   static const String templateType = 'schedule_order';
 
-  /// The local notification's payload. Its `type` is the template type,
-  /// which a tap routes to the store's orders (`NotificationRouting`).
-  static String payloadFor(String orderId) => jsonEncode({'type': templateType, 'orderId': orderId});
+  static String _typeOf(Map<String, dynamic> data) => '${data['type'] ?? ''}'.trim();
 
-  /// True when [data] is a scheduled-order push (whatever else it carries).
-  static bool isScheduledOrder(Map<String, dynamic> data) => '${data['type'] ?? ''}'.trim() == type;
-
-  /// The push in [data], or null when it is not one or is unusable (no
-  /// order id, no readable time). Never throws.
-  static ScheduledOrderPush? parse(Map<String, dynamic> data) {
-    if (!isScheduledOrder(data)) return null;
+  /// The order id of a scheduled-order push ([type] or [templateType]), or
+  /// null for any other push or one without a usable order id. Never throws.
+  static String? orderIdOf(Map<String, dynamic> data) {
+    final String t = _typeOf(data);
+    if (t != type && t != templateType) return null;
     final String orderId = '${data['orderId'] ?? ''}'.trim();
-    final int? ms = int.tryParse('${data['scheduleAt'] ?? ''}'.trim());
-    if (orderId.isEmpty || orderId == 'null' || ms == null || ms <= 0) return null;
-    return ScheduledOrderPush(orderId: orderId, scheduleAt: DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true));
+    if (orderId.isEmpty || orderId == 'null') return null;
+    return orderId;
   }
+
+  /// True only for the Cloud Function's push: the server decided the order
+  /// is due, so it is New even if this phone's clock is a little behind.
+  static bool isServerDue(Map<String, dynamic> data) => _typeOf(data) == type && orderIdOf(data) != null;
 }

@@ -1164,7 +1164,10 @@ class FireStoreUtils {
     return isAdded;
   }
 
-  static Future<bool?> setOrder(OrderModel orderModel) async {
+  /// [extraFields] are written in the same call, on top of the model (e.g.
+  /// `scheduledNotificationSent: false` for an order placed for later,
+  /// `ScheduledOrderNotice.orderFields`).
+  static Future<bool?> setOrder(OrderModel orderModel, {Map<String, dynamic> extraFields = const {}}) async {
     bool isAdded = false;
     // vendor_orders.regionId = the store's region (spec 18.12).
     orderModel.regionId ??= RegionService.regionOfVendor(orderModel.vendor) ?? await RegionService.resolveVendorRegion(orderModel.vendorID);
@@ -1173,7 +1176,7 @@ class FireStoreUtils {
     await fireStore
         .collection(CollectionName.vendorOrders)
         .doc(orderModel.id)
-        .setKnownFields(orderModel.toJson())
+        .setKnownFields({...orderModel.toJson(), ...extraFields})
         .then((value) {
           isAdded = true;
         })

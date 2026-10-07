@@ -79,8 +79,9 @@ class PushPayload {
 
   /// Template types that are a new order or booking for the store (they ring
   /// on the loud channel). Matches the server's `order_alert` profile plus the
-  /// store-side booking types the customer app sends.
-  static const Set<String> storeOrderAlertTypes = {'order_placed', 'new_order', 'schedule_order', 'dinein_placed', 'new_order_placed'};
+  /// store-side booking types the customer app sends, and the
+  /// `scheduledOrderNotifier` Cloud Function's `scheduled_order_due`.
+  static const Set<String> storeOrderAlertTypes = {'order_placed', 'new_order', 'schedule_order', 'scheduled_order_due', 'dinein_placed', 'new_order_placed'};
 
   /// Channel and sound for a push of [kind] to [recipient].
   static PushChannel channelFor(PushRecipient recipient, String? kind) {

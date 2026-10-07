@@ -1,0 +1,11 @@
+# Installed and compiled output: rebuilt by `npm install` / `npm run build`.
+node_modules/
+lib/
+
+# Local-only environment overrides and emulator / CLI logs.
+*.local
+.env.local
+firebase-debug.log*
+firebase-debug.*.log*
+firestore-debug.log*
+ui-debug.log*

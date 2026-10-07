@@ -70,7 +70,7 @@ The channel is chosen in `customer/lib/service/push_message.dart`
 | Push (template `type` / kind) | Recipient (token) | Android channel | Android sound | APNs sound |
 |---|---|---|---|---|
 | `order_placed` (cart, including a scheduled time that has already passed) | store owner, `users/{vendor.author}.fcmToken` | `new_order` | `order_alert` | `order_alert.caf` |
-| `scheduled_order` (cart, scheduled time still ahead): **data-only**, nothing shown or sounded | store owner (same token) | none | none | none (`content-available: 1`) |
+| none for a cart order whose scheduled time is still ahead: the order is written with `scheduledNotificationSent: false` and the `scheduledOrderNotifier` Cloud Function pushes the store when it is due (section "Cloud Functions" below) | - | - | - | - |
 | `dinein_placed` | store owner, `users/{vendor.author}.fcmToken`, falls back to `vendors/{id}.fcmToken` | `new_order` | `order_alert` | `order_alert.caf` |
 | chat to a store (`chat`) | store (`users/{id}`, read when the chat opens) | `general` | `default` | `default` |
 | chat to a driver (`chat`) | driver (same) | `driver_notifications_channel` | `default` | `default` |
@@ -80,12 +80,9 @@ The channel is chosen in `customer/lib/service/push_message.dart`
 
 Data (strings only: nulls dropped, maps/lists JSON-encoded, reserved keys
 dropped): always `type` (the caller's, else the template type) and the order
-id: `{type: "order_placed" | "dinein_placed", orderId}`; a scheduled order is
-`{type: "scheduled_order", orderId, scheduleAt: "<epoch ms>"}` sent DATA-ONLY
-(`SendNotification.sendDataMessage`: legacy `android.priority: high`, APNs
-`apns-priority: 5`, `apns-push-type: background`, `aps.content-available: 1`,
-no `notification`; server path: no `title` / `body` / channel),
-`{type: "provider_order", orderId}` for bookings, `{type: "orderChat", chatType,
+id: `{type: "order_placed" | "dinein_placed", orderId}` (the silent
+`scheduled_order` data push is gone: `customer/lib/service/push_message.dart`
+`ScheduledOrderNotice`), `{type: "provider_order", orderId}` for bookings, `{type: "orderChat", chatType,
 orderId, senderId, senderName}` for chat. When a channel is named it is also
 sent as data `channelId` (the store uses it to pick its foreground channel).
 Legacy path: FCM v1 at `projects/{Firebase options projectId}` (settings
@@ -265,7 +262,7 @@ owner's app replaces its token on its next start. Server path
 
   | Push to the store | Android channel | Android sound | APNs sound |
   |---|---|---|---|
-  | new order / booking: `order_placed`, `schedule_order`, `new_order`, `dinein_placed` | `new_order` | `order_alert` | `order_alert.caf` |
+  | new order / booking: `order_placed`, `schedule_order`, `scheduled_order_due`, `new_order`, `dinein_placed` | `new_order` | `order_alert` | `order_alert.caf` |
   | everything else (chat `orderChat`, `driver_accepted`, admin pushes) | `general` | `default` | `default` |
 
 - **Token:** `users/{uid}.fcmToken` (owner and employee), written field-level
@@ -282,22 +279,25 @@ owner's app replaces its token on its next start. Server path
   target the owner.
 - **Data the store routes on** (all values strings;
   `NotificationRouting.targetFor`):
-  - `type` = `order_placed`, `schedule_order`, `new_order*`, `driver_*`,
-    `store_*`, `restaurant_*`, `customer_cancelled`: the Home (orders) tab.
+  - `type` = `order_placed`, `schedule_order`, `scheduled_order_due`,
+    `new_order*`, `driver_*`, `store_*`, `restaurant_*`, `customer_cancelled`:
+    the Home (orders) tab (`scheduled_order_due`: its New tab).
   - `type` = `dinein*`: the Dine-in tab (when the user has it).
   - `type` = `orderChat` (or `chat`, `*_chat`): the chat inbox.
   - `type` = `admin_chat`, or `chatType` = `admin`: Help & Support.
   - anything else, or no signed-in user: nothing (no crash on missing keys).
     After a cold start the screen opens once the dashboard is up.
-- **Scheduled orders** (`vendor/lib/utils/scheduled_order.dart`,
-  `scheduled_order_alarms.dart`): the silent `{type: "scheduled_order", orderId,
-  scheduleAt}` push shows nothing; the store sets a local notification on
-  `new_order` (template `schedule_order` text, id = FNV-1a of the order id) for
-  the due time (`scheduleAt` minus `settings/scheduleOrderNotification` lead
-  time), from the background handler, `onMessage` and the order listener; it is
-  cancelled when the order leaves `Order Placed` first. The order sits in the
-  Scheduled tab until due, then moves to New and alerts once (in-app when the
-  app is in the foreground, else the local notification).
+- **Scheduled orders** (`vendor/lib/utils/scheduled_order.dart`): an `Order
+  Placed` order sits in the Scheduled tab (no Accept / Reject, no ring) until
+  it is due (scheduled time minus the `settings/scheduleOrderNotification`
+  lead time), then moves to New (in-app due timer) and rings in-app. No local
+  alarms any more (no exact-alarm / boot permissions). The store is notified
+  by the `scheduledOrderNotifier` Cloud Function's push `{type:
+  "scheduled_order_due", orderId}` on `new_order` (shown by the system in the
+  background, by the app's foreground display otherwise). In the foreground
+  that push (or the `schedule_order` template type) re-splits the tabs at
+  once; `scheduled_order_due` puts the order in New even if the phone's clock
+  is behind. A tap opens the orders (New) tab.
 - **Foreground:** Android posts a local notification on `new_order` for order
   alerts (by `type`, or the push's channel id) and on `general` otherwise; iOS
   shows the push itself (presentation options), no local notification (no
@@ -410,3 +410,23 @@ about the token) is only logged: the record belongs to another user's app,
 which replaces it on its next start. The project in the FCM path is
 `Firebase.app().options.projectId` (`spideli-870b0`), then the service
 account's `project_id`, then `settings/notification_setting.senderId`.
+
+---
+
+## Cloud Functions (`functions/`, codebase `push`)
+
+### Sends
+
+| Push (`data.type`) | Recipient (token) | Android channel | Android sound | APNs sound |
+|---|---|---|---|---|
+| `scheduled_order_due` (`scheduledOrderNotifier`, every minute: a scheduled order became due) | store owner, current `users/{order.vendor.author}.fcmToken` (no `vendor.author`: `vendors/{vendorID}.author`) | `new_order` | `order_alert` | `order_alert.caf` (`apns-priority: 10`) |
+
+Data `{type: "scheduled_order_due", orderId}` (strings). Text: the
+`dynamic_notification` template `schedule_order` (`subject` / `message`); when
+it has no text the push is data-only (APNs background push, nothing shown).
+Once per order: the order's `scheduledNotificationSent` (written `false` by the
+customer app for a future scheduled order) is set `true` with
+`scheduledNotificationAt` in a transaction before the push; an order that left
+`Order Placed` first is marked with `scheduledNotificationSkipped` and never
+pushed. Errors are logged without tokens; an `UNREGISTERED` token is only
+logged. Deploy and details: `functions/README.md`.

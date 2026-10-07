@@ -633,27 +633,23 @@ class CartController extends GetxController {
       );
       await FireStoreUtils.setCashbackRedeemModel(cashbackRedeemModel);
     }
-    await FireStoreUtils.setOrder(orderModel).then((value) async {
-      await FireStoreUtils.getUserProfile(orderModel.vendor!.author.toString()).then((value) async {
-        if (value != null) {
-          // To the store owner. An order for a later time is a SILENT
-          // data-only push: nothing rings now, the store app sets an alarm
-          // for the scheduled time instead (and lists the order under
-          // Scheduled). Anything else - including a scheduled time that has
-          // already passed - is the normal loud new-order push, whose data
-          // carries `type` (the template type) and the order id.
-          final DateTime? scheduleAt = orderModel.scheduleTime?.toDate();
-          if (PushPayload.isFutureSchedule(scheduleAt, DateTime.now())) {
-            await SendNotification.sendDataMessage(
-              token: value.fcmToken ?? '',
-              payload: PushPayload.scheduledOrderData(orderId: orderModel.id.toString(), scheduleAt: scheduleAt!),
-              kind: PushPayload.scheduledOrderType,
-            );
-          } else {
+    // An order for a later time is written with `scheduledNotificationSent:
+    // false` and sends the store NOTHING now: the `scheduledOrderNotifier`
+    // Cloud Function pushes the store owner when it becomes due. Anything
+    // else - including a scheduled time that has already passed - is today's
+    // loud new-order push, whose data carries `type` (the template type) and
+    // the order id.
+    final Map<String, dynamic> scheduledFields = ScheduledOrderNotice.orderFields(scheduleTime: orderModel.scheduleTime?.toDate(), now: DateTime.now());
+    final bool scheduledForLater = scheduledFields.isNotEmpty;
+    await FireStoreUtils.setOrder(orderModel, extraFields: scheduledFields).then((value) async {
+      if (!scheduledForLater) {
+        await FireStoreUtils.getUserProfile(orderModel.vendor!.author.toString()).then((value) async {
+          if (value != null) {
+            // To the store owner, on the store's loud new-order channel.
             await SendNotification.sendFcmMessage(Constant.orderPlacedNotification, value.fcmToken ?? '', {'orderId': orderModel.id}, recipient: PushRecipient.store);
           }
-        }
-      });
+        });
+      }
       await Constant.sendOrderEmail(orderModel: orderModel);
       ShowToastDialog.closeLoader();
       Get.off(const OrderPlacingScreen(), arguments: {"orderModel": orderModel});

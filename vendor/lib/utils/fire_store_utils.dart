@@ -106,25 +106,8 @@ class FireStoreUtils {
     return FirebaseAuth.instance.currentUser!.uid;
   }
 
-  static bool _ready = false;
-
-  /// True once [fireStore] is set in this isolate. The FCM background
-  /// handler runs in its own isolate on Android, where `main()` never ran.
-  static bool get isReady => _ready;
-
   void init(FirebaseApp app, {String? databaseId}) {
     fireStore = FirebaseFirestore.instanceFor(app: app, databaseId: databaseId);
-    _ready = true;
-  }
-
-  /// [init] with the database of [currentEnv] (default, or the named
-  /// `staging` database).
-  void initForEnv(FirebaseApp app) {
-    if (currentEnv == FirebaseEnv.defaultDb) {
-      init(app);
-    } else {
-      init(app, databaseId: 'staging'); // pass databaseId if named DB
-    }
   }
 
   static Future<bool> isLogin() async {
@@ -644,8 +627,12 @@ class FireStoreUtils {
 
       fireStore.collection(CollectionName.settings).doc("scheduleOrderNotification").get().then((time) {
         if (time.exists) {
-          Constant.scheduleOrderTime = time.data()!["notifyTime"];
-          Constant.scheduleOrderTimeType = time.data()!["timeUnit"];
+          // As strings, whatever the admin stored (a number used to throw
+          // here and leave the lead time at 0). Read by
+          // ScheduledOrderRule.leadTime, like the scheduledOrderNotifier
+          // Cloud Function does.
+          Constant.scheduleOrderTime = '${time.data()!["notifyTime"] ?? ''}';
+          Constant.scheduleOrderTimeType = '${time.data()!["timeUnit"] ?? ''}';
         }
       });
 
