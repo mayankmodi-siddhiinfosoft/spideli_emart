@@ -285,55 +285,67 @@ class HomeScreen extends StatelessWidget {
     final String tip = controller.currentOrder.value.tipAmount ?? '';
     final bool hasTip = _num(tip) > 0;
 
-    return SafeArea(
-      top: false,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: DsLayout.contentMax),
-        child: Padding(
-          padding: const EdgeInsets.all(DsSpace.md),
-          child: DsRequestCard(
-            title: "New Order".tr,
-            section: DsSection.delivery,
-            sectionLabel: Constant.sectionNameFromId(controller.currentOrder.value.sectionId),
-            fare: isFreelanceDriver
-                ? Constant.amountShow(
-                    currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.deliveryCharge)
-                : null,
-            fareCaption: isFreelanceDriver ? "Delivery Charge".tr : null,
-            stops: [
-              DsRouteStop(
-                kind: DsStopKind.pickup,
-                label: controller.currentOrder.value.vendor?.title ?? '',
-                address: AddressFormat.clean(controller.currentOrder.value.vendor?.location),
-              ),
-              DsRouteStop(
-                kind: DsStopKind.drop,
-                label: "${'Deliver to the'.tr} · ${controller.currentOrder.value.author?.fullName() ?? ''}",
-                address: controller.currentOrder.value.address?.getFullAddress() ?? '',
-              ),
-            ],
-            metrics: [
-              DsTripMetric(
-                icon: Icons.route_rounded,
-                value: kilometer == null ? '—' : "${kilometer.toStringAsFixed(2)} ${Constant.distanceType}",
-                label: "Trip Distance".tr,
-              ),
-              if (hasTip)
-                DsTripMetric(
-                  icon: Icons.volunteer_activism_outlined,
-                  value: Constant.amountShow(
-                      currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.tipAmount),
-                  label: "Tips".tr,
-                ),
-            ],
-            onReject: () {
-              controller.rejectOrder();
-            },
-            onAccept: () {
-              controller.acceptOrder();
-            },
+    final String? fare = isFreelanceDriver
+        ? Constant.amountShow(currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.deliveryCharge)
+        : null;
+
+    // Docked like the cab request: the driver can minimize it to a slim
+    // "New Order" bar; another order opens it again.
+    return DsMapPanel(
+      showHandle: false,
+      padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.sm, DsSpace.lg, DsSpace.lg),
+      storageId: 'delivery.request',
+      stateKey: 'request|${controller.currentOrder.value.id}',
+      collapsedHeader: Row(
+        children: [
+          Expanded(
+            child: Align(alignment: AlignmentDirectional.centerStart, child: DsStatusChip(label: "New Order".tr, tone: DsTone.warning, pulse: true)),
           ),
-        ),
+          if (fare != null) ...[
+            const DsGap(DsSpace.sm),
+            Text(fare, maxLines: 1, style: context.dsText.titleSm.w700.tabular),
+          ],
+        ],
+      ),
+      child: DsRequestCard(
+        margin: EdgeInsets.zero,
+        title: "New Order".tr,
+        section: DsSection.delivery,
+        sectionLabel: Constant.sectionNameFromId(controller.currentOrder.value.sectionId),
+        fare: fare,
+        fareCaption: isFreelanceDriver ? "Delivery Charge".tr : null,
+        stops: [
+          DsRouteStop(
+            kind: DsStopKind.pickup,
+            label: controller.currentOrder.value.vendor?.title ?? '',
+            address: AddressFormat.clean(controller.currentOrder.value.vendor?.location),
+          ),
+          DsRouteStop(
+            kind: DsStopKind.drop,
+            label: "${'Deliver to the'.tr} · ${controller.currentOrder.value.author?.fullName() ?? ''}",
+            address: controller.currentOrder.value.address?.getFullAddress() ?? '',
+          ),
+        ],
+        metrics: [
+          DsTripMetric(
+            icon: Icons.route_rounded,
+            value: kilometer == null ? '—' : "${kilometer.toStringAsFixed(2)} ${Constant.distanceType}",
+            label: "Trip Distance".tr,
+          ),
+          if (hasTip)
+            DsTripMetric(
+              icon: Icons.volunteer_activism_outlined,
+              value: Constant.amountShow(
+                  currency: RegionService.currencyForRecord(controller.currentOrder.value.regionId), amount: controller.currentOrder.value.tipAmount),
+              label: "Tips".tr,
+            ),
+        ],
+        onReject: () {
+          controller.rejectOrder();
+        },
+        onAccept: () {
+          controller.acceptOrder();
+        },
       ),
     );
   }
@@ -492,6 +504,10 @@ class HomeScreen extends StatelessWidget {
     final bool hasTip = _num(tip) > 0;
 
     return DsMapPanel(
+      // Minimized it keeps the status and order number; the next status
+      // (store → customer) opens it again so the new action is seen.
+      storageId: 'delivery.trip',
+      stateKey: '${controller.currentOrder.value.id}|$status',
       header: Row(
         children: [
           Expanded(child: DsStatusChip(label: status.tr, status: status, pulse: true)),

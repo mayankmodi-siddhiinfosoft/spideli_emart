@@ -543,4 +543,7 @@ const Map<String, String> enUS = {
   "Call receiver": "Call receiver",
   "Select your management zone first to see the zones it covers.": "Select your management zone first to see the zones it covers.",
   "No zone is available in this management zone yet.": "No zone is available in this management zone yet.",
+  // Map job panel: minimize / expand.
+  "Minimize": "Minimize",
+  "Show details": "Show details",
 };

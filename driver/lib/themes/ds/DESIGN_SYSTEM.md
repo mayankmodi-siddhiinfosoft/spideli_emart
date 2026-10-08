@@ -243,6 +243,12 @@ DsSectionBadge(section: DsSection.fromServiceType(type), label: 'Parcel'.tr, sol
 DsMapButton(icon: Icons.my_location_rounded, semanticLabel: 'My location'.tr, onPressed: ...)
 DsMapButton(icon: Icons.navigation_rounded, label: 'Navigate'.tr, semanticLabel: 'Navigate'.tr, tone: DsTone.brand, onPressed: ...)
 DsMapPanel(header: ..., child: ..., actions: ...)  // docked sheet on phones, floating 440-wide card on tablets
+// Minimizable by default (arrow button, handle tap, drag on handle / header) to a slim bar with the header
+// (or collapsedHeader); actions are hidden while minimized. stateKey: a new job state re-expands it;
+// storageId: remembers "minimized" for the screen while stateKey is unchanged. collapsible: false for skeletons.
+DsMapPanel(stateKey: '${order.id}|${order.status}', storageId: 'cab.trip', header: ..., child: ..., actions: ...)
+// Map + overlays + docked panel; the map reads DsMapInset.bottomOf(context) as its padding (controls stay visible).
+DsMapPanelArea(map: Builder(builder: (context) => GoogleMap(padding: EdgeInsets.only(bottom: DsMapInset.bottomOf(context)), ...)), overlays: [...], panel: DsMapPanel(...))
 
 // Incoming request (new ride / order / parcel / rental).
 DsRequestCard(title: 'New ride request'.tr, section: DsSection.cab, sectionLabel: 'Cab'.tr,

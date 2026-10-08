@@ -519,4 +519,7 @@ const Map<String, String> ptPO = {
   "Platform fee": "Taxa da plataforma",
   "Select your management zone first to see the zones it covers.": "Selecione primeiro a sua zona de gestão para ver as zonas que ela abrange.",
   "No zone is available in this management zone yet.": "Ainda não há nenhuma zona disponível nesta zona de gestão.",
+  // Map job panel: minimize / expand.
+  "Minimize": "Minimizar",
+  "Show details": "Mostrar detalhes",
 };

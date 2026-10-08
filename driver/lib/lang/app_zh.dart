@@ -519,4 +519,7 @@ const Map<String, String> zhCH = {
   "Platform fee": "平台费",
   "Select your management zone first to see the zones it covers.": "请先选择您的管理区域，以查看其覆盖的区域。",
   "No zone is available in this management zone yet.": "该管理区域内暂无可用区域。",
+  // Map job panel: minimize / expand.
+  "Minimize": "最小化",
+  "Show details": "显示详情",
 };

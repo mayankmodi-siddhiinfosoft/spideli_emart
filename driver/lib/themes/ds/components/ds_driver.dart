@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 
@@ -381,21 +384,40 @@ class DsMapButton extends StatelessWidget {
 /// Panel that sits on top of a full-screen map: live trip / navigation
 /// panel, "you're offline" card, request preview.
 ///
-/// * Phones: docked to the bottom, rounded top, drag-handle look, safe-area
+/// * Phones: docked to the bottom, rounded top, drag handle, safe-area
 ///   padded.
 /// * Tablets / iPad (or `floating: true`): a floating card at the bottom
 ///   start corner (max 440 wide) so the map stays visible.
 ///
-/// Put it in a `Stack` above the map: `Stack(children: [map, Align(alignment: Alignment.bottomCenter, child: DsMapPanel(...))])`.
+/// **Minimize** ([collapsible], on by default): a round arrow button in the
+/// header row, a tap on the drag handle or a vertical drag / fling on the
+/// handle and header shrink the panel (animated) to a slim bar holding only
+/// the header ([collapsedHeader] when given) and an expand button, so the
+/// map is free. A tap on the bar, the button, the handle or an upward drag
+/// opens it again. While minimized the details and [actions] (slide to
+/// confirm, Accept…) are out of the tree: they cannot be reached by
+/// accident, and minimizing never triggers them.
+///
+/// * [stateKey]: the job state on screen (`'${order.id}|${order.status}'`,
+///   a request id). A new value opens a minimized panel again, so a status
+///   change or a new request is never missed.
+/// * [storageId]: remembers "minimized" for that screen (`'cab.trip'`) while
+///   [stateKey] stays the same, even when the panel is rebuilt from scratch
+///   (tab switch, route pushed and popped).
+///
+/// Put it in a [DsMapPanelArea] (or a `Stack`) above the map so map controls
+/// and padding follow the panel height.
 ///
 /// ```dart
 /// DsMapPanel(
+///   stateKey: '${order.id}|${order.status}',
+///   storageId: 'cab.trip',
 ///   header: Row(children: [DsStatusChip(label: 'On the way'.tr, tone: DsTone.info, pulse: true), const Spacer(), Text(eta, style: t.titleSm)]),
 ///   child: DsRouteStops(stops: [...]),
 ///   actions: DsSlideToConfirm(label: 'Slide to start trip'.tr, onConfirmed: c.startTrip),
 /// )
 /// ```
-class DsMapPanel extends StatelessWidget {
+class DsMapPanel extends StatefulWidget {
   final Widget child;
   final Widget? header;
   final Widget? actions;
@@ -405,6 +427,23 @@ class DsMapPanel extends StatelessWidget {
   /// Force floating card style (defaults to `true` on tablets).
   final bool? floating;
 
+  /// The driver can minimize the panel to a slim bar (see the class docs).
+  final bool collapsible;
+
+  /// Content of the slim bar while minimized. Defaults to [header], then to
+  /// a "Show details" label.
+  final Widget? collapsedHeader;
+
+  /// Identifies the job state shown; a new value expands a minimized panel.
+  final Object? stateKey;
+
+  /// Remembers the minimized state for this screen while [stateKey] is
+  /// unchanged.
+  final String? storageId;
+
+  /// Called after the driver minimizes (`true`) or expands (`false`).
+  final ValueChanged<bool>? onCollapsedChanged;
+
   const DsMapPanel({
     super.key,
     required this.child,
@@ -413,44 +452,135 @@ class DsMapPanel extends StatelessWidget {
     this.padding = const EdgeInsets.fromLTRB(DsSpace.xl, DsSpace.sm, DsSpace.xl, DsSpace.lg),
     this.showHandle = true,
     this.floating,
+    this.collapsible = true,
+    this.collapsedHeader,
+    this.stateKey,
+    this.storageId,
+    this.onCollapsedChanged,
   });
+
+  /// storageId → (stateKey, minimized). In memory only: a cold start opens
+  /// every panel expanded.
+  static final Map<String, (Object?, bool)> _memory = {};
+
+  /// Forgets every remembered minimized state (tests).
+  @visibleForTesting
+  static void debugResetMemory() => _memory.clear();
+
+  @override
+  State<DsMapPanel> createState() => _DsMapPanelState();
+}
+
+class _DsMapPanelState extends State<DsMapPanel> with SingleTickerProviderStateMixin {
+  /// 1 = expanded, 0 = minimized.
+  late final AnimationController _anim;
+  late final CurvedAnimation _size;
+  bool _collapsed = false;
+  double _dragDy = 0;
+
+  /// Fling speed (logical px / s) that minimizes or expands on its own.
+  static const double _flingVelocity = 300;
+
+  /// Drag distance that minimizes or expands a slow drag.
+  static const double _dragDistance = 24;
+
+  @override
+  void initState() {
+    super.initState();
+    _collapsed = widget.collapsible && _remembered();
+    _anim = AnimationController(vsync: this, duration: DsMotion.base, value: _collapsed ? 0 : 1)..addStatusListener(_onStatus);
+    _size = CurvedAnimation(parent: _anim, curve: DsMotion.emphasized, reverseCurve: DsMotion.accelerate);
+  }
+
+  @override
+  void didUpdateWidget(covariant DsMapPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_collapsed && (!widget.collapsible || widget.stateKey != oldWidget.stateKey)) {
+      // A new job state (or a panel that may no longer be minimized): open
+      // it so the driver sees the change. build() follows didUpdateWidget.
+      _apply(false, animate: widget.collapsible, notifyAfterFrame: true);
+    } else if (widget.stateKey != oldWidget.stateKey || widget.storageId != oldWidget.storageId) {
+      _remember();
+    }
+  }
+
+  @override
+  void dispose() {
+    _size.dispose();
+    _anim.dispose();
+    super.dispose();
+  }
+
+  bool _remembered() {
+    final id = widget.storageId;
+    if (id == null) return false;
+    final saved = DsMapPanel._memory[id];
+    return saved != null && saved.$1 == widget.stateKey && saved.$2;
+  }
+
+  void _remember() {
+    final id = widget.storageId;
+    if (id != null) DsMapPanel._memory[id] = (widget.stateKey, _collapsed);
+  }
+
+  void _onStatus(AnimationStatus status) {
+    // Fully minimized: the details leave the tree (see build).
+    if (status == AnimationStatus.dismissed && mounted) setState(() {});
+  }
+
+  /// Changes the state without setState (callers rebuild).
+  void _apply(bool collapsed, {bool animate = true, bool notifyAfterFrame = false}) {
+    if (collapsed == _collapsed) return;
+    _collapsed = collapsed;
+    _remember();
+    if (!animate || DsMotion.reduced(context)) {
+      _anim.value = collapsed ? 0 : 1;
+    } else if (collapsed) {
+      _anim.reverse();
+    } else {
+      _anim.forward();
+    }
+    final onChanged = widget.onCollapsedChanged;
+    if (onChanged == null) return;
+    if (notifyAfterFrame) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) onChanged(collapsed);
+      });
+    } else {
+      onChanged(collapsed);
+    }
+  }
+
+  void _setCollapsed(bool collapsed) {
+    if (!widget.collapsible || collapsed == _collapsed) return;
+    HapticFeedback.selectionClick();
+    setState(() => _apply(collapsed));
+  }
+
+  void _onDragStart(DragStartDetails _) => _dragDy = 0;
+
+  void _onDragUpdate(DragUpdateDetails d) => _dragDy += d.primaryDelta ?? 0;
+
+  void _onDragEnd(DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    final slow = v.abs() < _flingVelocity;
+    if (v >= _flingVelocity || (slow && _dragDy > _dragDistance)) {
+      _setCollapsed(true);
+    } else if (v <= -_flingVelocity || (slow && _dragDy < -_dragDistance)) {
+      _setCollapsed(false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
     final l = DsLayout.of(context);
-    final isFloating = floating ?? l.isWide;
+    final isFloating = widget.floating ?? l.isWide;
     final radius = isFloating ? DsRadius.brXl : DsRadius.sheetTop;
 
-    Widget body = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (showHandle && !isFloating)
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: DsSpace.sm, bottom: DsSpace.xs),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(color: c.borderStrong, borderRadius: DsRadius.brPill),
-            ),
-          ),
-        Padding(
-          padding: isFloating ? padding.add(const EdgeInsets.only(top: DsSpace.md)) : padding,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (header != null) ...[header!, const DsGap(DsSpace.md)],
-              child,
-              if (actions != null) ...[const DsGap(DsSpace.lg), actions!],
-            ],
-          ),
-        ),
-      ],
-    );
+    final Widget body = widget.collapsible ? _collapsibleBody(context, isFloating) : _staticBody(context, isFloating);
 
-    body = Container(
+    final panel = Container(
       decoration: BoxDecoration(
         color: c.surfaceRaised,
         borderRadius: radius,
@@ -468,15 +598,262 @@ class DsMapPanel extends StatelessWidget {
           heightFactor: 1,
           child: Padding(
             padding: EdgeInsets.all(l.gutter),
-            child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: body),
+            child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: panel),
           ),
         ),
       );
     }
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: DsLayout.contentMax),
-      child: Padding(padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom), child: body),
+      child: Padding(padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom), child: panel),
     );
+  }
+
+  Widget _handleBar(DsColors c) => Container(width: 40, height: 4, decoration: BoxDecoration(color: c.borderStrong, borderRadius: DsRadius.brPill));
+
+  /// The panel as it always was (no minimize).
+  Widget _staticBody(BuildContext context, bool isFloating) {
+    final c = DsColors.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.showHandle && !isFloating)
+          Center(
+            child: Padding(padding: const EdgeInsets.only(top: DsSpace.sm, bottom: DsSpace.xs), child: _handleBar(c)),
+          ),
+        Padding(
+          padding: isFloating ? widget.padding.add(const EdgeInsets.only(top: DsSpace.md)) : widget.padding,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (widget.header != null) ...[widget.header!, const DsGap(DsSpace.md)],
+              widget.child,
+              if (widget.actions != null) ...[const DsGap(DsSpace.lg), widget.actions!],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _collapsibleBody(BuildContext context, bool isFloating) {
+    final c = DsColors.of(context);
+    final pad = widget.padding.resolve(Directionality.of(context));
+    final top = isFloating ? pad.top + DsSpace.md : pad.top;
+    final motion = DsMotion.of(context, DsMotion.base);
+    final hasHandle = !isFloating;
+
+    final toggle = DsIconButton(
+      key: const ValueKey('ds-map-panel-toggle'),
+      icon: _collapsed ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+      semanticLabel: _collapsed ? 'Show details'.tr : 'Minimize'.tr,
+      variant: DsIconButtonVariant.tonal,
+      onPressed: () => _setCollapsed(!_collapsed),
+    );
+
+    // Bigger tap target than the 40×4 bar; the arrow button carries the
+    // screen-reader action, so the handle stays out of semantics.
+    final handle = ExcludeSemantics(
+      child: GestureDetector(
+        key: const ValueKey('ds-map-panel-handle'),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _setCollapsed(!_collapsed),
+        child: SizedBox(width: 96, height: 20, child: Center(child: _handleBar(c))),
+      ),
+    );
+
+    final Widget? barContent = _collapsed
+        ? (widget.collapsedHeader ?? widget.header ?? Text('Show details'.tr, maxLines: 1, overflow: TextOverflow.ellipsis, style: DsTypography.titleSm.copyWith(color: c.textPrimary)))
+        : widget.header;
+
+    final Widget topBlock;
+    if (barContent == null) {
+      // Expanded with no header: the handle and the button share one row.
+      topBlock = Padding(
+        padding: EdgeInsets.fromLTRB(pad.left, isFloating ? DsSpace.sm : 0, pad.right, 0),
+        child: Row(
+          children: [
+            const SizedBox(width: 48),
+            Expanded(child: Center(child: hasHandle ? handle : const SizedBox.shrink())),
+            toggle,
+          ],
+        ),
+      );
+    } else {
+      topBlock = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (hasHandle) Center(child: handle),
+          Padding(
+            padding: EdgeInsets.fromLTRB(pad.left, hasHandle ? 0 : top, pad.right, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: DsMotion.of(context, DsMotion.fast),
+                    layoutBuilder: (current, previous) => Stack(alignment: AlignmentDirectional.centerStart, children: [...previous, ?current]),
+                    child: KeyedSubtree(key: ValueKey(_collapsed && widget.collapsedHeader != null), child: barContent),
+                  ),
+                ),
+                const DsGap(DsSpace.sm),
+                toggle,
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    final details = Padding(
+      padding: EdgeInsets.fromLTRB(pad.left, widget.header == null ? 0 : DsSpace.md, pad.right, 0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          widget.child,
+          if (widget.actions != null) ...[const DsGap(DsSpace.lg), widget.actions!],
+        ],
+      ),
+    );
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          // Minimized, the whole bar opens the panel; expanded, a tap on the
+          // header does nothing (only the handle and the button toggle).
+          onTap: _collapsed ? () => _setCollapsed(false) : null,
+          onVerticalDragStart: _onDragStart,
+          onVerticalDragUpdate: _onDragUpdate,
+          onVerticalDragEnd: _onDragEnd,
+          child: AnimatedSize(duration: motion, curve: DsMotion.standard, alignment: Alignment.topCenter, child: topBlock),
+        ),
+        SizeTransition(
+          sizeFactor: _size,
+          alignment: Alignment.topCenter,
+          child: IgnorePointer(
+            ignoring: _collapsed,
+            child: ExcludeSemantics(
+              excluding: _collapsed,
+              // Offstage once fully minimized: nothing in it can be reached
+              // (state such as a half-dragged slider is kept).
+              child: Visibility(visible: !_collapsed || !_anim.isDismissed, maintainState: true, child: details),
+            ),
+          ),
+        ),
+        SizedBox(height: pad.bottom),
+      ],
+    );
+  }
+}
+
+/// Bottom inset of the [DsMapPanel] docked over the map, provided by a
+/// [DsMapPanelArea]. Map widgets use it as their padding so the zoom /
+/// my-location controls, the logo and camera centring stay above the panel.
+///
+/// ```dart
+/// Builder(builder: (context) => GoogleMap(padding: EdgeInsets.only(bottom: DsMapInset.bottomOf(context)), ...))
+/// ```
+class DsMapInset extends InheritedWidget {
+  final double bottom;
+
+  const DsMapInset({super.key, required this.bottom, required super.child});
+
+  /// 0 outside a [DsMapPanelArea].
+  static double bottomOf(BuildContext context) => context.dependOnInheritedWidgetOfExactType<DsMapInset>()?.bottom ?? 0;
+
+  @override
+  bool updateShouldNotify(DsMapInset oldWidget) => oldWidget.bottom != bottom;
+}
+
+/// Full-screen [map] with [overlays] (top alerts, map buttons) and the
+/// [panel] docked at the bottom. The panel height is published through
+/// [DsMapInset] once it settles (not on every animation frame, so a native
+/// map view is not re-padded 60 times a second), and when the panel is
+/// minimized the map gets the full screen back.
+class DsMapPanelArea extends StatefulWidget {
+  final Widget map;
+  final Widget panel;
+  final List<Widget> overlays;
+
+  const DsMapPanelArea({super.key, required this.map, required this.panel, this.overlays = const []});
+
+  @override
+  State<DsMapPanelArea> createState() => _DsMapPanelAreaState();
+}
+
+class _DsMapPanelAreaState extends State<DsMapPanelArea> {
+  double _inset = 0;
+  double _pending = 0;
+  Timer? _settle;
+
+  void _onPanelSize(Size size) {
+    _pending = size.height;
+    _settle?.cancel();
+    _settle = Timer(DsMotion.fast, () {
+      if (mounted && (_pending - _inset).abs() >= 1) setState(() => _inset = _pending);
+    });
+  }
+
+  @override
+  void dispose() {
+    _settle?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DsMapInset(
+      bottom: _inset,
+      child: Stack(
+        children: [
+          Positioned.fill(child: widget.map),
+          ...widget.overlays,
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: DsSizeReporter(onChanged: _onPanelSize, child: widget.panel),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Reports its child's size after layout, whenever it changes.
+class DsSizeReporter extends SingleChildRenderObjectWidget {
+  final ValueChanged<Size> onChanged;
+
+  const DsSizeReporter({super.key, required this.onChanged, super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => RenderDsSizeReporter(onChanged);
+
+  @override
+  void updateRenderObject(BuildContext context, RenderDsSizeReporter renderObject) => renderObject.onChanged = onChanged;
+}
+
+/// Render object of [DsSizeReporter].
+class RenderDsSizeReporter extends RenderProxyBox {
+  RenderDsSizeReporter(this.onChanged);
+
+  ValueChanged<Size> onChanged;
+  Size? _last;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    if (size == _last) return;
+    _last = size;
+    final reported = size;
+    // Never call back during layout: the listener may rebuild.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (attached) onChanged(reported);
+    });
   }
 }
 

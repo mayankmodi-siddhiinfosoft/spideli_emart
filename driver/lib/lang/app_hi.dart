@@ -519,4 +519,7 @@ const Map<String, String> hiIN = {
   "Platform fee": "प्लेटफ़ॉर्म शुल्क",
   "Select your management zone first to see the zones it covers.": "इसमें शामिल क्षेत्र देखने के लिए पहले अपना प्रबंधन क्षेत्र चुनें।",
   "No zone is available in this management zone yet.": "इस प्रबंधन क्षेत्र में अभी कोई क्षेत्र उपलब्ध नहीं है।",
+  // Map job panel: minimize / expand.
+  "Minimize": "छोटा करें",
+  "Show details": "विवरण दिखाएं",
 };

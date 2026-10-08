@@ -519,4 +519,7 @@ const Map<String, String> ruRU = {
   "Platform fee": "Сбор платформы",
   "Select your management zone first to see the zones it covers.": "Сначала выберите зону управления, чтобы увидеть зоны, которые она охватывает.",
   "No zone is available in this management zone yet.": "В этой зоне управления пока нет доступных зон.",
+  // Map job panel: minimize / expand.
+  "Minimize": "Свернуть",
+  "Show details": "Показать подробности",
 };

@@ -45,9 +45,11 @@ class CabHomeScreen extends StatelessWidget {
                   themeController.isDark.value;
                   return _documentPendingView(context);
                 })
-              : Stack(
-                  children: [
-                    Positioned.fill(child: _mapLayer(context, controller)),
+              // The panel's height reaches the map (DsMapInset): its controls
+              // stay above the panel, and a minimized panel frees the map.
+              : DsMapPanelArea(
+                  map: _mapLayer(context, controller),
+                  overlays: [
                     // Wallet / owner-wallet warning over the map.
                     Positioned(
                       top: 0,
@@ -98,30 +100,27 @@ class CabHomeScreen extends StatelessWidget {
                         }),
                       ),
                     ),
-                    Align(
-                      alignment: Alignment.bottomCenter,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.88),
-                        child: SingleChildScrollView(
-                          reverse: true,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // A pending ride assigned to this driver, or a new
-                              // request for a verified driver who is online.
-                              Obx(() => controller.showRequestSheet ? showDriverBottomSheet(context, controller) : Container()),
-                              Obx(() => controller.shouldShowOrderSheet ? buildOrderActionsCard(context, controller) : const SizedBox()),
-                              // Obx(
-                              //   () => controller.currentOrder.value.id != null && controller.currentOrder.value.status != Constant.driverPending
-                              //       ? buildOrderActionsCard(isDark, controller)
-                              //       : Container(),
-                              // ),
-                            ],
-                          ),
-                        ),
+                  ],
+                  panel: ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.88),
+                    child: SingleChildScrollView(
+                      reverse: true,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // A pending ride assigned to this driver, or a new
+                          // request for a verified driver who is online.
+                          Obx(() => controller.showRequestSheet ? showDriverBottomSheet(context, controller) : Container()),
+                          Obx(() => controller.shouldShowOrderSheet ? buildOrderActionsCard(context, controller) : const SizedBox()),
+                          // Obx(
+                          //   () => controller.currentOrder.value.id != null && controller.currentOrder.value.status != Constant.driverPending
+                          //       ? buildOrderActionsCard(isDark, controller)
+                          //       : Container(),
+                          // ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
         );
       },
@@ -182,29 +181,7 @@ class CabHomeScreen extends StatelessWidget {
                     ),
                   ],
                 )
-              : GoogleMap(
-                  onMapCreated: (mapController) {
-                    controller.mapController = mapController;
-                    final lat = controller.current.value.latitude != 0.0 ? controller.current.value.latitude : (Constant.locationDataFinal?.latitude ?? 0.0);
-                    final lng = controller.current.value.longitude != 0.0 ? controller.current.value.longitude : (Constant.locationDataFinal?.longitude ?? 0.0);
-                    controller.mapController!.animateCamera(
-                      CameraUpdate.newCameraPosition(CameraPosition(target: LatLng(lat, lng), zoom: 15, bearing: double.parse('${controller.driverModel.value.rotation ?? '0.0'}'))),
-                    );
-                  },
-                  myLocationEnabled: true,
-                  myLocationButtonEnabled: true,
-                  mapType: MapType.normal,
-                  zoomControlsEnabled: true,
-                  polylines: Set<Polyline>.of(controller.polyLines.values),
-                  markers: controller.markers.values.toSet(),
-                  initialCameraPosition: CameraPosition(
-                    zoom: 15,
-                    target: LatLng(
-                      controller.current.value.latitude != 0.0 ? controller.current.value.latitude : (Constant.locationDataFinal?.latitude ?? 0.0),
-                      controller.current.value.longitude != 0.0 ? controller.current.value.longitude : (Constant.locationDataFinal?.longitude ?? 0.0),
-                    ),
-                  ),
-                ),
+              : _googleMap(controller),
           if (Constant.mapType == "inappmap" && Constant.selectedMapType == "osm")
             PositionedDirectional(
               top: MediaQuery.paddingOf(context).top + DsSpace.xxl,
@@ -299,6 +276,40 @@ class CabHomeScreen extends StatelessWidget {
     );
   }
 
+  /// The Google map, padded by the docked panel's height ([DsMapInset]) so
+  /// the zoom / my-location controls and the logo stay visible above it.
+  /// Every observable is read here, while the GetX builder runs, so the map
+  /// keeps rebuilding on marker / route changes; only the padding is read
+  /// later, by the Builder.
+  Widget _googleMap(CabHomeController controller) {
+    final polylines = Set<Polyline>.of(controller.polyLines.values);
+    final markers = controller.markers.values.toSet();
+    final initialTarget = LatLng(
+      controller.current.value.latitude != 0.0 ? controller.current.value.latitude : (Constant.locationDataFinal?.latitude ?? 0.0),
+      controller.current.value.longitude != 0.0 ? controller.current.value.longitude : (Constant.locationDataFinal?.longitude ?? 0.0),
+    );
+    return Builder(
+      builder: (context) => GoogleMap(
+        onMapCreated: (mapController) {
+          controller.mapController = mapController;
+          final lat = controller.current.value.latitude != 0.0 ? controller.current.value.latitude : (Constant.locationDataFinal?.latitude ?? 0.0);
+          final lng = controller.current.value.longitude != 0.0 ? controller.current.value.longitude : (Constant.locationDataFinal?.longitude ?? 0.0);
+          controller.mapController!.animateCamera(
+            CameraUpdate.newCameraPosition(CameraPosition(target: LatLng(lat, lng), zoom: 15, bearing: double.parse('${controller.driverModel.value.rotation ?? '0.0'}'))),
+          );
+        },
+        myLocationEnabled: true,
+        myLocationButtonEnabled: true,
+        mapType: MapType.normal,
+        zoomControlsEnabled: true,
+        padding: EdgeInsets.only(bottom: DsMapInset.bottomOf(context)),
+        polylines: polylines,
+        markers: markers,
+        initialCameraPosition: CameraPosition(zoom: 15, target: initialTarget),
+      ),
+    );
+  }
+
   /// Opens the ride chat with the customer (same arguments as the chat buttons).
   Future<void> openCustomerChat(CabHomeController controller) async {
     ShowToastDialog.showLoader("Please wait".tr);
@@ -369,6 +380,11 @@ class CabHomeScreen extends StatelessWidget {
     return DsMapPanel(
       showHandle: false,
       padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.sm, DsSpace.lg, DsSpace.lg),
+      // Minimizable to a slim "New ride request" bar; a different request
+      // opens the panel again.
+      storageId: 'cab.request',
+      stateKey: 'request|${order.id}',
+      collapsedHeader: _requestBar(context, label: "New ride request".tr, trailing: metrics.first.value),
       child: DsRequestCard(
         margin: EdgeInsets.zero,
         title: "New ride request".tr,
@@ -430,6 +446,23 @@ class CabHomeScreen extends StatelessWidget {
     );
   }
 
+  /// Slim bar of a minimized request panel: pulsing "new request" chip and
+  /// one figure (distance) so the driver still sees what is waiting.
+  Widget _requestBar(BuildContext context, {required String label, String? trailing}) {
+    final t = context.dsText;
+    return Row(
+      children: [
+        Expanded(
+          child: Align(alignment: AlignmentDirectional.centerStart, child: DsStatusChip(label: label, tone: DsTone.warning, pulse: true)),
+        ),
+        if (trailing != null && trailing.isNotEmpty) ...[
+          const DsGap(DsSpace.sm),
+          Text(trailing, maxLines: 1, style: t.titleSm.w700.tabular),
+        ],
+      ],
+    );
+  }
+
   /// Archetype C – live trip panel.
   Widget buildOrderActionsCard(BuildContext context, CabHomeController controller) {
     final c = context.dsColors;
@@ -477,6 +510,10 @@ class CabHomeScreen extends StatelessWidget {
 
     return DsMapPanel(
       padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.sm, DsSpace.lg, DsSpace.lg),
+      // Minimized it keeps the status and the fare; the next status (pickup
+      // → in transit) opens it again so the new action is seen.
+      storageId: 'cab.trip',
+      stateKey: '${order.id}|${order.status}',
       header: Row(
         children: [
           Expanded(
@@ -682,6 +719,7 @@ class _CabHomeSkeleton extends StatelessWidget {
           alignment: Alignment.bottomCenter,
           child: DsMapPanel(
             showHandle: false,
+            collapsible: false,
             child: DsShimmer(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

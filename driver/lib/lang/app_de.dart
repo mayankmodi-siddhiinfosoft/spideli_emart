@@ -519,4 +519,7 @@ const Map<String, String> deGR = {
   "Platform fee": "Plattformgebühr",
   "Select your management zone first to see the zones it covers.": "Wählen Sie zuerst Ihre Verwaltungszone, um die abgedeckten Zonen zu sehen.",
   "No zone is available in this management zone yet.": "In dieser Verwaltungszone ist noch keine Zone verfügbar.",
+  // Map job panel: minimize / expand.
+  "Minimize": "Minimieren",
+  "Show details": "Details anzeigen",
 };

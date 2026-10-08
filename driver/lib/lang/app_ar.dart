@@ -519,4 +519,7 @@ const Map<String, String> lnAr = {
   "Platform fee": "رسوم المنصة",
   "Select your management zone first to see the zones it covers.": "اختر منطقة الإدارة أولاً لعرض المناطق التي تغطيها.",
   "No zone is available in this management zone yet.": "لا توجد أي منطقة متاحة في منطقة الإدارة هذه بعد.",
+  // Map job panel: minimize / expand.
+  "Minimize": "تصغير",
+  "Show details": "عرض التفاصيل",
 };

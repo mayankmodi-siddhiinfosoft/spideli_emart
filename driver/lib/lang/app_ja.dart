@@ -519,4 +519,7 @@ const Map<String, String> jaJP = {
   "Platform fee": "プラットフォーム手数料",
   "Select your management zone first to see the zones it covers.": "対象ゾーンを表示するには、まず管理ゾーンを選択してください。",
   "No zone is available in this management zone yet.": "この管理ゾーンには、利用できるゾーンがまだありません。",
+  // Map job panel: minimize / expand.
+  "Minimize": "最小化",
+  "Show details": "詳細を表示",
 };

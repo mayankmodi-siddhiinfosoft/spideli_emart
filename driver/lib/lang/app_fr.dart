@@ -519,4 +519,7 @@ const Map<String, String> trFR = {
   "Platform fee": "Frais de plateforme",
   "Select your management zone first to see the zones it covers.": "Sélectionnez d'abord votre zone de gestion pour voir les zones qu'elle couvre.",
   "No zone is available in this management zone yet.": "Aucune zone n'est encore disponible dans cette zone de gestion.",
+  // Map job panel: minimize / expand.
+  "Minimize": "Réduire",
+  "Show details": "Afficher les détails",
 };
