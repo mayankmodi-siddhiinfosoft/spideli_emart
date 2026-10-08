@@ -1,3 +1,4 @@
+import 'package:driver/services/online_status_rules.dart';
 import 'package:driver/app/owner_screen/driver_create_screen.dart';
 import 'package:driver/app/owner_screen/driver_order_list.dart';
 import 'package:driver/controllers/owner_home_controller.dart';
@@ -17,7 +18,9 @@ class ViewAllDriverScreen extends StatelessWidget {
       init: Get.find<OwnerHomeController>(),
       builder: (controller) {
         final drivers = controller.driverList.toList();
-        final online = drivers.where((d) => d.isActive != false).length;
+        // Online is `isActive == true`, what the dispatch reads (a driver
+        // without the field used to count as online here).
+        final online = drivers.where((d) => OnlineStatusRules.isOnline(d.isActive)).length;
         return DsScaffold.collapsing(
           title: "All Drivers".tr,
           subtitle: drivers.isEmpty ? null : '${'Online'.tr}: $online / ${drivers.length}',
@@ -85,7 +88,7 @@ class _DriverCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
-    final isOnline = driver.isActive != false;
+    final isOnline = OnlineStatusRules.isOnline(driver.isActive);
     return DsCard.outlined(
       margin: const EdgeInsets.only(bottom: DsSpace.md),
       padding: const EdgeInsets.all(DsSpace.md),

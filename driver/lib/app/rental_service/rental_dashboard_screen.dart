@@ -13,12 +13,12 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/app/rental_service/rental_home_screen.dart';
 import 'package:driver/app/rental_service/rental_order_list_screen.dart';
+import 'package:driver/services/driver_online_status.dart';
 import 'package:driver/controllers/rental_dashboard_controller.dart';
 import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/themes/custom_dialog_box.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
-import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -155,7 +155,7 @@ class DrawerView extends StatelessWidget {
                             name: Constant.userModel?.fullName(),
                             size: 55,
                             ring: true,
-                            statusTone: (controller.userModel.value.isActive ?? false) ? DsTone.success : DsTone.neutral,
+                            statusTone: DriverOnlineStatus.isOnline ? DsTone.success : DsTone.neutral,
                           ),
                           const DsGap(DsSpace.md),
                           Expanded(
@@ -172,30 +172,15 @@ class DrawerView extends StatelessWidget {
                     ),
                     const DsGap(DsSpace.md),
                     DsOnlineToggle(
-                      isOnline: controller.userModel.value.isActive ?? false,
+                      isOnline: DriverOnlineStatus.isOnline,
+                      // Not known yet (first start without a session copy).
+                      loading: !DriverOnlineStatus.isKnown,
                       onlineLabel: 'Available Status'.tr,
                       offlineLabel: 'Available Status'.tr,
-                      onChanged: (value) async {
-                        if (DocumentVerification.checksDocuments(controller.userModel.value)) {
-                          if (!DocumentVerification.isPending(controller.userModel.value)) {
-                            // Spec 3.6: expired / rejected documents block going online.
-                            if (value == true) {
-                              final blockReason = await FireStoreUtils.documentBlockReason();
-                              if (blockReason != null) {
-                                ShowToastDialog.showToast(blockReason.tr);
-                                return;
-                              }
-                            }
-                            // `isActive` alone (field-level), never the whole user document.
-                            await controller.setOnline(value);
-                          } else {
-                            ShowToastDialog.showToast("Document verification is pending. Please proceed to set up your document verification.".tr);
-                          }
-                        } else {
-                          // `isActive` alone (field-level), never the whole user document.
-                          await controller.setOnline(value);
-                        }
-                      },
+                      onChanged: DriverOnlineStatus.isKnown
+                          // Shared by every service; going offline is never refused.
+                          ? (value) => DriverOnlineStatus.request(value, me: controller.userModel.value, write: controller.setOnline)
+                          : null,
                     ),
                     const DsGap(DsSpace.lg),
                     DsTileGroup(

@@ -1,6 +1,5 @@
-import 'package:driver/app/dash_board_screen/dash_board_screen.dart';
+import 'package:driver/services/dashboard_navigation.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
-import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -21,9 +20,10 @@ class ChangePasswordController extends GetxController {
       );
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast('${'Reset Password link sent your'.tr} ${emailEditingController.value.text} ${'email'.tr}');
-      DashBoardController dashBoardController = Get.put(DashBoardController());
-      dashBoardController.drawerIndex.value = 0;
-      Get.offAll(DashBoardScreen());
+      // Back to the home of the driver's own dashboards (a cab, parcel,
+      // rental or company account was sent to the delivery one), reused
+      // rather than rebuilt (DashboardNavigation).
+      await DashboardNavigation.home();
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found') {
         ShowToastDialog.showToast('No user found for that email.'.tr);

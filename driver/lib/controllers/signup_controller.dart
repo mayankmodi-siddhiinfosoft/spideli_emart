@@ -4,12 +4,6 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/auth_screen/login_screen.dart';
-import 'package:driver/app/cab_screen/cab_dashboard_screen.dart';
-import 'package:driver/app/dash_board_screen/dash_board_screen.dart';
-import 'package:driver/app/multi_service/multi_service_dashboard_screen.dart';
-import 'package:driver/app/owner_screen/owner_dashboard_screen.dart';
-import 'package:driver/app/parcel_screen/parcel_dashboard_screen.dart';
-import 'package:driver/app/rental_service/rental_dashboard_screen.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/car_makes.dart';
@@ -19,6 +13,7 @@ import 'package:driver/models/section_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/models/vehicle_type.dart';
 import 'package:driver/models/zone_model.dart';
+import 'package:driver/services/dashboard_navigation.dart';
 import 'package:driver/utils/company_profile.dart';
 import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/fire_store_utils.dart';
@@ -529,31 +524,9 @@ class SignupController extends GetxController {
     navigateByUserModel(user);
   }
 
+  /// Opens [user]'s dashboards ([DashboardNavigation.open]): never a second
+  /// copy of dashboards that are already running.
   static void navigateByUserModel(UserModel user) {
-    if (user.isOwner == true) {
-      Get.offAll(OwnerDashboardScreen());
-    } else if (user.serviceModules.length > 1) {
-      Get.offAll(const MultiServiceDashboardScreen());
-    } else {
-      // firstOrNull: an empty list used to throw here. Read through the
-      // spec's aliases (`parcel-service` is the parcel module).
-      _navigateByServiceType(user.serviceModules.firstOrNull ?? 'delivery-service');
-    }
-  }
-
-  static void _navigateByServiceType(String serviceType) {
-    switch (serviceType) {
-      case 'cab-service':
-        Get.offAll(const CabDashboardScreen());
-        break;
-      case 'parcel_delivery':
-        Get.offAll(const ParcelDashboardScreen());
-        break;
-      case 'rental-service':
-        Get.offAll(const RentalDashboardScreen());
-        break;
-      default:
-        Get.offAll(const DashBoardScreen());
-    }
+    unawaited(DashboardNavigation.open(user));
   }
 }

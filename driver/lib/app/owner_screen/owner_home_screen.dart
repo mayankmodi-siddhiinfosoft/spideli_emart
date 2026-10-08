@@ -1,3 +1,4 @@
+import 'package:driver/services/online_status_rules.dart';
 import 'package:driver/app/owner_screen/driver_create_screen.dart';
 import 'package:driver/app/owner_screen/view_all_drivers.dart';
 import 'package:driver/constant/constant.dart';
@@ -164,7 +165,8 @@ class OwnerHomeScreen extends StatelessWidget {
                                             _DriverRow(
                                               index: index,
                                               driverModel: controller.driverList[index],
-                                              isActive: controller.driverList[index].isActive != false,
+                                              // `isActive == true`, as the dispatch reads it.
+                                              isActive: OnlineStatusRules.isOnline(controller.driverList[index].isActive),
                                               onEdit: () {
                                                 Get.to(DriverCreateScreen(), arguments: {"driverModel": controller.driverList[index]})!.then(
                                                   (value0) {

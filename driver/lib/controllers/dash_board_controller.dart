@@ -13,6 +13,7 @@ import 'package:driver/controllers/rental_dashboard_controller.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/driver_assignment_watcher.dart';
 import 'package:driver/services/driver_job_queue_service.dart';
+import 'package:driver/services/driver_online_status.dart';
 import 'package:driver/services/incoming_offer_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/notification_service.dart';
@@ -39,6 +40,7 @@ class DriverSessions {
     if (Get.isRegistered<CabDashBoardController>()) await Get.find<CabDashBoardController>().stopSession();
     if (Get.isRegistered<ParcelDashboardController>()) await Get.find<ParcelDashboardController>().stopSession();
     if (Get.isRegistered<RentalDashboardController>()) await Get.find<RentalDashboardController>().stopSession();
+    await DriverOnlineStatus.stop();
     try {
       await Location().enableBackgroundMode(enable: false);
     } catch (_) {}
@@ -90,6 +92,10 @@ class DriverSessions {
       // Client point 19: stop receiving this driver's work and clear the
       // stored token when it is this device's.
       await step('notifications', () => NotificationService.onSignOut(), const Duration(seconds: 8));
+      // Log-out never changes the online status (`isActive`): only the
+      // driver's switch does. A driver who logs out online is still online
+      // on the next login; one who went offline stays offline.
+      await DriverOnlineStatus.reset();
       try {
         await FirebaseAuth.instance.signOut();
       } catch (e) {
@@ -108,6 +114,7 @@ class DriverSessions {
     DriverAssignmentWatcher.stop();
     DriverJobQueueService.reset();
     IncomingOfferService.stop();
+    await DriverOnlineStatus.reset();
     await FirebaseAuth.instance.signOut();
     Get.offAll(const LoginScreen());
     ShowToastDialog.showToast("This account no longer exists. Please contact the administrator.".tr);
@@ -144,10 +151,18 @@ class DashBoardController extends GetxController {
 
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userSub;
 
+  /// Between [getUser] and [stopSession] / close.
+  bool _live = false;
+
   Future<void> getUser() async {
-    await updateCurrentLocation();
     final String? uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    _live = true;
+    // The shared online status first, then this dashboard's listener, and
+    // only then the location set-up, never awaited: it can wait on a system
+    // permission dialog, and this listener (the driver's record, offers,
+    // assignments, topics) used to start only after it.
+    DriverOnlineStatus.start();
     await _userSub?.cancel();
     _userSub = FireStoreUtils.fireStore.collection(CollectionName.users).doc(uid).snapshots().listen(
       (event) {
@@ -169,11 +184,13 @@ class DashBoardController extends GetxController {
       },
       onError: (Object e) => log("DashBoardController users listener: $e"),
     );
+    unawaited(updateCurrentLocation());
   }
 
   /// Stops this dashboard's location stream and `users/{uid}` listener
   /// ([DriverSessions.stopAll]; also on close).
   Future<void> stopSession() async {
+    _live = false;
     await _locationSub?.cancel();
     _locationSub = null;
     await _userSub?.cancel();
@@ -182,6 +199,7 @@ class DashBoardController extends GetxController {
 
   @override
   void onClose() {
+    _live = false;
     _locationSub?.cancel();
     _locationSub = null;
     _userSub?.cancel();
@@ -189,23 +207,19 @@ class DashBoardController extends GetxController {
     super.onClose();
   }
 
-  /// Online / offline. Writes `isActive` and nothing else: the toggle wrote
+  /// Online / offline. Writes `isActive` and nothing else
+  /// ([DriverOnlineStatus.write], shared by every service): the toggle wrote
   /// the whole user document from this controller's copy, which rolled back
   /// any assignment, offer or wallet change made since the last snapshot.
   Future<void> setOnline(bool value) async {
-    final String? uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (FirebaseAuth.instance.currentUser?.uid == null) return;
     final bool? previous = userModel.value.isActive;
     userModel.value.isActive = value;
-    Constant.userModel?.isActive = value;
     userModel.refresh();
     if (value) updateCurrentLocation();
-    // `update`, never a merge set: a toggle after the account was deleted
-    // must not re-create users/{uid} as an {isActive} stub.
-    final UserWrite result = await FireStoreUtils.updateExistingUserFields(uid, {'isActive': value});
+    final UserWrite result = await DriverOnlineStatus.write(value);
     if (result == UserWrite.done) return;
     userModel.value.isActive = previous;
-    Constant.userModel?.isActive = previous;
     userModel.refresh();
     if (result == UserWrite.missing) {
       await DriverSessions.endDeletedAccount();
@@ -248,37 +262,27 @@ class DashBoardController extends GetxController {
     await FireStoreUtils.updateUserLocation(uid, latitude: locationData.latitude, longitude: locationData.longitude, heading: locationData.heading);
   }
 
+  /// Starts this dashboard's location stream. Never awaited by anything
+  /// that matters: a permission dialog may stay open (or never answer).
   Future<void> updateCurrentLocation() async {
     try {
       PermissionStatus permissionStatus = await location.hasPermission();
-      if (permissionStatus == PermissionStatus.granted) {
-        try {
-          await location.enableBackgroundMode(enable: true);
-        } catch (_) {}
-        location.changeSettings(accuracy: LocationAccuracy.high, distanceFilter: double.parse(Constant.driverLocationUpdate));
-
-        // One listener, however many times the driver goes online.
-        _locationSub?.cancel();
-        _locationSub = location.onLocationChanged.listen(_writeLocation);
-      } else {
-        location.requestPermission().then((permissionStatus) async {
-          if (permissionStatus == PermissionStatus.granted) {
-            try {
-              await location.enableBackgroundMode(enable: true);
-            } catch (_) {}
-            location.changeSettings(accuracy: LocationAccuracy.high, distanceFilter: double.parse(Constant.driverLocationUpdate));
-            _locationSub?.cancel();
-            _locationSub = location.onLocationChanged.listen((locationData) async {
-              await _writeLocation(locationData);
-              ShowToastDialog.closeLoader();
-            });
-          } else {
-            ShowToastDialog.closeLoader();
-          }
-        });
+      if (permissionStatus != PermissionStatus.granted) {
+        // One request for the whole app (DriverLocationRequests).
+        permissionStatus = await DriverLocationRequests.requestPermission(location);
+        ShowToastDialog.closeLoader();
       }
+      // Signed out / closed meanwhile: no stream outlives the session.
+      if (permissionStatus != PermissionStatus.granted || !_live) return;
+      location.changeSettings(accuracy: LocationAccuracy.high, distanceFilter: double.parse(Constant.driverLocationUpdate));
+      // One listener, however many times the driver goes online.
+      await _locationSub?.cancel();
+      _locationSub = location.onLocationChanged.listen(_writeLocation);
+      // Background mode once the stream runs, bounded and shared: the
+      // "Allow all the time" dialog must not hold anything up.
+      await DriverLocationRequests.enableBackgroundMode(location);
     } catch (e) {
-      print(e);
+      log("DashBoardController location: $e");
     }
   }
 }

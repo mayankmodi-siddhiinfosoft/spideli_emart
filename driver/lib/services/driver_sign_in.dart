@@ -2,20 +2,14 @@ import 'dart:async';
 import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
-import 'package:driver/app/cab_screen/cab_dashboard_screen.dart';
-import 'package:driver/app/dash_board_screen/dash_board_screen.dart';
-import 'package:driver/app/multi_service/multi_service_dashboard_screen.dart';
-import 'package:driver/app/owner_screen/owner_dashboard_screen.dart';
-import 'package:driver/app/parcel_screen/parcel_dashboard_screen.dart';
-import 'package:driver/app/rental_service/rental_dashboard_screen.dart';
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/dashboard_navigation.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/login_validation.dart';
 import 'package:driver/utils/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:get/get.dart';
 
 /// What happened when a signed-in user's driver account was opened.
 enum AccountOutcome {
@@ -112,26 +106,7 @@ class DriverSignIn {
   /// without one) used to throw on `.first`; it now opens the delivery
   /// dashboard, like a missing list always did.
   static void openDashboard(UserModel userModel) {
-    if (userModel.isOwner == true) {
-      Get.offAll(OwnerDashboardScreen());
-    } else if (userModel.serviceModules.length > 1) {
-      Get.offAll(const MultiServiceDashboardScreen());
-    } else {
-      // Read through the spec's aliases (`parcel-service` is the parcel module).
-      switch (userModel.serviceModules.firstOrNull) {
-        case 'cab-service':
-          Get.offAll(const CabDashboardScreen());
-          break;
-        case 'parcel_delivery':
-          Get.offAll(const ParcelDashboardScreen());
-          break;
-        case 'rental-service':
-          Get.offAll(const RentalDashboardScreen());
-          break;
-        default:
-          Get.offAll(const DashBoardScreen());
-      }
-    }
+    unawaited(DashboardNavigation.open(userModel));
   }
 
   static Future<void> signOutQuietly() async {

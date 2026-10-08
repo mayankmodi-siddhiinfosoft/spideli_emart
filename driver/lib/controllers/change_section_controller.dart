@@ -2,9 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
-import 'package:driver/controllers/signup_controller.dart';
 import 'package:driver/models/section_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/dashboard_navigation.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:get/get.dart';
 
@@ -132,6 +132,8 @@ class ChangeSectionController extends GetxController {
     ShowToastDialog.closeLoader();
     ShowToastDialog.showToast("Sections updated successfully".tr);
 
-    SignupController.navigateByUserModel(user);
+    // Fresh dashboards for the new services / sections: the running ones are
+    // closed first (DashboardNavigation), never adopted half-closed.
+    await DashboardNavigation.open(user, rebuild: true);
   }
 }

@@ -13,12 +13,12 @@ import 'package:driver/app/wallet_screen/wallet_screen.dart';
 import 'package:driver/app/withdraw_method_setup_screens/withdraw_method_setup_screen.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart' show ShowToastDialog;
+import 'package:driver/services/driver_online_status.dart';
 import 'package:driver/controllers/parcel_dashboard_controller.dart';
 import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/themes/custom_dialog_box.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
-import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -149,7 +149,9 @@ class DrawerView extends StatelessWidget {
           builder: (controller) {
             final c = context.dsColors;
             final t = context.dsText;
-            final bool isOnline = controller.userModel.value.isActive ?? false;
+            // The status every service shares (DriverOnlineStatus), never this
+            // dashboard's own copy, which starts empty.
+            final bool isOnline = DriverOnlineStatus.isOnline;
             final bool isDarkSwitch = controller.isDarkModeSwitch.value;
             return Drawer(
               backgroundColor: c.background,
@@ -202,27 +204,12 @@ class DrawerView extends StatelessWidget {
                       const DsGap(DsSpace.sm),
                       DsOnlineToggle(
                         isOnline: isOnline,
-                        onChanged: (value) async {
-                          if (DocumentVerification.checksDocuments(controller.userModel.value)) {
-                            if (!DocumentVerification.isPending(controller.userModel.value)) {
-                              // Spec 3.6: expired / rejected documents block going online.
-                              if (value == true) {
-                                final blockReason = await FireStoreUtils.documentBlockReason();
-                                if (blockReason != null) {
-                                  ShowToastDialog.showToast(blockReason.tr);
-                                  return;
-                                }
-                              }
-                              // `isActive` alone (field-level), never the whole user document.
-                              await controller.setOnline(value);
-                            } else {
-                              ShowToastDialog.showToast("Document verification is pending. Please proceed to set up your document verification.".tr);
-                            }
-                          } else {
-                            // `isActive` alone (field-level), never the whole user document.
-                            await controller.setOnline(value);
-                          }
-                        },
+                        // Not known yet (first start without a session copy).
+                        loading: !DriverOnlineStatus.isKnown,
+                        onChanged: DriverOnlineStatus.isKnown
+                            // Shared by every service; going offline is never refused.
+                            ? (value) => DriverOnlineStatus.request(value, me: controller.userModel.value, write: controller.setOnline)
+                            : null,
                       ),
                       const DsGap(DsSpace.lg),
 

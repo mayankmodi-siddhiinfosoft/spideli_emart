@@ -4,14 +4,13 @@ import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/chat_screens/chat_screen.dart';
-import 'package:driver/app/dash_board_screen/dash_board_screen.dart';
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
-import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/controllers/signup_controller.dart';
 import 'package:driver/firebase_options.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/dashboard_navigation.dart';
 import 'package:driver/services/carrier_dispatch_service.dart';
 import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/services/driver_assignment_watcher.dart';
@@ -699,10 +698,10 @@ class NotificationService {
   static Future<void> handleMessageClick({required String type, String? senderId, String? orderId, required String role}) async {
     final String uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return;
+    // DashboardNavigation: the running dashboards are reused (or closed
+    // cleanly), never adopted by a second copy that then loses its listeners.
     if (type == 'admin_chat') {
-      DashBoardController controller = Get.put(DashBoardController());
-      controller.drawerIndex.value = 7;
-      Get.offAll(DashBoardScreen());
+      await DashboardNavigation.openDeliveryPage(7);
     } else if (type == 'orderChat') {
       ShowToastDialog.showLoader("Please wait".tr);
       UserModel? customer;
@@ -717,14 +716,10 @@ class NotificationService {
       // the chat screen has nothing to open; land on the inbox instead of a
       // blank screen.
       if (customer == null || driver == null || (orderId ?? '').isEmpty) {
-        DashBoardController inbox = Get.put(DashBoardController());
-        inbox.drawerIndex.value = 5;
-        Get.offAll(DashBoardScreen());
+        await DashboardNavigation.openDeliveryPage(5);
         return;
       }
-      DashBoardController dashBoardScreen = Get.put(DashBoardController());
-      dashBoardScreen.drawerIndex.value = 5;
-      Get.offAll(DashBoardScreen());
+      await DashboardNavigation.openDeliveryPage(5);
       Get.to(const ChatScreen(), arguments: {
         "senderName": driver.fullName(),
         "senderId": driver.id,

@@ -192,6 +192,37 @@ class FireStoreUtils {
     return map;
   }
 
+  /// What [updateUser] writes. Never `wallet_amount`; for an existing
+  /// account never `fcmToken`, `isActive` (the online switch), the admin's
+  /// `isDocumentVerify`, the dispatch arrays or the position.
+  @visibleForTesting
+  static Map<String, dynamic> userSaveData(UserModel userModel, {bool isNew = false}) {
+    final Map<String, dynamic> data = removeNulls(userModel.toJson()..remove('wallet_amount'));
+    if (!isNew) data.remove('fcmToken');
+    // Online / offline is the driver's own choice: only their online switch
+    // (DashBoardController.setOnline and the cab / parcel / rental
+    // equivalents) writes `isActive`. A profile, bank, vehicle or section
+    // save wrote back the value its copy was loaded with, which put a driver
+    // who had gone online since back offline.
+    if (!isNew) data.remove('isActive');
+    // Report Doc 37: `isDocumentVerify` is the administrator's verdict. A new
+    // account starts at `false`; afterwards this app never writes it, so a
+    // copy loaded before an approval (or a revocation) cannot overwrite it.
+    if (!isNew) data.remove('isDocumentVerify');
+    // Dispatch spec §4: `orderRequestData` (offers the Cloud Function added),
+    // `inProgressOrderID` (accepted jobs) and the legacy ride request move
+    // only by field-level arrayUnion / arrayRemove. A profile, bank,
+    // vehicle, section or sign-in save wrote back the arrays its copy was
+    // loaded with, dropping an offer or a job added meanwhile; the position
+    // is written by the location stream alone.
+    if (!isNew) {
+      for (final String key in const ['orderRequestData', 'inProgressOrderID', 'ordercabRequestData', 'location', 'rotation']) {
+        data.remove(key);
+      }
+    }
+    return data;
+  }
+
   /// Saves a user, never its `wallet_amount`: a balance moves only through
   /// [updateUserWallet] / `WalletOnce` (transactions). This in-memory copy,
   /// written back, undid a credit made by another app or the server between
@@ -208,29 +239,7 @@ class FireStoreUtils {
     try {
       final docRef = fireStore.collection(CollectionName.users).doc(userModel.id);
 
-      final Map<String, dynamic> data = removeNulls(userModel.toJson()..remove('wallet_amount'));
-      if (!isNew) data.remove('fcmToken');
-      // Online / offline is the driver's own choice: only their online switch
-      // (DashBoardController.setOnline and the cab / parcel / rental
-      // equivalents) writes `isActive`. A profile, bank, vehicle or section
-      // save wrote back the value its copy was loaded with, which put a driver
-      // who had gone online since back offline.
-      if (!isNew) data.remove('isActive');
-      // Report Doc 37: `isDocumentVerify` is the administrator's verdict. A new
-      // account starts at `false`; afterwards this app never writes it, so a
-      // copy loaded before an approval (or a revocation) cannot overwrite it.
-      if (!isNew) data.remove('isDocumentVerify');
-      // Dispatch spec §4: `orderRequestData` (offers the Cloud Function added),
-      // `inProgressOrderID` (accepted jobs) and the legacy ride request move
-      // only by field-level arrayUnion / arrayRemove. A profile, bank,
-      // vehicle, section or sign-in save wrote back the arrays its copy was
-      // loaded with, dropping an offer or a job added meanwhile; the position
-      // is written by the location stream alone.
-      if (!isNew) {
-        for (final String key in const ['orderRequestData', 'inProgressOrderID', 'ordercabRequestData', 'location', 'rotation']) {
-          data.remove(key);
-        }
-      }
+      final Map<String, dynamic> data = userSaveData(userModel, isNew: isNew);
 
       await docRef.set(data, SetOptions(merge: true));
       if (isNew) await _openWallet(docRef);

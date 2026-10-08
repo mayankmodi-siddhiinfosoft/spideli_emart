@@ -2506,7 +2506,10 @@ class FireStoreUtils {
   }
 
   /// The store's drivers that may take an order right now: the account is
-  /// enabled (`isActive`) and the driver is on duty (`active`).
+  /// enabled (`active`: the store's switch in the delivery-man list, or the
+  /// admin's approval) and the driver is online (`isActive`: the driver's own
+  /// online switch in the Driver app, the same flag the dispatch functions
+  /// read).
   static Future<List<UserModel>> getAvalibleDrivers() async {
     final List<UserModel> drivers = await getStoreDrivers();
     return drivers.where((driver) => driver.isActive == true && driver.active == true).toList();
