@@ -312,6 +312,40 @@ delivery).
    app push, rather than fixed text in the function.
 8. **`serviceTypes`:** read the array first (the app deletes the legacy
    `serviceType`).
+9. **Order ringtone** (the admin's `settings/globalSettings.order_ringtone_url`
+   as the sound of an offer in the background / with the app closed;
+   `.claude/PUSH-CHANNELS.md` section "Order ringtone"). Per run (or cached
+   for at most a minute), read `order_ringtone_url`, trim it; when it starts
+   with `http://` or `https://`, compute
+   `key` = 32-bit FNV-1a over its UTF-8 bytes as 8 lowercase hex digits:
+
+   ```js
+   function ringtoneKey(url) {
+     const s = (url || '').trim();
+     if (!/^https?:\/\//i.test(s)) return '';
+     let h = 0x811c9dc5;
+     for (const b of Buffer.from(s, 'utf8')) { h ^= b; h = Math.imul(h, 0x01000193) >>> 0; }
+     return h.toString(16).padStart(8, '0');
+   }
+   // test vector: 'https://example.com/ring.mp3' -> '955470e2'
+   ```
+
+   and send the dispatch push with
+   `android.notification.channelId: "driver_jobs_rt_<key>"` (keep
+   `sound: "default"`, `android.priority: "high"`) and
+   `apns.payload.aps.sound: "order_ringtone_<key>.caf"` (keep
+   `apns-priority: 10`); data unchanged (the app recognises an offer by its
+   data, section 3). With no ringtone (`key` empty): exactly today's payload
+   (`channelId: "spideli"`, `aps.sound: "default"`). A driver device that has
+   not prepared the key yet shows the push on `driver_notifications_channel`
+   (the manifest default: heads-up, default tone) and iOS plays the default
+   tone - nothing is lost or shown twice; it catches up when the app runs or
+   any push reaches its background handler. The same rule, with
+   `new_order_rt_<key>`, applies to `scheduledOrderNotifier`'s
+   `scheduled_order_due` push to the store. Optional: on a change of
+   `order_ringtone_url`, a data-only `{type: "ringtone_changed"}` push to the
+   topics `driver` and `vendor` (no notification block; APNs background push)
+   makes the apps prepare the new sound at once.
 
 ---
 

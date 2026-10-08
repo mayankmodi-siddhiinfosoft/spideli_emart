@@ -10,6 +10,8 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/controllers/signup_controller.dart';
 import 'package:driver/firebase_options.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/audio_player_service.dart';
+import 'package:driver/services/chat_sound.dart';
 import 'package:driver/services/dashboard_navigation.dart';
 import 'package:driver/services/carrier_dispatch_service.dart';
 import 'package:driver/services/dispatch_offer_rules.dart';
@@ -17,6 +19,8 @@ import 'package:driver/services/driver_assignment_watcher.dart';
 import 'package:driver/services/driver_job_queue_service.dart';
 import 'package:driver/services/incoming_offer_service.dart';
 import 'package:driver/services/offer_seen_store.dart';
+import 'package:driver/services/order_ringtone_service.dart';
+import 'package:driver/services/order_ringtone.dart';
 import 'package:driver/services/push_message.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/preferences.dart';
@@ -64,6 +68,14 @@ Future<void> firebaseMessageBackgroundHandle(RemoteMessage message) async {
   }
   if (message.notification == null && _isAndroid) {
     await NotificationService.showDataOnly(message);
+  }
+  // A changed order ringtone (admin panel) is prepared here too, bounded, so
+  // the next job push rings with it even if the app is not opened.
+  try {
+    FireStoreUtils.instance.init(Firebase.app(), databaseId: currentEnv == FirebaseEnv.defaultDb ? null : 'staging');
+    await OrderRingtoneService.catchUpInBackground(forced: message.data['type'] == OrderRingtone.changedPushType);
+  } catch (e) {
+    log("Background ringtone check failed: $e");
   }
 }
 
@@ -123,8 +135,22 @@ class NotificationService {
     enableVibration: true,
   );
 
+  /// Chat messages: their own short sound (`res/raw/chat_message.wav`),
+  /// never a job / offer sound.
+  static const AndroidNotificationChannel _chatChannel = AndroidNotificationChannel(
+    ChatSound.channelId,
+    ChatSound.channelName,
+    description: ChatSound.channelDescription,
+    importance: Importance.high,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound(ChatSound.androidSound),
+    enableVibration: true,
+  );
+
   static AndroidNotificationChannel _channel(String id) {
     switch (id) {
+      case ChatSound.channelId:
+        return _chatChannel;
       case jobChannelId:
         return _jobChannel;
       case dispatchChannelId:
@@ -145,6 +171,7 @@ class NotificationService {
       await android?.createNotificationChannel(_generalChannel);
       await android?.createNotificationChannel(_jobChannel);
       await android?.createNotificationChannel(_dispatchChannel);
+      await android?.createNotificationChannel(_chatChannel);
     } catch (e) {
       log("createNotificationChannel failed: $e");
     }
@@ -170,6 +197,11 @@ class NotificationService {
     } catch (e) {
       log("setForegroundNotificationPresentationOptions failed: $e");
     }
+    // ... except its sound, for a job / offer push while the in-app alert
+    // already rings the order sound (AppDelegate asks; no double sound).
+    OrderRingtoneService.handleForegroundPresentation(
+      (Map<String, dynamic> data, String apsSound) => foregroundSilent(jobAlert: ForegroundJobSound.isJobAlertPush(data, apsSound: apsSound)),
+    );
 
     await createChannels();
 
@@ -562,8 +594,16 @@ class NotificationService {
     return (id == 9114 || id == 9115) ? id + 2 : id;
   }
 
-  static NotificationDetails _details(String channelId) {
-    final AndroidNotificationChannel channel = _channel(channelId);
+  /// How a local notification on [channelId] (one of the three channels) is
+  /// posted. A job or a dispatch offer goes on `driver_jobs_rt_<key>` with
+  /// the admin's order sound (iOS `order_ringtone_<key>.caf`) once this
+  /// device has prepared it ([OrderRingtoneService.current]), else on its own
+  /// channel with the default tone. [silent]: no sound of its own (the
+  /// in-app alert is ringing, [foregroundSilent]).
+  static Future<NotificationDetails> alertDetails(String channelId, {bool silent = false}) async {
+    final PreparedOrderRingtone? ringtone = JobAlertChannels.isJobAlert(channelId) ? await OrderRingtoneService.current() : null;
+    final String localId = JobAlertChannels.localChannelFor(channelId, preparedKey: _isAndroid ? ringtone?.key : null);
+    final AndroidNotificationChannel channel = (ringtone != null && localId == ringtone.jobChannelId) ? OrderRingtoneService.channelFor(ringtone) : _channel(localId);
     return NotificationDetails(
       android: AndroidNotificationDetails(
         channel.id,
@@ -572,18 +612,31 @@ class NotificationService {
         importance: channel.importance,
         priority: Priority.high,
         playSound: true,
+        sound: channel.sound,
         enableVibration: true,
         audioAttributesUsage: channel.audioAttributesUsage,
         icon: '@drawable/ic_stat_notification',
         ticker: 'ticker',
+        silent: silent,
       ),
-      iOS: const DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
+      iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: !silent, sound: channelId == ChatSound.channelId ? ChatSound.apnsSound : ringtone?.iosSound),
     );
+  }
+
+  /// A job / offer alert posted (or presented, iOS) by the running app is
+  /// silent while the in-app alert rings: the incoming-offer dialog or a
+  /// module's request card loops the same sound. They start from the same
+  /// order data as the push, so this waits up to 2 s for them.
+  static Future<bool> foregroundSilent({required bool jobAlert}) async {
+    if (!jobAlert) return false;
+    final bool ringing = AudioPlayerService.isRinging || await AudioPlayerService.waitForRing(const Duration(seconds: 2));
+    return ForegroundJobSound.silent(jobAlert: jobAlert, foreground: true, inAppRinging: ringing);
   }
 
   /// Posts [message] locally (Android foreground) on the channel it belongs
   /// to: the one the sender named, else the job channel for a job, else the
-  /// general channel.
+  /// general channel ([alertDetails]: the admin's sound for a job / offer).
+  /// A job / offer is posted silently while the in-app alert rings.
   void display(RemoteMessage message) async {
     try {
       final String? title = message.notification?.title ?? message.data['title']?.toString();
@@ -594,11 +647,12 @@ class NotificationService {
         requestedChannelId: message.notification?.android?.channelId,
         data: message.data,
       );
+      final bool silent = await foregroundSilent(jobAlert: JobAlertChannels.isJobAlert(channelId));
       await flutterLocalNotificationsPlugin.show(
         id: _notificationId(message),
         title: title,
         body: body,
-        notificationDetails: _details(channelId),
+        notificationDetails: await alertDetails(channelId, silent: silent),
         payload: jsonEncode(_withSentTime(message)),
       );
     } catch (e) {
@@ -619,7 +673,7 @@ class NotificationService {
         id: _notificationId(message),
         title: title,
         body: body,
-        notificationDetails: _details(channelId),
+        notificationDetails: await alertDetails(channelId),
         payload: jsonEncode(_withSentTime(message)),
       );
     } catch (e) {

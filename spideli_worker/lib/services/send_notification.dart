@@ -210,7 +210,7 @@ class SendNotification {
     required String kind,
     required PushRecipient recipient,
   }) {
-    final PushChannel channel = pushChannelFor(recipient);
+    final PushChannel channel = pushChannelFor(recipient, kind: kind);
     if (useServerPush) {
       return _sendViaServer(buildServerPushBody(token: token, title: title, body: body, data: data, channel: channel, kind: kind), kind);
     }

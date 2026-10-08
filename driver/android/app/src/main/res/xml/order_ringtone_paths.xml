@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- OrderRingtoneProvider: only the downloaded order ringtone (files/order_ringtones/). -->
+<paths>
+    <files-path name="order_ringtones" path="order_ringtones/" />
+</paths>

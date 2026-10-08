@@ -48,6 +48,7 @@ import 'package:driver/models/withdrawal_model.dart';
 import 'package:driver/models/zone_model.dart';
 import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/services/audio_player_service.dart';
+import 'package:driver/services/order_ringtone_service.dart';
 import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/utils/cancel_reason_list.dart';
@@ -405,6 +406,11 @@ class FireStoreUtils {
         Constant.defaultCountryCode = value.data()?['defaultCountryCode'] ?? '';
 
         Preferences.setString(Preferences.orderRingtone, Constant.orderRingtoneUrl);
+        // The same sound for job / offer notifications in the background /
+        // closed (Android channel `driver_jobs_rt_<key>`, iOS
+        // `order_ringtone_<key>.caf`); kept in step with later changes and
+        // re-checked on every return to the foreground.
+        OrderRingtoneService.start();
         AppThemeData.primary300 = Color(int.parse(value.data()!['app_driver_color'].replaceFirst("#", "0xff")));
         if (Constant.orderRingtoneUrl.isNotEmpty) {
           await AudioPlayerService.initAudio();

@@ -104,14 +104,17 @@ void main() {
       }
     });
 
-    test('anything else to a store uses its general channel', () {
-      expect(PushChannels.forRecipient(PushRecipient.store, kind: 'chat'), const PushChannelSpec(androidChannelId: 'general'));
+    test('anything else to a store uses its general channel (chat: the chat channel)', () {
+      expect(PushChannels.forRecipient(PushRecipient.store, kind: 'chat'), PushChannels.chat);
+      expect(PushChannels.forRecipient(PushRecipient.store, kind: 'store_update'), const PushChannelSpec(androidChannelId: 'general'));
       expect(PushChannels.forRecipient(PushRecipient.store), const PushChannelSpec(androidChannelId: 'general'));
     });
 
     test('driver, worker, customer and provider', () {
-      expect(PushChannels.forRecipient(PushRecipient.driver, kind: 'chat').androidChannelId, 'driver_notifications_channel');
-      expect(PushChannels.forRecipient(PushRecipient.worker, kind: 'chat').androidChannelId, '01');
+      expect(PushChannels.forRecipient(PushRecipient.driver, kind: 'chat').androidChannelId, 'chat_messages');
+      expect(PushChannels.forRecipient(PushRecipient.driver, kind: 'x').androidChannelId, 'driver_notifications_channel');
+      expect(PushChannels.forRecipient(PushRecipient.worker, kind: 'chat').androidChannelId, 'chat_messages');
+      expect(PushChannels.forRecipient(PushRecipient.worker, kind: 'x').androidChannelId, '01');
       expect(PushChannels.forRecipient(PushRecipient.customer).androidChannelId, 'high_importance_channel');
       expect(PushChannels.forRecipient(PushRecipient.provider, kind: 'booking_placed'), const PushChannelSpec(androidChannelId: '01'));
       expect(PushChannels.forRecipient(null), const PushChannelSpec());

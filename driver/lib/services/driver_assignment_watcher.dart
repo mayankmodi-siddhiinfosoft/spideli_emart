@@ -11,6 +11,7 @@ import 'package:driver/models/user_model.dart';
 import 'package:driver/services/incoming_offer_service.dart';
 import 'package:driver/services/push_message.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/notification_service.dart';
 import 'package:driver/utils/preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
@@ -587,21 +588,14 @@ class DriverAssignmentWatcher {
       return;
     }
     try {
-      const AndroidNotificationDetails android = AndroidNotificationDetails(
-        _channelId,
-        'New jobs',
-        channelDescription: 'Loud alert for a new or assigned delivery, ride, parcel or rental job',
-        importance: Importance.max,
-        priority: Priority.high,
-        audioAttributesUsage: AudioAttributesUsage.notificationRingtone,
-        ticker: 'ticker',
-      );
-      const DarwinNotificationDetails ios = DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true);
+      // The job channel - with the admin's order sound once prepared - and
+      // silent while the module's request card already rings that sound.
+      final bool silent = await NotificationService.foregroundSilent(jobAlert: true);
       await FlutterLocalNotificationsPlugin().show(
         id: _notificationId,
         title: template.subject,
         body: template.message,
-        notificationDetails: const NotificationDetails(android: android, iOS: ios),
+        notificationDetails: await NotificationService.alertDetails(_channelId, silent: silent),
         payload: jsonEncode({'type': 'job_assigned'}),
       );
     } catch (e) {

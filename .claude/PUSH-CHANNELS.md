@@ -14,11 +14,176 @@ Keep the summary table in sync with the sections.
 
 | Receiving app | Channel id(s) the app creates at start-up | Manifest default | Sound |
 |---|---|---|---|
-| customer | `high_importance_channel` (everything) | `high_importance_channel` | `default` |
-| store (vendor) | `new_order` (new orders and bookings), `general` (everything else) | `new_order` | `order_alert` on `new_order` (iOS `order_alert.caf`), `default` on `general` |
-| driver | `spideli` (dispatch offers from the Cloud Functions), `driver_jobs` (assigned job, loud) and `driver_notifications_channel` (everything else) | `driver_notifications_channel` | `default` |
-| provider | `01` "Bookings and messages" (everything) | `01` | `default` |
-| worker | `01` "Jobs and messages" (everything) | `01` | `default` |
+| customer | `high_importance_channel` (everything else), `chat_messages` (chat) | `high_importance_channel` | `default`; chat `chat_message` (iOS `chat_message.wav`) |
+| store (vendor) | `new_order` (new orders and bookings), `new_order_rt_<key>` (the same with the admin's order ringtone, once prepared), `general` (everything else), `chat_messages` (chat) | `new_order` | `order_alert` on `new_order` (iOS `order_alert.caf`), the admin's ringtone on `new_order_rt_<key>` (iOS `order_ringtone_<key>.caf`), `default` on `general`, `chat_message` on `chat_messages` |
+| driver | `spideli` (dispatch offers from the Cloud Functions), `driver_jobs` (assigned job, loud), `driver_jobs_rt_<key>` (jobs and offers with the admin's order ringtone, once prepared), `driver_notifications_channel` (everything else), `chat_messages` (chat) | `driver_notifications_channel` | `default`; the admin's ringtone on `driver_jobs_rt_<key>` (iOS `order_ringtone_<key>.caf`); `chat_message` on `chat_messages` |
+| provider | `01` "Bookings and messages" (everything else), `chat_messages` (chat) | `01` | `default`; chat `chat_message` |
+| worker | `01` "Jobs and messages" (everything else), `chat_messages` (chat) | `01` | `default`; chat `chat_message` |
+
+**Chat, in every direction** (any app to any app): `channel_id: "chat_messages"`,
+`sound: "chat_message"`, `apns.payload.aps.sound: "chat_message.wav"` (section
+"Chat sound"). **A new order / job** to a store or driver when
+`globalSettings.order_ringtone_url` is set: `new_order_rt_<key>` /
+`driver_jobs_rt_<key>` and `order_ringtone_<key>.caf` (section "Order
+ringtone").
+
+---
+
+## Order ringtone (`globalSettings.order_ringtone_url`)
+
+The admin's order ring sound (an audio URL; the in-app alert of the store and
+driver apps already loops it while they are open) is also the sound of
+new-order / new-job notifications in the background and with the app closed,
+on Android and iOS. Pure naming in `order_ringtone.dart`, identical in
+`customer/lib/service/`, `vendor/lib/utils/`, `driver/lib/services/` (tested
+with fixed vectors in each app's `test/order_ringtone_test.dart`).
+
+### Names (every app and the server compute the same)
+
+- The URL is used trimmed. "Configured" = it starts with `http://` or
+  `https://` (case-insensitive). Anything else (empty, junk) = no ringtone:
+  every app behaves exactly as before this section existed.
+- `key` = 32-bit FNV-1a over the UTF-8 bytes of the trimmed URL, 8 lowercase
+  hex digits. Node.js:
+
+  ```js
+  function ringtoneKey(url) {
+    const s = (url || '').trim();
+    if (!/^https?:\/\//i.test(s)) return '';
+    let h = 0x811c9dc5;
+    for (const b of Buffer.from(s, 'utf8')) { h ^= b; h = Math.imul(h, 0x01000193) >>> 0; }
+    return h.toString(16).padStart(8, '0');
+  }
+  // 'https://example.com/ring.mp3' -> '955470e2'
+  ```
+- Store new-order channel `new_order_rt_<key>`; driver job channel
+  `driver_jobs_rt_<key>`; iOS sound `order_ringtone_<key>.caf` (both apps).
+
+### What senders put in a NEW order / job push
+
+| Push | Without ringtone | With ringtone |
+|---|---|---|
+| to a store: `order_placed`, `dinein_placed`, `schedule_order`, `new_order`, `scheduled_order_due` | `new_order` / `order_alert` / `order_alert.caf` | `new_order_rt_<key>` / `order_alert` / `order_ringtone_<key>.caf` |
+| to a driver: `new_delivery_order`, `assign_order`, `job_assigned`, `driver_job`, `job_queue` | `driver_jobs` / `default` / `default` | `driver_jobs_rt_<key>` / `default` / `order_ringtone_<key>.caf` |
+| dispatch offer (Cloud Functions) | `spideli` / `default` / `default` | `driver_jobs_rt_<key>` / `default` / `order_ringtone_<key>.caf` (server change, below) |
+
+The Android `sound` field (only read by Android 7 and older) keeps today's
+value. Senders read the CURRENT URL: the store and driver apps keep a live
+listener on `settings/globalSettings` (`OrderRingtoneService.start`); the
+customer app re-reads it (4 s bound, falls back to the start-up copy) for
+every new-order push to a store (`FireStoreUtils.currentOrderRingtoneUrl`).
+Chat and every other push never change.
+
+### Recipient apps (store, driver)
+
+`OrderRingtoneService` (`vendor/lib/service/`, `driver/lib/services/`):
+
+- **When**: on the settings load at start, on every change of the URL (live
+  listener while the app runs: download, new channel / new `.caf`, and the
+  in-app alert switches to the new URL, restarting a ring in progress; no
+  restart of the app), on every return to the foreground, and from the FCM
+  background handler (bounded: settings read 8 s, whole catch-up 20 s; at
+  most every 10 minutes, always for a `ringtone_changed` push).
+- **Decision** (`OrderRingtone.plan`, unit tested): unchanged -> nothing;
+  file for the current key already on the device -> adopt (channel + record,
+  no download); changed -> download and prepare the new key; no ringtone ->
+  clear. The previous key's channel and file are removed only after the new
+  one is ready; a failed download keeps everything as it was and is retried
+  after 2 minutes / on the next resume.
+- **Download**: GET, 200 only, at most 10 MB, 30 s; failure = today's
+  behaviour.
+- **Android**: the file is stored as
+  `files/order_ringtones/order_ringtone_<key>.<ext>` and served by
+  `OrderRingtoneProvider` (a FileProvider subclass, authority
+  `<applicationId>.order_ringtone`, `res/xml/order_ringtone_paths.xml`, not
+  exported). Read access is granted to `com.android.systemui` when the file
+  is prepared and again whenever the process starts (the provider's
+  `onCreate`, which runs before an FCM push is shown), because URI grants do
+  not survive a reboot; the notification service also grants it per posted
+  notification. The channel `new_order_rt_<key>` ("New orders", importance
+  max, the `new_order` description, vibration, lights, ringtone audio usage)
+  / `driver_jobs_rt_<key>` ("New jobs", the `driver_jobs` settings) is created
+  with `UriAndroidNotificationSound(content uri)`; older `*_rt_*` channels
+  are deleted afterwards. A deleted id is never reused for another sound
+  (another URL = another key).
+- **iOS**: `AppDelegate` (`OrderRingtoneSounds`) converts the download (MP3,
+  M4A/AAC, WAV, CAF, AIFF... anything AVAudioFile reads) to 16-bit Linear
+  PCM `.caf`, mono / stereo, cut at 29.5 s, in
+  `Library/Sounds/order_ringtone_<key>.caf`. Info.plist and background modes
+  are unchanged. On iOS the FCM background handler runs in the app's own
+  engine, so the conversion also works from there.
+- **Local notifications the apps post** (Android foreground display,
+  data-only pushes, the background handler, the driver's assignment watcher)
+  use the prepared channel / sound when it is the current URL's, else the
+  existing ones (`new_order` / `driver_jobs` / `spideli`).
+- **No double sound**: while the in-app alert rings (it loops the same
+  sound), a new-order / job notification is shown without a sound of its
+  own: Android posts it `silent`; iOS presents a foreground remote push
+  without `.sound` (AppDelegate asks Dart `foregroundPushSilent`, answer
+  bounded at 3 s). The app waits up to 1.5 s (store) / 2 s (driver) for the
+  in-app alert to start, since the order listener and the push arrive
+  together. Never a second notification for one push. Not covered: with the
+  app in the BACKGROUND but its process alive, Android shows the push itself
+  (channel sound) while the in-app loop - if it was already ringing - keeps
+  ringing too (behaviour from before this change; the in-app loop is not
+  stopped in the background).
+
+### The window after a change (a device that has not caught up yet)
+
+A push that names `new_order_rt_<newkey>` reaching a device without that
+channel is shown by Android on the app's manifest default channel: store
+`new_order` (today's loud order tone - unchanged by design), driver
+`driver_notifications_channel` (heads-up, default tone; `driver_jobs` also
+plays the default tone). iOS plays the default tone when
+`order_ringtone_<newkey>.caf` is not in `Library/Sounds`. Nothing is lost and
+nothing is shown twice. A device catches up as soon as the app runs (start,
+resume, the live listener) or any push reaches its background handler
+(Android: every message; iOS: data / `content-available` messages when iOS
+wakes the app). The handler never re-posts the push it is handling (that
+would be a duplicate). Keeping the old key's channel does not help an FCM
+push that names the new key, so the old one is only kept until the new one
+is ready.
+
+**Admin panel (optional, recommended)**: when `order_ringtone_url` changes,
+send a data-only push `{data: {type: "ringtone_changed"}}` to the topics
+`vendor` (all store devices) and `driver` (all active drivers):
+`android.priority: "high"`, no `notification` block; APNs
+`apns-push-type: background`, `apns-priority: 5`,
+`aps.content-available: 1`, no alert / sound. The apps show nothing for it
+and prepare the new sound in the background (iOS throttles background
+pushes; a device that is off catches up at its next start).
+
+---
+
+## Chat sound
+
+Chat messages never use the order ringtone, an order channel, a job channel
+or `spideli`. Every app (customer, store, driver, provider, worker) creates
+`chat_messages` "Chat messages" (importance high, sound
+`res/raw/chat_message.wav`, vibration) at start-up next to its other
+channels, and ships the same file as `Runner/chat_message.wav` (in the
+Runner target's resources). The tone is an original 0.4 s two-tone ping
+(synthesised, 16-bit PCM WAV, no third-party asset); `keep_chat_message.xml`
+keeps it if resources are ever shrunk.
+
+- **Every chat push** (`kind: chat`, or a chat `data.type`: `orderChat`,
+  `chat`, `*_chat`) from any app: `channel_id: "chat_messages"`,
+  `sound: "chat_message"`, `apns.payload.aps.sound: "chat_message.wav"`.
+  `data.type` / routing unchanged. Pure rule in `chat_sound.dart`, identical
+  in all five apps (`ChatSound`), used by each sender's channel picker
+  (`PushChannels.forRecipient` customer/driver, `PushPayload.channelFor`
+  store, `pushRouteFor` provider, `pushChannelFor` worker).
+- **Receiving**: the foreground / data-only local copy of a chat push goes on
+  `chat_messages` (decided before any order / job rule: a chat push is never
+  an order alert and never starts or silences the in-app order ring). iOS
+  presents remote pushes itself with `chat_message.wav`.
+- **Older builds** without `chat_messages` show a chat push on their
+  manifest default: customer `high_importance_channel`, driver
+  `driver_notifications_channel`, provider / worker `01` - all fine - but an
+  OLDER STORE build's default is `new_order`, so until stores update, a chat
+  to an old store build rings with the order tone. Ship the store app update
+  before (or with) the other apps. iOS plays the default tone where the file
+  is missing.
 
 ---
 
@@ -69,14 +234,14 @@ The channel is chosen in `customer/lib/service/push_message.dart`
 
 | Push (template `type` / kind) | Recipient (token) | Android channel | Android sound | APNs sound |
 |---|---|---|---|---|
-| `order_placed` (cart, including a scheduled time that has already passed) | store owner, `users/{vendor.author}.fcmToken` | `new_order` | `order_alert` | `order_alert.caf` |
+| `order_placed` (cart, including a scheduled time that has already passed) | store owner, `users/{vendor.author}.fcmToken` | `new_order` (with a ringtone `new_order_rt_<key>`) | `order_alert` | `order_alert.caf` (with a ringtone `order_ringtone_<key>.caf`) |
 | none for a cart order whose scheduled time is still ahead: the order is written with `scheduledNotificationSent: false` and the `scheduledOrderNotifier` Cloud Function pushes the store when it is due (section "Cloud Functions" below) | - | - | - | - |
-| `dinein_placed` | store owner, `users/{vendor.author}.fcmToken`, falls back to `vendors/{id}.fcmToken` | `new_order` | `order_alert` | `order_alert.caf` |
-| chat to a store (`chat`) | store (`users/{id}`, read when the chat opens) | `general` | `default` | `default` |
-| chat to a driver (`chat`) | driver (same) | `driver_notifications_channel` | `default` | `default` |
+| `dinein_placed` | store owner, `users/{vendor.author}.fcmToken`, falls back to `vendors/{id}.fcmToken` | `new_order` (with a ringtone `new_order_rt_<key>`) | `order_alert` | `order_alert.caf` (with a ringtone `order_ringtone_<key>.caf`) |
+| chat to a store (`chat`) | store (`users/{id}`, read when the chat opens) | `chat_messages` | `chat_message` | `chat_message.wav` |
+| chat to a driver (`chat`) | driver (same) | `chat_messages` | `chat_message` | `chat_message.wav` |
 | `booking_placed` (booking, payment, cancel) | provider, `users/{provider.author}.fcmToken` | `01` | `default` | `default` |
-| chat to a provider (`chat`) | provider (same as chat) | `01` | `default` | `default` |
-| chat to a worker (`chat`) | worker, `providers_workers/{id}.fcmToken` | `01` | `default` | `default` |
+| chat to a provider (`chat`) | provider (same as chat) | `chat_messages` | `chat_message` | `chat_message.wav` |
+| chat to a worker (`chat`) | worker, `providers_workers/{id}.fcmToken` | `chat_messages` | `chat_message` | `chat_message.wav` |
 
 Data (strings only: nulls dropped, maps/lists JSON-encoded, reserved keys
 dropped): always `type` (the caller's, else the template type) and the order
@@ -140,7 +305,7 @@ The channel is chosen in `spideli_worker/lib/services/push_message.dart`
 | `stop_time` (hourly job stopped) | customer (same lookup) | `high_importance_channel` | `default` | `default` |
 | `service_completed` | customer (same lookup) | `high_importance_channel` | `default` | `default` |
 | `service_charges` (extra charges) | customer (same lookup) | `high_importance_channel` | `default` | `default` |
-| chat (`chat`) | customer (`users/{id}`, or `providers_workers/{id}`) | `high_importance_channel` | `default` | `default` |
+| chat (`chat`) | customer (`users/{id}`, or `providers_workers/{id}`) | `chat_messages` | `chat_message` | `chat_message.wav` |
 
 Data: `{type: "provider_order", orderId}` for job status; `{type: "orderChat" | "admin",
 chatType: "worker", orderId, senderId, senderName}` for chat. Every message also carries
@@ -184,8 +349,12 @@ chatType: "worker", orderId, senderId, senderName}` for chat. Every message also
     man, `assign_order`, or kinds `driver_job`, `job_assigned`, `job_queue`):
     `channel_id: "driver_jobs"`, `sound: "default"`,
     `apns.payload.aps.sound: "default"`. (`driver_notifications_channel` also
-    works, less loud.)
-  - anything else (chat, `customer_cancelled`, `driver_cancelled`, ...):
+    works, less loud.) With an order ringtone configured:
+    `driver_jobs_rt_<key>` and `order_ringtone_<key>.caf` (section "Order
+    ringtone").
+  - chat: `channel_id: "chat_messages"`, `sound: "chat_message"`,
+    `aps.sound: "chat_message.wav"` (section "Chat sound").
+  - anything else (`customer_cancelled`, `driver_cancelled`, ...):
     `channel_id: "driver_notifications_channel"`, `sound: "default"`.
   - Always send a `notification` block (title/body): a data-only push is
     shown only on Android (background handler), never on iOS.
@@ -234,10 +403,14 @@ chatType: "worker", orderId, senderId, senderName}` for chat. Every message also
   - `type` in the job set above, or `new_order`, `vendor_order`,
     `parcel_order`, `rental_order`, `cab_order`: the home of the driver's module.
   - anything else: opens the app (no crash on missing / non-string keys, or when signed out).
-- Foreground: Android posts a local notification on the channel the sender
-  named (if it is one of the three above), else `spideli` for a dispatch offer,
-  else `driver_jobs` for a job type, else `driver_notifications_channel`
-  (`PushChannels.driverChannelFor`). iOS shows the push itself
+- Foreground: Android posts a local notification on `chat_messages` for a
+  chat push (always, whatever channel it names), else on the channel the
+  sender named (if it is one of the three above; `driver_jobs_rt_<any key>`
+  counts as `driver_jobs`), else `spideli` for a dispatch offer, else
+  `driver_jobs` for a job type, else `driver_notifications_channel`
+  (`PushChannels.driverChannelFor`); a job / offer then goes on this device's
+  prepared `driver_jobs_rt_<key>` when it has one, silently while the in-app
+  alert rings (section "Order ringtone"). iOS shows the push itself
   (presentation options alert/badge/sound), no local copy (no duplicate).
   A tap that launched the app is handled after the splash has navigated.
 - **A hand assignment found without a push** (the admin panel may assign a
@@ -267,7 +440,7 @@ Every push goes through `driver/lib/constant/send_notification.dart`
 | `parcel_accepted`, `parcel_completed` | customer (same lookup) | `high_importance_channel` | `default` | `default` |
 | `rental_completed` | customer (same lookup) | `high_importance_channel` | `default` | `default` |
 | delivery code (`delivery_otp`, own text) | customer, fresh `users/{authorID}` | `high_importance_channel` | `default` | `default` |
-| chat (`chat`) | customer (live `users/{id}`) | `high_importance_channel` | `default` | `default` |
+| chat (`chat`) | customer (live `users/{id}`) | `chat_messages` | `chat_message` | `chat_message.wav` |
 
 Data: `{type, orderId}` (the caller's `type`, e.g. `parcel_order` /
 `rental_order`, else the template type) for order pushes; `{type: "delivery_otp", orderId}`;
@@ -309,8 +482,9 @@ owner's app replaces its token on its next start. Server path
 
   | Push to the store | Android channel | Android sound | APNs sound |
   |---|---|---|---|
-  | new order / booking: `order_placed`, `schedule_order`, `scheduled_order_due`, `new_order`, `dinein_placed` | `new_order` | `order_alert` | `order_alert.caf` |
-  | everything else (chat `orderChat`, `driver_accepted`, admin pushes) | `general` | `default` | `default` |
+  | new order / booking: `order_placed`, `schedule_order`, `scheduled_order_due`, `new_order`, `dinein_placed` | `new_order` (with a ringtone: `new_order_rt_<key>`, section "Order ringtone") | `order_alert` | `order_alert.caf` (with a ringtone: `order_ringtone_<key>.caf`) |
+  | chat (`orderChat`) | `chat_messages` | `chat_message` | `chat_message.wav` |
+  | everything else (`driver_accepted`, admin pushes) | `general` | `default` | `default` |
 
 - **Token:** `users/{uid}.fcmToken` (owner and employee), written field-level
   only (`FireStoreUtils.saveDeviceFcmToken`) on every start when signed in,
@@ -345,8 +519,10 @@ owner's app replaces its token on its next start. Server path
   that push (or the `schedule_order` template type) re-splits the tabs at
   once; `scheduled_order_due` puts the order in New even if the phone's clock
   is behind. A tap opens the orders (New) tab.
-- **Foreground:** Android posts a local notification on `new_order` for order
-  alerts (by `type`, or the push's channel id) and on `general` otherwise; iOS
+- **Foreground:** Android posts a local notification on `chat_messages` for a
+  chat push, on `new_order` (or the prepared `new_order_rt_<key>`, silently
+  while the in-app alert rings) for order alerts (by `type`, or the push's
+  channel id `new_order` / `new_order_rt_*`) and on `general` otherwise; iOS
   shows the push itself (presentation options), no local notification (no
   duplicate). A data-only message with a `title` / `body` is shown locally, in
   the foreground and from the background handler.
@@ -364,8 +540,8 @@ on the order.
 | `restaurant_accepted` (accept, assign, ship), `restaurant_rejected`, `restaurant_cancelled`, `takeaway_completed`, courier order delivered (template `driver_completed`, data `type: store_completed`) | customer, fresh `users/{order.authorID}`, falls back to `order.author.fcmToken` | `high_importance_channel` | `default` | `default` |
 | `dinein_accepted`, `dinein_canceled` | customer (same lookup on the booking) | `high_importance_channel` | `default` | `default` |
 | `delivery_otp` (POD, `pod_otp_service.dart`) | customer (fresh lookup there) | `high_importance_channel` | `default` | `default` |
-| chat (`chat`; data `type: orderChat`, `chatType: vendor`) | customer `users/{receivedId}` (a driver recipient gets the driver channel) | `high_importance_channel` | `default` | `default` |
-| `new_delivery_order` (store assigns its own delivery man) | driver, fresh `users/{order.driverID}` | `driver_jobs` (older driver builds fall back to `driver_notifications_channel`) | `default` | `default` |
+| chat (`chat`; data `type: orderChat`, `chatType: vendor`) | customer `users/{receivedId}` (or a driver) | `chat_messages` | `chat_message` | `chat_message.wav` |
+| `new_delivery_order` (store assigns its own delivery man) | driver, fresh `users/{order.driverID}` | `driver_jobs`; with a ringtone `driver_jobs_rt_<key>` (a driver without it falls back to `driver_notifications_channel`) | `default` | `default`; with a ringtone `order_ringtone_<key>.caf` |
 | `driver_cancelled` (order rejected / cancelled while assigned) | driver `users/{driverID}` | `driver_notifications_channel` | `default` | `default` |
 
 Removed (D1): the store app notifies no platform driver.
@@ -449,8 +625,8 @@ The channel is chosen in `spideli_provider/lib/services/push_message.dart`
 | `service_completed` | customer | same | `high_importance_channel` | `default` | `default` |
 | `service_charges` | customer | same | `high_importance_channel` | `default` | `default` |
 | `worker_assigned` | worker | `providers_workers/{workerId}.fcmToken`, falls back to the list copy | `01` | `default` | `default` |
-| chat (`chat`) to a customer | customer | `users/{id}` (re-read when the open-time copy has none) | `high_importance_channel` | `default` | `default` |
-| chat (`chat`) to a worker (record has `providerId`, role not `customer`) | worker | `providers_workers/{id}` | `01` | `default` | `default` |
+| chat (`chat`) to a customer | customer | `users/{id}` (re-read when the open-time copy has none) | `chat_messages` | `chat_message` | `chat_message.wav` |
+| chat (`chat`) to a worker (record has `providerId`, role not `customer`) | worker | `providers_workers/{id}` | `chat_messages` | `chat_message` | `chat_message.wav` |
 
 Data: `{type: "provider_order", orderId}` for booking status and assignments;
 `{type: "orderChat" | "admin", chatType, orderId, senderId, senderName}` for
@@ -479,11 +655,30 @@ account's `project_id`, then `settings/notification_setting.senderId`.
 
 | Push (`data.type`) | Recipient (token) | Android channel | Android sound | APNs sound |
 |---|---|---|---|---|
-| `scheduled_order_due` (`scheduledOrderNotifier`, every minute: a scheduled order became due) | store owner, current `users/{order.vendor.author}.fcmToken` (no `vendor.author`: `vendors/{vendorID}.author`) | `new_order` | `order_alert` | `order_alert.caf` (`apns-priority: 10`) |
-| `order` (`deliveryDispatch`: `vendor_orders` became `Order Accepted` or `Driver Rejected`) | the chosen driver, `users/{driverId}.fcmToken` | `spideli` | `default` | `default` (`apns-priority: 10`) |
+| `scheduled_order_due` (`scheduledOrderNotifier`, every minute: a scheduled order became due) | store owner, current `users/{order.vendor.author}.fcmToken` (no `vendor.author`: `vendors/{vendorID}.author`) | `new_order`; **requested**: with a ringtone `new_order_rt_<key>` | `order_alert` | `order_alert.caf` (`apns-priority: 10`); **requested**: with a ringtone `order_ringtone_<key>.caf` |
+| `order` (`deliveryDispatch`: `vendor_orders` became `Order Accepted` or `Driver Rejected`) | the chosen driver, `users/{driverId}.fcmToken` | `spideli`; **requested**: with a ringtone `driver_jobs_rt_<key>` | `default` | `default` (`apns-priority: 10`); **requested**: with a ringtone `order_ringtone_<key>.caf` |
 | `parcel` (`parcelDispatch`: `parcel_orders` `Order Placed` / `Driver Rejected`) | the chosen driver | `spideli` | `default` | `default` |
 | `cab` (`cabDispatch`: `rides` `Order Placed` / `Driver Rejected`) | the chosen driver | `spideli` | `default` | `default` |
 | `rental` (`rentalDispatch`: `rental_orders` `Order Placed` / `Driver Rejected`) | the chosen driver | `spideli` | `default` | `default` |
+
+**Order ringtone (requested from the function owners; the functions are not
+in this repository)**: when `settings/globalSettings.order_ringtone_url` is
+configured (section "Order ringtone"; read it per run or cache it for at
+most a minute), `scheduledOrderNotifier` sends
+`android.notification.channelId: "new_order_rt_<key>"` and
+`apns.payload.aps.sound: "order_ringtone_<key>.caf"`, and the four dispatch
+functions send `channelId: "driver_jobs_rt_<key>"` and
+`aps.sound: "order_ringtone_<key>.caf"` (keep `sound: "default"` /
+`order_alert` on Android, which only Android 7 reads). Without a ringtone,
+exactly today's values (`new_order` / `spideli`). A device that has not
+prepared the key yet falls back to its manifest default (store `new_order`,
+driver `driver_notifications_channel`) and iOS to the default tone. The
+driver app files a dispatch offer by its data (`DispatchPush.parse`), not by
+the channel, so its handling is unchanged. Until then a dispatch offer in
+the background plays the default tone on `spideli`; the driver app does NOT
+re-create `spideli` with the custom sound (a channel's sound is fixed at
+creation and `spideli` is created at every start before any download, so it
+would never get it - and could never follow a later change).
 
 **Dispatch pushes** (`DRIVER_DISPATCH_DOCUMENTATION.md`): data
 `{click_action: "FLUTTER_NOTIFICATION_CLICK", id, orderId, type, status:

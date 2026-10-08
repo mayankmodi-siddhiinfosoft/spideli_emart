@@ -754,6 +754,19 @@ class FireStoreUtils {
     return isAdded;
   }
 
+  /// `globalSettings.order_ringtone_url` as it is NOW (re-read at send time,
+  /// bounded), for a new-order push to a store: the admin may have changed it
+  /// since start-up. Falls back to the copy loaded at start-up.
+  static Future<String> currentOrderRingtoneUrl() async {
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> snap = await fireStore.collection(CollectionName.settings).doc("globalSettings").get().timeout(const Duration(seconds: 4));
+      if (snap.exists) Constant.orderRingtoneUrl = (snap.data()?['order_ringtone_url'] ?? '').toString();
+    } catch (e) {
+      log("order_ringtone_url re-read failed, using the start-up value: $e");
+    }
+    return Constant.orderRingtoneUrl;
+  }
+
   static Future<void> getSettings() async {
     try {
       final restaurantSnap = await fireStore.collection(CollectionName.settings).doc('vendor').get();
@@ -778,6 +791,7 @@ class FireStoreUtils {
         Constant.isEnableAdsFeature = globalSettingsSnap.data()?['isEnableAdsFeature'] ?? false;
         Constant.isSelfDeliveryFeature = globalSettingsSnap.data()?['isSelfDelivery'] ?? false;
         Constant.defaultCountryCode = globalSettingsSnap.data()?['defaultCountryCode'] ?? '';
+        Constant.orderRingtoneUrl = (globalSettingsSnap.data()?['order_ringtone_url'] ?? '').toString();
         Constant.taxScope = globalSettingsSnap.data()?['taxScope'] ?? "";
         String? colorStr = globalSettingsSnap.data()?['app_customer_color'];
         if (colorStr != null && colorStr.isNotEmpty) {

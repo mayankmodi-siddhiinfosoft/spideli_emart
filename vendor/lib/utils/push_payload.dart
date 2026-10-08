@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import 'package:vendor/utils/chat_sound.dart';
+import 'package:vendor/utils/order_ringtone.dart';
+
 /// Pure pieces of the store's push sending and receiving: no Firebase, no
 /// Flutter, so every rule here is unit tested (test/push_payload_test.dart).
 ///
@@ -77,6 +80,9 @@ class PushPayload {
 
   static const String defaultSound = 'default';
 
+  /// Every app's chat channel (`chat_messages`) and bundled chat sound.
+  static const PushChannel chatChannel = PushChannel(androidChannelId: ChatSound.channelId, androidSound: ChatSound.androidSound, apnsSound: ChatSound.apnsSound);
+
   /// Template types that are a new order or booking for the store (they ring
   /// on the loud channel). Matches the server's `order_alert` profile plus the
   /// store-side booking types the customer app sends, and the
@@ -84,17 +90,36 @@ class PushPayload {
   static const Set<String> storeOrderAlertTypes = {'order_placed', 'new_order', 'schedule_order', 'scheduled_order_due', 'dinein_placed', 'new_order_placed'};
 
   /// Channel and sound for a push of [kind] to [recipient].
-  static PushChannel channelFor(PushRecipient recipient, String? kind) {
+  ///
+  /// [orderRingtoneUrl] is `globalSettings.order_ringtone_url`. When it is
+  /// set, a NEW job for a driver goes on `driver_jobs_rt_<key>` and a new
+  /// order for a store on `new_order_rt_<key>`, both with the iOS sound
+  /// `order_ringtone_<key>.caf` (the receiving app prepares that channel and
+  /// file from the same URL, [OrderRingtone]). A device that has not prepared
+  /// them yet shows the push on its manifest default channel (store:
+  /// `new_order`, driver: `driver_notifications_channel`) and iOS plays the
+  /// default tone. The Android `sound` field (Android 7 and older only) keeps
+  /// today's value. Without a ringtone: exactly today's channels and sounds.
+  static PushChannel channelFor(PushRecipient recipient, String? kind, {String? orderRingtoneUrl}) {
+    // A chat message, to any app: the dedicated chat channel and sound,
+    // never an order channel or the order ringtone.
+    if (ChatSound.isChatPush(type: kind)) return chatChannel;
     switch (recipient) {
       case PushRecipient.customer:
         return const PushChannel(androidChannelId: customerChannelId, androidSound: defaultSound, apnsSound: defaultSound);
       case PushRecipient.driver:
         if (driverJobKinds.contains((kind ?? '').trim().toLowerCase())) {
+          if (OrderRingtone.isConfigured(orderRingtoneUrl)) {
+            return PushChannel(androidChannelId: OrderRingtone.driverJobChannelIdFor(orderRingtoneUrl)!, androidSound: defaultSound, apnsSound: OrderRingtone.iosSoundFor(orderRingtoneUrl)!);
+          }
           return const PushChannel(androidChannelId: driverJobChannelId, androidSound: defaultSound, apnsSound: defaultSound);
         }
         return const PushChannel(androidChannelId: driverChannelId, androidSound: defaultSound, apnsSound: defaultSound);
       case PushRecipient.store:
         if (isStoreOrderAlert(type: kind)) {
+          if (OrderRingtone.isConfigured(orderRingtoneUrl)) {
+            return PushChannel(androidChannelId: OrderRingtone.storeChannelIdFor(orderRingtoneUrl)!, androidSound: storeOrderAndroidSound, apnsSound: OrderRingtone.iosSoundFor(orderRingtoneUrl)!);
+          }
           return const PushChannel(androidChannelId: storeOrderChannelId, androidSound: storeOrderAndroidSound, apnsSound: storeOrderApnsSound);
         }
         return const PushChannel(androidChannelId: storeGeneralChannelId, androidSound: defaultSound, apnsSound: defaultSound);
@@ -116,9 +141,13 @@ class PushPayload {
   }
 
   /// True when a message received by the store is a new order / booking and
-  /// must ring on [storeOrderChannelId].
+  /// must ring on [storeOrderChannelId] (or its ringtone version
+  /// `new_order_rt_<key>`, [OrderRingtone]).
   static bool isStoreOrderAlert({String? type, String? channelId}) {
-    if ((channelId ?? '').trim() == storeOrderChannelId) return true;
+    // A chat message never rings as an order.
+    if (ChatSound.isChatPush(type: type, channelId: channelId)) return false;
+    final String channel = (channelId ?? '').trim();
+    if (channel == storeOrderChannelId || OrderRingtone.isStoreRingtoneChannel(channel)) return true;
     final String t = (type ?? '').trim().toLowerCase();
     if (t.isEmpty) return false;
     return storeOrderAlertTypes.contains(t) || t.contains('order_placed') || t.contains('new_order');
@@ -332,5 +361,33 @@ class NotificationRouting {
       return NotificationTarget.orders;
     }
     return NotificationTarget.none;
+  }
+}
+
+/// No double sound in the foreground: the store's in-app alert
+/// (`AudioPlayerService`, started by the orders screen for every order in
+/// New) loops the same order sound, so a new-order notification that arrives
+/// while it rings is shown without a sound of its own (Android: posted
+/// silent; iOS: presented without sound). Never a second notification.
+class ForegroundOrderSound {
+  ForegroundOrderSound._();
+
+  /// True when the in-app alert can be expected to ring for this push, so the
+  /// app waits briefly for it before deciding: an order alert other than a
+  /// dine-in booking (the orders screen does not ring for those), while the
+  /// orders screen is alive ([ordersScreenAlive]).
+  static bool inAppRingExpected({required bool orderAlert, String? type, required bool ordersScreenAlive}) {
+    if (!orderAlert || !ordersScreenAlive) return false;
+    return !(type ?? '').trim().toLowerCase().startsWith('dinein');
+  }
+
+  /// Show the notification without its own sound: a new-order alert received
+  /// in the foreground while the in-app alert rings.
+  static bool silent({required bool orderAlert, required bool foreground, required bool inAppRinging}) => orderAlert && foreground && inAppRinging;
+
+  /// iOS: the push's `aps.sound` is one of the store's order sounds.
+  static bool isOrderSound(String? apsSound) {
+    final String s = (apsSound ?? '').trim();
+    return s == PushPayload.storeOrderApnsSound || OrderRingtone.isRingtoneSoundName(s);
   }
 }

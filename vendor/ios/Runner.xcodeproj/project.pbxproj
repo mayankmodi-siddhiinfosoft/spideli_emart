@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C4A7C0DE2F00A00100C0FFEE /* chat_message.wav in Resources */ = {isa = PBXBuildFile; fileRef = C4A7C0DE2F00A00200C0FFEE /* chat_message.wav */; };
 		01E828016A1E1314835AFA8D /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4D91576081F8DB9CFE9799B9 /* GoogleService-Info.plist */; };
 		5F0A7C3E2E9B4D1100C0FFEE /* order_alert.caf in Resources */ = {isa = PBXBuildFile; fileRef = 5F0A7C3F2E9B4D1100C0FFEE /* order_alert.caf */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
@@ -45,6 +46,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C4A7C0DE2F00A00200C0FFEE /* chat_message.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = chat_message.wav; sourceTree = "<group>"; };
 		146E8C192E1E45C000A32F6A /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
 		5F0A7C3F2E9B4D1100C0FFEE /* order_alert.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = order_alert.caf; sourceTree = "<group>"; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
@@ -140,6 +142,7 @@
 		97C146F01CF9000F007C117D /* Runner */ = {
 			isa = PBXGroup;
 			children = (
+				C4A7C0DE2F00A00200C0FFEE /* chat_message.wav */,
 				146E8C192E1E45C000A32F6A /* Runner.entitlements */,
 				5F0A7C3F2E9B4D1100C0FFEE /* order_alert.caf */,
 				97C146FA1CF9000F007C117D /* Main.storyboard */,
@@ -278,6 +281,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C4A7C0DE2F00A00100C0FFEE /* chat_message.wav in Resources */,
 				97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */,
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,

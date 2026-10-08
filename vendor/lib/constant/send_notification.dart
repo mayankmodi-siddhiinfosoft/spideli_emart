@@ -299,7 +299,9 @@ class SendNotification {
     String? kind,
     required PushRecipient recipient,
   }) async {
-    final PushChannel channel = PushPayload.channelFor(recipient, kind ?? data['type']);
+    // A new order / job rings with the admin's order sound when one is set
+    // (`globalSettings.order_ringtone_url`, PUSH-CHANNELS.md "Order ringtone").
+    final PushChannel channel = PushPayload.channelFor(recipient, kind ?? data['type'], orderRingtoneUrl: Constant.orderRingtoneUrl);
     final String label = kind ?? data['type'] ?? '';
     final http.Response? response = useServerPush
         ? await _postToServer(token: token, title: title, body: body, data: data, kind: kind, channel: channel)

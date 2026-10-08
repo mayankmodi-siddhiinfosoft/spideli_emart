@@ -8,6 +8,8 @@
 library;
 
 import 'dart:convert';
+import 'package:spideliworker/services/chat_sound.dart';
+
 
 /// The worker app's Android notification channel.
 ///
@@ -30,6 +32,9 @@ const String customerChannelId = 'high_importance_channel';
 /// `.claude/PUSH-CHANNELS.md`).
 const String providerChannelId = '01';
 
+/// Every app's chat channel (`chat_messages`) and bundled chat sound.
+const PushChannel chatPushChannel = PushChannel(ChatSound.channelId, androidSound: ChatSound.androidSound, apnsSound: ChatSound.apnsSound);
+
 /// Who receives a push sent by the worker app.
 enum PushRecipient { customer, provider, worker }
 
@@ -44,7 +49,11 @@ class PushChannel {
 
 /// The channel the receiving app creates. A channel the device does not have
 /// falls back to that app's manifest default, so a wrong guess still shows.
-PushChannel pushChannelFor(PushRecipient recipient) {
+///
+/// A chat message ([kind] `chat`) goes on every app's chat channel with the
+/// bundled chat sound.
+PushChannel pushChannelFor(PushRecipient recipient, {String? kind}) {
+  if (ChatSound.isChatPush(type: kind)) return chatPushChannel;
   switch (recipient) {
     case PushRecipient.customer:
       return const PushChannel(customerChannelId);

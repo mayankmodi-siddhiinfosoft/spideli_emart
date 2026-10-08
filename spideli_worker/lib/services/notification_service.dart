@@ -19,6 +19,7 @@ import 'package:spideliworker/ui/chat_screen/chat_screen.dart';
 import 'package:spideliworker/ui/chat_screen/inbox_screen.dart';
 import 'package:spideliworker/ui/help_support_screen/help_support_screen.dart';
 import 'package:spideliworker/utils/fcm_token_reset.dart';
+import 'package:spideliworker/services/chat_sound.dart';
 
 /// Pushes that arrive while the app is in the background or killed.
 ///
@@ -57,6 +58,17 @@ class NotificationService {
     enableVibration: true,
   );
 
+  /// Chat messages: their own short sound (`res/raw/chat_message.wav`).
+  static const AndroidNotificationChannel _chatChannel = AndroidNotificationChannel(
+    ChatSound.channelId,
+    ChatSound.channelName,
+    description: ChatSound.channelDescription,
+    importance: Importance.high,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound(ChatSound.androidSound),
+    enableVibration: true,
+  );
+
   /// Runs in `main()` before `runApp`, never asks anything: creates the
   /// Android channel every push to this app references (it must exist before
   /// the first background push, which is posted without any Dart code
@@ -64,7 +76,9 @@ class NotificationService {
   static Future<void> prepareBeforeRunApp() async {
     try {
       if (_isAndroid) {
-        await _local.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(_workerChannel);
+        final AndroidFlutterLocalNotificationsPlugin? android = _local.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+        await android?.createNotificationChannel(_workerChannel);
+        await android?.createNotificationChannel(_chatChannel);
       }
     } catch (e) {
       log("Notification channel not created: $e");
@@ -270,16 +284,29 @@ class NotificationService {
     try {
       final RemoteNotification? notification = message.notification;
       if (notification == null) return;
-      const NotificationDetails details = NotificationDetails(
-        android: AndroidNotificationDetails(
-          workerChannelId,
-          workerChannelName,
-          channelDescription: workerChannelDescription,
-          importance: Importance.max,
-          priority: Priority.high,
-          playSound: true,
-          ticker: 'ticker',
-        ),
+      // A chat message on the chat channel with its own sound.
+      final bool chat = ChatSound.isChatPush(type: message.data['type']?.toString(), channelId: notification.android?.channelId ?? message.data['channelId']?.toString());
+      final NotificationDetails details = NotificationDetails(
+        android: chat
+            ? AndroidNotificationDetails(
+                _chatChannel.id,
+                _chatChannel.name,
+                channelDescription: _chatChannel.description,
+                importance: _chatChannel.importance,
+                priority: Priority.high,
+                playSound: true,
+                sound: _chatChannel.sound,
+                ticker: 'ticker',
+              )
+            : const AndroidNotificationDetails(
+                workerChannelId,
+                workerChannelName,
+                channelDescription: workerChannelDescription,
+                importance: Importance.max,
+                priority: Priority.high,
+                playSound: true,
+                ticker: 'ticker',
+              ),
       );
       await _local.show(
         // One notification per push: a fixed id made each new push replace

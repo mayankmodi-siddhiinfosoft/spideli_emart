@@ -62,6 +62,7 @@ import 'package:vendor/models/withdraw_method_model.dart';
 import 'package:vendor/models/withdrawal_model.dart';
 import 'package:vendor/models/zone_model.dart';
 import 'package:vendor/service/audio_player_service.dart';
+import 'package:vendor/service/order_ringtone_service.dart';
 import 'package:vendor/themes/app_them_data.dart';
 import 'package:vendor/utils/cancel_reasons.dart';
 import 'package:vendor/utils/chat_unread.dart';
@@ -622,6 +623,11 @@ class FireStoreUtils {
         Constant.orderRingtoneUrl = value.data()?['order_ringtone_url'] ?? '';
         Constant.defaultCountryCode = value.data()?['defaultCountryCode'] ?? '';
         Preferences.setString(Preferences.orderRingtone, Constant.orderRingtoneUrl);
+        // The same sound for new-order notifications in the background /
+        // closed (Android channel `new_order_rt_<key>`, iOS
+        // `order_ringtone_<key>.caf`); kept in step with later changes and
+        // re-checked on every return to the foreground.
+        OrderRingtoneService.start();
         AppThemeData.primary300 = Color(int.parse(value.data()!['app_store_color'].replaceFirst("#", "0xff")));
         Constant.isEnableAdsFeature = value.data()?['isEnableAdsFeature'] ?? false;
         Constant.isSelfDeliveryFeature = value.data()?['isSelfDelivery'] ?? false;

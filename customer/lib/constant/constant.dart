@@ -116,6 +116,12 @@ class Constant {
   static String placeHolderImage = "";
   static String defaultCountryCode = "";
 
+  /// `settings/globalSettings.order_ringtone_url`: the admin's order sound.
+  /// A new order / booking push to a store names the store's ringtone
+  /// channel and iOS sound for it (`PushChannels.forRecipient`,
+  /// .claude/PUSH-CHANNELS.md "Order ringtone"). Empty: today's channel.
+  static String orderRingtoneUrl = "";
+
   static bool isCashbackActive = false;
   static bool isEnableOTPTripStart = false;
   static bool isEnableOTPTripStartForRental = false;

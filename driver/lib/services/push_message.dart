@@ -7,7 +7,9 @@ library;
 
 import 'dart:convert';
 
+import 'package:driver/services/chat_sound.dart';
 import 'package:driver/services/dispatch_offer_rules.dart';
+import 'package:driver/services/order_ringtone.dart';
 
 /// The app a push is addressed to. The Android channel in the message must be
 /// one the RECEIVING app creates, or Android posts it on that app's manifest
@@ -78,17 +80,36 @@ class PushChannels {
   /// spideli_worker/lib/services/notification_service.dart.
   static const String worker = '01';
 
-  static PushTarget forRecipient(PushRecipient recipient) {
+  /// [orderRingtoneUrl] is `globalSettings.order_ringtone_url`: when set, a
+  /// new order for a store goes on `new_order_rt_<key>` and a new job for a
+  /// driver on `driver_jobs_rt_<key>`, with the iOS sound
+  /// `order_ringtone_<key>.caf` ([OrderRingtone]; the receiving app prepares
+  /// both from the same URL). Without it: exactly today's channels.
+  ///
+  /// A chat message ([kind] `chat` / a chat type) goes on every app's chat
+  /// channel with the bundled chat sound, never an order channel.
+  /// Every app's chat channel and the bundled chat sound.
+  static const PushTarget chat = PushTarget(androidChannelId: ChatSound.channelId, androidSound: ChatSound.androidSound, apnsSound: ChatSound.apnsSound);
+
+  static PushTarget forRecipient(PushRecipient recipient, {String? orderRingtoneUrl, String? kind}) {
+    if (ChatSound.isChatPush(type: kind)) return chat;
+    final bool ringtone = OrderRingtone.isConfigured(orderRingtoneUrl);
     switch (recipient) {
       case PushRecipient.customer:
         return const PushTarget(androidChannelId: customer);
       case PushRecipient.store:
         return const PushTarget(androidChannelId: storeGeneral);
       case PushRecipient.storeNewOrder:
+        if (ringtone) {
+          return PushTarget(androidChannelId: OrderRingtone.storeChannelIdFor(orderRingtoneUrl)!, androidSound: storeOrderSound, apnsSound: OrderRingtone.iosSoundFor(orderRingtoneUrl)!);
+        }
         return const PushTarget(androidChannelId: storeNewOrder, androidSound: storeOrderSound, apnsSound: 'order_alert.caf');
       case PushRecipient.driver:
         return const PushTarget(androidChannelId: driver);
       case PushRecipient.driverJob:
+        if (ringtone) {
+          return PushTarget(androidChannelId: OrderRingtone.driverJobChannelIdFor(orderRingtoneUrl)!, apnsSound: OrderRingtone.iosSoundFor(orderRingtoneUrl)!);
+        }
         return const PushTarget(androidChannelId: driverJob);
       case PushRecipient.provider:
         return const PushTarget(androidChannelId: provider);
@@ -120,17 +141,60 @@ class PushChannels {
   };
 
   /// Channel the driver app shows an incoming push on (foreground display):
-  /// the channel the sender named when it is one of the driver's, otherwise
+  /// the channel the sender named when it is one of the driver's (a
+  /// `driver_jobs_rt_<key>` job push counts as [driverJob]; the app then uses
+  /// the ringtone channel IT prepared, [jobAlertChannels]), otherwise
   /// [dispatch] for a dispatch offer ([DispatchPush.parse] on [data]: type
   /// order / parcel / cab / rental with an order id and the dispatch
   /// markers), otherwise the job channel for a job type, otherwise the
   /// general driver channel.
   static String driverChannelFor({String? type, String? requestedChannelId, Map<String, dynamic>? data}) {
     final String requested = (requestedChannelId ?? '').trim();
+    // A chat message: the chat channel, never a job / offer channel.
+    if (ChatSound.isChatPush(type: type, channelId: requested)) return ChatSound.channelId;
     if (requested == driver || requested == driverJob || requested == dispatch) return requested;
+    if (OrderRingtone.isDriverJobRingtoneChannel(requested)) return driverJob;
     if (DispatchPush.parse(data) != null) return dispatch;
     if (driverJobTypes.contains((type ?? '').trim())) return driverJob;
     return driver;
+  }
+}
+
+/// The loud channels a job / offer alert is shown on, and the admin's
+/// order sound (`.claude/PUSH-CHANNELS.md`, "Order ringtone").
+abstract final class JobAlertChannels {
+  /// True for the channels of a new / assigned job or a dispatch offer.
+  static bool isJobAlert(String channelId) => channelId == PushChannels.driverJob || channelId == PushChannels.dispatch;
+
+  /// The channel a local notification is posted on: a job or a dispatch offer
+  /// goes on `driver_jobs_rt_<preparedKey>` once this device prepared the
+  /// admin's sound ([preparedKey], [OrderRingtone.usableKey]), else on the
+  /// channel [PushChannels.driverChannelFor] chose.
+  static String localChannelFor(String logicalChannelId, {String? preparedKey}) {
+    if (preparedKey == null || preparedKey.isEmpty || !isJobAlert(logicalChannelId)) return logicalChannelId;
+    return '${OrderRingtone.driverJobChannelPrefix}$preparedKey';
+  }
+}
+
+/// No double sound in the foreground: the in-app alert (`AudioPlayerService`:
+/// the incoming-offer dialog, a module screen's request card) loops the
+/// order sound, so a job / offer notification that arrives while it rings is
+/// shown without a sound of its own (Android: posted silent; iOS: presented
+/// without sound). Never a second notification.
+abstract final class ForegroundJobSound {
+  /// Show it without its own sound.
+  static bool silent({required bool jobAlert, required bool foreground, required bool inAppRinging}) => jobAlert && foreground && inAppRinging;
+
+  /// iOS: a remote push is a job / offer alert by its data (same rule as the
+  /// Android channel choice) or by its `aps.sound` (the admin's sound).
+  static bool isJobAlertPush(Map<String, dynamic> data, {String? apsSound}) {
+    if (OrderRingtone.isRingtoneSoundName(apsSound)) return true;
+    final String channel = PushChannels.driverChannelFor(
+      type: data['type']?.toString(),
+      requestedChannelId: (data['channelId'] ?? data['android_channel_id'])?.toString(),
+      data: data,
+    );
+    return JobAlertChannels.isJobAlert(channel);
   }
 }
 
@@ -195,8 +259,10 @@ class PushMessage {
     required String body,
     required Map<String, String> data,
     required PushRecipient recipient,
+    String? orderRingtoneUrl,
+    String? kind,
   }) {
-    final PushTarget target = PushChannels.forRecipient(recipient);
+    final PushTarget target = PushChannels.forRecipient(recipient, orderRingtoneUrl: orderRingtoneUrl, kind: kind);
     return <String, dynamic>{
       'message': <String, dynamic>{
         'token': token.trim(),
@@ -230,8 +296,9 @@ class PushMessage {
     required Map<String, String> data,
     required PushRecipient recipient,
     String? kind,
+    String? orderRingtoneUrl,
   }) {
-    final PushTarget target = PushChannels.forRecipient(recipient);
+    final PushTarget target = PushChannels.forRecipient(recipient, orderRingtoneUrl: orderRingtoneUrl, kind: kind);
     final String k = (kind ?? '').trim();
     return <String, dynamic>{
       'token': token.trim(),

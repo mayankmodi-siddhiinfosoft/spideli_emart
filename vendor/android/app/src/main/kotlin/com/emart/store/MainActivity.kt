@@ -15,6 +15,9 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // The admin's order ringtone as a notification channel sound
+        // (OrderRingtone.kt, .claude/PUSH-CHANNELS.md "Order ringtone").
+        OrderRingtoneFiles.register(flutterEngine.dartExecutor.binaryMessenger, this)
         // Background delivery on phones whose system blocks closed apps
         // (Xiaomi / Redmi / POCO "Autostart", Oppo, Vivo, Huawei, OnePlus):
         // with it off, swiping the app away stops it and no push is shown.

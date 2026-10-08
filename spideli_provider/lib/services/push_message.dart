@@ -4,6 +4,7 @@
 //
 // The channel ids of every app are documented in .claude/PUSH-CHANNELS.md.
 import 'dart:convert';
+import 'package:spideliprovider/services/chat_sound.dart';
 
 /// The app a push is meant for. Each app creates its own Android channels, so
 /// the channel in the message depends on who receives it.
@@ -37,9 +38,14 @@ class PushChannels {
   static const String worker = '01';
 }
 
-/// Channel and sound for a push to [app]. None of these apps ships a custom
-/// sound, so the platform default tone plays.
-PushRoute pushRouteFor(PushApp app) {
+/// Every app's chat channel (`chat_messages`) and bundled chat sound.
+const PushRoute chatPushRoute = PushRoute(channelId: ChatSound.channelId, androidSound: ChatSound.androidSound, apnsSound: ChatSound.apnsSound);
+
+/// Channel and sound for a push to [app]: the default tone, except a chat
+/// message ([kind] `chat`), which goes on every app's chat channel with the
+/// bundled chat sound.
+PushRoute pushRouteFor(PushApp app, {String? kind}) {
+  if (ChatSound.isChatPush(type: kind)) return chatPushRoute;
   switch (app) {
     case PushApp.customer:
       return const PushRoute(channelId: PushChannels.customer);

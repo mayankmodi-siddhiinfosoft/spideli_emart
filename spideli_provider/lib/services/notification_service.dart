@@ -21,6 +21,7 @@ import 'package:spideliprovider/ui/booking_list/booking_details_screen.dart';
 import 'package:spideliprovider/ui/chat_screen/chat_screen.dart';
 import 'package:spideliprovider/ui/help_support_screen/help_support_screen.dart';
 import 'package:spideliprovider/utils/fcm_token_reset.dart';
+import 'package:spideliprovider/services/chat_sound.dart';
 
 /// Pushes that arrive while the app is in the background or not running.
 ///
@@ -59,6 +60,17 @@ class NotificationService {
     description: 'New bookings, booking updates and chat messages',
     importance: Importance.max,
     playSound: true,
+    enableVibration: true,
+  );
+
+  /// Chat messages: their own short sound (`res/raw/chat_message.wav`).
+  static const AndroidNotificationChannel _chatChannel = AndroidNotificationChannel(
+    ChatSound.channelId,
+    ChatSound.channelName,
+    description: ChatSound.channelDescription,
+    importance: Importance.high,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound(ChatSound.androidSound),
     enableVibration: true,
   );
 
@@ -108,7 +120,9 @@ class NotificationService {
   static Future<void> createAndroidChannels() async {
     if (defaultTargetPlatform != TargetPlatform.android) return;
     try {
-      await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(_channel);
+      final AndroidFlutterLocalNotificationsPlugin? android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      await android?.createNotificationChannel(_channel);
+      await android?.createNotificationChannel(_chatChannel);
     } catch (e) {
       log("Notification channel not created: $e");
     }
@@ -136,18 +150,21 @@ class NotificationService {
     await createAndroidChannels();
   }
 
-  static NotificationDetails _details() {
+  /// [chat]: a chat message, on the chat channel with the chat sound.
+  static NotificationDetails _details({bool chat = false}) {
+    final AndroidNotificationChannel channel = chat ? _chatChannel : _channel;
     return NotificationDetails(
       android: AndroidNotificationDetails(
-        _channel.id,
-        _channel.name,
-        channelDescription: _channel.description,
-        importance: Importance.max,
+        channel.id,
+        channel.name,
+        channelDescription: channel.description,
+        importance: channel.importance,
         priority: Priority.high,
+        sound: channel.sound,
         icon: '@drawable/ic_stat_notification',
         ticker: 'ticker',
       ),
-      iOS: const DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
+      iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true, sound: chat ? ChatSound.apnsSound : null),
     );
   }
 
@@ -165,7 +182,7 @@ class NotificationService {
         id: (message.messageId ?? '${DateTime.now().microsecondsSinceEpoch}').hashCode & 0x7fffffff,
         title: title,
         body: body,
-        notificationDetails: _details(),
+        notificationDetails: _details(chat: ChatSound.isChatPush(type: pushDataString(message.data, 'type'), channelId: message.notification?.android?.channelId ?? pushDataString(message.data, 'channelId'))),
         payload: jsonEncode(message.data),
       );
     } catch (e) {

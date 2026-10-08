@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import 'package:customer/service/chat_sound.dart';
+import 'package:customer/service/order_ringtone.dart';
+
 /// The app a push is meant for. The Android channel and the sound always
 /// belong to the RECEIVING app (see `.claude/PUSH-CHANNELS.md`).
 enum PushRecipient { customer, store, driver, provider, worker }
@@ -64,12 +67,31 @@ abstract final class PushChannels {
   /// they use the store's loud order channel.
   static const Set<String> storeOrderKinds = {'order_placed', 'schedule_order', 'dinein_placed', 'new_order'};
 
-  static PushChannelSpec forRecipient(PushRecipient? recipient, {String? kind}) {
+  /// A new order / booking for a store (the store's loud order channel).
+  static bool isStoreNewOrder(PushRecipient? recipient, String? kind) => recipient == PushRecipient.store && storeOrderKinds.contains((kind ?? '').trim().toLowerCase());
+
+  /// [orderRingtoneUrl] is `globalSettings.order_ringtone_url`. When it is
+  /// set, a new order / booking for a store goes on `new_order_rt_<key>`
+  /// with the iOS sound `order_ringtone_<key>.caf` (the store app prepares
+  /// both from the same URL, [OrderRingtone]); a store that has not prepared
+  /// them yet shows it on its manifest default `new_order`. The Android
+  /// `sound` field (Android 7 and older only) stays `order_alert`. Without a
+  /// ringtone: exactly today's channel and sounds.
+  /// Every app's chat channel (`chat_messages`) and bundled chat sound.
+  static const PushChannelSpec chat = PushChannelSpec(androidChannelId: ChatSound.channelId, androidSound: ChatSound.androidSound, apnsSound: ChatSound.apnsSound);
+
+  static PushChannelSpec forRecipient(PushRecipient? recipient, {String? kind, String? orderRingtoneUrl}) {
+    // A chat message, to any app: the dedicated chat channel and bundled
+    // chat sound, never an order channel or the order ringtone.
+    if (ChatSound.isChatPush(type: kind)) return chat;
     switch (recipient) {
       case PushRecipient.customer:
         return const PushChannelSpec(androidChannelId: customer);
       case PushRecipient.store:
         if (storeOrderKinds.contains((kind ?? '').trim().toLowerCase())) {
+          if (OrderRingtone.isConfigured(orderRingtoneUrl)) {
+            return PushChannelSpec(androidChannelId: OrderRingtone.storeChannelIdFor(orderRingtoneUrl), androidSound: storeOrderSound, apnsSound: OrderRingtone.iosSoundFor(orderRingtoneUrl)!);
+          }
           return const PushChannelSpec(androidChannelId: storeOrder, androidSound: storeOrderSound, apnsSound: storeOrderApnsSound);
         }
         return const PushChannelSpec(androidChannelId: storeGeneral);

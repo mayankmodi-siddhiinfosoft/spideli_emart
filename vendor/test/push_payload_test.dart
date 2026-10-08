@@ -98,14 +98,15 @@ void main() {
       // the driver's general channel (also its manifest default).
       expect(PushPayload.channelFor(PushRecipient.driver, 'new_delivery_order'), const PushChannel(androidChannelId: 'driver_jobs', androidSound: 'default', apnsSound: 'default'));
       expect(PushPayload.channelFor(PushRecipient.driver, 'driver_cancelled'), const PushChannel(androidChannelId: 'driver_notifications_channel', androidSound: 'default', apnsSound: 'default'));
-      expect(PushPayload.channelFor(PushRecipient.driver, 'chat').androidChannelId, 'driver_notifications_channel');
+      // Chat: the dedicated chat channel in every app (never a job channel).
+      expect(PushPayload.channelFor(PushRecipient.driver, 'chat').androidChannelId, 'chat_messages');
     });
 
     test('a new order for the store rings on new_order with the alert tone', () {
       for (final type in ['order_placed', 'schedule_order', 'dinein_placed', 'new_order']) {
         expect(PushPayload.channelFor(PushRecipient.store, type), const PushChannel(androidChannelId: 'new_order', androidSound: 'order_alert', apnsSound: 'order_alert.caf'), reason: type);
       }
-      expect(PushPayload.channelFor(PushRecipient.store, 'chat').androidChannelId, 'general');
+      expect(PushPayload.channelFor(PushRecipient.store, 'chat').androidChannelId, 'chat_messages');
       expect(PushPayload.channelFor(PushRecipient.store, null).androidChannelId, 'general');
     });
 

@@ -385,12 +385,12 @@ class SendNotification {
     final String label = kind ?? data['type'] ?? '';
     if (useServerPush) {
       return _sendViaServer(
-        PushMessage.serverRequest(token: token, title: title, body: body, data: data, recipient: recipient, kind: kind),
+        PushMessage.serverRequest(token: token, title: title, body: body, data: data, recipient: recipient, kind: kind, orderRingtoneUrl: Constant.orderRingtoneUrl),
         label,
       );
     }
     return _sendLegacy(
-      PushMessage.v1Message(token: token, title: title, body: body, data: data, recipient: recipient),
+      PushMessage.v1Message(token: token, title: title, body: body, data: data, recipient: recipient, orderRingtoneUrl: Constant.orderRingtoneUrl, kind: kind ?? data['type']),
       label,
     );
   }

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The chat sound is referenced by name only at run time (the chat_messages channel and
+     `android.notification.sound` in a chat push): keep it if resources are ever shrunk. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@raw/chat_message" />

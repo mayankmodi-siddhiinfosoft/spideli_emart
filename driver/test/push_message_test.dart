@@ -106,11 +106,13 @@ void main() {
       expect(PushChannels.driverChannelFor(type: 'new_delivery_order'), 'driver_jobs');
       expect(PushChannels.driverChannelFor(type: 'assign_order'), 'driver_jobs');
       expect(PushChannels.driverChannelFor(type: 'job_queue'), 'driver_jobs');
-      expect(PushChannels.driverChannelFor(type: 'orderChat'), 'driver_notifications_channel');
+      expect(PushChannels.driverChannelFor(type: 'orderChat'), 'chat_messages');
       expect(PushChannels.driverChannelFor(type: 'customer_cancelled'), 'driver_notifications_channel');
       expect(PushChannels.driverChannelFor(type: null), 'driver_notifications_channel');
       // The sender's channel wins when it is one of the driver's...
-      expect(PushChannels.driverChannelFor(type: 'orderChat', requestedChannelId: 'driver_jobs'), 'driver_jobs');
+      expect(PushChannels.driverChannelFor(type: 'driver_update', requestedChannelId: 'driver_jobs'), 'driver_jobs');
+      // ...except for a chat message: always the chat channel, never a job one.
+      expect(PushChannels.driverChannelFor(type: 'orderChat', requestedChannelId: 'driver_jobs'), 'chat_messages');
       expect(PushChannels.driverChannelFor(type: 'new_delivery_order', requestedChannelId: 'driver_notifications_channel'), 'driver_notifications_channel');
       // ...and is ignored when it belongs to another app.
       expect(PushChannels.driverChannelFor(type: 'new_delivery_order', requestedChannelId: 'new_order'), 'driver_jobs');
@@ -121,7 +123,8 @@ void main() {
       expect(PushChannels.dispatch, 'spideli');
       // The Cloud Function's payload names the channel itself...
       expect(PushChannels.driverChannelFor(type: 'order', requestedChannelId: 'spideli'), 'spideli');
-      expect(PushChannels.driverChannelFor(type: 'chat', requestedChannelId: 'spideli'), 'spideli');
+      expect(PushChannels.driverChannelFor(type: 'cab', requestedChannelId: 'spideli'), 'spideli');
+      expect(PushChannels.driverChannelFor(type: 'chat', requestedChannelId: 'spideli'), 'chat_messages', reason: 'chat never on an offer channel');
       // ...and a dispatch offer without it is still routed there, for every service.
       for (final String type in const ['order', 'parcel', 'cab', 'rental']) {
         expect(
@@ -135,7 +138,7 @@ void main() {
       expect(PushChannels.driverChannelFor(type: 'order'), 'driver_jobs');
       expect(PushChannels.driverChannelFor(type: 'order', data: {'type': 'order'}), 'driver_jobs');
       expect(PushChannels.driverChannelFor(type: 'parcel', data: {'type': 'parcel', 'orderId': 'p1'}), 'driver_notifications_channel');
-      expect(PushChannels.driverChannelFor(type: 'orderChat', requestedChannelId: 'driver_notifications_channel'), 'driver_notifications_channel');
+      expect(PushChannels.driverChannelFor(type: 'orderChat', requestedChannelId: 'driver_notifications_channel'), 'chat_messages');
     });
 
     test('the driver app creates the spideli channel at start-up, importance max', () {
@@ -247,8 +250,9 @@ void main() {
       );
       expect(req.keys.toSet(), <String>{'token', 'title', 'body', 'data', 'kind', 'android', 'apns'});
       expect(req['kind'], 'chat');
-      expect(req['android'], <String, String>{'channelId': 'high_importance_channel', 'sound': 'default'});
-      expect(req['apns'], <String, String>{'sound': 'default'});
+      // A chat message: the chat channel and the bundled chat sound.
+      expect(req['android'], <String, String>{'channelId': 'chat_messages', 'sound': 'chat_message'});
+      expect(req['apns'], <String, String>{'sound': 'chat_message.wav'});
       final Map<String, dynamic> noKind = PushMessage.serverRequest(
         token: 'tok',
         title: 'T',

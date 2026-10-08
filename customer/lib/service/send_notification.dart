@@ -103,7 +103,10 @@ class SendNotification {
       log('push "$label" not sent: the recipient has no FCM token');
       return false;
     }
-    final PushChannelSpec spec = PushChannels.forRecipient(recipient, kind: kind);
+    // A new order for a store rings with the admin's CURRENT order sound
+    // when one is set (globalSettings.order_ringtone_url, re-read now).
+    final String ringtoneUrl = PushChannels.isStoreNewOrder(recipient, kind) ? await FireStoreUtils.currentOrderRingtoneUrl() : Constant.orderRingtoneUrl;
+    final PushChannelSpec spec = PushChannels.forRecipient(recipient, kind: kind, orderRingtoneUrl: ringtoneUrl);
     // A chat's `type` is the caller's (orderChat); `chat` is only the kind.
     final Map<String, String> data = PushPayload.stringData(payload, type: kind == 'chat' ? null : kind, spec: spec);
     try {

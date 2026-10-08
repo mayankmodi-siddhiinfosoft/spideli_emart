@@ -245,7 +245,7 @@ class SendNotification {
     required String kind,
     required PushApp recipient,
   }) async {
-    final PushRoute route = pushRouteFor(recipient);
+    final PushRoute route = pushRouteFor(recipient, kind: kind);
     await _ensureSettings();
     if (useServerPush) {
       return _sendViaServer(token: token, title: title, body: body, data: data, kind: kind, route: route);

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 
+import 'package:customer/service/chat_sound.dart';
 import 'package:customer/firebase_options.dart';
 import 'package:customer/models/customer_notification_model.dart';
 import 'package:customer/screen_ui/help_support_screen/help_support_screen.dart';
@@ -71,6 +72,17 @@ class NotificationService {
     enableVibration: true,
   );
 
+  /// Chat messages: their own short sound (`res/raw/chat_message.wav`).
+  static const AndroidNotificationChannel chatChannel = AndroidNotificationChannel(
+    ChatSound.channelId,
+    ChatSound.channelName,
+    description: ChatSound.channelDescription,
+    importance: Importance.high,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound(ChatSound.androidSound),
+    enableVibration: true,
+  );
+
   static bool _initialized = false;
   static StreamSubscription<RemoteMessage>? _onMessageSubscription;
   static StreamSubscription<RemoteMessage>? _onOpenedSubscription;
@@ -87,7 +99,9 @@ class NotificationService {
   static Future<void> createChannels() async {
     if (!_isAndroid) return;
     try {
-      await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(channel);
+      final AndroidFlutterLocalNotificationsPlugin? android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      await android?.createNotificationChannel(channel);
+      await android?.createNotificationChannel(chatChannel);
     } catch (e) {
       log('push: createNotificationChannel failed (${e.runtimeType})');
     }
@@ -290,17 +304,21 @@ class NotificationService {
         data: message.data,
       );
       if (text == null) return;
+      // A chat message on the chat channel with its own sound.
+      final bool chat = ChatSound.isChatPush(type: message.data['type']?.toString(), channelId: message.notification?.android?.channelId ?? message.data['channelId']?.toString());
+      final AndroidNotificationChannel target = chat ? chatChannel : channel;
       final AndroidNotificationDetails android = AndroidNotificationDetails(
-        channel.id,
-        channel.name,
-        channelDescription: channel.description,
-        importance: Importance.max,
+        target.id,
+        target.name,
+        channelDescription: target.description,
+        importance: target.importance,
         priority: Priority.high,
         playSound: true,
+        sound: target.sound,
         enableVibration: true,
         ticker: 'ticker',
       );
-      const DarwinNotificationDetails darwin = DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true);
+      final DarwinNotificationDetails darwin = DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true, sound: chat ? ChatSound.apnsSound : null);
       await _plugin.show(
         id: PushTap.notificationId(message.messageId),
         title: text.title,

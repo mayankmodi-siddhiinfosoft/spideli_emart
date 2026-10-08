@@ -14,10 +14,14 @@ import 'package:vendor/app/help_support_screen/help_support_screen.dart';
 import 'package:vendor/controller/dash_board_controller.dart';
 import 'package:vendor/controller/home_controller.dart';
 import 'package:vendor/firebase_options.dart';
+import 'package:vendor/service/audio_player_service.dart';
+import 'package:vendor/service/order_ringtone_service.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/order_ringtone.dart';
 import 'package:vendor/utils/preferences.dart';
 import 'package:vendor/utils/push_payload.dart';
 import 'package:vendor/utils/fcm_token_reset.dart';
+import 'package:vendor/utils/chat_sound.dart';
 import 'package:vendor/utils/scheduled_order.dart';
 
 /// Runs for a message that arrives while the app is in the background or
@@ -40,6 +44,14 @@ Future<void> firebaseMessageBackgroundHandle(RemoteMessage message) async {
   log("BackGround Message :: ${message.messageId}");
   if (message.notification == null && NotificationService.hasDisplayableData(message.data)) {
     await NotificationService.display(message);
+  }
+  // A changed order ringtone (admin panel) is prepared here too, bounded, so
+  // the next new-order push rings with it even if the app is not opened.
+  try {
+    FireStoreUtils.instance.init(Firebase.app(), databaseId: currentEnv == FirebaseEnv.defaultDb ? null : 'staging');
+    await OrderRingtoneService.catchUpInBackground(forced: message.data['type'] == OrderRingtone.changedPushType);
+  } catch (e) {
+    log("background ringtone check failed: $e");
   }
 }
 
@@ -84,6 +96,18 @@ class NotificationService {
     enableVibration: true,
   );
 
+  /// Chat messages: their own short sound (`res/raw/chat_message.wav`),
+  /// never the order tone.
+  static const AndroidNotificationChannel _chatChannel = AndroidNotificationChannel(
+    ChatSound.channelId,
+    ChatSound.channelName,
+    description: ChatSound.channelDescription,
+    importance: Importance.high,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound(ChatSound.androidSound),
+    enableVibration: true,
+  );
+
   static bool _initStarted = false;
   static bool _localReady = false;
   static bool _permissionRequested = false;
@@ -108,6 +132,9 @@ class NotificationService {
       // iOS shows a `notification` message in the foreground only with
       // these options; Android needs the local notification in [display].
       await _guard('presentation options', () => FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(alert: true, badge: true, sound: true));
+      // A new-order push presented while the in-app alert rings loses only
+      // its sound (AppDelegate asks; no double sound).
+      await _guard('foreground order sound', () async => OrderRingtoneService.handleForegroundPresentation(_silentOnIos));
     }
     // Listeners no longer depend on the permission answer: a denied (or not
     // yet answered) request used to leave the app with no foreground and no
@@ -139,6 +166,7 @@ class NotificationService {
     try {
       await android.createNotificationChannel(_orderChannel);
       await android.createNotificationChannel(_generalChannel);
+      await android.createNotificationChannel(_chatChannel);
     } catch (e) {
       log("notification channel setup failed: $e");
     }
@@ -205,7 +233,27 @@ class NotificationService {
     // (setForegroundNotificationPresentationOptions); a local notification
     // as well showed it twice.
     if (Platform.isIOS && hasNotification) return;
-    await display(message);
+    await display(message, foreground: true);
+  }
+
+  /// iOS, a push presented in the foreground: true to present it without its
+  /// sound because the in-app alert is ringing the same order sound.
+  static Future<bool> _silentOnIos(Map<String, dynamic> data, String apsSound) async {
+    final String channelId = (data['channelId'] ?? data['android_channel_id'] ?? '').toString();
+    final bool orderAlert = PushPayload.isStoreOrderAlert(type: data['type']?.toString(), channelId: channelId) || ForegroundOrderSound.isOrderSound(apsSound);
+    return _foregroundSilent(orderAlert: orderAlert, type: data['type']?.toString());
+  }
+
+  /// A new-order alert in the foreground is silent while the in-app alert
+  /// rings; when the orders screen is up it may start a moment after the
+  /// push, so this waits up to 1.5 s for it.
+  static Future<bool> _foregroundSilent({required bool orderAlert, String? type}) async {
+    if (!orderAlert) return false;
+    bool ringing = AudioPlayerService.isRinging;
+    if (!ringing && ForegroundOrderSound.inAppRingExpected(orderAlert: orderAlert, type: type, ordersScreenAlive: Get.isRegistered<HomeController>())) {
+      ringing = await AudioPlayerService.waitForRing(const Duration(milliseconds: 1500));
+    }
+    return ForegroundOrderSound.silent(orderAlert: orderAlert, foreground: true, inAppRinging: ringing);
   }
 
   // ── Token ──
@@ -372,6 +420,12 @@ class NotificationService {
     return PushPayload.isStoreOrderAlert(type: message.data['type']?.toString(), channelId: channelId);
   }
 
+  /// A chat message (chat channel, or a chat `type`).
+  static bool isChat(RemoteMessage message) {
+    final String channelId = (message.notification?.android?.channelId ?? message.data['channelId'] ?? message.data['android_channel_id'] ?? '').toString();
+    return ChatSound.isChatPush(type: message.data['type']?.toString(), channelId: channelId);
+  }
+
   /// A data-only message that has something to show.
   static bool hasDisplayableData(Map<String, dynamic> data) => (data['title'] ?? '').toString().trim().isNotEmpty || (data['body'] ?? '').toString().trim().isNotEmpty;
 
@@ -380,8 +434,12 @@ class NotificationService {
   /// platforms for a data-only message that carries a title or body.
   ///
   /// Order alerts go on the loud order channel with the alert tone and max
-  /// importance; everything else on the general channel.
-  static Future<void> display(RemoteMessage message) async {
+  /// importance - the admin's order sound (`new_order_rt_<key>`, iOS
+  /// `order_ringtone_<key>.caf`) once this device has prepared it, else
+  /// `new_order` / `order_alert` - and everything else on the general
+  /// channel. [foreground]: received with the app open; an order alert is
+  /// then posted silently while the in-app alert rings ([_foregroundSilent]).
+  static Future<void> display(RemoteMessage message, {bool foreground = false}) async {
     try {
       if (!_localReady) {
         // Background isolate: the plugin and channels of the main isolate are
@@ -390,8 +448,11 @@ class NotificationService {
         await _plugin.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings('@drawable/ic_stat_notification'), iOS: DarwinInitializationSettings(requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false)));
         _localReady = true;
       }
-      final bool orderAlert = isOrderAlert(message);
-      final AndroidNotificationChannel channel = orderAlert ? _orderChannel : _generalChannel;
+      final bool chat = isChat(message);
+      final bool orderAlert = !chat && isOrderAlert(message);
+      final PreparedOrderRingtone? ringtone = orderAlert ? await OrderRingtoneService.current() : null;
+      final AndroidNotificationChannel channel = chat ? _chatChannel : (!orderAlert ? _generalChannel : (ringtone != null && Platform.isAndroid ? OrderRingtoneService.channelFor(ringtone) : _orderChannel));
+      final bool silent = foreground && await _foregroundSilent(orderAlert: orderAlert, type: message.data['type']?.toString());
       final String? title = message.notification?.title ?? message.data['title']?.toString();
       final String? body = message.notification?.body ?? message.data['body']?.toString();
       final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
@@ -403,10 +464,17 @@ class NotificationService {
         playSound: true,
         sound: channel.sound,
         enableVibration: true,
+        // The channel's sound is not played for this one notification.
+        silent: silent,
         category: orderAlert ? AndroidNotificationCategory.alarm : null,
         ticker: 'ticker',
       );
-      final DarwinNotificationDetails darwinDetails = DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true, sound: orderAlert ? PushPayload.storeOrderApnsSound : null);
+      final DarwinNotificationDetails darwinDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: !silent,
+        sound: chat ? ChatSound.apnsSound : (orderAlert ? (ringtone?.iosSound ?? PushPayload.storeOrderApnsSound) : null),
+      );
       await _plugin.show(
         // A distinct id per message: a fixed id made every new order replace
         // the previous one in the shade.

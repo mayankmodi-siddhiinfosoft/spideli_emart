@@ -40,6 +40,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- The admin's order ringtone (globalSettings.order_ringtone_url) as the
+             sound of the new-order channel: OrderRingtone.kt serves only
+             files/order_ringtones/ and grants the system UI read access
+             (.claude/PUSH-CHANNELS.md, "Order ringtone"). -->
+        <provider
+            android:name=".OrderRingtoneProvider"
+            android:authorities="${applicationId}.order_ringtone"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/order_ringtone_paths" />
+        </provider>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
