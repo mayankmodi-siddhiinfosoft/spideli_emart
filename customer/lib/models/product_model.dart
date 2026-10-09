@@ -3,6 +3,7 @@ import 'package:customer/models/tax_model.dart';
 import 'package:get/get.dart';
 import 'package:customer/utils/business_account.dart';
 import 'package:customer/utils/wholesale_entitlement.dart';
+import 'package:customer/utils/product_delivery_charge.dart';
 
 class ProductModel {
   int? fats;
@@ -57,6 +58,11 @@ class ProductModel {
 
   /// Wholesale prices only for verified Business customers.
   bool? wholesaleBusinessOnly;
+
+  /// `delivery_charges` tiers (Doc 60, product-level delivery charges), used
+  /// only when the section has `is_delivery_charge_customization`. Read only:
+  /// never written back by [toJson], so a stock update keeps them.
+  List<ProductDeliveryTier> deliveryChargeTiers = const [];
 
   /// Subset of ["delivery", "takeaway"]; absent = derived from [takeawayOption].
   List<String>? fulfilment;
@@ -170,6 +176,7 @@ class ProductModel {
     saleType = rawSaleType.isEmpty ? null : rawSaleType;
     wholesaleBusinessOnly = parseWholesaleBool(json['wholesaleBusinessOnly']);
     fulfilment = parseFulfilment(json['fulfilment']);
+    deliveryChargeTiers = ProductDeliveryTier.parseList(json['delivery_charges']);
   }
 
   /// Tiers sorted by minQty (or the legacy single tier).

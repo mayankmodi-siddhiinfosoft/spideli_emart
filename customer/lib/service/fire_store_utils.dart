@@ -78,6 +78,8 @@ import '../screen_ui/multi_vendor_service/chat_screens/chat_video_container.dart
 import '../themes/app_them_data.dart';
 import '../themes/show_toast_dialog.dart';
 import '../utils/address_format.dart';
+import '../utils/tax_country.dart';
+import '../utils/product_delivery_charge.dart';
 import '../utils/preferences.dart';
 import '../utils/push_token.dart';
 import '../utils/region_service.dart';
@@ -514,24 +516,34 @@ class FireStoreUtils {
     // hand), and the reverse geocode may come back empty: reading through
     // either threw here and the cart lost its taxes with it.
     final UserLocation? centre = Constant.selectedLocation.location;
-    List<Placemark> placeMarks = await Geocoding().placemarkFromCoordinates(centre?.latitude ?? 0.0, centre?.longitude ?? 0.0);
+    List<Placemark> placeMarks = [];
+    try {
+      placeMarks = await Geocoding().placemarkFromCoordinates(centre?.latitude ?? 0.0, centre?.longitude ?? 0.0);
+    } catch (e) {
+      log("getTaxList: reverse geocoding failed: $e");
+    }
     if (placeMarks.isEmpty) return taxList;
+    // Doc 61: the geocoder names the country in the DEVICE language
+    // ("Cameroun"), the admin saves the English name ("Cameroon"). Ask for
+    // both (plus English aliases) and keep each tax once, by doc id.
+    final List<String> countries = TaxCountry.queryNames(detectedName: placeMarks.first.country, isoCode: placeMarks.first.isoCountryCode);
+    if (countries.isEmpty) return taxList;
+    final Map<String, TaxModel> byId = {};
     await fireStore
         .collection(CollectionName.tax)
         .where('sectionId', isEqualTo: sectionId)
-        .where('country', isEqualTo: placeMarks.first.country)
+        .where('country', whereIn: countries)
         .where('enable', isEqualTo: true)
         .get()
         .then((value) {
           for (var element in value.docs) {
-            TaxModel taxModel = TaxModel.fromJson(element.data());
-            taxList.add(taxModel);
+            byId.putIfAbsent(element.id, () => TaxModel.fromJson(element.data()));
           }
         })
         .catchError((error) {
           log(error.toString());
         });
-
+    taxList.addAll(byId.values);
     return taxList;
   }
 
@@ -707,6 +719,21 @@ class FireStoreUtils {
       return null;
     }
     return vendorModel;
+  }
+
+  /// `sections/{sectionId}.is_delivery_charge_customization`, read now (Doc
+  /// 60): true / false, or null when the section could not be read (callers
+  /// then keep what they knew).
+  static Future<bool?> getSectionDeliveryChargeCustomization(String? sectionId) async {
+    if (sectionId == null || sectionId.isEmpty) return false;
+    try {
+      final snap = await fireStore.collection(CollectionName.sections).doc(sectionId).get();
+      if (!snap.exists) return false;
+      return ProductDeliveryCharge.isEnabled(snap.data()?['is_delivery_charge_customization']);
+    } catch (e, s) {
+      log('FireStoreUtils.getSectionDeliveryChargeCustomization $e $s');
+      return null;
+    }
   }
 
   static Future<ProductModel?> getProductById(String productId) async {

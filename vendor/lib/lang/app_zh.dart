@@ -86,4 +86,14 @@ const Map<String, String> zhCH = {
   "Assign Delivery Man": "分配配送员",
   "Order marked as completed": "订单已标记为完成",
   "The order is completed, but a payment could not be recorded": "订单已完成，但有一笔款项未能记录",
+  // Product delivery charges (bug point 60).
+  "Delivery Charges": "配送费",
+  "Configure up to 5 custom distance-based delivery charges for this product.": "为此商品设置最多 5 档按距离计算的自定义配送费。",
+  "Delivery Charges Per Km": "每公里配送费",
+  "Minimum Delivery Charges": "最低配送费",
+  "Minimum Delivery Charge Within Km": "最低配送费覆盖距离（公里）",
+  "Add Delivery Charge": "添加配送费",
+  "Remove delivery charge": "删除配送费",
+  "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "您已达到 5 档配送费的上限，无法继续添加。",
+  "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "请填写每档配送费的全部 3 个字段，或删除空行。",
 };

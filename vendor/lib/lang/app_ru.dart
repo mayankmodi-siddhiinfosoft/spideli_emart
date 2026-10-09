@@ -86,4 +86,14 @@ const Map<String, String> ruRU = {
   "Assign Delivery Man": "Назначить курьера",
   "Order marked as completed": "Заказ отмечен как выполненный",
   "The order is completed, but a payment could not be recorded": "Заказ выполнен, но платёж не удалось записать",
+  // Product delivery charges (bug point 60).
+  "Delivery Charges": "Стоимость доставки",
+  "Configure up to 5 custom distance-based delivery charges for this product.": "Настройте до 5 собственных тарифов доставки по расстоянию для этого товара.",
+  "Delivery Charges Per Km": "Стоимость доставки за км",
+  "Minimum Delivery Charges": "Минимальная стоимость доставки",
+  "Minimum Delivery Charge Within Km": "Минимальная стоимость действует до (км)",
+  "Add Delivery Charge": "Добавить тариф доставки",
+  "Remove delivery charge": "Удалить тариф доставки",
+  "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "Достигнут максимум — 5 тарифов доставки. Добавить больше нельзя.",
+  "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "Заполните все 3 поля каждого тарифа доставки или удалите пустые строки.",
 };

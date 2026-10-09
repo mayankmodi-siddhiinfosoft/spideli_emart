@@ -85,6 +85,7 @@ void main() {
     'This booking can no longer be negotiated',
     'This price proposal has changed. Please check the latest status.',
     'This counter-offer has expired: the driver who made it is no longer on your booking.',
+    'The delivery charge has been updated. Please check the new total before paying.',
   ];
   const maps = <String, Map<String, String>>{'en_US': enUS, 'ar_AR': arAR};
   final placeholder = RegExp(r'@\w+');

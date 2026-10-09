@@ -219,4 +219,14 @@ const Map<String, String> trFR = {
   "Order Rejected": "Commande refusée",
   "Order Cancelled": "Commande annulée",
   "The order is completed, but a payment could not be recorded": "La commande est terminée, mais un paiement n'a pas pu être enregistré",
+  // Product delivery charges (bug point 60).
+  "Delivery Charges": "Frais de livraison",
+  "Configure up to 5 custom distance-based delivery charges for this product.": "Configurez jusqu'à 5 frais de livraison personnalisés selon la distance pour ce produit.",
+  "Delivery Charges Per Km": "Frais de livraison par km",
+  "Minimum Delivery Charges": "Frais de livraison minimum",
+  "Minimum Delivery Charge Within Km": "Frais minimum appliqués jusqu'à (km)",
+  "Add Delivery Charge": "Ajouter des frais de livraison",
+  "Remove delivery charge": "Supprimer ces frais de livraison",
+  "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "Vous avez atteint la limite maximale de 5 frais de livraison. Vous ne pouvez plus en ajouter.",
+  "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "Veuillez remplir les 3 champs de chaque palier de frais de livraison ou supprimer les lignes vides.",
 };

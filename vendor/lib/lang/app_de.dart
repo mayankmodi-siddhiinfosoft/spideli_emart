@@ -86,4 +86,14 @@ const Map<String, String> deGR = {
   "Assign Delivery Man": "Fahrer zuweisen",
   "Order marked as completed": "Bestellung als abgeschlossen markiert",
   "The order is completed, but a payment could not be recorded": "Die Bestellung ist abgeschlossen, aber eine Zahlung konnte nicht erfasst werden",
+  // Product delivery charges (bug point 60).
+  "Delivery Charges": "Liefergebühren",
+  "Configure up to 5 custom distance-based delivery charges for this product.": "Legen Sie bis zu 5 eigene, entfernungsabhängige Liefergebühren für dieses Produkt fest.",
+  "Delivery Charges Per Km": "Liefergebühr pro km",
+  "Minimum Delivery Charges": "Mindestliefergebühr",
+  "Minimum Delivery Charge Within Km": "Mindestliefergebühr gilt bis (km)",
+  "Add Delivery Charge": "Liefergebühr hinzufügen",
+  "Remove delivery charge": "Liefergebühr entfernen",
+  "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "Sie haben die Höchstzahl von 5 Liefergebühren erreicht. Sie können keine weiteren hinzufügen.",
+  "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "Bitte füllen Sie alle 3 Felder jeder Liefergebührenstufe aus oder entfernen Sie leere Zeilen.",
 };

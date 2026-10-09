@@ -175,6 +175,8 @@ class AdminProductScreen extends StatelessWidget {
                     controller.productList[index].vendorID = Constant.userModel!.vendorID;
                     controller.productList[index].createdAt = Timestamp.now();
                     controller.productList[index].sectionId = Constant.selectedSection?.id;
+                    // A new document: carry the template's delivery charges, if any (point 60).
+                    controller.productList[index].writeDeliveryCharges = controller.productList[index].deliveryCharges != null;
                     await FireStoreUtils.updateProduct(controller.productList[index]);
                     await controller.getVendorProduct();
                     ShowToastDialog.closeLoader();
@@ -288,6 +290,8 @@ class TaxBottomSheet extends StatelessWidget {
                     productModel.vendorID = Constant.userModel!.vendorID;
                     productModel.createdAt = Timestamp.now();
                     productModel.taxSetting = selected;
+                    // A new document: carry the template's delivery charges, if any (point 60).
+                    productModel.writeDeliveryCharges = productModel.deliveryCharges != null;
                     await FireStoreUtils.updateProduct(productModel);
                     await controller.getVendorProduct();
                     ShowToastDialog.closeLoader();

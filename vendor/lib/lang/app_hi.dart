@@ -86,4 +86,14 @@ const Map<String, String> hiIN = {
   "Assign Delivery Man": "डिलीवरी मैन सौंपें",
   "Order marked as completed": "ऑर्डर पूरा चिह्नित किया गया",
   "The order is completed, but a payment could not be recorded": "ऑर्डर पूरा हो गया है, लेकिन एक भुगतान दर्ज नहीं हो सका",
+  // Product delivery charges (bug point 60).
+  "Delivery Charges": "डिलीवरी शुल्क",
+  "Configure up to 5 custom distance-based delivery charges for this product.": "इस उत्पाद के लिए दूरी के आधार पर अधिकतम 5 कस्टम डिलीवरी शुल्क सेट करें।",
+  "Delivery Charges Per Km": "प्रति किमी डिलीवरी शुल्क",
+  "Minimum Delivery Charges": "न्यूनतम डिलीवरी शुल्क",
+  "Minimum Delivery Charge Within Km": "न्यूनतम डिलीवरी शुल्क की सीमा (किमी)",
+  "Add Delivery Charge": "डिलीवरी शुल्क जोड़ें",
+  "Remove delivery charge": "डिलीवरी शुल्क हटाएँ",
+  "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "आप अधिकतम 5 डिलीवरी शुल्क की सीमा तक पहुँच गए हैं। आप और नहीं जोड़ सकते।",
+  "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "कृपया हर डिलीवरी शुल्क स्तर के तीनों फ़ील्ड भरें या खाली पंक्तियाँ हटाएँ।",
 };

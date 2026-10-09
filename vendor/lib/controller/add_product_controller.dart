@@ -22,6 +22,7 @@ import 'package:vendor/models/vendor_model.dart';
 import 'package:vendor/service/api.dart';
 import 'package:http/http.dart' as http;
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/product_delivery_charges.dart';
 
 class AddProductController extends GetxController {
   RxBool isLoading = true.obs;
@@ -57,6 +58,12 @@ class AddProductController extends GetxController {
   // New products are available for both, which is what takeawayOption: false
   // (the old default) meant.
   RxBool fulfilTakeaway = true.obs;
+
+  // Product custom delivery charges (bug point 60). Shown and written only
+  // while the store's section has is_delivery_charge_customization == true,
+  // read fresh in getArgument().
+  RxBool deliveryChargesEnabled = false.obs;
+  RxList<DeliveryChargeTierInput> deliveryChargeInputs = <DeliveryChargeTierInput>[].obs;
 
   Rx<ItemAttribute?> itemAttributes = ItemAttribute(attributes: [], variants: []).obs;
 
@@ -146,6 +153,9 @@ class AddProductController extends GetxController {
     for (final tier in wholesaleTierInputs) {
       tier.dispose();
     }
+    for (final row in deliveryChargeInputs) {
+      row.dispose();
+    }
     super.dispose();
   }
 
@@ -163,6 +173,8 @@ class AddProductController extends GetxController {
         }
       }
     }
+
+    deliveryChargesEnabled.value = await FireStoreUtils.getSectionDeliveryChargeCustomization(storeSectionId);
 
     print("======>");
     print(Constant.userModel!.sectionId);
@@ -212,6 +224,10 @@ class AddProductController extends GetxController {
           wholesaleTierInputs.add(_newTierInput(minQty: tier.minQty, price: tier.price));
         }
         if (wholesaleTierInputs.isEmpty) wholesaleTierInputs.add(_newTierInput());
+      }
+      deliveryChargeInputs.clear();
+      for (final tier in (productModel.value.deliveryCharges ?? const <DeliveryChargeTier>[]).take(ProductDeliveryCharges.maxTiers)) {
+        deliveryChargeInputs.add(DeliveryChargeTierInput.fromTier(tier));
       }
       saleType.value = productModel.value.effectiveSaleType;
       wholesaleBusinessOnly.value = productModel.value.wholesaleBusinessOnly == true;
@@ -292,6 +308,8 @@ class AddProductController extends GetxController {
       ShowToastDialog.showToast("Please upload digital product".tr);
     } else if (validateWholesale() case final String wholesaleError) {
       ShowToastDialog.showToast(wholesaleError);
+    } else if (validateDeliveryCharges() case final String deliveryChargeError) {
+      ShowToastDialog.showToast(deliveryChargeError.tr);
     } else if (!fulfilDelivery.value && !fulfilTakeaway.value) {
       ShowToastDialog.showToast("Select at least one of Delivery or Takeaway".tr);
     } else {
@@ -371,11 +389,61 @@ class AddProductController extends GetxController {
       productModel.value.brandId = selectedBrands.value.id;
       productModel.value.taxSetting = List.from(selectedTaxes);
       applyWholesaleToProduct();
+      applyDeliveryChargesToProduct();
 
       await FireStoreUtils.updateProduct(productModel.value);
+      // One-shot: later saves of this same instance (e.g. the publish switch
+      // in the list) must not re-write delivery_charges.
+      productModel.value.writeDeliveryCharges = false;
       ShowToastDialog.closeLoader();
       Get.back(result: true);
     }
+  }
+
+  /// The store's section: the vendor document's `section_id`, else the
+  /// signed-in user's `sectionId`, else the section chosen at login.
+  String? get storeSectionId {
+    for (final String? id in [vendorModel.value.sectionId, Constant.userModel?.sectionId, Constant.selectedSection?.id]) {
+      if (id != null && id.trim().isNotEmpty) return id.trim();
+    }
+    return null;
+  }
+
+  bool get canAddDeliveryCharge => ProductDeliveryCharges.canAdd(deliveryChargeInputs.length);
+
+  /// Adds an empty row; refused at the 5-row limit (the button is disabled
+  /// there too).
+  void addDeliveryCharge() {
+    if (!canAddDeliveryCharge) return;
+    deliveryChargeInputs.add(DeliveryChargeTierInput());
+  }
+
+  void removeDeliveryCharge(int index) {
+    if (index < 0 || index >= deliveryChargeInputs.length) return;
+    final removed = deliveryChargeInputs.removeAt(index);
+    // Dispose after the frame so the removed TextFields are unmounted first.
+    WidgetsBinding.instance.addPostFrameCallback((_) => removed.dispose());
+  }
+
+  /// The untranslated error key, or null when valid (always valid while the
+  /// section flag is off, as nothing is written then).
+  String? validateDeliveryCharges() {
+    if (!deliveryChargesEnabled.value) return null;
+    return ProductDeliveryCharges.validate(deliveryChargeInputs.map((e) => e.values).toList()).error;
+  }
+
+  /// Copies the validated rows onto [productModel] ([] when there are none).
+  /// With the section flag off nothing is written, so whatever
+  /// `delivery_charges` the panel stored stays untouched.
+  void applyDeliveryChargesToProduct() {
+    if (!deliveryChargesEnabled.value) {
+      productModel.value.writeDeliveryCharges = false;
+      return;
+    }
+    final result = ProductDeliveryCharges.validate(deliveryChargeInputs.map((e) => e.values).toList());
+    if (result.tiers == null) return;
+    productModel.value.deliveryCharges = result.tiers;
+    productModel.value.writeDeliveryCharges = true;
   }
 
   WholesaleTierInput _newTierInput({String minQty = '', String price = ''}) {

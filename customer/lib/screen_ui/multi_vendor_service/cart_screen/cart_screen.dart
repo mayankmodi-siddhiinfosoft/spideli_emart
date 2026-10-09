@@ -46,6 +46,9 @@ class CartScreen extends StatelessWidget {
         final String foodType = controller.selectedFoodType.value;
         final bool isTakeAway = foodType == 'TakeAway';
         final bool selfDelivery = controller.vendorModel.value.isSelfDelivery == true && Constant.isSelfDeliveryFeature == true;
+        // Doc 60: with product delivery charges the fee comes from the
+        // products' tiers, so it is "Free Delivery" only when that comes to 0.
+        final bool freeDelivery = controller.productDeliveryChargeMode.value ? controller.deliveryCharges.value <= 0 : selfDelivery;
         final String deliveryType = controller.deliveryType.value;
         final double tips = controller.deliveryTips.value;
         final bool cashbackApply = controller.isCashbackApply.value;
@@ -426,9 +429,9 @@ class CartScreen extends StatelessWidget {
                                 ? const SizedBox()
                                 : amountRow(
                                     title: "Delivery Fee".tr,
-                                    amount: selfDelivery ? 'Free Delivery'.tr : Constant.amountShow(amount: controller.deliveryCharges.value.toString(), currency: currency),
+                                    amount: freeDelivery ? 'Free Delivery'.tr : Constant.amountShow(amount: controller.deliveryCharges.value.toString(), currency: currency),
                                     isDark: isDark,
-                                    amountColor: selfDelivery ? c.successStrong : null,
+                                    amountColor: freeDelivery ? c.successStrong : null,
                                   ),
                             if (!isTakeAway) const DsGap(DsSpace.md),
                             isTakeAway || selfDelivery

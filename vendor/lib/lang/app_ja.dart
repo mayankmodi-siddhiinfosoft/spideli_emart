@@ -86,4 +86,14 @@ const Map<String, String> jaJP = {
   "Assign Delivery Man": "配達員を割り当てる",
   "Order marked as completed": "注文を完了にしました",
   "The order is completed, but a payment could not be recorded": "注文は完了しましたが、支払いを記録できませんでした",
+  // Product delivery charges (bug point 60).
+  "Delivery Charges": "配送料",
+  "Configure up to 5 custom distance-based delivery charges for this product.": "この商品に、距離に応じたカスタム配送料を最大5件まで設定できます。",
+  "Delivery Charges Per Km": "1kmあたりの配送料",
+  "Minimum Delivery Charges": "最低配送料",
+  "Minimum Delivery Charge Within Km": "最低配送料の適用距離（km）",
+  "Add Delivery Charge": "配送料を追加",
+  "Remove delivery charge": "配送料を削除",
+  "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "配送料は最大5件までです。これ以上追加できません。",
+  "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "各配送料の3つの項目をすべて入力するか、空の行を削除してください。",
 };

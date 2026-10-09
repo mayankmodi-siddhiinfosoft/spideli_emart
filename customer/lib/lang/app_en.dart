@@ -923,4 +923,5 @@ const Map<String, String> enUS = {
   "This booking can no longer be negotiated": "This booking can no longer be negotiated",
   "This price proposal has changed. Please check the latest status.": "This price proposal has changed. Please check the latest status.",
   "This counter-offer has expired: the driver who made it is no longer on your booking.": "This counter-offer has expired: the driver who made it is no longer on your booking.",
+  "The delivery charge has been updated. Please check the new total before paying.": "The delivery charge has been updated. Please check the new total before paying.",
 };

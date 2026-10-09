@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:vendor/models/brands_model.dart';
 import 'package:vendor/constant/constant.dart';
 import 'package:vendor/constant/show_toast_dialog.dart';
+import 'package:vendor/app/product_screens/product_delivery_charges_section.dart';
 import 'package:vendor/controller/add_product_controller.dart';
 import 'package:vendor/models/attributes_model.dart';
 import 'package:vendor/models/product_model.dart';
@@ -400,6 +401,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                       icon: Icons.storefront_outlined,
                                       children: [_buildWholesaleSection(controller, isDark), const DsGap(DsSpace.md)],
                                     ),
+                                    // Bug point 60: only when the store's section has
+                                    // is_delivery_charge_customization == true.
+                                    if (controller.deliveryChargesEnabled.value)
+                                      ProductDeliveryChargesSection(
+                                        rows: controller.deliveryChargeInputs.toList(),
+                                        currencySymbol: Constant.currencyModel?.symbol,
+                                        currencyCode: Constant.currencyModel?.code,
+                                        onAdd: controller.addDeliveryCharge,
+                                        onRemove: controller.removeDeliveryCharge,
+                                      ),
                                   ],
                                 ),
                               ),

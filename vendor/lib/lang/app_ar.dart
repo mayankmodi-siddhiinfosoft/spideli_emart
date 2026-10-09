@@ -982,4 +982,14 @@ const Map<String, String> lnAr = {
   "Order Rejected": "تم رفض الطلب",
   "Order Cancelled": "تم إلغاء الطلب",
   "The order is completed, but a payment could not be recorded": "اكتمل الطلب، لكن تعذّر تسجيل إحدى الدفعات",
+  // Product delivery charges (bug point 60).
+  "Delivery Charges": "رسوم التوصيل",
+  "Configure up to 5 custom distance-based delivery charges for this product.": "قم بإعداد ما يصل إلى 5 رسوم توصيل مخصصة حسب المسافة لهذا المنتج.",
+  "Delivery Charges Per Km": "رسوم التوصيل لكل كم",
+  "Minimum Delivery Charges": "الحد الأدنى لرسوم التوصيل",
+  "Minimum Delivery Charge Within Km": "الحد الأدنى لرسوم التوصيل ضمن (كم)",
+  "Add Delivery Charge": "إضافة رسوم توصيل",
+  "Remove delivery charge": "حذف رسوم التوصيل",
+  "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "لقد وصلت إلى الحد الأقصى وهو 5 رسوم توصيل. لا يمكنك إضافة المزيد.",
+  "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "يرجى ملء الحقول الثلاثة لكل شريحة من رسوم التوصيل أو حذف الصفوف الفارغة.",
 };

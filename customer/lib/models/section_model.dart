@@ -1,5 +1,6 @@
 import 'package:customer/models/admin_commission_model.dart';
 import 'package:customer/models/platform_fee_model.dart';
+import 'package:customer/utils/product_delivery_charge.dart';
 
 class SectionModel {
   String? referralAmount;
@@ -20,6 +21,13 @@ class SectionModel {
   AdminCommission? adminCommision;
   PlatformFeeModel? platformFee;
   bool? packagingChargeEnable;
+
+  /// `is_delivery_charge_customization` (Doc 60): delivery is charged from the
+  /// products' own `delivery_charges` tiers. Set by the admin for the
+  /// e-commerce / multivendor-delivery services only. The cart reads it fresh
+  /// (FireStoreUtils.getSectionDeliveryChargeCustomization); this copy is
+  /// only the starting value.
+  bool isDeliveryChargeCustomization = false;
 
   /// Regions the service is offered in (spec 18.8). Empty/absent = every region.
   List<String>? regionIds;
@@ -93,6 +101,7 @@ class SectionModel {
     }
     platformFee = json['platformFee'] is Map ? _tryParse(() => PlatformFeeModel.fromJson(Map<String, dynamic>.from(json['platformFee']))) : null;
     packagingChargeEnable = json['packagingChargeEnable'] == true;
+    isDeliveryChargeCustomization = ProductDeliveryCharge.isEnabled(json['is_delivery_charge_customization']);
     regionIds = json['regionIds'] is List ? (json['regionIds'] as List).map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList() : null;
     serviceGroup = json['serviceGroup']?.toString();
     order = json['order'] is num ? json['order'] as num : num.tryParse(json['order']?.toString() ?? '');
@@ -133,6 +142,7 @@ class SectionModel {
       data['platformFee'] = platformFee?.toJson();
     }
     data['packagingChargeEnable'] = packagingChargeEnable;
+    if (isDeliveryChargeCustomization) data['is_delivery_charge_customization'] = true;
     if (regionIds != null) data['regionIds'] = regionIds;
     if (serviceGroup != null) data['serviceGroup'] = serviceGroup;
     if (order != null) data['order'] = order;

@@ -66,8 +66,10 @@ import 'package:vendor/service/order_ringtone_service.dart';
 import 'package:vendor/themes/app_them_data.dart';
 import 'package:vendor/utils/cancel_reasons.dart';
 import 'package:vendor/utils/chat_unread.dart';
+import 'package:vendor/utils/tax_country.dart';
 import 'package:vendor/utils/customer_notification.dart';
 import 'package:vendor/utils/preferences.dart';
+import 'package:vendor/utils/product_delivery_charges.dart';
 import 'package:vendor/utils/product_image_cleanup.dart';
 import 'package:vendor/utils/push_payload.dart';
 import 'package:vendor/utils/store_credit_once.dart';
@@ -783,30 +785,38 @@ class FireStoreUtils {
   static Future<List<TaxModel>?> getTaxList(double lat, double lng, String sectionId) async {
     List<TaxModel> taxList = [];
     String? country;
+    String? isoCode;
     try {
       final List<Placemark> placeMarks = await Geocoding().placemarkFromCoordinates(lat, lng);
-      if (placeMarks.isNotEmpty) country = placeMarks.first.country;
+      if (placeMarks.isNotEmpty) {
+        country = placeMarks.first.country;
+        isoCode = placeMarks.first.isoCountryCode;
+      }
     } catch (e) {
       log("getTaxList: reverse geocoding ($lat, $lng) failed: $e");
     }
-    if (country == null || country.trim().isEmpty) return taxList;
+    // Doc 61: the geocoder names the country in the DEVICE language
+    // ("Cameroun"), the admin saves the English name ("Cameroon"). Ask for
+    // both (plus English aliases) and keep each tax once, by doc id.
+    final List<String> countries = TaxCountry.queryNames(detectedName: country, isoCode: isoCode);
+    if (countries.isEmpty) return taxList;
 
+    final Map<String, TaxModel> byId = {};
     await fireStore
         .collection(CollectionName.tax)
-        .where('country', isEqualTo: country)
         .where('sectionId', isEqualTo: sectionId)
+        .where('country', whereIn: countries)
         .where('enable', isEqualTo: true)
         .get()
         .then((value) {
           for (var element in value.docs) {
-            TaxModel taxModel = TaxModel.fromJson(element.data());
-            taxList.add(taxModel);
+            byId.putIfAbsent(element.id, () => TaxModel.fromJson(element.data()));
           }
         })
         .catchError((error) {
           log(error.toString());
         });
-
+    taxList.addAll(byId.values);
     return taxList;
   }
 
@@ -1641,6 +1651,20 @@ class FireStoreUtils {
       return null;
     }
     return sectionModel;
+  }
+
+  /// Bug point 60: `sections/{sectionId}.is_delivery_charge_customization`,
+  /// read fresh (server first) when the Add / Edit Product screen opens. False
+  /// when the id is blank, the document is missing or cannot be read.
+  static Future<bool> getSectionDeliveryChargeCustomization(String? sectionId) async {
+    if (sectionId == null || sectionId.trim().isEmpty) return false;
+    try {
+      final snapshot = await fireStore.collection(CollectionName.sections).doc(sectionId.trim()).get();
+      return ProductDeliveryCharges.isEnabledForSection(snapshot.data());
+    } catch (e, s) {
+      log('FireStoreUtils.getSectionDeliveryChargeCustomization $e $s');
+      return false;
+    }
   }
 
   static Future<List<VendorCategoryModel>> getVendorCategoryById(String sectionId) async {

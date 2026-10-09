@@ -251,7 +251,10 @@ class OrderDetailsScreen extends StatelessWidget {
                             ],
                             if (order.takeAway != true) ...[
                               const DsGap(DsSpace.md),
-                              (order.vendor?.isSelfDelivery == true && Constant.isSelfDeliveryFeature == true)
+                              // The fee the order was charged: "Free Delivery" when that
+                              // was nothing (a self-delivering store, or Doc 60
+                              // product charges that came to 0), the amount otherwise.
+                              controller.deliveryCharges.value <= 0
                                   ? _billRow(context, title: "Delivery Fee".tr, amount: 'Free Delivery'.tr, amountColor: c.successStrong, strongTitle: true)
                                   : _billRow(
                                       context,

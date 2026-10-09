@@ -61,6 +61,19 @@ class ProductModel {
   /// Subset of ["delivery", "takeaway"]; absent/empty = both.
   List<String>? fulfilment;
 
+  /// Product-level custom delivery charges (`delivery_charges`, bug point 60,
+  /// APP-SPEC-PRODUCT-DELIVERY-CHARGES §2B). Null when the document has no
+  /// such field. Only edited while the store's section has
+  /// `is_delivery_charge_customization == true`.
+  List<DeliveryChargeTier>? deliveryCharges;
+
+  /// Write [deliveryCharges] on the next save. False by default, so a save
+  /// that never showed the editor (the publish switch, bulk tax, a section
+  /// with the flag off) leaves `delivery_charges` exactly as the panel left
+  /// it: product saves use `setKnownFields`, which only touches keys present
+  /// in [toJson].
+  bool writeDeliveryCharges = false;
+
   static const int maxWholesaleTiers = 5;
   static const String saleTypeRetail = 'retail';
   static const String saleTypeWholesale = 'wholesale';
@@ -108,6 +121,7 @@ class ProductModel {
     this.saleType,
     this.wholesaleBusinessOnly,
     this.fulfilment,
+    this.deliveryCharges,
   });
 
   ProductModel.fromJson(Map<String, dynamic> json) {
@@ -170,6 +184,7 @@ class ProductModel {
     saleType = rawSaleType.isEmpty ? null : rawSaleType;
     wholesaleBusinessOnly = parseWholesaleBool(json['wholesaleBusinessOnly']);
     fulfilment = parseFulfilment(json['fulfilment']);
+    deliveryCharges = json.containsKey(DeliveryChargeTier.productField) ? DeliveryChargeTier.parseList(json[DeliveryChargeTier.productField]) : null;
   }
 
   /// Tiers to use/write: [wholesaleTiers] sorted, or the legacy single tier.
@@ -279,6 +294,11 @@ class ProductModel {
     // older product as explicitly restricted the first time it is saved.
     if (hasExplicitFulfilment) {
       data['fulfilment'] = allFulfilmentModes.where((m) => fulfilment!.contains(m)).toList();
+    }
+    // Field-preserving: absent from the map (so untouched by setKnownFields)
+    // unless the delivery charges editor was shown and validated.
+    if (writeDeliveryCharges) {
+      data[DeliveryChargeTier.productField] = (deliveryCharges ?? const <DeliveryChargeTier>[]).take(DeliveryChargeTier.maxTiers).map((t) => t.toJson()).toList();
     }
     return data;
   }
@@ -486,6 +506,83 @@ class WholesaleTier {
     tiers.sort((a, b) => a.minQtyValue.compareTo(b.minQtyValue));
     return tiers;
   }
+}
+
+/// One product delivery charge tier (`vendor_products/{id}.delivery_charges[]`,
+/// APP-SPEC-PRODUCT-DELIVERY-CHARGES §2B). Always written as NUMBERS; read
+/// tolerantly (numbers or numeric strings).
+class DeliveryChargeTier {
+  final num deliveryChargesPerKm;
+  final num minimumDeliveryCharges;
+  final num minimumDeliveryChargesWithinKm;
+
+  static const String productField = 'delivery_charges';
+  static const String perKmKey = 'delivery_charges_per_km';
+  static const String minimumChargeKey = 'minimum_delivery_charges';
+  static const String withinKmKey = 'minimum_delivery_charges_within_km';
+
+  /// Hard limit on tiers per product (spec §3B.4).
+  static const int maxTiers = 5;
+
+  const DeliveryChargeTier({required this.deliveryChargesPerKm, required this.minimumDeliveryCharges, required this.minimumDeliveryChargesWithinKm});
+
+  /// A value that is missing or not a number reads as 0; see [parseList] for
+  /// entries that carry nothing usable at all.
+  factory DeliveryChargeTier.fromJson(Map<String, dynamic> json) => DeliveryChargeTier(
+    deliveryChargesPerKm: parseDeliveryChargeNumber(json[perKmKey]) ?? 0,
+    minimumDeliveryCharges: parseDeliveryChargeNumber(json[minimumChargeKey]) ?? 0,
+    minimumDeliveryChargesWithinKm: parseDeliveryChargeNumber(json[withinKmKey]) ?? 0,
+  );
+
+  Map<String, dynamic> toJson() => {
+    perKmKey: _compact(deliveryChargesPerKm),
+    minimumChargeKey: _compact(minimumDeliveryCharges),
+    withinKmKey: _compact(minimumDeliveryChargesWithinKm),
+  };
+
+  /// Whole values are written as ints (150, not 150.0), as in the spec.
+  static num _compact(num v) => v is double && v.isFinite && v % 1 == 0 ? v.toInt() : v;
+
+  /// Parses `delivery_charges`. Anything that is not a list gives []; list
+  /// entries that are not maps, or in which none of the three values is a
+  /// number, are skipped. Stored order is kept.
+  static List<DeliveryChargeTier> parseList(dynamic value) {
+    if (value is! List) return <DeliveryChargeTier>[];
+    final List<DeliveryChargeTier> tiers = [];
+    for (final item in value) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      if ([perKmKey, minimumChargeKey, withinKmKey].every((k) => parseDeliveryChargeNumber(map[k]) == null)) continue;
+      tiers.add(DeliveryChargeTier.fromJson(map));
+    }
+    return tiers;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is DeliveryChargeTier &&
+      other.deliveryChargesPerKm == deliveryChargesPerKm &&
+      other.minimumDeliveryCharges == minimumDeliveryCharges &&
+      other.minimumDeliveryChargesWithinKm == minimumDeliveryChargesWithinKm;
+
+  @override
+  int get hashCode => Object.hash(deliveryChargesPerKm, minimumDeliveryCharges, minimumDeliveryChargesWithinKm);
+
+  @override
+  String toString() => 'DeliveryChargeTier(${toJson()})';
+}
+
+/// A finite number from a num or a numeric string ("150", "1.5", "1,5"), or
+/// null for anything else (null, "", "abc", NaN, infinity, bools).
+num? parseDeliveryChargeNumber(dynamic value) {
+  if (value is num) return value.isFinite ? value : null;
+  if (value is String) {
+    final String text = value.trim().replaceAll(',', '.');
+    if (text.isEmpty) return null;
+    final num? parsed = num.tryParse(text);
+    return parsed != null && parsed.isFinite ? parsed : null;
+  }
+  return null;
 }
 
 String parseWholesaleString(dynamic value) {

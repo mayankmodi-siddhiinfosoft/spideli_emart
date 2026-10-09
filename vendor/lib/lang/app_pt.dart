@@ -86,4 +86,14 @@ const Map<String, String> ptPO = {
   "Assign Delivery Man": "Atribuir entregador",
   "Order marked as completed": "Pedido marcado como concluído",
   "The order is completed, but a payment could not be recorded": "O pedido foi concluído, mas um pagamento não pôde ser registrado",
+  // Product delivery charges (bug point 60).
+  "Delivery Charges": "Taxas de entrega",
+  "Configure up to 5 custom distance-based delivery charges for this product.": "Configure até 5 taxas de entrega personalizadas por distância para este produto.",
+  "Delivery Charges Per Km": "Taxa de entrega por km",
+  "Minimum Delivery Charges": "Taxa de entrega mínima",
+  "Minimum Delivery Charge Within Km": "Taxa mínima válida até (km)",
+  "Add Delivery Charge": "Adicionar taxa de entrega",
+  "Remove delivery charge": "Remover taxa de entrega",
+  "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "Você atingiu o limite máximo de 5 taxas de entrega. Não é possível adicionar mais.",
+  "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "Preencha os 3 campos de cada faixa de taxa de entrega ou remova as linhas vazias.",
 };

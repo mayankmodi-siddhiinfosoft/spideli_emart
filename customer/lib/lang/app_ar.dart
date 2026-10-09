@@ -920,4 +920,5 @@ const Map<String, String> arAR = {
   "This booking can no longer be negotiated": "لم يعد من الممكن التفاوض على هذا الحجز",
   "This price proposal has changed. Please check the latest status.": "تم تغيير عرض السعر هذا. يرجى التحقق من أحدث حالة.",
   "This counter-offer has expired: the driver who made it is no longer on your booking.": "انتهت صلاحية هذا العرض المقابل: السائق الذي قدّمه لم يعد مرتبطًا بحجزك.",
+  "The delivery charge has been updated. Please check the new total before paying.": "تم تحديث رسوم التوصيل. يرجى مراجعة الإجمالي الجديد قبل الدفع.",
 };

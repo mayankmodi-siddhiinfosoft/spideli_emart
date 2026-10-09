@@ -54,6 +54,7 @@ import '../screen_ui/multi_vendor_service/cart_screen/oder_placing_screens.dart'
 import '../screen_ui/multi_vendor_service/wallet_screen/wallet_screen.dart';
 import '../service/cart_provider.dart';
 import '../service/database_helper.dart';
+import '../utils/product_delivery_charge.dart';
 import '../utils/region_service.dart';
 import '../utils/wholesale_pricing.dart';
 import 'food_home_controller.dart';
@@ -128,6 +129,9 @@ class CartController extends GetxController {
             vendorModel.value = value;
           }
         });
+        // Doc 60 first: a section charging per product never needs
+        // settings/DeliveryCharge.
+        await _loadProductDeliveryCharges();
         await _loadDeliveryCharge();
       }
       calculatePrice();
@@ -157,6 +161,8 @@ class CartController extends GetxController {
   /// settings/DeliveryCharge for the store's region (spec 18.6): reloaded only
   /// when the cart's store region changes.
   Future<void> _loadDeliveryCharge() async {
+    // Doc 60: product delivery charges replace this setting entirely.
+    if (productDeliveryChargeMode.value) return;
     await RegionService.ensureLoaded();
     final String region = RegionService.regionOfVendor(vendorModel.value.id == null ? null : vendorModel.value) ?? '';
     if (_deliveryChargeRegion == region) return;
@@ -169,6 +175,56 @@ class CartController extends GetxController {
       }
     });
   }
+
+  /// Doc 60: the cart's section has `is_delivery_charge_customization`, so a
+  /// Delivery order is charged from the products' own `delivery_charges`
+  /// tiers ONLY (see [ProductDeliveryCharge]).
+  RxBool productDeliveryChargeMode = false.obs;
+
+  /// `delivery_charges` tiers per product id (no `~variant`), read from
+  /// `vendor_products` - never from the locally cached cart line.
+  final Map<String, List<ProductDeliveryTier>> _productDeliveryTiers = {};
+
+  /// Section the flag above was read for.
+  String? _productDeliverySectionId;
+
+  /// The section of the cart's store; the open service when the store does
+  /// not say.
+  String? get _cartSectionId {
+    final String? id = vendorModel.value.sectionId;
+    return (id != null && id.isNotEmpty) ? id : Constant.sectionConstantModel?.id;
+  }
+
+  static String _productIdOf(CartProductModel line) => (line.id ?? '').split('~').first;
+
+  /// Reads the section flag (once per section) and, when it is on, the tiers
+  /// of every cart product not read yet. [validateCartBeforePayment] reads
+  /// both again before any payment.
+  Future<void> _loadProductDeliveryCharges() async {
+    final String? sectionId = _cartSectionId;
+    if (_productDeliverySectionId != sectionId) {
+      _productDeliverySectionId = sectionId;
+      _productDeliveryTiers.clear();
+      final bool? fresh = await FireStoreUtils.getSectionDeliveryChargeCustomization(sectionId);
+      productDeliveryChargeMode.value =
+          fresh ?? (Constant.sectionConstantModel?.id == sectionId && Constant.sectionConstantModel?.isDeliveryChargeCustomization == true);
+    }
+    if (!productDeliveryChargeMode.value) return;
+    final Set<String> missing = cartItem.map(_productIdOf).where((id) => id.isNotEmpty && !_productDeliveryTiers.containsKey(id)).toSet();
+    for (final String id in missing) {
+      final ProductModel? product = await FireStoreUtils.getProductById(id);
+      if (product != null) _productDeliveryTiers[id] = product.deliveryChargeTiers;
+    }
+  }
+
+  /// Haversine km from the delivery address to the store; 0 when either has
+  /// no position (a store without one cannot take Delivery at all - see
+  /// [validateCartBeforePayment]).
+  double get _deliveryDistanceKm =>
+      ProductDeliveryCharge.haversineKm(selectedAddress.value.location?.latitude, selectedAddress.value.location?.longitude, vendorModel.value.latitude, vendorModel.value.longitude) ?? 0.0;
+
+  /// Doc 60 order delivery charge: the highest product charge in the cart.
+  double _productDeliveryCharge() => ProductDeliveryCharge.orderCharge(_deliveryDistanceKm, cartItem.map((line) => _productDeliveryTiers[_productIdOf(line)] ?? const <ProductDeliveryTier>[]));
 
   /// Live prices in the cart / checkout: the store's region currency.
   CurrencyModel? get storeCurrency => RegionService.currencyForVendor(vendorModel.value.id == null ? null : vendorModel.value);
@@ -206,7 +262,11 @@ class CartController extends GetxController {
               ),
             ) ??
             0.0;
-        if (Constant.sectionConstantModel?.serviceType == 'Ecommerce Service') {
+        if (productDeliveryChargeMode.value) {
+          // Doc 60: product tiers only - no settings/DeliveryCharge, no flat
+          // e-commerce charge, no vendor-level charge.
+          deliveryCharges.value = _productDeliveryCharge();
+        } else if (Constant.sectionConstantModel?.serviceType == 'Ecommerce Service') {
           deliveryCharges.value = double.parse(Constant.sectionConstantModel?.deliveryCharge ?? '0.0');
         } else if (vendorModel.value.isSelfDelivery == true && Constant.isSelfDeliveryFeature == true) {
           deliveryCharges.value = 0.0;
@@ -446,8 +506,18 @@ class CartController extends GetxController {
     if (selectedFoodType.value == OrderTypeMode.delivery && vendorModel.value.id != null && !vendorModel.value.hasPosition) {
       problems.add("This store has not set its location yet, so it cannot deliver. Please choose TakeAway.".tr);
     }
+    // Doc 60: the delivery charge the customer is looking at; re-worked below
+    // from the section flag and product tiers as they are now.
+    final double shownDeliveryCharge = deliveryCharges.value;
     ShowToastDialog.showLoader("Please wait...".tr);
     try {
+      final String? sectionId = _cartSectionId;
+      final bool? customDelivery = await FireStoreUtils.getSectionDeliveryChargeCustomization(sectionId);
+      if (customDelivery != null) productDeliveryChargeMode.value = customDelivery;
+      // Turned off since the cart opened: today's charge needs its setting.
+      if (!productDeliveryChargeMode.value) await _loadDeliveryCharge();
+      if (_productDeliverySectionId != sectionId) _productDeliveryTiers.clear();
+      _productDeliverySectionId = sectionId;
       for (final CartProductModel line in cartItem.toList()) {
         final String productId = (line.id ?? '').split('~').first;
         final String? variantId = (line.id ?? '').contains('~') ? line.id!.split('~').last : null;
@@ -456,6 +526,7 @@ class CartController extends GetxController {
           problems.add("${'"'}${line.name ?? ''}${'"'} ${'is no longer available'.tr}");
           continue;
         }
+        _productDeliveryTiers[productId] = product.deliveryChargeTiers;
         final String name = line.name ?? product.name ?? '';
         if (!product.allowsFoodType(selectedFoodType.value)) {
           final String allowed = product.effectiveFulfilment.map(OrderTypeMode.labelOf).join(' / ');
@@ -489,6 +560,11 @@ class CartController extends GetxController {
     }
     ShowToastDialog.closeLoader();
     calculatePrice();
+    // The amount charged must be the amount shown: when the fresh tiers /
+    // section flag change the delivery charge, show the new total first.
+    if (selectedFoodType.value == OrderTypeMode.delivery && (deliveryCharges.value - shownDeliveryCharge).abs() > 0.004) {
+      problems.add("The delivery charge has been updated. Please check the new total before paying.".tr);
+    }
     if (problems.isEmpty) return true;
     Get.dialog(
       AlertDialog(

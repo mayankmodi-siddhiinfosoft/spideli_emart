@@ -988,4 +988,14 @@ const Map<String, String> enUS = {
   "Order Rejected": "Order Rejected",
   "Order Cancelled": "Order Cancelled",
   "The order is completed, but a payment could not be recorded": "The order is completed, but a payment could not be recorded",
+  // Product delivery charges (bug point 60).
+  "Delivery Charges": "Delivery Charges",
+  "Configure up to 5 custom distance-based delivery charges for this product.": "Configure up to 5 custom distance-based delivery charges for this product.",
+  "Delivery Charges Per Km": "Delivery Charges Per Km",
+  "Minimum Delivery Charges": "Minimum Delivery Charges",
+  "Minimum Delivery Charge Within Km": "Minimum Delivery Charge Within Km",
+  "Add Delivery Charge": "Add Delivery Charge",
+  "Remove delivery charge": "Remove delivery charge",
+  "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "You have reached the maximum limit of 5 delivery charges. You cannot add more.",
+  "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "Please fill all 3 fields for each delivery charge tier or remove empty rows.",
 };

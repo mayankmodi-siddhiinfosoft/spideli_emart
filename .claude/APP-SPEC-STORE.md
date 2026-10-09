@@ -31,6 +31,7 @@ stay on disk as history. **Edit this one.**
 | 2 | Multiple stores on one account | point 3 | ✅ |
 | 3 | Wholesale pricing, in tiers | point 17 | ✅ panel, POS, store app and website |
 | 3a | "Takeaway Option" means takeaway ONLY | — | ✅ relabelled |
+| 3b | Product custom delivery charges (store app) | bug point 60 | ✅ store app (9 Oct) |
 | 4 | Subscriptions a store sells to its customers | point 19 | ✅ selling side |
 | 5 | The store's own platform subscription | Document 1 | ✅ |
 | 6 | Open questions | — | — |
@@ -385,6 +386,47 @@ touched.
 > "takeaway"]` array can say it, but the website's strict equality cannot act on
 > it. Supporting it properly means changing the customer site's filter, not just
 > adding a field.
+
+## 3b. Product custom delivery charges — store app (bug point 60, 9 Oct 2026)
+
+Source: `APP-SPEC-PRODUCT-DELIVERY-CHARGES.md` §2–3. Store app half only; the
+customer app's cart rule (max across items) is specified there.
+
+- **When it shows:** the Add / Edit Product screen reads
+  `sections/{sectionId}.is_delivery_charge_customization` **fresh** every time it
+  opens (`FireStoreUtils.getSectionDeliveryChargeCustomization`). The section
+  id is the vendor document's `section_id`, else the user's `sectionId`, else
+  the section chosen at login. Only `true` shows the "Delivery Charges"
+  section; missing, `false`, or an unreadable document hides it. The app does
+  not check `serviceTypeFlag` itself — the admin panel only sets the flag on
+  `ecommerce-service` / `multivendor-delivery-service`.
+- **The editor:** up to **5** rows of *Delivery Charges Per Km*, *Minimum
+  Delivery Charges (<store currency symbol, else code>)*, *Minimum Delivery
+  Charge Within Km*; decimal keyboard, digits with at most 2 decimals (`,` is
+  accepted as the separator), no sign. Trash icon per row. At 5 rows "+ Add
+  Delivery Charge" is disabled and *"You have reached the maximum limit of 5
+  delivery charges. You cannot add more."* shows above it.
+- **Save:** every row present needs all 3 values, numeric and `>= 0`, else
+  *"Please fill all 3 fields for each delivery charge tier or remove empty
+  rows."* and nothing is saved. Written as
+  `vendor_products/{id}.delivery_charges: [{delivery_charges_per_km,
+  minimum_delivery_charges, minimum_delivery_charges_within_km}]` with
+  **numbers** (whole values as ints), in the order entered, `[]` when there
+  are no rows.
+- **Read:** numbers or numeric strings; entries with none of the three values
+  usable are dropped, a single missing value reads `0`.
+- **Field-preserving:** product saves use `setKnownFields`, and
+  `delivery_charges` is in the write **only** when the editor was shown (flag
+  on) and validated. With the flag off, and on every other product save (the
+  publish switch, bulk "Apply Tax"), whatever the panel stored is left alone.
+  Importing an admin catalogue product (a new document) carries the
+  template's `delivery_charges` when it has the field.
+- Code: `vendor/lib/utils/product_delivery_charges.dart` (rules),
+  `vendor/lib/app/product_screens/product_delivery_charges_section.dart`
+  (UI), `DeliveryChargeTier` in `vendor/lib/models/product_model.dart`;
+  tests in `vendor/test/product_delivery_charges_test.dart`.
+
+---
 
 ## 4. Subscriptions a store sells to its customers
 
