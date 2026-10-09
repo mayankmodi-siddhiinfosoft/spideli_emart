@@ -7,6 +7,8 @@ This note covers the CUSTOMER app (`customer/`). The Store app's tier editor is 
 
 - `sections/{sectionId}.is_delivery_charge_customization == true` (boolean `true`, or the text `"true"`), read when the cart loads and read again by `validateCartBeforePayment` before any payment. The section is the cart store's `section_id`, or the open service's id if the store has none.
 - The admin sets the flag only for `ecommerce-service` / `multivendor-delivery-service`, and the app treats the flag itself as the switch.
+- **Exception (client decision, 9 Oct 2026):** a store that delivers its orders itself (`vendors.isSelfDelivery == true` with the self-delivery feature on) is always **free delivery**, even when the flag is on; its product tiers are not applied.
+- **Admin catalogue import (confirmed by the client, 9 Oct 2026):** a product imported from `admin_products` copies that template's `delivery_charges`.
 - If the flag is false, missing, malformed or unreadable, the delivery charge is calculated exactly as before: `settings/DeliveryCharge` for the store's region, the flat e-commerce `sections.delivery_charge`, the vendor-level `deliveryCharge` and self-delivery.
 - TakeAway orders still have a delivery charge of 0.
 

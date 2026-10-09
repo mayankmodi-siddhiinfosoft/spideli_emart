@@ -262,7 +262,11 @@ class CartController extends GetxController {
               ),
             ) ??
             0.0;
-        if (productDeliveryChargeMode.value) {
+        if (productDeliveryChargeMode.value && vendorModel.value.isSelfDelivery == true && Constant.isSelfDeliveryFeature == true) {
+          // Doc 60, client decision 9 Oct: a store that delivers its orders
+          // itself stays free delivery, product tiers or not.
+          deliveryCharges.value = 0.0;
+        } else if (productDeliveryChargeMode.value) {
           // Doc 60: product tiers only - no settings/DeliveryCharge, no flat
           // e-commerce charge, no vendor-level charge.
           deliveryCharges.value = _productDeliveryCharge();
