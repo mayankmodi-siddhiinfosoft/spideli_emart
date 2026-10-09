@@ -161,8 +161,8 @@ class CartController extends GetxController {
   /// settings/DeliveryCharge for the store's region (spec 18.6): reloaded only
   /// when the cart's store region changes.
   Future<void> _loadDeliveryCharge() async {
-    // Doc 60: product delivery charges replace this setting entirely.
-    if (productDeliveryChargeMode.value) return;
+    // Doc 60: also loaded in product mode - a product without its own tiers
+    // costs the store's delivery charge, which may come from this setting.
     await RegionService.ensureLoaded();
     final String region = RegionService.regionOfVendor(vendorModel.value.id == null ? null : vendorModel.value) ?? '';
     if (_deliveryChargeRegion == region) return;
@@ -223,8 +223,32 @@ class CartController extends GetxController {
   double get _deliveryDistanceKm =>
       ProductDeliveryCharge.haversineKm(selectedAddress.value.location?.latitude, selectedAddress.value.location?.longitude, vendorModel.value.latitude, vendorModel.value.longitude) ?? 0.0;
 
-  /// Doc 60 order delivery charge: the highest product charge in the cart.
-  double _productDeliveryCharge() => ProductDeliveryCharge.orderCharge(_deliveryDistanceKm, cartItem.map((line) => _productDeliveryTiers[_productIdOf(line)] ?? const <ProductDeliveryTier>[]));
+  /// Doc 60 order delivery charge: the highest product charge in the cart. A
+  /// product with no tiers of its own costs the store's delivery charge
+  /// ([_storeDeliveryCharge], client rule 9 Oct 2026).
+  double _productDeliveryCharge() {
+    final List<List<ProductDeliveryTier>> tiers = cartItem.map((line) => _productDeliveryTiers[_productIdOf(line)] ?? const <ProductDeliveryTier>[]).toList();
+    final bool anyWithout = tiers.any((t) => t.isEmpty);
+    return ProductDeliveryCharge.orderCharge(_deliveryDistanceKm, tiers, storeCharge: anyWithout ? _storeDeliveryCharge() : null);
+  }
+
+  /// The store's delivery charge as charged when a section does not price per
+  /// product: the flat e-commerce section charge, the platform charge when
+  /// stores may not set their own, else the store's own (or the platform's).
+  double _storeDeliveryCharge() {
+    if (Constant.sectionConstantModel?.serviceType == 'Ecommerce Service') {
+      return double.tryParse(Constant.sectionConstantModel?.deliveryCharge ?? '0.0') ?? 0.0;
+    }
+    if (deliveryChargeModel.value.vendorCanModify == false) {
+      return totalDistance.value > (deliveryChargeModel.value.minimumDeliveryChargesWithinKm ?? 0)
+          ? totalDistance.value * (deliveryChargeModel.value.deliveryChargesPerKm ?? 0)
+          : (deliveryChargeModel.value.minimumDeliveryCharges ?? 0).toDouble();
+    }
+    final charge = vendorModel.value.deliveryCharge ?? deliveryChargeModel.value;
+    return totalDistance.value > (charge.minimumDeliveryChargesWithinKm ?? 0)
+        ? totalDistance.value * (charge.deliveryChargesPerKm ?? 0)
+        : (charge.minimumDeliveryCharges ?? 0).toDouble();
+  }
 
   /// Live prices in the cart / checkout: the store's region currency.
   CurrencyModel? get storeCurrency => RegionService.currencyForVendor(vendorModel.value.id == null ? null : vendorModel.value);
@@ -267,8 +291,8 @@ class CartController extends GetxController {
           // itself stays free delivery, product tiers or not.
           deliveryCharges.value = 0.0;
         } else if (productDeliveryChargeMode.value) {
-          // Doc 60: product tiers only - no settings/DeliveryCharge, no flat
-          // e-commerce charge, no vendor-level charge.
+          // Doc 60: each product's own tiers; a product without tiers costs
+          // the store's delivery charge; the order pays the highest.
           deliveryCharges.value = _productDeliveryCharge();
         } else if (Constant.sectionConstantModel?.serviceType == 'Ecommerce Service') {
           deliveryCharges.value = double.parse(Constant.sectionConstantModel?.deliveryCharge ?? '0.0');

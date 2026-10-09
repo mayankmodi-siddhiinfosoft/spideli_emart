@@ -121,4 +121,21 @@ void main() {
       expect(ProductDeliveryCharge.orderCharge(3, const []), 0);
     });
   });
+
+  group('a product without tiers costs the store charge (client rule 9 Oct)', () {
+    test('only untiered products -> the store charge', () {
+      expect(ProductDeliveryCharge.orderCharge(3, [const [], const []], storeCharge: 100), 100);
+    });
+    test('mixed cart -> the highest of the tier charge and the store charge', () {
+      expect(ProductDeliveryCharge.orderCharge(7, [const [], [tier(150, 1500, 5)]], storeCharge: 100), 1800);
+      expect(ProductDeliveryCharge.orderCharge(3, [const [], [tier(50, 30, 5)]], storeCharge: 100), 100);
+    });
+    test('all products tiered -> the store charge is not used', () {
+      expect(ProductDeliveryCharge.orderCharge(3, [[tier(50, 30, 5)]], storeCharge: 100), 30);
+    });
+    test('unusable store charge counts as 0', () {
+      expect(ProductDeliveryCharge.orderCharge(3, [const []], storeCharge: double.nan), 0);
+      expect(ProductDeliveryCharge.orderCharge(3, [const []], storeCharge: -5), 0);
+    });
+  });
 }

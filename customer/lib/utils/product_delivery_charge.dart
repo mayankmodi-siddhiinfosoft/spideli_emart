@@ -107,10 +107,15 @@ class ProductDeliveryCharge {
 
   /// The order's delivery charge: the highest [itemCharge] over
   /// [itemTiers] (one tier list per cart line), 0 for an empty cart.
-  static double orderCharge(double distanceKm, Iterable<List<ProductDeliveryTier>> itemTiers) {
+  ///
+  /// [storeCharge] is what a product WITHOUT tiers costs: the store's own
+  /// delivery charge (client rule, 9 Oct 2026 - "if no delivery charge is
+  /// configured for a product, apply the delivery charge configured by the
+  /// store"). Null keeps the spec's 0 for such a product.
+  static double orderCharge(double distanceKm, Iterable<List<ProductDeliveryTier>> itemTiers, {double? storeCharge}) {
     double max = 0.0;
     for (final List<ProductDeliveryTier> tiers in itemTiers) {
-      final double c = itemCharge(distanceKm, tiers);
+      final double c = tiers.isEmpty && storeCharge != null ? _round(storeCharge.isFinite && storeCharge > 0 ? storeCharge : 0.0) : itemCharge(distanceKm, tiers);
       if (c > max) max = c;
     }
     return max;
