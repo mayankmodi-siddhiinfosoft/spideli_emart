@@ -18,8 +18,9 @@ import 'package:location/location.dart';
 /// every switch and status dot shows the same value.
 ///
 /// Client report (8 Oct): "the driver goes Offline automatically". Nothing
-/// in the apps writes `isActive: false` except the driver's own switch (and
-/// a brand-new account), but each dashboard showed the value of its OWN copy
+/// in the apps writes `isActive: false` except the driver's own switch, the
+/// log-out (client rule 9 Oct: offline first, then sign out) and a brand-new
+/// account, but each dashboard showed the value of its OWN copy
 /// of the driver, which started empty ("Offline") and was filled only once
 /// that dashboard's `users/{uid}` listener ran. That listener started only
 /// after the location set-up, which on Android could wait for good (see
@@ -29,7 +30,7 @@ import 'package:location/location.dart';
 ///
 /// The value here comes from its own listener, starts from the copy read at
 /// sign-in / app start (never from an empty model), and survives dashboards
-/// being rebuilt. It changes only through [write] (the switch) or the live
+/// being rebuilt. It changes only through [write] (the switch, log-out) or the live
 /// record (another device, the panel).
 abstract final class DriverOnlineStatus {
   static final Rxn<bool> _online = Rxn<bool>();

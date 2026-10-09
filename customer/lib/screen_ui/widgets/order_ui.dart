@@ -290,7 +290,10 @@ class OrderTotalRow extends StatelessWidget {
 
   final EdgeInsetsGeometry? padding;
 
-  const OrderTotalRow({super.key, required this.label, required this.value, this.divider = true, this.valueColor, this.padding});
+  /// Replaces the value text (e.g. a loading placeholder).
+  final Widget? valueWidget;
+
+  const OrderTotalRow({super.key, required this.label, required this.value, this.divider = true, this.valueColor, this.padding, this.valueWidget});
 
   @override
   Widget build(BuildContext context) {
@@ -303,16 +306,17 @@ class OrderTotalRow extends StatelessWidget {
         children: [
           Expanded(child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.titleSm)),
           const DsGap(DsSpace.md),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: OrderUi.valueMaxWidth),
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: t.titleSm.w700.tabular.withColor(valueColor ?? c.brandStrong),
-            ),
-          ),
+          valueWidget ??
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: OrderUi.valueMaxWidth),
+                child: Text(
+                  value,
+                  textAlign: TextAlign.end,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.titleSm.w700.tabular.withColor(valueColor ?? c.brandStrong),
+                ),
+              ),
         ],
       ),
     );

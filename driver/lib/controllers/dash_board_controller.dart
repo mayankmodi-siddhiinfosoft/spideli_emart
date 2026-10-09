@@ -86,15 +86,17 @@ class DriverSessions {
 
     try {
       await step('alert sound', () => AudioPlayerService.playSound(false), const Duration(seconds: 2));
+      // Client rule (9 Oct 2026): logging out takes the driver offline FIRST,
+      // while still signed in, so the dispatch stops offering work to a
+      // logged-out phone. Same field-level write as the switch; bounded, so a
+      // slow network never blocks the log-out.
+      await step('offline', () => DriverOnlineStatus.write(false), const Duration(seconds: 6));
       // Location streams and users listeners stop before the auth user goes
       // away (no tick with a null user, none left to double up after login).
       await step('dashboards', stopAll, const Duration(seconds: 4));
       // Client point 19: stop receiving this driver's work and clear the
       // stored token when it is this device's.
       await step('notifications', () => NotificationService.onSignOut(), const Duration(seconds: 8));
-      // Log-out never changes the online status (`isActive`): only the
-      // driver's switch does. A driver who logs out online is still online
-      // on the next login; one who went offline stays offline.
       await DriverOnlineStatus.reset();
       try {
         await FirebaseAuth.instance.signOut();

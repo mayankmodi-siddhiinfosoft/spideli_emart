@@ -52,6 +52,8 @@ class CartScreen extends StatelessWidget {
         // products' tiers, so it is "Free Delivery" only when that comes to 0.
         final bool freeDelivery = controller.productDeliveryChargeMode.value ? controller.deliveryCharges.value <= 0 : selfDelivery;
         final deliveryBreakdown = controller.productDeliveryBreakdown.toList();
+        // Shimmer, not amounts, until the bill has been worked out once.
+        final bool billLoading = !controller.isBillReady.value;
         final String deliveryType = controller.deliveryType.value;
         final double tips = controller.deliveryTips.value;
         final bool cashbackApply = controller.isCashbackApply.value;
@@ -145,8 +147,13 @@ class CartScreen extends StatelessWidget {
                                           children: [
                                             Text("${cartProductModel.name}", style: t.bodyStrong),
                                             const DsGap(DsSpace.xxs),
-                                            // Wholesale tier reached by this line's quantity (spec 8.2).
-                                            cartProductModel.linePrice.isWholesale
+                                            // Shimmer until the store (and so its currency) is
+                                            // loaded: the price used to flip from one currency
+                                            // to the other.
+                                            billLoading
+                                                ? const Padding(padding: EdgeInsets.symmetric(vertical: DsSpace.xxs), child: _AmountSkeleton(width: 96, height: 18))
+                                                // Wholesale tier reached by this line's quantity (spec 8.2).
+                                                : cartProductModel.linePrice.isWholesale
                                                 ? Column(
                                                     crossAxisAlignment: CrossAxisAlignment.start,
                                                     children: [
@@ -194,6 +201,7 @@ class CartScreen extends StatelessWidget {
                                               builder: (context) {
                                                 // Next cheaper tier, so the customer sees when the price
                                                 // switches - the same helper the product page's note uses.
+                                                if (billLoading) return const SizedBox.shrink();
                                                 final next = LinePrice.nextTier(
                                                   tiers: cartProductModel.activeTiers,
                                                   quantity: cartProductModel.quantity ?? 0,
@@ -405,12 +413,14 @@ class CartScreen extends StatelessWidget {
                               title: "Item totals".tr,
                               amount: Constant.amountShow(amount: controller.subTotal.value.toString(), currency: currency),
                               isDark: isDark,
+                              loading: billLoading,
                             ),
                             sectionDivider(isDark),
                             amountRow(
                               title: "Coupon Discount".tr,
                               amount: "- (${Constant.amountShow(amount: controller.couponAmount.value.toString(), currency: currency)})",
                               isDark: isDark,
+                              loading: billLoading,
                               amountColor: c.dangerStrong,
                             ),
                             controller.vendorModel.value.specialDiscountEnable == true && Constant.specialDiscountOffer == true
@@ -420,6 +430,7 @@ class CartScreen extends StatelessWidget {
                                       title: "Special Discount".tr,
                                       amount: "- (${Constant.amountShow(amount: controller.specialDiscountAmount.value.toString(), currency: currency)})",
                                       isDark: isDark,
+                                      loading: billLoading,
                                       amountColor: c.dangerStrong,
                                     ),
                                   )
@@ -430,6 +441,7 @@ class CartScreen extends StatelessWidget {
                                 title: "Packaging charge".tr,
                                 amount: Constant.amountShow(amount: controller.packagingCharge.value.toString(), currency: currency),
                                 isDark: isDark,
+                                loading: billLoading,
                               ),
                             if (Constant.sectionConstantModel?.packagingChargeEnable == true) const DsGap(DsSpace.md),
                             isTakeAway
@@ -438,9 +450,10 @@ class CartScreen extends StatelessWidget {
                                     title: "Delivery Fee".tr,
                                     amount: freeDelivery ? 'Free Delivery'.tr : Constant.amountShow(amount: controller.deliveryCharges.value.toString(), currency: currency),
                                     isDark: isDark,
+                                    loading: billLoading,
                                     amountColor: freeDelivery ? c.successStrong : null,
                                     // Doc 60: tap for each product's share.
-                                    onTap: deliveryBreakdown.isEmpty
+                                    onTap: billLoading || deliveryBreakdown.isEmpty
                                         ? null
                                         : () => DsBottomSheet.show(
                                             title: "Delivery Fee".tr,
@@ -455,6 +468,7 @@ class CartScreen extends StatelessWidget {
                                     title: "Delivery Tips".tr,
                                     amount: Constant.amountShow(amount: controller.deliveryTips.toString(), currency: currency),
                                     isDark: isDark,
+                                    loading: billLoading,
                                     leadingExtra: tips == 0
                                         ? null
                                         : DsButton.ghost(
@@ -472,6 +486,7 @@ class CartScreen extends StatelessWidget {
                                 title: "Platform fee".tr,
                                 amount: Constant.amountShow(amount: controller.platformFee.value.toString(), currency: currency),
                                 isDark: isDark,
+                                loading: billLoading,
                               ),
                             if (Constant.sectionConstantModel?.platformFee?.enable == true) const DsGap(DsSpace.md),
                             sectionDivider(isDark),
@@ -483,6 +498,7 @@ class CartScreen extends StatelessWidget {
                                 title: "Tax amount".tr,
                                 amount: Constant.amountShow(amount: controller.totalTaxAmount.value.toString(), currency: currency),
                                 isDark: isDark,
+                                loading: billLoading,
                                 textColour: c.textSecondary,
                                 underline: true,
                               ),
@@ -490,6 +506,7 @@ class CartScreen extends StatelessWidget {
                             OrderTotalRow(
                               label: "To Pay".tr,
                               value: Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: currency),
+                              valueWidget: billLoading ? const _AmountSkeleton(width: 96, height: 18) : null,
                             ),
                           ],
                         ),
@@ -860,8 +877,29 @@ class CartScreen extends StatelessWidget {
   }
 
   /// One "label … amount" line of the bill summary.
-  Widget amountRow({required String title, required String amount, required bool isDark, Color? textColour, Color? amountColor, bool? underline, Widget? trailing, Widget? leadingExtra, VoidCallback? onTap}) {
-    return _AmountRow(title: title, amount: amount, textColour: textColour, amountColor: amountColor, underline: underline ?? (onTap != null), trailing: trailing, leadingExtra: leadingExtra, onTap: onTap);
+  /// [loading]: the amount is not known yet - shimmer in its place.
+  Widget amountRow({
+    required String title,
+    required String amount,
+    required bool isDark,
+    Color? textColour,
+    Color? amountColor,
+    bool? underline,
+    Widget? trailing,
+    Widget? leadingExtra,
+    VoidCallback? onTap,
+    bool loading = false,
+  }) {
+    return _AmountRow(
+      title: title,
+      amount: amount,
+      textColour: textColour,
+      amountColor: amountColor,
+      underline: underline ?? (onTap != null),
+      trailing: loading ? const _AmountSkeleton() : trailing,
+      leadingExtra: loading ? null : leadingExtra,
+      onTap: onTap,
+    );
   }
 
   /// Compact gateway logo tile shown next to "Pay Via".
@@ -904,6 +942,16 @@ class _AmountRow extends StatelessWidget {
       padding: EdgeInsets.zero,
     );
   }
+}
+
+/// A shimmering placeholder where an amount will be.
+class _AmountSkeleton extends StatelessWidget {
+  final double width;
+  final double height;
+  const _AmountSkeleton({this.width = 64, this.height = 14});
+
+  @override
+  Widget build(BuildContext context) => DsShimmer(child: DsSkeleton.line(width: width, height: height));
 }
 
 /// Doc 60: the Delivery Fee split by cart line — each product's charge for

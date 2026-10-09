@@ -119,22 +119,39 @@ class CartController extends GetxController {
     super.onInit();
   }
 
+  /// False until the bill has been worked out once with everything it needs
+  /// (store, product delivery charges, delivery setting). The cart shows
+  /// shimmer instead of amounts until then, so the customer never sees the
+  /// zeros and part-loaded figures that used to change three times.
+  RxBool isBillReady = false.obs;
+
+  /// Store the coupons were loaded for.
+  String? _couponsVendorId;
+
   Future<void> getCartData() async {
     cartProvider.cartStream.listen((event) async {
       cartItem.clear();
       cartItem.addAll(event);
-      if (cartItem.isNotEmpty) {
-        await FireStoreUtils.getVendorById(cartItem.first.vendorID.toString()).then((value) {
-          if (value != null) {
-            vendorModel.value = value;
-          }
-        });
-        // Doc 60 first: a section charging per product never needs
-        // settings/DeliveryCharge.
-        await _loadProductDeliveryCharges();
-        await _loadDeliveryCharge();
+      try {
+        if (cartItem.isNotEmpty) {
+          await FireStoreUtils.getVendorById(cartItem.first.vendorID.toString()).then((value) {
+            if (value != null) {
+              vendorModel.value = value;
+            }
+          });
+          // Doc 60 first: a section charging per product never needs
+          // settings/DeliveryCharge.
+          await _loadProductDeliveryCharges();
+          await _loadDeliveryCharge();
+        }
+      } catch (e, s) {
+        log("CartController.getCartData: $e", stackTrace: s);
       }
+      // The only calculation of a cart change: everything it reads is loaded.
       calculatePrice();
+      isBillReady.value = true;
+      // Coupons do not change the bill: loaded after it is shown.
+      if (cartItem.isNotEmpty) _loadCoupons().catchError((Object e) => log("CartController._loadCoupons: $e"));
     });
     selectedFoodType.value = OrderTypeMode.current;
 
@@ -143,14 +160,18 @@ class CartController extends GetxController {
         userModel.value = value;
       }
     });
+  }
 
-    await _loadDeliveryCharge();
-
-    await FireStoreUtils.getAllVendorPublicCoupons(vendorModel.value.id.toString()).then((value) {
+  /// The cart store's coupons, once per store. Loaded after the store itself:
+  /// they used to be read in parallel, often before the store was known.
+  Future<void> _loadCoupons() async {
+    final String? vendorId = vendorModel.value.id;
+    if (vendorId == null || vendorId == _couponsVendorId) return;
+    _couponsVendorId = vendorId;
+    await FireStoreUtils.getAllVendorPublicCoupons(vendorId).then((value) {
       couponList.value = value;
     });
-
-    await FireStoreUtils.getAllVendorCoupons(vendorModel.value.id.toString()).then((value) {
+    await FireStoreUtils.getAllVendorCoupons(vendorId).then((value) {
       allCouponList.value = value;
     });
   }
@@ -168,11 +189,8 @@ class CartController extends GetxController {
     if (_deliveryChargeRegion == region) return;
     _deliveryChargeRegion = region;
     await FireStoreUtils.getDeliveryCharge(regionId: region.isEmpty ? null : region).then((value) {
-      if (value != null) {
-        deliveryChargeModel.value = value;
-        print("===> Delivery Charge Model: ${deliveryChargeModel.value.toJson()}");
-        calculatePrice();
-      }
+      // No calculatePrice() here: every caller calculates once afterwards.
+      if (value != null) deliveryChargeModel.value = value;
     });
   }
 
