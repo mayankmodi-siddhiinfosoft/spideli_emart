@@ -13,9 +13,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 
+import '../../../models/currency_model.dart';
 import '../../../models/user_model.dart';
 import '../../../service/fire_store_utils.dart';
 import '../../../themes/show_toast_dialog.dart';
+import '../../../utils/product_delivery_charge.dart';
 import '../../../utils/wholesale_pricing.dart';
 import '../../../widget/quantity_stepper.dart';
 import '../../../widget/schedule_picker.dart';
@@ -49,6 +51,7 @@ class CartScreen extends StatelessWidget {
         // Doc 60: with product delivery charges the fee comes from the
         // products' tiers, so it is "Free Delivery" only when that comes to 0.
         final bool freeDelivery = controller.productDeliveryChargeMode.value ? controller.deliveryCharges.value <= 0 : selfDelivery;
+        final deliveryBreakdown = controller.productDeliveryBreakdown.toList();
         final String deliveryType = controller.deliveryType.value;
         final double tips = controller.deliveryTips.value;
         final bool cashbackApply = controller.isCashbackApply.value;
@@ -147,13 +150,16 @@ class CartScreen extends StatelessWidget {
                                                 ? Column(
                                                     crossAxisAlignment: CrossAxisAlignment.start,
                                                     children: [
-                                                      Row(
+                                                      // Wrap, not Row: next to the stepper a long price
+                                                      // would overflow, so the old price drops below.
+                                                      Wrap(
+                                                        spacing: DsSpace.xs,
+                                                        crossAxisAlignment: WrapCrossAlignment.center,
                                                         children: [
                                                           Text(
                                                             Constant.amountShow(amount: cartProductModel.chargedUnitPrice.toString(), currency: currency),
                                                             style: t.titleSm.tabular.withColor(c.brandStrong),
                                                           ),
-                                                          const DsGap(DsSpace.xs),
                                                           if (cartProductModel.lineMeta?.isWholesaleOnly != true)
                                                             Text(
                                                               Constant.amountShow(amount: cartProductModel.retailUnitPrice.toString(), currency: currency),
@@ -170,13 +176,14 @@ class CartScreen extends StatelessWidget {
                                                     Constant.amountShow(amount: cartProductModel.price, currency: currency),
                                                     style: t.titleSm.tabular.withColor(c.brandStrong),
                                                   )
-                                                : Row(
+                                                : Wrap(
+                                                    spacing: DsSpace.xs,
+                                                    crossAxisAlignment: WrapCrossAlignment.center,
                                                     children: [
                                                       Text(
                                                         Constant.amountShow(amount: cartProductModel.discountPrice.toString(), currency: currency),
                                                         style: t.titleSm.tabular.withColor(c.brandStrong),
                                                       ),
-                                                      const DsGap(DsSpace.xs),
                                                       Text(
                                                         Constant.amountShow(amount: cartProductModel.price, currency: currency),
                                                         style: t.bodySm.tabular.strike,
@@ -432,6 +439,14 @@ class CartScreen extends StatelessWidget {
                                     amount: freeDelivery ? 'Free Delivery'.tr : Constant.amountShow(amount: controller.deliveryCharges.value.toString(), currency: currency),
                                     isDark: isDark,
                                     amountColor: freeDelivery ? c.successStrong : null,
+                                    // Doc 60: tap for each product's share.
+                                    onTap: deliveryBreakdown.isEmpty
+                                        ? null
+                                        : () => DsBottomSheet.show(
+                                            title: "Delivery Fee".tr,
+                                            subtitle: "Charged for each product, by quantity".tr,
+                                            child: _DeliveryChargeBreakdown(lines: deliveryBreakdown, total: controller.deliveryCharges.value, currency: currency),
+                                          ),
                                   ),
                             if (!isTakeAway) const DsGap(DsSpace.md),
                             isTakeAway || selfDelivery
@@ -845,8 +860,8 @@ class CartScreen extends StatelessWidget {
   }
 
   /// One "label … amount" line of the bill summary.
-  Widget amountRow({required String title, required String amount, required bool isDark, Color? textColour, Color? amountColor, bool? underline, Widget? trailing, Widget? leadingExtra}) {
-    return _AmountRow(title: title, amount: amount, textColour: textColour, amountColor: amountColor, underline: underline, trailing: trailing, leadingExtra: leadingExtra);
+  Widget amountRow({required String title, required String amount, required bool isDark, Color? textColour, Color? amountColor, bool? underline, Widget? trailing, Widget? leadingExtra, VoidCallback? onTap}) {
+    return _AmountRow(title: title, amount: amount, textColour: textColour, amountColor: amountColor, underline: underline ?? (onTap != null), trailing: trailing, leadingExtra: leadingExtra, onTap: onTap);
   }
 
   /// Compact gateway logo tile shown next to "Pay Via".
@@ -873,7 +888,8 @@ class _AmountRow extends StatelessWidget {
   final bool? underline;
   final Widget? trailing;
   final Widget? leadingExtra;
-  const _AmountRow({required this.title, required this.amount, this.textColour, this.amountColor, this.underline, this.trailing, this.leadingExtra});
+  final VoidCallback? onTap;
+  const _AmountRow({required this.title, required this.amount, this.textColour, this.amountColor, this.underline, this.trailing, this.leadingExtra, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -884,7 +900,84 @@ class _AmountRow extends StatelessWidget {
       underline: underline == true,
       labelExtra: leadingExtra,
       valueWidget: trailing,
+      onTap: onTap,
       padding: EdgeInsets.zero,
+    );
+  }
+}
+
+/// Doc 60: the Delivery Fee split by cart line — each product's charge for
+/// one piece (its tier's minimum, the per-km rule beyond the tiers, or the
+/// store's charge), times its quantity, and the total the cart charges.
+class _DeliveryChargeBreakdown extends StatelessWidget {
+  final List<({CartProductModel item, ProductDeliveryLine charge})> lines;
+  final double total;
+  final CurrencyModel? currency;
+  const _DeliveryChargeBreakdown({required this.lines, required this.total, required this.currency});
+
+  String _money(double v) => Constant.amountShow(amount: v.toString(), currency: currency);
+
+  static String _km(double v) => v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 2);
+
+  String _rule(ProductDeliveryLine l) {
+    final ProductDeliveryTier? tier = l.tier;
+    switch (l.rule) {
+      case ProductDeliveryRule.minimum:
+        return "Minimum delivery charge (up to @km km)".trParams({'km': _km(tier!.withinKm)});
+      case ProductDeliveryRule.perKm:
+        return "@min + @extra km × @rate per km".trParams({'min': _money(tier!.minCharge), 'extra': _km(l.extraKm), 'rate': _money(tier.perKm)});
+      case ProductDeliveryRule.store:
+        return "Store delivery charge".tr;
+      case ProductDeliveryRule.none:
+        return "No delivery charge".tr;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.dsColors;
+    final t = context.dsText;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (lines.isNotEmpty) Text("Distance: @km km".trParams({'km': _km(lines.first.charge.distanceKm)}), style: t.caption),
+        for (final line in lines) ...[
+          const DsDivider(spacing: DsSpace.md),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(line.item.name ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: t.label),
+                    if (line.item.variantInfo?.variantOptions?.isNotEmpty == true)
+                      Text(
+                        line.item.variantInfo!.variantOptions!.entries.map((e) => '${e.key}: ${e.value}').join(', '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.caption,
+                      ),
+                    const DsGap(DsSpace.xxs),
+                    Text(_rule(line.charge), style: t.bodySm),
+                    Text('${line.charge.quantity} × ${_money(line.charge.unitCharge)}', style: t.bodySm.tabular),
+                  ],
+                ),
+              ),
+              const DsGap(DsSpace.md),
+              Text(_money(line.charge.total), style: t.bodyStrong.tabular),
+            ],
+          ),
+        ],
+        const DsDivider(spacing: DsSpace.md),
+        Row(
+          children: [
+            Expanded(child: Text("Total Delivery Fee".tr, style: t.titleSm)),
+            Text(total <= 0 ? 'Free Delivery'.tr : _money(total), style: t.titleSm.tabular.withColor(total <= 0 ? c.successStrong : c.textPrimary)),
+          ],
+        ),
+      ],
     );
   }
 }

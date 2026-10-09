@@ -96,4 +96,6 @@ const Map<String, String> ptPO = {
   "Remove delivery charge": "Remover taxa de entrega",
   "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "Você atingiu o limite máximo de 5 taxas de entrega. Não é possível adicionar mais.",
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "Preencha os 3 campos de cada faixa de taxa de entrega ou remova as linhas vazias.",
+  "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "Obrigatório. A taxa mínima cobre até a distância definida; além dela, a taxa por km é somada a cada km extra.",
+  "Please enter the delivery charge: all 3 fields are required.": "Informe a taxa de entrega: os 3 campos são obrigatórios.",
 };

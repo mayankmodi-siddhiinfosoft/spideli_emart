@@ -5,6 +5,11 @@ import 'package:vendor/models/product_model.dart';
 /// Product-level custom delivery charges in the Add / Edit Product screen
 /// (bug point 60, APP-SPEC-PRODUCT-DELIVERY-CHARGES §2-3). Pure rules, kept
 /// out of the controller so they can be unit-tested.
+///
+/// A product has exactly ONE delivery charge (client rule, 9 Oct 2026): the
+/// same three fields, still stored as a one-entry `delivery_charges` array so
+/// the customer app's calculation is unchanged. While the section flag is on
+/// it is required.
 abstract final class ProductDeliveryCharges {
   /// `sections/{sectionId}.is_delivery_charge_customization`.
   static const String sectionFlag = 'is_delivery_charge_customization';
@@ -13,16 +18,13 @@ abstract final class ProductDeliveryCharges {
 
   // Translation keys (every one is in all 9 vendor/lib/lang files).
   static const String title = 'Delivery Charges';
-  static const String note = 'Configure up to 5 custom distance-based delivery charges for this product.';
+  static const String note = 'Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.';
   static const String perKmLabel = 'Delivery Charges Per Km';
   static const String minimumChargeLabel = 'Minimum Delivery Charges';
   static const String withinKmLabel = 'Minimum Delivery Charge Within Km';
-  static const String addLabel = 'Add Delivery Charge';
-  static const String removeLabel = 'Remove delivery charge';
-  static const String limitReached = 'You have reached the maximum limit of 5 delivery charges. You cannot add more.';
-  static const String incompleteRow = 'Please fill all 3 fields for each delivery charge tier or remove empty rows.';
+  static const String required = 'Please enter the delivery charge: all 3 fields are required.';
 
-  static const List<String> translationKeys = [title, note, perKmLabel, minimumChargeLabel, withinKmLabel, addLabel, removeLabel, limitReached, incompleteRow];
+  static const List<String> translationKeys = [title, note, perKmLabel, minimumChargeLabel, withinKmLabel, required];
 
   /// True only when the section document says `true` (a bool; the string
   /// "true" is accepted too). Missing, false, anything else, or an unreadable
@@ -33,12 +35,6 @@ abstract final class ProductDeliveryCharges {
     if (value is String) return value.trim().toLowerCase() == 'true';
     return false;
   }
-
-  /// Another row may be added while there are fewer than [maxTiers].
-  static bool canAdd(int rowCount) => rowCount < maxTiers;
-
-  /// The limit warning shows (and the add button is disabled) at [maxTiers].
-  static bool isLimitReached(int rowCount) => rowCount >= maxTiers;
 
   /// "Minimum Delivery Charges (FCFA)": the translated label followed by the
   /// store's currency symbol, or its code when there is no symbol.
@@ -60,18 +56,18 @@ abstract final class ProductDeliveryCharges {
     return value % 1 == 0 ? value.toInt().toString() : value.toString();
   }
 
-  /// Validates the rows on save. Every row present must have all 3 fields
-  /// filled with a number >= 0; otherwise [incompleteRow] is returned as the
-  /// error and nothing may be saved. No rows -> an empty list (saved as []).
+  /// Validates the delivery charge on save: exactly one row, all 3 fields a
+  /// number >= 0; otherwise [required] is returned as the error and nothing
+  /// may be saved.
   static ({List<DeliveryChargeTier>? tiers, String? error}) validate(List<({String perKm, String minimumCharge, String withinKm})> rows) {
-    if (rows.length > maxTiers) return (tiers: null, error: limitReached);
+    if (rows.length != maxTiers) return (tiers: null, error: required);
     final List<DeliveryChargeTier> tiers = [];
     for (final row in rows) {
       final num? perKm = parseField(row.perKm);
       final num? minimumCharge = parseField(row.minimumCharge);
       final num? withinKm = parseField(row.withinKm);
       if (perKm == null || minimumCharge == null || withinKm == null) {
-        return (tiers: null, error: incompleteRow);
+        return (tiers: null, error: required);
       }
       tiers.add(DeliveryChargeTier(deliveryChargesPerKm: perKm, minimumDeliveryCharges: minimumCharge, minimumDeliveryChargesWithinKm: withinKm));
     }
@@ -104,6 +100,13 @@ class DeliveryChargeTierInput {
     minimumCharge: ProductDeliveryCharges.formatValue(tier.minimumDeliveryCharges),
     withinKm: ProductDeliveryCharges.formatValue(tier.minimumDeliveryChargesWithinKm),
   );
+
+  /// Shows a stored [tier] in these fields.
+  void fill(DeliveryChargeTier tier) {
+    perKmController.text = ProductDeliveryCharges.formatValue(tier.deliveryChargesPerKm);
+    minimumChargeController.text = ProductDeliveryCharges.formatValue(tier.minimumDeliveryCharges);
+    withinKmController.text = ProductDeliveryCharges.formatValue(tier.minimumDeliveryChargesWithinKm);
+  }
 
   ({String perKm, String minimumCharge, String withinKm}) get values =>
       (perKm: perKmController.text, minimumCharge: minimumChargeController.text, withinKm: withinKmController.text);

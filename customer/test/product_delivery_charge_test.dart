@@ -106,36 +106,53 @@ void main() {
     });
   });
 
-  group('order charge = maximum item charge', () {
-    test('max, not sum', () {
+  group('order charge = sum of (product charge x quantity) (client rule 9 Oct)', () {
+    ProductDeliveryLine line(double d, List<ProductDeliveryTier> tiers, int qty, {double? store}) => ProductDeliveryCharge.line(d, tiers, quantity: qty, storeCharge: store);
+
+    test('each line is its per-piece charge times its quantity, summed', () {
       final heavy = [tier(150, 1500, 5)];
       final light = [tier(50, 300, 5)];
-      expect(ProductDeliveryCharge.orderCharge(7, [heavy, light, light]), 1800);
-      expect(ProductDeliveryCharge.orderCharge(7, [light, heavy]), 1800);
+      // 7 km: heavy = 1500 + 2 x 150 = 1800, light = 300 + 2 x 50 = 400.
+      final lines = [line(7, heavy, 2), line(7, light, 3)];
+      expect(lines[0].total, 3600);
+      expect(lines[1].total, 1200);
+      expect(ProductDeliveryCharge.orderCharge(lines), 4800);
     });
-    test('items without tiers are 0 and do not lower the max', () {
-      expect(ProductDeliveryCharge.orderCharge(3, [const [], [tier(50, 300, 5)]]), 300);
+    test('the rule applied is reported per line', () {
+      final tiers = [tier(150, 1500, 5), tier(180, 2200, 10)];
+      final within = line(7, tiers, 1);
+      expect(within.rule, ProductDeliveryRule.minimum);
+      expect(within.tier, tier(180, 2200, 10));
+      expect(within.unitCharge, 2200);
+      final beyond = line(12, tiers, 1);
+      expect(beyond.rule, ProductDeliveryRule.perKm);
+      expect(beyond.extraKm, 2);
+      expect(beyond.unitCharge, 2200 + 2 * 180);
     });
-    test('no tiers anywhere / empty cart -> 0 (Free Delivery)', () {
-      expect(ProductDeliveryCharge.orderCharge(3, [const [], const []]), 0);
-      expect(ProductDeliveryCharge.orderCharge(3, const []), 0);
+    test('a product without tiers costs the store charge per piece', () {
+      final lines = [line(3, const [], 2, store: 100), line(3, [tier(50, 30, 5)], 1, store: 100)];
+      expect(lines[0].rule, ProductDeliveryRule.store);
+      expect(lines[0].total, 200);
+      expect(ProductDeliveryCharge.orderCharge(lines), 230);
     });
-  });
-
-  group('a product without tiers costs the store charge (client rule 9 Oct)', () {
-    test('only untiered products -> the store charge', () {
-      expect(ProductDeliveryCharge.orderCharge(3, [const [], const []], storeCharge: 100), 100);
-    });
-    test('mixed cart -> the highest of the tier charge and the store charge', () {
-      expect(ProductDeliveryCharge.orderCharge(7, [const [], [tier(150, 1500, 5)]], storeCharge: 100), 1800);
-      expect(ProductDeliveryCharge.orderCharge(3, [const [], [tier(50, 30, 5)]], storeCharge: 100), 100);
-    });
-    test('all products tiered -> the store charge is not used', () {
-      expect(ProductDeliveryCharge.orderCharge(3, [[tier(50, 30, 5)]], storeCharge: 100), 30);
+    test('no store charge -> an untiered product costs 0', () {
+      final l = line(3, const [], 4);
+      expect(l.rule, ProductDeliveryRule.none);
+      expect(l.total, 0);
     });
     test('unusable store charge counts as 0', () {
-      expect(ProductDeliveryCharge.orderCharge(3, [const []], storeCharge: double.nan), 0);
-      expect(ProductDeliveryCharge.orderCharge(3, [const []], storeCharge: -5), 0);
+      expect(line(3, const [], 2, store: double.nan).total, 0);
+      expect(line(3, const [], 2, store: -5).total, 0);
+    });
+    test('no lines / zero quantity -> 0 (Free Delivery)', () {
+      expect(ProductDeliveryCharge.orderCharge(const []), 0);
+      expect(ProductDeliveryCharge.orderCharge([line(3, [tier(50, 300, 5)], 0)]), 0);
+      expect(line(3, [tier(50, 300, 5)], -2).quantity, 0);
+    });
+    test('totals are rounded to 2 decimals', () {
+      final lines = [line(5.333, [tier(150, 1500, 5)], 3)];
+      expect(lines.single.unitCharge, closeTo(1549.95, 0.001));
+      expect(ProductDeliveryCharge.orderCharge(lines), closeTo(4649.85, 0.001));
     });
   });
 }

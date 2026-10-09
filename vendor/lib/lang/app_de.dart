@@ -96,4 +96,6 @@ const Map<String, String> deGR = {
   "Remove delivery charge": "Liefergebühr entfernen",
   "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "Sie haben die Höchstzahl von 5 Liefergebühren erreicht. Sie können keine weiteren hinzufügen.",
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "Bitte füllen Sie alle 3 Felder jeder Liefergebührenstufe aus oder entfernen Sie leere Zeilen.",
+  "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "Pflichtfeld. Die Mindestgebühr gilt bis zur angegebenen Entfernung; darüber hinaus wird für jeden weiteren km die Gebühr pro km berechnet.",
+  "Please enter the delivery charge: all 3 fields are required.": "Bitte geben Sie die Liefergebühr ein: Alle 3 Felder sind erforderlich.",
 };

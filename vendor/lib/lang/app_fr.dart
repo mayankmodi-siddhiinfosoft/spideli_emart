@@ -229,4 +229,6 @@ const Map<String, String> trFR = {
   "Remove delivery charge": "Supprimer ces frais de livraison",
   "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "Vous avez atteint la limite maximale de 5 frais de livraison. Vous ne pouvez plus en ajouter.",
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "Veuillez remplir les 3 champs de chaque palier de frais de livraison ou supprimer les lignes vides.",
+  "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "Obligatoire. Les frais minimum couvrent jusqu'à la distance indiquée ; au-delà, les frais par km s'ajoutent pour chaque km supplémentaire.",
+  "Please enter the delivery charge: all 3 fields are required.": "Veuillez saisir les frais de livraison : les 3 champs sont obligatoires.",
 };

@@ -203,6 +203,11 @@ class AddRestaurantController extends GetxController {
     isLoading.value = false;
   }
 
+  /// The selected section has `is_delivery_charge_customization`: products
+  /// carry their own delivery charge, so the store's Delivery Charge card is
+  /// hidden and its three charges are saved as 0.
+  bool get productDeliveryCharges => selectedSectionModel.value.isDeliveryChargeCustomization;
+
   void _applyDeliveryCharge(DeliveryCharge value) {
     deliveryChargeModel.value = value;
     isEnableDeliverySettings.value = deliveryChargeModel.value.vendorCanModify ?? false;
@@ -316,11 +321,14 @@ class AddRestaurantController extends GetxController {
       if (Constant.isPointInPolygon(selectedLocation.value!, selectedZone.value.area!)) {
         ShowToastDialog.showLoader("Please wait...".tr);
         filter();
+        // Bug point 60: in a section whose products carry their own delivery
+        // charge the store's card is hidden and its three charges are 0.
+        final bool productCharges = productDeliveryCharges;
         DeliveryCharge deliveryChargeModel = DeliveryCharge(
           vendorCanModify: true,
-          deliveryChargesPerKm: num.tryParse(chargePerKmController.value.text) ?? 0,
-          minimumDeliveryCharges: num.tryParse(minDeliveryChargesController.value.text) ?? 0,
-          minimumDeliveryChargesWithinKm: num.tryParse(minDeliveryChargesWithinKMController.value.text) ?? 0,
+          deliveryChargesPerKm: productCharges ? 0 : num.tryParse(chargePerKmController.value.text) ?? 0,
+          minimumDeliveryCharges: productCharges ? 0 : num.tryParse(minDeliveryChargesController.value.text) ?? 0,
+          minimumDeliveryChargesWithinKm: productCharges ? 0 : num.tryParse(minDeliveryChargesWithinKMController.value.text) ?? 0,
         );
 
         if (vendorModel.value.id == null) {

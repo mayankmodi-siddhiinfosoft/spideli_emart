@@ -1654,16 +1654,19 @@ class FireStoreUtils {
   }
 
   /// Bug point 60: `sections/{sectionId}.is_delivery_charge_customization`,
-  /// read fresh (server first) when the Add / Edit Product screen opens. False
-  /// when the id is blank, the document is missing or cannot be read.
-  static Future<bool> getSectionDeliveryChargeCustomization(String? sectionId) async {
-    if (sectionId == null || sectionId.trim().isEmpty) return false;
+  /// read fresh (server first) when the Add / Edit Product screen opens. Null
+  /// when the id is blank, the document is missing or cannot be read, so a
+  /// failed read is never mistaken for "off" (which clears the product's
+  /// delivery charge on save).
+  static Future<bool?> getSectionDeliveryChargeCustomization(String? sectionId) async {
+    if (sectionId == null || sectionId.trim().isEmpty) return null;
     try {
       final snapshot = await fireStore.collection(CollectionName.sections).doc(sectionId.trim()).get();
+      if (!snapshot.exists) return null;
       return ProductDeliveryCharges.isEnabledForSection(snapshot.data());
     } catch (e, s) {
       log('FireStoreUtils.getSectionDeliveryChargeCustomization $e $s');
-      return false;
+      return null;
     }
   }
 

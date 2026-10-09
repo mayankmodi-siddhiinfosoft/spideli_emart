@@ -403,13 +403,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                     ),
                                     // Bug point 60: only when the store's section has
                                     // is_delivery_charge_customization == true.
-                                    if (controller.deliveryChargesEnabled.value)
+                                    if (controller.deliveryChargesEnabled.value && controller.deliveryChargeInputs.isNotEmpty)
                                       ProductDeliveryChargesSection(
-                                        rows: controller.deliveryChargeInputs.toList(),
+                                        row: controller.deliveryChargeInputs.first,
                                         currencySymbol: Constant.currencyModel?.symbol,
                                         currencyCode: Constant.currencyModel?.code,
-                                        onAdd: controller.addDeliveryCharge,
-                                        onRemove: controller.removeDeliveryCharge,
                                       ),
                                   ],
                                 ),

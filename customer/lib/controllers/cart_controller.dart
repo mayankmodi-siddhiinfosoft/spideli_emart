@@ -223,13 +223,24 @@ class CartController extends GetxController {
   double get _deliveryDistanceKm =>
       ProductDeliveryCharge.haversineKm(selectedAddress.value.location?.latitude, selectedAddress.value.location?.longitude, vendorModel.value.latitude, vendorModel.value.longitude) ?? 0.0;
 
-  /// Doc 60 order delivery charge: the highest product charge in the cart. A
-  /// product with no tiers of its own costs the store's delivery charge
-  /// ([_storeDeliveryCharge], client rule 9 Oct 2026).
+  /// Doc 60: each cart line's delivery charge, shown when the customer taps
+  /// the Delivery Fee row. Empty unless [deliveryCharges] came from the
+  /// product tiers.
+  final RxList<({CartProductModel item, ProductDeliveryLine charge})> productDeliveryBreakdown = <({CartProductModel item, ProductDeliveryLine charge})>[].obs;
+
+  /// Doc 60 order delivery charge: every line's per-piece charge times its
+  /// quantity, summed (client rule 9 Oct 2026). A product with no tiers of its
+  /// own costs the store's delivery charge ([_storeDeliveryCharge]).
   double _productDeliveryCharge() {
+    final double distanceKm = _deliveryDistanceKm;
     final List<List<ProductDeliveryTier>> tiers = cartItem.map((line) => _productDeliveryTiers[_productIdOf(line)] ?? const <ProductDeliveryTier>[]).toList();
-    final bool anyWithout = tiers.any((t) => t.isEmpty);
-    return ProductDeliveryCharge.orderCharge(_deliveryDistanceKm, tiers, storeCharge: anyWithout ? _storeDeliveryCharge() : null);
+    final double? storeCharge = tiers.any((t) => t.isEmpty) ? _storeDeliveryCharge() : null;
+    final breakdown = [
+      for (int i = 0; i < cartItem.length; i++)
+        (item: cartItem[i], charge: ProductDeliveryCharge.line(distanceKm, tiers[i], quantity: cartItem[i].quantity ?? 1, storeCharge: storeCharge)),
+    ];
+    productDeliveryBreakdown.assignAll(breakdown);
+    return ProductDeliveryCharge.orderCharge(breakdown.map((e) => e.charge));
   }
 
   /// The store's delivery charge as charged when a section does not price per
@@ -256,6 +267,7 @@ class CartController extends GetxController {
   Future<void> calculatePrice() async {
     // Reset values
     deliveryCharges.value = 0.0;
+    productDeliveryBreakdown.clear();
     subTotal.value = 0.0;
     couponAmount.value = 0.0;
     specialDiscountAmount.value = 0.0;
@@ -291,8 +303,8 @@ class CartController extends GetxController {
           // itself stays free delivery, product tiers or not.
           deliveryCharges.value = 0.0;
         } else if (productDeliveryChargeMode.value) {
-          // Doc 60: each product's own tiers; a product without tiers costs
-          // the store's delivery charge; the order pays the highest.
+          // Doc 60: each product's own tiers (a product without tiers costs
+          // the store's delivery charge) times its quantity, summed.
           deliveryCharges.value = _productDeliveryCharge();
         } else if (Constant.sectionConstantModel?.serviceType == 'Ecommerce Service') {
           deliveryCharges.value = double.parse(Constant.sectionConstantModel?.deliveryCharge ?? '0.0');

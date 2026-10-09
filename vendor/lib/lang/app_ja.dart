@@ -96,4 +96,6 @@ const Map<String, String> jaJP = {
   "Remove delivery charge": "配送料を削除",
   "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "配送料は最大5件までです。これ以上追加できません。",
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "各配送料の3つの項目をすべて入力するか、空の行を削除してください。",
+  "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "必須。最低配送料は設定した距離まで適用され、それを超えると1kmごとにkm単価が加算されます。",
+  "Please enter the delivery charge: all 3 fields are required.": "配送料を入力してください：3つの項目はすべて必須です。",
 };

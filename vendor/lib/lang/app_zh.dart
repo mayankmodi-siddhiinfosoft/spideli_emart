@@ -96,4 +96,6 @@ const Map<String, String> zhCH = {
   "Remove delivery charge": "删除配送费",
   "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "您已达到 5 档配送费的上限，无法继续添加。",
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "请填写每档配送费的全部 3 个字段，或删除空行。",
+  "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "必填。最低配送费适用于设定的距离以内；超出部分每公里加收每公里费用。",
+  "Please enter the delivery charge: all 3 fields are required.": "请输入配送费：3 个字段均为必填。",
 };

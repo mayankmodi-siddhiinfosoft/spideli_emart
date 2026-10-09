@@ -992,4 +992,6 @@ const Map<String, String> lnAr = {
   "Remove delivery charge": "حذف رسوم التوصيل",
   "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "لقد وصلت إلى الحد الأقصى وهو 5 رسوم توصيل. لا يمكنك إضافة المزيد.",
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "يرجى ملء الحقول الثلاثة لكل شريحة من رسوم التوصيل أو حذف الصفوف الفارغة.",
+  "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "مطلوب. يغطي الحد الأدنى للرسوم المسافة المحددة؛ وبعدها تُضاف رسوم كل كيلومتر إضافي.",
+  "Please enter the delivery charge: all 3 fields are required.": "يرجى إدخال رسوم التوصيل: الحقول الثلاثة مطلوبة.",
 };

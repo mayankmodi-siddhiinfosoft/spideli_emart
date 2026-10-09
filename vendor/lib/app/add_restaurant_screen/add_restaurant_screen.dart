@@ -450,66 +450,70 @@ class AddRestaurantScreen extends StatelessWidget {
                                     ),
                                     const DsGap(DsSpace.sm),
                                   ],
-                                  // Read-only: whether a store may set its own
-                                  // delivery charges is `settings/DeliveryCharge
-                                  // .vendorCanModify`, decided by the admin. The
-                                  // switch used to accept taps and silently
-                                  // discard them (`onChanged: (value) {}`); a
-                                  // null handler disables it and the subtitle
-                                  // says who controls it.
-                                  FormSwitchTile(
-                                    title: "Delivery Settings".tr,
-                                    subtitle: controller.isEnableDeliverySettings.value
-                                        ? "The administrator lets this store set its own delivery charges.".tr
-                                        : "Delivery charges are set by the administrator and cannot be changed here.".tr,
-                                    icon: Icons.tune_rounded,
-                                    value: controller.isEnableDeliverySettings.value,
-                                    onChanged: null,
-                                  ),
-                                  const DsGap(DsSpace.lg),
-                                  AnimatedOpacity(
-                                    duration: DsMotion.of(context, DsMotion.base),
-                                    opacity: controller.isEnableDeliverySettings.value ? 1 : 0.7,
-                                    child: DsAdaptiveGrid(
-                                      minItemWidth: 260,
-                                      maxColumns: 2,
-                                      equalHeight: false,
-                                      runSpacing: 0,
-                                      children: [
-                                        FormInput(
-                                          label: '${'Charges per'.tr} ${Constant.distanceType} ${'(distance)'.tr}'.tr,
-                                          controller: controller.chargePerKmController.value,
-                                          hint: 'Enter charges'.tr,
-                                          enabled: controller.isEnableDeliverySettings.value,
-                                          keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                                          textInputAction: TextInputAction.done,
-                                          inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]'))],
-                                          prefix: FormAffix(currencySymbol),
-                                        ),
-                                        FormInput(
-                                          label: 'Min Delivery Charges'.tr,
-                                          controller: controller.minDeliveryChargesController.value,
-                                          hint: 'Enter Min Delivery Charges'.tr,
-                                          enabled: controller.isEnableDeliverySettings.value,
-                                          keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                                          textInputAction: TextInputAction.done,
-                                          inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]'))],
-                                          prefix: FormAffix(currencySymbol),
-                                        ),
-                                      ],
+                                  // Bug point 60: products carry their own delivery charge in
+                                  // this section, so the store has none to set (saved as 0).
+                                  if (!controller.productDeliveryCharges) ...[
+                                    // Read-only: whether a store may set its own
+                                    // delivery charges is `settings/DeliveryCharge
+                                    // .vendorCanModify`, decided by the admin. The
+                                    // switch used to accept taps and silently
+                                    // discard them (`onChanged: (value) {}`); a
+                                    // null handler disables it and the subtitle
+                                    // says who controls it.
+                                    FormSwitchTile(
+                                      title: "Delivery Settings".tr,
+                                      subtitle: controller.isEnableDeliverySettings.value
+                                          ? "The administrator lets this store set its own delivery charges.".tr
+                                          : "Delivery charges are set by the administrator and cannot be changed here.".tr,
+                                      icon: Icons.tune_rounded,
+                                      value: controller.isEnableDeliverySettings.value,
+                                      onChanged: null,
                                     ),
-                                  ),
-                                  FormInput(
-                                    label: '${'Min Delivery Charges within'.tr} ${Constant.distanceType} ${'(distance)'.tr}'.tr,
-                                    controller: controller.minDeliveryChargesWithinKMController.value,
-                                    hint: '${'Enter Min Delivery Charges within'.tr} ${Constant.distanceType} ${'(distance)'.tr}'.tr,
-                                    enabled: controller.isEnableDeliverySettings.value,
-                                    prefixIcon: Icons.social_distance_outlined,
-                                    keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                                    textInputAction: TextInputAction.done,
-                                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]'))],
-                                    bottomSpacing: 0,
-                                  ),
+                                    const DsGap(DsSpace.lg),
+                                    AnimatedOpacity(
+                                      duration: DsMotion.of(context, DsMotion.base),
+                                      opacity: controller.isEnableDeliverySettings.value ? 1 : 0.7,
+                                      child: DsAdaptiveGrid(
+                                        minItemWidth: 260,
+                                        maxColumns: 2,
+                                        equalHeight: false,
+                                        runSpacing: 0,
+                                        children: [
+                                          FormInput(
+                                            label: '${'Charges per'.tr} ${Constant.distanceType} ${'(distance)'.tr}'.tr,
+                                            controller: controller.chargePerKmController.value,
+                                            hint: 'Enter charges'.tr,
+                                            enabled: controller.isEnableDeliverySettings.value,
+                                            keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                                            textInputAction: TextInputAction.done,
+                                            inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]'))],
+                                            prefix: FormAffix(currencySymbol),
+                                          ),
+                                          FormInput(
+                                            label: 'Min Delivery Charges'.tr,
+                                            controller: controller.minDeliveryChargesController.value,
+                                            hint: 'Enter Min Delivery Charges'.tr,
+                                            enabled: controller.isEnableDeliverySettings.value,
+                                            keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                                            textInputAction: TextInputAction.done,
+                                            inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]'))],
+                                            prefix: FormAffix(currencySymbol),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    FormInput(
+                                      label: '${'Min Delivery Charges within'.tr} ${Constant.distanceType} ${'(distance)'.tr}'.tr,
+                                      controller: controller.minDeliveryChargesWithinKMController.value,
+                                      hint: '${'Enter Min Delivery Charges within'.tr} ${Constant.distanceType} ${'(distance)'.tr}'.tr,
+                                      enabled: controller.isEnableDeliverySettings.value,
+                                      prefixIcon: Icons.social_distance_outlined,
+                                      keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                                      textInputAction: TextInputAction.done,
+                                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]'))],
+                                      bottomSpacing: 0,
+                                    ),
+                                  ],
                                 ],
                               ],
                             ),

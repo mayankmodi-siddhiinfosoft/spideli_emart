@@ -84,24 +84,38 @@ void main() {
       expect(product.toJson().containsKey('delivery_charges'), isFalse);
     });
 
-    test('an edited save writes numbers, and [] when every row was removed', () {
+    test('an edited save writes one charge as numbers; null clears the field (section flag off)', () {
       final product = ProductModel.fromJson({'id': 'p1'});
       product.deliveryCharges = [const DeliveryChargeTier(deliveryChargesPerKm: 150, minimumDeliveryCharges: 1500, minimumDeliveryChargesWithinKm: 5)];
       product.writeDeliveryCharges = true;
       expect(product.toJson()['delivery_charges'], [
         {'delivery_charges_per_km': 150, 'minimum_delivery_charges': 1500, 'minimum_delivery_charges_within_km': 5},
       ]);
-      product.deliveryCharges = [];
-      expect(product.toJson()['delivery_charges'], isEmpty);
       product.deliveryCharges = null;
-      expect(product.toJson()['delivery_charges'], isEmpty);
+      final json = product.toJson();
+      expect(json.containsKey('delivery_charges'), isTrue);
+      expect(json['delivery_charges'], isNull);
     });
 
-    test('never more than 5 tiers are written', () {
+    test('only one charge is ever written: the one with the smallest within-km', () {
       final product = ProductModel()
-        ..deliveryCharges = List.generate(7, (i) => DeliveryChargeTier(deliveryChargesPerKm: i, minimumDeliveryCharges: i, minimumDeliveryChargesWithinKm: i))
+        ..deliveryCharges = const [
+          DeliveryChargeTier(deliveryChargesPerKm: 180, minimumDeliveryCharges: 2200, minimumDeliveryChargesWithinKm: 10),
+          DeliveryChargeTier(deliveryChargesPerKm: 150, minimumDeliveryCharges: 1500, minimumDeliveryChargesWithinKm: 5),
+          DeliveryChargeTier(deliveryChargesPerKm: 200, minimumDeliveryCharges: 3000, minimumDeliveryChargesWithinKm: 15),
+        ]
         ..writeDeliveryCharges = true;
-      expect((product.toJson()['delivery_charges'] as List).length, 5);
+      expect(product.toJson()['delivery_charges'], [
+        {'delivery_charges_per_km': 150, 'minimum_delivery_charges': 1500, 'minimum_delivery_charges_within_km': 5},
+      ]);
+      expect(DeliveryChargeTier.maxTiers, 1);
+    });
+
+    test('a stored charge fills the single row in place', () {
+      final input = DeliveryChargeTierInput();
+      input.fill(const DeliveryChargeTier(deliveryChargesPerKm: 150, minimumDeliveryCharges: 1500, minimumDeliveryChargesWithinKm: 5));
+      expect(input.values, row('150', '1500', '5'));
+      input.dispose();
     });
 
     test('editor round trip: stored tier -> text fields -> validated tier', () {
@@ -113,47 +127,29 @@ void main() {
     });
   });
 
-  group('validation on save', () {
-    test('no rows is valid and saves []', () {
-      final result = ProductDeliveryCharges.validate([]);
+  group('validation on save (one charge, required)', () {
+    test('a complete charge is valid; 0 and two decimals are allowed', () {
+      final result = ProductDeliveryCharges.validate([row('0', '0.5', '12,75')]);
       expect(result.error, isNull);
-      expect(result.tiers, isEmpty);
+      expect(result.tiers, [const DeliveryChargeTier(deliveryChargesPerKm: 0, minimumDeliveryCharges: 0.5, minimumDeliveryChargesWithinKm: 12.75)]);
     });
 
-    test('complete rows are valid; 0 and two decimals are allowed', () {
-      final result = ProductDeliveryCharges.validate([row('150', '1500', '5'), row('0', '0.5', '12,75')]);
-      expect(result.error, isNull);
-      expect(result.tiers, [
-        const DeliveryChargeTier(deliveryChargesPerKm: 150, minimumDeliveryCharges: 1500, minimumDeliveryChargesWithinKm: 5),
-        const DeliveryChargeTier(deliveryChargesPerKm: 0, minimumDeliveryCharges: 0.5, minimumDeliveryChargesWithinKm: 12.75),
-      ]);
+    test('no charge, or more than one, blocks the save', () {
+      expect(ProductDeliveryCharges.validate([]).error, ProductDeliveryCharges.required);
+      expect(ProductDeliveryCharges.validate([row('1', '1', '1'), row('1', '1', '1')]).error, ProductDeliveryCharges.required);
     });
 
     test('a blank, non-numeric or negative field blocks the save', () {
       for (final bad in [row('', '1500', '5'), row('150', ' ', '5'), row('150', '1500', ''), row('', '', ''), row('abc', '1', '1'), row('-1', '1', '1'), row('.', '1', '1')]) {
-        final result = ProductDeliveryCharges.validate([row('1', '1', '1'), bad]);
-        expect(result.error, ProductDeliveryCharges.incompleteRow, reason: '$bad');
+        final result = ProductDeliveryCharges.validate([bad]);
+        expect(result.error, ProductDeliveryCharges.required, reason: '$bad');
         expect(result.tiers, isNull);
       }
-      expect(ProductDeliveryCharges.incompleteRow, 'Please fill all 3 fields for each delivery charge tier or remove empty rows.');
-    });
-
-    test('more than 5 rows is refused', () {
-      expect(ProductDeliveryCharges.validate(List.generate(6, (_) => row('1', '1', '1'))).error, ProductDeliveryCharges.limitReached);
+      expect(ProductDeliveryCharges.required, 'Please enter the delivery charge: all 3 fields are required.');
     });
   });
 
-  group('limit and labels', () {
-    test('a row can be added below 5, not at 5', () {
-      for (int n = 0; n < 5; n++) {
-        expect(ProductDeliveryCharges.canAdd(n), isTrue, reason: '$n');
-        expect(ProductDeliveryCharges.isLimitReached(n), isFalse, reason: '$n');
-      }
-      expect(ProductDeliveryCharges.canAdd(5), isFalse);
-      expect(ProductDeliveryCharges.isLimitReached(5), isTrue);
-      expect(ProductDeliveryCharges.limitReached, 'You have reached the maximum limit of 5 delivery charges. You cannot add more.');
-    });
-
+  group('labels', () {
     test('the minimum charge label carries the store currency', () {
       expect(ProductDeliveryCharges.minimumChargeLabelWithCurrency('Minimum Delivery Charges', symbol: 'FCFA', code: 'XAF'), 'Minimum Delivery Charges (FCFA)');
       expect(ProductDeliveryCharges.minimumChargeLabelWithCurrency('Minimum Delivery Charges', symbol: '', code: 'XAF'), 'Minimum Delivery Charges (XAF)');
@@ -184,76 +180,42 @@ void main() {
   });
 
   group('section widget', () {
-    testWidgets('at 5 rows the add button is disabled and the warning shows; deleting one re-enables it', (tester) async {
-      tester.view.physicalSize = const Size(800, 3000);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
-      final rows = <DeliveryChargeTierInput>[];
-      await tester.pumpWidget(
+    Future<void> pump(WidgetTester tester, DeliveryChargeTierInput input) {
+      return tester.pumpWidget(
         MaterialApp(
           theme: DsTheme.light(),
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: StatefulBuilder(
-                builder: (context, setState) => ProductDeliveryChargesSection(
-                  rows: rows,
-                  currencySymbol: 'FCFA',
-                  onAdd: () => setState(() {
-                    if (ProductDeliveryCharges.canAdd(rows.length)) rows.add(DeliveryChargeTierInput());
-                  }),
-                  onRemove: (i) => setState(() => rows.removeAt(i)),
-                ),
-              ),
-            ),
-          ),
+          home: Scaffold(body: SingleChildScrollView(child: ProductDeliveryChargesSection(row: input, currencySymbol: 'FCFA'))),
         ),
       );
+    }
+
+    testWidgets('one charge: three fields, no add or remove', (tester) async {
+      tester.view.physicalSize = const Size(800, 2000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final input = DeliveryChargeTierInput();
+      await pump(tester, input);
 
       expect(find.text('Delivery Charges'), findsOneWidget);
-      expect(find.text('Configure up to 5 custom distance-based delivery charges for this product.'), findsOneWidget);
-      expect(find.byKey(ProductDeliveryChargesSection.limitWarningKey), findsNothing);
-
-      final addButton = find.byKey(ProductDeliveryChargesSection.addButtonKey);
-      for (int i = 0; i < 5; i++) {
-        await tester.tap(addButton);
-        await tester.pumpAndSettle();
-      }
-      expect(rows.length, 5);
-      expect(find.text('Minimum Delivery Charges (FCFA)'), findsNWidgets(5));
-      expect(find.text('Delivery Charges Per Km'), findsNWidgets(5));
-      expect(find.text('Minimum Delivery Charge Within Km'), findsNWidgets(5));
-      expect(find.text('You have reached the maximum limit of 5 delivery charges. You cannot add more.'), findsOneWidget);
-      expect(tester.widget<DsButton>(addButton).onPressed, isNull, reason: 'disabled at the limit');
-
-      // The warning sits above the button.
-      expect(tester.getTopLeft(find.byKey(ProductDeliveryChargesSection.limitWarningKey)).dy, lessThan(tester.getTopLeft(addButton).dy));
-
-      await tester.tap(addButton);
-      await tester.pumpAndSettle();
-      expect(rows.length, 5, reason: 'a disabled button adds nothing');
-
-      await tester.tap(find.byIcon(Icons.delete_outline_rounded).first);
-      await tester.pumpAndSettle();
-      expect(rows.length, 4);
-      expect(find.byKey(ProductDeliveryChargesSection.limitWarningKey), findsNothing);
-      expect(tester.widget<DsButton>(addButton).onPressed, isNotNull);
+      expect(find.text(ProductDeliveryCharges.note), findsOneWidget);
+      expect(find.text('Delivery Charges Per Km'), findsOneWidget);
+      expect(find.text('Minimum Delivery Charges (FCFA)'), findsOneWidget);
+      expect(find.text('Minimum Delivery Charge Within Km'), findsOneWidget);
+      expect(find.byType(TextField), findsNWidgets(3));
+      expect(find.byType(DsButton), findsNothing);
+      expect(find.byIcon(Icons.delete_outline_rounded), findsNothing);
+      input.dispose();
     });
 
     testWidgets('fields take a decimal keyboard and refuse letters', (tester) async {
-      final rows = [DeliveryChargeTierInput()];
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: DsTheme.light(),
-          home: Scaffold(body: SingleChildScrollView(child: ProductDeliveryChargesSection(rows: rows, onAdd: () {}, onRemove: (_) {}))),
-        ),
-      );
+      final input = DeliveryChargeTierInput();
+      await pump(tester, input);
       final fields = find.byType(TextField);
-      expect(fields, findsNWidgets(3));
       expect(tester.widget<TextField>(fields.first).keyboardType, const TextInputType.numberWithOptions(decimal: true));
       await tester.enterText(fields.first, '12.345');
-      expect(rows.first.perKmController.text, isNot('12.345'));
+      expect(input.perKmController.text, isNot('12.345'));
       await tester.enterText(fields.first, '12.34');
-      expect(rows.first.perKmController.text, '12.34');
+      expect(input.perKmController.text, '12.34');
     });
   });
 }

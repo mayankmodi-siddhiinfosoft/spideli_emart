@@ -998,4 +998,6 @@ const Map<String, String> enUS = {
   "Remove delivery charge": "Remove delivery charge",
   "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "You have reached the maximum limit of 5 delivery charges. You cannot add more.",
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "Please fill all 3 fields for each delivery charge tier or remove empty rows.",
+  "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.",
+  "Please enter the delivery charge: all 3 fields are required.": "Please enter the delivery charge: all 3 fields are required.",
 };

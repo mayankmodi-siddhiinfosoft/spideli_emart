@@ -921,4 +921,11 @@ const Map<String, String> arAR = {
   "This price proposal has changed. Please check the latest status.": "تم تغيير عرض السعر هذا. يرجى التحقق من أحدث حالة.",
   "This counter-offer has expired: the driver who made it is no longer on your booking.": "انتهت صلاحية هذا العرض المقابل: السائق الذي قدّمه لم يعد مرتبطًا بحجزك.",
   "The delivery charge has been updated. Please check the new total before paying.": "تم تحديث رسوم التوصيل. يرجى مراجعة الإجمالي الجديد قبل الدفع.",
+  "Charged for each product, by quantity": "تُحتسب لكل منتج حسب الكمية",
+  "Minimum delivery charge (up to @km km)": "الحد الأدنى لرسوم التوصيل (حتى @km كم)",
+  "@min + @extra km × @rate per km": "@min + @extra كم × @rate لكل كم",
+  "Store delivery charge": "رسوم التوصيل الخاصة بالمتجر",
+  "No delivery charge": "لا توجد رسوم توصيل",
+  "Distance: @km km": "المسافة: @km كم",
+  "Total Delivery Fee": "إجمالي رسوم التوصيل",
 };

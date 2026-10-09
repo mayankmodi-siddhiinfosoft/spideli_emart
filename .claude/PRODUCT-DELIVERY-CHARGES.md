@@ -8,14 +8,14 @@ This note covers the CUSTOMER app (`customer/`). The Store app's tier editor is 
 - `sections/{sectionId}.is_delivery_charge_customization == true` (boolean `true`, or the text `"true"`), read when the cart loads and read again by `validateCartBeforePayment` before any payment. The section is the cart store's `section_id`, or the open service's id if the store has none.
 - The admin sets the flag only for `ecommerce-service` / `multivendor-delivery-service`, and the app treats the flag itself as the switch.
 - **Exception (client decision, 9 Oct 2026):** a store that delivers its orders itself (`vendors.isSelfDelivery == true` with the self-delivery feature on) is always **free delivery**, even when the flag is on; its product tiers are not applied.
-- **Products without tiers (client rule, 9 Oct 2026, replaces the spec's 0):** a product with no `delivery_charges` costs the **store's delivery charge** — what the store charges when the section does not price per product (the flat e-commerce section charge; the platform `settings/DeliveryCharge` when stores may not set their own; else the store's own `deliveryCharge`, falling back to the platform one). The order still pays the highest charge across its products.
+- **Products without tiers (client rule, 9 Oct 2026, replaces the spec's 0):** a product with no `delivery_charges` costs the **store's delivery charge** — what the store charges when the section does not price per product (the flat e-commerce section charge; the platform `settings/DeliveryCharge` when stores may not set their own; else the store's own `deliveryCharge`, falling back to the platform one). Like any product, that charge is multiplied by the line's quantity.
 - **Admin catalogue import (confirmed by the client, 9 Oct 2026):** a product imported from `admin_products` copies that template's `delivery_charges`.
 - If the flag is false, missing, malformed or unreadable, the delivery charge is calculated exactly as before: `settings/DeliveryCharge` for the store's region, the flat e-commerce `sections.delivery_charge`, the vendor-level `deliveryCharge` and self-delivery.
 - TakeAway orders still have a delivery charge of 0.
 
 ## 2. Where the numbers come from
 
-- `vendor_products/{id}.delivery_charges`: an array of up to 5 tiers `{delivery_charges_per_km, minimum_delivery_charges, minimum_delivery_charges_within_km}`. Each value may be a number or a numeric string.
+- `vendor_products/{id}.delivery_charges`: an array of tiers `{delivery_charges_per_km, minimum_delivery_charges, minimum_delivery_charges_within_km}`. Since 9 Oct 2026 the Store app saves exactly one (the admin panel should too); older products may still hold up to 5, and the customer app still reads them all with the rule below. Each value may be a number or a numeric string.
 - Missing, unreadable or negative values count as 0. Array entries that are not maps, or that hold none of the three fields, are dropped.
 - Tiers are read from `vendor_products` (`FireStoreUtils.getProductById`), never from the cart line cached on the phone. They are read when a product first appears in the cart, and again for every line at checkout.
 - `ProductModel.deliveryChargeTiers` is read-only. `toJson` does not write it, so the stock update at order time (`setKnownFields`) leaves the field as it is.
@@ -24,9 +24,9 @@ This note covers the CUSTOMER app (`customer/`). The Store app's tier editor is 
 
 ## 3. The rule (`customer/lib/utils/product_delivery_charge.dart`)
 
-Per item, at distance `d` km:
+Per piece of a product, at distance `d` km:
 
-1. No tiers: the item's charge is **0**.
+1. No tiers: the store's delivery charge (see §1), or **0** when none is passed.
 2. Sort the tiers by `minimum_delivery_charges_within_km` ascending.
 3. The **first tier whose withinKm >= d** applies, and the item's charge is that tier's `minimum_delivery_charges`. The boundary is inclusive.
 4. If `d` is beyond every tier's withinKm, the tier with the **largest withinKm** applies: `minimum_delivery_charges + (d - withinKm) * delivery_charges_per_km`.
@@ -34,7 +34,9 @@ Per item, at distance `d` km:
 
 With a single tier this is exactly the spec formula: `d <= withinKm ? min : min + (d - withinKm) * perKm`.
 
-**Order charge = the MAXIMUM item charge in the cart, not the sum.** If it comes to 0, the cart shows "Free Delivery".
+**Order charge = the SUM over the cart lines of (per-piece charge × the line's quantity)** (client rule, 9 Oct 2026; it replaced "the highest item charge"). Each variant line counts separately. If it comes to 0, the cart shows "Free Delivery".
+
+`ProductDeliveryCharge.line` returns, per line, the rule applied (`minimum` within a tier, `perKm` beyond every tier, `store` for a product without tiers, `none`), the tier used, the per-piece charge, the quantity and the line total. `orderCharge` sums the line totals.
 
 Example tiers: `[{150, 1500, 5}, {180, 2200, 10}, {200, 3000, 15}]` (perKm, min, withinKm):
 
@@ -56,7 +58,7 @@ Example tiers: `[{150, 1500, 5}, {180, 2200, 10}, {200, 3000, 15}]` (perKm, min,
   - If the flag was switched off since the cart opened, it loads `settings/DeliveryCharge` again.
 - The order is `vendor_orders` (this app's collection; the spec says `restaurant_orders`). The charge is written to the existing **`deliveryCharge`** field with the existing type (a string of the number). No new order field is added.
 - Display:
-  - The cart's "Delivery Fee" row shows the amount, or "Free Delivery" when the product charge is 0.
+  - The cart's "Delivery Fee" row shows the amount, or "Free Delivery" when the product charge is 0. In product mode the row is tappable (underlined, info icon) and opens a sheet listing each cart line: product (and variant), the rule applied (minimum up to N km / min + extra km × rate per km / store delivery charge), quantity × per-piece charge, the line total, the distance, and the Total Delivery Fee. The lines come from `CartController.productDeliveryBreakdown`, filled by `calculatePrice`.
   - Order details shows "Free Delivery" whenever the charged `deliveryCharge` is 0, otherwise the amount. For self-delivery stores this is the same as before. A self-delivering e-commerce store with a flat fee now shows its real fee.
   - The receipt PDF shows the order's `deliveryCharge` as before.
 
@@ -75,5 +77,5 @@ Example tiers: `[{150, 1500, 5}, {180, 2200, 10}, {200, 3000, 15}]` (perKm, min,
 
 ## 6. Tests
 
-- `customer/test/product_delivery_charge_test.dart`: parsing, the section flag, a single tier, several tiers, the max rule, empty tiers and distance edge cases.
+- `customer/test/product_delivery_charge_test.dart`: parsing, the section flag, a single tier, several tiers, the sum × quantity rule and the rule reported per line, the store charge for untiered products, empty tiers, zero quantities and distance edge cases.
 - `customer/test/tax_country_test.dart`: ISO and local-name normalisation and the query values.

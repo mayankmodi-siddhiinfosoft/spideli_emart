@@ -924,4 +924,11 @@ const Map<String, String> enUS = {
   "This price proposal has changed. Please check the latest status.": "This price proposal has changed. Please check the latest status.",
   "This counter-offer has expired: the driver who made it is no longer on your booking.": "This counter-offer has expired: the driver who made it is no longer on your booking.",
   "The delivery charge has been updated. Please check the new total before paying.": "The delivery charge has been updated. Please check the new total before paying.",
+  "Charged for each product, by quantity": "Charged for each product, by quantity",
+  "Minimum delivery charge (up to @km km)": "Minimum delivery charge (up to @km km)",
+  "@min + @extra km × @rate per km": "@min + @extra km × @rate per km",
+  "Store delivery charge": "Store delivery charge",
+  "No delivery charge": "No delivery charge",
+  "Distance: @km km": "Distance: @km km",
+  "Total Delivery Fee": "Total Delivery Fee",
 };

@@ -296,9 +296,10 @@ class ProductModel {
       data['fulfilment'] = allFulfilmentModes.where((m) => fulfilment!.contains(m)).toList();
     }
     // Field-preserving: absent from the map (so untouched by setKnownFields)
-    // unless the delivery charges editor was shown and validated.
+    // unless the delivery charges editor was shown and validated. Null clears
+    // it (section flag off); a product keeps at most one charge.
     if (writeDeliveryCharges) {
-      data[DeliveryChargeTier.productField] = (deliveryCharges ?? const <DeliveryChargeTier>[]).take(DeliveryChargeTier.maxTiers).map((t) => t.toJson()).toList();
+      data[DeliveryChargeTier.productField] = deliveryCharges == null ? null : DeliveryChargeTier.single(deliveryCharges!).map((t) => t.toJson()).toList();
     }
     return data;
   }
@@ -521,8 +522,17 @@ class DeliveryChargeTier {
   static const String minimumChargeKey = 'minimum_delivery_charges';
   static const String withinKmKey = 'minimum_delivery_charges_within_km';
 
-  /// Hard limit on tiers per product (spec §3B.4).
-  static const int maxTiers = 5;
+  /// One delivery charge per product (client rule, 9 Oct 2026; the spec's
+  /// limit was 5).
+  static const int maxTiers = 1;
+
+  /// The one charge a product keeps: the first by `minimum_delivery_charges_within_km`
+  /// (products saved with several tiers before the one-charge rule), or none.
+  static List<DeliveryChargeTier> single(List<DeliveryChargeTier> tiers) {
+    if (tiers.length <= maxTiers) return tiers;
+    final List<DeliveryChargeTier> sorted = [...tiers]..sort((a, b) => a.minimumDeliveryChargesWithinKm.compareTo(b.minimumDeliveryChargesWithinKm));
+    return sorted.take(maxTiers).toList();
+  }
 
   const DeliveryChargeTier({required this.deliveryChargesPerKm, required this.minimumDeliveryCharges, required this.minimumDeliveryChargesWithinKm});
 

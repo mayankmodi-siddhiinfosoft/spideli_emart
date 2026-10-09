@@ -96,4 +96,6 @@ const Map<String, String> hiIN = {
   "Remove delivery charge": "डिलीवरी शुल्क हटाएँ",
   "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "आप अधिकतम 5 डिलीवरी शुल्क की सीमा तक पहुँच गए हैं। आप और नहीं जोड़ सकते।",
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "कृपया हर डिलीवरी शुल्क स्तर के तीनों फ़ील्ड भरें या खाली पंक्तियाँ हटाएँ।",
+  "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "आवश्यक। न्यूनतम शुल्क तय दूरी तक लागू होता है; उससे आगे हर अतिरिक्त किमी के लिए प्रति किमी शुल्क जुड़ता है।",
+  "Please enter the delivery charge: all 3 fields are required.": "कृपया डिलीवरी शुल्क दर्ज करें: तीनों फ़ील्ड आवश्यक हैं।",
 };

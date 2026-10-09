@@ -59,11 +59,16 @@ class AddProductController extends GetxController {
   // (the old default) meant.
   RxBool fulfilTakeaway = true.obs;
 
-  // Product custom delivery charges (bug point 60). Shown and written only
-  // while the store's section has is_delivery_charge_customization == true,
-  // read fresh in getArgument().
+  // Product custom delivery charges (bug point 60). Shown, required and
+  // written only while the store's section has
+  // is_delivery_charge_customization == true, read fresh in getArgument().
+  // One charge per product, so there is always exactly one input row.
   RxBool deliveryChargesEnabled = false.obs;
   RxList<DeliveryChargeTierInput> deliveryChargeInputs = <DeliveryChargeTierInput>[].obs;
+
+  /// The section flag as read: null when the section could not be read, in
+  /// which case the stored `delivery_charges` is left untouched.
+  bool? _deliveryChargeFlag;
 
   Rx<ItemAttribute?> itemAttributes = ItemAttribute(attributes: [], variants: []).obs;
 
@@ -174,7 +179,10 @@ class AddProductController extends GetxController {
       }
     }
 
-    deliveryChargesEnabled.value = await FireStoreUtils.getSectionDeliveryChargeCustomization(storeSectionId);
+    _deliveryChargeFlag = await FireStoreUtils.getSectionDeliveryChargeCustomization(storeSectionId);
+    deliveryChargesEnabled.value = _deliveryChargeFlag == true;
+    // The single row, empty for a new product (filled below when editing).
+    deliveryChargeInputs.assignAll([DeliveryChargeTierInput()]);
 
     print("======>");
     print(Constant.userModel!.sectionId);
@@ -225,10 +233,10 @@ class AddProductController extends GetxController {
         }
         if (wholesaleTierInputs.isEmpty) wholesaleTierInputs.add(_newTierInput());
       }
-      deliveryChargeInputs.clear();
-      for (final tier in (productModel.value.deliveryCharges ?? const <DeliveryChargeTier>[]).take(ProductDeliveryCharges.maxTiers)) {
-        deliveryChargeInputs.add(DeliveryChargeTierInput.fromTier(tier));
-      }
+      // A product saved with several tiers before the one-charge rule shows
+      // (and on save keeps) its first one.
+      final List<DeliveryChargeTier> storedCharges = DeliveryChargeTier.single(productModel.value.deliveryCharges ?? const <DeliveryChargeTier>[]);
+      if (storedCharges.isNotEmpty) deliveryChargeInputs.first.fill(storedCharges.first);
       saleType.value = productModel.value.effectiveSaleType;
       wholesaleBusinessOnly.value = productModel.value.wholesaleBusinessOnly == true;
       final fulfilment = productModel.value.effectiveFulfilment;
@@ -409,35 +417,24 @@ class AddProductController extends GetxController {
     return null;
   }
 
-  bool get canAddDeliveryCharge => ProductDeliveryCharges.canAdd(deliveryChargeInputs.length);
-
-  /// Adds an empty row; refused at the 5-row limit (the button is disabled
-  /// there too).
-  void addDeliveryCharge() {
-    if (!canAddDeliveryCharge) return;
-    deliveryChargeInputs.add(DeliveryChargeTierInput());
-  }
-
-  void removeDeliveryCharge(int index) {
-    if (index < 0 || index >= deliveryChargeInputs.length) return;
-    final removed = deliveryChargeInputs.removeAt(index);
-    // Dispose after the frame so the removed TextFields are unmounted first.
-    WidgetsBinding.instance.addPostFrameCallback((_) => removed.dispose());
-  }
-
   /// The untranslated error key, or null when valid (always valid while the
-  /// section flag is off, as nothing is written then).
+  /// section flag is off, as the charge is not asked for then).
   String? validateDeliveryCharges() {
     if (!deliveryChargesEnabled.value) return null;
     return ProductDeliveryCharges.validate(deliveryChargeInputs.map((e) => e.values).toList()).error;
   }
 
-  /// Copies the validated rows onto [productModel] ([] when there are none).
-  /// With the section flag off nothing is written, so whatever
-  /// `delivery_charges` the panel stored stays untouched.
+  /// Copies the validated charge onto [productModel]. With the section flag
+  /// off `delivery_charges` is saved as null; when the flag could not be read
+  /// it is left as stored.
   void applyDeliveryChargesToProduct() {
-    if (!deliveryChargesEnabled.value) {
+    if (_deliveryChargeFlag == null) {
       productModel.value.writeDeliveryCharges = false;
+      return;
+    }
+    if (_deliveryChargeFlag == false) {
+      productModel.value.deliveryCharges = null;
+      productModel.value.writeDeliveryCharges = true;
       return;
     }
     final result = ProductDeliveryCharges.validate(deliveryChargeInputs.map((e) => e.values).toList());

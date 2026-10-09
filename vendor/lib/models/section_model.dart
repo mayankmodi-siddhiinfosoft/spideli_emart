@@ -21,6 +21,11 @@ class SectionModel {
   PlatformFeeModel? platformFee;
   bool? packagingChargeEnable;
 
+  /// `is_delivery_charge_customization` (bug point 60): products carry their
+  /// own delivery charge, so the store's own delivery charge card is hidden
+  /// and saved as 0. Read-only: never written back by [toJson].
+  bool isDeliveryChargeCustomization = false;
+
   /// Regions this section/service is offered in. Empty = every region.
   List<String> regionIds = [];
 
@@ -71,6 +76,8 @@ class SectionModel {
     }
     platformFee = PlatformFeeModel.fromJson(json['platformFee']);
     packagingChargeEnable = json['packagingChargeEnable'] ?? false;
+    final dynamic customDelivery = json['is_delivery_charge_customization'];
+    isDeliveryChargeCustomization = customDelivery == true || (customDelivery is String && customDelivery.trim().toLowerCase() == 'true');
     regionIds = json['regionIds'] is Iterable ? (json['regionIds'] as Iterable).map((e) => e.toString()).where((e) => e.isNotEmpty).toList() : [];
   }
 

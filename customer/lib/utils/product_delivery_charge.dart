@@ -53,23 +53,67 @@ class ProductDeliveryTier {
   String toString() => 'ProductDeliveryTier(perKm: $perKm, min: $minCharge, withinKm: $withinKm)';
 }
 
+/// How a product's delivery charge was worked out, for the cart's breakdown.
+enum ProductDeliveryRule {
+  /// Within a tier's range: that tier's `minimum_delivery_charges`.
+  minimum,
+
+  /// Beyond every tier: the widest tier's minimum plus its per-km rate for
+  /// the extra distance.
+  perKm,
+
+  /// The product has no tiers and costs the store's delivery charge.
+  store,
+
+  /// The product has no tiers and no store charge applies: 0.
+  none,
+}
+
+/// One cart line's delivery charge: [unitCharge] for one piece, times
+/// [quantity].
+class ProductDeliveryLine {
+  final ProductDeliveryRule rule;
+
+  /// The tier that set the charge ([ProductDeliveryRule.minimum] /
+  /// [ProductDeliveryRule.perKm] only).
+  final ProductDeliveryTier? tier;
+
+  /// The delivery distance the charge was worked out for, in km.
+  final double distanceKm;
+  final double unitCharge;
+  final int quantity;
+
+  const ProductDeliveryLine({required this.rule, this.tier, required this.distanceKm, required this.unitCharge, required this.quantity});
+
+  /// [unitCharge] x [quantity], to 2 decimals.
+  double get total => ProductDeliveryCharge._round(unitCharge * quantity);
+
+  /// Extra km charged per km ([ProductDeliveryRule.perKm] only).
+  double get extraKm => rule == ProductDeliveryRule.perKm && tier != null ? math.max(0.0, distanceKm - tier!.withinKm) : 0.0;
+
+  @override
+  String toString() => 'ProductDeliveryLine($rule, $unitCharge x $quantity = $total)';
+}
+
 /// Product-level delivery charges (Doc 60, APP-SPEC-PRODUCT-DELIVERY-CHARGES
 /// §4). Used only when the cart's section has
 /// `sections/{id}.is_delivery_charge_customization == true`; then the Delivery
 /// charge comes from these tiers ALONE - no `settings/DeliveryCharge`, no flat
 /// e-commerce charge, no vendor-level charge.
 ///
-/// **Tier choice (per item).** Tiers are sorted by `withinKm` ascending.
+/// **Tier choice (per piece).** Tiers are sorted by `withinKm` ascending.
 ///  * The first tier whose `withinKm >= distance` applies: its
-///    `minimum_delivery_charges` is the item's charge.
+///    `minimum_delivery_charges` is the charge.
 ///  * Beyond every tier, the tier with the largest `withinKm` applies:
 ///    `min + (distance - withinKm) * perKm`.
-///  * No tiers -> 0.
+///  * No tiers -> the store's delivery charge, or 0.
 ///
 /// With a single tier this is exactly the spec formula
 /// `distance <= withinKm ? min : min + (distance - withinKm) * perKm`.
 ///
-/// **Order charge = the MAXIMUM item charge** across the cart, never the sum.
+/// **Order charge = the SUM over the cart lines of that charge x the line's
+/// quantity** (client rule, 9 Oct 2026; it replaces "the highest item
+/// charge").
 class ProductDeliveryCharge {
   ProductDeliveryCharge._();
 
@@ -92,34 +136,31 @@ class ProductDeliveryCharge {
     return earthRadiusKm * c;
   }
 
-  /// The charge for one item at [distanceKm] (see the class doc for the tier
+  /// The charge for one piece at [distanceKm] (see the class doc for the tier
   /// rule). A negative / non-finite distance counts as 0 km.
-  static double itemCharge(double distanceKm, List<ProductDeliveryTier> tiers) {
-    if (tiers.isEmpty) return 0.0;
+  static double itemCharge(double distanceKm, List<ProductDeliveryTier> tiers) => line(distanceKm, tiers).unitCharge;
+
+  /// One cart line: the per-piece charge from [tiers] (or [storeCharge] when
+  /// the product has none; null keeps the spec's 0) times [quantity]. A
+  /// negative quantity counts as 0.
+  static ProductDeliveryLine line(double distanceKm, List<ProductDeliveryTier> tiers, {int quantity = 1, double? storeCharge}) {
     final double d = distanceKm.isFinite && distanceKm > 0 ? distanceKm : 0.0;
+    final int qty = math.max(0, quantity);
+    if (tiers.isEmpty) {
+      if (storeCharge == null) return ProductDeliveryLine(rule: ProductDeliveryRule.none, distanceKm: d, unitCharge: 0.0, quantity: qty);
+      return ProductDeliveryLine(rule: ProductDeliveryRule.store, distanceKm: d, unitCharge: _round(storeCharge.isFinite && storeCharge > 0 ? storeCharge : 0.0), quantity: qty);
+    }
     final List<ProductDeliveryTier> sorted = [...tiers]..sort((a, b) => a.withinKm.compareTo(b.withinKm));
     for (final ProductDeliveryTier t in sorted) {
-      if (t.withinKm >= d) return _round(t.minCharge);
+      if (t.withinKm >= d) return ProductDeliveryLine(rule: ProductDeliveryRule.minimum, tier: t, distanceKm: d, unitCharge: _round(t.minCharge), quantity: qty);
     }
     final ProductDeliveryTier last = sorted.last;
-    return _round(last.minCharge + (d - last.withinKm) * last.perKm);
+    return ProductDeliveryLine(rule: ProductDeliveryRule.perKm, tier: last, distanceKm: d, unitCharge: _round(last.minCharge + (d - last.withinKm) * last.perKm), quantity: qty);
   }
 
-  /// The order's delivery charge: the highest [itemCharge] over
-  /// [itemTiers] (one tier list per cart line), 0 for an empty cart.
-  ///
-  /// [storeCharge] is what a product WITHOUT tiers costs: the store's own
-  /// delivery charge (client rule, 9 Oct 2026 - "if no delivery charge is
-  /// configured for a product, apply the delivery charge configured by the
-  /// store"). Null keeps the spec's 0 for such a product.
-  static double orderCharge(double distanceKm, Iterable<List<ProductDeliveryTier>> itemTiers, {double? storeCharge}) {
-    double max = 0.0;
-    for (final List<ProductDeliveryTier> tiers in itemTiers) {
-      final double c = tiers.isEmpty && storeCharge != null ? _round(storeCharge.isFinite && storeCharge > 0 ? storeCharge : 0.0) : itemCharge(distanceKm, tiers);
-      if (c > max) max = c;
-    }
-    return max;
-  }
+  /// The order's delivery charge: the sum of every line's total, 0 for an
+  /// empty cart.
+  static double orderCharge(Iterable<ProductDeliveryLine> lines) => _round(lines.fold(0.0, (sum, l) => sum + l.total));
 
   /// Two decimals, so the stored `deliveryCharge` has no floating-point tail.
   static double _round(double v) => (v * 100).roundToDouble() / 100;

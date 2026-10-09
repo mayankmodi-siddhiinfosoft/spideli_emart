@@ -390,40 +390,54 @@ touched.
 ## 3b. Product custom delivery charges — store app (bug point 60, 9 Oct 2026)
 
 Source: `APP-SPEC-PRODUCT-DELIVERY-CHARGES.md` §2–3. Store app half only; the
-customer app's cart rule (max across items) is specified there.
+customer app's cart rule (sum of each product's charge × quantity) is specified there.
 
 - **When it shows:** the Add / Edit Product screen reads
   `sections/{sectionId}.is_delivery_charge_customization` **fresh** every time it
-  opens (`FireStoreUtils.getSectionDeliveryChargeCustomization`). The section
-  id is the vendor document's `section_id`, else the user's `sectionId`, else
-  the section chosen at login. Only `true` shows the "Delivery Charges"
-  section; missing, `false`, or an unreadable document hides it. The app does
-  not check `serviceTypeFlag` itself — the admin panel only sets the flag on
+  opens (`FireStoreUtils.getSectionDeliveryChargeCustomization`, which returns
+  null when the section cannot be read). The section id is the vendor
+  document's `section_id`, else the user's `sectionId`, else the section chosen
+  at login. Only `true` shows the "Delivery Charges" section. The app does not
+  check `serviceTypeFlag` itself — the admin panel only sets the flag on
   `ecommerce-service` / `multivendor-delivery-service`.
-- **The editor:** up to **5** rows of *Delivery Charges Per Km*, *Minimum
-  Delivery Charges (<store currency symbol, else code>)*, *Minimum Delivery
-  Charge Within Km*; decimal keyboard, digits with at most 2 decimals (`,` is
-  accepted as the separator), no sign. Trash icon per row. At 5 rows "+ Add
-  Delivery Charge" is disabled and *"You have reached the maximum limit of 5
-  delivery charges. You cannot add more."* shows above it.
-- **Save:** every row present needs all 3 values, numeric and `>= 0`, else
-  *"Please fill all 3 fields for each delivery charge tier or remove empty
-  rows."* and nothing is saved. Written as
+- **One charge per product (client rule, 9 Oct 2026; replaces "up to 5"):**
+  a single card with *Delivery Charges Per Km*, *Minimum Delivery Charges
+  (<store currency symbol, else code>)* and *Minimum Delivery Charge Within
+  Km*; decimal keyboard, digits with at most 2 decimals (`,` is accepted as the
+  separator), no sign. No add / remove buttons.
+- **Save, flag on:** the charge is **required** — all 3 values numeric and
+  `>= 0`, else *"Please enter the delivery charge: all 3 fields are
+  required."* and nothing is saved. Written as a one-entry array (field
+  structure unchanged, so the customer app's calculation is unchanged):
   `vendor_products/{id}.delivery_charges: [{delivery_charges_per_km,
-  minimum_delivery_charges, minimum_delivery_charges_within_km}]` with
-  **numbers** (whole values as ints), in the order entered, `[]` when there
-  are no rows.
+  minimum_delivery_charges, minimum_delivery_charges_within_km}]`, numbers
+  (whole values as ints).
+- **Save, flag off:** the card is hidden and `delivery_charges` is written as
+  **`null`**. If the section could not be read the field is left as stored.
+- **Products saved with several tiers** (before the one-charge rule): the
+  editor shows the tier with the smallest *within km*, and any write of the
+  field (an edit, or importing an admin catalogue product) keeps only that one
+  (`DeliveryChargeTier.single`).
 - **Read:** numbers or numeric strings; entries with none of the three values
   usable are dropped, a single missing value reads `0`.
 - **Field-preserving:** product saves use `setKnownFields`, and
-  `delivery_charges` is in the write **only** when the editor was shown (flag
-  on) and validated. With the flag off, and on every other product save (the
-  publish switch, bulk "Apply Tax"), whatever the panel stored is left alone.
-  Importing an admin catalogue product (a new document) carries the
-  template's `delivery_charges` when it has the field.
+  `delivery_charges` is in the write **only** from the Add / Edit Product save
+  (above) or an admin catalogue import that carries the field. Every other
+  product save (the publish switch, bulk "Apply Tax") leaves it alone.
+- **Add / Edit Store:** when the selected section has the flag
+  (`SectionModel.isDeliveryChargeCustomization`, read-only), the store's
+  Delivery Charge card (the read-only "Delivery Settings" switch and the three
+  charge fields) is hidden and `vendors.DeliveryCharge` is saved with
+  `delivery_charges_per_km`, `minimum_delivery_charges` and
+  `minimum_delivery_charges_within_km` all `0`.
+- **Admin panel** (not in this repo): with the flag on the product Delivery
+  Charge is mandatory there too; with it off the option is hidden and the
+  field saved as `null`, and the store's delivery charge applies to the whole
+  order (the customer app already does this when the flag is off).
 - Code: `vendor/lib/utils/product_delivery_charges.dart` (rules),
   `vendor/lib/app/product_screens/product_delivery_charges_section.dart`
-  (UI), `DeliveryChargeTier` in `vendor/lib/models/product_model.dart`;
+  (UI), `DeliveryChargeTier` in `vendor/lib/models/product_model.dart`,
+  `AddRestaurantController.productDeliveryCharges` (store card);
   tests in `vendor/test/product_delivery_charges_test.dart`.
 
 ---

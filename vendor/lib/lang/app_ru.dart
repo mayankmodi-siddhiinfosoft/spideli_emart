@@ -96,4 +96,6 @@ const Map<String, String> ruRU = {
   "Remove delivery charge": "Удалить тариф доставки",
   "You have reached the maximum limit of 5 delivery charges. You cannot add more.": "Достигнут максимум — 5 тарифов доставки. Добавить больше нельзя.",
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "Заполните все 3 поля каждого тарифа доставки или удалите пустые строки.",
+  "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "Обязательно. Минимальная стоимость действует до указанного расстояния; дальше за каждый дополнительный км добавляется стоимость за км.",
+  "Please enter the delivery charge: all 3 fields are required.": "Укажите стоимость доставки: все 3 поля обязательны.",
 };
