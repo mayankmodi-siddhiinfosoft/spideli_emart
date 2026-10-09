@@ -1,6 +1,5 @@
 import 'dart:developer';
 
-import 'package:customer/constant/collection_name.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/inbox_model.dart';
 import 'package:customer/models/user_model.dart';
@@ -25,12 +24,7 @@ class DriverInboxScreen extends StatelessWidget {
       title: "Driver Inbox".tr,
       maxContentWidth: DsLayout.contentMax,
       body: FirestorePagination(
-        query: FireStoreUtils.fireStore
-            .collection(CollectionName.chat)
-            .where("sender_receiver_id", arrayContains: FireStoreUtils.getCurrentUid())
-            .where('chatType', isEqualTo: Constant.userRoleDriver)
-            .where('type', isEqualTo: 'orderChat')
-            .orderBy('createdAt', descending: true),
+        query: FireStoreUtils.orderInboxQuery(uid: FireStoreUtils.getCurrentUid(), chatType: Constant.userRoleDriver),
         //item builder type is compulsory.
         physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),

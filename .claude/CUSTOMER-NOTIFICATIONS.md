@@ -47,3 +47,6 @@ One document per notification shown to the customer (no Cloud Function).
 
 ### Firestore rules
 - `firestore.rules.draft` has `match /users/{userId}/notifications/{notificationId}`: any signed-in sender creates (`id` = doc id, `read == false`); only the owner (or admin) reads, deletes, and updates `read` alone. The live rules need the same before the senders' writes can succeed.
+
+### customer — profile badges
+- Profile → Communication: Notifications (`LiveUnreadBadge.notifications()`, unread `users/{uid}/notifications`), Store / Driver / Provider / Worker Inbox (`LiveUnreadBadge.inbox(kind)`, `InboxUnreadService`: the inbox list query `FireStoreUtils.orderInboxQuery(uid, chatType)` + one `ChatUnreadService.orderThread(thread, peer)` per conversation, summed live; newest 50 conversations per inbox), Help & Support (`LiveUnreadBadge.supportChat()`). Every badge follows `authStateChanges`; hidden at 0, "99+" past 99.

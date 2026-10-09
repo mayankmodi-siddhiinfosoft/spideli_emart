@@ -1,4 +1,3 @@
-import 'package:customer/constant/collection_name.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/inbox_model.dart';
 import 'package:customer/models/user_model.dart';
@@ -21,12 +20,7 @@ class WorkerInboxScreen extends StatelessWidget {
       title: "Worker Inbox".tr,
       subtitle: "Order conversations".tr,
       body: FirestorePagination(
-        query: FireStoreUtils.fireStore
-            .collection(CollectionName.chat)
-            .where("sender_receiver_id", arrayContains: FireStoreUtils.getCurrentUid())
-            .where('chatType', isEqualTo: Constant.userRoleWorker)
-            .where('type', isEqualTo: 'orderChat')
-            .orderBy('createdAt', descending: true),
+        query: FireStoreUtils.orderInboxQuery(uid: FireStoreUtils.getCurrentUid(), chatType: Constant.userRoleWorker),
         //item builder type is compulsory.
         physics: const BouncingScrollPhysics(),
         itemBuilder: (context, documentSnapshots, index) {

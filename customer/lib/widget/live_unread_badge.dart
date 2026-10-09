@@ -1,8 +1,11 @@
 import 'dart:async';
 
 import 'package:customer/service/chat_unread_service.dart';
+import 'package:customer/service/customer_notification_service.dart';
+import 'package:customer/service/inbox_unread_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/unread_badge.dart';
+import 'package:customer/utils/unread_sum.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -34,6 +37,23 @@ class LiveUnreadBadge extends StatefulWidget {
     final String uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return const SizedBox.shrink();
     return LiveUnreadBadge(streamKey: 'support/$uid', create: () => ChatUnreadService.supportThread(uid: uid));
+  }
+
+  /// The unread count of the Notification Center. Follows sign-in /
+  /// sign-out itself (nothing while signed out), so it is right even when
+  /// built before the auth state is restored.
+  static Widget notifications() {
+    return LiveUnreadBadge(
+      streamKey: 'notifications',
+      create: () => UnreadSum.perUser(InboxUnreadService.authUids(), CustomerNotificationService.unreadCount),
+    );
+  }
+
+  /// The total unread count of the [kind] inbox (its newest
+  /// [InboxUnreadService.conversationCap] conversations, each counted like
+  /// its row badge in the inbox screen). Follows sign-in / sign-out itself.
+  static Widget inbox(InboxKind kind) {
+    return LiveUnreadBadge(streamKey: 'inbox/${kind.name}', create: () => InboxUnreadService.total(kind));
   }
 
   @override

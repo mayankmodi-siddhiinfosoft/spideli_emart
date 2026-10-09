@@ -5,7 +5,7 @@ import 'package:customer/screen_ui/help_support_screen/help_support_screen.dart'
 import 'package:customer/screen_ui/on_demand_service/provider_inbox_screen.dart';
 import 'package:customer/screen_ui/notification_center/notification_center_screen.dart';
 import 'package:customer/screen_ui/on_demand_service/worker_inbox_screen.dart';
-import 'package:customer/service/customer_notification_service.dart';
+import 'package:customer/service/inbox_unread_service.dart';
 import 'package:customer/widget/live_unread_badge.dart';
 import 'package:customer/themes/custom_dialog_box.dart';
 import 'package:customer/themes/ds/ds.dart';
@@ -227,33 +227,30 @@ class ProfileScreen extends StatelessWidget {
                             : DsTileGroup(
                                 title: "Communication".tr,
                                 children: [
-                                  // Notification Center, with its unread count.
-                                  DsListTile(
-                                    title: "Notifications".tr,
-                                    leading: const DsIconWell(icon: Icons.notifications_none_rounded, tone: DsTone.brand, size: 40),
-                                    trailing: LiveUnreadBadge(
-                                      streamKey: 'center/${FirebaseAuth.instance.currentUser?.uid ?? ''}',
-                                      create: () {
-                                        final String? uid = CustomerNotificationService.currentUid;
-                                        return uid == null ? Stream<int>.value(0) : CustomerNotificationService.unreadCount(uid);
-                                      },
-                                    ),
-                                    showChevron: true,
-                                    onTap: () {
-                                      FocusManager.instance.primaryFocus?.unfocus();
+                                  // Each row with its live unread total (the
+                                  // badge before the chevron; nothing at 0,
+                                  // 99+ past 99). The badges follow sign-in /
+                                  // sign-out themselves.
+                                  _tile(
+                                    context,
+                                    null,
+                                    icon: Icons.notifications_none_rounded,
+                                    "Notifications".tr,
+                                    badge: LiveUnreadBadge.notifications(),
+                                    () {
                                       Get.to(() => const NotificationCenterScreen());
                                     },
                                   ),
-                                  _tile(context, "assets/icons/ic_restaurant_chat.svg", "Store Inbox".tr, () {
+                                  _tile(context, "assets/icons/ic_restaurant_chat.svg", "Store Inbox".tr, badge: LiveUnreadBadge.inbox(InboxKind.store), () {
                                     Get.to(const RestaurantInboxScreen());
                                   }),
-                                  _tile(context, "assets/icons/ic_restaurant_driver.svg", "Driver Inbox".tr, () {
+                                  _tile(context, "assets/icons/ic_restaurant_driver.svg", "Driver Inbox".tr, badge: LiveUnreadBadge.inbox(InboxKind.driver), () {
                                     Get.to(const DriverInboxScreen());
                                   }),
-                                  _tile(context, "assets/icons/ic_restaurant_chat.svg", "Provider Inbox".tr, () {
+                                  _tile(context, "assets/icons/ic_restaurant_chat.svg", "Provider Inbox".tr, badge: LiveUnreadBadge.inbox(InboxKind.provider), () {
                                     Get.to(const ProviderInboxScreen());
                                   }),
-                                  _tile(context, "assets/icons/ic_restaurant_driver.svg", "Worker Inbox".tr, () {
+                                  _tile(context, "assets/icons/ic_restaurant_driver.svg", "Worker Inbox".tr, badge: LiveUnreadBadge.inbox(InboxKind.worker), () {
                                     Get.to(const WorkerInboxScreen());
                                   }),
                                 ],
@@ -371,29 +368,76 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  /// One settings row: the screen's original SVG in a tinted well, the label
-  /// and a chevron (or a custom [trailing] control).
+  /// One settings row: the screen's original SVG (or an [icon]) in a tinted
+  /// well, the label and a chevron (or a custom [trailing] control).
   Widget _tile(
     BuildContext context,
-    String image,
+    String? image,
     String title,
     VoidCallback? onPress, {
     DsTone tone = DsTone.brand,
+    IconData? icon,
     Widget? trailing,
     bool showChevron = true,
 
     /// Shown before the chevron (an unread count), unlike [trailing].
     Widget? badge,
   }) {
+    return ProfileSettingsTile(
+      image: image,
+      icon: icon,
+      title: title,
+      onPress: onPress,
+      tone: tone,
+      trailing: trailing,
+      showChevron: showChevron,
+      badge: badge,
+    );
+  }
+}
+
+/// A profile settings row: the icon in a tinted well, the label, then either
+/// a custom [trailing] control, or an optional [badge] (an unread count)
+/// followed by the chevron.
+class ProfileSettingsTile extends StatelessWidget {
+  /// An SVG asset for the well, or null to use [icon].
+  final String? image;
+  final IconData? icon;
+  final String title;
+  final VoidCallback? onPress;
+  final DsTone tone;
+  final Widget? trailing;
+  final bool showChevron;
+
+  /// Shown before the chevron (an unread count), unlike [trailing].
+  final Widget? badge;
+
+  const ProfileSettingsTile({
+    super.key,
+    this.image,
+    this.icon,
+    required this.title,
+    this.onPress,
+    this.tone = DsTone.brand,
+    this.trailing,
+    this.showChevron = true,
+    this.badge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final c = context.dsColors;
     final accent = c.tone(tone).strong;
+    final String? asset = image;
     return DsListTile(
       title: title.tr,
-      leading: DsIconWell(
-        tone: tone,
-        size: 40,
-        child: SvgPicture.asset(image, height: 20, width: 20, colorFilter: ColorFilter.mode(accent, BlendMode.srcIn)),
-      ),
+      leading: asset == null || asset.isEmpty
+          ? DsIconWell(icon: icon ?? Icons.circle_outlined, tone: tone, size: 40)
+          : DsIconWell(
+              tone: tone,
+              size: 40,
+              child: SvgPicture.asset(asset, height: 20, width: 20, colorFilter: ColorFilter.mode(accent, BlendMode.srcIn)),
+            ),
       trailing: trailing ?? badge,
       showChevron: trailing == null && showChevron,
       onTap: () {

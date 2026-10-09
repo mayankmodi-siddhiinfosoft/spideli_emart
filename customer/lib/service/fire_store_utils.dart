@@ -3306,6 +3306,20 @@ class FireStoreUtils {
   /// of one booking) share the thread, so the peer tells the conversations
   /// apart. Equality filters only (no composite index needed). Shared by the
   /// inbox badge (ChatUnreadService) and [setSeenChatForOrder].
+  /// The order conversations of [uid] with a [chatType] party (`vendor`,
+  /// `driver`, `provider`, `worker`), newest first: one inbox document per
+  /// order thread, `chat/{orderId}`. The query of the four inbox screens and
+  /// of the profile screen's inbox badges (InboxUnreadService), so both use
+  /// the same (already existing) index and list the same conversations.
+  static Query<Map<String, dynamic>> orderInboxQuery({required String uid, required String chatType}) {
+    return fireStore
+        .collection(CollectionName.chat)
+        .where("sender_receiver_id", arrayContains: uid)
+        .where('chatType', isEqualTo: chatType)
+        .where('type', isEqualTo: 'orderChat')
+        .orderBy('createdAt', descending: true);
+  }
+
   static Query<Map<String, dynamic>> unreadOrderChatQuery({required String threadId, required String receiverId, String senderId = ''}) {
     Query<Map<String, dynamic>> query = fireStore.collection(CollectionName.chat).doc(threadId.trim()).collection("thread").where('receiverId', isEqualTo: receiverId);
     if (senderId.trim().isNotEmpty) query = query.where('senderId', isEqualTo: senderId.trim());

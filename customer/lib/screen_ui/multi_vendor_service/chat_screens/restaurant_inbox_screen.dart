@@ -1,4 +1,3 @@
-import 'package:customer/constant/collection_name.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/inbox_model.dart';
 import 'package:customer/models/user_model.dart';
@@ -24,12 +23,7 @@ class RestaurantInboxScreen extends StatelessWidget {
       title: "Restaurant Inbox".tr,
       maxContentWidth: DsLayout.contentMax,
       body: FirestorePagination(
-        query: FireStoreUtils.fireStore
-            .collection(CollectionName.chat)
-            .where("sender_receiver_id", arrayContains: FireStoreUtils.getCurrentUid())
-            .where('chatType', isEqualTo: Constant.userRoleVendor)
-            .where('type', isEqualTo: 'orderChat')
-            .orderBy('createdAt', descending: true),
+        query: FireStoreUtils.orderInboxQuery(uid: FireStoreUtils.getCurrentUid(), chatType: Constant.userRoleVendor),
         //item builder type is compulsory.
         physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
