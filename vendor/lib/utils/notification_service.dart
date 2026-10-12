@@ -23,6 +23,7 @@ import 'package:vendor/utils/push_payload.dart';
 import 'package:vendor/utils/fcm_token_reset.dart';
 import 'package:vendor/utils/chat_sound.dart';
 import 'package:vendor/utils/scheduled_order.dart';
+import 'package:vendor/utils/store_chat_topic_service.dart';
 
 /// Runs for a message that arrives while the app is in the background or
 /// closed. Registered once from `main()` so it is always installed (report
@@ -146,6 +147,9 @@ class NotificationService {
     unawaited(requestPermissionOnce());
     await _guard('token refresh', () async => listenTokenRefresh());
     await _guard('token', syncToken);
+    // The store chat topic of an employee with Chat is re-checked on every
+    // return to the foreground (the role may have changed).
+    await _guard('store chat topic', () async => StoreChatTopicService.observeLifecycle());
   }
 
   static Future<void> _guard(String step, Future<void> Function() run) async {
@@ -300,6 +304,9 @@ class NotificationService {
     final String token = await getToken();
     if (!PushPayload.isUsableToken(token)) return;
     await _subscribeTopic();
+    // An employee with Chat: the store's chat topic (`store_chat_<vendorID>`);
+    // anyone else: none. Not awaited: it reads the profile and role.
+    unawaited(StoreChatTopicService.sync());
     final String uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return;
     await FireStoreUtils.saveDeviceFcmToken(uid, token);
@@ -313,6 +320,8 @@ class NotificationService {
         if (!PushPayload.isUsableToken(token)) return;
         _deviceToken = token.trim();
         await _subscribeTopic();
+        // A new token is subscribed to nothing yet: join the chat topic again.
+        unawaited(StoreChatTopicService.sync(resubscribe: true));
         final String uid = FirebaseAuth.instance.currentUser?.uid ?? '';
         if (uid.isNotEmpty) await FireStoreUtils.saveDeviceFcmToken(uid, _deviceToken);
       },
@@ -323,6 +332,8 @@ class NotificationService {
   /// Before sign-out: clears the stored token only where it is still this
   /// device's, so the account's other phone keeps receiving.
   static Future<void> clearTokenOnSignOut() async {
+    // An employee stops receiving the store's chats on this phone.
+    await StoreChatTopicService.signOut();
     final String uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return;
     String token = _deviceToken;
