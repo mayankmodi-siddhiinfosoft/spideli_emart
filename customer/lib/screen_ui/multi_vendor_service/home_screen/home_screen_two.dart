@@ -177,7 +177,7 @@ class HomeScreenTwo extends StatelessWidget {
         return Scaffold(
           backgroundColor: c.background,
           // The search field and the list / map / scan actions float over the
-          // content as ONE capsule (client report #15, screenshot b).
+          // content as a column of round buttons at the bottom right (12 Oct 2026).
           body: Stack(
             children: [
               Positioned.fill(child: content),

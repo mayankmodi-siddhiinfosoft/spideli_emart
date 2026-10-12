@@ -304,19 +304,17 @@ class NoStoreInZoneView extends StatelessWidget {
   }
 }
 
-/// The food home's search + tools block (client report #15, screenshot b):
-/// ONE floating rounded capsule near the bottom of the screen, over the
-/// content, holding — left to right — the list / map toggle as a small
-/// segmented pair (the active side filled with the brand colour), the search
-/// field taking the remaining width, and the QR scan action at the right end.
+/// The home's search + tools (client request, 12 Oct 2026, second picture):
+/// a column of round floating buttons at the bottom RIGHT of the screen, over
+/// the content — top to bottom: list view, map view (the active one filled
+/// with the brand colour), search and QR scan. It replaced the full-width
+/// capsule along the bottom, so the content stays visible across the width.
 ///
-/// It replaces the old arrangement where a list / map / scan pill floated
-/// ABOVE a separate full-width search bar. Every handler is the screen's own
-/// and is passed through untouched.
+/// Every handler is the screen's own and is passed through untouched.
 ///
 /// Place it with [HomeSearchToolBar.overlay] in a `Stack` over the home body,
 /// and end scrollable content with [HomeSearchToolBar.reservedHeight] of
-/// space so the capsule never covers the last items.
+/// space so the last items can scroll clear of the bottom button.
 class HomeSearchToolBar extends StatelessWidget {
   final String hint;
   final VoidCallback onSearch;
@@ -335,100 +333,51 @@ class HomeSearchToolBar extends StatelessWidget {
     required this.onScan,
   });
 
-  /// Inner padding of the capsule.
-  static const double _pad = DsSpace.xs;
+  /// Diameter of each round button.
+  static const double button = 48;
 
-  /// Height of every control inside (the toggle track, search field, scan).
-  static const double _control = 48;
+  /// Gap between the buttons.
+  static const double _gap = DsSpace.sm;
 
-  /// The capsule's own height. Fixed: the hint is a single ellipsised line,
-  /// so a larger text scale never grows it.
-  static const double height = _control + _pad * 2;
+  /// The column's own height (four buttons).
+  static const double height = button * 4 + _gap * 3;
 
-  /// Gap between the capsule and the bottom of the home (above the app's
-  /// bottom navigation bar, which the home's Scaffold already sits above).
+  /// Gap between the column and the bottom / right edges of the home.
   static const double bottomMargin = DsSpace.md;
 
-  /// Space scrollable content must leave at its end so the floating capsule
-  /// never covers the last items.
-  static const double reservedHeight = height + bottomMargin + DsSpace.md;
+  /// Space scrollable content must leave at its end so the last items can
+  /// scroll above the bottom button.
+  static const double reservedHeight = button + bottomMargin + DsSpace.md;
 
-  /// The capsule positioned for a `Stack` over the home body: full width
-  /// minus the page gutter (capped at the wide-content width), [bottomMargin]
-  /// above the bottom edge and clear of any bottom safe-area inset.
+  /// The column positioned for a `Stack` over the home body: bottom right,
+  /// inside the page gutter, clear of any bottom safe-area inset.
   static Widget overlay(BuildContext context, HomeSearchToolBar bar) {
     final l = context.dsLayout;
     return Positioned(
-      left: 0,
       right: 0,
       bottom: 0,
       child: SafeArea(
         top: false,
-        minimum: EdgeInsets.fromLTRB(l.gutter, 0, l.gutter, bottomMargin),
-        child: Center(
-          heightFactor: 1,
-          child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: DsLayout.wideMax), child: bar),
-        ),
+        left: false,
+        minimum: EdgeInsets.fromLTRB(0, 0, l.gutter, bottomMargin),
+        child: bar,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    return Container(
-      height: height,
-      padding: const EdgeInsets.all(_pad),
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: DsRadius.brPill,
-        border: Border.all(color: c.border),
-        boxShadow: DsShadows.md(context),
-      ),
-      child: Row(
-        children: [
-          // List / map: a small segmented pair, active side brand-filled.
-          Container(
-            height: _control,
-            padding: const EdgeInsets.all(DsSpace.xxs),
-            decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brPill),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _ToolButton(asset: "assets/icons/ic_view_grid_list.svg", label: "List view".tr, active: isListView, onTap: onList),
-                _ToolButton(asset: "assets/icons/ic_map_draw.svg", label: "Map view".tr, active: !isListView, onTap: onMap),
-              ],
-            ),
-          ),
-          const DsGap(DsSpace.sm),
-          // Search: takes the remaining width.
-          Expanded(
-            child: Semantics(
-              button: true,
-              label: hint,
-              excludeSemantics: true,
-              child: InkWell(
-                onTap: onSearch,
-                borderRadius: DsRadius.brPill,
-                child: SizedBox(
-                  height: _control,
-                  child: Row(
-                    children: [
-                      SvgPicture.asset("assets/icons/ic_search.svg", width: 20, height: 20, colorFilter: ColorFilter.mode(c.textMuted, BlendMode.srcIn)),
-                      const DsGap(DsSpace.sm),
-                      Expanded(child: Text(hint, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.body.withColor(c.textMuted))),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const DsGap(DsSpace.sm),
-          // QR scan at the right end.
-          _ToolButton(asset: "assets/icons/ic_scan_code.svg", label: "Scan QR Code".tr, active: false, onTap: onScan),
-        ],
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ToolButton(asset: "assets/icons/ic_view_grid_list.svg", label: "List view".tr, active: isListView, onTap: onList, floating: true),
+        const DsGap(_gap),
+        _ToolButton(asset: "assets/icons/ic_map_draw.svg", label: "Map view".tr, active: !isListView, onTap: onMap, floating: true),
+        const DsGap(_gap),
+        _ToolButton(asset: "assets/icons/ic_search.svg", label: hint, active: false, onTap: onSearch, floating: true),
+        const DsGap(_gap),
+        _ToolButton(asset: "assets/icons/ic_scan_code.svg", label: "Scan QR Code".tr, active: false, onTap: onScan, floating: true),
+      ],
     );
   }
 }
@@ -438,26 +387,43 @@ class _ToolButton extends StatelessWidget {
   final String label;
   final bool active;
   final VoidCallback onTap;
-  const _ToolButton({required this.asset, required this.label, required this.active, required this.onTap});
+
+  /// A free-standing round button over the content: its own surface, border
+  /// and shadow (the column of [HomeSearchToolBar]).
+  final bool floating;
+  const _ToolButton({required this.asset, required this.label, required this.active, required this.onTap, this.floating = false});
 
   @override
   Widget build(BuildContext context) {
     final c = context.dsColors;
+    final double size = floating ? HomeSearchToolBar.button : 44;
     return Semantics(
       button: true,
       selected: active,
       label: label,
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: AnimatedContainer(
-          duration: DsMotion.of(context, DsMotion.fast),
-          curve: DsMotion.standard,
-          width: 44,
-          height: 44,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(shape: BoxShape.circle, color: active ? c.brand : Colors.transparent),
-          child: SvgPicture.asset(asset, width: 20, height: 20, colorFilter: ColorFilter.mode(active ? c.onBrand : c.textMuted, BlendMode.srcIn)),
+      excludeSemantics: true,
+      child: Tooltip(
+        message: label,
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            child: AnimatedContainer(
+              duration: DsMotion.of(context, DsMotion.fast),
+              curve: DsMotion.standard,
+              width: size,
+              height: size,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: active ? c.brand : (floating ? c.surface : Colors.transparent),
+                border: floating && !active ? Border.all(color: c.border) : null,
+                boxShadow: floating ? DsShadows.md(context) : null,
+              ),
+              child: SvgPicture.asset(asset, width: 20, height: 20, colorFilter: ColorFilter.mode(active ? c.onBrand : c.textMuted, BlendMode.srcIn)),
+            ),
+          ),
         ),
       ),
     );

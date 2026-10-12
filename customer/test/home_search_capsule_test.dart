@@ -61,30 +61,33 @@ void main() {
 
   Rect rectOf(WidgetTester tester, String label) => tester.getRect(find.bySemanticsLabel(label));
 
-  testWidgets('toggle, then search, then scan — in one capsule', (tester) async {
+  testWidgets('list, map, search, scan — a column of round buttons at the bottom right', (tester) async {
     phone(tester);
     await tester.pumpWidget(host(theme: DsTheme.light()));
     await tester.pumpAndSettle();
 
-    final capsule = tester.getRect(find.byType(HomeSearchToolBar));
+    final column = tester.getRect(find.byType(HomeSearchToolBar));
     final list = rectOf(tester, 'List view');
     final map = rectOf(tester, 'Map view');
     final search = rectOf(tester, hint);
     final scan = rectOf(tester, 'Scan QR Code');
 
     for (final r in [list, map, search, scan]) {
-      expect(capsule.contains(r.center), isTrue);
+      expect(column.contains(r.center), isTrue);
+      // Round buttons of one size.
+      expect(r.width, HomeSearchToolBar.button);
+      expect(r.height, HomeSearchToolBar.button);
     }
-    expect(list.right, lessThanOrEqualTo(map.left + 0.5));
-    expect(map.right, lessThan(search.left));
-    expect(search.right, lessThan(scan.left));
-    // The search field takes the remaining width.
-    expect(search.width, greaterThan(capsule.width / 2));
-    // Floating: inset from both edges and from the bottom, not a full-width bar.
-    expect(capsule.left, greaterThan(0));
-    expect(capsule.right, lessThan(375));
-    expect(capsule.bottom, lessThan(812));
-    expect(capsule.height, HomeSearchToolBar.height);
+    // Stacked top to bottom, one above the other.
+    expect(list.bottom, lessThan(map.top));
+    expect(map.bottom, lessThan(search.top));
+    expect(search.bottom, lessThan(scan.top));
+    expect((list.center.dx - scan.center.dx).abs(), lessThan(0.5));
+    // Bottom right, inset from the edges; not a full-width bar.
+    expect(column.left, greaterThan(375 / 2));
+    expect(column.right, lessThan(375));
+    expect(column.bottom, lessThan(812));
+    expect(column.height, HomeSearchToolBar.height);
   });
 
   testWidgets('every handler is wired to its own control', (tester) async {
@@ -108,7 +111,7 @@ void main() {
     expect(taps, ['list', 'map', 'search', 'scan']);
   });
 
-  testWidgets('the last list item can scroll clear of the capsule', (tester) async {
+  testWidgets('the last list item can scroll clear of the bottom button', (tester) async {
     phone(tester);
     await tester.pumpWidget(host(theme: DsTheme.light()));
     await tester.pumpAndSettle();
@@ -120,9 +123,10 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    // The last item scrolls clear of the bottom button.
     final last = tester.getRect(find.byKey(const ValueKey('store-29')));
-    final capsule = tester.getRect(find.byType(HomeSearchToolBar));
-    expect(last.bottom, lessThanOrEqualTo(capsule.top));
+    final bottomButton = rectOf(tester, 'Scan QR Code');
+    expect(last.bottom, lessThanOrEqualTo(bottomButton.top));
   });
 
   for (final (name, theme) in [('light', DsTheme.light()), ('dark', DsTheme.dark())]) {
