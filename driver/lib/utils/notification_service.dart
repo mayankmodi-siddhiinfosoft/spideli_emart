@@ -4,9 +4,11 @@ import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/chat_screens/chat_screen.dart';
+import 'package:driver/app/verification_screen/verification_screen.dart';
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
+import 'package:driver/services/carrier_parcel_rules.dart';
 import 'package:driver/controllers/signup_controller.dart';
 import 'package:driver/firebase_options.dart';
 import 'package:driver/models/user_model.dart';
@@ -756,6 +758,13 @@ class NotificationService {
     // cleanly), never adopted by a second copy that then loses its listeners.
     if (type == 'admin_chat') {
       await DashboardNavigation.openDeliveryPage(7);
+    } else if (CarrierParcelRules.ownerPushTypes.contains(type)) {
+      // A carrier parcel to assign (new, or handed back by a driver): the
+      // company owner's Orders list; any other account just opens the app.
+      final UserModel? me = Constant.userModel ?? await FireStoreUtils.getUserProfile(uid);
+      if (me?.isOwner == true) await DashboardNavigation.openOwnerPage(DashboardNavigation.ownerOrdersPage, me!);
+    } else if (type == 'document_verification') {
+      Get.to(() => const VerificationScreen());
     } else if (type == 'orderChat') {
       ShowToastDialog.showLoader("Please wait".tr);
       UserModel? customer;

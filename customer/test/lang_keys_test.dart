@@ -93,6 +93,19 @@ void main() {
     'No delivery charge',
     'Distance: @km km',
     'Total Delivery Fee',
+    // Parcel price lines (app-spec-parcel-pricing, 12 Oct 2026).
+    'Carrier price',
+    'Extra kg',
+    'Options',
+    'Fixed tax',
+    'Commission',
+    'Home pickup charge',
+    'Pickup point drop-off charge',
+    'Home delivery charge',
+    'Pickup point collection charge',
+    // Wallet checkout (WalletCheckout.failureMessage).
+    'You do not have sufficient wallet balance',
+    'Payment failed. No money was taken from your wallet. Please try again.',
   ];
   const maps = <String, Map<String, String>>{'en_US': enUS, 'ar_AR': arAR};
   final placeholder = RegExp(r'@\w+');

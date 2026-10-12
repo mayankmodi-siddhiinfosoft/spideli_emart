@@ -1,5 +1,6 @@
 import 'package:driver/services/online_status_rules.dart';
 import 'package:driver/app/owner_screen/driver_create_screen.dart';
+import 'package:driver/app/owner_screen/owner_driver_verification_screen.dart';
 import 'package:driver/app/owner_screen/view_all_drivers.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/owner_dashboard_controller.dart';
@@ -80,6 +81,20 @@ class OwnerHomeScreen extends StatelessWidget {
                                             ),
                                           )
                                         : const SizedBox();
+                                  }),
+                                  // No carrier bound yet: only the admin binds one
+                                  // (the app never creates a carrier).
+                                  Obx(() {
+                                    final bool noCarrier = (dashController.userModel.value.carrierId ?? '').isEmpty;
+                                    if (!noCarrier) return const SizedBox.shrink();
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: DsSpace.md),
+                                      child: DsInlineAlert(
+                                        tone: DsTone.info,
+                                        icon: Icons.local_shipping_outlined,
+                                        message: "Your carrier has not been set up yet — please contact Spideli.".tr,
+                                      ),
+                                    );
                                   }),
                                   const DsGap(DsSpace.sm),
 
@@ -167,6 +182,11 @@ class OwnerHomeScreen extends StatelessWidget {
                                               driverModel: controller.driverList[index],
                                               // `isActive == true`, as the dispatch reads it.
                                               isActive: OnlineStatusRules.isOnline(controller.driverList[index].isActive),
+                                              onVerify: () {
+                                                Get.to(() => OwnerDriverVerificationScreen(driver: controller.driverList[index]))!.then(
+                                                  (_) => controller.getDriverList(),
+                                                );
+                                              },
                                               onEdit: () {
                                                 Get.to(DriverCreateScreen(), arguments: {"driverModel": controller.driverList[index]})!.then(
                                                   (value0) {
@@ -226,6 +246,7 @@ class _DriverRow extends StatelessWidget {
   final int index;
   final UserModel driverModel;
   final bool isActive;
+  final VoidCallback onVerify;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onViewOrders;
@@ -234,6 +255,7 @@ class _DriverRow extends StatelessWidget {
     required this.index,
     required this.driverModel,
     required this.isActive,
+    required this.onVerify,
     required this.onEdit,
     required this.onDelete,
     required this.onViewOrders,
@@ -243,6 +265,7 @@ class _DriverRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
+    final bool isVerified = driverModel.isDocumentVerify == true;
     return DsFadeSlideIn(
       index: index,
       child: DsListTile(
@@ -258,6 +281,12 @@ class _DriverRow extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             DsBadge(
+              label: isVerified ? "Verified".tr : "Unverified".tr,
+              tone: isVerified ? DsTone.success : DsTone.warning,
+              small: true,
+            ),
+            const SizedBox(width: 4),
+            DsBadge(
               label: isActive ? "Online".tr : "Offline".tr,
               tone: isActive ? DsTone.success : DsTone.neutral,
               icon: isActive ? Icons.circle : Icons.circle_outlined,
@@ -267,7 +296,9 @@ class _DriverRow extends StatelessWidget {
               padding: EdgeInsets.zero,
               tooltip: 'More'.tr,
               onSelected: (value) {
-                if (value == 'Edit Driver') {
+                if (value == 'Verify Documents') {
+                  onVerify();
+                } else if (value == 'Edit Driver') {
                   onEdit();
                 } else if (value == 'Delete Driver') {
                   onDelete();
@@ -276,6 +307,7 @@ class _DriverRow extends StatelessWidget {
                 }
               },
               itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(value: 'Verify Documents', child: Text('Verify Documents'.tr, style: t.body)),
                 PopupMenuItem<String>(value: 'Edit Driver', child: Text('Edit Driver'.tr, style: t.body)),
                 PopupMenuItem<String>(value: 'Delete Driver', child: Text('Delete Driver'.tr, style: t.body)),
                 PopupMenuItem<String>(value: 'View All Order', child: Text('View All Order'.tr, style: t.body)),

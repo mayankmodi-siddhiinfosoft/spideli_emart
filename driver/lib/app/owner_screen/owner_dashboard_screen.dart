@@ -7,7 +7,11 @@ import 'package:driver/app/change_language/change_language_screen.dart';
 import 'package:driver/app/change_password_screen/change_password_screen.dart';
 import 'package:driver/app/chat_screens/driver_inbox_screen.dart';
 import 'package:driver/app/edit_profile_screen/edit_profile_screen.dart';
+import 'package:driver/app/change_section_screen/change_section_screen.dart';
 import 'package:driver/app/owner_screen/carrier_settings_screen.dart';
+import 'package:driver/app/owner_screen/company_reports_screen.dart';
+import 'package:driver/app/owner_screen/owner_cash_settlements_screen.dart';
+import 'package:driver/app/owner_screen/owner_driver_verification_list_screen.dart';
 import 'package:driver/app/owner_screen/driver_location_screen.dart';
 import 'package:driver/app/owner_screen/owner_home_screen.dart';
 import 'package:driver/app/terms_and_condition/terms_and_condition_screen.dart';
@@ -205,6 +209,15 @@ class DrawerView extends StatelessWidget {
                           },
                         ),
                         DsListTile(
+                          leadingIcon: Icons.grid_view_rounded,
+                          title: 'Change Section'.tr,
+                          showChevron: true,
+                          onTap: () {
+                            Get.back();
+                            Get.to(() => const ChangeSectionScreen());
+                          },
+                        ),
+                        DsListTile(
                           leadingIcon: Icons.receipt_long_outlined,
                           title: 'Orders'.tr,
                           showChevron: true,
@@ -222,15 +235,42 @@ class DrawerView extends StatelessWidget {
                             Get.to(() => const ParcelRunScreen());
                           },
                         ),
-                        // Client point 18: a company manages its own carrier
-                        // settings (`delivery_carriers`) from the app.
+                        // The owner's "Carrier settings" (brief 12 Oct section 6):
+                        // the carrier the admin bound to this owner.
                         DsListTile(
                           leadingIcon: Icons.local_shipping_outlined,
-                          title: 'Carrier Settings'.tr,
+                          title: 'Carrier settings'.tr,
                           showChevron: true,
                           onTap: () {
                             Get.back();
                             Get.to(() => const CarrierSettingsScreen());
+                          },
+                        ),
+                        DsListTile(
+                          leadingIcon: Icons.verified_user_outlined,
+                          title: 'Driver Verification'.tr,
+                          showChevron: true,
+                          onTap: () {
+                            Get.back();
+                            Get.to(() => const OwnerDriverVerificationListScreen());
+                          },
+                        ),
+                        DsListTile(
+                          leadingIcon: Icons.analytics_outlined,
+                          title: 'Reports & Performance'.tr,
+                          showChevron: true,
+                          onTap: () {
+                            Get.back();
+                            Get.to(() => const CompanyReportsScreen());
+                          },
+                        ),
+                        DsListTile(
+                          leadingIcon: Icons.account_balance_outlined,
+                          title: 'Cash Settlements'.tr,
+                          showChevron: true,
+                          onTap: () {
+                            Get.back();
+                            Get.to(() => const OwnerCashSettlementsScreen());
                           },
                         ),
                         if (Constant.userModel?.vendorID?.isEmpty == true)

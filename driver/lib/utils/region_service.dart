@@ -99,6 +99,16 @@ class RegionService {
 
   static RegionModel? regionById(String? regionId) => (regionId == null || regionId.isEmpty) ? null : _regions[regionId];
 
+  /// Returns the `parcelPricing` defaults map for [regionId], or null.
+  static Map<String, dynamic>? parcelPricingForRegion(String? regionId) {
+    return regionById(regionId)?.parcelPricing;
+  }
+
+  /// Returns the default value for [field] from `regions/{regionId}.parcelPricing`, or null.
+  static num? parcelPricingDefault(String? regionId, String field) {
+    return regionById(regionId)?.parcelPricingValue(field);
+  }
+
   static List<String> toIdList(dynamic value) {
     if (value is Iterable) {
       return value.map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList();

@@ -7,6 +7,7 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/models/parcel_order_model.dart';
 import 'package:customer/models/parcel_shipping_models.dart';
 import 'package:customer/service/fire_store_utils.dart';
+import 'package:customer/utils/carrier_owner_link.dart';
 import 'package:customer/utils/parcel_pricing.dart';
 import 'package:intl/intl.dart';
 
@@ -31,6 +32,18 @@ class ParcelShippingService {
     }
   }
 
+  static Future<RegionParcelPricing> regionParcelPricing(String? regionId) async {
+    if (regionId == null || regionId.isEmpty) return const RegionParcelPricing();
+    try {
+      final doc = await _db.collection('regions').doc(regionId).get();
+      // A region the admin has not saved yet has no map: everything unset.
+      return RegionParcelPricing.fromJson(doc.data()?['parcelPricing']);
+    } catch (e) {
+      log('region parcel pricing not loaded: $e');
+      return const RegionParcelPricing();
+    }
+  }
+
   static Future<List<DeliveryCarrierModel>> carriers() async {
     try {
       final snap = await _db.collection('delivery_carriers').get();
@@ -48,6 +61,27 @@ class ParcelShippingService {
       log('delivery_carriers not loaded: $e');
       return [];
     }
+  }
+
+  /// The company account that manages carrier [carrierId]
+  /// (`users/{companyId}.carrierId`, `.claude/COMPANY-CARRIER-LINK.md`),
+  /// else the owner the carrier document names ([carrierDocOwnerId]);
+  /// '' when nothing links one. Never throws.
+  static Future<String> carrierOwnerId(String? carrierId, {String? carrierDocOwnerId}) async {
+    final String id = (carrierId ?? '').trim();
+    if (id.isEmpty) return (carrierDocOwnerId ?? '').trim();
+    final List<(String, Map<String, dynamic>)> users = [];
+    for (final String field in const ['carrierId', 'deliveryCarrierId']) {
+      try {
+        final snap = await _db.collection(CollectionName.users).where(field, isEqualTo: id).limit(20).get();
+        users.addAll(snap.docs.map((d) => (d.id, d.data())));
+      } catch (e) {
+        log('carrier owner lookup by $field failed: $e');
+      }
+      final String owner = CarrierOwnerLink.pickOwner(id, users);
+      if (owner.isNotEmpty) return owner;
+    }
+    return CarrierOwnerLink.pickOwner(id, users, carrierDocOwnerId: carrierDocOwnerId);
   }
 
   static List<PickupPointModel>? _pickupPoints;
@@ -87,23 +121,20 @@ class ParcelShippingService {
     return null;
   }
 
-  /// Pickup points of a region; when the region is unknown (e.g. abroad),
-  /// those in [city]; failing that, every published point.
+  /// Pickup points offered for an order of region [regionId] (the sender's
+  /// region for the drop-off point; the receiver's for the collection point):
+  /// `publish == true` and `regionId` = that region, nothing else
+  /// (app-spec-parcel-pricing 3.5). Only when the region is unknown, the
+  /// published points in [city].
   static Future<List<PickupPointModel>> pickupPointsFor({String? regionId, String? city}) async {
     final all = await pickupPoints();
-    if (regionId != null) {
-      final inRegion = all.where((p) => p.regionIds.contains(regionId)).toList();
-      if (inRegion.isNotEmpty) return inRegion;
-    }
-    final String c = (city ?? '').trim().toLowerCase();
-    if (c.isNotEmpty) {
-      final inCity = all.where((p) => p.town.toLowerCase() == c).toList();
-      if (inCity.isNotEmpty) return inCity;
-    }
-    // Points without a region serve everywhere.
-    final global = all.where((p) => p.regionIds.isEmpty).toList();
-    return global.isNotEmpty ? global : all;
+    final String region = (regionId ?? '').trim();
+    if (region.isNotEmpty) return all.where((p) => p.offeredIn(region)).toList();
+    final String c = ParcelPricing.normalize(city);
+    if (c.isEmpty) return const [];
+    return all.where((p) => p.published && ParcelPricing.normalize(p.town) == c).toList();
   }
+
 
   // ---------------- codes ----------------
 
@@ -214,10 +245,42 @@ class ParcelShippingService {
   /// receiver fields the server or panel wrote survive a quote payment.
   static Future<void> save(ParcelOrderModel order, List<ParcelTrackingEvent> events, {required bool isNew}) async {
     final ref = _orders.doc(order.id);
+    final _ParcelSave w = _saveData(order, events, isNew: isNew);
+    await ref.setKnownFields(w.data);
+    if (w.statusUpdate != null) await ref.update(w.statusUpdate!);
+    applySaved(order, events, isNew: isNew);
+  }
+
+  /// [save]'s writes, for a wallet payment (`FireStoreUtils.payFromWallet`
+  /// commits them with the debit, all or nothing). Call [applySaved] once
+  /// the payment is committed.
+  static List<WalletOrderWrite> saveWrites(ParcelOrderModel order, List<ParcelTrackingEvent> events, {required bool isNew}) {
+    final ref = _orders.doc(order.id);
+    final _ParcelSave w = _saveData(order, events, isNew: isNew);
+    return [
+      WalletOrderWrite.setKnownFields(ref, w.data),
+      if (w.statusUpdate != null) WalletOrderWrite.update(ref, w.statusUpdate!),
+    ];
+  }
+
+  /// The model after a [save] / [saveWrites] commit: `parcelStatus`, the
+  /// appended events and, on creation, `smsOptOut`.
+  static void applySaved(ParcelOrderModel order, List<ParcelTrackingEvent> events, {required bool isNew}) {
+    if (events.isNotEmpty) {
+      order.parcelStatus = events.last.status;
+      order.trackingEvents = [...order.trackingEvents, ...events];
+    }
+    if (isNew) order.smsOptOut = false;
+  }
+
+  static _ParcelSave _saveData(ParcelOrderModel order, List<ParcelTrackingEvent> events, {required bool isNew}) {
     final Map<String, dynamic> data = order.toJson();
-    final Map<String, dynamic>? statusUpdate = events.isEmpty
-        ? null
-        : {'parcelStatus': events.last.status, 'trackingEvents': FieldValue.arrayUnion(events.map((e) => e.toJson()).toList())};
+    // A carrier parcel names no driver and never goes to the dispatch: its
+    // company owner assigns one (CarrierOwnerLink).
+    if (CarrierOwnerLink.isCarrierOrder(carrierId: order.carrierId, carrierOwnerId: order.carrierOwnerId)) {
+      data.addAll(CarrierOwnerLink.unassignedFields());
+      data.remove('driver');
+    }
     if (isNew && events.isNotEmpty) {
       data['parcelStatus'] = events.last.status;
       data['trackingEvents'] = events.map((e) => e.toJson()).toList();
@@ -226,13 +289,10 @@ class ParcelShippingService {
     // the app (it is not in toJson), so a later opt-out recorded by the server
     // is never reset.
     if (isNew) data['smsOptOut'] = false;
-    await ref.setKnownFields(data);
-    if (!isNew && statusUpdate != null) await ref.update(statusUpdate);
-    if (events.isNotEmpty) {
-      order.parcelStatus = events.last.status;
-      order.trackingEvents = [...order.trackingEvents, ...events];
-    }
-    if (isNew) order.smsOptOut = false;
+    final Map<String, dynamic>? statusUpdate = isNew || events.isEmpty
+        ? null
+        : {'parcelStatus': events.last.status, 'trackingEvents': FieldValue.arrayUnion(events.map((e) => e.toJson()).toList())};
+    return _ParcelSave(data, statusUpdate);
   }
 
   /// Appends one event (e.g. `Cancelled`) without touching other fields.
@@ -243,4 +303,12 @@ class ParcelShippingService {
   /// The fields [append] writes, for a caller that writes them inside its own
   /// transaction (the customer's cancel).
   static Map<String, dynamic> appendFields(ParcelTrackingEvent e) => {'parcelStatus': e.status, 'trackingEvents': FieldValue.arrayUnion([e.toJson()])};
+}
+
+/// The two parts of a parcel save: the known fields, and (paying a priced
+/// quote) the status / events appended to the existing order.
+class _ParcelSave {
+  const _ParcelSave(this.data, this.statusUpdate);
+  final Map<String, dynamic> data;
+  final Map<String, dynamic>? statusUpdate;
 }

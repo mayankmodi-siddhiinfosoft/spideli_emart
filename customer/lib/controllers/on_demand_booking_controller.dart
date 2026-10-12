@@ -1,3 +1,4 @@
+import 'package:customer/utils/platform_fee_charge.dart';
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
@@ -36,6 +37,9 @@ class OnDemandBookingController extends GetxController {
   RxDouble totalAmount = 0.0.obs;
   RxDouble orderTaxAmount = 0.0.obs;
   RxDouble platformTaxAmount = 0.0.obs;
+
+  /// The platform fee in [totalAmount] (0 when not charged).
+  RxDouble platformFee = 0.0.obs;
   RxDouble taxAmount = 0.0.obs;
 
   RxString discountType = "".obs;
@@ -142,15 +146,14 @@ class OnDemandBookingController extends GetxController {
       orderTaxAmount.value += Constant.calculateTax(amount: (subTotal.value).toString(), taxModel: taxElement);
     }
 
-    if (double.parse(Constant.platformFeeModel?.fee ?? '0.0') > 0.0 && Constant.platformFeeModel?.enable == true) {
-      for (var taxElement in Constant.platformTaxList ?? []) {
-        platformTaxAmount.value += Constant.calculateTax(amount: Constant.platformFeeModel?.fee ?? '0.0', taxModel: taxElement);
-      }
-    }
+    // Platform fee and its taxes only while the admin has it enabled.
+    final PlatformFeeCharge platformCharge = PlatformFeeCharge.current();
+    platformFee.value = platformCharge.fee;
+    platformTaxAmount.value = platformCharge.taxAmount();
 
     taxAmount.value = orderTaxAmount.value + platformTaxAmount.value;
 
-    totalAmount.value = (subTotal.value) + double.parse(Constant.platformFeeModel?.fee ?? '0.0') + taxAmount.value;
+    totalAmount.value = (subTotal.value) + platformFee.value + taxAmount.value;
   }
 
   Future<void> confirmBooking(BuildContext context) async {
@@ -193,8 +196,9 @@ class OnDemandBookingController extends GetxController {
           otp: Constant.getReferralCode(),
           couponCode: offerCode.toString(),
           taxModel: Constant.orderProductTaxList,
-          platformFee: Constant.platformFeeModel?.fee ?? '0.0',
-          platformTax: Constant.platformTaxList,
+          // Recorded as charged: "0.0" / [] while the fee is disabled.
+          platformFee: PlatformFeeCharge.current().feeField,
+          platformTax: PlatformFeeCharge.current().taxes,
         );
         print('totalAmount ::::::: ${double.tryParse(Constant.amountShow(amount: totalAmount.value.toString())) ?? 0.0}');
         print('totalAmount value ::::::: ${totalAmount.value}');
@@ -223,8 +227,9 @@ class OnDemandBookingController extends GetxController {
                   : providerUser?.adminCommissionModel?.commissionType ?? Constant.sectionConstantModel?.adminCommision?.commissionType,
           paymentStatus: true,
           taxModel: Constant.orderProductTaxList,
-          platformFee: Constant.platformFeeModel?.fee ?? '0.0',
-          platformTax: Constant.platformTaxList,
+          // Recorded as charged: "0.0" / [] while the fee is disabled.
+          platformFee: PlatformFeeCharge.current().feeField,
+          platformTax: PlatformFeeCharge.current().taxes,
         );
 
         await FireStoreUtils.onDemandOrderPlace(onDemandOrder, 0.0);

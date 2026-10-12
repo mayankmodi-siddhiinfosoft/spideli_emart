@@ -315,7 +315,7 @@ class BookParcelScreen extends StatelessWidget {
       final result = await Get.to(
         () => PickupPointPickerScreen(
           title: origin ? "Drop-off point".tr : "Collection point".tr,
-          regionId: origin ? controller.originRegionId : controller.destinationRegionId,
+          regionId: origin ? controller.originRegionId : (controller.destinationRegionId ?? controller.originRegionId),
           city: origin ? controller.senderCityController.value.text : controller.receiverCityController.value.text,
           selectedId: current?.id,
         ),

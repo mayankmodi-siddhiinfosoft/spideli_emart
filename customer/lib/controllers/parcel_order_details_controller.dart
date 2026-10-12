@@ -14,6 +14,7 @@ import '../service/fire_store_utils.dart';
 import '../service/parcel_cancellation.dart';
 import '../service/parcel_shipping_service.dart';
 import '../utils/booking_status_tabs.dart';
+import '../utils/parcel_receipt_pdf.dart' show ParcelAmounts;
 
 class ParcelOrderDetailsController extends GetxController {
   Rx<ParcelOrderModel> parcelOrder = ParcelOrderModel().obs;
@@ -43,31 +44,24 @@ class ParcelOrderDetailsController extends GetxController {
   RxDouble orderTaxAmount = 0.0.obs;
   RxDouble platformTaxAmount = 0.0.obs;
 
+  /// The bill exactly as checkout charged it ([ParcelAmounts], the receipt's
+  /// and the Driver app's numbers). Tolerant: a record without `subTotal` or
+  /// with an empty `discount` (written by the website / panel) used to throw
+  /// in `double.parse` here and leave the screen broken.
   void calculateTotalAmount() {
-    taxAmount = 0.0.obs;
-    discount = 0.0.obs;
-    orderTaxAmount.value = 0;
-    platformTaxAmount.value = 0;
-    subTotal.value = double.parse(parcelOrder.value.subTotal.toString());
-    discount.value = double.parse(parcelOrder.value.discount ?? '0.0');
-
-    /// ---------------- ORDER TAX ----------------
-    for (var taxElement in parcelOrder.value.taxSetting ?? []) {
-      orderTaxAmount.value += Constant.calculateTax(amount: (subTotal.value - discount.value).toString(), taxModel: taxElement);
-    }
-
-    /// ---------------- PLATFORM TAX ----------------
-    if (double.parse(parcelOrder.value.platformFee ?? '0.0') > 0) {
-      for (var taxElement in parcelOrder.value.platformTax ?? []) {
-        platformTaxAmount.value += Constant.calculateTax(amount: parcelOrder.value.platformFee ?? '0.0', taxModel: taxElement);
-      }
-    }
-
-    taxAmount.value = orderTaxAmount.value + platformTaxAmount.value;
-
-    totalAmount.value = (subTotal.value - discount.value) + double.parse(parcelOrder.value.platformFee ?? '0.0') + taxAmount.value + parcelOrder.value.scopeTaxAmount + parcelOrder.value.smsChargeAmount;
+    final ParcelAmounts amounts = ParcelAmounts.of(parcelOrder.value);
+    subTotal.value = amounts.subTotal;
+    discount.value = amounts.discount;
+    orderTaxAmount.value = amounts.orderTax;
+    platformTaxAmount.value = amounts.platformTax;
+    taxAmount.value = amounts.taxes;
+    platformFee.value = amounts.platformFee;
+    totalAmount.value = amounts.total;
     update();
   }
+
+  /// The platform fee in [totalAmount] (0 when none was charged).
+  RxDouble platformFee = 0.0.obs;
 
   Future<void> fetchDriverDetails() async {
     // Only a driver who accepted the parcel: at "Driver Pending" the dispatch

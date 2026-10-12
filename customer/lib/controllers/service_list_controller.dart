@@ -137,6 +137,10 @@ class ServiceListController extends GetxController {
   }
 
   Future<void> _navigate(SectionModel sectionModel) async {
+    // The platform fee of THIS section (disabled or missing = none): the
+    // previous section's enabled fee and its taxes must not carry over.
+    Constant.platformFeeModel = sectionModel.platformFee;
+    Constant.platformTaxList = [];
     await FireStoreUtils.getTaxList(Constant.sectionConstantModel!.id).then((value) {
       if (value != null) {
         Constant.taxProductList = value.where((TaxModel taxModel) => taxModel.scope == "product").toList();

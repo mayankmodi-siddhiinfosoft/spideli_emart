@@ -1,8 +1,14 @@
-// Parcel / mail pricing (spec Section 5, PARCEL-CONTRACT "Pricing").
+// Parcel / mail pricing — web team spec `app-spec-parcel-pricing.md` (12 Oct
+// 2026, points 41 + 65; summary in .claude/PARCEL-PRICING.md).
 //
-// Pure Dart on purpose - no Flutter / Firestore imports - so the worked
-// examples of spec 5.3 can be verified by a plain unit test
+// Pure Dart on purpose - no Flutter / Firestore imports - so the brief's
+// check cases A-E can be verified by a plain unit test
 // (test/parcel_pricing_test.dart).
+//
+// Nothing here is hard-coded: the divisor, the door / pickup-point charges and
+// the fixed inter-city / inter-country charge are all read from
+// `regions/{R}.parcelPricing` and `delivery_carriers/{id}.regionPricing.<R>`.
+// Every amount is in region R's own currency and is never converted.
 
 /// Shipment scope as stored on `parcel_orders.scope`.
 class ParcelScope {
@@ -11,179 +17,170 @@ class ParcelScope {
   static const String city = 'city';
   static const String intercity = 'intercity';
   static const String intercountry = 'intercountry';
+
+  static const List<String> all = [city, intercity, intercountry];
 }
 
-/// Where a price comes from (`priceBreakdown.source`).
+/// Where a price comes from (`priceBreakdown.source`). `route_table` is
+/// reserved by the web team for rate tables that are not built yet: never used.
 class ParcelPriceSource {
   ParcelPriceSource._();
 
-  static const String rateTable = 'rate_table';
+  /// A carrier's rate card (`regionPricing[R]`, else its flat fields).
   static const String rateCard = 'rate_card';
+
+  /// No carrier: distance x the weight band's charge (Admin -> Parcel Weight).
   static const String defaultSetting = 'default';
+
+  /// A quote the admin priced by hand.
   static const String manual = 'manual';
 }
 
-double? _num(dynamic value) {
-  if (value == null) return null;
-  if (value is num) return value.toDouble();
-  final String s = value.toString().trim();
-  if (s.isEmpty) return null;
-  return double.tryParse(s.replaceAll(',', ''));
+/// `pickupMethod` / `deliveryMethod` values on `parcel_orders`.
+class ParcelMethod {
+  ParcelMethod._();
+
+  static const String home = 'home';
+  static const String pickupPoint = 'pickup_point';
 }
 
-/// `settings/ParcelPricing` - every field optional, defaults per the contract.
-class ParcelPricingSettings {
-  final double intercityTax;
-  final double intercountryTax;
-  final double extraKgPrice;
-  final double lastIntercityBandMaxKg;
-  final double roundingStepKg;
-  final String? currencyNote;
+/// Defensive number: num, numeric text ("20", "1,500"), else null. `null`,
+/// `""`, non-numeric text, NaN and infinity are all "not set".
+double? parcelNumber(dynamic value) {
+  if (value == null || value is bool) return null;
+  double? d;
+  if (value is num) {
+    d = value.toDouble();
+  } else {
+    final String s = value.toString().trim();
+    if (s.isEmpty) return null;
+    d = double.tryParse(s.replaceAll(',', ''));
+  }
+  if (d == null || !d.isFinite) return null;
+  return d;
+}
 
-  /// Spec 5.1/5.2 "admin delivery commission (if configured as an extra)".
-  /// false (default) = the commission is recorded on the order as the existing
-  /// parcel checkout does, not added to the customer's price.
-  final bool commissionAsExtra;
+double? _num(dynamic value) => parcelNumber(value);
 
-  /// Client doc point 42 ("the price does not change whether or not dimensions
-  /// are given"): `settings/ParcelPricing.volumetricDivisor`, in cm3 per kg.
-  /// A parcel is charged on the GREATER of its actual weight and its
-  /// volumetric weight `L x W x H / volumetricDivisor` - the courier rule,
-  /// applied to whatever the configured pricing charges by weight (the
-  /// same-city weight categories, the rate tables, the carriers' per-kg rate).
-  ///
-  /// Absent = [defaultVolumetricDivisor] (5000, the usual courier divisor),
-  /// so dimensions count from today; `0` (or less) switches volumetric weight
-  /// off and dimensions are recorded only, as before.
-  final double volumetricDivisor;
+/// `regions/{regionId}.parcelPricing` — the admin's per-region defaults.
+/// A null value = not set; a missing map = everything unset (no divisor,
+/// charges 0, fixed charges 0).
+class RegionParcelPricing {
+  final double? volumetricDivisor;
+  final double? homePickupCharge;
+  final double? pointDropoffCharge;
+  final double? homeDeliveryCharge;
+  final double? pointCollectionCharge;
+  final double? intercityFixedTax;
+  final double? intercountryFixedTax;
 
-  static const double defaultVolumetricDivisor = 5000;
-
-  const ParcelPricingSettings({
-    this.intercityTax = 5000,
-    this.intercountryTax = 5000,
-    this.extraKgPrice = 1000,
-    this.lastIntercityBandMaxKg = 10,
-    this.roundingStepKg = 0.5,
-    this.currencyNote,
-    this.commissionAsExtra = false,
-    this.volumetricDivisor = defaultVolumetricDivisor,
+  const RegionParcelPricing({
+    this.volumetricDivisor,
+    this.homePickupCharge,
+    this.pointDropoffCharge,
+    this.homeDeliveryCharge,
+    this.pointCollectionCharge,
+    this.intercityFixedTax,
+    this.intercountryFixedTax,
   });
 
-  factory ParcelPricingSettings.fromJson(Map<String, dynamic>? json) {
-    if (json == null) return const ParcelPricingSettings();
-    final double step = _num(json['roundingStepKg']) ?? 0.5;
-    final double divisor = _num(json['volumetricDivisor']) ?? defaultVolumetricDivisor;
-    return ParcelPricingSettings(
-      intercityTax: _num(json['intercityTax']) ?? 5000,
-      intercountryTax: _num(json['intercountryTax']) ?? 5000,
-      extraKgPrice: _num(json['extraKgPrice']) ?? 1000,
-      lastIntercityBandMaxKg: _num(json['lastIntercityBandMaxKg']) ?? 10,
-      roundingStepKg: step > 0 ? step : 0.5,
-      currencyNote: json['currencyNote']?.toString(),
-      commissionAsExtra: json['commissionAsExtra'] == true,
-      volumetricDivisor: divisor > 0 ? divisor : 0,
+  factory RegionParcelPricing.fromJson(dynamic json) {
+    if (json is! Map) return const RegionParcelPricing();
+    return RegionParcelPricing(
+      volumetricDivisor: _num(json['volumetricDivisor']),
+      homePickupCharge: _num(json['homePickupCharge']),
+      pointDropoffCharge: _num(json['pointDropoffCharge']),
+      homeDeliveryCharge: _num(json['homeDeliveryCharge']),
+      pointCollectionCharge: _num(json['pointCollectionCharge']),
+      intercityFixedTax: _num(json['intercityFixedTax']),
+      intercountryFixedTax: _num(json['intercountryFixedTax']),
     );
   }
 
-  /// Volumetric weight is part of the price.
-  bool get usesVolumetricWeight => volumetricDivisor > 0;
-
-  double taxFor(String scope) {
-    if (scope == ParcelScope.intercity) return intercityTax;
-    if (scope == ParcelScope.intercountry) return intercountryTax;
-    return 0;
+  /// Spec step 6: the fixed platform charge for [scope] — admin only, never
+  /// the carrier's. Not set -> 0 (never an assumed 5,000).
+  double fixedTaxFor(String scope) {
+    final double? v = scope == ParcelScope.intercity
+        ? intercityFixedTax
+        : scope == ParcelScope.intercountry
+        ? intercountryFixedTax
+        : null;
+    return v != null && v > 0 ? v : 0;
   }
 }
 
-/// One intercity row: fixed price per directional route and weight band.
-class IntercityRate {
-  final String from;
-  final String to;
-  final double minKg;
-  final double? maxKg; // null = open-ended
-  final double price;
+/// `settings/ParcelPricing` - only `commissionAsExtra` is still read. The
+/// fixed charges and the divisor it used to carry are superseded by
+/// `regions/{R}.parcelPricing` and `delivery_carriers/{id}.regionPricing.<R>`.
+class ParcelPricingSettings {
+  /// "admin delivery commission (if configured as an extra)". false (default)
+  /// = the commission is recorded on the order as the existing parcel
+  /// checkout does, not added to the customer's price.
+  final bool commissionAsExtra;
 
-  const IntercityRate({required this.from, required this.to, required this.minKg, required this.maxKg, required this.price});
+  const ParcelPricingSettings({this.commissionAsExtra = false});
 
-  static IntercityRate? fromJson(Map<String, dynamic> json) {
-    final double? price = _num(json['price']);
-    final String from = (json['from'] ?? '').toString().trim();
-    final String to = (json['to'] ?? '').toString().trim();
-    if (price == null || from.isEmpty || to.isEmpty) return null;
-    return IntercityRate(from: from, to: to, minKg: _num(json['minKg']) ?? 0, maxKg: _num(json['maxKg']), price: price);
-  }
+  factory ParcelPricingSettings.fromJson(Map<String, dynamic>? json) => ParcelPricingSettings(commissionAsExtra: json?['commissionAsExtra'] == true);
 }
 
-/// One intercountry row: rate per kg per directional country route and band.
-class IntercountryRate {
-  final String fromCountry;
-  final String toCountry;
-  final double minKg;
-  final double? maxKg; // null = open-ended
-  final double ratePerKg;
-
-  const IntercountryRate({required this.fromCountry, required this.toCountry, required this.minKg, required this.maxKg, required this.ratePerKg});
-
-  static IntercountryRate? fromJson(Map<String, dynamic> json) {
-    final double? rate = _num(json['ratePerKg']);
-    final String from = (json['fromCountry'] ?? '').toString().trim();
-    final String to = (json['toCountry'] ?? '').toString().trim();
-    if (rate == null || from.isEmpty || to.isEmpty) return null;
-    return IntercountryRate(fromCountry: from, toCountry: to, minKg: _num(json['minKg']) ?? 0, maxKg: _num(json['maxKg']), ratePerKg: rate);
-  }
-}
-
-/// `delivery_carriers/{id}.rateTable`.
-class ParcelRateTable {
-  final List<IntercityRate> intercity;
-  final List<IntercountryRate> intercountry;
-
-  const ParcelRateTable({this.intercity = const [], this.intercountry = const []});
-
-  bool get isEmpty => intercity.isEmpty && intercountry.isEmpty;
-
-  static ParcelRateTable? fromJson(dynamic json) {
-    if (json is! Map) return null;
-    final List<IntercityRate> city = [];
-    final List<IntercountryRate> country = [];
-    if (json['intercity'] is List) {
-      for (final row in json['intercity']) {
-        if (row is Map) {
-          final r = IntercityRate.fromJson(Map<String, dynamic>.from(row));
-          if (r != null) city.add(r);
-        }
-      }
-    }
-    if (json['intercountry'] is List) {
-      for (final row in json['intercountry']) {
-        if (row is Map) {
-          final r = IntercountryRate.fromJson(Map<String, dynamic>.from(row));
-          if (r != null) country.add(r);
-        }
-      }
-    }
-    return ParcelRateTable(intercity: city, intercountry: country);
-  }
-}
-
-/// The carrier's single rate card (spec 18.14). A null field = not set (not zero).
+/// A carrier's price block. A null field = not set (never zero).
+///
+/// The four prices (`baseCharge`, `perKmCharge`, `perKgCharge`,
+/// `minimumCharge`) and - only inside `regionPricing.<R>` - the owner's five
+/// values (`volumetricDivisor` and the four door / pickup-point charges).
 class ParcelRateCard {
   final double? baseCharge;
   final double? perKmCharge;
   final double? perKgCharge;
   final double? minimumCharge;
+  final double? volumetricDivisor;
+  final double? homePickupCharge;
+  final double? pointDropoffCharge;
+  final double? homeDeliveryCharge;
+  final double? pointCollectionCharge;
 
-  const ParcelRateCard({this.baseCharge, this.perKmCharge, this.perKgCharge, this.minimumCharge});
+  const ParcelRateCard({
+    this.baseCharge,
+    this.perKmCharge,
+    this.perKgCharge,
+    this.minimumCharge,
+    this.volumetricDivisor,
+    this.homePickupCharge,
+    this.pointDropoffCharge,
+    this.homeDeliveryCharge,
+    this.pointCollectionCharge,
+  });
 
-  factory ParcelRateCard.fromJson(Map<String, dynamic> json) =>
-      ParcelRateCard(baseCharge: _num(json['baseCharge']), perKmCharge: _num(json['perKmCharge']), perKgCharge: _num(json['perKgCharge']), minimumCharge: _num(json['minimumCharge']));
+  /// One `regionPricing.<R>` block: the four prices and the five values.
+  factory ParcelRateCard.fromJson(Map<String, dynamic> json) => ParcelRateCard(
+    baseCharge: _num(json['baseCharge']),
+    perKmCharge: _num(json['perKmCharge']),
+    perKgCharge: _num(json['perKgCharge']),
+    minimumCharge: _num(json['minimumCharge']),
+    volumetricDivisor: _num(json['volumetricDivisor']),
+    homePickupCharge: _num(json['homePickupCharge']),
+    pointDropoffCharge: _num(json['pointDropoffCharge']),
+    homeDeliveryCharge: _num(json['homeDeliveryCharge']),
+    pointCollectionCharge: _num(json['pointCollectionCharge']),
+  );
 
-  bool get isSet => baseCharge != null || perKmCharge != null || perKgCharge != null || minimumCharge != null;
+  /// The carrier's FLAT fields: the four prices only. A carrier with no region
+  /// block has none of the five values, so it always uses the region defaults.
+  factory ParcelRateCard.flatFromJson(Map<String, dynamic> json) => ParcelRateCard(
+    baseCharge: _num(json['baseCharge']),
+    perKmCharge: _num(json['perKmCharge']),
+    perKgCharge: _num(json['perKgCharge']),
+    minimumCharge: _num(json['minimumCharge']),
+  );
 
-  /// `delivery_carriers.regionPricing` (doc point 43, panel 6 October):
-  /// `{ "<regionId>": { baseCharge, perKmCharge, perKgCharge, minimumCharge } }`.
-  /// Entries that are not maps, or that set no charge, are left out.
+  /// At least one of the four prices is set.
+  bool get hasPrice => baseCharge != null || perKmCharge != null || perKgCharge != null || minimumCharge != null;
+
+  bool get isSet =>
+      hasPrice || volumetricDivisor != null || homePickupCharge != null || pointDropoffCharge != null || homeDeliveryCharge != null || pointCollectionCharge != null;
+
+  /// `delivery_carriers.regionPricing`: `{ "<regionId>": { ... } }`. Entries
+  /// that are not maps, or that set nothing, are left out.
   static Map<String, ParcelRateCard> parseRegionPricing(dynamic raw) {
     if (raw is! Map) return const <String, ParcelRateCard>{};
     final Map<String, ParcelRateCard> out = <String, ParcelRateCard>{};
@@ -196,11 +193,9 @@ class ParcelRateCard {
     return out;
   }
 
-  /// The card a carrier charges in [regionId]: `regionPricing[regionId]`, the
-  /// source of truth since 6 October; the flat fields ([flat]) only when
-  /// `regionPricing` is empty or has no entry for that region (or the region
-  /// is unknown). The flat fields now hold the FIRST region's price, so they
-  /// are wrong for a carrier charging differently in two regions.
+  /// The card a carrier charges in [regionId]: `regionPricing[regionId]`; the
+  /// flat fields ([flat]) only when there is no entry for that region (or the
+  /// region is unknown).
   static ParcelRateCard forRegion({required ParcelRateCard flat, required Map<String, ParcelRateCard> regionPricing, String? regionId}) {
     final String id = (regionId ?? '').trim();
     if (id.isEmpty || regionPricing.isEmpty) return flat;
@@ -223,51 +218,138 @@ class ParcelPlace {
 
   Map<String, dynamic> toJson() => {'city': city, 'country': country, 'countryCode': countryCode};
 
-  /// Countries match by ISO code or by name, case-insensitively.
+  /// Countries match by ISO code or by name (trimmed, lower-case, no accents).
   bool countryMatches(String value) {
-    final String v = _norm(value);
+    final String v = ParcelPricing.normalize(value);
     if (v.isEmpty) return false;
-    return v == _norm(countryCode) || v == _norm(country);
+    return v == ParcelPricing.normalize(countryCode) || v == ParcelPricing.normalize(country);
   }
 
+  /// Spec section 5: "Yaoundé" == "yaounde".
   bool cityMatches(String value) {
-    final String v = _norm(value);
-    return v.isNotEmpty && v == _norm(city);
+    final String v = ParcelPricing.normalize(value);
+    return v.isNotEmpty && v == ParcelPricing.normalize(city);
   }
 
   String get label {
     final List<String> parts = [if (city.trim().isNotEmpty) city.trim(), if (country.trim().isNotEmpty) country.trim() else if (countryCode.trim().isNotEmpty) countryCode.trim()];
     return parts.join(', ');
   }
-
-  static String _norm(String s) => s.trim().toLowerCase();
 }
 
-/// Result of pricing one option. Amounts are in the ORIGIN region's currency.
+/// A weight band (`parcel_weight/{id}`), as the pricing sees it.
+class ParcelBand<T> {
+  /// The model the band came from (returned to the caller).
+  final T source;
+  final String? title;
+  final double? minKg;
+  final double? maxKg;
+
+  /// `delivery_charge` (a string on existing bands), per distance unit.
+  final double charge;
+
+  const ParcelBand({required this.source, this.title, this.minKg, this.maxKg, required this.charge});
+}
+
+/// Chargeable weight of one shipment (spec step 2).
+class ParcelWeight {
+  /// The real weight, kg.
+  final double actualKg;
+
+  /// The divisor used; null = none (size not used).
+  final double? divisor;
+
+  /// L x W x H / divisor, 2 decimals; 0 without a divisor or all three sides.
+  final double volumetricKg;
+
+  /// max(actualKg, volumetricKg), 2 decimals.
+  final double chargeableKg;
+
+  const ParcelWeight({required this.actualKg, required this.divisor, required this.volumetricKg, required this.chargeableKg});
+}
+
+/// The price of one option (a carrier, or the default setting). Amounts are in
+/// the order region's currency.
 class ParcelQuote {
+  /// The base price (spec step 4), whichever source it came from.
   final double carrierPrice;
+
+  /// Reserved for the web team's rate tables: always 0.
   final double extraKgCharge;
   final double fixedTax;
   final double commission;
-  final double options;
+  final double pickupCharge;
+  final double deliveryCharge;
   final String source;
 
-  /// Chargeable weight used (intercountry rounding), for display.
+  final double? actualKg;
+  final double? volumetricKg;
   final double? chargeableKg;
 
-  const ParcelQuote({required this.carrierPrice, this.extraKgCharge = 0, this.fixedTax = 0, this.commission = 0, this.options = 0, required this.source, this.chargeableKg});
+  /// The divisor used; null = none.
+  final double? volumetricDivisor;
 
-  double get total => carrierPrice + extraKgCharge + fixedTax + commission + options;
+  const ParcelQuote({
+    required this.carrierPrice,
+    this.extraKgCharge = 0,
+    this.fixedTax = 0,
+    this.commission = 0,
+    this.pickupCharge = 0,
+    this.deliveryCharge = 0,
+    required this.source,
+    this.actualKg,
+    this.volumetricKg,
+    this.chargeableKg,
+    this.volumetricDivisor,
+  });
 
-  ParcelQuote copyWith({double? commission, double? options}) => ParcelQuote(
+  /// Door / pickup-point charges (spec step 5).
+  double get options => pickupCharge + deliveryCharge;
+
+  /// The shipping price before the receiver SMS, platform fee and taxes:
+  /// carrierPrice + extraKgCharge + options + fixedTax (+ commission when the
+  /// admin charges it as an extra).
+  double get total => carrierPrice + extraKgCharge + options + fixedTax + commission;
+
+  /// The order's `subTotal`: the base price (plus the commission when it is
+  /// charged as an extra, as before). Options, fixedTax, extraKgCharge and the
+  /// SMS fee are never folded in: they are added on top at checkout.
+  double get subTotal => carrierPrice + commission;
+
+  ParcelQuote copyWith({double? commission}) => ParcelQuote(
     carrierPrice: carrierPrice,
     extraKgCharge: extraKgCharge,
     fixedTax: fixedTax,
     commission: commission ?? this.commission,
-    options: options ?? this.options,
+    pickupCharge: pickupCharge,
+    deliveryCharge: deliveryCharge,
     source: source,
+    actualKg: actualKg,
+    volumetricKg: volumetricKg,
     chargeableKg: chargeableKg,
+    volumetricDivisor: volumetricDivisor,
   );
+
+  /// `parcel_orders.priceBreakdown` (spec section 7). [total] defaults to
+  /// [ParcelQuote.total] + [smsCharge]; checkout overwrites it with what the
+  /// customer actually pays (after coupon, platform fee and taxes).
+  Map<String, dynamic> breakdown({required String currency, double smsCharge = 0, double? total}) => {
+    'source': source,
+    'currency': currency,
+    'actualKg': actualKg ?? 0,
+    'volumetricKg': volumetricKg ?? 0,
+    'chargeableKg': chargeableKg ?? actualKg ?? 0,
+    'volumetricDivisor': volumetricDivisor,
+    'carrierPrice': carrierPrice,
+    'extraKgCharge': extraKgCharge,
+    'options': options,
+    'pickupCharge': pickupCharge,
+    'deliveryCharge': deliveryCharge,
+    'fixedTax': fixedTax,
+    'smsCharge': smsCharge,
+    'commission': commission,
+    'total': total ?? (this.total + smsCharge),
+  };
 }
 
 class ParcelPricing {
@@ -275,125 +357,275 @@ class ParcelPricing {
 
   static const double _eps = 1e-9;
 
-  /// Band whose [minKg, maxKg] holds [kg]: the band with the smallest maxKg
-  /// >= kg (open-ended bands last). A weight falling in a gap between two
-  /// bands (e.g. 2.05 kg between "501 g-2 kg" and "2.1-5 kg") is charged at
-  /// the next band up.
-  static T? _band<T>(List<T> bands, double kg, double? Function(T) maxOf) {
-    T? best;
-    double bestMax = double.infinity;
-    bool bestOpen = true;
-    for (final T b in bands) {
-      final double? max = maxOf(b);
-      if (max == null) {
-        if (best == null) {
-          best = b;
-          bestOpen = true;
-        }
-        continue;
-      }
-      if (max + _eps < kg) continue;
-      if (best == null || bestOpen || max < bestMax) {
-        best = b;
-        bestMax = max;
-        bestOpen = false;
-      }
+  // ---- Step 1: scope -------------------------------------------------------
+
+  static const Map<String, String> _accents = {
+    'à': 'a', 'á': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a', 'å': 'a', 'æ': 'ae', //
+    'ç': 'c', 'è': 'e', 'é': 'e', 'ê': 'e', 'ë': 'e', 'ì': 'i', 'í': 'i', 'î': 'i', 'ï': 'i',
+    'ñ': 'n', 'ò': 'o', 'ó': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o', 'ø': 'o', 'œ': 'oe',
+    'ù': 'u', 'ú': 'u', 'û': 'u', 'ü': 'u', 'ý': 'y', 'ÿ': 'y', 'ß': 'ss',
+  };
+
+  /// Trimmed, lower-case, accents removed, inner spaces collapsed.
+  static String normalize(String? value) {
+    final String lower = (value ?? '').trim().toLowerCase();
+    final StringBuffer out = StringBuffer();
+    for (final int rune in lower.runes) {
+      final String ch = String.fromCharCode(rune);
+      out.write(_accents[ch] ?? ch);
     }
-    return best;
+    return out.toString().replaceAll(RegExp(r'\s+'), ' ');
   }
 
-  /// Intercity (spec 5.1): band price for the directional route; above
-  /// [ParcelPricingSettings.lastIntercityBandMaxKg] the price of the band
-  /// holding that weight + extraKgPrice x ceil(weight - lastMax); + intercity tax.
-  /// Null = the table has no price for this route / weight.
-  static ParcelQuote? intercity({required ParcelRateTable table, required ParcelPlace origin, required ParcelPlace destination, required double weightKg, ParcelPricingSettings settings = const ParcelPricingSettings()}) {
-    if (weightKg <= 0) return null;
-    final List<IntercityRate> route = table.intercity.where((r) => origin.cityMatches(r.from) && destination.cityMatches(r.to)).toList();
-    if (route.isEmpty) return null;
-    final double lastMax = settings.lastIntercityBandMaxKg;
-    if (weightKg > lastMax + _eps) {
-      final IntercityRate? last = _band(route, lastMax, (r) => r.maxKg);
-      if (last == null) return null;
-      final int extraKg = (weightKg - lastMax - _eps).ceil();
-      return ParcelQuote(carrierPrice: last.price, extraKgCharge: settings.extraKgPrice * extraKg, fixedTax: settings.intercityTax, source: ParcelPriceSource.rateTable, chargeableKg: weightKg);
+  /// Spec section 5: different country codes -> intercountry; same country,
+  /// different city (accent-insensitive) -> intercity; otherwise city. A city
+  /// missing on either side: same zone -> city, else intercity.
+  static String scopeFor({required ParcelPlace origin, required ParcelPlace destination, String? senderZoneId, String? receiverZoneId}) {
+    final String a = normalize(origin.countryCode), b = normalize(destination.countryCode);
+    if (a.isNotEmpty && b.isNotEmpty && a != b) return ParcelScope.intercountry;
+    final String ca = normalize(origin.city), cb = normalize(destination.city);
+    if (ca.isEmpty || cb.isEmpty) {
+      final String za = (senderZoneId ?? '').trim(), zb = (receiverZoneId ?? '').trim();
+      return za.isNotEmpty && za == zb ? ParcelScope.city : ParcelScope.intercity;
     }
-    final IntercityRate? band = _band(route, weightKg, (r) => r.maxKg);
-    if (band == null) return null;
-    return ParcelQuote(carrierPrice: band.price, fixedTax: settings.intercityTax, source: ParcelPriceSource.rateTable, chargeableKg: weightKg);
+    return ca == cb ? ParcelScope.city : ParcelScope.intercity;
   }
 
-  /// Weight rounded UP to the next [step] (0.5 kg by default).
-  static double chargeableWeight(double weightKg, double step) {
-    if (step <= 0) return weightKg;
-    return (weightKg / step - _eps).ceil() * step;
+  // ---- Step 2: chargeable weight -------------------------------------------
+
+  /// carrier.regionPricing[R].volumetricDivisor if > 0, else
+  /// regions[R].parcelPricing.volumetricDivisor if > 0, else none (null).
+  static double? resolveVolumetricDivisor({ParcelRateCard? carrierCard, RegionParcelPricing? regionPricing}) {
+    final double? carrierDiv = carrierCard?.volumetricDivisor;
+    if (carrierDiv != null && carrierDiv > 0) return carrierDiv;
+    final double? regionDiv = regionPricing?.volumetricDivisor;
+    if (regionDiv != null && regionDiv > 0) return regionDiv;
+    return null;
   }
 
-  /// Intercountry (spec 5.2): chargeable weight x ratePerKg of the band holding
-  /// it + intercountry tax. Null = no rate for this route / weight.
-  static ParcelQuote? intercountry({required ParcelRateTable table, required ParcelPlace origin, required ParcelPlace destination, required double weightKg, ParcelPricingSettings settings = const ParcelPricingSettings()}) {
-    if (weightKg <= 0) return null;
-    final List<IntercountryRate> route = table.intercountry.where((r) => origin.countryMatches(r.fromCountry) && destination.countryMatches(r.toCountry)).toList();
-    if (route.isEmpty) return null;
-    final double kg = chargeableWeight(weightKg, settings.roundingStepKg);
-    final IntercountryRate? band = _band(route, kg, (r) => r.maxKg);
-    if (band == null) return null;
-    return ParcelQuote(carrierPrice: _round2(kg * band.ratePerKg), fixedTax: settings.intercountryTax, source: ParcelPriceSource.rateTable, chargeableKg: kg);
-  }
-
-  /// Rate-card fallback: max(minimumCharge, baseCharge + perKmCharge x km +
-  /// perKgCharge x kg) with null fields ignored, + the scope tax.
-  static ParcelQuote? rateCard({required ParcelRateCard card, required String scope, required double distanceKm, required double weightKg, ParcelPricingSettings settings = const ParcelPricingSettings()}) {
-    if (!card.isSet) return null;
-    double price = (card.baseCharge ?? 0) + (card.perKmCharge ?? 0) * distanceKm + (card.perKgCharge ?? 0) * weightKg;
-    if (card.minimumCharge != null && card.minimumCharge! > price) price = card.minimumCharge!;
-    if (price <= 0) return null;
-    return ParcelQuote(carrierPrice: _round2(price), fixedTax: settings.taxFor(scope), source: ParcelPriceSource.rateCard, chargeableKg: weightKg);
-  }
-
-  /// A carrier's price for the shipment: its rate table first (intercity /
-  /// intercountry), else its rate card. Null = the carrier does not serve it.
-  static ParcelQuote? carrierQuote({
-    required String scope,
-    ParcelRateTable? table,
-    ParcelRateCard? card,
-    required ParcelPlace origin,
-    required ParcelPlace destination,
-    required double weightKg,
-    required double distanceKm,
-    ParcelPricingSettings settings = const ParcelPricingSettings(),
-  }) {
-    ParcelQuote? quote;
-    if (table != null && !table.isEmpty) {
-      if (scope == ParcelScope.intercity) {
-        quote = intercity(table: table, origin: origin, destination: destination, weightKg: weightKg, settings: settings);
-      } else if (scope == ParcelScope.intercountry) {
-        quote = intercountry(table: table, origin: origin, destination: destination, weightKg: weightKg, settings: settings);
-      }
-    }
-    if (quote == null && card != null) {
-      quote = rateCard(card: card, scope: scope, distanceKm: distanceKm, weightKg: weightKg, settings: settings);
-    }
-    return quote;
-  }
-
-  /// Volumetric weight in kg of an `l x w x h` cm parcel: `l * w * h /
-  /// divisor`. Null when a side is missing or not positive (nothing to price
-  /// on) or when the divisor switches it off.
-  static double? volumetricKg({num? lengthCm, num? widthCm, num? heightCm, required double divisor}) {
-    if (divisor <= 0) return null;
+  /// L x W x H (cm) / [divisor], 2 decimals. Null when there is no divisor or
+  /// a side is missing / not positive.
+  static double? volumetricKg({num? lengthCm, num? widthCm, num? heightCm, double? divisor}) {
+    if (divisor == null || divisor <= 0) return null;
     final List<num?> sides = [lengthCm, widthCm, heightCm];
     if (sides.any((v) => v == null || v <= 0 || !v.isFinite)) return null;
-    final double kg = lengthCm! * widthCm! * heightCm! / divisor;
-    return _round3(kg);
+    return round2(lengthCm! * widthCm! * heightCm! / divisor);
   }
 
-  /// The weight a parcel is charged on: the greater of [actualKg] and
-  /// [volumetricKg] (either may be unknown). 0 when neither is known.
+  /// The greater of [actualKg] and [volumetricKg] (either may be unknown),
+  /// 2 decimals. 0 when neither is known.
   static double chargeableKg({double? actualKg, double? volumetricKg}) {
     final double a = (actualKg != null && actualKg > 0) ? actualKg : 0;
     final double v = (volumetricKg != null && volumetricKg > 0) ? volumetricKg : 0;
-    return a > v ? a : v;
+    return round2(a > v ? a : v);
   }
+
+  /// Step 2 for one option: [carrierCard] null = no carrier (region divisor).
+  static ParcelWeight weightFor({required double actualKg, num? lengthCm, num? widthCm, num? heightCm, ParcelRateCard? carrierCard, RegionParcelPricing region = const RegionParcelPricing()}) {
+    final double? divisor = resolveVolumetricDivisor(carrierCard: carrierCard, regionPricing: region);
+    final double? vol = volumetricKg(lengthCm: lengthCm, widthCm: widthCm, heightCm: heightCm, divisor: divisor);
+    final double actual = actualKg > 0 ? round2(actualKg) : 0;
+    return ParcelWeight(actualKg: actual, divisor: divisor, volumetricKg: vol ?? 0, chargeableKg: chargeableKg(actualKg: actual, volumetricKg: vol));
+  }
+
+  // ---- Step 3: which carriers ----------------------------------------------
+
+  /// `scope` in `deliveryScopes`; missing or empty = all three.
+  static bool handlesScope(List<String> deliveryScopes, String scope) => deliveryScopes.isEmpty || deliveryScopes.contains(scope);
+
+  // ---- Step 4: base price ----------------------------------------------------
+
+  /// rate_card: baseCharge + perKmCharge x km + perKgCharge x chargeableKg, at
+  /// least minimumCharge, 2 decimals. Null = the card sets no price (or a
+  /// price of 0): the carrier is not offered.
+  static double? rateCardPrice({required ParcelRateCard card, required double distanceKm, required double chargeableKg}) {
+    if (!card.hasPrice) return null;
+    double price = (card.baseCharge ?? 0) + (card.perKmCharge ?? 0) * distanceKm + (card.perKgCharge ?? 0) * chargeableKg;
+    if (card.minimumCharge != null && card.minimumCharge! > price) price = card.minimumCharge!;
+    if (price <= 0) return null;
+    return round2(price);
+  }
+
+  /// The bands carry `minKg` / `maxKg` (the admin has saved Parcel Weight).
+  static bool hasKgBands<T>(List<ParcelBand<T>> bands) => bands.any((b) => b.minKg != null || b.maxKg != null);
+
+  /// default: the band with minKg <= [kg] <= maxKg (inclusive; maxKg null = no
+  /// upper limit). A weight in a gap between two bands takes the next band up;
+  /// above every band, the heaviest. Only when the bands carry no
+  /// minKg / maxKg at all: today's title matching ([categoryFor] from
+  /// [selected]).
+  static ParcelBand<T>? bandFor<T>(List<ParcelBand<T>> bands, double kg, {ParcelBand<T>? selected}) {
+    if (bands.isEmpty) return selected;
+    if (!hasKgBands(bands)) {
+      if (selected == null) return null;
+      return categoryFor<ParcelBand<T>>(categories: bands, selected: selected, kg: kg, titleOf: (b) => b.title);
+    }
+    final List<ParcelBand<T>> withKg = bands.where((b) => b.minKg != null || b.maxKg != null).toList()..sort((a, b) => (a.minKg ?? 0).compareTo(b.minKg ?? 0));
+    ParcelBand<T>? containing;
+    for (final b in withKg) {
+      if (kg + _eps >= (b.minKg ?? 0) && (b.maxKg == null || kg <= b.maxKg! + _eps)) {
+        containing = b;
+        break;
+      }
+    }
+    if (containing == null) {
+      for (final b in withKg) {
+        if ((b.minKg ?? 0) > kg) {
+          containing = b;
+          break;
+        }
+      }
+    }
+    if (containing == null) {
+      ParcelBand<T> heaviest = withKg.first;
+      for (final b in withKg) {
+        if (b.maxKg == null || (heaviest.maxKg != null && b.maxKg! > heaviest.maxKg!)) heaviest = b;
+      }
+      containing = heaviest;
+    }
+    // Moves up, never down (the website's `effectiveBand()`, BUG-REPORT-01-WEB
+    // section 41): the heavier of the band the customer chose and the band of
+    // the chargeable weight.
+    if (selected != null && (selected.minKg != null || selected.maxKg != null) && isHeavierBand(selected, containing)) return selected;
+    return containing;
+  }
+
+  /// [a] is a heavier band than [b]: a higher lower limit, else a higher upper
+  /// limit (no upper limit = the heaviest).
+  static bool isHeavierBand<T>(ParcelBand<T> a, ParcelBand<T> b) {
+    final double aMin = a.minKg ?? 0, bMin = b.minKg ?? 0;
+    if ((aMin - bMin).abs() > _eps) return aMin > bMin;
+    if (a.maxKg == null) return b.maxKg != null;
+    if (b.maxKg == null) return false;
+    return a.maxKg! > b.maxKg! + _eps;
+  }
+
+  /// The order's region R (the SENDER's region: carriers, prices, currency,
+  /// pickup points and payment methods all follow it). A sender's location
+  /// often lies outside every delivery-zone polygon (a whole country is one
+  /// region), and an unresolved R used to offer EVERY carrier and price in the
+  /// default currency (FCFA shown to an India customer, brief 12 Oct section 9):
+  ///
+  ///  1. the single region of the zone(s) around the sender ([atSender]); with
+  ///     several, the customer's own region when it is one of them;
+  ///  2. else the published regions of the sender's country ([countryRegions],
+  ///     on `countryCode`): the only one, or the customer's region among them;
+  ///  3. else, the country not resolving, the customer's region
+  ///     ([customerRegion], the website's active region).
+  /// Null when none of these decides.
+  static String? resolveOrderRegion({List<String> atSender = const [], List<String> countryRegions = const [], String? customerRegion}) {
+    final String mine = (customerRegion ?? '').trim();
+    String? pick(List<String> ids) {
+      final List<String> list = ids.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
+      if (list.length == 1) return list.first;
+      if (list.isEmpty) return null;
+      return list.contains(mine) ? mine : null;
+    }
+
+    if (atSender.isNotEmpty) return pick(atSender);
+    if (countryRegions.isNotEmpty) return pick(countryRegions);
+    return mine.isEmpty ? null : mine;
+  }
+
+  // ---- Step 5: options ---------------------------------------------------------
+
+  /// Each charge from the carrier's `regionPricing[R]` if set (0 included),
+  /// else `regions[R].parcelPricing`, else 0. No carrier: the region directly.
+  static ({double pickupCharge, double deliveryCharge}) resolveOptionCharges({
+    required String pickupMethod,
+    required String deliveryMethod,
+    ParcelRateCard? carrierCard,
+    RegionParcelPricing? regionPricing,
+  }) {
+    double pick(double? carrier, double? region) {
+      final double v = carrier ?? region ?? 0;
+      return v > 0 ? v : 0;
+    }
+
+    final double pickup = pickupMethod == ParcelMethod.pickupPoint
+        ? pick(carrierCard?.pointDropoffCharge, regionPricing?.pointDropoffCharge)
+        : pickupMethod == ParcelMethod.home
+        ? pick(carrierCard?.homePickupCharge, regionPricing?.homePickupCharge)
+        : 0;
+    final double delivery = deliveryMethod == ParcelMethod.pickupPoint
+        ? pick(carrierCard?.pointCollectionCharge, regionPricing?.pointCollectionCharge)
+        : deliveryMethod == ParcelMethod.home
+        ? pick(carrierCard?.homeDeliveryCharge, regionPricing?.homeDeliveryCharge)
+        : 0;
+    return (pickupCharge: pickup, deliveryCharge: delivery);
+  }
+
+  // ---- Steps 2-6 for one option ----------------------------------------------
+
+  /// A carrier's quote (`source: rate_card`), or null when it is not offered
+  /// (step 3) or its card sets no price. [card] is the carrier's card for R
+  /// ([ParcelRateCard.forRegion]).
+  static ParcelQuote? carrierQuote({
+    required String scope,
+    required ParcelRateCard card,
+    required double distanceKm,
+    required double actualKg,
+    num? lengthCm,
+    num? widthCm,
+    num? heightCm,
+    required String pickupMethod,
+    required String deliveryMethod,
+    RegionParcelPricing region = const RegionParcelPricing(),
+    List<String> deliveryScopes = const [],
+    double? maxWeight,
+  }) {
+    final ParcelWeight w = weightFor(actualKg: actualKg, lengthCm: lengthCm, widthCm: widthCm, heightCm: heightCm, carrierCard: card, region: region);
+    if (!handlesScope(deliveryScopes, scope)) return null;
+    if (maxWeight != null && maxWeight > 0 && maxWeight + _eps < w.chargeableKg) return null;
+    final double? price = rateCardPrice(card: card, distanceKm: distanceKm, chargeableKg: w.chargeableKg);
+    if (price == null) return null;
+    final opt = resolveOptionCharges(pickupMethod: pickupMethod, deliveryMethod: deliveryMethod, carrierCard: card, regionPricing: region);
+    return ParcelQuote(
+      carrierPrice: price,
+      fixedTax: region.fixedTaxFor(scope),
+      pickupCharge: opt.pickupCharge,
+      deliveryCharge: opt.deliveryCharge,
+      source: ParcelPriceSource.rateCard,
+      actualKg: w.actualKg,
+      volumetricKg: w.volumetricKg,
+      chargeableKg: w.chargeableKg,
+      volumetricDivisor: w.divisor,
+    );
+  }
+
+  /// No carrier (`source: default`): [distance] x the band's charge. [bandOf]
+  /// picks the band for the chargeable weight ([bandFor]); null = no band.
+  static ParcelQuote? defaultQuote<T>({
+    required String scope,
+    required double distance,
+    required double actualKg,
+    num? lengthCm,
+    num? widthCm,
+    num? heightCm,
+    required String pickupMethod,
+    required String deliveryMethod,
+    required List<ParcelBand<T>> bands,
+    ParcelBand<T>? selected,
+    RegionParcelPricing region = const RegionParcelPricing(),
+  }) {
+    final ParcelWeight w = weightFor(actualKg: actualKg, lengthCm: lengthCm, widthCm: widthCm, heightCm: heightCm, region: region);
+    final ParcelBand<T>? band = bandFor<T>(bands, w.chargeableKg, selected: selected);
+    if (band == null) return null;
+    final opt = resolveOptionCharges(pickupMethod: pickupMethod, deliveryMethod: deliveryMethod, regionPricing: region);
+    return ParcelQuote(
+      carrierPrice: distance * band.charge,
+      fixedTax: region.fixedTaxFor(scope),
+      pickupCharge: opt.pickupCharge,
+      deliveryCharge: opt.deliveryCharge,
+      source: ParcelPriceSource.defaultSetting,
+      actualKg: w.actualKg,
+      volumetricKg: w.volumetricKg,
+      chargeableKg: w.chargeableKg,
+      volumetricDivisor: w.divisor,
+    );
+  }
+
+  // ---- Title matching (bands without minKg / maxKg) --------------------------
 
   /// Same-city weight category for a parcel charged on [kg]: [selected] while
   /// it covers [kg] (its title's upper limit, [categoryMaxKg]), else the
@@ -422,14 +654,10 @@ class ParcelPricing {
     return best ?? heaviest;
   }
 
-  /// The existing eMart same-city price (distance x weight-category charge).
-  static ParcelQuote cityDefault({required double distance, required double weightCategoryCharge}) =>
-      ParcelQuote(carrierPrice: distance * weightCategoryCharge, source: ParcelPriceSource.defaultSetting);
-
-  /// Upper limit in kg of a same-city weight category title ("Upto 5 kg",
-  /// "1-5 kg", "500 g - 1 kg", "Above 20kg", "2 lbs"): the largest number in
-  /// it, a number without a unit taking the unit of the next one (kg when
-  /// none). Null when the title holds no number.
+  /// Upper limit in kg of a weight category title ("Upto 5 kg", "1-5 kg",
+  /// "500 g - 1 kg", "Above 20kg", "2 lbs"): the largest number in it, a
+  /// number without a unit taking the unit of the next one (kg when none).
+  /// Null when the title holds no number.
   static double? categoryMaxKg(String? title) {
     if (title == null) return null;
     final RegExp re = RegExp(r'(\d+(?:[.,]\d+)?)\s*(kgs?|kilo\w*|grams?|gms?|g|lbs?|pounds?)?(?![a-z])', caseSensitive: false);
@@ -460,11 +688,9 @@ class ParcelPricing {
   static double commissionOn({required double amount, required String? type, required double? value}) {
     if (value == null || value <= 0) return 0;
     final String t = (type ?? '').toLowerCase();
-    if (t == 'percent' || t == 'percentage') return _round2(amount * value / 100);
+    if (t == 'percent' || t == 'percentage') return round2(amount * value / 100);
     return value;
   }
 
-  static double _round2(double v) => (v * 100).roundToDouble() / 100;
-
-  static double _round3(double v) => (v * 1000).roundToDouble() / 1000;
+  static double round2(double v) => (v * 100).roundToDouble() / 100;
 }

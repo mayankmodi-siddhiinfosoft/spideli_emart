@@ -159,32 +159,24 @@ void main() {
     });
 
     test('the write touches only the changed regional prices; region 1 is mirrored flat', () {
-      final update = carrier.regionPricingUpdate({
-        'r2': {'baseCharge': 950, 'minimumCharge': null},
-        'r1': {'perKmCharge': 80},
-        'r9': {'baseCharge': 1}, // not served: dropped
+      final paths = {
+        for (final e in carrier.updatePaths(const {}, regionChanges: {
+          'r2': {'baseCharge': 950, 'minimumCharge': null},
+          'r1': {'perKmCharge': 80},
+          'r9': {'baseCharge': 1}, // not served: dropped
+        }))
+          e.key.join('.'): e.value,
+      };
+      expect(paths, {
+        'regionPricing.r2.baseCharge': 950,
+        'regionPricing.r2.minimumCharge': null,
+        'regionPricing.r1.perKmCharge': 80,
+        'perKmCharge': 80, // r1 is the first region: mirrored flat
       });
-      expect(update.data['regionPricing'], {
-        'r2': {'baseCharge': 950, 'minimumCharge': null},
-        'r1': {'perKmCharge': 80},
-      });
-      expect(update.data['perKmCharge'], 80);
-      expect(update.data.containsKey('baseCharge'), isFalse, reason: 'r2 is not the first region');
-      expect(update.paths, containsAll([
-        ['regionPricing', 'r2', 'baseCharge'],
-        ['regionPricing', 'r2', 'minimumCharge'],
-        ['regionPricing', 'r1', 'perKmCharge'],
-        ['perKmCharge'],
-      ]));
-      expect(update.paths.length, 4);
     });
 
     test('non-charge fields never reach regionPricing', () {
-      final update = carrier.regionPricingUpdate({
-        'r1': {'maxWeight': 10},
-      });
-      expect(update.data, isEmpty);
-      expect(update.paths, isEmpty);
+      expect(carrier.updatePaths(const {}, regionChanges: {'r1': {'maxWeight': 10}}), isEmpty);
     });
   });
 }

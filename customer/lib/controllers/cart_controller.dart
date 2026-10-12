@@ -64,6 +64,8 @@ import '../service/fire_store_utils.dart';
 import '../service/push_message.dart';
 import '../service/send_notification.dart';
 import '../themes/show_toast_dialog.dart';
+import '../utils/platform_fee_charge.dart';
+import '../utils/wallet_checkout.dart';
 
 class CartController extends GetxController {
   RxBool isCashbackApply = false.obs;
@@ -344,9 +346,9 @@ class CartController extends GetxController {
     if (Constant.sectionConstantModel?.packagingChargeEnable == true) {
       packagingCharge.value = vendorModel.value.packagingCharge != null ? double.parse(vendorModel.value.packagingCharge.toString()) : 0.0;
     }
-    if (Constant.sectionConstantModel?.platformFee?.enable == true) {
-      platformFee.value = Constant.calculatePlatFormMeModel(platFromFeeModel: Constant.platformFeeModel);
-    }
+    // Charged only while the admin has it enabled (PlatformFeeCharge).
+    final PlatformFeeCharge platformCharge = PlatformFeeCharge.current();
+    platformFee.value = platformCharge.fee;
 
     log("TaxScope :: ${Constant.taxScope}");
 
@@ -441,11 +443,7 @@ class CartController extends GetxController {
     }
 
     /// ---------------- PLATFORM TAX ----------------
-    if (Constant.platformFeeModel?.enable == true && platformFee.value > 0) {
-      for (var taxElement in Constant.platformTaxList ?? []) {
-        platformTaxAmount.value += Constant.calculateTax(amount: platformFee.value.toString(), taxModel: taxElement);
-      }
-    }
+    platformTaxAmount.value = platformCharge.taxAmount();
 
     /// ---------------- TOTAL ----------------
     totalTaxAmount.value = productTaxAmount.value + orderTaxAmount.value + driverDeliveryTaxAmount.value + packagingTaxAmount.value + platformTaxAmount.value;
@@ -711,11 +709,25 @@ class CartController extends GetxController {
     orderModel.taxSetting = Constant.taxScope == "order" ? Constant.orderProductTaxList : [];
     orderModel.driverDeliveryTax = Constant.driverDeliveryTaxList;
     orderModel.packagingTax = Constant.packagingTaxList;
-    orderModel.platformTax = Constant.platformTaxList;
+    // The platform fee's taxes only with a charged fee (calculatePrice).
+    orderModel.platformTax = platformFee.value > 0 ? PlatformFeeCharge.current().taxes : [];
     orderModel.taxScope = Constant.taxScope;
     orderModel.platformFee = platformFee.value.toString();
     orderModel.packagingChargeEnable = Constant.sectionConstantModel?.packagingChargeEnable == true;
+
+    // An order for a later time is written with `scheduledNotificationSent:
+    // false` and sends the store NOTHING now: the `scheduledOrderNotifier`
+    // Cloud Function pushes the store owner when it becomes due. Anything
+    // else - including a scheduled time that has already passed - is today's
+    // loud new-order push, whose data carries `type` (the template type) and
+    // the order id.
+    final Map<String, dynamic> scheduledFields = ScheduledOrderNotice.orderFields(scheduleTime: orderModel.scheduleTime?.toDate(), now: DateTime.now());
+    final bool scheduledForLater = scheduledFields.isNotEmpty;
+
     if (selectedPaymentMethod.value == PaymentGateway.wallet.name) {
+      // Wallet: the debit, its wallet row and the order in ONE transaction
+      // (WalletCheckout): the money is never taken without the saved order.
+      // Stock, cashback, the store's push and the email only after it.
       WalletTransactionModel transactionModel = WalletTransactionModel(
         id: Constant.getUuid(),
         amount: double.parse(totalAmount.value.toString()),
@@ -729,14 +741,39 @@ class CartController extends GetxController {
         paymentStatus: "success".tr,
         regionId: orderModel.regionId,
       );
-
-      await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-        if (value == true) {
-          await FireStoreUtils.updateUserWallet(amount: "-${totalAmount.value.toString()}", userId: FireStoreUtils.getCurrentUid()).then((value) {});
-        }
-      });
+      final WalletPayOutcome outcome = await WalletCheckout.pay(
+        commit: () async => FireStoreUtils.payFromWallet(
+          amount: totalAmount.value,
+          userId: FireStoreUtils.getCurrentUid(),
+          walletTransaction: transactionModel,
+          orderWrites: [await FireStoreUtils.vendorOrderWrite(orderModel, extraFields: scheduledFields)],
+        ),
+        afterPaid: () async {
+          await FireStoreUtils.addCustomerRegion(orderModel.regionId);
+          await _afterOrderSaved(orderModel, scheduledForLater: scheduledForLater);
+        },
+      );
+      tempProduc.clear();
+      ShowToastDialog.closeLoader();
+      if (outcome != WalletPayOutcome.paid) {
+        ShowToastDialog.showToast(WalletCheckout.failureMessage(outcome).tr);
+        return;
+      }
+      Get.off(const OrderPlacingScreen(), arguments: {"orderModel": orderModel});
+      return;
     }
 
+    await FireStoreUtils.setOrder(orderModel, extraFields: scheduledFields);
+    await _afterOrderSaved(orderModel, scheduledForLater: scheduledForLater);
+    tempProduc.clear();
+    ShowToastDialog.closeLoader();
+    Get.off(const OrderPlacingScreen(), arguments: {"orderModel": orderModel});
+  }
+
+  /// After the order is saved (and, by wallet, paid): the stock of each line,
+  /// the cashback redemption, the store owner's new-order push (not for an
+  /// order scheduled for later) and the order email.
+  Future<void> _afterOrderSaved(OrderModel orderModel, {required bool scheduledForLater}) async {
     for (int i = 0; i < tempProduc.length; i++) {
       await FireStoreUtils.getProductById(tempProduc[i].id!.split('~').first).then((value) async {
         ProductModel? productModel = value;
@@ -773,27 +810,15 @@ class CartController extends GetxController {
       );
       await FireStoreUtils.setCashbackRedeemModel(cashbackRedeemModel);
     }
-    // An order for a later time is written with `scheduledNotificationSent:
-    // false` and sends the store NOTHING now: the `scheduledOrderNotifier`
-    // Cloud Function pushes the store owner when it becomes due. Anything
-    // else - including a scheduled time that has already passed - is today's
-    // loud new-order push, whose data carries `type` (the template type) and
-    // the order id.
-    final Map<String, dynamic> scheduledFields = ScheduledOrderNotice.orderFields(scheduleTime: orderModel.scheduleTime?.toDate(), now: DateTime.now());
-    final bool scheduledForLater = scheduledFields.isNotEmpty;
-    await FireStoreUtils.setOrder(orderModel, extraFields: scheduledFields).then((value) async {
-      if (!scheduledForLater) {
-        await FireStoreUtils.getUserProfile(orderModel.vendor!.author.toString()).then((value) async {
-          if (value != null) {
-            // To the store owner, on the store's loud new-order channel.
-            await SendNotification.sendFcmMessage(Constant.orderPlacedNotification, value.fcmToken ?? '', {'orderId': orderModel.id}, recipient: PushRecipient.store);
-          }
-        });
-      }
-      await Constant.sendOrderEmail(orderModel: orderModel);
-      ShowToastDialog.closeLoader();
-      Get.off(const OrderPlacingScreen(), arguments: {"orderModel": orderModel});
-    });
+    if (!scheduledForLater) {
+      await FireStoreUtils.getUserProfile(orderModel.vendor!.author.toString()).then((value) async {
+        if (value != null) {
+          // To the store owner, on the store's loud new-order channel.
+          await SendNotification.sendFcmMessage(Constant.orderPlacedNotification, value.fcmToken ?? '', {'orderId': orderModel.id}, recipient: PushRecipient.store);
+        }
+      });
+    }
+    await Constant.sendOrderEmail(orderModel: orderModel);
   }
 
   Rx<WalletSettingModel> walletSettingModel = WalletSettingModel().obs;

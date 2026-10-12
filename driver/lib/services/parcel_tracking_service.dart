@@ -8,6 +8,8 @@ import 'package:driver/models/wallet_transaction_model.dart';
 import 'package:driver/app/wallet_screen/payment_list_screen.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/parcel_amounts.dart';
+import 'package:driver/services/company_cash_service.dart';
+import 'package:driver/services/parcel_flow_rules.dart';
 import 'package:flutter/foundation.dart';
 
 /// Parcel tracking statuses (PARCEL-CONTRACT.md, spec 7.5) — `parcel_orders.parcelStatus`.
@@ -289,6 +291,34 @@ class ParcelTrackingService {
     await _doc(o.id!).update(data);
     o.parcelStatus = status;
     if (data['status'] != null) o.status = data['status'];
+
+    // The customer (and, on pickup, the company owner) are told by template
+    // (ParcelStatusPush): no notification text lives in the app.
+    try {
+      final String? template = ParcelStatusPush.customerTemplate(status);
+      if (template != null) {
+        await SendNotification.notifyCustomer(template,
+            customerId: o.authorID ?? o.author?.id, embeddedToken: o.author?.fcmToken, payload: {'type': 'parcel_order', 'orderId': o.id ?? '', 'parcelStatus': status}, status: o.status);
+      }
+      if (status == ParcelTrackingStatus.collected) await _notifyOwner(o, ParcelStatusPush.ownerPickedUpTemplate);
+    } catch (e) {
+      debugPrint('ParcelTrackingService._writeStatus notification error: $e');
+    }
+  }
+
+  /// The templated progress push to the parcel's company owner
+  /// ([ParcelStatusPush.ownerToNotify]), on the owner's general channel; a
+  /// tap opens its Orders list. Never throws.
+  static Future<void> _notifyOwner(ParcelOrderModel o, String template) async {
+    try {
+      final String ownerUid = ParcelStatusPush.ownerToNotify(carrierOwnerId: o.carrierOwnerId, driverOwnerId: o.driver?.ownerId ?? Constant.userModel?.ownerId);
+      if (ownerUid.isEmpty || ownerUid == FireStoreUtils.getCurrentUid()) return;
+      final UserModel? owner = await FireStoreUtils.getUserProfile(ownerUid);
+      await SendNotification.sendFcmMessage(template, (owner?.fcmToken ?? '').trim(), {'type': ParcelStatusPush.ownerPushType, 'orderId': o.id ?? ''},
+          recipient: PushRecipient.driver);
+    } catch (e) {
+      debugPrint('ParcelTrackingService owner push $template failed: $e');
+    }
   }
 
   /// Hook for the existing "Pickup Parcel" button: also records `Collected` (home pickup) or, for a parcel
@@ -298,7 +328,18 @@ class ParcelTrackingService {
     if (o.pickupMethod == 'pickup_point' && ParcelTrackingStatus.rank(current) <= 1 && o.parcelStatus != null) {
       return 'The sender has not dropped the parcel off at the origin pickup point yet.';
     }
-    await _doc(o.id!).set({'status': Constant.orderInTransit}, SetOptions(merge: true));
+    // In a transaction on the live order: only this driver's accepted job
+    // moves to In Transit (ParcelPickupRules), never a cancelled / completed
+    // / reassigned one.
+    final String uid = FireStoreUtils.getCurrentUid();
+    final bool allowed = await FireStoreUtils.fireStore.runTransaction<bool>((tx) async {
+      final snap = await tx.get(_doc(o.id!));
+      final Map<String, dynamic>? fields = ParcelPickupRules.pickupFields(snap.data(), uid);
+      if (fields == null) return false;
+      if (fields.isNotEmpty) tx.update(_doc(o.id!), fields);
+      return true;
+    });
+    if (!allowed) return 'This parcel can no longer be picked up.';
     o.status = Constant.orderInTransit;
     try {
       if (ParcelTrackingStatus.rank(current) <= 1) {
@@ -394,8 +435,25 @@ class ParcelTrackingService {
       final Map<String, dynamic> payLoad = <String, dynamic>{"type": "parcel_order", "orderId": o.id};
       await SendNotification.notifyCustomer(Constant.parcelCompleted,
           customerId: o.authorID ?? o.author?.id, embeddedToken: o.author?.fcmToken, payload: payLoad, status: o.status);
+
+      // The company owner of a carrier / fleet parcel (template).
+      await _notifyOwner(o, ParcelStatusPush.ownerDeliveredTemplate);
+
+      // Record COD collection in Company Cash Ledger if driver belongs to a company
+      final bool isCod = o.paymentMethod == PaymentGateway.cod.name;
+      // The snapshot written at accept, else the signed-in (assigned) driver:
+      // a panel-assigned parcel may carry no snapshot.
+      final UserModel? driver = (o.driver?.ownerId ?? '').isNotEmpty ? o.driver : Constant.userModel;
+      if (isCod && driver?.ownerId != null && driver!.ownerId!.isNotEmpty) {
+        final ParcelAmounts amounts = ParcelAmounts.of(o);
+        await CompanyCashService.recordCodCollection(
+          order: o,
+          driver: driver,
+          amount: amounts.total,
+        );
+      }
     } catch (e) {
-      debugPrint('ParcelTrackingService.completeOrder notification $e');
+      debugPrint('ParcelTrackingService.completeOrder notification/ledger $e');
     }
     await FireStoreUtils.getParcelFirstOrderOrNOt(o).then((value) async {
       if (value == true) {
@@ -428,15 +486,22 @@ class ParcelTrackingService {
           adminCommission: orderModel.adminCommission ?? '0');
     }
 
-    final UserModel? driver = orderModel.driver;
-    final String walletUserId = driver?.ownerId != null && driver!.ownerId!.isNotEmpty ? driver.ownerId.toString() : FireStoreUtils.getCurrentUid();
+    final String walletUserId = ParcelAmounts.walletUserFor(
+        snapshotOwnerId: orderModel.driver?.ownerId, myOwnerId: Constant.userModel?.ownerId, myUid: FireStoreUtils.getCurrentUid());
 
     // Fixed intercity / intercountry tax: platform revenue, outside subTotal (never credited to the driver).
     final double scopeTax = (orderModel.parcelScopeTax ?? 0).toDouble();
     final String paymentMethod = orderModel.paymentMethod ?? '';
     final bool isCod = paymentMethod == PaymentGateway.cod.name;
 
-    totalAmount = ((subTotal - discount) + totalTax);
+    // The door / pickup-point charges (priceBreakdown.pickupCharge +
+    // deliveryCharge) are the Owner's prices for the courier's work
+    // (app-spec-parcel-pricing 3.2): paid online, they are credited with the
+    // delivery charge; in cash the driver already holds them (they are not in
+    // ParcelAmounts.platformShareOfCash).
+    final double options = ParcelAmounts.of(orderModel).options;
+    // = ParcelAmounts.onlineCredit (company reports read the same rule).
+    totalAmount = ((subTotal - discount) + totalTax + options);
     if (!isCod) {
       WalletTransactionModel transactionModel = WalletTransactionModel(
           id: Constant.getUuid(),

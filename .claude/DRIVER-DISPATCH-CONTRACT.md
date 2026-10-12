@@ -34,7 +34,8 @@ Related: `.claude/PUSH-CHANNELS.md` (the `spideli` channel),
 the driver app's own re-dispatch (`updateDriverOrder`, the job queue's
 `triggerDelivery` rewrite). No app writes `Driver Pending`, adds an id to
 another driver's `orderRequestData`, or pushes a platform driver about an
-order it could take (`order_available`, `new_ride`, `new_parcel`, `new_rental`
+order it could take (one exception: a company owner assigning a carrier
+parcel to its own driver, below) (`order_available`, `new_ride`, `new_parcel`, `new_rental`
 are no longer sent).
 
 **Not dispatch, unchanged:** a store giving an order to **its own delivery
@@ -45,6 +46,17 @@ transaction from `Order Placed`, and sends him the templated
 through `Order Accepted`, `deliveryDispatch` is never involved. An admin's hand
 assignment (`Order Accepted` or `Driver Pending` with `driverID` set by the
 panel) is answered on the module's home card, with no countdown.
+
+**Not dispatch either: carrier parcels (12 Oct 2026).** A parcel with
+`carrierId` / `carrierOwnerId` (booked with a delivery company) is written
+`Order Placed`, `sendToDriver: false`, nobody named, and is assigned by the
+**company owner** in the driver app: `Driver Pending` + `driverId` /
+`driverID` + `assignedBy` (owner) + `dispatchedAt`, and the id in the
+driver's `orderRequestData`, then a `carrier_parcel_assigned` push with the
+parcel-offer data. The driver answers it like any offer (sections 3 to 5);
+a reject or timeout returns it to the owner (section 5.7). No other driver
+sees, is offered or may accept it. `parcelDispatch` must skip these parcels
+(section 8, item 5). Full flow: `.claude/COMPANY-CARRIER-LINK.md` section 5.
 
 ---
 
@@ -206,9 +218,19 @@ arrayRemove id. The function re-offers it like any rejected order.
 
 - a pending offer in `inProgressOrderID`;
 - `Driver Pending`, or another driver's id in `driverId` / `driverID`, or
-  another uid in `rejectedByDrivers`;
+  another uid in `rejectedByDrivers` (only the company owner's assignment of
+  a carrier parcel to its own driver does, 5.7);
 - a whole order model (it rolled back `rejectedByDrivers`, the parcel SMS
   fields and other drivers' writes).
+
+### 5.7 Carrier parcels (assigned by the company owner)
+
+| | Rule |
+|---|---|
+| Accept | only when the order names this driver **and** `assignedBy` is the company owner (`== carrierOwnerId` when set); never from the open search or a legacy request (`DispatchOrderRules.acceptCheck` + `CarrierParcelRules.ownerAssignedTo`) |
+| Reject / timeout | `status: "Order Placed"` (not `Driver Rejected`), `sendToDriver: false`, `driverId: null`, `driverID: null`, `rejectedByDrivers` arrayUnion `<me>` (+ the reason on a manual reject); `orderRequestData` arrayRemove; the owner gets template `carrier_parcel_returned` (`CarrierParcelRules.returnToOwnerFields`) |
+| An offer the owner did not make (`Driver Pending` naming this driver, no / another `assignedBy`) | never shown; answered at once with the timeout write above, so it returns to the owner (`CarrierParcelRules.isForeignOffer`, `IncomingOfferService`) |
+| Parcel search | never lists a carrier parcel (independent and company drivers alike) |
 
 ---
 
@@ -296,8 +318,13 @@ delivery).
    The function should treat an offer older than
    `driverOrderAcceptRejectDuration` as rejected (same writes as 5.3).
 5. **Exclusions the apps expect:** takeaway and POS orders, self-delivery
-   orders, scheduled orders before they are due, parcels bound to a carrier
-   (`carrierId`: offered only to that carrier's drivers); drivers who are a store's own delivery men (`vendorID` set),
+   orders, scheduled orders before they are due, **parcels bound to a carrier
+   (`carrierId` or `carrierOwnerId` non-empty): never dispatched at all,
+   neither on `Order Placed` nor on `Driver Rejected` nor after a driver
+   handed one back to `Order Placed` — the company owner assigns them from the
+   driver app (section 1, 5.7). The apps cannot stop the function; until it
+   skips them, the driver app bounces such an offer back to the owner**;
+   drivers who are a store's own delivery men (`vendorID` set),
    company accounts (`isOwner: true`), offline drivers (`isActive` false), and
    everyone in `rejectedByDrivers`. A company's driver (`ownerId` set) should be
    checked against the company's wallet and `ownerMinimumDepositToRideAccept`,
@@ -357,7 +384,9 @@ fields from an order offered to it (or an unnamed one as in 5.1), `Driver
 Rejected` only with both fields null and itself in `rejectedByDrivers`,
 `rejectedByDrivers` only grown by its own uid, `driverId` / `driverID` cleared
 only by the named driver, the customer cancelling before acceptance, or the
-store for its own delivery men; nobody but the admin writes `Driver Pending`.
+store for its own delivery men; nobody but the admin writes `Driver Pending`
+(to add: the company owner's carrier-parcel assignment,
+`.claude/COMPANY-CARRIER-LINK.md` section 5.5).
 The functions use the Admin SDK and are not affected.
 
 ---
@@ -373,6 +402,7 @@ The functions use the Admin SDK and are not affected.
 | `driver/lib/services/offer_seen_store.dart` | first-seen times (also from the background isolate) |
 | `driver/lib/app/incoming_offer/incoming_offer_dialog.dart` | the dialog |
 | `driver/lib/services/driver_assignment_watcher.dart` | hand assignments without a push |
+| `driver/lib/services/carrier_parcel_rules.dart`, `carrier_parcel_service.dart` | carrier parcels: visibility, the owner's assignment, the hand-back to the owner (section 5.7) |
 | `driver/lib/utils/notification_service.dart`, `driver/lib/services/push_message.dart` | the `spideli` channel and push routing |
 | `customer/lib/utils/booking_status_tabs.dart` | the customer's tabs, labels and the offered-driver rule |
 | `vendor/lib/utils/store_order_write.dart` | the store's guarded order writes |

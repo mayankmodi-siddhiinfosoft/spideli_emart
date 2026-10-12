@@ -2,9 +2,12 @@ import 'dart:developer';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/constant.dart';
+import 'package:driver/constant/send_notification.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/document_model.dart';
 import 'package:driver/models/driver_document_model.dart';
+import 'package:driver/models/user_model.dart';
+import 'package:driver/services/push_message.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -111,6 +114,29 @@ class DetailsUploadController extends GetxController {
       if (expiryDate.value != null) documents.value.expiryDate = Timestamp.fromDate(expiryDate.value!);
 
       saved = await FireStoreUtils.uploadDriverDocument(documents.value);
+
+      // Notify company owner if this driver belongs to a company
+      if (saved && (Constant.userModel?.ownerId ?? '').isNotEmpty) {
+        try {
+          final String ownerId = Constant.userModel!.ownerId!;
+          final UserModel? owner = await FireStoreUtils.getUserProfile(ownerId);
+          final String ownerToken = (owner?.fcmToken ?? '').trim();
+          if (ownerToken.isNotEmpty) {
+            await SendNotification.sendOneNotification(
+              token: ownerToken,
+              title: "Driver Document Submitted".tr,
+              body: "${Constant.userModel?.fullName() ?? 'Your driver'} submitted ${documentModel.value.title ?? 'a document'} for verification.".tr,
+              payload: {
+                'type': 'document_verification',
+                'driverId': FireStoreUtils.getCurrentUid(),
+              },
+              recipient: PushRecipient.driver,
+            );
+          }
+        } catch (e) {
+          log("Notify owner on document upload failed: $e");
+        }
+      }
     } catch (e) {
       log("uploadDocument failed: $e");
       saved = false;

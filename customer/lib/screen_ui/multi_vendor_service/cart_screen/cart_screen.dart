@@ -481,14 +481,14 @@ class CartScreen extends StatelessWidget {
                                           ),
                                   ),
                             isTakeAway || selfDelivery ? const SizedBox() : const DsGap(DsSpace.md),
-                            if (Constant.sectionConstantModel?.platformFee?.enable == true)
+                            if (controller.platformFee.value > 0)
                               amountRow(
                                 title: "Platform fee".tr,
                                 amount: Constant.amountShow(amount: controller.platformFee.value.toString(), currency: currency),
                                 isDark: isDark,
                                 loading: billLoading,
                               ),
-                            if (Constant.sectionConstantModel?.platformFee?.enable == true) const DsGap(DsSpace.md),
+                            if (controller.platformFee.value > 0) const DsGap(DsSpace.md),
                             sectionDivider(isDark),
                             DsPressable(
                               onTap: () {
@@ -835,8 +835,8 @@ class CartScreen extends StatelessWidget {
                       );
                     },
                   ),
-                  if (Constant.platformTaxList?.isNotEmpty == true) sectionDivider(isDark),
-                  if (Constant.platformTaxList?.isNotEmpty == true)
+                  if (controller.platformFee.value > 0 && Constant.platformTaxList?.isNotEmpty == true) sectionDivider(isDark),
+                  if (controller.platformFee.value > 0 && Constant.platformTaxList?.isNotEmpty == true)
                     ListView.builder(
                       padding: EdgeInsets.zero,
                       shrinkWrap: true,
@@ -855,7 +855,7 @@ class CartScreen extends StatelessWidget {
                         );
                       },
                     ),
-                  if (Constant.platformTaxList?.isNotEmpty == true) sectionDivider(isDark),
+                  if (controller.platformFee.value > 0 && Constant.platformTaxList?.isNotEmpty == true) sectionDivider(isDark),
                   amountRow(
                     title: "Total Tax Amount".tr,
                     amount: Constant.amountShow(amount: controller.totalTaxAmount.value.toString(), currency: controller.storeCurrency),

@@ -187,6 +187,62 @@ keeps it if resources are ever shrunk.
 
 ---
 
+## Store chat topic (`store_chat_<vendorID>`, store employees with Chat)
+
+Store employees whose role allows Chat (`vendor_employee_roles/{id}`
+permission `{title: 'Chat', isActive: true}`, `vendor/lib/utils/store_chat.dart`)
+use the store's chats as the owner, so they get the customer's chat messages
+by an FCM **topic**; the owner keeps the token push. Nobody gets two.
+
+- **Topic:** `store_chat_<vendorID>`, `vendorID` = the store's `vendors/{id}`
+  document id. Must match `[a-zA-Z0-9-_.~%]{1,900}` or no topic is used on
+  either side. Same rule in `customer/lib/utils/store_chat_push.dart`
+  (`StoreChatTopic.forVendor`) and `vendor/lib/utils/store_chat_topic.dart`.
+- **Sender (customer app, `ChatController.notifyReceiver`):** a message to a
+  store (`chatType` `vendor` / `store` / `restaurant`) goes to the owner's
+  token exactly as before, PLUS one FCM v1 message with `message.topic =
+  store_chat_<vendorID>` (no `token`) and the same title (customer name),
+  body, data `{type: "orderChat", chatType: "vendor", orderId, senderId,
+  senderName, channelId: "chat_messages"}`, `channel_id: "chat_messages"`,
+  `sound: "chat_message"`, `aps.sound: "chat_message.wav"`
+  (`PushPayload.fcmV1TopicMessage`, `SendNotification.sendChatFcmMessageToTopic`).
+  The store id is the chat argument `vendorId` when given, else the order's
+  `vendor_orders/{orderId}.vendorID` (the thread id is the order id), else the
+  owner's `users/{id}.vendorID`; unknown: no topic push. Sent even when the
+  owner has no token. Not awaited and never throws: the chat send never
+  waits for it or fails because of it.
+- **Server path:** `sendPush` takes `topic` only from admin accounts
+  (`.claude/SERVER-PUSH-CONTRACT.md`), so with `serverPushUrl` set the topic
+  push is **skipped** (logged `push "chat (topic)" not sent`); the owner push
+  still goes. Employees get chat pushes on the server path only once the
+  function accepts this topic from customers (e.g. `store_chat_*` for a
+  customer of an order of that store).
+- **Who subscribes (store app, `StoreChatTopicService`):** only an EMPLOYEE
+  whose role currently has Chat on, to their own `users/{uid}.vendorID`
+  store's topic. Never the owner (or any non-employee), never a role without
+  the Chat entry, a deleted role, or an employee without a store. The profile
+  and role are read fresh at each check: after the FCM token is saved
+  (start-up, sign-in, sign-up, OTP), on a new FCM token (subscribes again),
+  and on every return to the foreground (role or store changed by the
+  owner). The subscribed topic is kept in preferences (`storeChatTopic`):
+  Chat revoked, signed out, or another account on the phone -> unsubscribe;
+  moved to another store -> unsubscribe the old, subscribe the new.
+  Sign-out (`NotificationService.clearTokenOnSignOut`) unsubscribes first. A
+  failed read changes nothing (retried on the next resume). There is no
+  live listener on the role: a change applies when the app next comes to
+  the foreground (or restarts).
+- **Receiving:** the topic message is the owner's chat push, so it routes the
+  same (`type: orderChat` -> the store's chat inbox, which an employee opens
+  as the store) and shows on `chat_messages` (foreground local copy on
+  Android, iOS presents it itself). The customer is the sender, so the
+  writer is never notified of their own message.
+- **iOS:** topics need the APNs token like any FCM token; a subscribe before
+  it exists fails and is retried at the next check. Nothing else is gated.
+- **Older store builds** never subscribe: their employees get nothing (as
+  before); the owner gets one push either way.
+
+---
+
 ## customer (`customer/`)
 
 ### Receives
@@ -238,7 +294,9 @@ The channel is chosen in `customer/lib/service/push_message.dart`
 | none for a cart order whose scheduled time is still ahead: the order is written with `scheduledNotificationSent: false` and the `scheduledOrderNotifier` Cloud Function pushes the store when it is due (section "Cloud Functions" below) | - | - | - | - |
 | `dinein_placed` | store owner, `users/{vendor.author}.fcmToken`, falls back to `vendors/{id}.fcmToken` | `new_order` (with a ringtone `new_order_rt_<key>`) | `order_alert` | `order_alert.caf` (with a ringtone `order_ringtone_<key>.caf`) |
 | chat to a store (`chat`) | store (`users/{id}`, read when the chat opens) | `chat_messages` | `chat_message` | `chat_message.wav` |
+| chat to a store, to its employees with Chat (`chat`, FCM v1 path only) | topic `store_chat_<vendorID>` (section "Store chat topic") | `chat_messages` | `chat_message` | `chat_message.wav` |
 | chat to a driver (`chat`) | driver (same) | `chat_messages` | `chat_message` | `chat_message.wav` |
+| `carrier_parcel_order` (a carrier parcel placed / its quote paid; data `{type: "carrier_parcel_order", orderId}`) | the company owner (driver app), `users/{carrierOwnerId}.fcmToken` | `driver_jobs` (with a ringtone `driver_jobs_rt_<key>`) | `default` | `default` (with a ringtone `order_ringtone_<key>.caf`) |
 | `booking_placed` (booking, payment, cancel) | provider, `users/{provider.author}.fcmToken` | `01` | `default` | `default` |
 | chat to a provider (`chat`) | provider (same as chat) | `chat_messages` | `chat_message` | `chat_message.wav` |
 | chat to a worker (`chat`) | worker, `providers_workers/{id}.fcmToken` | `chat_messages` | `chat_message` | `chat_message.wav` |
@@ -400,6 +458,9 @@ chatType: "worker", orderId, senderId, senderName}` for chat. Every message also
     incoming-order dialog (above), else that module's job screen.
   - `type` = `orderChat` + `orderId` + `senderId` (customer id): opens that chat; without them, the inbox.
   - `type` = `admin_chat`: Help & Support (drawer 7).
+  - `type` = `carrier_parcel_order` / `carrier_parcel_returned` (a company
+    owner): the owner dashboard's Orders page (`COMPANY-CARRIER-LINK.md`
+    section 5).
   - `type` in the job set above, or `new_order`, `vendor_order`,
     `parcel_order`, `rental_order`, `cab_order`: the home of the driver's module.
   - anything else: opens the app (no crash on missing / non-string keys, or when signed out).
@@ -441,6 +502,14 @@ Every push goes through `driver/lib/constant/send_notification.dart`
 | `rental_completed` | customer (same lookup) | `high_importance_channel` | `default` | `default` |
 | delivery code (`delivery_otp`, own text) | customer, fresh `users/{authorID}` | `high_importance_channel` | `default` | `default` |
 | chat (`chat`) | customer (live `users/{id}`) | `chat_messages` | `chat_message` | `chat_message.wav` |
+| `carrier_parcel_assigned` (company owner -> its driver; data = the parcel-offer data `{type: "parcel", orderId, id, click_action, status: "Driver Pending"}`) | company driver, live `users/{driverId}.fcmToken` | `driver_jobs` (with a ringtone `driver_jobs_rt_<key>`) | `default` | `default` (with a ringtone `order_ringtone_<key>.caf`) |
+| `carrier_parcel_returned` (the driver rejected / timed out a carrier parcel; data `{type: "carrier_parcel_order", orderId}`) | the company owner, live `users/{carrierOwnerId}.fcmToken` | `driver_jobs` (with a ringtone `driver_jobs_rt_<key>`) | `default` | `default` (with a ringtone `order_ringtone_<key>.caf`) |
+| `parcel_picked_up`, `parcel_in_transit`, `parcel_arrived_destination` (parcel tracking steps `Collected` / `In transit` / `Arrived destination`; data `{type: "parcel_order", orderId, parcelStatus}`; replaced fixed English text on 12 Oct) | customer (same lookup), recorded in the Notification Center | `high_importance_channel` | `default` | `default` |
+| `carrier_parcel_picked_up`, `carrier_parcel_delivered` (a carrier / fleet parcel picked up / completed; data `{type: "carrier_parcel_status", orderId}`, a tap opens the owner's Orders) | the company owner (`carrierOwnerId`, else the driver's `ownerId`) | `driver_notifications_channel` | `default` | `default` |
+| `company_cash_collected` (a company driver collected cash on delivery; data `{type: "company_cash_collection", orderId, driverId, amount}`) | the company owner, live `users/{ownerId}.fcmToken` | `driver_notifications_channel` | `default` | `default` |
+| `company_cash_settlement_submitted` (a driver handed a cash settlement in; data `{type: "company_settlement_submitted", settlementId, driverId, amount}`) | the company owner (same) | `driver_notifications_channel` | `default` | `default` |
+| `company_cash_settlement_confirmed` / `company_cash_settlement_rejected` (the owner's answer; data `{type: "company_settlement_confirmed" \| "company_settlement_rejected", settlementId}`) | the driver, live `users/{driverId}.fcmToken` | `driver_notifications_channel` | `default` | `default` |
+| `company_cash_adjustment` (the owner adjusted the driver's cash ledger; data `{type: "company_cash_adjustment", adjustmentId}`) | the driver (same) | `driver_notifications_channel` | `default` | `default` |
 
 Data: `{type, orderId}` (the caller's `type`, e.g. `parcel_order` /
 `rental_order`, else the template type) for order pushes; `{type: "delivery_otp", orderId}`;
@@ -457,6 +526,30 @@ token is only logged: the driver app never writes another user's document; the
 owner's app replaces its token on its next start. Server path
 (`serverPushUrl` = https URL): the same fields as `kind` + `android.channelId` /
 `sound` + `apns.sound`, the driver's Firebase ID token, never the key.
+
+### Company cash templates (placeholders)
+
+The company cash pushes (`driver/lib/services/company_cash_service.dart`)
+used fixed English text with the amount and names in it until 12 Oct; their
+text now comes only from these `dynamic_notification` templates. **No
+template = no push** (logged, as for every other driver push). The app fills
+the `{placeholders}` in `subject` and `message` before sending
+(`PushTemplateText.fill`, `driver/lib/services/push_template_text.dart`):
+the `{name}` style of the email templates, names matched case-insensitively
+(`{driverName}` = `{drivername}`), a placeholder the push has no value for
+left as written. Amounts are formatted (symbol, decimals) in the currency of
+the order's region (`company_cash_collected`) or the driver's region (the
+others; the ledger has no currency of its own). `{companyName}` = the
+company's `companyName`, else the owner account's name. Routing data and
+channel are unchanged. Please create:
+
+| Template `type` | To | Placeholders | Suggested `subject` | Suggested `message` |
+|---|---|---|---|---|
+| `company_cash_collected` | owner | `{driverName}`, `{amount}`, `{orderId}`, `{companyName}` | Cash collected | {driverName} collected {amount} in cash for order #{orderId}. |
+| `company_cash_settlement_submitted` | owner | `{driverName}`, `{amount}`, `{reference}` (settlement id), `{companyName}` | Cash settlement to review | {driverName} handed in a cash settlement of {amount}. Please review it. |
+| `company_cash_settlement_confirmed` | driver | `{driverName}`, `{amount}`, `{reference}`, `{companyName}` | Settlement confirmed | {companyName} confirmed your cash settlement of {amount}. |
+| `company_cash_settlement_rejected` | driver | `{driverName}`, `{amount}`, `{reference}`, `{companyName}`, `{reason}` | Settlement rejected | {companyName} rejected your cash settlement of {amount}: {reason} |
+| `company_cash_adjustment` | driver | `{driverName}`, `{amount}`, `{signedAmount}` (`+` credit / `-` debit, then the amount), `{reference}` (adjustment id), `{companyName}`, `{reason}` | Cash balance adjusted | {companyName} adjusted your cash balance by {signedAmount}. Reason: {reason} |
 
 ---
 
@@ -496,8 +589,10 @@ owner's app replaces its token on its next start. Server path
   never written. `updateUser` / `updateVendor` no longer write the token from
   their in-memory copies. On sign-out it is cleared only where it is still this
   device's token. Senders should read the owner's token fresh from
-  `users/{vendor.author}.fcmToken`. Employees receive no pushes: senders
-  target the owner.
+  `users/{vendor.author}.fcmToken`. Employees receive no token pushes:
+  senders target the owner. An employee whose role allows Chat is subscribed
+  to the topic `store_chat_<vendorID>` and gets the customers' chat messages
+  through it (section "Store chat topic").
 - **Data the store routes on** (all values strings;
   `NotificationRouting.targetFor`):
   - `type` = `order_placed`, `schedule_order`, `scheduled_order_due`,

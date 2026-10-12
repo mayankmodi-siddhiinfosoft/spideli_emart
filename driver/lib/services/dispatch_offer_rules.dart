@@ -15,6 +15,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' show FieldValue, Timestamp
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/models/parcel_order_model.dart';
+import 'package:driver/services/carrier_parcel_rules.dart';
 import 'package:driver/utils/address_format.dart';
 import 'package:driver/utils/parcel_amounts.dart';
 
@@ -456,6 +457,19 @@ abstract final class DispatchOrderRules {
     return _text((proposal as Map)['counteredBy']) == uid;
   }
 
+  /// A parcel the open parcel search may list for [uid]: `Order Placed`,
+  /// naming nobody else (a hand assignment to another driver, or an offer
+  /// the dispatch made meanwhile, is that driver's), not passed on by [uid],
+  /// and not bound to a carrier (its company owner assigns it,
+  /// [CarrierParcelRules.visibleToDriver]). The accept transaction checks the
+  /// same again ([acceptCheck] with `fromOpenSearch`).
+  static bool listedInParcelSearch(Map<String, dynamic>? order, String uid) {
+    if (order == null || uid.isEmpty) return false;
+    if (status(order) != Constant.orderPlaced) return false;
+    if (namesOther(order, uid) || rejectedBy(order, uid)) return false;
+    return CarrierParcelRules.visibleToDriver(order, uid);
+  }
+
   /// Accept preconditions (D2), read inside the accept transaction.
   ///
   /// [heldAsRequest]: the driver's record holds the id as an offer
@@ -469,6 +483,10 @@ abstract final class DispatchOrderRules {
     final bool mine = namesDriver(order, uid);
     if (mine && workingStatuses.contains(s)) return AcceptCheck.held;
     if (namesOther(order, uid) || terminalStatuses.contains(s) || s == Constant.driverRejected) return AcceptCheck.gone;
+    // A carrier parcel is taken only from its company owner's assignment:
+    // never from the open search, a legacy request or a dispatch the owner
+    // did not make (CarrierParcelRules).
+    if (kind == DispatchKind.parcel && CarrierParcelRules.isCarrierBound(order) && !CarrierParcelRules.ownerAssignedTo(order, uid)) return AcceptCheck.gone;
     final bool unnamed = driverNames(order).isEmpty;
     final bool legacyRequest = unnamed && heldAsRequest && !rejectedBy(order, uid);
     if (s == Constant.driverPending) return mine || legacyRequest ? AcceptCheck.ok : AcceptCheck.gone;

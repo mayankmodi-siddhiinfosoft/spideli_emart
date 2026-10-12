@@ -1,3 +1,4 @@
+import 'package:customer/utils/platform_fee_charge.dart';
 import 'package:customer/utils/address_format.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/themes/ds/ds.dart';
@@ -715,8 +716,10 @@ class OnDemandOrderDetailsScreen extends StatelessWidget {
                 : const SizedBox(),
 
             const DsDivider(spacing: DsSpace.xs),
-            if (Constant.platformFeeModel?.enable == true) rowText(context, "Platform fee".tr, Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: RegionService.currencyForRecord(controller.onProviderOrder.value?.regionId))),
-            if (Constant.platformFeeModel?.enable == true) const DsDivider(spacing: DsSpace.xs),
+            // The fee this booking recorded (what is in its total), if any.
+            if (PlatformFeeCharge.parse(controller.onProviderOrder.value?.platformFee) > 0)
+              rowText(context, "Platform fee".tr, Constant.amountShow(amount: PlatformFeeCharge.parse(controller.onProviderOrder.value?.platformFee).toString(), currency: RegionService.currencyForRecord(controller.onProviderOrder.value?.regionId))),
+            if (PlatformFeeCharge.parse(controller.onProviderOrder.value?.platformFee) > 0) const DsDivider(spacing: DsSpace.xs),
             InkWell(
               onTap: () {
                 showBillBifurcationDialog(context, controller);

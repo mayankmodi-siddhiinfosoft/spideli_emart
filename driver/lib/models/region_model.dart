@@ -21,16 +21,42 @@ class RegionModel {
   /// Only an explicit `publish: false` hides a region from lists.
   bool publish;
 
-  RegionModel({this.id, this.name, this.code, this.countryCode, this.currencyId, this.zoneIds = const [], this.publish = true});
+  /// Optional regional parcel pricing defaults (e.g. volumetricDivisor,
+  /// homePickupCharge, pointDropoffCharge, homeDeliveryCharge,
+  /// pointCollectionCharge, intercityFixedTax, intercountryFixedTax).
+  Map<String, dynamic>? parcelPricing;
+
+  RegionModel({
+    this.id,
+    this.name,
+    this.code,
+    this.countryCode,
+    this.currencyId,
+    this.zoneIds = const [],
+    this.publish = true,
+    this.parcelPricing,
+  });
 
   RegionModel.fromJson(Map<String, dynamic> json, {String? docId})
     : zoneIds = _idList(json['zoneIds']),
-      publish = json['publish'] != false {
+      publish = json['publish'] != false,
+      parcelPricing = json['parcelPricing'] is Map ? Map<String, dynamic>.from(json['parcelPricing'] as Map) : null {
     id = (json['id']?.toString().isNotEmpty == true) ? json['id'].toString() : docId;
     name = json['name']?.toString();
     code = json['code']?.toString();
     countryCode = json['countryCode']?.toString();
     currencyId = json['currencyId']?.toString();
+  }
+
+  /// Looks up a numeric default from [parcelPricing], tolerating string numbers.
+  num? parcelPricingValue(String field) {
+    if (parcelPricing == null) return null;
+    final dynamic v = parcelPricing![field];
+    if (v == null) return null;
+    if (v is num) return v;
+    final String s = v.toString().trim().replaceAll(',', '.');
+    if (s.isEmpty || s == 'null') return null;
+    return num.tryParse(s);
   }
 
   static List<String> _idList(dynamic value) {

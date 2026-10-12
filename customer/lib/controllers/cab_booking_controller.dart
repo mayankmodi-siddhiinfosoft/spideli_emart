@@ -43,7 +43,9 @@ import 'package:customer/payment/xendit_model.dart';
 import 'package:customer/payment/xendit_screen.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
+import 'package:customer/utils/platform_fee_charge.dart';
 import 'package:customer/utils/preferences.dart';
+import 'package:customer/utils/wallet_checkout.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart' as flutterMap;
 import 'package:flutter_paypal/flutter_paypal.dart';
@@ -105,6 +107,9 @@ class CabBookingController extends GetxController with CabRideOptions {
   RxDouble totalAmount = 0.0.obs;
   RxDouble orderTaxAmount = 0.0.obs;
   RxDouble platformTaxAmount = 0.0.obs;
+
+  /// The platform fee in [totalAmount] (0 when not charged).
+  RxDouble platformFee = 0.0.obs;
 
   bool isOsmMapReady = false;
 
@@ -493,16 +498,13 @@ class CabBookingController extends GetxController with CabRideOptions {
     for (var taxElement in Constant.orderProductTaxList ?? []) {
       orderTaxAmount.value += Constant.calculateTax(amount: (subTotal.value - discount.value).toString(), taxModel: taxElement);
     }
-
-    /// ---------------- PLATFORM TAX ----------------
-    if (double.parse(Constant.platformFeeModel?.fee ?? '0.0') > 0.0) {
-      for (var taxElement in Constant.platformTaxList ?? []) {
-        platformTaxAmount.value += Constant.calculateTax(amount: Constant.platformFeeModel?.fee ?? '0.0', taxModel: taxElement);
-      }
-    }
+    // The platform fee (and its taxes) the ride recorded when it was booked.
+    final PlatformFeeCharge platformCharge = PlatformFeeCharge.recorded(currentOrder.value.platformFee, currentOrder.value.platformTax);
+    platformFee.value = platformCharge.fee;
+    platformTaxAmount.value = platformCharge.taxAmount();
     taxAmount.value = orderTaxAmount.value + platformTaxAmount.value;
 
-    totalAmount.value = (subTotal.value - discount.value) + double.parse(Constant.platformFeeModel?.fee ?? '0.0') + taxAmount.value;
+    totalAmount.value = (subTotal.value - discount.value) + platformFee.value + taxAmount.value;
     update();
   }
 
@@ -522,16 +524,13 @@ class CabBookingController extends GetxController with CabRideOptions {
     for (var taxElement in Constant.orderProductTaxList ?? []) {
       orderTaxAmount.value += Constant.calculateTax(amount: (subTotal.value - discount.value).toString(), taxModel: taxElement);
     }
-
-    /// ---------------- PLATFORM TAX ----------------
-    if (double.parse(Constant.platformFeeModel?.fee ?? '0.0') > 0.0) {
-      for (var taxElement in Constant.platformTaxList ?? []) {
-        platformTaxAmount.value += Constant.calculateTax(amount: Constant.platformFeeModel?.fee ?? '0.0', taxModel: taxElement);
-      }
-    }
+    // Platform fee and its taxes only while the admin has it enabled.
+    final PlatformFeeCharge platformCharge = PlatformFeeCharge.current();
+    platformFee.value = platformCharge.fee;
+    platformTaxAmount.value = platformCharge.taxAmount();
     taxAmount.value = orderTaxAmount.value + platformTaxAmount.value;
 
-    totalAmount.value = (subTotal.value - discount.value) + double.parse(Constant.platformFeeModel?.fee ?? '0.0') + taxAmount.value;
+    totalAmount.value = (subTotal.value - discount.value) + platformFee.value + taxAmount.value;
 
     update();
   }
@@ -549,11 +548,10 @@ class CabBookingController extends GetxController with CabRideOptions {
       // rides.regionId = the driver's region (the Driver app writes it on accept too).
       currentOrder.value.regionId ??= (driverModel.value.regionId?.isNotEmpty == true ? driverModel.value.regionId : null);
       currentOrder.value.paymentMethod = selectedPaymentMethod.value;
-      userModel.value.inProgressOrderID ??= [];
-      userModel.value.inProgressOrderID!.clear();
-      await FireStoreUtils.updateUser(userModel.value);
 
       if (selectedPaymentMethod.value == PaymentGateway.wallet.name) {
+        // The debit, its wallet row and the ride's paid state in ONE
+        // transaction (WalletCheckout): never money taken on an unpaid ride.
         WalletTransactionModel transactionModel = WalletTransactionModel(
           id: Constant.getUuid(),
           amount: double.parse(totalAmount.toString()),
@@ -568,18 +566,30 @@ class CabBookingController extends GetxController with CabRideOptions {
           paymentStatus: "success",
           serviceType: Constant.parcelServiceType,
         );
-
-        await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-          if (value == true) {
-            await FireStoreUtils.updateUserWallet(amount: "-${totalAmount.value.toString()}", userId: FireStoreUtils.getCurrentUid());
-          }
-        });
+        ShowToastDialog.showLoader("Please wait...".tr);
+        final WalletPayOutcome outcome = await WalletCheckout.pay(
+          commit: () => FireStoreUtils.payFromWallet(
+            amount: totalAmount.value,
+            userId: FireStoreUtils.getCurrentUid(),
+            walletTransaction: transactionModel,
+            orderWrites: [FireStoreUtils.ridePaymentWrite(currentOrder.value)],
+          ),
+        );
+        ShowToastDialog.closeLoader();
+        if (outcome != WalletPayOutcome.paid) {
+          currentOrder.value.paymentStatus = false;
+          ShowToastDialog.showToast(WalletCheckout.failureMessage(outcome).tr);
+          return;
+        }
+      } else {
+        await FireStoreUtils.updateRidePayment(currentOrder.value);
       }
 
-      await FireStoreUtils.updateRidePayment(currentOrder.value).then((value) {
-        ShowToastDialog.showToast("Payment successfully".tr);
-        Get.back();
-      });
+      userModel.value.inProgressOrderID ??= [];
+      userModel.value.inProgressOrderID!.clear();
+      await FireStoreUtils.updateUser(userModel.value);
+      ShowToastDialog.showToast("Payment successfully".tr);
+      Get.back();
     }
   }
 
@@ -636,8 +646,10 @@ class CabBookingController extends GetxController with CabRideOptions {
     orderModel.status = Constant.orderPlaced;
     orderModel.scheduleDateTime = Timestamp.now();
     orderModel.taxSetting = Constant.orderProductTaxList;
-    orderModel.platformFee = Constant.platformFeeModel?.fee;
-    orderModel.platformTax = Constant.platformTaxList;
+    // Recorded as charged: "0.0" / [] while the admin has the fee disabled.
+    final PlatformFeeCharge platformCharge = PlatformFeeCharge.current();
+    orderModel.platformFee = platformCharge.feeField;
+    orderModel.platformTax = platformCharge.taxes;
     // Stops, passengers, instructions, written-only, rider (spec 4.8).
     applyRideOptions(orderModel);
     ShowToastDialog.showLoader("Please wait".tr);

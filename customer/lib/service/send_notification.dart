@@ -90,6 +90,33 @@ class SendNotification {
     return _send(token: token, title: title, body: message, payload: payload, kind: 'chat', recipient: recipient);
   }
 
+  /// A chat message to the FCM [topic] (`store_chat_<vendorID>`: the store's
+  /// employees with the Chat permission, `.claude/PUSH-CHANNELS.md` "Store
+  /// chat topic"). Same title, body, data and channel as
+  /// [sendChatFcmMessage]. FCM v1 path only: the `sendPush` function takes a
+  /// topic from admin accounts only (`.claude/SERVER-PUSH-CONTRACT.md`), so
+  /// with `serverPushUrl` set nothing is sent (logged) and this returns false.
+  static Future<bool> sendChatFcmMessageToTopic(String title, String message, String topic, Map<String, dynamic>? payload, {PushRecipient? recipient}) async {
+    const String kind = 'chat';
+    const String label = 'chat (topic)';
+    if (!PushPayload.isValidTopic(topic)) {
+      log('push "$label" not sent: not a valid FCM topic name');
+      return false;
+    }
+    if (useServerPush) {
+      log('push "$label" not sent: the server push path takes no topics from app accounts');
+      return false;
+    }
+    final PushChannelSpec spec = PushChannels.forRecipient(recipient, kind: kind, orderRingtoneUrl: Constant.orderRingtoneUrl);
+    final Map<String, String> data = PushPayload.stringData(payload, spec: spec);
+    try {
+      return await _sendViaFcm(topic: topic.trim(), title: title, body: message, data: data, spec: spec, label: label);
+    } catch (e) {
+      log('push "$label" failed (${e.runtimeType})');
+      return false;
+    }
+  }
+
   static Future<bool> _send({
     required String token,
     required String title,
@@ -103,9 +130,11 @@ class SendNotification {
       log('push "$label" not sent: the recipient has no FCM token');
       return false;
     }
-    // A new order for a store rings with the admin's CURRENT order sound
-    // when one is set (globalSettings.order_ringtone_url, re-read now).
-    final String ringtoneUrl = PushChannels.isStoreNewOrder(recipient, kind) ? await FireStoreUtils.currentOrderRingtoneUrl() : Constant.orderRingtoneUrl;
+    // A new order for a store (or a job for a driver-app account) rings with
+    // the admin's CURRENT order sound when one is set
+    // (globalSettings.order_ringtone_url, re-read now).
+    final String ringtoneUrl =
+        PushChannels.isStoreNewOrder(recipient, kind) || PushChannels.isDriverJob(recipient, kind) ? await FireStoreUtils.currentOrderRingtoneUrl() : Constant.orderRingtoneUrl;
     final PushChannelSpec spec = PushChannels.forRecipient(recipient, kind: kind, orderRingtoneUrl: ringtoneUrl);
     // A chat's `type` is the caller's (orderChat); `chat` is only the kind.
     final Map<String, String> data = PushPayload.stringData(payload, type: kind == 'chat' ? null : kind, spec: spec);
@@ -128,8 +157,10 @@ class SendNotification {
     }
   }
 
+  /// To [token], or to [topic] when one is given (then [token] is unused).
   static Future<bool> _sendViaFcm({
-    required String token,
+    String token = '',
+    String? topic,
     required String title,
     required String body,
     required Map<String, String> data,
@@ -143,7 +174,10 @@ class SendNotification {
       log('push "$label" not sent: no Firebase project id');
       return false;
     }
-    final String requestBody = jsonEncode({'message': PushPayload.fcmV1Message(token: token, title: title, body: body, data: data, spec: spec)});
+    final Map<String, dynamic> message = topic != null
+        ? PushPayload.fcmV1TopicMessage(topic: topic, title: title, body: body, data: data, spec: spec)
+        : PushPayload.fcmV1Message(token: token, title: title, body: body, data: data, spec: spec);
+    final String requestBody = jsonEncode({'message': message});
     Future<http.Response> post(String accessToken) => http
         .post(PushPayload.fcmSendUri(projectId), headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $accessToken'}, body: requestBody)
         .timeout(_timeout);
@@ -157,7 +191,7 @@ class SendNotification {
 
     final FcmSendError error = FcmSendError.parse(response.statusCode, response.body);
     log('push "$label" refused by FCM: $error');
-    if (error.isDeadToken) {
+    if (topic == null && error.isDeadToken) {
       // The recipient is another account (store, driver, provider, worker):
       // the customer app must not write their user document. Their app saves
       // a fresh token the next time it starts.

@@ -7,8 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../constant/constant.dart';
 import '../../controllers/owner_order_list_controller.dart';
+import '../../services/carrier_parcel_rules.dart';
 import '../../models/cab_order_model.dart';
 import '../../models/order_model.dart';
+import '../../models/parcel_order_model.dart';
 import '../../models/rental_order_model.dart';
 import '../../models/section_model.dart';
 import '../../models/user_model.dart';
@@ -70,6 +72,7 @@ class OwnerOrderListScreen extends StatelessWidget {
                           onChanged: (value) {
                             controller.selectedSection.value = value;
                             controller.selectedDriver.value = null;
+                            controller.fetchOrdersForSection();
                           },
                         ),
 
@@ -123,6 +126,8 @@ class OwnerOrderListScreen extends StatelessWidget {
                         case 'cab-service':
                           return _cabListView(controller);
                         case 'parcel_delivery':
+                        case 'parcel-service':
+                        case 'parcel':
                           return _parcelListView(controller);
                         case 'rental-service':
                           return _rentalListView(controller);
@@ -272,11 +277,12 @@ class OwnerOrderListScreen extends StatelessWidget {
       child: Column(
         children: [
           DsTabBar(
+            scrollable: true,
             onTap: (index) {
               controller
                   .parcelSelectedTab(controller.parcelTabTitles[index]);
             },
-            tabs: controller.parcelTabTitles.toList(),
+            tabs: controller.parcelTabTitles.map((t) => t.tr).toList(),
           ),
           Expanded(
             child: TabBarView(
@@ -306,7 +312,7 @@ class OwnerOrderListScreen extends StatelessWidget {
                                 alignment: AlignmentDirectional.centerStart,
                                 child: DsSectionBadge(section: DsSection.parcel, label: 'Parcel'.tr),
                               ),
-                              trailing: order.status == null ? null : DsStatusChip(label: order.status!, status: order.status),
+                              trailing: order.status == null ? null : DsStatusChip(label: order.status!.tr, status: order.status),
                               subtitle: OrderIdLine(
                                 label: 'Order Id:'.tr,
                                 id: order.id.toString(),
@@ -316,10 +322,12 @@ class OwnerOrderListScreen extends StatelessWidget {
                             ),
                             ..._cancelLine(CancellationSummary.of(status: order.status, info: order.cancellation, cancelled: order.parcelStatus == ParcelTrackingStatus.cancelled)),
                             const DsGap(DsSpace.sm),
-                            _orderDate(
-                              context,
-                              "Order Date:${order.isSchedule == true ? controller.formatDate(order.createdAt!) : controller.formatDate(order.senderPickupDateTime!)}",
-                            ),
+                            // Null-safe: a parcel written by the website / panel may lack either time.
+                            if ((order.isSchedule == true ? order.createdAt : order.senderPickupDateTime ?? order.createdAt) != null)
+                              _orderDate(
+                                context,
+                                "${'Order Date:'.tr}${controller.formatDate((order.isSchedule == true ? order.createdAt : order.senderPickupDateTime ?? order.createdAt)!)}",
+                              ),
                             _contactBlock(
                               context,
                               kind: DsStopKind.pickup,
@@ -337,6 +345,10 @@ class OwnerOrderListScreen extends StatelessWidget {
                               address: AddressFormat.clean(order.receiver?.address),
                               phone: order.receiverPhoneDisplay,
                             ),
+                            const DsGap(DsSpace.md),
+                            // The company's carrier parcels: who it is with, and the owner's
+                            // Assign / Reassign (CarrierParcelRules).
+                            _parcelDriverRow(context, controller, order),
                           ],
                         ),
                       ),
@@ -670,6 +682,170 @@ class OwnerOrderListScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _parcelDriverRow(BuildContext context, OwnerOrderListController controller, ParcelOrderModel order) {
+    final UserModel? driver = controller.driverOf(order);
+    final bool hasDriver = (order.driverId ?? '').isNotEmpty;
+    final bool waitingForDriver = CarrierParcelRules.awaitsDriver(status: order.status, driverId: order.driverId);
+    final String name = (driver?.fullName() ?? '').trim();
+    final String label = !hasDriver
+        ? "Waiting for driver assignment".tr
+        : (waitingForDriver ? "Waiting for @name to accept" : "Driver: @name").trParams({'name': name});
+    final bool canAssign = controller.canAssign(order);
+    if (!canAssign && !hasDriver) return const SizedBox.shrink();
+    return Row(
+      children: [
+        Expanded(child: Text(label, style: context.dsText.bodySm.w600)),
+        if (canAssign)
+          DsButton.primary(
+            label: hasDriver ? "Reassign".tr : "Assign Driver".tr,
+            size: DsButtonSize.sm,
+            onPressed: () => _showAssignDriverDialog(context, controller, order),
+          ),
+      ],
+    );
+  }
+
+  void _showAssignDriverDialog(BuildContext context, OwnerOrderListController controller, ParcelOrderModel order) {
+    final List<UserModel> availableDrivers = controller.assignableDrivers;
+    if (availableDrivers.isEmpty) {
+      Get.dialog(DsDialog(
+        title: "No drivers".tr,
+        message: "Your company has no driver to assign. Add a driver first.".tr,
+        icon: Icons.warning_amber_rounded,
+        tone: DsTone.warning,
+        primaryLabel: "OK".tr,
+        onPrimary: () => Get.back(),
+      ));
+      return;
+    }
+
+    final searchController = TextEditingController();
+    final List<String> rejectedBy = [for (final dynamic id in order.rejectedByDrivers ?? const []) id.toString()];
+
+    Get.bottomSheet(
+      StatefulBuilder(
+        builder: (context, setState) {
+          final query = searchController.text.trim().toLowerCase();
+          final displayDrivers = query.isEmpty
+              ? availableDrivers
+              : availableDrivers.where((d) {
+                  final name = (d.fullName()).toLowerCase();
+                  final phone = (d.phoneNumber ?? '').toLowerCase();
+                  return name.contains(query) || phone.contains(query);
+                }).toList();
+
+          return Container(
+            padding: const EdgeInsets.all(DsSpace.lg),
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.75,
+            ),
+            decoration: BoxDecoration(
+              color: context.dsColors.surfaceRaised,
+              borderRadius: DsRadius.sheetTop,
+            ),
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: context.dsColors.borderStrong,
+                        borderRadius: DsRadius.brPill,
+                      ),
+                    ),
+                  ),
+                  const DsGap(DsSpace.md),
+                  Text(
+                    "${'Assign Driver'.tr} · ${order.trackingNumber ?? order.id ?? ''}",
+                    style: context.dsText.title,
+                  ),
+                  const DsGap(DsSpace.sm),
+                  Text(
+                    "The driver gets the order and accepts or rejects it. A rejected order comes back to you.".tr,
+                    style: context.dsText.bodySecondary,
+                  ),
+                  const DsGap(DsSpace.md),
+                  // Driver search field
+                  TextField(
+                    controller: searchController,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: "Search by name or phone...".tr,
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                searchController.clear();
+                                setState(() {});
+                              },
+                            )
+                          : null,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      isDense: true,
+                    ),
+                  ),
+                  const DsGap(DsSpace.md),
+                  if (displayDrivers.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: DsSpace.xl),
+                      child: Center(
+                        child: Text(
+                          "No drivers found".tr,
+                          style: context.dsText.bodySecondary,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    )
+                  else
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: displayDrivers.length,
+                        separatorBuilder: (_, __) => const DsDivider(),
+                        itemBuilder: (context, i) {
+                          final driver = displayDrivers[i];
+                          final bool isCurrent = order.driverId == driver.id;
+                          final bool online = driver.isActive == true;
+                          final List<String> notes = [
+                            online ? "Online".tr : "Offline".tr,
+                            if (rejectedBy.contains(driver.id)) "Rejected this order before".tr,
+                            if ((driver.phoneNumber ?? '').isNotEmpty) driver.phoneNumber!,
+                          ];
+                          return DsListTile(
+                            title: driver.fullName(),
+                            subtitle: notes.join(' · '),
+                            trailing: isCurrent
+                                ? DsBadge(label: "Assigned".tr, tone: DsTone.brand, small: true)
+                                : DsButton.primary(
+                                    label: "Assign".tr,
+                                    size: DsButtonSize.sm,
+                                    onPressed: () async {
+                                      Get.back();
+                                      await controller.assignParcelOrderToDriver(order, driver);
+                                    },
+                                  ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+      isScrollControlled: true,
     );
   }
 }

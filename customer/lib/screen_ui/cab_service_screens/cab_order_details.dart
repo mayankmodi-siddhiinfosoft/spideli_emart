@@ -1,3 +1,4 @@
+import 'package:customer/utils/platform_fee_charge.dart';
 import 'package:customer/utils/booking_status_tabs.dart';
 import 'package:customer/utils/address_format.dart';
 import 'package:customer/widget/cancellation_info_view.dart';
@@ -466,10 +467,11 @@ class _BillCard extends StatelessWidget {
               ),
 
               // Tax List
-              if (Constant.platformFeeModel?.enable == true)
+              // The fee this ride recorded (what is in its total), if any.
+              if (PlatformFeeCharge.parse(controller.cabOrder.value.platformFee) > 0)
                 CabBillRow(
                   label: "Platform fee".tr,
-                  value: Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: currency),
+                  value: Constant.amountShow(amount: PlatformFeeCharge.parse(controller.cabOrder.value.platformFee).toString(), currency: currency),
                 ),
 
               CabBillRow(

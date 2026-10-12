@@ -39,16 +39,27 @@ class ParcelLabels {
 
   static String deliveryMethod(String? method) => method == ParcelShipping.pickupPoint ? 'Collection at a pickup point'.tr : 'Home delivery'.tr;
 
-  static Map<String, dynamic> breakdownOf(ParcelQuote q, String? currencyCode) => {
-    'carrierPrice': q.carrierPrice,
-    'extraKgCharge': q.extraKgCharge,
-    'fixedTax': q.fixedTax,
-    'commission': q.commission,
-    'options': q.options,
-    'total': q.total,
-    'currency': currencyCode ?? '',
-    'source': q.source,
-  };
+  /// The `priceBreakdown` of an option, as it will be saved.
+  static Map<String, dynamic> breakdownOf(ParcelQuote q, String? currencyCode) => q.breakdown(currency: currencyCode ?? '');
+
+  /// The pickup charge's label for [method] (home pickup / drop-off point).
+  static String pickupChargeLabel(String? method) => method == ParcelShipping.pickupPoint ? 'Pickup point drop-off charge'.tr : 'Home pickup charge'.tr;
+
+  /// The delivery charge's label for [method] (home delivery / collection).
+  static String deliveryChargeLabel(String? method) => method == ParcelShipping.pickupPoint ? 'Pickup point collection charge'.tr : 'Home delivery charge'.tr;
+
+  /// The door / pickup-point charge lines of [b] (`priceBreakdown`): the
+  /// pickup and delivery charges, or only `options` on an order that does not
+  /// carry them apart. Zero lines are skipped.
+  static List<MapEntry<String, double>> optionLines(Map<String, dynamic>? b, {String? pickupMethod, String? deliveryMethod}) {
+    if (b == null) return const [];
+    final double pickup = n(b['pickupCharge']), delivery = n(b['deliveryCharge']), options = n(b['options']);
+    if (pickup <= 0 && delivery <= 0) return [if (options > 0) MapEntry('Options'.tr, options)];
+    return [
+      if (pickup > 0) MapEntry(pickupChargeLabel(pickupMethod), pickup),
+      if (delivery > 0) MapEntry(deliveryChargeLabel(deliveryMethod), delivery),
+    ];
+  }
 
   static double n(dynamic v) => v is num ? v.toDouble() : (double.tryParse(v?.toString() ?? '') ?? 0);
 
@@ -63,12 +74,12 @@ class ParcelLabels {
   }
 
   /// Lines of `priceBreakdown` (zero lines skipped except the carrier price).
-  static List<MapEntry<String, double>> breakdownLines(Map<String, dynamic> b) => [
+  static List<MapEntry<String, double>> breakdownLines(Map<String, dynamic> b, {String? pickupMethod, String? deliveryMethod}) => [
     MapEntry('Carrier price'.tr, n(b['carrierPrice'])),
     if (n(b['extraKgCharge']) > 0) MapEntry('Extra kg'.tr, n(b['extraKgCharge'])),
+    ...optionLines(b, pickupMethod: pickupMethod, deliveryMethod: deliveryMethod),
     if (n(b['fixedTax']) > 0) MapEntry('Fixed tax'.tr, n(b['fixedTax'])),
     if (n(b['commission']) > 0) MapEntry('Commission'.tr, n(b['commission'])),
-    if (n(b['options']) > 0) MapEntry('Options'.tr, n(b['options'])),
   ];
 }
 
@@ -119,12 +130,14 @@ class ParcelBreakdownCard extends StatelessWidget {
   final CurrencyModel? currency;
   final Map<String, dynamic> breakdown;
   final String? title;
+  final String? pickupMethod;
+  final String? deliveryMethod;
 
-  const ParcelBreakdownCard({super.key, required this.currency, required this.breakdown, this.title});
+  const ParcelBreakdownCard({super.key, required this.currency, required this.breakdown, this.title, this.pickupMethod, this.deliveryMethod});
 
   @override
   Widget build(BuildContext context) {
-    final lines = ParcelLabels.breakdownLines(breakdown);
+    final lines = ParcelLabels.breakdownLines(breakdown, pickupMethod: pickupMethod, deliveryMethod: deliveryMethod);
     final double subtotal = lines.fold(0.0, (a, e) => a + e.value);
     return ParcelCard(
       child: Column(

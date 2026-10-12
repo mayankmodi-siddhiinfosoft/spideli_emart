@@ -1,3 +1,4 @@
+import 'package:customer/utils/wallet_checkout.dart';
 import 'package:customer/models/currency_model.dart';
 import 'package:customer/utils/region_service.dart';
 import 'dart:async';
@@ -271,6 +272,8 @@ class RentalOrderDetailsController extends GetxController {
       // rental_orders.regionId = the driver's region (the Driver app writes it too).
       order.value.regionId ??= (driverUser.value?.regionId?.isNotEmpty == true ? driverUser.value?.regionId : null);
       if (selectedPaymentMethod.value == PaymentGateway.wallet.name) {
+        // The debit, its wallet row and the booking's paid state in ONE
+        // transaction (WalletCheckout): never money taken on an unpaid booking.
         WalletTransactionModel transactionModel = WalletTransactionModel(
           id: Constant.getUuid(),
           amount: double.parse(totalAmount.toString()),
@@ -285,19 +288,27 @@ class RentalOrderDetailsController extends GetxController {
           paymentStatus: "success",
           serviceType: Constant.parcelServiceType,
         );
-
-        await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-          if (value == true) {
-            await FireStoreUtils.updateUserWallet(amount: "-${totalAmount.toString()}", userId: FireStoreUtils.getCurrentUid());
-          }
-        });
+        ShowToastDialog.showLoader("Please wait...".tr);
+        final WalletPayOutcome outcome = await WalletCheckout.pay(
+          commit: () => FireStoreUtils.payFromWallet(
+            amount: totalAmount.value,
+            userId: FireStoreUtils.getCurrentUid(),
+            walletTransaction: transactionModel,
+            orderWrites: [FireStoreUtils.rentalPaymentWrite(order.value)],
+          ),
+        );
+        ShowToastDialog.closeLoader();
+        if (outcome != WalletPayOutcome.paid) {
+          order.value.paymentStatus = false;
+          ShowToastDialog.showToast(WalletCheckout.failureMessage(outcome).tr);
+          return;
+        }
+      } else {
+        await FireStoreUtils.updateRentalPayment(order.value);
       }
-
-      await FireStoreUtils.updateRentalPayment(order.value).then((value) {
-        ShowToastDialog.showToast("Payment successfully".tr);
-        Get.back();
-        Get.back();
-      });
+      ShowToastDialog.showToast("Payment successfully".tr);
+      Get.back();
+      Get.back();
     }
   }
 

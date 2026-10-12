@@ -188,8 +188,10 @@ class OnDemandOrderDetailsController extends GetxController {
       for (var taxElement in order.taxModel ?? []) {
         orderTaxAmount += Constant.calculateTax(amount: (price - discountAmount).toString(), taxModel: taxElement);
       }
+      // The platform fee's taxes the booking recorded (and was charged), not
+      // the current section's list.
       if (double.parse(order.platformFee ?? '0.0') > 0.0) {
-        for (var taxElement in Constant.platformTaxList ?? []) {
+        for (var taxElement in order.platformTax ?? []) {
           platformTaxAmount += Constant.calculateTax(amount: order.platformFee ?? '0.0', taxModel: taxElement);
         }
       }

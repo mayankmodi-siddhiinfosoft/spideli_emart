@@ -29,6 +29,7 @@ class ParcelAmounts {
   final double platformFee;
   final double platformTax;
   final double scopeTax;
+  final double options;
   final double smsCharge;
 
   const ParcelAmounts({
@@ -38,6 +39,7 @@ class ParcelAmounts {
     this.platformFee = 0,
     this.platformTax = 0,
     this.scopeTax = 0,
+    this.options = 0,
     this.smsCharge = 0,
   });
 
@@ -56,6 +58,7 @@ class ParcelAmounts {
       }
     }
     final double scope = (order.parcelScopeTax ?? 0).toDouble();
+    final double opts = order.optionsAmount;
     final ParcelAmounts lines = ParcelAmounts(
       subTotal: sub,
       discount: disc,
@@ -63,6 +66,7 @@ class ParcelAmounts {
       platformFee: fee > 0 ? fee : 0,
       platformTax: platformTax,
       scopeTax: scope.isFinite && scope > 0 ? scope : 0,
+      options: opts.isFinite && opts > 0 ? opts : 0,
       smsCharge: order.smsChargeAmount.isFinite && order.smsChargeAmount > 0 ? order.smsChargeAmount : 0,
     );
     return platformTaxCharged(lines, order.chargedTotal) ? lines : lines.withoutPlatformTax();
@@ -82,6 +86,7 @@ class ParcelAmounts {
         orderTax: orderTax,
         platformFee: platformFee,
         scopeTax: scopeTax,
+        options: options,
         smsCharge: smsCharge,
       );
 
@@ -89,12 +94,37 @@ class ParcelAmounts {
   double get taxes => orderTax + platformTax;
 
   /// What the customer pays (and the driver collects on a cash parcel).
-  double get total => subTotal - discount + orderTax + platformFee + platformTax + scopeTax + smsCharge;
+  double get total => subTotal - discount + orderTax + platformFee + platformTax + scopeTax + options + smsCharge;
 
   /// The part of a cash parcel's total that belongs to the platform, never
   /// to the driver: the platform fee and its taxes, the fixed tax and the
   /// receiver-SMS fee. Debited from the driver's wallet on completion.
   double get platformShareOfCash => platformFee + platformTax + scopeTax + smsCharge;
+
+  /// What a parcel paid ONLINE credits to the courier's wallet (the driver,
+  /// or a company driver's company) before the commission:
+  /// subTotal - discount + the order taxes + the door / pickup-point options.
+  /// The platform fee and its taxes, the fixed tax and the SMS fee stay with
+  /// the platform (`ParcelTrackingService._updateWalletAmount`).
+  double get onlineCredit => subTotal - discount + orderTax + options;
+
+  /// What the courier keeps of this parcel after [commission], whatever the
+  /// payment: online it is credited [onlineCredit] and debited the
+  /// commission; in cash it holds [total] and is debited the commission and
+  /// [platformShareOfCash]. Both come to the same number, which the company
+  /// reports show as "Net Company Revenue".
+  double courierNet(double commission) => total - platformShareOfCash - commission;
+
+  /// The wallet a parcel's earnings and debits go to: the company of a
+  /// company driver (`ownerId` of the order's `driver` snapshot, else of the
+  /// signed-in driver completing it - a panel-assigned parcel may have no
+  /// snapshot), else the driver itself.
+  static String walletUserFor({String? snapshotOwnerId, String? myOwnerId, required String myUid}) {
+    final String snap = (snapshotOwnerId ?? '').trim();
+    if (snap.isNotEmpty) return snap;
+    final String mine = (myOwnerId ?? '').trim();
+    return mine.isNotEmpty ? mine : myUid;
+  }
 
   /// [total] as text with [digits] decimals (the currency's).
   String totalText(int digits) => total.toStringAsFixed(digits);

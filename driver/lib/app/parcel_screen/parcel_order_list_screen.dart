@@ -78,7 +78,7 @@ class ParcelOrderListScreen extends StatelessWidget {
                                         child: _ParcelHistoryCard(
                                           order: order,
                                           dateLabel:
-                                              "Order Date:${order.isSchedule == true ? controller.formatDate(order.createdAt!) : controller.formatDate(order.senderPickupDateTime!)}",
+                                              "${'Order Date:'.tr}${order.orderDateStamp == null ? '-' : controller.formatDate(order.orderDateStamp!)}",
                                           sectionName: Constant.sectionNameFromId(order.sectionId),
                                           onTap: () {
                                             Get.to(() => const ParcelOrderDetails(), arguments: order);
@@ -137,7 +137,7 @@ class _ParcelHistoryCard extends StatelessWidget {
                 copyable: false,
                 copiedMessage: "Order ID copied to clipboard".tr,
               ),
-              trailing: order.status == null ? null : DsStatusChip(label: order.status!, status: order.status),
+              trailing: order.status == null ? null : DsStatusChip(label: order.status!.tr, status: order.status),
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

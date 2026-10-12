@@ -1,5 +1,9 @@
 import 'package:customer/models/currency_model.dart';
 import 'package:customer/utils/region_service.dart';
+import 'package:customer/service/send_notification.dart';
+import 'package:customer/service/push_message.dart';
+import 'package:customer/utils/carrier_owner_link.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
@@ -49,6 +53,8 @@ import '../service/fire_store_utils.dart';
 import '../service/parcel_shipping_service.dart';
 import '../service/parcel_receiver_sms.dart';
 import '../utils/parcel_pricing.dart';
+import '../utils/platform_fee_charge.dart';
+import '../utils/wallet_checkout.dart';
 import '../themes/app_them_data.dart';
 import '../themes/show_toast_dialog.dart';
 import '../utils/preferences.dart';
@@ -88,8 +94,21 @@ class ParcelOrderConfirmationController extends GetxController {
   /// Cash (cod) is not offered when either leg goes through a pickup point.
   bool get cashAllowed => !parcelOrder.value.usesPickupPoint;
 
+  /// The platform fee charged at this checkout: the section's fee while the
+  /// admin has it enabled, else 0 (it used to be added to the total even when
+  /// disabled, with no "Platform fee" line shown). What is written on the
+  /// order (`platformFee`, `platformTax`) is exactly what was charged, so the
+  /// receipt, the refund and the Driver app's cash total read the same.
+  double get platformFee => PlatformFeeCharge.current().fee;
+
   /// Fixed scope tax, added to the payable total after taxes / coupon.
   double get scopeTax => parcelOrder.value.scopeTaxAmount;
+
+  /// Door / pickup-point charges (priceBreakdown.options = pickupCharge +
+  /// deliveryCharge), added to the payable total on top of subTotal.
+  double get optionsCharge => isQuotePayment ? 0 : parcelOrder.value.optionsAmount;
+  double get pickupCharge => isQuotePayment ? 0 : parcelOrder.value.pickupChargeAmount;
+  double get deliveryCharge => isQuotePayment ? 0 : parcelOrder.value.deliveryChargeAmount;
 
   // ---- Point 54: "Notify the receiver by SMS" (BUG-REPORT-01-APP.md §4) ----
 
@@ -200,17 +219,46 @@ class ParcelOrderConfirmationController extends GetxController {
     }
 
     /// ---------------- PLATFORM TAX ----------------
-    if (Constant.platformFeeModel?.enable == true && double.parse(Constant.platformFeeModel?.fee ?? '0.0') > 0.0) {
+    // Only on a platform fee that is actually charged (enabled and > 0).
+    final double fee = platformFee;
+    if (fee > 0) {
       for (var taxElement in Constant.platformTaxList ?? []) {
-        platformTaxAmount.value += Constant.calculateTax(amount: Constant.platformFeeModel?.fee ?? '0.0', taxModel: taxElement);
+        platformTaxAmount.value += Constant.calculateTax(amount: fee.toString(), taxModel: taxElement);
       }
     }
 
     taxAmount.value = orderTaxAmount.value + platformTaxAmount.value;
 
-    // The receiver-SMS fee (point 54) sits with the scope tax: outside VAT,
-    // coupons and the driver's credit.
-    totalAmount.value = (subTotal.value - discount.value) + double.parse(Constant.platformFeeModel?.fee ?? '0.0') + taxAmount.value + scopeTax + smsCharge;
+    // total = subTotal (the base price) - coupon + platform fee + taxes
+    //       + fixedTax + options (pickup + delivery charge) + receiver SMS:
+    // app-spec-parcel-pricing step 7. The last three stay outside subTotal,
+    // so VAT, coupons and the driver's credit never apply to them.
+    totalAmount.value = (subTotal.value - discount.value) +
+        fee +
+        taxAmount.value +
+        scopeTax +
+        optionsCharge +
+        smsCharge;
+  }
+
+  /// The templated `carrier_parcel_order` push to the company owner of a
+  /// carrier parcel (live `users/{ownerId}.fcmToken`), on the driver app's
+  /// job channel; a tap opens the owner's Orders list. Text only from the
+  /// `dynamic_notification` template. Never throws.
+  Future<void> _notifyCarrierOwner(ParcelOrderModel order) async {
+    final String ownerId = (order.carrierOwnerId ?? '').trim();
+    if (ownerId.isEmpty || (order.id ?? '').isEmpty) return;
+    try {
+      final UserModel? owner = await FireStoreUtils.getUserProfile(ownerId);
+      await SendNotification.sendFcmMessage(
+        CarrierOwnerLink.orderTemplate,
+        (owner?.fcmToken ?? '').trim(),
+        {'type': CarrierOwnerLink.ownerPushType, 'orderId': order.id},
+        recipient: PushRecipient.driver,
+      );
+    } catch (e) {
+      log("Carrier owner push failed: $e");
+    }
   }
 
   RxList<CouponModel> couponList = <CouponModel>[].obs;
@@ -234,6 +282,7 @@ class ParcelOrderConfirmationController extends GetxController {
     // Captured once: `status` changes below and quoteReadyToPay reads it.
     final bool quotePayment = isQuotePayment;
     final bool quoteRequest = isQuoteRequest;
+    final String? statusBefore = parcelOrder.value.status;
     if (!quoteRequest && !cashAllowed && (paymentBy.value == "Receiver" || selectedPaymentMethod.value == PaymentGateway.cod.name)) {
       ShowToastDialog.showToast("Cash is not available for pickup-point parcels. Please choose another payment method.".tr);
       return;
@@ -251,6 +300,9 @@ class ParcelOrderConfirmationController extends GetxController {
 
       if (parcelImages.isNotEmpty || !quotePayment) parcelOrder.value.parcelImages = parcelImages;
       parcelOrder.value.discount = discount.value.toString();
+      // The platform fee and its taxes as charged (none when the fee is off).
+      parcelOrder.value.platformFee = platformFee.toString();
+      parcelOrder.value.platformTax = PlatformFeeCharge.current().taxes;
       parcelOrder.value.discountType = selectedCouponModel.value.discountType.toString();
       parcelOrder.value.discountLabel = selectedCouponModel.value.code.toString();
       // Commission already added to the price (commissionAsExtra): record that
@@ -266,7 +318,21 @@ class ParcelOrderConfirmationController extends GetxController {
         parcelOrder.value.adminCommissionType = Constant.sectionConstantModel?.adminCommision?.commissionType;
       }
       parcelOrder.value.status = quoteRequest ? ParcelShipping.quoteRequestedStatus : Constant.orderPlaced;
-      if (quotePayment) parcelOrder.value.sendToDriver = parcelOrder.value.isSchedule != true;
+      final bool isCarrierOrder = CarrierOwnerLink.isCarrierOrder(carrierId: parcelOrder.value.carrierId, carrierOwnerId: parcelOrder.value.carrierOwnerId);
+      if (isCarrierOrder) {
+        // A carrier parcel goes to its company owner, who assigns one of the
+        // company's drivers: no driver, never sent to the dispatch
+        // (.claude/COMPANY-CARRIER-LINK.md section 5). The owner is the
+        // company account linked to the carrier (users.carrierId), resolved
+        // now on every path (new, scheduled, quote request, quote payment).
+        parcelOrder.value.sendToDriver = false;
+        parcelOrder.value.driverId = null;
+        parcelOrder.value.driver = null;
+        final String owner = await ParcelShippingService.carrierOwnerId(parcelOrder.value.carrierId, carrierDocOwnerId: parcelOrder.value.carrierOwnerId);
+        if (owner.isNotEmpty) parcelOrder.value.carrierOwnerId = owner;
+      } else if (quotePayment) {
+        parcelOrder.value.sendToDriver = parcelOrder.value.isSchedule != true;
+      }
       parcelOrder.value.createdAt ??= Timestamp.now();
       parcelOrder.value.author = userModel.value;
       parcelOrder.value.authorID = FireStoreUtils.getCurrentUid();
@@ -300,6 +366,8 @@ class ParcelOrderConfirmationController extends GetxController {
           'fixedTax': 0,
           'commission': 0,
           'options': 0,
+          'pickupCharge': 0,
+          'deliveryCharge': 0,
           'total': totalAmount.value,
           // Point 54: the receiver-SMS fee inside `total`.
           'smsCharge': smsCharge,
@@ -307,7 +375,7 @@ class ParcelOrderConfirmationController extends GetxController {
           'source': ParcelPriceSource.manual,
         };
       } else if (!quoteRequest) {
-        order.priceBreakdown ??= {'carrierPrice': subTotal.value, 'extraKgCharge': 0, 'fixedTax': scopeTax, 'commission': 0, 'options': 0, 'source': ParcelPriceSource.defaultSetting};
+        order.priceBreakdown ??= ParcelQuote(carrierPrice: subTotal.value, fixedTax: scopeTax, source: ParcelPriceSource.defaultSetting).breakdown(currency: parcelCurrency?.code ?? '');
         // total = what the customer pays (after coupon, platform fee and taxes).
         order.priceBreakdown!['total'] = totalAmount.value;
         // Point 54: the receiver-SMS fee inside `total`, so readers can account for it.
@@ -323,38 +391,64 @@ class ParcelOrderConfirmationController extends GetxController {
           ParcelShippingService.event(ParcelShipping.paid),
       ];
 
-      if (!quoteRequest && paymentBy.value != "Receiver") {
-        if (selectedPaymentMethod.value == PaymentGateway.wallet.name) {
-          WalletTransactionModel transactionModel = WalletTransactionModel(
-            id: Constant.getUuid(),
-            amount: double.parse(totalAmount.value.toString()),
-            date: Timestamp.now(),
-            paymentMethod: PaymentGateway.wallet.name,
-            transactionUser: "customer",
-            userId: FireStoreUtils.getCurrentUid(),
-            isTopup: false,
-            orderId: parcelOrder.value.id,
-            regionId: parcelOrder.value.regionId,
-            note: "Parcel Amount debited",
-            paymentStatus: "success",
-            serviceType: Constant.parcelServiceType,
-          );
-
-          await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-            if (value == true) {
-              await FireStoreUtils.updateUserWallet(amount: "-${totalAmount.value.toString()}", userId: FireStoreUtils.getCurrentUid());
-            }
-          });
-        }
-      }
-
-      await ParcelShippingService.save(parcelOrder.value, events, isNew: isNew).then((value) async {
+      // After the order is saved (and, paid by wallet, paid): the customer's
+      // region, the company owner of a carrier parcel, the success screen and
+      // the booking email. Never before the money and the order are in.
+      Future<void> afterSaved() async {
         await FireStoreUtils.addCustomerRegion(parcelOrder.value.regionId);
+
+        // A carrier parcel that is now an order (not a quote request): its
+        // company owner is told to assign a driver.
+        if (isCarrierOrder && !quoteRequest) unawaited(_notifyCarrierOwner(parcelOrder.value));
+
         ShowToastDialog.closeLoader();
         ShowToastDialog.showToast(quoteRequest ? "Quote requested".tr : "Order placed successfully".tr);
         Get.offAll(() => OrderSuccessfullyPlaced(), arguments: {'parcelOrder': parcelOrder.value});
         if (isNew) await FireStoreUtils.sendParcelBookEmail(orderModel: parcelOrder.value);
-      });
+      }
+
+      if (!quoteRequest && paymentBy.value != "Receiver" && selectedPaymentMethod.value == PaymentGateway.wallet.name) {
+        // Wallet: the debit, its wallet row and the order (with its "Paid"
+        // event) in ONE transaction (WalletCheckout) - the money is never
+        // taken without the saved order, and nothing (dispatch, owner push,
+        // email) starts before both are in.
+        WalletTransactionModel transactionModel = WalletTransactionModel(
+          id: Constant.getUuid(),
+          amount: double.parse(totalAmount.value.toString()),
+          date: Timestamp.now(),
+          paymentMethod: PaymentGateway.wallet.name,
+          transactionUser: "customer",
+          userId: FireStoreUtils.getCurrentUid(),
+          isTopup: false,
+          orderId: parcelOrder.value.id,
+          regionId: parcelOrder.value.regionId,
+          note: "Parcel Amount debited",
+          paymentStatus: "success",
+          serviceType: Constant.parcelServiceType,
+        );
+        final WalletPayOutcome outcome = await WalletCheckout.pay(
+          commit: () => FireStoreUtils.payFromWallet(
+            amount: totalAmount.value,
+            userId: FireStoreUtils.getCurrentUid(),
+            walletTransaction: transactionModel,
+            orderWrites: ParcelShippingService.saveWrites(parcelOrder.value, events, isNew: isNew),
+          ),
+          afterPaid: () async {
+            ParcelShippingService.applySaved(parcelOrder.value, events, isNew: isNew);
+            await afterSaved();
+          },
+        );
+        if (outcome != WalletPayOutcome.paid) {
+          // Nothing was written: the screen stays as it was for a retry.
+          parcelOrder.value.status = statusBefore;
+          ShowToastDialog.closeLoader();
+          ShowToastDialog.showToast(WalletCheckout.failureMessage(outcome).tr);
+        }
+        return;
+      }
+
+      await ParcelShippingService.save(parcelOrder.value, events, isNew: isNew);
+      await afterSaved();
     } catch (e) {
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast("Something went wrong. Please try again.".tr);

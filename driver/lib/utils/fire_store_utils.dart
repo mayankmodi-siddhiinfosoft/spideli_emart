@@ -1905,16 +1905,60 @@ class FireStoreUtils {
   static Future<List<ParcelOrderModel>> getParcelOrdersBySection({
     required String sectionId,
     required List<String> driverIds,
+    String? ownerId,
   }) async {
-    List<ParcelOrderModel> allOrders = [];
-    for (final did in driverIds) {
-      Query query = fireStore.collection(CollectionName.parcelOrders).where('driverId', isEqualTo: did).where('sectionId', isEqualTo: sectionId).orderBy('createdAt', descending: true);
-      QuerySnapshot snapshot = await query.get();
-      allOrders.addAll(
-        snapshot.docs.map((doc) => ParcelOrderModel.fromJson(doc.data() as Map<String, dynamic>)),
-      );
+    final Map<String, ParcelOrderModel> ordersMap = {};
+    final String myUid = ownerId ?? getCurrentUid();
+
+    // 1. Orders assigned or booked specifically for this company owner / carrier
+    // Try multiple queries defensively so composite index absence never swallows orders
+    final List<Query> ownerQueries = [
+      fireStore.collection(CollectionName.parcelOrders).where('carrierOwnerId', isEqualTo: myUid),
+      fireStore.collection(CollectionName.parcelOrders).where('companyOwnerId', isEqualTo: myUid),
+    ];
+
+    // If owner has a linked carrierId, also query by carrierId directly!
+    final String myCarrierId = (Constant.userModel?.carrierId ?? '').trim();
+    if (myCarrierId.isNotEmpty) {
+      ownerQueries.add(fireStore.collection(CollectionName.parcelOrders).where('carrierId', isEqualTo: myCarrierId));
     }
-    return allOrders;
+
+    for (final q in ownerQueries) {
+      try {
+        final snap = await q.get();
+        for (final doc in snap.docs) {
+          final order = ParcelOrderModel.fromJson(doc.data() as Map<String, dynamic>);
+          if (order.id != null) ordersMap[order.id!] = order;
+        }
+      } catch (e) {
+        log("Query parcel orders owner query: $e");
+      }
+    }
+
+    // 2. Orders assigned to drivers of this fleet
+    for (final did in driverIds) {
+      try {
+        Query query = fireStore
+            .collection(CollectionName.parcelOrders)
+            .where('driverId', isEqualTo: did)
+            .orderBy('createdAt', descending: true);
+        QuerySnapshot snapshot = await query.get();
+        for (final doc in snapshot.docs) {
+          final order = ParcelOrderModel.fromJson(doc.data() as Map<String, dynamic>);
+          if (order.id != null) ordersMap[order.id!] = order;
+        }
+      } catch (e) {
+        log("Query parcel orders for driver $did: $e");
+      }
+    }
+
+    final List<ParcelOrderModel> list = ordersMap.values.toList();
+    list.sort((a, b) {
+      final tA = a.createdAt?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final tB = b.createdAt?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return tB.compareTo(tA);
+    });
+    return list;
   }
 
   static Future<List<RentalOrderModel>> getRentalOrdersBySection({

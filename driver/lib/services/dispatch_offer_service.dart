@@ -7,6 +7,8 @@ import 'package:driver/constant/send_notification.dart';
 import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/assigned_delivery_orders.dart';
+import 'package:driver/services/carrier_parcel_rules.dart';
+import 'package:driver/services/carrier_parcel_service.dart';
 import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/services/driver_assignment_watcher.dart';
 import 'package:driver/services/incoming_offer_service.dart';
@@ -200,13 +202,21 @@ abstract final class DispatchOfferService {
         final DocumentSnapshot<Map<String, dynamic>> snap = await tx.get(ref);
         final Map<String, dynamic>? data = snap.exists ? snap.data() : null;
         if (!DispatchOrderRules.canReject(kind, data, uid, heldAsRequest: heldAsRequest, timeout: timeout)) return (done: false, data: data);
-        final Map<String, dynamic> fields = DispatchOrderRules.rejectFields(uid, reasonFields: timeout ? null : reasonFields);
+        final Map<String, dynamic>? reason = timeout ? null : reasonFields;
+        // A carrier parcel goes back to its company owner for another
+        // assignment, never to the public dispatch (CarrierParcelRules).
+        final Map<String, dynamic> fields = kind == DispatchKind.parcel && CarrierParcelRules.isCarrierBound(data)
+            ? CarrierParcelRules.returnToOwnerFields(uid, reasonFields: reason)
+            : DispatchOrderRules.rejectFields(uid, reasonFields: reason);
         tx.set(ref, fields, SetOptions(mergeFields: _paths(fields)));
         return (done: true, data: data);
       });
     } catch (e) {
       log("DispatchOfferService.${timeout ? 'timeout' : 'reject'}(${kind.collection}/$orderId) failed: $e");
       return const DispatchResult(OfferAnswer.failed);
+    }
+    if (outcome.done && kind == DispatchKind.parcel && CarrierParcelRules.isCarrierBound(outcome.data)) {
+      unawaited(CarrierParcelService.notifyOwnerReturned(orderId, outcome.data, fallbackOwnerId: Constant.userModel?.ownerId));
     }
     await FireStoreUtils.updateUserFields(uid, {
       'orderRequestData': FieldValue.arrayRemove([orderId]),

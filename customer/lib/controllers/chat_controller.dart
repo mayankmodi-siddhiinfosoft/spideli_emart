@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:developer';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:customer/models/order_model.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/chat_scroll.dart';
+import 'package:customer/utils/store_chat_push.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/conversation_model.dart';
 import '../models/inbox_model.dart';
@@ -38,6 +40,12 @@ class ChatController extends GetxController {
   RxString token = "".obs;
   RxString chatType = "".obs;
   UserModel? receiverUser;
+
+  /// The store's `vendors` id when the screen that opened the chat passed
+  /// one (`vendorId`); otherwise it is looked up when the first message is
+  /// sent ([_storeVendorId]).
+  String vendorIdArgument = '';
+  String? _resolvedVendorId;
 
   /// The Firestore document that holds this thread (`chat/<id>/thread`).
   ///
@@ -75,6 +83,7 @@ class ChatController extends GetxController {
       receivedProfileUrl.value = argumentData['receivedProfileUrl'] ?? "";
       token.value = argumentData['token'] ?? '';
       chatType.value = argumentData['chatType'] ?? "";
+      vendorIdArgument = (argumentData['vendorId'] ?? argumentData['vendorID'] ?? '').toString();
       receiverUser = await FireStoreUtils.getUserForChat(receivedId.value);
     }
     log("senderId :: ${senderId.value} :: receivedId :: ${receivedId.value}");
@@ -170,27 +179,71 @@ class ChatController extends GetxController {
   Future<void> notifyReceiver(ConversationModel conversationModel, InboxModel inboxModel) async {
     final String freshToken = (receiverUser?.fcmToken ?? '').trim();
     final String fcmToken = PushPayload.isUsableToken(freshToken) ? freshToken : token.value.trim();
-    if (!PushPayload.isUsableToken(fcmToken)) {
-      log("chat push skipped: no fcm token for ${receivedId.value}");
-      return;
-    }
+    final String message = conversationModel.message.toString();
     // Same payload shape as the app's other notifications: `type` and
     // `chatType` are what the receiving apps route on (`senderName` lets the
     // provider / worker open the thread itself). SendNotification turns every
     // value into a string and picks the receiving app's channel.
-    await SendNotification.sendChatFcmMessage(
-      senderName.value,
-      conversationModel.message.toString(),
-      fcmToken,
-      {
-        'type': inboxModel.type ?? 'orderChat',
-        'chatType': inboxModel.chatType ?? '',
-        'orderId': orderId.value,
-        'senderId': conversationModel.senderId ?? '',
-        'senderName': senderName.value,
-      },
-      recipient: PushChannels.recipientForChatType(chatType.value),
-    );
+    final Map<String, dynamic> payload = {
+      'type': inboxModel.type ?? 'orderChat',
+      'chatType': inboxModel.chatType ?? '',
+      'orderId': orderId.value,
+      'senderId': conversationModel.senderId ?? '',
+      'senderName': senderName.value,
+    };
+    final PushRecipient? recipient = PushChannels.recipientForChatType(chatType.value);
+    // The store's employees with the Chat permission (topic push), next to
+    // and independent of the owner's token push below; never awaited, and it
+    // never throws, so it cannot hold up or fail the send.
+    final bool hasOwnerToken = PushPayload.isUsableToken(fcmToken);
+    unawaited(_notifyStoreEmployees(message, payload, recipient, hasOwnerToken: hasOwnerToken));
+    if (!hasOwnerToken) {
+      log("chat push skipped: no fcm token for ${receivedId.value}");
+      return;
+    }
+    await SendNotification.sendChatFcmMessage(senderName.value, message, fcmToken, payload, recipient: recipient);
+  }
+
+  /// A message to a STORE also goes to the topic `store_chat_<vendorID>`,
+  /// which the store app subscribes for each employee whose role allows Chat
+  /// (never the owner, who has the token push: no duplicate). Skipped when
+  /// the store's id is unknown, and on the server push path, which takes no
+  /// topics from app accounts (`.claude/PUSH-CHANNELS.md`, "Store chat
+  /// topic").
+  Future<void> _notifyStoreEmployees(String message, Map<String, dynamic> payload, PushRecipient? recipient, {required bool hasOwnerToken}) async {
+    try {
+      if (!StoreChatPushPlan.isStoreChat(chatType.value)) return;
+      final StoreChatPushPlan plan = StoreChatPushPlan.of(
+        chatType: chatType.value,
+        vendorId: await _storeVendorId(),
+        hasOwnerToken: hasOwnerToken,
+        serverPush: SendNotification.useServerPush,
+      );
+      final String? topic = plan.topic;
+      if (topic == null) {
+        log("store chat topic push skipped: ${plan.topicSkip.name}");
+        return;
+      }
+      await SendNotification.sendChatFcmMessageToTopic(senderName.value, message, topic, payload, recipient: recipient);
+    } catch (e) {
+      log("store chat topic push failed (${e.runtimeType})");
+    }
+  }
+
+  /// The store's `vendors` id: the chat argument, else the order's store
+  /// (the thread id is the order id), else the owner's profile. Found once
+  /// per chat; '' when none is known.
+  Future<String> _storeVendorId() async {
+    final String? known = _resolvedVendorId;
+    if (known != null) return known;
+    String orderVendorId = '';
+    if (vendorIdArgument.trim().isEmpty && hasThread) {
+      final OrderModel? order = await FireStoreUtils.getOrderByOrderId(threadId).timeout(const Duration(seconds: 8), onTimeout: () => null);
+      orderVendorId = ((order?.vendorID ?? '').trim().isNotEmpty ? order?.vendorID : order?.vendor?.id) ?? '';
+    }
+    final String id = StoreChatTopic.vendorIdFrom(argument: vendorIdArgument, orderVendorId: orderVendorId, receiverVendorId: receiverUser?.vendorID);
+    if (id.isNotEmpty) _resolvedVendorId = id;
+    return id;
   }
 
   final ImagePicker imagePicker = ImagePicker();

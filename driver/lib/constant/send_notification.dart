@@ -9,6 +9,7 @@ import 'package:driver/models/user_model.dart';
 import 'package:driver/models/vendor_model.dart';
 import 'package:driver/services/customer_notification.dart';
 import 'package:driver/services/push_message.dart';
+import 'package:driver/services/push_template_text.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' show FieldValue;
 import 'package:firebase_auth/firebase_auth.dart' as auth;
@@ -203,7 +204,8 @@ class SendNotification {
   /// [PushRecipient.store]. [customerId] (customer recipient only) records
   /// it in that customer's Notification Center with [status].
   /// Nothing is sent or recorded when the template is missing: the app has
-  /// no notification text of its own.
+  /// no notification text of its own. [placeholders] fill the template's
+  /// `{name}` placeholders ([PushTemplateText.fill]).
   static Future<bool> sendFcmMessage(
     String type,
     String token,
@@ -211,6 +213,7 @@ class SendNotification {
     PushRecipient recipient = PushRecipient.customer,
     String? customerId,
     String? status,
+    Map<String, String>? placeholders,
   }) async {
     final bool usable = PushMessage.isUsableToken(token);
     final bool mayRecord = recipient == PushRecipient.customer && (customerId ?? '').trim().isNotEmpty;
@@ -224,8 +227,8 @@ class SendNotification {
         log("Push '$type' not sent: no dynamic_notification template for it.");
         return false;
       }
-      final String title = template.subject ?? '';
-      final String body = template.message ?? '';
+      final String title = PushTemplateText.fill(template.subject, placeholders ?? const {});
+      final String body = PushTemplateText.fill(template.message, placeholders ?? const {});
       final Map<String, String> data = await _recordForCustomer(
         recipient: recipient,
         customerId: customerId,

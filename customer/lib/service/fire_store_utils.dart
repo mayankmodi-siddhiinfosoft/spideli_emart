@@ -84,6 +84,7 @@ import '../utils/preferences.dart';
 import '../utils/push_token.dart';
 import '../utils/region_service.dart';
 import '../utils/review_totals.dart';
+import '../utils/wallet_checkout.dart';
 import '../widget/geoflutterfire/src/geoflutterfire.dart';
 import '../widget/geoflutterfire/src/models/point.dart';
 import 'package:http/http.dart' as http;
@@ -95,6 +96,31 @@ import 'package:http/http.dart' as http;
 extension SetKnownFields on DocumentReference<Map<String, dynamic>> {
   Future<void> setKnownFields(Map<String, dynamic> data) {
     return set(data, SetOptions(mergeFields: data.keys.map((key) => FieldPath([key])).toList()));
+  }
+}
+
+/// One document write committed together with a wallet debit
+/// (`FireStoreUtils.payFromWallet`).
+class WalletOrderWrite {
+  /// Creates or overwrites the known fields of [ref], like
+  /// [SetKnownFields.setKnownFields] (fields the app does not model are
+  /// kept). For a new order.
+  WalletOrderWrite.setKnownFields(this.ref, this.data) : update = false;
+
+  /// Updates fields of an existing document (fails, and with it the whole
+  /// payment, when the document is gone). For paying an existing booking.
+  WalletOrderWrite.update(this.ref, this.data) : update = true;
+
+  final DocumentReference<Map<String, dynamic>> ref;
+  final Map<String, dynamic> data;
+  final bool update;
+
+  void applyTo(Transaction transaction) {
+    if (update) {
+      transaction.update(ref, data);
+    } else {
+      transaction.set(ref, data, SetOptions(mergeFields: data.keys.map((key) => FieldPath([key])).toList()));
+    }
   }
 }
 
@@ -1258,6 +1284,13 @@ class FireStoreUtils {
   /// [extraFields] are written in the same call, on top of the model (e.g.
   /// `scheduledNotificationSent: false` for an order placed for later,
   /// `ScheduledOrderNotice.orderFields`).
+  /// The creation write of [setOrder], for a wallet payment
+  /// ([payFromWallet]); the caller adds the customer's region after the commit.
+  static Future<WalletOrderWrite> vendorOrderWrite(OrderModel orderModel, {Map<String, dynamic> extraFields = const {}}) async {
+    orderModel.regionId ??= RegionService.regionOfVendor(orderModel.vendor) ?? await RegionService.resolveVendorRegion(orderModel.vendorID);
+    return WalletOrderWrite.setKnownFields(fireStore.collection(CollectionName.vendorOrders).doc(orderModel.id), {...orderModel.toJson(), ...extraFields});
+  }
+
   static Future<bool?> setOrder(OrderModel orderModel, {Map<String, dynamic> extraFields = const {}}) async {
     bool isAdded = false;
     // vendor_orders.regionId = the store's region (spec 18.12).
@@ -1503,6 +1536,56 @@ class FireStoreUtils {
     } catch (error) {
       log("Failed to debit wallet: $error");
       return false;
+    }
+  }
+
+  /// A wallet checkout (`WalletCheckout`): in ONE transaction, re-reads
+  /// [userId]'s `wallet_amount`, refuses when it is below [amount]
+  /// ([WalletPayOutcome.insufficient], nothing written), else debits it,
+  /// writes [walletTransaction]'s `wallet` row and every [orderWrites] (the
+  /// new order, or the paid state of an existing booking). All of it or
+  /// none of it: money is never taken without the order it pays for, and an
+  /// order is never left unpaid after its money was taken. An [amount] of 0
+  /// (fully discounted) writes the order only.
+  static Future<WalletPayOutcome> payFromWallet({
+    required num amount,
+    required String userId,
+    required WalletTransactionModel walletTransaction,
+    List<WalletOrderWrite> orderWrites = const [],
+  }) async {
+    if (userId.isEmpty || !amount.isFinite || amount < 0) return WalletPayOutcome.failed;
+    try {
+      WalletPayOutcome outcome = WalletPayOutcome.failed;
+      num? total;
+      await fireStore.runTransaction<void>((transaction) async {
+        // Reset on every attempt: Firestore re-runs this on contention.
+        outcome = WalletPayOutcome.failed;
+        total = null;
+        final ref = fireStore.collection(CollectionName.users).doc(userId);
+        final snap = await transaction.get(ref);
+        if (!snap.exists) return;
+        if (amount > 0) {
+          final num? next = WalletCheckout.debitedBalance(balance: snap.data()?['wallet_amount'], amount: amount);
+          if (next == null) {
+            outcome = WalletPayOutcome.insufficient;
+            return;
+          }
+          transaction.update(ref, {'wallet_amount': next});
+          transaction.set(fireStore.collection(CollectionName.wallet).doc(walletTransaction.id), walletTransaction.toJson());
+          total = next;
+        }
+        for (final WalletOrderWrite w in orderWrites) {
+          w.applyTo(transaction);
+        }
+        outcome = WalletPayOutcome.paid;
+      });
+      if (outcome == WalletPayOutcome.paid && total != null && userId == getCurrentUid() && Constant.userModel != null) {
+        Constant.userModel!.walletAmount = total;
+      }
+      return outcome;
+    } catch (error) {
+      log("Wallet payment failed, nothing was written: $error");
+      return WalletPayOutcome.failed;
     }
   }
 
@@ -2360,16 +2443,30 @@ class FireStoreUtils {
   /// [updateRidePayment] for `rental_orders`.
   static Future<void> updateRentalPayment(RentalOrderModel orderModel) => _updateBookingPayment(CollectionName.rentalOrders, orderModel.id, paymentMethod: orderModel.paymentMethod, paymentStatus: orderModel.paymentStatus, regionId: orderModel.regionId);
 
+  /// The paid state of a ride, as a write for [payFromWallet]: committed in
+  /// the same transaction as the wallet debit.
+  static WalletOrderWrite ridePaymentWrite(CabOrderModel orderModel) => _bookingPaymentWrite(CollectionName.rides, orderModel.id, paymentMethod: orderModel.paymentMethod, paymentStatus: orderModel.paymentStatus, regionId: orderModel.regionId);
+
+  /// [ridePaymentWrite] for `rental_orders`.
+  static WalletOrderWrite rentalPaymentWrite(RentalOrderModel orderModel) => _bookingPaymentWrite(CollectionName.rentalOrders, orderModel.id, paymentMethod: orderModel.paymentMethod, paymentStatus: orderModel.paymentStatus, regionId: orderModel.regionId);
+
+  static WalletOrderWrite _bookingPaymentWrite(String collection, String? orderId, {String? paymentMethod, bool? paymentStatus, String? regionId}) {
+    if (orderId == null || orderId.isEmpty) throw StateError('booking id is empty');
+    return WalletOrderWrite.update(fireStore.collection(collection).doc(orderId), _bookingPaymentFields(paymentMethod: paymentMethod, paymentStatus: paymentStatus, regionId: regionId));
+  }
+
+  static Map<String, dynamic> _bookingPaymentFields({String? paymentMethod, bool? paymentStatus, String? regionId}) => {
+        'paymentMethod': paymentMethod,
+        if (paymentStatus != null) 'paymentStatus': paymentStatus,
+        // Fill-only on the model side (`regionId ??= driver's region`): an
+        // existing region is written back unchanged, a missing one is not
+        // written at all.
+        if (regionId != null && regionId.isNotEmpty) 'regionId': regionId,
+      };
+
   static Future<void> _updateBookingPayment(String collection, String? orderId, {String? paymentMethod, bool? paymentStatus, String? regionId}) async {
     if (orderId == null || orderId.isEmpty) throw StateError('booking id is empty');
-    await fireStore.collection(collection).doc(orderId).update({
-      'paymentMethod': paymentMethod,
-      if (paymentStatus != null) 'paymentStatus': paymentStatus,
-      // Fill-only on the model side (`regionId ??= driver's region`): an
-      // existing region is written back unchanged, a missing one is not
-      // written at all.
-      if (regionId != null && regionId.isNotEmpty) 'regionId': regionId,
-    });
+    await fireStore.collection(collection).doc(orderId).update(_bookingPaymentFields(paymentMethod: paymentMethod, paymentStatus: paymentStatus, regionId: regionId));
   }
 
   // Parcel orders are created / paid through ParcelShippingService.save and
@@ -2688,6 +2785,20 @@ class FireStoreUtils {
         });
     return coupon;
   }
+
+  /// The write of [onDemandOrderPlace] (a new booking gets its id and the
+  /// provider's region first), for a wallet payment ([payFromWallet]); the
+  /// caller adds the customer's region after the commit.
+  static Future<WalletOrderWrite> onDemandOrderWrite(OnProviderOrderModel orderModel) async {
+    final CollectionReference<Map<String, dynamic>> orders = fireStore.collection(CollectionName.providerOrders);
+    if (orderModel.id.isEmpty) orderModel.id = orders.doc().id;
+    orderModel.regionId ??= await RegionService.providerRegionId(orderModel.provider);
+    return WalletOrderWrite.setKnownFields(orders.doc(orderModel.id), orderModel.toJson());
+  }
+
+  /// A gift card purchase ([placeGiftCardOrder]) as a write for [payFromWallet].
+  static WalletOrderWrite giftCardOrderWrite(GiftCardsOrderModel giftCardsOrderModel) =>
+      WalletOrderWrite.setKnownFields(fireStore.collection(CollectionName.giftPurchases).doc(giftCardsOrderModel.id), giftCardsOrderModel.toJson());
 
   static Future<OnProviderOrderModel> onDemandOrderPlace(OnProviderOrderModel orderModel, double totalAmount) async {
     DocumentReference<Map<String, dynamic>> documentReference;

@@ -5,7 +5,6 @@ import 'package:driver/models/parcel_category.dart';
 import 'package:driver/models/parcel_order_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/assigned_delivery_orders.dart';
-import 'package:driver/services/carrier_dispatch_service.dart';
 import 'package:driver/services/dispatch_navigation.dart';
 import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/services/dispatch_offer_service.dart';
@@ -169,19 +168,16 @@ class ParcelSearchController extends GetxController {
       final data = doc.data() as Map<String, dynamic>;
       if (!_matchesSearchInput(data, date: date, destLat: destLat, destLng: destLng)) continue;
 
-      // A parcel this driver already passed on is not offered again (the
-      // dispatch Cloud Function excludes `rejectedByDrivers` the same way).
-      if (DispatchOrderRules.rejectedBy(data, me)) continue;
+      // Never a parcel this driver already passed on (the dispatch Cloud
+      // Function excludes `rejectedByDrivers` the same way), one that names
+      // another driver, or a carrier parcel (its company owner assigns it).
+      if (!DispatchOrderRules.listedInParcelSearch(data, me)) continue;
 
       // Zone-bound (spec 9.1), scope-aware (admin spec §11/§12): a same-city
       // parcel keeps today's rule; an intercity / intercountry parcel is also
       // offered to drivers of the region it ENDS in.
       if (await ParcelDispatchService.isOutOfDriverRegion(data, driver: driverModel.value)) continue;
 
-      // Carrier-bound dispatch (admin spec §11): an order carrying a
-      // `carrierId` belongs to that company's own drivers. An order with no
-      // carrier — and a carrier nothing is linked to — behaves as today.
-      if (!await CarrierDispatchService.driverServesCarrier(data['carrierId']?.toString(), driverModel.value)) continue;
 
       result.add(ParcelOrderModel.fromJson(data));
     }

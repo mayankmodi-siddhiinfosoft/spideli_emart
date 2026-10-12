@@ -92,12 +92,21 @@ class Documents {
   bool get isExpired => verificationStatus == 'expired';
 
   Map<String, dynamic> toJson() {
-    final Map<String, dynamic> data = <String, dynamic>{...extra};
+    Map<String, dynamic> data = <String, dynamic>{...extra};
     data['frontImage'] = frontImage;
     data['status'] = status;
     data['documentId'] = documentId;
     data['backImage'] = backImage;
     if (expiryDate != null) data['expireAt'] = expiryDate;
+    if (rejectReason != null && rejectReason!.trim().isNotEmpty) {
+      data['rejectReason'] = rejectReason!.trim();
+      data['rejectionReason'] = rejectReason!.trim();
+      data['reason'] = rejectReason!.trim();
+    } else {
+      data.remove('rejectReason');
+      data.remove('rejectionReason');
+      data.remove('reason');
+    }
     return data;
   }
 }

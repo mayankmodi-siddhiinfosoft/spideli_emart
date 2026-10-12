@@ -46,6 +46,7 @@ import '../service/on_demand_notifier.dart';
 import '../themes/app_them_data.dart';
 import '../themes/show_toast_dialog.dart';
 import '../utils/preferences.dart';
+import '../utils/wallet_checkout.dart';
 import 'on_demand_dashboard_controller.dart';
 
 class OnDemandPaymentController extends GetxController {
@@ -79,47 +80,71 @@ class OnDemandPaymentController extends GetxController {
   }
 
   Future<void> placeOrder() async {
+    final bool byWallet = selectedPaymentMethod.value == PaymentGateway.wallet.name;
     if (!isExtra) {
       // Normal Order
       ShowToastDialog.showLoader("Please wait...".tr);
 
-      onDemandOrderModel.value?.payment_method = selectedPaymentMethod.value;
-      onDemandOrderModel.value?.paymentStatus = onDemandOrderModel.value?.provider.priceUnit == "Fixed" && selectedPaymentMethod.value == "cod" ? false : true;
-      onDemandOrderModel.value?.extraPaymentStatus = true;
+      final OnProviderOrderModel order = onDemandOrderModel.value!;
+      order.payment_method = selectedPaymentMethod.value;
+      order.paymentStatus = order.provider.priceUnit == "Fixed" && selectedPaymentMethod.value == "cod" ? false : true;
+      order.extraPaymentStatus = true;
 
       // A fixed-price booking reaches here new (no id yet); an hourly booking
       // already exists and is paid from its details screen ("Pay Now").
-      final bool isNewBooking = onDemandOrderModel.value!.id.isEmpty;
-      await FireStoreUtils.onDemandOrderPlace(onDemandOrderModel.value!, totalAmount.value);
-      // Event 1 once per new booking, else the payment (event 14). Not
-      // awaited: a failed push never holds up the booking or the payment.
-      unawaited(isNewBooking ? OnDemandNotifier.bookingPlaced(onDemandOrderModel.value!) : OnDemandNotifier.bookingPaid(onDemandOrderModel.value!));
+      final bool isNewBooking = order.id.isEmpty;
 
-      if (onDemandOrderModel.value?.status == Constant.orderPlaced) {
-        await FireStoreUtils.sendOrderOnDemandServiceEmail(orderModel: onDemandOrderModel.value!);
-
-        ShowToastDialog.showToast("OnDemand Service successfully booked".tr);
+      // Only once the booking is saved (and, by wallet, paid): event 1 once
+      // per new booking, else the payment (event 14) - not awaited, a failed
+      // push never holds up the booking - and the booking email.
+      Future<void> afterSaved() async {
+        unawaited(isNewBooking ? OnDemandNotifier.bookingPlaced(order) : OnDemandNotifier.bookingPaid(order));
+        if (order.status == Constant.orderPlaced) {
+          await FireStoreUtils.sendOrderOnDemandServiceEmail(orderModel: order);
+          ShowToastDialog.showToast("OnDemand Service successfully booked".tr);
+        }
       }
-      if (selectedPaymentMethod.value == PaymentGateway.wallet.name) {
-        WalletTransactionModel transactionModel = WalletTransactionModel(
-          id: Constant.getUuid(),
-          amount: double.parse(totalAmount.value.toString()),
-          date: Timestamp.now(),
-          paymentMethod: PaymentGateway.wallet.name,
-          transactionUser: "customer",
-          userId: FireStoreUtils.getCurrentUid(),
-          isTopup: false,
-          orderId: onDemandOrderModel.value!.id,
-          regionId: onDemandOrderModel.value!.regionId,
-          note: "Booking Amount debited".tr,
-          paymentStatus: "success".tr,
-        );
 
-        await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-          if (value == true) {
-            await FireStoreUtils.updateUserWallet(amount: "-${totalAmount.value.toString()}", userId: FireStoreUtils.getCurrentUid()).then((value) {});
-          }
-        });
+      if (byWallet) {
+        // The debit, its wallet row and the booking (new, or its paid state)
+        // in ONE transaction (WalletCheckout): never money without the booking.
+        final WalletPayOutcome outcome = await WalletCheckout.pay(
+          commit: () async {
+            final WalletOrderWrite write = await FireStoreUtils.onDemandOrderWrite(order);
+            return FireStoreUtils.payFromWallet(
+              amount: totalAmount.value,
+              userId: FireStoreUtils.getCurrentUid(),
+              walletTransaction: WalletTransactionModel(
+                id: Constant.getUuid(),
+                amount: double.parse(totalAmount.value.toString()),
+                date: Timestamp.now(),
+                paymentMethod: PaymentGateway.wallet.name,
+                transactionUser: "customer",
+                userId: FireStoreUtils.getCurrentUid(),
+                isTopup: false,
+                orderId: order.id,
+                regionId: order.regionId,
+                note: "Booking Amount debited".tr,
+                paymentStatus: "success".tr,
+              ),
+              orderWrites: [write],
+            );
+          },
+          afterPaid: () async {
+            await FireStoreUtils.addCustomerRegion(order.regionId);
+            await afterSaved();
+          },
+        );
+        if (outcome != WalletPayOutcome.paid) {
+          // Nothing was written: a retry books (or pays) it afresh.
+          if (isNewBooking) order.id = '';
+          ShowToastDialog.closeLoader();
+          ShowToastDialog.showToast(WalletCheckout.failureMessage(outcome).tr);
+          return;
+        }
+      } else {
+        await FireStoreUtils.onDemandOrderPlace(order, totalAmount.value);
+        await afterSaved();
       }
 
       ShowToastDialog.closeLoader();
@@ -128,57 +153,48 @@ class OnDemandPaymentController extends GetxController {
       controller.selectedIndex.value = 2;
     } else {
       // Extra Charges Flow
-      onDemandOrderModel.value?.createdAt = Timestamp.now();
-      onDemandOrderModel.value?.extraPaymentStatus = true;
+      final OnProviderOrderModel order = onDemandOrderModel.value!;
+      order.createdAt = Timestamp.now();
+      order.extraPaymentStatus = true;
 
-      if (selectedPaymentMethod.value == PaymentGateway.wallet.name) {
-        WalletTransactionModel transactionModel = WalletTransactionModel(
-          id: Constant.getUuid(),
-          amount: double.parse(totalAmount.value.toString()),
-          date: Timestamp.now(),
-          paymentMethod: PaymentGateway.wallet.name,
-          transactionUser: "customer",
-          userId: FireStoreUtils.getCurrentUid(),
-          isTopup: false,
-          orderId: onDemandOrderModel.value!.id,
-          regionId: onDemandOrderModel.value!.regionId,
-          note: "Booking Extra charge debited",
-          paymentStatus: "success".tr,
+      if (byWallet) {
+        // The debit, its wallet row and the booking's paid extras in ONE
+        // transaction (WalletCheckout).
+        ShowToastDialog.showLoader("Please wait...".tr);
+        final WalletPayOutcome outcome = await WalletCheckout.pay(
+          commit: () async => FireStoreUtils.payFromWallet(
+            amount: totalAmount.value,
+            userId: FireStoreUtils.getCurrentUid(),
+            walletTransaction: WalletTransactionModel(
+              id: Constant.getUuid(),
+              amount: double.parse(totalAmount.value.toString()),
+              date: Timestamp.now(),
+              paymentMethod: PaymentGateway.wallet.name,
+              transactionUser: "customer",
+              userId: FireStoreUtils.getCurrentUid(),
+              isTopup: false,
+              orderId: order.id,
+              regionId: order.regionId,
+              note: "Booking Extra charge debited",
+              paymentStatus: "success".tr,
+            ),
+            orderWrites: [await FireStoreUtils.onDemandOrderWrite(order)],
+          ),
         );
-
-        await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-          if (value == true) {
-            await FireStoreUtils.updateUserWallet(amount: "-${totalAmount.value.toString()}", userId: FireStoreUtils.getCurrentUid()).then((value) {});
-          }
-        });
+        if (outcome != WalletPayOutcome.paid) {
+          order.extraPaymentStatus = false;
+          ShowToastDialog.closeLoader();
+          ShowToastDialog.showToast(WalletCheckout.failureMessage(outcome).tr);
+          return;
+        }
+      } else {
+        // The provider is credited the extra charges with the booking when
+        // it completes (provider app). The customer's wallet is never touched
+        // for a cash / gateway payment (it used to be debited here a second
+        // time, under a "provider credited" row).
+        await FireStoreUtils.updateOnDemandOrder(order);
       }
-
-      // Handle wallet payment if needed
-      if (selectedPaymentMethod.value != 'cod') {
-        WalletTransactionModel transactionModel = WalletTransactionModel(
-          id: Constant.getUuid(),
-          serviceType: 'ondemand-service',
-          amount: totalAmount.value,
-          date: Timestamp.now(),
-          paymentMethod: PaymentGateway.wallet.name,
-          transactionUser: "provider",
-          userId: onDemandOrderModel.value?.provider.author!,
-          isTopup: true,
-          orderId: onDemandOrderModel.value?.id,
-          regionId: onDemandOrderModel.value?.regionId,
-          note: 'Extra Charge Amount Credited',
-          paymentStatus: "success".tr,
-        );
-
-        await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-          if (value == true) {
-            await FireStoreUtils.updateUserWallet(amount: "-$totalAmount", userId: FireStoreUtils.getCurrentUid());
-          }
-        });
-      }
-
-      await FireStoreUtils.updateOnDemandOrder(onDemandOrderModel.value!);
-      unawaited(OnDemandNotifier.extraChargesPaid(onDemandOrderModel.value!));
+      unawaited(OnDemandNotifier.extraChargesPaid(order));
 
       ShowToastDialog.closeLoader();
       Get.offAll(const OnDemandDashboardScreen());

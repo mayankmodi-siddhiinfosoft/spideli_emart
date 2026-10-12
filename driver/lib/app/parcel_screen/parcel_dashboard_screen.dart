@@ -8,6 +8,7 @@ import 'package:driver/app/edit_profile_screen/edit_profile_screen.dart';
 import 'package:driver/app/parcel_screen/parcel_home_screen.dart';
 import 'package:driver/app/parcel_screen/parcel_order_list_screen.dart';
 import 'package:driver/app/terms_and_condition/terms_and_condition_screen.dart';
+import 'package:driver/app/driver_cash_settlement_screen.dart';
 import 'package:driver/app/verification_screen/verification_screen.dart';
 import 'package:driver/app/wallet_screen/wallet_screen.dart';
 import 'package:driver/app/withdraw_method_setup_screens/withdraw_method_setup_screen.dart';
@@ -72,7 +73,14 @@ class ParcelDashboardScreen extends StatelessWidget {
                   const DsGap(DsSpace.sm),
                 ],
                 Constant.userModel!.ownerId != null && Constant.userModel!.ownerId!.isNotEmpty
-                    ? const SizedBox()
+                    ? DsIconButton(
+                        icon: Icons.payments_outlined,
+                        semanticLabel: 'Cash Settlements'.tr,
+                        variant: DsIconButtonVariant.tonal,
+                        onPressed: () {
+                          Get.to(() => const DriverCashSettlementScreen());
+                        },
+                      )
                     : DsIconButton(
                         icon: Icons.account_balance_wallet_outlined,
                         semanticLabel: 'Wallet'.tr,
@@ -258,18 +266,28 @@ class DrawerView extends StatelessWidget {
                               Get.to(() => const ParcelRunScreen());
                             },
                           ),
-                          Constant.userModel!.ownerId != null && Constant.userModel!.ownerId!.isNotEmpty
-                              ? const SizedBox()
-                              : DsListTile(
-                                  title: 'Wallet'.tr,
-                                  leadingIcon: Icons.account_balance_wallet_outlined,
-                                  leadingTone: DsTone.brand,
-                                  showChevron: true,
-                                  onTap: () {
-                                    Get.back();
-                                    controller.drawerIndex.value = 2;
-                                  },
-                                ),
+                          if (Constant.userModel!.ownerId != null && Constant.userModel!.ownerId!.isNotEmpty)
+                            DsListTile(
+                              title: 'Cash Settlements'.tr,
+                              leadingIcon: Icons.payments_outlined,
+                              leadingTone: DsTone.brand,
+                              showChevron: true,
+                              onTap: () {
+                                Get.back();
+                                Get.to(() => const DriverCashSettlementScreen());
+                              },
+                            )
+                          else
+                            DsListTile(
+                              title: 'Wallet'.tr,
+                              leadingIcon: Icons.account_balance_wallet_outlined,
+                              leadingTone: DsTone.brand,
+                              showChevron: true,
+                              onTap: () {
+                                Get.back();
+                                controller.drawerIndex.value = 2;
+                              },
+                            ),
                           Constant.userModel!.ownerId != null && Constant.userModel!.ownerId!.isNotEmpty
                               ? const SizedBox()
                               : DsListTile(

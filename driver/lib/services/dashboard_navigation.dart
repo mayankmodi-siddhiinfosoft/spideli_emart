@@ -10,6 +10,7 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/cab_dashboard_controller.dart';
 import 'package:driver/controllers/dash_board_controller.dart';
 import 'package:driver/controllers/owner_dashboard_controller.dart';
+import 'package:driver/controllers/owner_order_list_controller.dart';
 import 'package:driver/controllers/parcel_dashboard_controller.dart';
 import 'package:driver/controllers/rental_dashboard_controller.dart';
 import 'package:driver/models/user_model.dart';
@@ -110,6 +111,26 @@ abstract final class DashboardNavigation {
       Get.until((route) => route.isFirst);
     }
     if (Get.isRegistered<DashBoardController>()) Get.find<DashBoardController>().drawerIndex.value = drawerIndex;
+  }
+
+  /// The company dashboard's Orders page (drawer index of
+  /// `OwnerOrderListScreen` in `owner_dashboard_screen.dart`).
+  static const int ownerOrdersPage = 1;
+
+  /// The company dashboard on drawer page [drawerIndex] (a carrier parcel
+  /// to assign). Returns once that dashboard is on screen.
+  static Future<void> openOwnerPage(int drawerIndex, UserModel owner) async {
+    if (!Get.isRegistered<OwnerDashboardController>()) {
+      await open(owner);
+      await _waitFor(() => Get.isRegistered<OwnerDashboardController>());
+    } else {
+      Get.until((route) => route.isFirst);
+    }
+    if (Get.isRegistered<OwnerDashboardController>()) Get.find<OwnerDashboardController>().drawerIndex.value = drawerIndex;
+    // Already showing the Orders list: reload it so the new parcel appears.
+    if (drawerIndex == ownerOrdersPage && Get.isRegistered<OwnerOrderListController>()) {
+      unawaited(Get.find<OwnerOrderListController>().fetchOrdersForSection());
+    }
   }
 
   static void _toHome() {

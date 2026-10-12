@@ -76,6 +76,7 @@ class ParcelOrderModel with CancellationFields {
   num? weightKg;
   String? carrierId;
   String? carrierName;
+  String? carrierOwnerId;
   Map<String, dynamic>? priceBreakdown;
 
   /// Fixed intercity / intercountry tax (priceBreakdown.fixedTax): platform
@@ -132,6 +133,22 @@ class ParcelOrderModel with CancellationFields {
 
   /// Fixed scope tax added to the payable total (0 when none).
   double get scopeTaxAmount => (parcelScopeTax ?? 0).toDouble();
+
+  static double _amount(dynamic v) {
+    final double? d = v is num ? v.toDouble() : double.tryParse(v?.toString().trim() ?? '');
+    return d == null || !d.isFinite || d < 0 ? 0 : d;
+  }
+
+  /// Door / pickup-point charges (`priceBreakdown.options` = pickupCharge +
+  /// deliveryCharge, app-spec-parcel-pricing step 5): added to the payable
+  /// total on top of [subTotal], like the fixed tax. 0 when none.
+  double get optionsAmount => _amount(priceBreakdown?['options']);
+
+  /// `priceBreakdown.pickupCharge` (home pickup / drop-off at a point).
+  double get pickupChargeAmount => _amount(priceBreakdown?['pickupCharge']);
+
+  /// `priceBreakdown.deliveryCharge` (home delivery / collection at a point).
+  double get deliveryChargeAmount => _amount(priceBreakdown?['deliveryCharge']);
 
   /// Receiver-SMS fee added to the payable total (0 when not opted in).
   double get smsChargeAmount => sendReceiverSms == true ? (smsCharge ?? 0).toDouble() : 0;
@@ -271,6 +288,10 @@ class ParcelOrderModel with CancellationFields {
     originPickupPointId = _str(json['originPickupPointId']);
     deliveryMethod = _str(json['deliveryMethod']);
     destinationPickupPointId = _str(json['destinationPickupPointId']);
+    // Orders written by another client carry only the spec names.
+    if (pickupMethod == ParcelShipping.pickupPoint) originPickupPointId ??= _str(json['dropoffPointId']);
+    // (Before 12 Oct `pickupPointId` held the ORIGIN point when there was one.)
+    if (deliveryMethod == ParcelShipping.pickupPoint && _str(json['pickupPointId']) != originPickupPointId) destinationPickupPointId ??= _str(json['pickupPointId']);
     pickupCode = _str(json['pickupCode']);
     declaredValue = _str(json['declaredValue']);
     dimensions = json['dimensions'] is Map ? Map<String, dynamic>.from(json['dimensions']) : null;
@@ -278,6 +299,7 @@ class ParcelOrderModel with CancellationFields {
     weightKg = json['weightKg'] is num ? json['weightKg'] : num.tryParse(json['weightKg']?.toString() ?? '');
     carrierId = _str(json['carrierId']);
     carrierName = _str(json['carrierName']);
+    carrierOwnerId = _str(json['carrierOwnerId']) ?? _str(json['companyOwnerId']);
     priceBreakdown = json['priceBreakdown'] is Map ? Map<String, dynamic>.from(json['priceBreakdown']) : null;
     parcelScopeTax = json['parcelScopeTax'] is num ? json['parcelScopeTax'] : num.tryParse(json['parcelScopeTax']?.toString() ?? '');
     sendReceiverSms = json['sendReceiverSms'] is bool ? json['sendReceiverSms'] : null;
@@ -316,10 +338,12 @@ class ParcelOrderModel with CancellationFields {
       'originPickupPointId': originPickupPointId,
       'deliveryMethod': deliveryMethod,
       'destinationPickupPointId': destinationPickupPointId,
-      // The admin panel links a parcel to its point with a single
-      // `pickupPointId` (admin spec §12): the origin point when there is one,
-      // else the destination. Ours stay the truth for the app.
-      'pickupPointId': originPickupPointId ?? destinationPickupPointId,
+      // app-spec-parcel-pricing section 4: `dropoffPointId` = where the
+      // SENDER drops the parcel off (pickupMethod pickup_point),
+      // `pickupPointId` = where the RECEIVER collects it (deliveryMethod
+      // pickup_point). The origin / destination ids above stay for the app.
+      'dropoffPointId': pickupMethod == ParcelShipping.pickupPoint ? originPickupPointId : null,
+      'pickupPointId': deliveryMethod == ParcelShipping.pickupPoint ? destinationPickupPointId : null,
       'pickupCode': pickupCode,
       'declaredValue': declaredValue,
       'dimensions': dimensions,
@@ -327,6 +351,8 @@ class ParcelOrderModel with CancellationFields {
       'weightKg': weightKg,
       'carrierId': carrierId,
       'carrierName': carrierName,
+      'carrierOwnerId': carrierOwnerId,
+      'companyOwnerId': carrierOwnerId,
       'priceBreakdown': priceBreakdown,
       'parcelScopeTax': parcelScopeTax,
       // Absent on a model read from an order written before point 54: then

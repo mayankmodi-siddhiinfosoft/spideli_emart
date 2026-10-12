@@ -33,6 +33,20 @@ void main() {
     expect(a.totalText(2), '1575.00');
   });
 
+  test('options charge is included in total', () {
+    final ParcelAmounts a = ParcelAmounts.of(ParcelOrderModel.fromJson({
+      'id': 'p2',
+      'subTotal': '2000',
+      'priceBreakdown': {
+        'options': 500,
+        'total': 2500,
+      },
+    }));
+    expect(a.subTotal, 2000);
+    expect(a.options, 500);
+    expect(a.total, 2500);
+  });
+
   test('no platform fee: its taxes are not charged either', () {
     final ParcelAmounts a = ParcelAmounts.of(ParcelOrderModel.fromJson({
       'id': 'p1',

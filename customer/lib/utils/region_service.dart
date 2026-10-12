@@ -13,6 +13,7 @@ import 'package:customer/models/vendor_model.dart';
 import 'package:customer/models/zone_model.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/utils/preferences.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:geocoding/geocoding.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -133,6 +134,17 @@ class RegionService {
   // ---------------------------------------------------------------------------
 
   static bool get hasRegions => _regions.isNotEmpty;
+
+  /// Tests only: the loaded `regions` / `currencies` without Firestore.
+  @visibleForTesting
+  static void seedForTest({List<RegionModel> regions = const [], Map<String, CurrencyModel> currencies = const {}}) {
+    _regions
+      ..clear()
+      ..addEntries(regions.where((r) => r.id != null).map((r) => MapEntry(r.id!, r)));
+    _currencies
+      ..clear()
+      ..addAll(currencies);
+  }
 
   static RegionModel? regionById(String? regionId) => _isEmpty(regionId) ? null : _regions[regionId];
 

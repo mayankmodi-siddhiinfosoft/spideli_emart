@@ -1,3 +1,4 @@
+import 'package:customer/utils/platform_fee_charge.dart';
 import 'package:customer/service/parcel_receiver_sms.dart';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
@@ -77,11 +78,20 @@ class BookParcelController extends GetxController {
 
   double? get weightKg => double.tryParse(weightKgController.value.text.trim().replaceAll(',', '.'));
 
-  /// `settings/ParcelPricing`, read when the customer asks for a price
-  /// ([bookNow]); the defaults until then.
+  /// `settings/ParcelPricing` (only `commissionAsExtra` is still read), read
+  /// when the customer asks for a price ([bookNow]).
   ParcelPricingSettings pricingSettings = const ParcelPricingSettings();
 
+  /// `regions/{R}.parcelPricing` of the sender's region R, read when the
+  /// customer asks for a price ([bookNow]). Unset until then / when the admin
+  /// has not saved the region: no divisor, charges 0, fixed charges 0.
+  RegionParcelPricing regionPricing = const RegionParcelPricing();
+
   static num? _dimension(TextEditingController c) => num.tryParse(c.text.trim().replaceAll(',', '.'));
+
+  num? get lengthCm => _dimension(lengthController.value);
+  num? get widthCm => _dimension(widthController.value);
+  num? get heightCm => _dimension(heightController.value);
 
   /// Some, but not all three, of the dimensions are filled in.
   bool get hasPartialDimensions {
@@ -90,42 +100,35 @@ class BookParcelController extends GetxController {
   }
 
   /// The parcel's PHYSICAL weight: the entered kg, else (same city) the upper
-  /// limit of the selected weight category. Carriers' `maxWeight` is checked
-  /// against this.
+  /// limit of the selected weight band (its `maxKg`, else the number in its
+  /// title; the open top band: its `minKg`).
   double get actualWeightKg {
     final double? kg = weightKg;
     if (kg != null && kg > 0) return kg;
-    if (isCityScope) return ParcelPricing.categoryMaxKg(selectedWeight?.title) ?? 0;
-    return 0;
+    if (!isCityScope) return 0;
+    final ParcelWeightModel? w = selectedWeight;
+    return w?.maxKg ?? ParcelPricing.categoryMaxKg(w?.title) ?? w?.minKg ?? 0;
   }
 
-  /// Volumetric weight of the entered dimensions (doc point 42), or null when
-  /// they are not all given or `settings/ParcelPricing.volumetricDivisor`
-  /// switches it off.
-  double? get volumetricWeightKg => ParcelPricing.volumetricKg(
-    lengthCm: _dimension(lengthController.value),
-    widthCm: _dimension(widthController.value),
-    heightCm: _dimension(heightController.value),
-    divisor: pricingSettings.volumetricDivisor,
-  );
+  /// `parcel_weight` as pricing bands (`delivery_charge` is a string there).
+  List<ParcelBand<ParcelWeightModel>> get weightBands => parcelWeight.map(_band).toList();
 
-  /// Weight the shipment is PRICED on: the greater of [actualWeightKg] and
-  /// [volumetricWeightKg] - so both the weight and the dimensions move the
-  /// price (doc point 42; before, the dimensions were stored and ignored).
-  double get offerWeightKg => ParcelPricing.chargeableKg(actualKg: actualWeightKg, volumetricKg: volumetricWeightKg);
+  static ParcelBand<ParcelWeightModel> _band(ParcelWeightModel w) =>
+      ParcelBand<ParcelWeightModel>(source: w, title: w.title, minKg: w.minKg, maxKg: w.maxKg, charge: parcelNumber(w.deliveryCharge) ?? 0);
 
-  /// Same city: the weight category the parcel is charged at - the selected
-  /// one, moved up to the category that covers [offerWeightKg] when the
-  /// entered weight or the dimensions exceed it. Never lower than the pick.
-  ParcelWeightModel? get chargedWeight {
-    final ParcelWeightModel? selected = selectedWeight;
-    if (selected == null) return null;
-    return ParcelPricing.categoryFor<ParcelWeightModel>(categories: parcelWeight.toList(), selected: selected, kg: offerWeightKg, titleOf: (w) => w.title);
-  }
+  /// The band the no-carrier (default) price of the last [carrierOptions] used.
+  ParcelWeightModel? chargedWeight;
 
-  double get chargedWeightCharge => double.tryParse(chargedWeight?.deliveryCharge?.toString() ?? '') ?? 0;
+  double get chargedWeightCharge => parcelNumber(chargedWeight?.deliveryCharge) ?? 0;
 
-  String? get originRegionId => RegionService.regionAt(senderLocation.value?.latitude, senderLocation.value?.longitude);
+  /// The order's region R ([ParcelPricing.resolveOrderRegion]): the sender's
+  /// zone region, else the sender's country's region, else the customer's.
+  /// Decides the carriers offered, their prices and the currency shown.
+  String? get originRegionId => ParcelPricing.resolveOrderRegion(
+        atSender: RegionService.regionIdsAt(senderLocation.value?.latitude, senderLocation.value?.longitude),
+        countryRegions: RegionService.regionIdsForCountry(senderCountryCode.value),
+        customerRegion: RegionService.customerRegionId,
+      );
 
   String? get destinationRegionId => RegionService.regionAt(receiverLocation.value?.latitude, receiverLocation.value?.longitude);
 
@@ -354,11 +357,14 @@ class BookParcelController extends GetxController {
         return false;
       }
     }
-    if (pickupMethod.value == ParcelShipping.pickupPoint && originPickupPoint.value == null) {
+    // A point picked before the address changed may belong to another region:
+    // only published points of the order's region are offered (spec 3.5).
+    bool outOfRegion(PickupPointModel? p, String? regionId) => p != null && (regionId ?? '').isNotEmpty && !p.offeredIn(regionId!);
+    if (pickupMethod.value == ParcelShipping.pickupPoint && (originPickupPoint.value == null || outOfRegion(originPickupPoint.value, originRegionId))) {
       ShowToastDialog.showToast("Please choose the drop-off pickup point".tr);
       return false;
     }
-    if (deliveryMethod.value == ParcelShipping.pickupPoint && destinationPickupPoint.value == null) {
+    if (deliveryMethod.value == ParcelShipping.pickupPoint && (destinationPickupPoint.value == null || outOfRegion(destinationPickupPoint.value, destinationRegionId ?? originRegionId))) {
       ShowToastDialog.showToast("Please choose the collection pickup point".tr);
       return false;
     }
@@ -370,8 +376,13 @@ class BookParcelController extends GetxController {
 
     ShowToastDialog.showLoader("Please wait...".tr);
     try {
+      // R and its currency need the regions / zones / currencies loaded (the
+      // parcel screens can be opened before anything else read them).
+      await RegionService.ensureLoaded();
       distance.value = 0.0;
       pricingSettings = await ParcelShippingService.pricingSettings();
+      regionPricing = await ParcelShippingService.regionParcelPricing(originRegionId);
+      chargedWeight = null;
 
       if (isCityScope) {
         if (Constant.selectedMapType == 'osm') {
@@ -401,8 +412,8 @@ class BookParcelController extends GetxController {
         return;
       }
 
-      subTotal.value = isCityScope ? (distance.value * chargedWeightCharge) : 0;
       final List<ParcelCarrierOption> options = await carrierOptions();
+      subTotal.value = isCityScope ? (distance.value * chargedWeightCharge) : 0;
       ShowToastDialog.closeLoader();
 
       // Same city, home to home and no carrier to choose from: today's flow.
@@ -418,37 +429,61 @@ class BookParcelController extends GetxController {
     }
   }
 
-  /// Offers for this shipment (spec 4.2 step 5). Same city: the platform's
-  /// drivers at today's price first, then eligible carriers. Other scopes:
-  /// eligible carriers with a price for the route. Empty = not served.
+  /// Offers for this shipment (app-spec-parcel-pricing section 6). Same city:
+  /// the platform's drivers at the default setting (distance x the band of the
+  /// chargeable weight) first, then the eligible carriers on their rate card.
+  /// Other scopes: the eligible carriers. Empty = not served (quote request).
+  /// Every amount is in region R's currency (R = the sender's region).
   Future<List<ParcelCarrierOption>> carrierOptions() async {
     final ParcelPricingSettings settings = pricingSettings;
+    final RegionParcelPricing region = regionPricing;
+    final String? regionId = originRegionId;
     final List<DeliveryCarrierModel> carriers = await ParcelShippingService.carriers();
-    // Priced on the chargeable weight (actual or volumetric, the greater);
-    // a carrier's maxWeight is about the physical parcel.
-    final double kg = offerWeightKg;
-    final double physicalKg = actualWeightKg;
+
+    // Carriers' per-km prices are per km, whatever the app's distance unit.
     final double km = Constant.distanceType.toLowerCase() == "km" ? distance.value : distance.value * 1.60934;
     final List<ParcelCarrierOption> options = [];
+
     if (isCityScope) {
-      options.add(ParcelCarrierOption(carrier: null, quote: ParcelPricing.cityDefault(distance: distance.value, weightCategoryCharge: chargedWeightCharge)));
+      final ParcelWeightModel? selected = selectedWeight;
+      final ParcelQuote? quote = ParcelPricing.defaultQuote<ParcelWeightModel>(
+        scope: scope.value,
+        // Today's same-city price: the distance in the app's unit x the band.
+        distance: distance.value,
+        actualKg: actualWeightKg,
+        lengthCm: lengthCm,
+        widthCm: widthCm,
+        heightCm: heightCm,
+        pickupMethod: pickupMethod.value,
+        deliveryMethod: deliveryMethod.value,
+        bands: weightBands,
+        selected: selected == null ? null : _band(selected),
+        region: region,
+      );
+      if (quote != null) {
+        chargedWeight = ParcelPricing.bandFor<ParcelWeightModel>(weightBands, quote.chargeableKg ?? 0, selected: selected == null ? null : _band(selected))?.source;
+        options.add(ParcelCarrierOption(carrier: null, quote: quote));
+      }
     }
+
     final commission = Constant.sectionConstantModel?.adminCommision;
     final List<ParcelCarrierOption> carrierOffers = [];
     for (final carrier in carriers) {
-      if (!carrier.isEligible(originRegionId: originRegionId, weightKg: physicalKg)) continue;
+      final ParcelRateCard card = carrier.rateCardFor(regionId);
       ParcelQuote? quote = ParcelPricing.carrierQuote(
         scope: scope.value,
-        table: carrier.rateTable,
-        // Doc 43: the carrier's price for the parcel's region first.
-        card: carrier.rateCardFor(originRegionId),
-        origin: originPlace,
-        destination: destinationPlace,
-        weightKg: kg,
+        card: card,
         distanceKm: km,
-        settings: settings,
+        actualKg: actualWeightKg,
+        lengthCm: lengthCm,
+        widthCm: widthCm,
+        heightCm: heightCm,
+        pickupMethod: pickupMethod.value,
+        deliveryMethod: deliveryMethod.value,
+        region: region,
       );
       if (quote == null) continue;
+      if (!carrier.isEligible(originRegionId: regionId, chargeableKg: quote.chargeableKg ?? 0, scope: scope.value)) continue;
       if (settings.commissionAsExtra && commission?.isEnabled == true) {
         quote = quote.copyWith(
           commission: ParcelPricing.commissionOn(amount: quote.carrierPrice + quote.extraKgCharge, type: commission?.commissionType, value: double.tryParse(commission?.amount?.toString() ?? '')),
@@ -465,13 +500,14 @@ class BookParcelController extends GetxController {
   void goToCart({ParcelCarrierOption? option, bool quoteRequest = false}) {
     DateTime senderPickup = isScheduled.value ? parseScheduledDateTime(scheduledDate.value, scheduledTime.value) : DateTime.now();
 
-    // The fixed scope tax (intercity / intercountry) is platform revenue added
-    // to the payable total at checkout: keep it out of subTotal so VAT, %
-    // coupons, commission and the driver's credit never apply to it.
+    // The fixed charge (intercity / intercountry) and the door / pickup-point
+    // options are added to the payable total at checkout, on top of subTotal
+    // (the base price): VAT, % coupons, commission and the driver's credit
+    // never apply to them (app-spec-parcel-pricing step 6).
     final double scopeTax = quoteRequest ? 0.0 : (option?.quote.fixedTax ?? 0.0);
     ParcelOrderModel order = ParcelOrderModel(
       id: Constant.getUuid(),
-      subTotal: (quoteRequest ? 0.0 : (option != null ? option.quote.total - scopeTax : subTotal.value)).toString(),
+      subTotal: (quoteRequest ? 0.0 : (option != null ? option.quote.subTotal : subTotal.value)).toString(),
       parcelType: selectedCategory?.title ?? '',
       parcelCategoryID: selectedCategory?.id ?? '',
       note: senderNoteController.value.text,
@@ -479,9 +515,11 @@ class BookParcelController extends GetxController {
       distance: distance.value.toStringAsFixed(4),
       // Same city: the category actually charged (moved up when the weight or
       // the dimensions exceed the one picked - doc point 42).
-      parcelWeight: isCityScope && chargedWeight != null ? (chargedWeight?.title ?? '') : '${_kg(weightKg ?? 0)} kg',
-      parcelWeightCharge: isCityScope ? chargedWeight?.deliveryCharge : null,
-      sendToDriver: isScheduled.value == true ? false : true,
+      parcelWeight: isCityScope && option?.carrier == null && chargedWeight != null ? (chargedWeight?.title ?? '') : '${_kg(weightKg ?? actualWeightKg)} kg',
+      parcelWeightCharge: isCityScope && option?.carrier == null ? chargedWeight?.deliveryCharge : null,
+      // For carrier company orders, do NOT dispatch directly to drivers.
+      // The order is received by the Company Owner first, who assigns it.
+      sendToDriver: option?.carrier != null ? false : (isScheduled.value == true ? false : true),
       senderPickupDateTime: Timestamp.fromDate(senderPickup),
       receiverPickupDateTime: Timestamp.fromDate(DateTime.now()),
 
@@ -510,8 +548,9 @@ class BookParcelController extends GetxController {
       senderLatLong: senderLocation.value,
       sectionId: Constant.sectionConstantModel?.id ?? '',
       taxSetting: Constant.orderProductTaxList,
-      platformFee: Constant.platformFeeModel?.fee ?? '0.0',
-      platformTax: Constant.platformTaxList,
+      // As charged: nothing while the admin has the fee disabled.
+      platformFee: PlatformFeeCharge.current().feeField,
+      platformTax: PlatformFeeCharge.current().taxes,
     );
 
     // The receiver as flat fields (app-spec-parcel-sms.md), next to the
@@ -524,8 +563,7 @@ class BookParcelController extends GetxController {
 
     // Shipping fields (tracking number / QR / pickup code are generated when
     // the order is placed).
-    final num? l = _dimension(lengthController.value), w = _dimension(widthController.value), h = _dimension(heightController.value);
-    final double? volumetricKg = volumetricWeightKg;
+    final num? l = lengthCm, w = widthCm, h = heightCm;
     order
       ..shipmentType = shipmentType.value
       ..scope = scope.value
@@ -542,26 +580,16 @@ class BookParcelController extends GetxController {
       ..parcelScopeTax = scopeTax > 0 ? scopeTax : null
       ..carrierId = option?.carrier?.id
       ..carrierName = option?.carrier?.name
+      ..carrierOwnerId = option?.carrier?.ownerId
       ..quoteRequested = quoteRequest ? true : null
       ..regionId = originRegionId;
     if (quoteRequest) {
       order.status = ParcelShipping.quoteRequestedStatus;
       order.sendToDriver = false;
     } else if (option != null) {
-      final q = option.quote;
-      order.priceBreakdown = {
-        'carrierPrice': q.carrierPrice,
-        'extraKgCharge': q.extraKgCharge,
-        'fixedTax': q.fixedTax,
-        'commission': q.commission,
-        'options': q.options,
-        'total': q.total,
-        'currency': RegionService.currencyForRecord(originRegionId)?.code ?? '',
-        'source': q.source,
-        // What the price was computed on (doc point 42): the physical weight,
-        // the volumetric weight of the dimensions, and the greater of the two.
-        if (volumetricKg != null) ...{'actualKg': actualWeightKg, 'volumetricKg': volumetricKg, 'chargeableKg': offerWeightKg},
-      };
+      // app-spec-parcel-pricing section 7. `total` and `smsCharge` are
+      // completed at checkout (what the customer actually pays).
+      order.priceBreakdown = option.quote.breakdown(currency: RegionService.currencyForRecord(originRegionId)?.code ?? '');
     }
     // Dispatch geo-points follow where the parcel physically is: a driver
     // collects at the origin pickup point / delivers to the destination one.

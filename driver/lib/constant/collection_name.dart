@@ -51,4 +51,5 @@ class CollectionName {
   static const String itemsReview = 'items_review';
   static const String chat = "chat";
   static const String regions = "regions";
+  static const String companyCashLedger = "company_cash_ledger";
 }

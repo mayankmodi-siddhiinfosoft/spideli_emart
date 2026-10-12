@@ -37,6 +37,9 @@ class ParcelOrderDetailsController extends GetxController {
   RxDouble scopeTax = 0.0.obs;
   RxDouble smsCharge = 0.0.obs;
 
+  /// Door / pickup-point charges (priceBreakdown.options), in the total.
+  RxDouble options = 0.0.obs;
+
   /// The bill exactly as the customer was charged ([ParcelAmounts]), so the
   /// "Order Total" — the cash a driver collects — reconciles with the lines
   /// shown. Tolerant of a record without `subTotal`, taxes or commission.
@@ -48,6 +51,7 @@ class ParcelOrderDetailsController extends GetxController {
     platformFee.value = amounts.platformFee;
     platformTaxAmount.value = amounts.platformTax;
     scopeTax.value = amounts.scopeTax;
+    options.value = amounts.options;
     smsCharge.value = amounts.smsCharge;
 
     adminCommission.value = 0.0;

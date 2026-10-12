@@ -1,3 +1,4 @@
+import 'package:customer/utils/platform_fee_charge.dart';
 import 'dart:developer';
 import 'dart:math' as maths;
 
@@ -43,6 +44,9 @@ class RentalConformationController extends GetxController {
   RxDouble taxAmount = 0.0.obs;
   RxDouble orderTaxAmount = 0.0.obs;
   RxDouble platformTaxAmount = 0.0.obs;
+
+  /// The platform fee in [totalAmount] (0 when not charged).
+  RxDouble platformFee = 0.0.obs;
   RxDouble totalAmount = 0.0.obs;
   Rx<CouponModel> selectedCouponModel = CouponModel().obs;
 
@@ -63,13 +67,12 @@ class RentalConformationController extends GetxController {
       orderTaxAmount.value += Constant.calculateTax(amount: (subTotal.value - discount.value).toString(), taxModel: taxElement);
     }
     log("platformTaxAmount.value ::11:: ${Constant.platformTaxList?.length}");
-    if (Constant.platformFeeModel?.enable == true && double.parse(Constant.platformFeeModel?.fee ?? '0.0') > 0.0) {
-      for (var taxElement in Constant.platformTaxList ?? []) {
-        platformTaxAmount.value += Constant.calculateTax(amount: Constant.platformFeeModel?.fee ?? '0.0', taxModel: taxElement);
-      }
-    }
+    // Platform fee and its taxes only while the admin has it enabled.
+    final PlatformFeeCharge platformCharge = PlatformFeeCharge.current();
+    platformFee.value = platformCharge.fee;
+    platformTaxAmount.value = platformCharge.taxAmount();
     taxAmount.value = orderTaxAmount.value + platformTaxAmount.value;
-    totalAmount.value = subTotal.value - discount.value + double.parse(Constant.platformFeeModel?.fee ?? '0.0') + taxAmount.value;
+    totalAmount.value = subTotal.value - discount.value + platformFee.value + taxAmount.value;
   }
 
   RxList<CouponModel> couponList = <CouponModel>[].obs;
@@ -109,8 +112,10 @@ class RentalConformationController extends GetxController {
     rentalOrderModel.value.couponId = selectedCouponModel.value.id;
     rentalOrderModel.value.subTotal = subTotal.value.toString();
     rentalOrderModel.value.otpCode = (maths.Random().nextInt(9000) + 1000).toString();
-    rentalOrderModel.value.platformFee = Constant.platformFeeModel?.fee;
-    rentalOrderModel.value.platformTax = Constant.platformTaxList;
+    // Recorded as charged: "0.0" / [] while the admin has the fee disabled.
+    final PlatformFeeCharge platformCharge = PlatformFeeCharge.current();
+    rentalOrderModel.value.platformFee = platformCharge.feeField;
+    rentalOrderModel.value.platformTax = platformCharge.taxes;
     rentalOrderModel.value.taxSetting = Constant.orderProductTaxList;
     // Creation write; `priceProposal` / `listedPrice` are not in toJson (the
     // Driver app answers the proposal), so they are added here.

@@ -424,8 +424,8 @@ class OnDemandBookingScreen extends StatelessWidget {
                 )
                 : const SizedBox(),
             const DsDivider(spacing: DsSpace.xs),
-            if (Constant.platformFeeModel?.enable == true) rowText(context, "Platform fee".tr, Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId))),
-            if (Constant.platformFeeModel?.enable == true) const DsDivider(spacing: DsSpace.xs),
+            if (controller.platformFee.value > 0) rowText(context, "Platform fee".tr, Constant.amountShow(amount: controller.platformFee.value.toString(), currency: RegionService.currencyForService(regionId: controller.provider.value?.regionId))),
+            if (controller.platformFee.value > 0) const DsDivider(spacing: DsSpace.xs),
             InkWell(
               onTap: () {
                 showBillBifurcationDialog(context, controller);

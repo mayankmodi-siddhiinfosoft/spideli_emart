@@ -76,7 +76,7 @@ Content-Type: application/json
 | Field | Type | Rules |
 |---|---|---|
 | `token` | string | Recipient FCM registration token. Send **exactly one** of `token` / `topic`. Trimmed; 32-4096 chars of `[A-Za-z0-9_\-:.]`; `''`, `'null'`, `'undefined'` are refused (400). |
-| `topic` | string | FCM topic (`/topics/` prefix optional), `[a-zA-Z0-9-_.~%]{1,900}`. **Only callers whose `users/{uid}.role` is `admin`** (setting `PUSH_TOPIC_ROLES`). The apps never send to topics. |
+| `topic` | string | FCM topic (`/topics/` prefix optional), `[a-zA-Z0-9-_.~%]{1,900}`. **Only callers whose `users/{uid}.role` is `admin`** (setting `PUSH_TOPIC_ROLES`). The apps never send a topic here: the customer app's store-chat topic push (`store_chat_<vendorID>`, `.claude/PUSH-CHANNELS.md` "Store chat topic") goes only on the legacy FCM v1 path and is skipped on this path. |
 | `title` | string | Notification title. Longer than **200** characters (code points): clipped, reported in `truncated`. `""` is sent as-is. |
 | `body` | string | Notification body. Longer than **1000** characters: clipped, reported. |
 | `data` | object | FCM data. Converted exactly like the apps' `PushPayload.stringData`: strings as-is, objects / arrays JSON-encoded, numbers and booleans with their string form (`5` -> `"5"`, `true` -> `"true"`), `null` drops the key. Keys are trimmed; empty keys and FCM-reserved keys (`from`, `notification`, `message_type`, `collapse_key`, anything starting with `google` or `gcm`) are dropped. Converted / dropped keys are reported. Keys plus values over **4096** UTF-8 bytes: refused with **413**. (A Dart `1.0` arrives in JSON as `1` and becomes `"1"`; send it as a string to keep the `.0`.) |

@@ -89,7 +89,12 @@ class _ParcelCarrierSelectionScreenState extends State<ParcelCarrierSelectionScr
                 DsSectionHeader(title: "Choose a carrier".tr, subtitle: "${options.length} ${'available'.tr}"),
                 for (int i = 0; i < options.length; i++) _optionTile(options[i], i, currency),
                 const DsGap(DsSpace.sm),
-                ParcelBreakdownCard(currency: currency, breakdown: ParcelLabels.breakdownOf(options[selected].quote, currency?.code)),
+                ParcelBreakdownCard(
+                  currency: currency,
+                  breakdown: ParcelLabels.breakdownOf(options[selected].quote, currency?.code),
+                  pickupMethod: controller.pickupMethod.value,
+                  deliveryMethod: controller.deliveryMethod.value,
+                ),
                 // The carrier's own conditions (delivery_carriers.conditions),
                 // shown where the carrier is chosen.
                 if ((options[selected].carrier?.conditions ?? '').isNotEmpty) ...[

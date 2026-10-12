@@ -1,3 +1,5 @@
+import 'package:customer/utils/platform_fee_charge.dart';
+import 'package:customer/utils/wallet_checkout.dart';
 import 'package:customer/utils/booking_status_tabs.dart';
 import 'dart:async';
 
@@ -108,13 +110,11 @@ class MyRentalBookingController extends GetxController {
       }
 
       /// ---------------- PLATFORM TAX ----------------
-      if (double.parse(selectedOrder.value.platformFee ?? '0.0') > 0) {
-        for (var taxElement in selectedOrder.value.platformTax ?? []) {
-          platformTaxAmount.value += Constant.calculateTax(amount: selectedOrder.value.platformFee ?? '0.0', taxModel: taxElement);
-        }
-      }
+      // What the booking recorded (none when the fee was disabled).
+      final PlatformFeeCharge platformCharge = PlatformFeeCharge.recorded(selectedOrder.value.platformFee, selectedOrder.value.platformTax);
+      platformTaxAmount.value = platformCharge.taxAmount();
       taxAmount.value = orderTaxAmount.value + platformTaxAmount.value;
-      totalAmount.value = (subTotal.value - discount.value) + double.parse(selectedOrder.value.platformFee!) + taxAmount.value;
+      totalAmount.value = (subTotal.value - discount.value) + platformCharge.fee + taxAmount.value;
     } catch (e) {
       ShowToastDialog.showToast("Failed to calculate total: $e");
     }
@@ -141,6 +141,8 @@ class MyRentalBookingController extends GetxController {
       selectedOrder.value.paymentStatus = true;
       selectedOrder.value.paymentMethod = selectedPaymentMethod.value;
       if (selectedPaymentMethod.value == PaymentGateway.wallet.name) {
+        // The debit, its wallet row and the booking's paid state in ONE
+        // transaction (WalletCheckout): never money taken on an unpaid booking.
         WalletTransactionModel transactionModel = WalletTransactionModel(
           id: Constant.getUuid(),
           amount: double.parse(totalAmount.toString()),
@@ -155,19 +157,27 @@ class MyRentalBookingController extends GetxController {
           paymentStatus: "success".tr,
           serviceType: Constant.parcelServiceType,
         );
-
-        await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-          if (value == true) {
-            await FireStoreUtils.updateUserWallet(amount: "-${totalAmount.value.toString()}", userId: FireStoreUtils.getCurrentUid());
-          }
-        });
+        ShowToastDialog.showLoader("Please wait...".tr);
+        final WalletPayOutcome outcome = await WalletCheckout.pay(
+          commit: () => FireStoreUtils.payFromWallet(
+            amount: totalAmount.value,
+            userId: FireStoreUtils.getCurrentUid(),
+            walletTransaction: transactionModel,
+            orderWrites: [FireStoreUtils.rentalPaymentWrite(selectedOrder.value)],
+          ),
+        );
+        ShowToastDialog.closeLoader();
+        if (outcome != WalletPayOutcome.paid) {
+          selectedOrder.value.paymentStatus = false;
+          ShowToastDialog.showToast(WalletCheckout.failureMessage(outcome).tr);
+          return;
+        }
+      } else {
+        await FireStoreUtils.updateRentalPayment(selectedOrder.value);
       }
-
-      await FireStoreUtils.updateRentalPayment(selectedOrder.value).then((value) {
-        ShowToastDialog.showToast("Payment successfully".tr);
-        Get.back();
-        Get.back();
-      });
+      ShowToastDialog.showToast("Payment successfully".tr);
+      Get.back();
+      Get.back();
     }
   }
 

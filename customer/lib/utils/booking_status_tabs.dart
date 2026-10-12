@@ -41,6 +41,23 @@ abstract final class BookingStatusTabs {
   /// status as it is.
   static String label(String? status) => isWaitingForDriver(status) ? 'Looking for a driver'.tr : (status ?? '').tr;
 
+  /// The status line of a parcel's details screen: the quote states first;
+  /// then the tracking status once the parcel has moved (`Waiting drop-off`,
+  /// `Collected`, ..., `Delivered`, `Cancelled`); before that - `parcelStatus`
+  /// still `Created` / `Paid`, or a parcel without tracking - the order status
+  /// as the bookings list shows it ([label]: "Looking for a driver" while the
+  /// dispatch is offering it, never "Driver Rejected"; "Driver Accepted"
+  /// once a driver took it, not the stale "Paid").
+  static String parcelLabel(ParcelOrderModel order) {
+    if (order.awaitingQuote) return 'Waiting for a quote'.tr;
+    if (order.quoteReadyToPay) return 'Quote ready - pay to confirm'.tr;
+    final String tracking = (order.parcelStatus ?? '').trim();
+    if (tracking.isNotEmpty && tracking != ParcelShipping.created && tracking != ParcelShipping.paid) return tracking.tr;
+    final String status = (order.status ?? '').trim();
+    if (status.isNotEmpty) return label(status);
+    return tracking.tr;
+  }
+
   /// The statuses where a booking's `driverId` is not (or not yet) its
   /// driver: before dispatch, while a driver is only being offered it, and
   /// after one declined (the dispatch nulls `driverId` then).

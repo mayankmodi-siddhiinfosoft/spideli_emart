@@ -608,10 +608,10 @@ class CabBookingScreen extends StatelessWidget {
                                   value: Constant.amountShow(amount: controller.discount.value.toString(), currency: controller.rideCurrency),
                                   valueColor: context.dsColors.dangerStrong,
                                 ),
-                                if (Constant.platformFeeModel?.enable == true)
+                                if (controller.platformFee.value > 0)
                                   CabBillRow(
                                     label: "Platform fee".tr,
-                                    value: Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: controller.rideCurrency),
+                                    value: Constant.amountShow(amount: controller.platformFee.value.toString(), currency: controller.rideCurrency),
                                   ),
                                 CabBillRow(
                                   label: "Tax amount".tr,
@@ -905,10 +905,10 @@ class CabBookingScreen extends StatelessWidget {
                                   value: Constant.amountShow(amount: controller.discount.value.toString(), currency: controller.rideCurrency),
                                   valueColor: c.dangerStrong,
                                 ),
-                                if (Constant.platformFeeModel?.enable == true)
+                                if (controller.platformFee.value > 0)
                                   CabBillRow(
                                     label: "Platform fee".tr,
-                                    value: Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: controller.rideCurrency),
+                                    value: Constant.amountShow(amount: controller.platformFee.value.toString(), currency: controller.rideCurrency),
                                   ),
                                 CabBillRow(
                                   label: "Tax amount".tr,

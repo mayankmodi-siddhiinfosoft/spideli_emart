@@ -204,8 +204,8 @@ class RentalConformationScreen extends StatelessWidget {
                             value: Constant.amountShow(amount: controller.discount.value.toString(), currency: currency),
                             tone: DsTone.danger,
                           ),
-                          if (Constant.platformFeeModel?.enable == true)
-                            RentalSummaryRow(label: "Platform fee".tr, value: Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: currency)),
+                          if (controller.platformFee.value > 0)
+                            RentalSummaryRow(label: "Platform fee".tr, value: Constant.amountShow(amount: controller.platformFee.value.toString(), currency: currency)),
                           RentalSummaryRow(
                             label: "Tax amount".tr,
                             value: Constant.amountShow(amount: (controller.taxAmount.value).toString(), currency: currency),

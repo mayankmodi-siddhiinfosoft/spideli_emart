@@ -1,8 +1,9 @@
-import 'package:driver/services/online_status_rules.dart';
 import 'package:driver/app/owner_screen/driver_create_screen.dart';
 import 'package:driver/app/owner_screen/driver_order_list.dart';
+import 'package:driver/app/owner_screen/owner_driver_verification_screen.dart';
 import 'package:driver/controllers/owner_home_controller.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/online_status_rules.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -45,6 +46,11 @@ class ViewAllDriverScreen extends StatelessWidget {
                       index: index,
                       child: _DriverCard(
                         driver: driver,
+                        onVerify: () {
+                          Get.to(() => OwnerDriverVerificationScreen(driver: driver))?.then((_) {
+                            controller.getDriverList();
+                          });
+                        },
                         onEdit: () {
                           Get.to(() => const DriverCreateScreen(), arguments: {"driverModel": driver})?.then((value0) {
                             if (value0 == true) controller.getDriverList();
@@ -73,12 +79,14 @@ class ViewAllDriverScreen extends StatelessWidget {
 
 class _DriverCard extends StatelessWidget {
   final UserModel driver;
+  final VoidCallback onVerify;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onViewOrders;
 
   const _DriverCard({
     required this.driver,
+    required this.onVerify,
     required this.onEdit,
     required this.onDelete,
     required this.onViewOrders,
@@ -89,6 +97,7 @@ class _DriverCard extends StatelessWidget {
     final c = context.dsColors;
     final t = context.dsText;
     final isOnline = OnlineStatusRules.isOnline(driver.isActive);
+    final isVerified = driver.isDocumentVerify == true;
     return DsCard.outlined(
       margin: const EdgeInsets.only(bottom: DsSpace.md),
       padding: const EdgeInsets.all(DsSpace.md),
@@ -124,7 +133,9 @@ class _DriverCard extends StatelessWidget {
               PopupMenuButton<String>(
                 tooltip: 'More'.tr,
                 onSelected: (value) {
-                  if (value == 'Edit Driver') {
+                  if (value == 'Verify Documents') {
+                    onVerify();
+                  } else if (value == 'Edit Driver') {
                     onEdit();
                   } else if (value == 'Delete Driver') {
                     onDelete();
@@ -133,6 +144,7 @@ class _DriverCard extends StatelessWidget {
                   }
                 },
                 itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                  PopupMenuItem<String>(value: 'Verify Documents', child: Text('Verify Documents'.tr, style: t.body)),
                   PopupMenuItem<String>(value: 'Edit Driver', child: Text('Edit Driver'.tr, style: t.body)),
                   PopupMenuItem<String>(value: 'Delete Driver', child: Text('Delete Driver'.tr, style: t.body)),
                   PopupMenuItem<String>(value: 'View All Order', child: Text('View All Order'.tr, style: t.body)),
@@ -146,12 +158,26 @@ class _DriverCard extends StatelessWidget {
           Row(
             children: [
               DsBadge(
+                label: isVerified ? "Verified".tr : "Unverified".tr,
+                tone: isVerified ? DsTone.success : DsTone.warning,
+                icon: isVerified ? Icons.verified_user_rounded : Icons.pending_actions_rounded,
+                small: true,
+              ),
+              const SizedBox(width: 6),
+              DsBadge(
                 label: isOnline ? "Online".tr : "Offline".tr,
                 tone: isOnline ? DsTone.success : DsTone.neutral,
                 icon: isOnline ? Icons.wifi_tethering_rounded : Icons.wifi_tethering_off_rounded,
                 small: true,
               ),
               const Spacer(),
+              DsButton.ghost(
+                label: 'Docs'.tr,
+                size: DsButtonSize.sm,
+                icon: Icons.assignment_outlined,
+                onPressed: onVerify,
+              ),
+              const SizedBox(width: 4),
               DsButton.ghost(
                 label: 'View All Order'.tr,
                 size: DsButtonSize.sm,

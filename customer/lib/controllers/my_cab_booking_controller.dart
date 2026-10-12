@@ -1,3 +1,5 @@
+import 'package:customer/utils/platform_fee_charge.dart';
+import 'package:customer/utils/wallet_checkout.dart';
 import 'package:customer/utils/booking_status_tabs.dart';
 import 'package:customer/utils/region_service.dart';
 import 'dart:convert';
@@ -161,12 +163,16 @@ class MyCabBookingController extends GetxController {
   RxDouble orderTaxAmount = 0.0.obs;
   RxDouble platformTaxAmount = 0.0.obs;
 
+  /// The platform fee in [totalAmount] (0 when not charged).
+  RxDouble platformFee = 0.0.obs;
+
   void calculateTotalAmount(CabOrderModel order) {
     subTotal.value = 0.0;
     discount.value = 0.0;
     taxAmount.value = 0.0;
     totalAmount.value = 0.0;
     platformTaxAmount.value = 0.0;
+    platformFee.value = 0.0;
     orderTaxAmount.value = 0.0;
 
     selectedOrder.value = order;
@@ -181,15 +187,15 @@ class MyCabBookingController extends GetxController {
         orderTaxAmount.value += Constant.calculateTax(amount: (subTotal.value - discount.value).toString(), taxModel: taxElement);
       }
 
-      /// ---------------- PLATFORM TAX ----------------
-      if (double.parse(Constant.platformFeeModel?.fee ?? '0.0') > 0.0) {
-        for (var taxElement in Constant.platformTaxList ?? []) {
-          platformTaxAmount.value += Constant.calculateTax(amount: Constant.platformFeeModel?.fee ?? '0.0', taxModel: taxElement);
-        }
-      }
+      /// ---------------- PLATFORM FEE + TAX ----------------
+      // What the ride recorded when it was booked (none when the fee was
+      // disabled), never today's setting.
+      final PlatformFeeCharge platformCharge = PlatformFeeCharge.recorded(selectedOrder.value.platformFee, selectedOrder.value.platformTax);
+      platformFee.value = platformCharge.fee;
+      platformTaxAmount.value = platformCharge.taxAmount();
       taxAmount.value = orderTaxAmount.value + platformTaxAmount.value;
 
-      totalAmount.value = (subTotal.value - discount.value) + double.parse(Constant.platformFeeModel?.fee ?? '0.0') + taxAmount.value;
+      totalAmount.value = (subTotal.value - discount.value) + platformFee.value + taxAmount.value;
     } catch (e) {
       ShowToastDialog.showToast("Failed to calculate total: $e");
     }
@@ -219,10 +225,10 @@ class MyCabBookingController extends GetxController {
       });
     } else {
       selectedOrder.value.paymentMethod = selectedPaymentMethod.value;
-      userModel.value.inProgressOrderID ??= [];
-      userModel.value.inProgressOrderID!.clear();
-      await FireStoreUtils.updateUser(userModel.value);
+      selectedOrder.value.paymentStatus = true;
       if (selectedPaymentMethod.value == PaymentGateway.wallet.name) {
+        // The debit, its wallet row and the ride's paid state in ONE
+        // transaction (WalletCheckout): never money taken on an unpaid ride.
         WalletTransactionModel transactionModel = WalletTransactionModel(
           id: Constant.getUuid(),
           amount: double.parse(totalAmount.toString()),
@@ -237,16 +243,29 @@ class MyCabBookingController extends GetxController {
           paymentStatus: "success".tr,
           serviceType: Constant.parcelServiceType,
         );
-
-        await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-          await FireStoreUtils.updateUserWallet(amount: "-${totalAmount.value.toString()}", userId: FireStoreUtils.getCurrentUid());
-        });
+        ShowToastDialog.showLoader("Please wait...".tr);
+        final WalletPayOutcome outcome = await WalletCheckout.pay(
+          commit: () => FireStoreUtils.payFromWallet(
+            amount: totalAmount.value,
+            userId: FireStoreUtils.getCurrentUid(),
+            walletTransaction: transactionModel,
+            orderWrites: [FireStoreUtils.ridePaymentWrite(selectedOrder.value)],
+          ),
+        );
+        ShowToastDialog.closeLoader();
+        if (outcome != WalletPayOutcome.paid) {
+          selectedOrder.value.paymentStatus = false;
+          ShowToastDialog.showToast(WalletCheckout.failureMessage(outcome).tr);
+          return;
+        }
+      } else {
+        await FireStoreUtils.updateRidePayment(selectedOrder.value);
       }
-      selectedOrder.value.paymentStatus = true;
-      await FireStoreUtils.updateRidePayment(selectedOrder.value).then((value) {
-        ShowToastDialog.showToast("Payment successfully".tr);
-        Get.back();
-      });
+      userModel.value.inProgressOrderID ??= [];
+      userModel.value.inProgressOrderID!.clear();
+      await FireStoreUtils.updateUser(userModel.value);
+      ShowToastDialog.showToast("Payment successfully".tr);
+      Get.back();
     }
   }
 

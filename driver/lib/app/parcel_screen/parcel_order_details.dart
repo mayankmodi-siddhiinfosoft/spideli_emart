@@ -113,7 +113,7 @@ class ParcelOrderDetails extends StatelessWidget {
                                 showConnector: false,
                               ),
                               const DsDivider(spacing: DsSpace.lg),
-                              if (controller.parcelOrder.value.isSchedule == true)
+                              if (controller.parcelOrder.value.isSchedule == true && controller.parcelOrder.value.senderPickupDateTime != null)
                                 Padding(
                                   padding: const EdgeInsets.only(bottom: DsSpace.sm),
                                   child: DsInlineAlert(
@@ -130,7 +130,7 @@ class ParcelOrderDetails extends StatelessWidget {
                                     const DsGap(DsSpace.sm),
                                     Expanded(
                                       child: Text(
-                                        "Order Date:${controller.parcelOrder.value.isSchedule == true ? controller.formatDate(controller.parcelOrder.value.createdAt!) : controller.formatDate(controller.parcelOrder.value.senderPickupDateTime!)}"
+                                        "${'Order Date:'.tr}${controller.parcelOrder.value.orderDateStamp == null ? '-' : controller.formatDate(controller.parcelOrder.value.orderDateStamp!)}"
                                             .tr,
                                         style: t.bodySm.withColor(c.infoStrong),
                                       ),
@@ -308,6 +308,16 @@ class ParcelOrderDetails extends StatelessWidget {
                                   value: Constant.amountShow(
                                       currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId),
                                       amount: controller.scopeTax.value.toString()),
+                                ),
+
+                              // Door / pickup-point charges (app-spec-parcel-pricing
+                              // step 5), outside VAT and coupons.
+                              if (controller.options.value > 0)
+                                OrderMoneyRow(
+                                  label: "Pickup and delivery options".tr,
+                                  value: Constant.amountShow(
+                                      currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId),
+                                      amount: controller.options.value.toString()),
                                 ),
 
                               // Receiver SMS (point 54): its fee, outside VAT

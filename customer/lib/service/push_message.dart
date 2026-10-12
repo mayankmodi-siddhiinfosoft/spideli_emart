@@ -56,6 +56,18 @@ abstract final class PushChannels {
   /// Driver: jobs, order updates and chat; also the driver's manifest default.
   static const String driver = 'driver_notifications_channel';
 
+  /// Driver: the loud job channel ("New jobs"), for a job the account must
+  /// act on (`.claude/PUSH-CHANNELS.md`, driver section).
+  static const String driverJob = 'driver_jobs';
+
+  /// Template types to a driver-app account that announce work to act on:
+  /// a carrier parcel waiting for the company owner's assignment. They use
+  /// the driver's job channel (with the admin's order ringtone when set).
+  static const Set<String> driverJobKinds = {'carrier_parcel_order'};
+
+  /// A job for a driver-app account (the driver's job channel).
+  static bool isDriverJob(PushRecipient? recipient, String? kind) => recipient == PushRecipient.driver && driverJobKinds.contains((kind ?? '').trim().toLowerCase());
+
   /// Provider: `01` "Bookings and messages", also the provider's manifest
   /// default (`spideli_provider/lib/services/push_message.dart`).
   static const String provider = '01';
@@ -96,6 +108,12 @@ abstract final class PushChannels {
         }
         return const PushChannelSpec(androidChannelId: storeGeneral);
       case PushRecipient.driver:
+        if (driverJobKinds.contains((kind ?? '').trim().toLowerCase())) {
+          if (OrderRingtone.isConfigured(orderRingtoneUrl)) {
+            return PushChannelSpec(androidChannelId: OrderRingtone.driverJobChannelIdFor(orderRingtoneUrl), apnsSound: OrderRingtone.iosSoundFor(orderRingtoneUrl)!);
+          }
+          return const PushChannelSpec(androidChannelId: driverJob);
+        }
         return const PushChannelSpec(androidChannelId: driver);
       case PushRecipient.provider:
         return const PushChannelSpec(androidChannelId: provider);
@@ -220,6 +238,26 @@ abstract final class PushPayload {
         },
       },
     };
+  }
+
+  /// FCM topic names: `[a-zA-Z0-9-_.~%]{1,900}` (without `/topics/`).
+  static final RegExp _topicName = RegExp(r'^[a-zA-Z0-9\-_.~%]{1,900}$');
+
+  /// Whether [topic] is a topic name FCM accepts.
+  static bool isValidTopic(String? topic) => _topicName.hasMatch(topic?.trim() ?? '');
+
+  /// The same message as [fcmV1Message], addressed to the FCM [topic]
+  /// (`message.topic`, no `token`): same notification, data, channel and
+  /// sounds. The caller checks [isValidTopic] first.
+  static Map<String, dynamic> fcmV1TopicMessage({
+    required String topic,
+    required String title,
+    required String body,
+    required Map<String, String> data,
+    required PushChannelSpec spec,
+  }) {
+    final Map<String, dynamic> message = fcmV1Message(token: '', title: title, body: body, data: data, spec: spec)..remove('token');
+    return {'topic': topic.trim(), ...message};
   }
 
   /// The request body of the `sendPush` function (`.claude/SERVER-PUSH-CONTRACT.md`):

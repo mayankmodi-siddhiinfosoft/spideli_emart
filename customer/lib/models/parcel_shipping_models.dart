@@ -30,6 +30,9 @@ class PickupPointModel {
   final List<String> regionIds;
   final bool active;
 
+  /// `publish == true` (app-spec-parcel-pricing 3.5): only these are offered.
+  final bool published;
+
   PickupPointModel({
     required this.id,
     required this.name,
@@ -42,6 +45,7 @@ class PickupPointModel {
     this.capacity = '',
     this.regionIds = const [],
     this.active = true,
+    this.published = true,
   });
 
   bool get hasLocation => latitude != null && longitude != null && !(latitude == 0 && longitude == 0);
@@ -92,18 +96,25 @@ class PickupPointModel {
       capacity: _s(json['capacity']),
       regionIds: regions,
       active: active,
+      published: json['publish'] == true || json['publish']?.toString() == 'true',
     );
   }
 
   bool inRegion(String? regionId) => regionIds.isEmpty || (regionId != null && regionIds.contains(regionId));
+
+  /// Offered for an order of region [regionId]: published and in that region
+  /// (`pickup_points.regionId`, app-spec-parcel-pricing 3.5 / section 4).
+  bool offeredIn(String regionId) => active && published && name.isNotEmpty && regionIds.contains(regionId);
 }
 
-/// `delivery_carriers/{id}` (spec 18.14 + the optional contract rateTable).
+/// `delivery_carriers/{id}` (spec 18.14, app-spec-parcel-pricing.md 3.2 / 3.3).
 class DeliveryCarrierModel {
   final String id;
   final String name;
   final String photo;
   final List<String> regionIds;
+  /// `deliveryScopes` (point 65): missing / empty = all three scopes.
+  final List<String> deliveryScopes;
   final bool publish;
   final bool? isVerified;
   final double? maxWeight;
@@ -117,17 +128,21 @@ class DeliveryCarrierModel {
   /// [rateCardFor], never this directly.
   final ParcelRateCard rateCard;
 
+  /// The owner/company user ID who manages this carrier.
+  final String? ownerId;
+
   /// `regionPricing`: the carrier's price per region (doc point 43).
   final Map<String, ParcelRateCard> regionPricing;
-  final ParcelRateTable? rateTable;
 
   DeliveryCarrierModel({
     required this.id,
     required this.name,
     this.photo = '',
     this.regionIds = const [],
+    this.deliveryScopes = const [],
     this.publish = true,
     this.isVerified,
+    this.ownerId,
     this.maxWeight,
     this.minDeliveryTime,
     this.maxDeliveryTime,
@@ -136,7 +151,6 @@ class DeliveryCarrierModel {
     this.rating,
     this.rateCard = const ParcelRateCard(),
     this.regionPricing = const <String, ParcelRateCard>{},
-    this.rateTable,
   });
 
   factory DeliveryCarrierModel.fromJson(String id, Map<String, dynamic> json) {
@@ -149,30 +163,38 @@ class DeliveryCarrierModel {
       name: _s(json['name']),
       photo: _s(json['photo']),
       regionIds: _ids(json['regionIds']),
+      deliveryScopes: _ids(json['deliveryScopes']),
       publish: json['publish'] != false,
       isVerified: json['isVerified'] is bool ? json['isVerified'] : null,
+      // `delivery_carriers/{id}.ownerId` (binding of 9 Oct; never `companyId`).
+      ownerId: _s(json['ownerId']).isEmpty ? null : _s(json['ownerId']),
       maxWeight: _d(json['maxWeight']),
       minDeliveryTime: _d(json['minDeliveryTime']),
       maxDeliveryTime: _d(json['maxDeliveryTime']),
       deliveryTimeUnit: _s(json['deliveryTimeUnit']).isEmpty ? 'days' : _s(json['deliveryTimeUnit']),
       conditions: _s(json['conditions']),
       rating: rating,
-      rateCard: ParcelRateCard.fromJson(json),
+      rateCard: ParcelRateCard.flatFromJson(json),
       regionPricing: ParcelRateCard.parseRegionPricing(json['regionPricing']),
-      rateTable: ParcelRateTable.fromJson(json['rateTable']),
     );
   }
 
-  /// Contract "Carriers" (admin spec §11): published, not explicitly
-  /// unverified, serving the origin region, able to carry the weight.
+  /// Spec step 3 - offered only when published (and not explicitly
+  /// unverified, admin spec section 11), serving the origin region, handling
+  /// the [scope] (`deliveryScopes`, missing / empty = all) and able to carry
+  /// [chargeableKg] (`maxWeight` not set, or >= it).
   ///
   /// Every field is optional and a missing one is "not set", never zero:
-  /// empty `regionIds` = served everywhere, and an UNRESOLVED origin region
-  /// hides nothing (the platform-wide `regionIds` rule).
-  bool isEligible({required String? originRegionId, required double weightKg}) {
+  /// empty `regionIds` = served everywhere. A carrier that names its regions
+  /// is offered ONLY in one of them: with the order's region R unresolved it
+  /// is not offered at all (it used to be offered everywhere - three Yaounde
+  /// carriers shown to an India customer, brief 12 Oct section 9).
+  bool isEligible({required String? originRegionId, required double chargeableKg, required String scope}) {
     if (!publish || isVerified == false) return false;
-    if (regionIds.isNotEmpty && originRegionId != null && originRegionId.isNotEmpty && !regionIds.contains(originRegionId)) return false;
-    if (maxWeight != null && maxWeight! > 0 && maxWeight! < weightKg) return false;
+    if (!ParcelPricing.handlesScope(deliveryScopes, scope)) return false;
+    final String region = (originRegionId ?? '').trim();
+    if (regionIds.isNotEmpty && !regionIds.contains(region)) return false;
+    if (maxWeight != null && maxWeight! > 0 && maxWeight! + 1e-9 < chargeableKg) return false;
     return true;
   }
 

@@ -22,12 +22,32 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
-/// Amounts of a parcel order, computed exactly as the parcel screens do.
+/// Amounts of a parcel order, computed exactly as checkout charged them
+/// (`ParcelOrderConfirmationController.calculatePrice`) and exactly as the
+/// Driver app's `ParcelAmounts` (driver/lib/utils/parcel_amounts.dart) reads
+/// them, so the receipt, the order screen, the history export, the cancel
+/// refund and the cash a driver collects are one number:
+///
+///   subTotal - discount + order taxes + platform fee + its taxes
+///   + fixed tax + options + receiver-SMS fee
+///
+/// Read tolerantly (a field left out or stored as text counts as 0).
+///
+/// Orders placed before 12 Oct 2026 recorded `platformTax` even when the
+/// platform fee's taxes were not charged (the fee setting was disabled). When
+/// the order's charged total (`priceBreakdown.total`) is exactly the total
+/// WITHOUT those taxes, they count as 0 - the Driver app's rule, so both apps
+/// agree (test/parcel_totals_fixture_test.dart).
 class ParcelAmounts {
   final double subTotal;
   final double discount;
   final double platformFee;
-  final double taxes;
+
+  /// Taxes on subTotal - discount.
+  final double orderTax;
+
+  /// Taxes on the platform fee (only when there is one).
+  final double platformTax;
 
   /// Fixed intercity / intercountry tax, outside VAT and coupons.
   final double scopeTax;
@@ -35,24 +55,86 @@ class ParcelAmounts {
   /// Receiver-SMS fee (point 54), outside VAT and coupons.
   final double smsCharge;
 
-  ParcelAmounts(this.subTotal, this.discount, this.platformFee, this.taxes, [this.scopeTax = 0, this.smsCharge = 0]);
+  /// Door / pickup-point charges (`priceBreakdown.options`), outside VAT and
+  /// coupons like the fixed tax.
+  final double options;
 
-  double get total => subTotal - discount + platformFee + taxes + scopeTax + smsCharge;
+  const ParcelAmounts({
+    this.subTotal = 0,
+    this.discount = 0,
+    this.platformFee = 0,
+    this.orderTax = 0,
+    this.platformTax = 0,
+    this.scopeTax = 0,
+    this.smsCharge = 0,
+    this.options = 0,
+  });
+
+  /// Every tax line: the order taxes and the platform fee's taxes.
+  double get taxes => orderTax + platformTax;
+
+  double get total => subTotal - discount + platformFee + taxes + scopeTax + options + smsCharge;
+
+  static double _number(dynamic value) {
+    final double? d = value is num ? value.toDouble() : double.tryParse((value ?? '').toString().trim());
+    return d == null || !d.isFinite ? 0 : d;
+  }
 
   factory ParcelAmounts.of(ParcelOrderModel o) {
-    final double sub = double.tryParse(o.subTotal ?? '') ?? 0;
-    final double disc = double.tryParse(o.discount ?? '') ?? 0;
-    final double fee = double.tryParse(o.platformFee ?? '') ?? 0;
-    double tax = 0;
+    final double sub = _number(o.subTotal);
+    final double disc = _number(o.discount);
+    final double fee = _number(o.platformFee);
+    double orderTax = 0;
     for (final t in o.taxSetting ?? []) {
-      tax += Constant.calculateTax(amount: (sub - disc).toString(), taxModel: t);
+      orderTax += Constant.calculateTax(amount: (sub - disc).toString(), taxModel: t);
     }
+    double platformTax = 0;
     if (fee > 0) {
       for (final t in o.platformTax ?? []) {
-        tax += Constant.calculateTax(amount: fee.toString(), taxModel: t);
+        platformTax += Constant.calculateTax(amount: fee.toString(), taxModel: t);
       }
     }
-    return ParcelAmounts(sub, disc, fee, tax, o.scopeTaxAmount, o.smsChargeAmount);
+    final ParcelAmounts lines = ParcelAmounts(
+      subTotal: sub,
+      discount: disc,
+      platformFee: fee > 0 ? fee : 0,
+      orderTax: orderTax,
+      platformTax: platformTax,
+      scopeTax: o.scopeTaxAmount > 0 ? o.scopeTaxAmount : 0,
+      smsCharge: o.smsChargeAmount > 0 ? o.smsChargeAmount : 0,
+      options: o.optionsAmount,
+    );
+    final dynamic charged = o.priceBreakdown?['total'];
+    final num? chargedTotal = charged is num ? charged : num.tryParse((charged ?? '').toString().trim());
+    return platformTaxCharged(lines, chargedTotal) ? lines : lines.withoutPlatformTax();
+  }
+
+  /// Whether the customer was charged the platform fee's taxes of [lines]:
+  /// false only when [chargedTotal] is the total without them (to the cent).
+  static bool platformTaxCharged(ParcelAmounts lines, num? chargedTotal) {
+    if (lines.platformTax <= 0 || chargedTotal == null || !chargedTotal.isFinite) return true;
+    final double withoutTax = lines.total - lines.platformTax;
+    return (chargedTotal - withoutTax).abs() >= 0.005;
+  }
+
+  ParcelAmounts withoutPlatformTax() => ParcelAmounts(
+        subTotal: subTotal,
+        discount: discount,
+        platformFee: platformFee,
+        orderTax: orderTax,
+        scopeTax: scopeTax,
+        smsCharge: smsCharge,
+        options: options,
+      );
+
+  /// The platform fee a parcel checkout charges: the section's fee only while
+  /// the admin has it enabled (`platformFee.enable`), else 0. Checkout used to
+  /// add the fee to the total even when disabled - with no "Platform fee" line
+  /// on screen - and to record the fee's taxes it had not charged.
+  static double chargedPlatformFee({bool? enabled, String? fee}) {
+    if (enabled != true) return 0;
+    final double v = _number(fee);
+    return v > 0 ? v : 0;
   }
 }
 
@@ -336,12 +418,15 @@ class ParcelReceiptPdf {
     final ParcelAmounts a = ParcelAmounts.of(o);
     final Map<String, dynamic>? b = o.priceBreakdown;
     if (b != null && (b['source'] ?? '') != 'default') {
-      for (final e in ParcelLabels.breakdownLines(b)) {
+      for (final e in ParcelLabels.breakdownLines(b, pickupMethod: o.pickupMethod, deliveryMethod: o.deliveryMethod)) {
         money(e.key, e.value);
       }
     } else {
       money('Delivery charge'.tr, a.subTotal);
       if (a.scopeTax > 0) money('Fixed tax'.tr, a.scopeTax);
+      for (final e in ParcelLabels.optionLines(b, pickupMethod: o.pickupMethod, deliveryMethod: o.deliveryMethod)) {
+        money(e.key, e.value);
+      }
     }
     // Point 54: not a `priceBreakdown` line, so shown whatever priced the order.
     if (a.smsCharge > 0) money('Receiver SMS'.tr, a.smsCharge);

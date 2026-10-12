@@ -9,6 +9,7 @@ import 'package:driver/models/order_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/services/audio_player_service.dart';
+import 'package:driver/services/carrier_parcel_rules.dart';
 import 'package:driver/services/dispatch_navigation.dart';
 import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/services/dispatch_offer_service.dart';
@@ -659,6 +660,14 @@ class IncomingOfferService {
         if (have != null) next.remove(id);
         return;
       }
+      // A carrier parcel the company owner did not assign to this driver is
+      // never shown (no dialog, no card): handed back to the owner once,
+      // from server data only (CarrierParcelRules).
+      if (kind == DispatchKind.parcel && CarrierParcelRules.isForeignOffer(data, uid)) {
+        if (have != null) next.remove(id);
+        if (fromServer) _returnForeignCarrierOffer(id, uid);
+        return;
+      }
       // A rental waiting for the customer's answer to this driver's counter:
       // no countdown now, and a fresh one once the customer has answered.
       if (DispatchOrderRules.awaitsCustomer(data, uid)) _forgetRound(id);
@@ -733,6 +742,18 @@ class IncomingOfferService {
       }
     }
     _maybeShowDialog();
+  }
+
+  /// Ids of foreign carrier offers already being handed back (one write each).
+  static final Set<String> _returningCarrier = {};
+
+  /// A `Driver Pending` carrier parcel naming this driver that its company
+  /// owner did not assign: answered like a timeout (no reason), which for a
+  /// carrier parcel writes it back to the owner ([DispatchOfferService.timeout]).
+  static void _returnForeignCarrierOffer(String id, String uid) {
+    if (!_returningCarrier.add(id)) return;
+    log("IncomingOfferService: carrier parcel $id was not assigned by its owner; handed back");
+    unawaited(DispatchOfferService.timeout(DispatchKind.parcel, id, uid).whenComplete(() => _returningCarrier.remove(id)));
   }
 
   static void _cancelTimer(String id) {

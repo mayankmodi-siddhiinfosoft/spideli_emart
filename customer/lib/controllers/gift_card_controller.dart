@@ -1,3 +1,4 @@
+import 'package:customer/utils/wallet_checkout.dart';
 import 'package:customer/utils/region_service.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -131,14 +132,24 @@ class GiftCardController extends GetxController {
         note: "Gift card purchase amount debited".tr,
         paymentStatus: "success".tr,
       );
-
-      await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-        if (value == true) {
-          await FireStoreUtils.updateUserWallet(amount: "-${amountController.value.text.toString()}", userId: FireStoreUtils.getCurrentUid()).then((value) {});
-        }
-      });
+      // The debit, its wallet row and the gift card in ONE transaction
+      // (WalletCheckout): never money taken without the card.
+      final WalletPayOutcome outcome = await WalletCheckout.pay(
+        commit: () => FireStoreUtils.payFromWallet(
+          amount: double.parse(amountController.value.text),
+          userId: FireStoreUtils.getCurrentUid(),
+          walletTransaction: transactionModel,
+          orderWrites: [FireStoreUtils.giftCardOrderWrite(giftCardsOrderModel)],
+        ),
+      );
+      if (outcome != WalletPayOutcome.paid) {
+        ShowToastDialog.closeLoader();
+        ShowToastDialog.showToast(WalletCheckout.failureMessage(outcome).tr);
+        return;
+      }
+    } else {
+      await FireStoreUtils.placeGiftCardOrder(giftCardsOrderModel);
     }
-    await FireStoreUtils.placeGiftCardOrder(giftCardsOrderModel);
     ShowToastDialog.closeLoader();
     Get.off(const HistoryGiftCard());
     ShowToastDialog.showToast("Gift card Purchases successfully".tr);

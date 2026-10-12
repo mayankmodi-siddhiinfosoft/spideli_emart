@@ -25,6 +25,7 @@ class ChangeSectionController extends GetxController {
 
     allSections.value = await FireStoreUtils.getAllActiveSections();
 
+    selectedSections.clear();
     final user = Constant.userModel;
     if (user != null && user.sectionIds != null) {
       for (final section in allSections) {

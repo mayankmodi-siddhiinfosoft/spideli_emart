@@ -72,6 +72,7 @@ class ParcelOrderModel {
   String? contentDescription;
   String? carrierId;
   String? carrierName;
+  String? carrierOwnerId;
   bool? quoteRequested;
   num? manualPrice;
 
@@ -88,6 +89,18 @@ class ParcelOrderModel {
 
   /// The receiver-SMS fee in the order total: 0 unless opted in.
   double get smsChargeAmount => sendReceiverSms == true ? (smsCharge ?? 0).toDouble() : 0;
+
+  /// Full priceBreakdown map saved by the customer app/admin.
+  Map<String, dynamic>? priceBreakdown;
+
+  /// `priceBreakdown.options`: the door / pickup-point charges (pickupCharge +
+  /// deliveryCharge, app-spec-parcel-pricing step 5), charged on top of
+  /// subTotal. 0 when absent, not a number or negative.
+  double get optionsAmount {
+    final dynamic opt = priceBreakdown?['options'];
+    final double? d = opt is num ? opt.toDouble() : double.tryParse(opt?.toString().trim() ?? '');
+    return d == null || !d.isFinite || d < 0 ? 0.0 : d;
+  }
 
   /// `priceBreakdown.total`: what the customer's checkout charged (written
   /// by the customer app when the order is placed or a quote is paid, the
@@ -261,12 +274,14 @@ class ParcelOrderModel {
     contentDescription = str(json['contentDescription']);
     carrierId = str(json['carrierId']);
     carrierName = str(json['carrierName']);
+    carrierOwnerId = str(json['carrierOwnerId']) ?? str(json['companyOwnerId']);
     quoteRequested = json['quoteRequested'] is bool ? json['quoteRequested'] as bool : null;
     manualPrice = json['manualPrice'] is num ? json['manualPrice'] as num : num.tryParse('${json['manualPrice']}');
     parcelScopeTax = json['parcelScopeTax'] is num ? json['parcelScopeTax'] as num : num.tryParse('${json['parcelScopeTax']}');
     sendReceiverSms = json['sendReceiverSms'] is bool ? json['sendReceiverSms'] as bool : null;
     smsCharge = json['smsCharge'] is num ? json['smsCharge'] as num : num.tryParse('${json['smsCharge']}');
     final dynamic breakdown = json['priceBreakdown'];
+    priceBreakdown = breakdown is Map ? Map<String, dynamic>.from(breakdown) : null;
     final dynamic charged = breakdown is Map ? breakdown['total'] : null;
     chargedTotal = charged is num ? charged : num.tryParse('${charged ?? ''}'.trim());
     receiverName = str(json['receiverName']);
@@ -283,6 +298,11 @@ class ParcelOrderModel {
     }
     cancellation = CancellationInfo.fromJson(json);
   }
+
+  /// The date an order card shows: when it was booked for a scheduled
+  /// parcel, else its pickup time (else when it was booked). Null when the
+  /// record has neither (a website / panel order may not): never a `!` crash.
+  Timestamp? get orderDateStamp => isSchedule == true ? (createdAt ?? senderPickupDateTime) : (senderPickupDateTime ?? createdAt);
 
   /// True when the order was created with the parcel/mail contract fields.
   bool get hasTrackingContract => parcelStatus != null || trackingNumber != null || qrValue != null;

@@ -72,7 +72,12 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                     ],
                     if (controller.parcelOrder.value.priceBreakdown != null && !controller.isQuotePayment && !controller.parcelOrder.value.isLegacyShape) ...[
                       const DsGap(DsSpace.lg),
-                      ParcelBreakdownCard(currency: controller.parcelCurrency, breakdown: controller.parcelOrder.value.priceBreakdown!),
+                      ParcelBreakdownCard(
+                        currency: controller.parcelCurrency,
+                        breakdown: controller.parcelOrder.value.priceBreakdown!,
+                        pickupMethod: controller.parcelOrder.value.pickupMethod,
+                        deliveryMethod: controller.parcelOrder.value.deliveryMethod,
+                      ),
                     ],
                     if (controller.isQuoteRequest) ...[
                       const DsGap(DsSpace.lg),
@@ -128,9 +133,11 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                               label: "Redeem now".tr,
                               size: DsButtonSize.sm,
                               onPressed: () {
-                                if (controller.couponList.where((element) => element.code!.toLowerCase() == controller.couponController.value.text.toLowerCase()).isNotEmpty) {
-                                  CouponModel couponModel = controller.couponList.firstWhere((p0) => p0.code!.toLowerCase() == controller.couponController.value.text.toLowerCase());
-                                  if (couponModel.expiresAt!.toDate().isAfter(DateTime.now())) {
+                                // Null-safe: a coupon saved without a code or an expiry no longer throws here.
+                                final String entered = controller.couponController.value.text.trim().toLowerCase();
+                                if (entered.isNotEmpty && controller.couponList.where((element) => (element.code ?? '').toLowerCase() == entered).isNotEmpty) {
+                                  CouponModel couponModel = controller.couponList.firstWhere((p0) => (p0.code ?? '').toLowerCase() == entered);
+                                  if (couponModel.expiresAt == null || couponModel.expiresAt!.toDate().isAfter(DateTime.now())) {
                                     double couponAmount = Constant.calculateDiscount(amount: controller.subTotal.value.toString(), offerModel: couponModel);
                                     if (couponAmount < controller.subTotal.value) {
                                       controller.selectedCouponModel.value = couponModel;
@@ -191,10 +198,16 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                             // Fixed intercity / intercountry tax: outside VAT and coupons.
                             if (controller.scopeTax > 0)
                               ParcelSummaryRow(label: "Fixed tax".tr, value: Constant.amountShow(amount: controller.scopeTax.toString(), currency: controller.parcelCurrency)),
+                            // Door / pickup-point charges (priceBreakdown.pickupCharge / deliveryCharge).
+                            if (controller.pickupCharge > 0)
+                              ParcelSummaryRow(label: ParcelLabels.pickupChargeLabel(controller.parcelOrder.value.pickupMethod), value: Constant.amountShow(amount: controller.pickupCharge.toString(), currency: controller.parcelCurrency)),
+                            if (controller.deliveryCharge > 0)
+                              ParcelSummaryRow(label: ParcelLabels.deliveryChargeLabel(controller.parcelOrder.value.deliveryMethod), value: Constant.amountShow(amount: controller.deliveryCharge.toString(), currency: controller.parcelCurrency)),
                             if (controller.smsCharge > 0)
                               ParcelSummaryRow(label: "Receiver SMS".tr, value: Constant.amountShow(amount: controller.smsCharge.toString(), currency: controller.parcelCurrency)),
-                            if (Constant.platformFeeModel?.enable == true)
-                              ParcelSummaryRow(label: "Platform fee".tr, value: Constant.amountShow(amount: Constant.platformFeeModel?.fee.toString(), currency: controller.parcelCurrency)),
+                            // The fee in the total (enabled and > 0): the line and the total agree.
+                            if (controller.platformFee > 0)
+                              ParcelSummaryRow(label: "Platform fee".tr, value: Constant.amountShow(amount: controller.platformFee.toString(), currency: controller.parcelCurrency)),
 
                             // Tax List
                             ParcelSummaryRow(

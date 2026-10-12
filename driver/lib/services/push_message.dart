@@ -138,6 +138,9 @@ class PushChannels {
     'parcel_order',
     'rental_order',
     'cab_order',
+    // A carrier parcel waiting for the company owner's assignment
+    // (CarrierParcelRules.ownerPushType).
+    'carrier_parcel_order',
   };
 
   /// Channel the driver app shows an incoming push on (foreground display):

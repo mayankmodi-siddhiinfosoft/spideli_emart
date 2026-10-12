@@ -6,6 +6,7 @@ import 'package:driver/models/parcel_order_model.dart';
 import 'package:driver/models/region_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/carrier_dispatch_service.dart';
+import 'package:driver/services/carrier_parcel_rules.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/region_service.dart';
 
@@ -31,7 +32,8 @@ class ParcelScope {
 ///    is resolved tolerantly — by the destination pickup point (§12) first,
 ///    then by the destination city / country matched through [RegionService] —
 ///    and when it cannot be resolved the parcel falls back to today's rule.
-/// 2. **Carrier.** See [CarrierDispatchService].
+/// 2. **Carrier.** A carrier parcel is never offered here: its company owner
+///    assigns it ([CarrierParcelRules]).
 class ParcelDispatchService {
   ParcelDispatchService._();
 
@@ -149,7 +151,7 @@ class ParcelDispatchService {
   /// The two new gates in one call, for a raw `parcel_orders` document.
   /// True = this driver may be offered the job.
   static Future<bool> isOfferable(Map<String, dynamic> data, {required UserModel? driver}) async {
-    if (await isOutOfDriverRegion(data, driver: driver)) return false;
-    return CarrierDispatchService.driverServesCarrier(data['carrierId']?.toString(), driver);
+    if (!CarrierParcelRules.visibleToDriver(data, driver?.id ?? '')) return false;
+    return !await isOutOfDriverRegion(data, driver: driver);
   }
 }

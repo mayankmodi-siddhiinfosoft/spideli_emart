@@ -1,0 +1,42 @@
+{
+  "_doc": "Shared by customer/test/parcel_totals_fixture_test.dart and driver/test/parcel_totals_fixture_test.dart: the customer's and the driver's ParcelAmounts must give the same total (what checkout charged, what the driver collects in cash).",
+  "cases": [
+    {
+      "name": "every line: coupon, order taxes, platform fee and its tax, fixed tax, options, SMS",
+      "order": {
+        "id": "f1", "subTotal": "1000", "discount": "100",
+        "taxSetting": [{"title": "VAT", "type": "percentage", "tax": "10", "enable": true}, {"title": "Stamp", "type": "fix", "tax": "25", "enable": true}],
+        "platformFee": "200", "platformTax": [{"title": "VAT", "type": "percentage", "tax": "5", "enable": true}],
+        "parcelScopeTax": 5000,
+        "priceBreakdown": {"options": 1500, "pickupCharge": 500, "deliveryCharge": 1000, "total": 7775},
+        "sendReceiverSms": true, "smsCharge": 50
+      },
+      "total": 7775, "platformTax": 10, "platformShare": 5260
+    },
+    {
+      "name": "older order: platformTax recorded but not charged (fee setting disabled)",
+      "order": {
+        "id": "f2", "subTotal": "1000", "discount": "0", "taxSetting": [],
+        "platformFee": "200", "platformTax": [{"title": "VAT", "type": "percentage", "tax": "5", "enable": true}],
+        "priceBreakdown": {"total": 1200}
+      },
+      "total": 1200, "platformTax": 0, "platformShare": 200
+    },
+    {
+      "name": "text / empty / missing fields (website or panel order)",
+      "order": {
+        "id": "f3", "subTotal": " 500 ", "discount": "", "platformFee": null,
+        "parcelScopeTax": "300", "sendReceiverSms": false, "smsCharge": "50"
+      },
+      "total": 800, "platformTax": 0, "platformShare": 300
+    },
+    {
+      "name": "new order with the platform fee disabled (checkout of 12 Oct)",
+      "order": {
+        "id": "f4", "subTotal": "2000", "discount": "0.0", "platformFee": "0.0", "platformTax": [],
+        "priceBreakdown": {"options": 0, "total": 2000}
+      },
+      "total": 2000, "platformTax": 0, "platformShare": 0
+    }
+  ]
+}

@@ -5,8 +5,9 @@ class DocumentModel {
   String? id;
   bool? frontSide;
   String? title;
+  String? type;
 
-  DocumentModel({this.backSide, this.enable, this.id, this.frontSide, this.title, this.expireAt});
+  DocumentModel({this.backSide, this.enable, this.id, this.frontSide, this.title, this.expireAt, this.type});
 
   DocumentModel.fromJson(Map<String, dynamic> json) {
     backSide = json['backSide'];
@@ -15,6 +16,7 @@ class DocumentModel {
     frontSide = json['frontSide'];
     title = json['title'];
     expireAt = json['expireAt'];
+    type = json['type'];
   }
 
   Map<String, dynamic> toJson() {
@@ -25,6 +27,7 @@ class DocumentModel {
     data['frontSide'] = frontSide;
     data['title'] = title;
     data['expireAt'] = expireAt;
+    data['type'] = type;
     return data;
   }
 }

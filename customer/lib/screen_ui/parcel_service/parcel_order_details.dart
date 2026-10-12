@@ -32,11 +32,7 @@ class ParcelOrderDetails extends StatelessWidget {
     return GetX(
       init: ParcelOrderDetailsController(),
       builder: (controller) {
-        final String statusLabel = controller.parcelOrder.value.awaitingQuote
-            ? "Waiting for a quote".tr
-            : controller.parcelOrder.value.quoteReadyToPay
-            ? "Quote ready - pay to confirm".tr
-            : (controller.parcelOrder.value.parcelStatus ?? controller.parcelOrder.value.status ?? '').tr;
+        final String statusLabel = BookingStatusTabs.parcelLabel(controller.parcelOrder.value);
         return DsScaffold(
           appBar: DsAppBar(
             title: "Order Details".tr,
@@ -85,6 +81,8 @@ class ParcelOrderDetails extends StatelessWidget {
                         ParcelBreakdownCard(
                           currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId),
                           breakdown: controller.parcelOrder.value.priceBreakdown!,
+                          pickupMethod: controller.parcelOrder.value.pickupMethod,
+                          deliveryMethod: controller.parcelOrder.value.deliveryMethod,
                         ),
                       ],
                       const DsGap(DsSpace.lg),
@@ -124,17 +122,19 @@ class ParcelOrderDetails extends StatelessWidget {
 
                           const DsDivider(spacing: DsSpace.xl),
 
-                          if (controller.parcelOrder.value.isSchedule == true)
+                          // Null-safe: an order written by the website / panel may lack either time.
+                          if (controller.parcelOrder.value.isSchedule == true && controller.parcelOrder.value.senderPickupDateTime != null)
                             _DateLine(
                               icon: Icons.event_available_outlined,
                               label: "${'Schedule Pickup time:'.tr} ${controller.formatDate(controller.parcelOrder.value.senderPickupDateTime!)}",
                             ),
 
-                          _DateLine(
-                            icon: Icons.event_outlined,
-                            label:
-                                "${'Order Date:'.tr}${controller.parcelOrder.value.isSchedule == true ? controller.formatDate(controller.parcelOrder.value.createdAt!) : controller.formatDate(controller.parcelOrder.value.senderPickupDateTime!)}",
-                          ),
+                          if ((controller.parcelOrder.value.isSchedule == true ? controller.parcelOrder.value.createdAt : controller.parcelOrder.value.senderPickupDateTime ?? controller.parcelOrder.value.createdAt) != null)
+                            _DateLine(
+                              icon: Icons.event_outlined,
+                              label:
+                                  "${'Order Date:'.tr}${controller.formatDate((controller.parcelOrder.value.isSchedule == true ? controller.parcelOrder.value.createdAt : controller.parcelOrder.value.senderPickupDateTime ?? controller.parcelOrder.value.createdAt)!)}",
+                            ),
 
                           const DsGap(DsSpace.md),
                           Row(
@@ -324,6 +324,33 @@ class ParcelOrderDetails extends StatelessWidget {
                               ),
                             ),
 
+                          // Door / pickup-point charges (priceBreakdown.pickupCharge / deliveryCharge).
+                          if (controller.parcelOrder.value.pickupChargeAmount > 0)
+                            ParcelSummaryRow(
+                              label: ParcelLabels.pickupChargeLabel(controller.parcelOrder.value.pickupMethod),
+                              value: Constant.amountShow(
+                                amount: controller.parcelOrder.value.pickupChargeAmount.toString(),
+                                currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
+                              ),
+                            ),
+                          if (controller.parcelOrder.value.deliveryChargeAmount > 0)
+                            ParcelSummaryRow(
+                              label: ParcelLabels.deliveryChargeLabel(controller.parcelOrder.value.deliveryMethod),
+                              value: Constant.amountShow(
+                                amount: controller.parcelOrder.value.deliveryChargeAmount.toString(),
+                                currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
+                              ),
+                            ),
+                          // An order written with only the total of the two.
+                          if (controller.parcelOrder.value.optionsAmount > 0 && controller.parcelOrder.value.pickupChargeAmount + controller.parcelOrder.value.deliveryChargeAmount <= 0)
+                            ParcelSummaryRow(
+                              label: "Options".tr,
+                              value: Constant.amountShow(
+                                amount: controller.parcelOrder.value.optionsAmount.toString(),
+                                currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
+                              ),
+                            ),
+
                           // Receiver SMS (point 54): its fee, outside VAT and
                           // coupons - or "Free" when the sender's region
                           // charges nothing for it.
@@ -339,11 +366,11 @@ class ParcelOrderDetails extends StatelessWidget {
                             ),
 
                           // Tax List
-                          if (double.parse(controller.parcelOrder.value.platformFee ?? '0.0') > 0.0)
+                          if (controller.platformFee.value > 0.0)
                             ParcelSummaryRow(
                               label: "Platform fee".tr,
                               value: Constant.amountShow(
-                                amount: controller.parcelOrder.value.platformFee ?? '0.0',
+                                amount: controller.platformFee.value.toString(),
                                 currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
                               ),
                             ),
