@@ -12,6 +12,7 @@ import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/themes/theme_controller.dart';
 import 'package:vendor/utils/network_image_widget.dart';
 import 'package:vendor/widget/video_widget.dart';
+import 'package:vendor/utils/store_chat_session.dart';
 
 class AdvertisementListScreen extends StatelessWidget {
   const AdvertisementListScreen({super.key});
@@ -30,7 +31,7 @@ class AdvertisementListScreen extends StatelessWidget {
               title: "Your Advertisement".tr,
               actions: [
                 Visibility(
-                  visible: controller.venderModel.value.subscriptionPlan?.features?.chat != false,
+                  visible: StoreChatSession.canChat && controller.venderModel.value.subscriptionPlan?.features?.chat != false,
                   child: DsIconButton(
                     icon: Icons.forum_outlined,
                     semanticLabel: "Chat".tr,

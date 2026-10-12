@@ -98,4 +98,8 @@ const Map<String, String> jaJP = {
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "各配送料の3つの項目をすべて入力するか、空の行を削除してください。",
   "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "必須。最低配送料は設定した距離まで適用され、それを超えると1kmごとにkm単価が加算されます。",
   "Please enter the delivery charge: all 3 fields are required.": "配送料を入力してください：3つの項目はすべて必須です。",
+  "You don’t have permission to view chats.": "チャットを表示する権限がありません。",
+  "At least 6 characters.": "6文字以上。",
+  "Password must be at least 6 characters.": "パスワードは6文字以上にしてください。",
+  "Chat": "チャット",
 };

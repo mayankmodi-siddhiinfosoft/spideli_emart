@@ -1000,4 +1000,7 @@ const Map<String, String> enUS = {
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "Please fill all 3 fields for each delivery charge tier or remove empty rows.",
   "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.",
   "Please enter the delivery charge: all 3 fields are required.": "Please enter the delivery charge: all 3 fields are required.",
+  "You don’t have permission to view chats.": "You don’t have permission to view chats.",
+  "At least 6 characters.": "At least 6 characters.",
+  "Password must be at least 6 characters.": "Password must be at least 6 characters.",
 };

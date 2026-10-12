@@ -11,6 +11,7 @@ import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/network_image_widget.dart';
 import 'package:vendor/widget/video_widget.dart';
+import 'package:vendor/utils/store_chat_session.dart';
 
 class ViewAdvertisementScreen extends StatelessWidget {
   const ViewAdvertisementScreen({super.key});
@@ -117,7 +118,7 @@ class ViewAdvertisementScreen extends StatelessWidget {
           maxContentWidth: null,
           actions: [
             Visibility(
-              visible: controller.vendorModel.value?.subscriptionPlan?.features?.chat != false,
+              visible: StoreChatSession.canChat && controller.vendorModel.value?.subscriptionPlan?.features?.chat != false,
               child: DsIconButton(
                 icon: Icons.chat_bubble_outline_rounded,
                 semanticLabel: "Chat".tr,
@@ -131,7 +132,7 @@ class ViewAdvertisementScreen extends StatelessWidget {
                     const ChatScreen(),
                     arguments: {
                       "senderName": vendorModel?.title,
-                      "senderId": Constant.userModel?.id,
+                      "senderId": Constant.userModel?.id, // an employee writes as the store (ChatController)
                       "senderProfileUrl": vendorModel?.photo,
                       "receivedName": 'Admin',
                       "receivedId": 'admin',

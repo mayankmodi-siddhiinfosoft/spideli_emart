@@ -13,6 +13,9 @@ import 'package:vendor/models/inbox_model.dart';
 import 'package:vendor/models/user_model.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/push_payload.dart';
+import 'package:vendor/constant/show_toast_dialog.dart';
+import 'package:vendor/utils/store_chat.dart';
+import 'package:vendor/utils/store_chat_session.dart';
 
 class ChatController extends GetxController {
   Rx<TextEditingController> messageController = TextEditingController().obs;
@@ -41,6 +44,27 @@ class ChatController extends GetxController {
   RxString sectionType = "".obs;
   Rx<UserModel?> receiverUser = UserModel().obs;
 
+  /// The store side of this chat for the signed-in user (lib/utils/store_chat.dart).
+  /// For an employee it replaces [senderId] / [senderName] /
+  /// [senderProfileUrl] with the store's, so the employee reads, marks seen
+  /// and writes the conversation exactly as the owner does.
+  Rx<StoreChatIdentity?> identity = Rx<StoreChatIdentity?>(null);
+
+  /// The signed-in user is an employee whose store identity could not be
+  /// read, or whose role does not allow chats: nothing is read or written.
+  bool get _employeeBlocked => identity.value?.isEmployee == true && identity.value?.ready != true;
+
+  /// Who the messages of the store side are written as: the store's chat id
+  /// for an employee, the signed-in user (as before) for the owner.
+  String get _writerId => identity.value?.isEmployee == true ? identity.value!.senderId : FireStoreUtils.getCurrentUid();
+
+  /// A message of the thread is the store side's own (shown on the right).
+  bool isStoreSide(String? messageSenderId) {
+    final StoreChatIdentity? me = identity.value;
+    if (me != null && me.isEmployee) return me.isStoreSide(messageSenderId);
+    return messageSenderId == FireStoreUtils.getCurrentUid();
+  }
+
   Future<void> getArgument() async {
     dynamic argumentData = Get.arguments;
     if (argumentData != null) {
@@ -54,6 +78,13 @@ class ChatController extends GetxController {
       senderProfileUrl.value = argumentData['senderProfileUrl'] ?? "";
       token.value = argumentData['token'] ?? '';
       chatType.value = argumentData['chatType'] ?? '';
+      await _applyStoreIdentity();
+      if (_employeeBlocked) {
+        isLoading.value = false;
+        ShowToastDialog.showToast("You don’t have permission to view chats.".tr);
+        if (!isClosed) Get.back();
+        return;
+      }
       if (receivedId.value != 'admin') {
         // getUserById, not getUserProfile: getUserProfile also makes the user
         // it reads the session's user (Constant.userModel), so after opening
@@ -67,6 +98,19 @@ class ChatController extends GetxController {
     isLoading.value = false;
   }
 
+  /// An employee chats as the store: the store's chat id, the store's name
+  /// and picture. The owner keeps what the opening screen passed.
+  Future<void> _applyStoreIdentity() async {
+    if (!StoreChatSession.isEmployee) return;
+    final StoreChatIdentity? me = await StoreChatSession.resolve();
+    identity.value = me ??
+        StoreChatIdentity(storeId: '', actorId: FireStoreUtils.getCurrentUid(), isEmployee: true, canChat: false);
+    if (me == null || !me.isEmployee || !me.ready) return;
+    senderId.value = me.senderId;
+    if (me.displayName.isNotEmpty) senderName.value = me.displayName;
+    if (me.photo.isNotEmpty) senderProfileUrl.value = me.photo;
+  }
+
   /// Marks the store side's unread messages of this conversation seen while
   /// it is open (the same messages the inbox badge counts,
   /// `lib/utils/chat_unread.dart`): an admin conversation's messages from
@@ -76,7 +120,7 @@ class ChatController extends GetxController {
   Future<void> setSeen() async {
     // Left before the receiver lookup finished: onClose already ran, so a
     // listener started now would never be stopped.
-    if (isClosed) return;
+    if (isClosed || _employeeBlocked) return;
     if (receivedId.value == 'admin' || chatType.value == 'admin') {
       FireStoreUtils.setSeenChatForOrder(orderId: orderId.value, senderId: Constant.adminType);
     } else {
@@ -94,6 +138,10 @@ class ChatController extends GetxController {
   }
 
   Future<void> sendMessage(String message, Url? url, String videoThumbnail, String messageType) async {
+    if (_employeeBlocked) {
+      ShowToastDialog.showToast("You don’t have permission to view chats.".tr);
+      return;
+    }
     List<String> senderReceiverId = [receivedId.value, senderId.value];
     InboxModel inboxModel = InboxModel(
       chatType: chatType.value,
@@ -113,7 +161,7 @@ class ChatController extends GetxController {
     ConversationModel conversationModel = ConversationModel(
       id: const Uuid().v4(),
       message: message,
-      senderId: FireStoreUtils.getCurrentUid(),
+      senderId: _writerId,
       receiverId: receivedId.value,
       createdAt: Timestamp.now(),
       url: url,
@@ -121,6 +169,9 @@ class ChatController extends GetxController {
       messageType: messageType,
       videoThumbnail: videoThumbnail,
       seen: false,
+      // An employee's message: who actually wrote it (audit only).
+      sentByUserId: identity.value?.auditFields['sentByUserId'],
+      sentByName: identity.value?.auditFields['sentByName'],
     );
 
     if (url != null) {
@@ -158,7 +209,7 @@ class ChatController extends GetxController {
         senderName.value.isEmpty ? "New message".tr : senderName.value,
         message,
         fcmToken,
-        {'type': inboxModel.type, 'chatType': inboxModel.chatType, 'orderId': orderId.value, 'senderId': FireStoreUtils.getCurrentUid()},
+        {'type': inboxModel.type, 'chatType': inboxModel.chatType, 'orderId': orderId.value, 'senderId': _writerId},
         recipientId: receivedId.value,
         recipient: PushPayload.recipientForRole(receiverUser.value?.role),
       );

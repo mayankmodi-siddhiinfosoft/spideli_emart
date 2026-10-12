@@ -98,4 +98,8 @@ const Map<String, String> ruRU = {
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "Заполните все 3 поля каждого тарифа доставки или удалите пустые строки.",
   "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "Обязательно. Минимальная стоимость действует до указанного расстояния; дальше за каждый дополнительный км добавляется стоимость за км.",
   "Please enter the delivery charge: all 3 fields are required.": "Укажите стоимость доставки: все 3 поля обязательны.",
+  "You don’t have permission to view chats.": "У вас нет прав на просмотр чатов.",
+  "At least 6 characters.": "Не менее 6 символов.",
+  "Password must be at least 6 characters.": "Пароль должен содержать не менее 6 символов.",
+  "Chat": "Чат",
 };

@@ -98,4 +98,8 @@ const Map<String, String> ptPO = {
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "Preencha os 3 campos de cada faixa de taxa de entrega ou remova as linhas vazias.",
   "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "Obrigatório. A taxa mínima cobre até a distância definida; além dela, a taxa por km é somada a cada km extra.",
   "Please enter the delivery charge: all 3 fields are required.": "Informe a taxa de entrega: os 3 campos são obrigatórios.",
+  "You don’t have permission to view chats.": "Você não tem permissão para ver as conversas.",
+  "At least 6 characters.": "Pelo menos 6 caracteres.",
+  "Password must be at least 6 characters.": "A senha deve ter pelo menos 6 caracteres.",
+  "Chat": "Chat",
 };

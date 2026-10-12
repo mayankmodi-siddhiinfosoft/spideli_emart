@@ -7,6 +7,7 @@ import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/controller/add_employee_controller.dart';
 import 'package:vendor/models/employee_role_model.dart';
 import 'package:vendor/themes/ds/ds.dart';
+import 'package:vendor/utils/password_rule.dart';
 
 class AddEmployeeScreen extends StatefulWidget {
   const AddEmployeeScreen({super.key});
@@ -177,6 +178,8 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
                       _PasswordField(
                         label: 'Password'.tr,
                         hint: 'Enter Password'.tr,
+                        helper: PasswordRule.hint.tr,
+                        error: controller.passwordError.value?.tr,
                         controller: controller.passwordEditingController.value,
                         obscure: controller.passwordVisible.value,
                         onToggle: () {
@@ -204,6 +207,9 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
               icon: Icons.check_rounded,
               expand: true,
               onPressed: () async {
+                // A message from an earlier attempt never outlives this Save
+                // (the password may have been filled without a keystroke).
+                controller.passwordError.value = null;
                 if (controller.firstNameEditingController.value.text.isEmpty) {
                   ShowToastDialog.showToast("Please enter first name".tr);
                 } else if (controller.lastNameEditingController.value.text.isEmpty) {
@@ -216,6 +222,9 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
                   ShowToastDialog.showToast("Please enter Phone number".tr);
                 } else if (controller.passwordEditingController.value.text.isEmpty && controller.employeeModel.value.id == null) {
                   ShowToastDialog.showToast("Please enter password".tr);
+                } else if (controller.employeeModel.value.id == null && !controller.checkPasswordLength()) {
+                  // Too short: stopped here, before Firebase (report 56).
+                  ShowToastDialog.showToast(PasswordRule.tooShort.tr);
                 } else if (controller.conformPasswordEditingController.value.text.isEmpty && controller.employeeModel.value.id == null) {
                   ShowToastDialog.showToast("Please enter Confirm password".tr);
                 } else if (controller.passwordEditingController.value.text != controller.conformPasswordEditingController.value.text && controller.employeeModel.value.id == null) {
@@ -240,7 +249,13 @@ class _PasswordField extends StatelessWidget {
   final TextEditingController controller;
   final bool obscure;
   final VoidCallback onToggle;
-  const _PasswordField({required this.label, required this.hint, required this.controller, required this.obscure, required this.onToggle});
+
+  /// Shown under the field (the password length rule).
+  final String? helper;
+
+  /// Shown next to the field instead of [helper] (password too short).
+  final String? error;
+  const _PasswordField({required this.label, required this.hint, required this.controller, required this.obscure, required this.onToggle, this.helper, this.error});
 
   @override
   Widget build(BuildContext context) {
@@ -262,6 +277,8 @@ class _PasswordField extends StatelessWidget {
             decoration: DsInputDecoration.of(
               context,
               hint: hint,
+              helper: helper,
+              error: error,
               prefixIcon: Icons.lock_outline_rounded,
               suffix: DsIconButton(
                 icon: obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,

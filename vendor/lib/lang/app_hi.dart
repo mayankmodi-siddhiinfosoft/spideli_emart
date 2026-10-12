@@ -98,4 +98,8 @@ const Map<String, String> hiIN = {
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "कृपया हर डिलीवरी शुल्क स्तर के तीनों फ़ील्ड भरें या खाली पंक्तियाँ हटाएँ।",
   "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "आवश्यक। न्यूनतम शुल्क तय दूरी तक लागू होता है; उससे आगे हर अतिरिक्त किमी के लिए प्रति किमी शुल्क जुड़ता है।",
   "Please enter the delivery charge: all 3 fields are required.": "कृपया डिलीवरी शुल्क दर्ज करें: तीनों फ़ील्ड आवश्यक हैं।",
+  "You don’t have permission to view chats.": "आपको चैट देखने की अनुमति नहीं है।",
+  "At least 6 characters.": "कम से कम 6 अक्षर।",
+  "Password must be at least 6 characters.": "पासवर्ड कम से कम 6 अक्षरों का होना चाहिए।",
+  "Chat": "चैट",
 };

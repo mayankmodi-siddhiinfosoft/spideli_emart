@@ -5,6 +5,7 @@ import 'package:vendor/constant/show_toast_dialog.dart';
 import 'package:vendor/models/employee_role_model.dart';
 import 'package:vendor/models/permission_model.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/store_chat.dart';
 
 class AddEditRoleController extends GetxController {
   RxBool isLoading = true.obs;
@@ -27,7 +28,9 @@ class AddEditRoleController extends GetxController {
     if (argumentData != null) {
       employeeRoleModel.value = argumentData['employeeRoleModel'];
       isActive.value = employeeRoleModel.value.isEnable ?? false;
-      permissionList.value = employeeRoleModel.value.permissions ?? [];
+      // A role saved before the "Chat" permission existed gets its switch,
+      // set to what the role can do today (lib/utils/store_chat.dart).
+      permissionList.value = StoreChat.withChatPermission(employeeRoleModel.value.permissions);
       nameController.value.text = employeeRoleModel.value.title ?? '';
       isAllPermission.value = permissionList.every((item) => item.isActive == true);
     } else {
@@ -75,6 +78,7 @@ class AddEditRoleController extends GetxController {
         PermissionModel(title: 'Offers', isActive: true),
         PermissionModel(title: 'Special Discounts', isActive: true),
         PermissionModel(title: 'Manage Order', isActive: true),
+        PermissionModel(title: StoreChat.permission, isActive: true),
       ];
       isAllPermission.value = true;
     } else {
@@ -93,6 +97,7 @@ class AddEditRoleController extends GetxController {
         PermissionModel(title: 'Offers', isActive: false),
         PermissionModel(title: 'Special Discounts', isActive: false),
         PermissionModel(title: 'Manage Order', isActive: false),
+        PermissionModel(title: StoreChat.permission, isActive: false),
       ];
       isAllPermission.value = false;
     }

@@ -46,6 +46,17 @@ import 'package:vendor/widget/pod_block.dart';
 import 'package:vendor/utils/pod_otp.dart';
 import 'package:vendor/utils/wallet_once.dart';
 import 'package:vendor/widget/wholesale_tag.dart';
+import 'package:vendor/utils/store_chat_session.dart';
+
+/// The chat entries (inbox button, order chat) are shown: the signed-in user
+/// may use the store's chats (an employee needs the role's "Chat"
+/// permission, lib/utils/store_chat.dart) and the plan includes chat - the
+/// owner's own plan, as before, or for an employee the store's.
+bool storeChatAvailable(HomeController controller) {
+  if (!StoreChatSession.canChat) return false;
+  final plan = StoreChatSession.isEmployee ? controller.vendermodel.value.subscriptionPlan : controller.userModel.value.subscriptionPlan;
+  return plan?.features?.chat != false;
+}
 
 /// Store dashboard: a brand hero (who is signed in, the current store with its
 /// switcher, and a live order-pipeline KPI strip), a pinned order-status tab
@@ -975,7 +986,7 @@ class HomeScreen extends StatelessWidget {
           ),
           DsGap.md,
           Expanded(child: _progressAction(context, orderModel, controller, isDark == true)),
-          if (controller.userModel.value.subscriptionPlan?.features?.chat != false) ...[
+          if (storeChatAvailable(controller)) ...[
             DsGap.sm,
             DsIconButton(
               semanticLabel: "Chat".tr,
@@ -2062,9 +2073,9 @@ class HomeScreen extends StatelessWidget {
                     onPressed: () => OrderHistoryExportFlow.start(context, store: controller.vendermodel.value),
                   ),
                 ),
-                if (controller.userModel.value.subscriptionPlan?.features?.chat != false) DsGap.sm,
+                if (storeChatAvailable(controller)) DsGap.sm,
               ],
-              if (controller.userModel.value.subscriptionPlan?.features?.chat != false)
+              if (storeChatAvailable(controller))
                 Container(
                   decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.18)),
                   child: DsIconButton(

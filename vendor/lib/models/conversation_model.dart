@@ -13,7 +13,15 @@ class ConversationModel {
   bool? seen;
   int? recordingTimer;
 
-  ConversationModel({this.id, this.senderId, this.receiverId, this.orderId, this.message, this.messageType, this.videoThumbnail, this.url, this.createdAt, this.seen, this.recordingTimer});
+  /// Audit only, set on a message a store EMPLOYEE writes: the employee's own
+  /// uid and name. [senderId] is then the store's chat id (the owner's uid),
+  /// which is what every reader filters and draws on; these two are never
+  /// read for that, and are left out of the document when empty, so the
+  /// owner's messages are unchanged (lib/utils/store_chat.dart).
+  String? sentByUserId;
+  String? sentByName;
+
+  ConversationModel({this.id, this.senderId, this.receiverId, this.orderId, this.message, this.messageType, this.videoThumbnail, this.url, this.createdAt, this.seen, this.recordingTimer, this.sentByUserId, this.sentByName});
 
   factory ConversationModel.fromJson(Map<String, dynamic> parsedJson) {
     return ConversationModel(
@@ -32,6 +40,8 @@ class ConversationModel {
       createdAt: parsedJson['createdAt'] ?? Timestamp.now(),
       seen: parsedJson['seen'],
       recordingTimer: parsedJson['recordingTimer'],
+      sentByUserId: parsedJson['sentByUserId']?.toString(),
+      sentByName: parsedJson['sentByName']?.toString(),
     );
   }
 
@@ -48,6 +58,8 @@ class ConversationModel {
       'createdAt': createdAt,
       if (seen != null) 'seen': seen,
       'recordingTimer': recordingTimer,
+      if ((sentByUserId ?? '').isNotEmpty) 'sentByUserId': sentByUserId,
+      if ((sentByName ?? '').isNotEmpty) 'sentByName': sentByName,
     };
   }
 }

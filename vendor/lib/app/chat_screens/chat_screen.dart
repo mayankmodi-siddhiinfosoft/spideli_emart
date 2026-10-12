@@ -93,7 +93,7 @@ class ChatScreen extends StatelessWidget {
                     final ConversationModel? newer = index - 1 >= 0 ? ConversationModel.fromJson(documentSnapshots[index - 1].data() as Map<String, dynamic>) : null;
                     return chatItemView(
                       context,
-                      chatmodel.senderId == FireStoreUtils.getCurrentUid(),
+                      controller.isStoreSide(chatmodel.senderId),
                       chatmodel,
                       groupedWithOlder: _isGrouped(chatmodel, older),
                       groupedWithNewer: _isGrouped(chatmodel, newer),

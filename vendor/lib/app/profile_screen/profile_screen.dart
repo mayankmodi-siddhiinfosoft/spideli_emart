@@ -38,6 +38,7 @@ import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
 import 'package:vendor/utils/notification_service.dart';
 import 'package:vendor/utils/network_image_widget.dart';
+import 'package:vendor/utils/store_chat_session.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -399,15 +400,18 @@ class ProfileScreen extends StatelessWidget {
                   Get.to(const VerificationScreen());
                 },
               ),
-            _tile(
-              context,
-              svg: "assets/icons/ic_help_support.svg",
-              tone: DsTone.neutral,
-              title: "Help & Support".tr,
-              onPress: () {
-                Get.to(HelpSupportScreen(isNavigateViaNotification: false));
-              },
-            ),
+            // The store's support chat with admin: an employee needs the
+            // role's "Chat" permission (lib/utils/store_chat.dart).
+            if (StoreChatSession.canChat)
+              _tile(
+                context,
+                svg: "assets/icons/ic_help_support.svg",
+                tone: DsTone.neutral,
+                title: "Help & Support".tr,
+                onPress: () {
+                  Get.to(HelpSupportScreen(isNavigateViaNotification: false));
+                },
+              ),
             _tile(
               context,
               svg: "assets/icons/ic_terms_condition.svg",

@@ -10,6 +10,7 @@ import 'package:vendor/models/employee_role_model.dart';
 import 'package:vendor/models/user_model.dart';
 import 'package:vendor/utils/account_verification.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/password_rule.dart';
 
 class AddEmployeeController extends GetxController {
   RxBool isLoading = true.obs;
@@ -21,6 +22,22 @@ class AddEmployeeController extends GetxController {
   Rx<TextEditingController> countryISOCodeEditingController = TextEditingController(text: Constant.defaultCountryCode).obs;
   Rx<TextEditingController> passwordEditingController = TextEditingController().obs;
   RxBool passwordVisible = true.obs;
+
+  /// Error shown next to the password field (a translation key,
+  /// [PasswordRule.tooShort]); null when there is none. Set by Save before
+  /// Firebase is called, cleared as soon as the password is long enough.
+  RxnString passwordError = RxnString();
+
+  /// Save's check of the password length, before Firebase (report 56): sets
+  /// or clears [passwordError] and says whether the account may be created.
+  bool checkPasswordLength() {
+    passwordError.value = PasswordRule.isLongEnough(passwordEditingController.value.text) ? null : PasswordRule.tooShort;
+    return passwordError.value == null;
+  }
+
+  void _clearFixedPasswordError() {
+    if (passwordError.value != null && PasswordRule.errorFor(passwordEditingController.value.text) == null) passwordError.value = null;
+  }
   Rx<TextEditingController> conformPasswordEditingController = TextEditingController().obs;
   RxBool conformPasswordVisible = true.obs;
 
@@ -28,6 +45,7 @@ class AddEmployeeController extends GetxController {
 
   @override
   void onInit() {
+    passwordEditingController.value.addListener(_clearFixedPasswordError);
     getAllEmployeeRoles();
     super.onInit();
   }
@@ -65,6 +83,12 @@ class AddEmployeeController extends GetxController {
   }
 
   Future<void> signUpWithEmailAndPassword() async {
+    // A new account never reaches Firebase with a too-short password.
+    final bool isEdit = (employeeModel.value.id ?? '').isNotEmpty;
+    if (!isEdit && !checkPasswordLength()) {
+      ShowToastDialog.showToast(PasswordRule.tooShort.tr);
+      return;
+    }
     signUp();
   }
 

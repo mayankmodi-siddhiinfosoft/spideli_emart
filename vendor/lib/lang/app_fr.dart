@@ -231,4 +231,8 @@ const Map<String, String> trFR = {
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "Veuillez remplir les 3 champs de chaque palier de frais de livraison ou supprimer les lignes vides.",
   "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "Obligatoire. Les frais minimum couvrent jusqu'à la distance indiquée ; au-delà, les frais par km s'ajoutent pour chaque km supplémentaire.",
   "Please enter the delivery charge: all 3 fields are required.": "Veuillez saisir les frais de livraison : les 3 champs sont obligatoires.",
+  "You don’t have permission to view chats.": "Vous n'avez pas l'autorisation de consulter les discussions.",
+  "At least 6 characters.": "Au moins 6 caractères.",
+  "Password must be at least 6 characters.": "Le mot de passe doit contenir au moins 6 caractères.",
+  "Chat": "Discussion",
 };

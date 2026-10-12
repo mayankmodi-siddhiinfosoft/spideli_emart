@@ -66,6 +66,7 @@ import 'package:vendor/service/order_ringtone_service.dart';
 import 'package:vendor/themes/app_them_data.dart';
 import 'package:vendor/utils/cancel_reasons.dart';
 import 'package:vendor/utils/chat_unread.dart';
+import 'package:vendor/utils/store_chat.dart';
 import 'package:vendor/utils/tax_country.dart';
 import 'package:vendor/utils/customer_notification.dart';
 import 'package:vendor/utils/preferences.dart';
@@ -2768,6 +2769,20 @@ class FireStoreUtils {
     return _unreadChatQuery(threadId: id, receiverId: receiver, senderId: sender).limit(ChatUnread.queryLimit).snapshots().map((snapshot) => snapshot.docs.length);
   }
 
+  /// The store's order conversations with customers, newest first: one inbox
+  /// document per order thread, `chat/{orderId}`. [storeChatId] is the
+  /// store's chat identity (the owner's uid, also for an employee - see
+  /// lib/utils/store_chat.dart): the customer app writes it into
+  /// `sender_receiver_id`. Same filters (and index) as before.
+  static Query<Map<String, dynamic>> storeOrderInboxQuery(String storeChatId) {
+    return fireStore
+        .collection(CollectionName.chat)
+        .where("sender_receiver_id", arrayContains: storeChatId.trim())
+        .where('chatType', isEqualTo: StoreChat.vendorChatType)
+        .where('type', isEqualTo: StoreChat.orderChatType)
+        .orderBy('createdAt', descending: true);
+  }
+
   static Query<Map<String, dynamic>> _unreadChatQuery({required String threadId, required String receiverId, required String senderId}) {
     Query<Map<String, dynamic>> query = fireStore.collection(CollectionName.chat).doc(threadId).collection("thread");
     if (receiverId.isNotEmpty) query = query.where('receiverId', isEqualTo: receiverId);
@@ -2817,14 +2832,19 @@ class FireStoreUtils {
     return conversationModel;
   }
 
-  static late StreamSubscription<QuerySnapshot> adminChatSeenSubscription;
+  static StreamSubscription<QuerySnapshot>? adminChatSeenSubscription;
 
-  static void setSeen() {
-    final currentUserId = FireStoreUtils.getCurrentUid();
+  /// Marks admin's messages of the store's Help & Support thread
+  /// `chat/{threadId}` seen while it is open. [threadId] is the store's chat
+  /// identity (the owner's uid, also for an employee); the signed-in user
+  /// when it is not given.
+  static void setSeen({String? threadId}) {
+    final String id = (threadId ?? '').trim().isNotEmpty ? threadId!.trim() : FireStoreUtils.getCurrentUid();
+    stopSeenListener();
 
     adminChatSeenSubscription = fireStore
         .collection(CollectionName.chat)
-        .doc(currentUserId)
+        .doc(id)
         .collection("thread")
         .where('senderId', isEqualTo: Constant.adminType)
         .where('seen', isEqualTo: false)
@@ -2846,6 +2866,7 @@ class FireStoreUtils {
   }
 
   static void stopSeenListener() {
-    adminChatSeenSubscription.cancel();
+    adminChatSeenSubscription?.cancel();
+    adminChatSeenSubscription = null;
   }
 }

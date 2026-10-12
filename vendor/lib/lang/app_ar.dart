@@ -994,4 +994,7 @@ const Map<String, String> lnAr = {
   "Please fill all 3 fields for each delivery charge tier or remove empty rows.": "يرجى ملء الحقول الثلاثة لكل شريحة من رسوم التوصيل أو حذف الصفوف الفارغة.",
   "Required. The minimum charge covers up to the set distance; beyond it the per-km charge is added for each extra km.": "مطلوب. يغطي الحد الأدنى للرسوم المسافة المحددة؛ وبعدها تُضاف رسوم كل كيلومتر إضافي.",
   "Please enter the delivery charge: all 3 fields are required.": "يرجى إدخال رسوم التوصيل: الحقول الثلاثة مطلوبة.",
+  "You don’t have permission to view chats.": "ليس لديك صلاحية لعرض المحادثات.",
+  "At least 6 characters.": "6 أحرف على الأقل.",
+  "Password must be at least 6 characters.": "يجب أن تتكون كلمة المرور من 6 أحرف على الأقل.",
 };

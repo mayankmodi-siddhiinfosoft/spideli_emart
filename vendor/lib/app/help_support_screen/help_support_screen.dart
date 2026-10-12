@@ -109,25 +109,28 @@ class HelpSupportScreen extends StatelessWidget {
                 onTap: () {
                   FocusScope.of(context).unfocus();
                 },
-                child: FirestorePagination(
-                  controller: controller.scrollController.value,
-                  physics: const BouncingScrollPhysics(),
-                  query: FireStoreUtils.fireStore
-                      .collection(CollectionName.chat)
-                      .doc(FireStoreUtils.getCurrentUid())
-                      .collection('thread')
-                      .orderBy('createdAt', descending: true),
-                  isLive: true,
-                  shrinkWrap: true,
-                  reverse: true,
-                  onEmpty: DsEmptyState(icon: Icons.forum_outlined, title: "No conversion found".tr, compact: true),
-                  viewType: ViewType.list,
-                  // to fetch real-time data
-                  itemBuilder: (context, documentSnapshots, index) {
-                    ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
-                    return chatItemView(isMe: inboxModel.senderId == FireStoreUtils.getCurrentUid(), data: inboxModel, context: context, controller: controller);
-                  },
-                ),
+                // The store's support thread (lib/utils/store_chat.dart): the
+                // owner's uid, for the owner and for the store's employees.
+                child: controller.blocked.value
+                    ? DsEmptyState(icon: Icons.lock_outline_rounded, tone: DsTone.neutral, title: "You don’t have permission to view chats.".tr, compact: true)
+                    : controller.threadId.value.isEmpty
+                    ? const Center(child: DsSpinner())
+                    : FirestorePagination(
+                        key: ValueKey(controller.threadId.value),
+                        controller: controller.scrollController.value,
+                        physics: const BouncingScrollPhysics(),
+                        query: FireStoreUtils.fireStore.collection(CollectionName.chat).doc(controller.threadId.value).collection('thread').orderBy('createdAt', descending: true),
+                        isLive: true,
+                        shrinkWrap: true,
+                        reverse: true,
+                        onEmpty: DsEmptyState(icon: Icons.forum_outlined, title: "No conversion found".tr, compact: true),
+                        viewType: ViewType.list,
+                        // to fetch real-time data
+                        itemBuilder: (context, documentSnapshots, index) {
+                          ConversationModel inboxModel = ConversationModel.fromJson(documentSnapshots[index].data() as Map<String, dynamic>);
+                          return chatItemView(isMe: controller.isStoreSide(inboxModel.senderId), data: inboxModel, context: context, controller: controller);
+                        },
+                      ),
               ),
               composer: HelpSupportComposer(
                 controller: controller.messageController.value,

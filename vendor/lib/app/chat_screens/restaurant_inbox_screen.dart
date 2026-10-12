@@ -2,7 +2,6 @@ import 'dart:developer';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:vendor/constant/collection_name.dart';
 import 'package:vendor/app/chat_screens/chat_screen.dart';
 import 'package:vendor/app/chat_screens/widgets/chat_unread_badge.dart';
 import 'package:vendor/constant/constant.dart';
@@ -11,91 +10,123 @@ import 'package:vendor/models/inbox_model.dart';
 import 'package:vendor/models/user_model.dart';
 import 'package:vendor/themes/ds/ds.dart';
 import 'package:vendor/utils/fire_store_utils.dart';
+import 'package:vendor/utils/store_chat.dart';
+import 'package:vendor/utils/store_chat_session.dart';
 import 'package:vendor/widget/firebase_pagination/src/firestore_pagination.dart';
 import 'package:vendor/widget/firebase_pagination/src/models/view_type.dart';
 
-class RestaurantInboxScreen extends StatelessWidget {
+class RestaurantInboxScreen extends StatefulWidget {
   const RestaurantInboxScreen({super.key});
+
+  @override
+  State<RestaurantInboxScreen> createState() => _RestaurantInboxScreenState();
+}
+
+class _RestaurantInboxScreenState extends State<RestaurantInboxScreen> {
+  /// The store side of the chats (lib/utils/store_chat.dart): the owner's uid
+  /// for the owner AND for the store's employees, so both list, count and
+  /// open the same conversations. Read once per screen.
+  late final Future<StoreChatIdentity?> _identity = StoreChatSession.resolve();
 
   @override
   Widget build(BuildContext context) {
     return DsScaffold(
       title: "Restaurant Inbox".tr,
       maxContentWidth: DsLayout.contentMax,
-      body: FirestorePagination(
-        query: FireStoreUtils.fireStore
-            .collection(CollectionName.chat)
-            .where("sender_receiver_id", arrayContains: FireStoreUtils.getCurrentUid())
-            .where('chatType', isEqualTo: Constant.userRoleVendor)
-            .where('type', isEqualTo: 'orderChat')
-            .orderBy('createdAt', descending: true),
-        //item builder type is compulsory.
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
-        itemBuilder: (context, documentSnapshots, index) {
-          final data = documentSnapshots[index].data() as Map<String, dynamic>?;
-          InboxModel inboxModel = InboxModel.fromJson(data!);
-
-          // getUserById, not getUserProfile: getUserProfile also makes the user
-          // it reads the session's user (Constant.userModel), so every row
-          // drawn here made the store "signed in" as that customer.
-          return FutureBuilder<UserModel?>(
-            future: FireStoreUtils.getUserById(inboxModel.receiverId == FireStoreUtils.getCurrentUid() ? inboxModel.senderId! : inboxModel.receiverId!),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData || snapshot.hasError || snapshot.connectionState == ConnectionState.waiting) {
-                return snapshot.connectionState == ConnectionState.waiting ? const _InboxRowSkeleton() : const SizedBox();
-              } else {
-                UserModel? customer = snapshot.data;
-                return DsFadeSlideIn(
-                  index: index,
-                  child: _ConversationRow(
-                    onTap: () async {
-                      ShowToastDialog.showLoader("Please wait".tr);
-                      UserModel? restaurant = await FireStoreUtils.getUserProfile(FireStoreUtils.getCurrentUid());
-                      UserModel? customer = snapshot.data;
-                      ShowToastDialog.closeLoader();
-                      log("receivedId.value :: ${customer?.id}");
-                      Get.to(
-                        const ChatScreen(),
-                        arguments: {
-                          "senderName": restaurant?.fullName(),
-                          "senderId": restaurant?.id,
-                          "senderProfileUrl": restaurant?.profilePictureURL,
-                          "receivedName": customer?.fullName(),
-                          "receivedId": customer?.id,
-                          "receivedProfileUrl": customer?.profilePictureURL,
-                          "orderId": inboxModel.orderId,
-                          "token": restaurant?.fcmToken,
-                          "chatType": Constant.userRoleVendor,
-                        },
-                      );
-                    },
-                    avatar: DsAvatar(imageUrl: customer?.profilePictureURL, name: customer?.fullName(), size: 52),
-                    name: "${customer?.fullName()}",
-                    date: Constant.timestampToDate(inboxModel.createdAt!),
-                    subtitle: "${"Order".tr} ${Constant.orderId(orderId: inboxModel.orderId.toString())}",
-                    subtitleIcon: Icons.receipt_long_outlined,
-                    // Messages the store received in this conversation and
-                    // has not opened yet (lib/utils/chat_unread.dart).
-                    unreadBadge: ChatUnreadBadge(threadId: inboxModel.orderId ?? '', receiverId: FireStoreUtils.getCurrentUid()),
-                    showDivider: index < documentSnapshots.length - 1,
-                  ),
-                );
-              }
-            },
-          );
+      body: FutureBuilder<StoreChatIdentity?>(
+        future: _identity,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const DsSkeletonList(carded: false, itemCount: 8);
+          }
+          final StoreChatIdentity? store = snapshot.data;
+          if (store != null && !store.canChat) {
+            return DsEmptyState(icon: Icons.lock_outline_rounded, tone: DsTone.neutral, title: "You don’t have permission to view chats.".tr);
+          }
+          if (store == null || store.storeId.isEmpty) {
+            return DsEmptyState(icon: Icons.forum_outlined, title: "No conversion found".tr);
+          }
+          return _inbox(store);
         },
-
-        shrinkWrap: true,
-        onEmpty: DsEmptyState(icon: Icons.forum_outlined, title: "No conversion found".tr),
-        // orderBy is compulsory to enable pagination
-        //Change types customerId
-        viewType: ViewType.list,
-        initialLoader: const DsSkeletonList(carded: false, itemCount: 8),
-        bottomLoader: const Padding(padding: EdgeInsets.all(DsSpace.lg), child: Center(child: DsSpinner())),
-        // to fetch real-time data
-        isLive: true,
       ),
+    );
+  }
+
+  Widget _inbox(StoreChatIdentity store) {
+    return FirestorePagination(
+      query: FireStoreUtils.storeOrderInboxQuery(store.inboxMemberId),
+      //item builder type is compulsory.
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
+      itemBuilder: (context, documentSnapshots, index) {
+        final data = documentSnapshots[index].data() as Map<String, dynamic>?;
+        InboxModel inboxModel = InboxModel.fromJson(data!);
+
+        // getUserById, not getUserProfile: getUserProfile also makes the user
+        // it reads the session's user (Constant.userModel), so every row
+        // drawn here made the store "signed in" as that customer.
+        return FutureBuilder<UserModel?>(
+          future: FireStoreUtils.getUserById(inboxModel.receiverId == store.storeId ? inboxModel.senderId! : inboxModel.receiverId!),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData || snapshot.hasError || snapshot.connectionState == ConnectionState.waiting) {
+              return snapshot.connectionState == ConnectionState.waiting ? const _InboxRowSkeleton() : const SizedBox();
+            } else {
+              UserModel? customer = snapshot.data;
+              return DsFadeSlideIn(
+                index: index,
+                child: _ConversationRow(
+                  onTap: () async {
+                    ShowToastDialog.showLoader("Please wait".tr);
+                    // The store side: the owner's profile (getUserById, so
+                    // the session's user is left alone). For an employee
+                    // ChatController then writes as the store.
+                    UserModel? restaurant = await FireStoreUtils.getUserById(store.storeId);
+                    UserModel? customer = snapshot.data;
+                    ShowToastDialog.closeLoader();
+                    log("receivedId.value :: ${customer?.id}");
+                    Get.to(
+                      const ChatScreen(),
+                      arguments: {
+                        "senderName": store.isEmployee ? store.displayName : restaurant?.fullName(),
+                        "senderId": store.storeId,
+                        "senderProfileUrl": store.isEmployee ? store.photo : restaurant?.profilePictureURL,
+                        "receivedName": customer?.fullName(),
+                        "receivedId": customer?.id,
+                        "receivedProfileUrl": customer?.profilePictureURL,
+                        "orderId": inboxModel.orderId,
+                        "token": restaurant?.fcmToken,
+                        "chatType": Constant.userRoleVendor,
+                      },
+                    );
+                  },
+                  avatar: DsAvatar(imageUrl: customer?.profilePictureURL, name: customer?.fullName(), size: 52),
+                  name: "${customer?.fullName()}",
+                  date: Constant.timestampToDate(inboxModel.createdAt!),
+                  subtitle: "${"Order".tr} ${Constant.orderId(orderId: inboxModel.orderId.toString())}",
+                  subtitleIcon: Icons.receipt_long_outlined,
+                  // Messages the store received in this conversation and
+                  // has not opened yet (lib/utils/chat_unread.dart).
+                  unreadBadge: ChatUnreadBadge(threadId: inboxModel.orderId ?? '', receiverId: store.unreadReceiverId),
+                  showDivider: index < documentSnapshots.length - 1,
+                ),
+              );
+            }
+          },
+        );
+      },
+
+      shrinkWrap: true,
+      onEmpty: DsEmptyState(icon: Icons.forum_outlined, title: "No conversion found".tr),
+      // orderBy is compulsory to enable pagination
+      //Change types customerId
+      viewType: ViewType.list,
+      initialLoader: const DsSkeletonList(carded: false, itemCount: 8),
+      bottomLoader: const Padding(
+        padding: EdgeInsets.all(DsSpace.lg),
+        child: Center(child: DsSpinner()),
+      ),
+      // to fetch real-time data
+      isLive: true,
     );
   }
 }
@@ -195,10 +226,7 @@ class _InboxRowSkeleton extends StatelessWidget {
             DsSkeleton.circle(size: 52),
             const DsGap(DsSpace.md),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [DsSkeleton.line(width: 140), const DsGap(DsSpace.sm), DsSkeleton.line(width: 90)],
-              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [DsSkeleton.line(width: 140), const DsGap(DsSpace.sm), DsSkeleton.line(width: 90)]),
             ),
           ],
         ),
