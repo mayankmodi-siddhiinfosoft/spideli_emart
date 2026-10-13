@@ -196,6 +196,9 @@ abstract final class FinanceErrors {
     'biller_unavailable': 'The biller cannot be reached right now. Please try again later.',
     'account_not_found': 'This account number was not found by the biller.',
     'provider_unavailable': 'The payment service cannot be reached right now. Please try again later.',
+    'financing_documents_missing': 'Please add every required document before submitting.',
+    'financing_not_editable': 'This application can no longer be changed.',
+    'business_kyc_required': 'A business verification is needed to apply for financing.',
     'sign_in_required': 'Please sign in again.',
     'unauthenticated': 'Please sign in again.',
   };

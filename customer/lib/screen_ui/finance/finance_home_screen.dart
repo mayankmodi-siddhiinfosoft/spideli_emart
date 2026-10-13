@@ -1,6 +1,7 @@
 import 'package:customer/screen_ui/finance/bill_screens.dart';
 import 'package:customer/screen_ui/finance/card_screens.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
+import 'package:customer/screen_ui/finance/financing_screens.dart';
 import 'package:customer/screen_ui/finance/insurance_screens.dart';
 import 'package:customer/screen_ui/finance/investment_screens.dart';
 import 'package:customer/screen_ui/finance/kyc_screen.dart';
@@ -135,6 +136,14 @@ class FinanceHomeScreen extends StatelessWidget {
                 subtitle: "Electricity, water, TV, internet and more.".tr,
                 showChevron: true,
                 onTap: () => Get.to(() => const BillsScreen()),
+              ),
+              DsListTile(
+                leadingIcon: Icons.business_center_outlined,
+                leadingTone: DsTone.brand,
+                title: "Project financing".tr,
+                subtitle: "Apply for financing for your company or project and follow the review.".tr,
+                showChevron: true,
+                onTap: () => Get.to(() => const FinancingScreen()),
               ),
             ],
           ),

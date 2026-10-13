@@ -1,8 +1,10 @@
 # Creates the admin-level Spideli Finance configuration in the live Firestore
 # (project spideli-870b0), as listed in .claude/FINANCE-APP-CONTRACT.md:
 #   - platform_settings/kyc, /savings, /tontines, /lending, /investments, /insurance, /cards,
-#     /transfers, /bills                (sections 2.1, 8.1, 9.1, 11.1, 12.1, 13.1, 14.1, 15.1, 15.4)
-#   - dynamic_notification templates    (sections 6, 10, 11.5, 12.4, 13.4, 14.5, 15.5)
+#     /transfers, /bills, /financing    (sections 2.1, 8.1, 9.1, 11.1, 12.1, 13.1, 14.1, 15.1, 15.4, 16.1)
+#   - dynamic_notification templates    (sections 6, 10, 11.5, 12.4, 13.4, 14.5, 15.5, 16.4)
+#   - financial_resources: three starter guides, UNPUBLISHED (published: false)
+#     for the admin to review, adapt and publish (section 16.2)
 # Utility BILLERS are not seeded: each needs a live integration (section 15.4).
 # platform_settings/cards is created WITHOUT terms / termsVersion, so virtual
 # cards stay "not available yet" until an issuer is contracted and the admin
@@ -148,6 +150,73 @@ SETTINGS = {
     'cards': CARDS,
     'transfers': TRANSFERS,
     'bills': BILLS,
+    'financing': {
+        'currencies': ['XAF'],
+        'financingTypes': ['loan', 'equity', 'grant', 'guarantee', 'mixed'],
+        'sectors': ['agriculture', 'commerce', 'manufacturing', 'services', 'technology', 'health', 'education', 'energy', 'construction', 'transport', 'tourism', 'other'],
+        'stages': ['idea', 'startup', 'growth', 'established'],
+        'documentTypes': ['business_plan', 'financial_statements', 'financial_forecast', 'registration', 'tax_certificate', 'bank_statements', 'id_documents', 'pitch_deck', 'quotes', 'other'],
+        'requiredDocuments': [
+            'business_plan',
+            'registration',
+            {'type': 'financial_statements', 'financingTypes': ['loan', 'equity', 'guarantee', 'mixed']},
+        ],
+        'minAmount': {'XAF': 500000},
+        'maxAmount': {'XAF': 500000000},
+        'durationsMonths': [12, 24, 36, 60],
+        'allowedContentTypes': ['application/pdf', 'image/jpeg', 'image/png'],
+        'maxFileBytes': 20 * 1024 * 1024,
+    },
+}
+
+# Starter guides, created UNPUBLISHED: the admin reviews, adapts and publishes them.
+RESOURCES = {
+    'guide_business_plan': {
+        'published': False,
+        'type': 'guide',
+        'order': 1,
+        'title': 'How to write your business plan',
+        'summary': 'The sections reviewers expect, and what to put in each.',
+        'body': (
+            '1. Summary: the project in one page - what you sell, to whom, how much you need and why.\n'
+            '2. The company: legal form, founders and managers, history, location.\n'
+            '3. Market: your customers, their needs, the size of the market, your competitors.\n'
+            '4. Offer: your products or services, prices, and what makes them different.\n'
+            '5. Sales and marketing: how you reach and keep customers.\n'
+            '6. Operations: suppliers, equipment, premises, staff.\n'
+            '7. Financial plan: start-up costs, forecast sales, expenses and cash flow for at least three years.\n'
+            '8. Financing: the amount requested, how it will be used, and how it will be repaid or what investors receive.\n'
+            'Keep it clear and factual, and make sure the figures match your financial statements.'
+        ),
+    },
+    'guide_financial_statements': {
+        'published': False,
+        'type': 'guide',
+        'order': 2,
+        'title': 'Financial statements: what to provide',
+        'summary': 'The documents that show the health of your company.',
+        'body': (
+            'Reviewers usually ask for:\n'
+            '- the balance sheet and income statement of the last two or three years, signed or certified where required;\n'
+            '- recent bank statements (often the last six to twelve months);\n'
+            '- for a new company, a forecast of income, expenses and cash flow instead.\n'
+            'Make sure the amounts are consistent between the documents and with your business plan.'
+        ),
+    },
+    'guide_application': {
+        'published': False,
+        'type': 'guide',
+        'order': 3,
+        'title': 'Preparing your financing application',
+        'summary': 'A checklist before you submit.',
+        'body': (
+            '- Describe your project precisely: activity, customers, location, team.\n'
+            '- Ask for an amount you can justify, and list how each part will be used.\n'
+            '- Add every required document, readable and complete.\n'
+            '- Answer quickly when reviewers ask for more information: the application waits for you.\n'
+            'An application is reviewed by the financing institution; submitting it does not guarantee financing.'
+        ),
+    },
 }
 
 TEMPLATES = [
@@ -232,6 +301,14 @@ TEMPLATES = [
     ('bill_token', 'Your code', 'Your {billerName} code: {token}'),
     ('bill_failed', 'Bill payment failed', 'Your payment of {amount} to {billerName} failed: {reason}'),
     ('bill_reversed', 'Bill payment refunded', 'Your payment of {amount} to {billerName} could not be completed and was refunded.'),
+    ('financing_submitted', 'Application received', 'Your financing application for {projectName} was received.'),
+    ('financing_under_review', 'Application under review', 'Your financing application for {projectName} is being reviewed.'),
+    ('financing_info_required', 'More information needed', 'The reviewers need more information about {projectName}: {reason}'),
+    ('financing_document_rejected', 'Document to replace', 'Please replace "{documentName}" in your application for {projectName}: {note}'),
+    ('financing_approved', 'Financing approved', 'Your application for {projectName} was approved for {amount}.'),
+    ('financing_rejected', 'Financing not approved', 'Your application for {projectName} was not approved: {reason}'),
+    ('financing_funded', 'Financing paid', '{amount} was paid for {projectName}.'),
+    ('financing_closed', 'Application closed', 'Your financing application for {projectName} is closed.'),
 ]
 # The admin panel groups templates by service_type; account-level customer
 # templates already use this group.
@@ -289,6 +366,12 @@ for doc_id, data in SETTINGS.items():
         print(f' - platform_settings/{doc_id}: already exists, skipped')
     else:
         print(f' - platform_settings/{doc_id}:', create('platform_settings', doc_id, {**data, 'createdAt': now}) if APPLY else 'would create')
+
+for doc_id, data in RESOURCES.items():
+    if exists(f'financial_resources/{doc_id}'):
+        print(f' - financial_resources/{doc_id}: already exists, skipped')
+    else:
+        print(f' - financial_resources/{doc_id} (unpublished):', create('financial_resources', doc_id, {**data, 'updatedAt': now}) if APPLY else 'would create')
 
 have = template_types()
 for type_, subject, message in TEMPLATES:

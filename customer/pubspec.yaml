@@ -98,6 +98,7 @@ dependencies:
   cloud_functions: ^6.5.0
   url_launcher: ^6.3.2
   crypto: ^3.0.7
+  file_picker: ^13.1.0
 
 
 dependency_overrides:

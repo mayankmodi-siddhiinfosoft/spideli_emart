@@ -1062,3 +1062,99 @@ Reasons the app maps (`FinanceErrors`): `recipient_not_found`, `recipient_invali
 | `bill_token` | user | `{billerName}`, `{token}` |
 | `bill_failed` | user | `{amount}`, `{billerName}`, `{reason}` |
 | `bill_reversed` | user | `{amount}`, `{billerName}` |
+
+---
+
+## 16. Project financing (brief section 16)
+
+App code: `customer/lib/screen_ui/finance/financing_screens.dart`, `customer/lib/service/finance_financing_service.dart`, rules in `customer/lib/utils/finance_financing_rules.dart` (tested in `customer/test/finance_financing_rules_test.dart`). Entry: Spideli Finance > Services > **Project financing** (Applications / Projects / Resources). Documents are picked with `file_picker` (PDF, images; the same package as the vendor app).
+
+**Model:** a company or institution (a **project owner**) describes its project, then submits financing applications for it, with its business plan and financial statements. Reviewers (financing institutions, Spideli staff) handle the review in the admin / institutional portal, which is not in this app. Application documents are visible **only to the owner and explicitly authorised reviewers**.
+
+### 16.1 `platform_settings/financing` (admin config)
+
+```jsonc
+{
+  "currencies": ["XAF"],
+  "financingTypes": ["loan", "equity", "grant", "guarantee", "mixed"],
+  "sectors": ["agriculture", "commerce", "manufacturing", "services", "technology", "health", "education", "energy", "construction", "transport", "tourism", "other"],
+  "stages": ["idea", "startup", "growth", "established"],
+  "documentTypes": ["business_plan", "financial_statements", "financial_forecast", "registration", "tax_certificate", "bank_statements", "id_documents", "pitch_deck", "quotes", "other"],
+  "requiredDocuments": [                                   // a type, or { type, financingTypes } to require it only for those
+    "business_plan", "registration",
+    { "type": "financial_statements", "financingTypes": ["loan", "equity", "guarantee", "mixed"] }
+  ],
+  "minAmount": { "XAF": 500000 }, "maxAmount": { "XAF": 500000000 },
+  "durationsMonths": [12, 24, 36, 60],                     // asked for loan and mixed financing
+  "allowedContentTypes": ["application/pdf", "image/jpeg", "image/png"],
+  "maxFileBytes": 20971520                                 // capped at 50 MB by the app
+}
+```
+
+Required: "Project financing is not available yet" when it is missing or has no valid currency, no known financing type, or no document type.
+
+### 16.2 Collections (SERVER writes all of them)
+
+**`financing_projects/{projectId}`**: `{ ownerId, name, sector, stage, country, city, description, employees, foundedYear, website, createdAt, updatedAt }`.
+
+**`financing_applications/{applicationId}`**:
+- `{ ownerId, projectId, projectName, financingType, amount, currency, durationMonths, useOfFunds, status, reason, approvedAmount, fundedAmount, institutionName, reviewerIds[], submittedAt, fundedAt, createdAt }`;
+- `status`: `draft` → `submitted` → `under_review` → (`additional_info_required` → `submitted` …) → `approved` → `funded` → `closed`, or `rejected` / `withdrawn`;
+- `reason` is shown to the owner: what the reviewers need (`additional_info_required`), or why it was rejected.
+
+**`financing_documents/{documentId}`**: `{ ownerId, applicationId, type, name, storagePath, contentType, size, status: received | accepted | rejected, note, uploadedAt }`. A `rejected` document no longer counts towards the required ones, and its `note` tells the owner what to fix.
+
+**`financing_reviews/{reviewId}`** (the history): `{ ownerId, applicationId, fromStatus, toStatus, publicNote, reviewerId, internalNote, at }`. **The owner must not read `internalNote` or `reviewerId`**: keep internal notes in a separate staff-only collection, or serve owner-visible history from a field-restricted copy.
+
+**`financial_resources/{resourceId}`**: `{ published, type: template | guide | faq | regulation, title, summary, body (plain text), storagePath | url (https), country, language, order, updatedAt }`. Only **approved** content: publish it with `published: true` after review.
+
+App queries (with indexes):
+
+```
+financing_projects     where ownerId == <uid> orderBy createdAt desc limit 20                        -> (ownerId ASC, createdAt DESC)
+financing_applications where ownerId == <uid> orderBy createdAt desc limit 50                        -> (ownerId ASC, createdAt DESC)
+financing_documents    where ownerId == <uid> and applicationId == X orderBy uploadedAt desc         -> (ownerId ASC, applicationId ASC, uploadedAt DESC)
+financing_reviews      where ownerId == <uid> and applicationId == X orderBy at desc                 -> (ownerId ASC, applicationId ASC, at DESC)
+financial_resources    where published == true limit 200                                            -> equality only
+financing_applications/{id}: single document
+```
+
+Rules:
+- projects, applications, documents, reviews: readable by the owner (`resource.data.ownerId == request.auth.uid`) and by reviewers whose uid is in the application's `reviewerIds` (or a reviewer role claim);
+- published resources: any signed-in user;
+- **no client writes**.
+
+Storage:
+- `financing_documents/{uid}/{applicationId}/{file}` may be **created** by its owner only;
+- the content types and size come from the config; no overwrite;
+- read by the owner and authorised reviewers (signed links for reviewers);
+- `financial_resources/**`: read by signed-in users.
+
+### 16.3 Callables
+
+| Function | Request | Server checks |
+|---|---|---|
+| `financingSaveProject` | `{ projectId?, name, sector, stage?, country, city, description, employees?, foundedYear?, website? }` -> `{ projectId }` | KYC-verified, **business** account / level as your policy requires (`business_kyc_required`); the owner when updating |
+| `financingCreateApplication` | `{ projectId, financingType, amount, currency, durationMonths?, useOfFunds }` -> `{ applicationId }` | the project's owner; config limits; `draft` |
+| `financingUpdateApplication` | `{ applicationId, …same fields }` | the owner; `draft` / `additional_info_required` (else `financing_not_editable`) |
+| `financingRegisterDocument` | `{ applicationId, type, name, storagePath, contentType, size }` | the owner; editable; the path is theirs; the file exists with that type and size |
+| `financingRemoveDocument` | `{ documentId }` | the owner; editable; delete the file too |
+| `financingSubmit` | `{ applicationId, declarationAccepted: true, message? }` | the owner; editable; every required document present and not rejected (else `financing_documents_missing`); record the declaration (time, user); → `submitted`; write a `financing_reviews` entry (the `message` as `publicNote`) |
+| `financingWithdraw` | `{ applicationId }` | the owner; before `approved` |
+
+Reviewer actions (start review, request information, accept or reject documents, approve, record funding, close) belong to the **institutional / admin portal** and must write `financing_reviews` on every status change.
+
+### 16.4 Notifications (SERVER)
+
+Templates (`dynamic_notification`, `source: "finance"`):
+
+| Template `type` | To | Placeholders |
+|---|---|---|
+| `financing_submitted` | owner | `{projectName}` |
+| `financing_under_review` | owner | `{projectName}` |
+| `financing_info_required` | owner | `{projectName}`, `{reason}` |
+| `financing_document_rejected` | owner | `{projectName}`, `{documentName}`, `{note}` |
+| `financing_approved` | owner | `{projectName}`, `{amount}` |
+| `financing_rejected` | owner | `{projectName}`, `{reason}` |
+| `financing_funded` | owner | `{projectName}`, `{amount}` |
+| `financing_closed` | owner | `{projectName}` |
