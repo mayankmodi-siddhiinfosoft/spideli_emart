@@ -5,6 +5,7 @@ import 'package:driver/constant/send_notification.dart';
 import 'package:driver/models/company_cash_model.dart';
 import 'package:driver/models/parcel_order_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/carrier_dispatch_service.dart';
 import 'package:driver/services/company_cash_push.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/region_service.dart';
@@ -80,7 +81,7 @@ class CompanyCashService {
         placeholders: CompanyCashPush.values(
           amount: Constant.amountShow(amount: amount.toString(), currency: RegionService.currencyForRecord(order.regionId)),
           driverName: driver.fullName(),
-          companyName: CompanyCashPush.companyNameOf(companyName: owner?.companyName, ownerName: owner?.fullName()),
+          companyName: await CarrierDispatchService.companyNameFor(owner),
           orderId: orderId,
         ),
       );
@@ -131,7 +132,7 @@ class CompanyCashService {
         placeholders: CompanyCashPush.values(
           amount: _money(amount, user),
           driverName: user.fullName(),
-          companyName: CompanyCashPush.companyNameOf(companyName: owner?.companyName, ownerName: owner?.fullName()),
+          companyName: await CarrierDispatchService.companyNameFor(owner),
           reference: txId,
         ),
       );
@@ -190,7 +191,7 @@ class CompanyCashService {
           placeholders: CompanyCashPush.values(
             amount: _money(amount, driver),
             driverName: driverName ?? driver?.fullName(),
-            companyName: _myCompanyName(),
+            companyName: await _myCompanyName(),
             reference: transactionId,
           ),
         );
@@ -239,7 +240,7 @@ class CompanyCashService {
           placeholders: CompanyCashPush.values(
             amount: _money(amount, driver),
             driverName: data['driverName']?.toString() ?? driver?.fullName(),
-            companyName: _myCompanyName(),
+            companyName: await _myCompanyName(),
             reference: transactionId,
             reason: reason,
           ),
@@ -292,7 +293,7 @@ class CompanyCashService {
         placeholders: CompanyCashPush.values(
           amount: _money(amount, driver),
           driverName: driverName,
-          companyName: _myCompanyName(),
+          companyName: await _myCompanyName(),
           reference: txId,
           reason: reason,
           isCredit: isCredit,
@@ -323,7 +324,7 @@ class CompanyCashService {
   static String _money(double amount, UserModel? driver) => Constant.amountShow(amount: amount.toString(), currency: RegionService.currencyForRecord(driver?.regionId));
 
   /// `{companyName}` for pushes the signed-in owner sends.
-  static String _myCompanyName() => CompanyCashPush.companyNameOf(companyName: Constant.userModel?.companyName, ownerName: Constant.userModel?.fullName());
+  static Future<String> _myCompanyName() => CarrierDispatchService.companyNameFor(Constant.userModel);
 
   /// Stream of transactions for a specific driver, newest first.
   ///

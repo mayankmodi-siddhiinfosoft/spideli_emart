@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/models/delivery_carrier_model.dart';
+import 'package:driver/services/company_cash_push.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 
@@ -55,6 +56,24 @@ class CarrierDispatchService {
       log("CarrierDispatchService.myCarrier failed: $e");
     }
     return null;
+  }
+
+  static final Map<String, String> _carrierNames = {};
+
+  /// `{companyName}` for a push about [owner]'s company: the name of the
+  /// carrier the owner is bound to (`delivery_carriers/{users.carrierId}`,
+  /// read once per carrier), else the owner's `companyName`, else their name
+  /// ([CompanyCashPush.companyNameOf]). Never throws.
+  static Future<String> companyNameFor(UserModel? owner) async {
+    if (owner == null) return '';
+    final String carrierId = (owner.carrierId ?? '').trim();
+    String? carrierName = carrierId.isEmpty ? null : _carrierNames[carrierId];
+    if (carrierName == null && carrierId.isNotEmpty) {
+      final DeliveryCarrierModel? carrier = await myCarrier(user: owner);
+      carrierName = carrier?.text('name') ?? '';
+      if (carrierName.trim().isNotEmpty) _carrierNames[carrierId] = carrierName;
+    }
+    return CompanyCashPush.companyNameOf(carrierName: carrierName, companyName: owner.companyName, ownerName: owner.fullName());
   }
 
   /// Saves the settings the owner maintains (brief section 6) with a

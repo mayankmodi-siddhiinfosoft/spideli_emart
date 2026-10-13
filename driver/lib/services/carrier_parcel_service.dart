@@ -5,8 +5,8 @@ import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/send_notification.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/carrier_dispatch_service.dart';
 import 'package:driver/services/carrier_parcel_rules.dart';
-import 'package:driver/services/company_cash_push.dart';
 import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 
@@ -105,7 +105,7 @@ abstract final class CarrierParcelService {
       final Map<String, String> values = CarrierParcelRules.pushValues(
         orderId: orderId,
         trackingNumber: outcome.tracking,
-        companyName: CompanyCashPush.companyNameOf(companyName: owner?.companyName, ownerName: owner?.fullName()),
+        companyName: await CarrierDispatchService.companyNameFor(owner),
         driverName: (fresh ?? driver).fullName(),
       );
       pushed = await SendNotification.sendFcmMessage(
@@ -150,7 +150,7 @@ abstract final class CarrierParcelService {
         placeholders: CarrierParcelRules.pushValues(
           orderId: orderId,
           trackingNumber: order?['trackingNumber']?.toString(),
-          companyName: CompanyCashPush.companyNameOf(companyName: owner?.companyName, ownerName: owner?.fullName()),
+          companyName: await CarrierDispatchService.companyNameFor(owner),
           driverName: me?.fullName(),
         ),
       );

@@ -61,10 +61,15 @@ abstract final class CompanyCashPush {
     };
   }
 
-  /// The company's name for `{companyName}`: its `companyName`, else the
-  /// owner account's own name.
-  static String companyNameOf({String? companyName, String? ownerName}) {
-    final String c = (companyName ?? '').trim();
-    return c.isNotEmpty ? c : (ownerName ?? '').trim();
+  /// The company's name for `{companyName}`: the name of its CARRIER (the
+  /// `delivery_carriers` record the admin bound the owner to - the name
+  /// customers choose, client decision 13 Oct 2026), else the owner account's
+  /// `companyName`, else the owner's own name.
+  static String companyNameOf({String? carrierName, String? companyName, String? ownerName}) {
+    for (final String? v in [carrierName, companyName, ownerName]) {
+      final String t = (v ?? '').trim();
+      if (t.isNotEmpty) return t;
+    }
+    return '';
   }
 }

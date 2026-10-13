@@ -1,4 +1,5 @@
 import 'package:driver/services/carrier_parcel_rules.dart';
+import 'package:driver/services/company_cash_push.dart';
 import 'package:driver/services/push_template_text.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -23,6 +24,17 @@ void main() {
     test('the template types the admin manages', () {
       expect(CarrierParcelRules.assignedTemplate, 'carrier_parcel_assigned');
       expect(CarrierParcelRules.returnedTemplate, 'carrier_parcel_returned');
+    });
+  });
+
+  group('{companyName} = the carrier name', () {
+    test('the carrier name wins over the account company name and the owner name', () {
+      expect(CompanyCashPush.companyNameOf(carrierName: 'LN Carrier', companyName: 'BEST COMPANY', ownerName: 'Test Company'), 'LN Carrier');
+    });
+    test('no carrier name -> company name -> owner name -> empty', () {
+      expect(CompanyCashPush.companyNameOf(carrierName: '  ', companyName: 'BEST COMPANY', ownerName: 'Test Company'), 'BEST COMPANY');
+      expect(CompanyCashPush.companyNameOf(carrierName: null, companyName: '', ownerName: 'Test Company'), 'Test Company');
+      expect(CompanyCashPush.companyNameOf(), '');
     });
   });
 }
