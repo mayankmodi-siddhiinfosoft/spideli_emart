@@ -62,7 +62,13 @@ first login once approved; once per app launch, so closing it leaves the owner
 on the dashboard). The owner home then shows *"You have not set up your carrier
 yet."* with a **Set up your carrier** button; Carrier settings offers the same
 button to any owner without a carrier. The registration numbers given at
-sign-up are pre-filled. The form (`driver/lib/app/owner_screen/carrier_setup_screen.dart`,
+sign-up are pre-filled.
+
+**An owner NOT registered with the Parcel service has no carrier screens at
+all** (`CarrierSetupForm.offersCarrier`): no "Carrier settings" in the drawer,
+no reminder on the owner home, no automatic set-up, and Carrier settings
+(if reached) only says *"Carrier settings are for parcel delivery companies
+only."* The form (`driver/lib/app/owner_screen/carrier_setup_screen.dart`,
 pure rules `driver/lib/utils/carrier_setup_form.dart`) asks for:
 
 | Field | Required | Stored as |

@@ -553,7 +553,6 @@ const Map<String, String> deGR = {
   // Owner "Carrier settings" (parcel pricing brief, 12 Oct 2026).
   "Carrier settings": "Spediteur-Einstellungen",
   "Carrier Management for Parcel Delivery": "Spediteurverwaltung für Paketzustellung",
-  "Carrier settings are for company owners only.": "Die Spediteur-Einstellungen sind nur für Unternehmensinhaber.",
   "Your carrier has not been set up yet — please contact Spideli.": "Ihr Spediteur wurde noch nicht eingerichtet — bitte kontaktieren Sie Spideli.",
   "Verified carrier": "Verifizierter Spediteur",
   "Verification pending": "Verifizierung ausstehend",
@@ -716,4 +715,5 @@ const Map<String, String> deGR = {
   "Select a region to enter its prices.": "Wählen Sie eine Region, um ihre Preise einzugeben.",
   "Carrier created. It will be offered to customers once the administrator has verified it.": "Spediteur erstellt. Er wird Kunden angeboten, sobald der Administrator ihn geprüft hat.",
   "Please enter the prices for @region.": "Bitte geben Sie die Preise für @region ein.",
+  "Carrier settings are for parcel delivery companies only.": "Die Spediteur-Einstellungen gibt es nur für Paketlieferunternehmen.",
 };

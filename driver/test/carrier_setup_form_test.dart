@@ -121,4 +121,12 @@ void main() {
     });
     test('not an owner: no', () => expect(needs(owner: false), isFalse));
   });
+
+  test('offersCarrier: carrier screens only for a Parcel company owner', () {
+    expect(CarrierSetupForm.offersCarrier(isOwner: true, serviceTypes: const ['parcel_delivery']), isTrue);
+    expect(CarrierSetupForm.offersCarrier(isOwner: true, serviceTypes: const ['parcel-service']), isTrue);
+    expect(CarrierSetupForm.offersCarrier(isOwner: true, serviceTypes: const ['cab-service', 'delivery-service']), isFalse);
+    expect(CarrierSetupForm.offersCarrier(isOwner: true, serviceTypes: null), isFalse);
+    expect(CarrierSetupForm.offersCarrier(isOwner: false, serviceTypes: const ['parcel_delivery']), isFalse);
+  });
 }

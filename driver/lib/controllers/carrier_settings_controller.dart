@@ -3,6 +3,7 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/delivery_carrier_model.dart';
 import 'package:driver/services/carrier_dispatch_service.dart';
 import 'package:driver/utils/carrier_settings_form.dart';
+import 'package:driver/utils/carrier_setup_form.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -24,7 +25,8 @@ class CarrierSettingsController extends GetxController {
   final RxBool isLoading = true.obs;
   final RxBool isSaving = false.obs;
 
-  /// The logged-in account is an owner (the screen is for owners only).
+  /// The logged-in account is a company owner registered with the Parcel
+  /// service ([CarrierSetupForm.offersCarrier]); the screen is for it only.
   final RxBool isOwner = false.obs;
 
   /// Null once loading has finished = no carrier bound to this owner yet.
@@ -112,7 +114,8 @@ class CarrierSettingsController extends GetxController {
   Future<void> load() async {
     isLoading.value = true;
     errors.clear();
-    isOwner.value = Constant.userModel?.isOwner == true;
+    // Only a company registered with the Parcel service has a carrier.
+    isOwner.value = CarrierSetupForm.offersCarrier(isOwner: Constant.userModel?.isOwner == true, serviceTypes: Constant.userModel?.serviceTypes);
     final DeliveryCarrierModel? found = isOwner.value ? await CarrierDispatchService.myCarrier() : null;
     carrier.value = found;
     carrierId.value = found?.id ?? '';

@@ -24,7 +24,13 @@ class CarrierSetupForm {
   /// dashboard then opens "Set up your carrier" by itself, and the owner
   /// home shows the reminder.
   static bool needsSetup({required bool isOwner, required Iterable<String>? serviceTypes, required String? carrierId}) =>
-      isOwner && DriverServiceTypes.normalizeAll(serviceTypes).contains(DriverServiceTypes.parcel) && (carrierId ?? '').trim().isEmpty;
+      offersCarrier(isOwner: isOwner, serviceTypes: serviceTypes) && (carrierId ?? '').trim().isEmpty;
+
+  /// Whether the carrier screens exist for this account at all: a company
+  /// owner registered with the Parcel service. Any other owner has no
+  /// "Carrier settings" in the drawer, no carrier reminder and no set-up.
+  static bool offersCarrier({required bool isOwner, required Iterable<String>? serviceTypes}) =>
+      isOwner && DriverServiceTypes.normalizeAll(serviceTypes).contains(DriverServiceTypes.parcel);
 
   static const String errPhone = 'Please enter the phone number';
   static const String errEmail = 'Please enter a valid email address';

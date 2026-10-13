@@ -553,7 +553,6 @@ const Map<String, String> jaJP = {
   // Owner "Carrier settings" (parcel pricing brief, 12 Oct 2026).
   "Carrier settings": "運送会社の設定",
   "Carrier Management for Parcel Delivery": "小包配送の運送会社管理",
-  "Carrier settings are for company owners only.": "運送会社の設定は会社オーナー専用です。",
   "Your carrier has not been set up yet — please contact Spideli.": "運送会社はまだ設定されていません — Spideli にお問い合わせください。",
   "Verified carrier": "認証済みの運送会社",
   "Verification pending": "認証待ち",
@@ -716,4 +715,5 @@ const Map<String, String> jaJP = {
   "Select a region to enter its prices.": "料金を入力する地域を選択してください。",
   "Carrier created. It will be offered to customers once the administrator has verified it.": "運送会社を作成しました。管理者が確認すると、お客様に表示されます。",
   "Please enter the prices for @region.": "@region の料金を入力してください。",
+  "Carrier settings are for parcel delivery companies only.": "運送会社の設定は荷物配達会社のみが利用できます。",
 };

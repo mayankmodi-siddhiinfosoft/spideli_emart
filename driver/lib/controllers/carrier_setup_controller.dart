@@ -137,7 +137,7 @@ class CarrierSetupController extends GetxController {
   Future<bool> submit() async {
     final owner = Constant.userModel;
     final String ownerId = (owner?.id ?? '').trim();
-    if (ownerId.isEmpty || owner?.isOwner != true) return false;
+    if (ownerId.isEmpty || !CarrierSetupForm.offersCarrier(isOwner: owner?.isOwner == true, serviceTypes: owner?.serviceTypes)) return false;
 
     final Map<String, String> texts = {for (final e in fields.entries) e.key: e.value.text};
     final check = CarrierSetupForm.build(

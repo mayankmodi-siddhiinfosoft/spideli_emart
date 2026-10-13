@@ -26,6 +26,7 @@ import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/material.dart';
+import 'package:driver/utils/carrier_setup_form.dart';
 import 'package:get/get.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:share_plus/share_plus.dart';
@@ -236,16 +237,22 @@ class DrawerView extends StatelessWidget {
                           },
                         ),
                         // The owner's "Carrier settings" (brief 12 Oct section 6):
-                        // the carrier the admin bound to this owner.
-                        DsListTile(
-                          leadingIcon: Icons.local_shipping_outlined,
-                          title: 'Carrier settings'.tr,
-                          showChevron: true,
-                          onTap: () {
-                            Get.back();
-                            Get.to(() => const CarrierSettingsScreen());
-                          },
-                        ),
+                        // only for a company registered with the Parcel service.
+                        Obx(() {
+                          final owner = controller.userModel.value;
+                          if (!CarrierSetupForm.offersCarrier(isOwner: owner.isOwner == true, serviceTypes: owner.serviceTypes)) {
+                            return const SizedBox.shrink();
+                          }
+                          return DsListTile(
+                            leadingIcon: Icons.local_shipping_outlined,
+                            title: 'Carrier settings'.tr,
+                            showChevron: true,
+                            onTap: () {
+                              Get.back();
+                              Get.to(() => const CarrierSettingsScreen());
+                            },
+                          );
+                        }),
                         DsListTile(
                           leadingIcon: Icons.verified_user_outlined,
                           title: 'Driver Verification'.tr,

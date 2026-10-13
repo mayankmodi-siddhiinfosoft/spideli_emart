@@ -553,7 +553,6 @@ const Map<String, String> ruRU = {
   // Owner "Carrier settings" (parcel pricing brief, 12 Oct 2026).
   "Carrier settings": "Настройки перевозчика",
   "Carrier Management for Parcel Delivery": "Управление перевозчиком для доставки посылок",
-  "Carrier settings are for company owners only.": "Настройки перевозчика доступны только владельцам компаний.",
   "Your carrier has not been set up yet — please contact Spideli.": "Ваш перевозчик ещё не настроен — пожалуйста, свяжитесь со Spideli.",
   "Verified carrier": "Проверенный перевозчик",
   "Verification pending": "Ожидает проверки",
@@ -716,4 +715,5 @@ const Map<String, String> ruRU = {
   "Select a region to enter its prices.": "Выберите регион, чтобы указать его цены.",
   "Carrier created. It will be offered to customers once the administrator has verified it.": "Перевозчик создан. Он будет предложен клиентам после проверки администратором.",
   "Please enter the prices for @region.": "Укажите цены для @region.",
+  "Carrier settings are for parcel delivery companies only.": "Настройки перевозчика доступны только компаниям по доставке посылок.",
 };

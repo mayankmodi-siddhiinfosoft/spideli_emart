@@ -553,7 +553,6 @@ const Map<String, String> trFR = {
   // Owner "Carrier settings" (parcel pricing brief, 12 Oct 2026).
   "Carrier settings": "Paramètres du transporteur",
   "Carrier Management for Parcel Delivery": "Gestion du transporteur pour la livraison de colis",
-  "Carrier settings are for company owners only.": "Les paramètres du transporteur sont réservés aux propriétaires d'entreprise.",
   "Your carrier has not been set up yet — please contact Spideli.": "Votre transporteur n'a pas encore été configuré — veuillez contacter Spideli.",
   "Verified carrier": "Transporteur vérifié",
   "Verification pending": "Vérification en attente",
@@ -716,4 +715,5 @@ const Map<String, String> trFR = {
   "Select a region to enter its prices.": "Sélectionnez une région pour saisir ses prix.",
   "Carrier created. It will be offered to customers once the administrator has verified it.": "Transporteur créé. Il sera proposé aux clients une fois vérifié par l'administrateur.",
   "Please enter the prices for @region.": "Veuillez saisir les prix pour @region.",
+  "Carrier settings are for parcel delivery companies only.": "Les paramètres du transporteur sont réservés aux sociétés de livraison de colis.",
 };

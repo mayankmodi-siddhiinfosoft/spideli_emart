@@ -553,7 +553,6 @@ const Map<String, String> zhCH = {
   // Owner "Carrier settings" (parcel pricing brief, 12 Oct 2026).
   "Carrier settings": "承运商设置",
   "Carrier Management for Parcel Delivery": "包裹配送承运商管理",
-  "Carrier settings are for company owners only.": "承运商设置仅限公司所有者使用。",
   "Your carrier has not been set up yet — please contact Spideli.": "您的承运商尚未设置 — 请联系 Spideli。",
   "Verified carrier": "已认证承运商",
   "Verification pending": "等待认证",
@@ -716,4 +715,5 @@ const Map<String, String> zhCH = {
   "Select a region to enter its prices.": "请选择一个地区以填写其价格。",
   "Carrier created. It will be offered to customers once the administrator has verified it.": "承运商已创建。管理员审核后将向客户展示。",
   "Please enter the prices for @region.": "请填写 @region 的价格。",
+  "Carrier settings are for parcel delivery companies only.": "承运商设置仅适用于包裹配送公司。",
 };

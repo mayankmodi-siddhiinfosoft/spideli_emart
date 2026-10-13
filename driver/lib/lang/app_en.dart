@@ -581,7 +581,6 @@ const Map<String, String> enUS = {
   "OK": "OK",
   // Owner "Carrier settings" (parcel pricing brief, 12 Oct 2026).
   "Carrier settings": "Carrier settings",
-  "Carrier settings are for company owners only.": "Carrier settings are for company owners only.",
   "Your carrier has not been set up yet — please contact Spideli.": "Your carrier has not been set up yet — please contact Spideli.",
   "Verified carrier": "Verified carrier",
   "Verification pending": "Verification pending",
@@ -720,4 +719,5 @@ const Map<String, String> enUS = {
   "Select a region to enter its prices.": "Select a region to enter its prices.",
   "Carrier created. It will be offered to customers once the administrator has verified it.": "Carrier created. It will be offered to customers once the administrator has verified it.",
   "Please enter the prices for @region.": "Please enter the prices for @region.",
+  "Carrier settings are for parcel delivery companies only.": "Carrier settings are for parcel delivery companies only.",
 };

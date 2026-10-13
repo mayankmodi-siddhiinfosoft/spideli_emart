@@ -553,7 +553,6 @@ const Map<String, String> lnAr = {
   // Owner "Carrier settings" (parcel pricing brief, 12 Oct 2026).
   "Carrier settings": "إعدادات شركة الشحن",
   "Carrier Management for Parcel Delivery": "إدارة شركة الشحن لتوصيل الطرود",
-  "Carrier settings are for company owners only.": "إعدادات شركة الشحن متاحة لأصحاب الشركات فقط.",
   "Your carrier has not been set up yet — please contact Spideli.": "لم يتم إعداد شركة الشحن الخاصة بك بعد — يرجى التواصل مع Spideli.",
   "Verified carrier": "شركة شحن موثقة",
   "Verification pending": "التحقق قيد الانتظار",
@@ -716,4 +715,5 @@ const Map<String, String> lnAr = {
   "Select a region to enter its prices.": "اختر منطقة لإدخال أسعارها.",
   "Carrier created. It will be offered to customers once the administrator has verified it.": "تم إنشاء شركة الشحن. ستُعرض على العملاء بعد أن يتحقق منها المسؤول.",
   "Please enter the prices for @region.": "يرجى إدخال الأسعار لـ @region.",
+  "Carrier settings are for parcel delivery companies only.": "إعدادات شركة الشحن متاحة لشركات توصيل الطرود فقط.",
 };

@@ -553,7 +553,6 @@ const Map<String, String> ptPO = {
   // Owner "Carrier settings" (parcel pricing brief, 12 Oct 2026).
   "Carrier settings": "Configurações da transportadora",
   "Carrier Management for Parcel Delivery": "Gestão da transportadora para entrega de encomendas",
-  "Carrier settings are for company owners only.": "As configurações da transportadora são apenas para proprietários de empresas.",
   "Your carrier has not been set up yet — please contact Spideli.": "A sua transportadora ainda não foi configurada — contacte a Spideli.",
   "Verified carrier": "Transportadora verificada",
   "Verification pending": "Verificação pendente",
@@ -716,4 +715,5 @@ const Map<String, String> ptPO = {
   "Select a region to enter its prices.": "Selecione uma região para introduzir os seus preços.",
   "Carrier created. It will be offered to customers once the administrator has verified it.": "Transportadora criada. Será oferecida aos clientes depois de o administrador a verificar.",
   "Please enter the prices for @region.": "Introduza os preços para @region.",
+  "Carrier settings are for parcel delivery companies only.": "As definições da transportadora são apenas para empresas de entrega de encomendas.",
 };

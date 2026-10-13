@@ -15,7 +15,7 @@ void main() {
   const keys = <String>[
     'Carrier settings',
     'Carrier Management for Parcel Delivery',
-    'Carrier settings are for company owners only.',
+    'Carrier settings are for parcel delivery companies only.',
     'Your carrier has not been set up yet — please contact Spideli.',
     'Verified carrier',
     'Verification pending',

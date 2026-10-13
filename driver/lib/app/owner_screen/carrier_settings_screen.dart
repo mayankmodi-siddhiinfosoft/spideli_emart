@@ -40,7 +40,7 @@ class CarrierSettingsScreen extends StatelessWidget {
                   ? DsEmptyState(
                       icon: Icons.lock_outline_rounded,
                       tone: DsTone.brand,
-                      title: "Carrier settings are for company owners only.".tr,
+                      title: "Carrier settings are for parcel delivery companies only.".tr,
                     )
               : !linked
                   ? DsEmptyState(

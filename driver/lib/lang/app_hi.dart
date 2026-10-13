@@ -553,7 +553,6 @@ const Map<String, String> hiIN = {
   // Owner "Carrier settings" (parcel pricing brief, 12 Oct 2026).
   "Carrier settings": "कैरियर सेटिंग्स",
   "Carrier Management for Parcel Delivery": "पार्सल डिलीवरी के लिए कैरियर प्रबंधन",
-  "Carrier settings are for company owners only.": "कैरियर सेटिंग्स केवल कंपनी मालिकों के लिए हैं।",
   "Your carrier has not been set up yet — please contact Spideli.": "आपका कैरियर अभी तक सेट अप नहीं किया गया है — कृपया Spideli से संपर्क करें।",
   "Verified carrier": "सत्यापित कैरियर",
   "Verification pending": "सत्यापन लंबित",
@@ -716,4 +715,5 @@ const Map<String, String> hiIN = {
   "Select a region to enter its prices.": "कीमतें दर्ज करने के लिए एक क्षेत्र चुनें।",
   "Carrier created. It will be offered to customers once the administrator has verified it.": "कैरियर बन गया। व्यवस्थापक द्वारा सत्यापित किए जाने के बाद यह ग्राहकों को दिखाया जाएगा।",
   "Please enter the prices for @region.": "कृपया @region के लिए कीमतें दर्ज करें।",
+  "Carrier settings are for parcel delivery companies only.": "कैरियर सेटिंग्स केवल पार्सल डिलीवरी कंपनियों के लिए हैं।",
 };
