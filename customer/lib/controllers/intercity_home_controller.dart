@@ -1253,7 +1253,10 @@ class IntercityHomeController extends GetxController with CabRideOptions {
       }
       Stripe.publishableKey = stripeModel.value.clientpublishableKey.toString();
       Stripe.merchantIdentifier = 'spideli Customer';
-      Stripe.instance.applySettings();
+      // An invalid publishable key in the admin settings must not throw an
+      // unhandled error when the checkout opens: Stripe stays unusable, the
+      // other payment methods work.
+      Stripe.instance.applySettings().catchError((Object e) => log('Stripe settings not applied: $e'));
       setRef();
 
       razorPay.on(Razorpay.EVENT_PAYMENT_SUCCESS, handlePaymentSuccess);

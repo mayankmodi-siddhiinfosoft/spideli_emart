@@ -1,9 +1,10 @@
+import 'dart:developer' show log;
 import 'package:customer/utils/wallet_checkout.dart';
 import 'package:customer/utils/region_service.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as maths;
-import 'dart:math';
+import 'dart:math' hide log;
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/gift_cards_model.dart';
@@ -230,7 +231,10 @@ class GiftCardController extends GetxController {
       }
       Stripe.publishableKey = stripeModel.value.clientpublishableKey.toString();
       Stripe.merchantIdentifier = 'GoRide';
-      Stripe.instance.applySettings();
+      // An invalid publishable key in the admin settings must not throw an
+      // unhandled error when the checkout opens: Stripe stays unusable, the
+      // other payment methods work.
+      Stripe.instance.applySettings().catchError((Object e) => log('Stripe settings not applied: $e'));
       setRef();
 
       razorPay.on(Razorpay.EVENT_PAYMENT_SUCCESS, handlePaymentSuccess);

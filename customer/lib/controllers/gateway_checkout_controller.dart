@@ -150,7 +150,10 @@ class GatewayCheckoutController extends GetxController {
       if (stripeModel.value.isEnabled == true) {
         Stripe.publishableKey = stripeModel.value.clientpublishableKey.toString();
         Stripe.merchantIdentifier = 'GoRide';
-        Stripe.instance.applySettings();
+        // An invalid publishable key in the admin settings must not throw an
+      // unhandled error when the checkout opens: Stripe stays unusable, the
+      // other payment methods work.
+      Stripe.instance.applySettings().catchError((Object e) => log('Stripe settings not applied: $e'));
       }
       _setRef();
       razorPay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse r) => _success());

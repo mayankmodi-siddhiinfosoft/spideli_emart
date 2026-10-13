@@ -6,6 +6,7 @@ import 'package:customer/utils/address_format.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
+
 import '../../constant/constant.dart';
 import '../../controllers/parcel_order_confirmation_controller.dart';
 import '../../payment/create_razor_pay_order_model.dart';
@@ -66,10 +67,7 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                         ),
                       ],
                     ),
-                    if (!controller.parcelOrder.value.isLegacyShape) ...[
-                      const DsGap(DsSpace.lg),
-                      ParcelShippingSummaryCard(order: controller.parcelOrder.value),
-                    ],
+                    if (!controller.parcelOrder.value.isLegacyShape) ...[const DsGap(DsSpace.lg), ParcelShippingSummaryCard(order: controller.parcelOrder.value)],
                     if (controller.parcelOrder.value.priceBreakdown != null && !controller.isQuotePayment && !controller.parcelOrder.value.isLegacyShape) ...[
                       const DsGap(DsSpace.lg),
                       ParcelBreakdownCard(
@@ -120,12 +118,7 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                                 controller: controller.couponController.value,
                                 style: t.bodyStrong,
                                 textCapitalization: TextCapitalization.characters,
-                                decoration: InputDecoration(
-                                  hintText: "Write coupon code".tr,
-                                  hintStyle: t.bodySecondary,
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                ),
+                                decoration: InputDecoration(hintText: "Write coupon code".tr, hintStyle: t.bodySecondary, border: InputBorder.none, isDense: true),
                               ),
                             ),
                             const DsGap(DsSpace.sm),
@@ -161,21 +154,26 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                       if (controller.canOfferReceiverSms) ...[
                         const DsGap(DsSpace.lg),
                         ParcelCard(
-                          child: CheckboxListTile(
-                            key: const ValueKey('parcel-receiver-sms'),
-                            contentPadding: EdgeInsets.zero,
-                            value: controller.notifyReceiverBySms.value,
-                            activeColor: context.dsColors.brand,
-                            controlAffinity: ListTileControlAffinity.leading,
-                            onChanged: (v) => controller.setNotifyReceiverBySms(v ?? false),
-                            // The wording of the message itself is the
-                            // admin's (settings/SMSGateway.templates), so the
-                            // subtitle promises no content.
-                            title: Text(
-                              "${'Notify receiver via SMS that a parcel has been sent'.tr} (${controller.parcelSmsFee.value > 0 ? '+${Constant.amountShow(amount: controller.parcelSmsFee.value.toString(), currency: controller.parcelCurrency)}' : 'Free'.tr})",
-                              style: t.bodyStrong,
+                          // Its own Material: the card's background would
+                          // otherwise hide the tile's ink splash.
+                          child: Material(
+                            type: MaterialType.transparency,
+                            child: CheckboxListTile(
+                              key: const ValueKey('parcel-receiver-sms'),
+                              contentPadding: EdgeInsets.zero,
+                              value: controller.notifyReceiverBySms.value,
+                              activeColor: context.dsColors.brand,
+                              controlAffinity: ListTileControlAffinity.leading,
+                              onChanged: (v) => controller.setNotifyReceiverBySms(v ?? false),
+                              // The wording of the message itself is the
+                              // admin's (settings/SMSGateway.templates), so the
+                              // subtitle promises no content.
+                              title: Text(
+                                "${'Notify receiver via SMS that a parcel has been sent'.tr} (${controller.parcelSmsFee.value > 0 ? '+${Constant.amountShow(amount: controller.parcelSmsFee.value.toString(), currency: controller.parcelCurrency)}' : 'Free'.tr})",
+                                style: t.bodyStrong,
+                              ),
+                              subtitle: Text("The receiver gets a text message when the parcel is sent.".tr, style: t.caption),
                             ),
-                            subtitle: Text("The receiver gets a text message when the parcel is sent.".tr, style: t.caption),
                           ),
                         ),
                       ],
@@ -187,7 +185,10 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                             ParcelCardTitle("Order Summary".tr, icon: Icons.receipt_long_rounded),
 
                             // Subtotal
-                            ParcelSummaryRow(label: "Subtotal".tr, value: Constant.amountShow(amount: controller.subTotal.value.toString(), currency: controller.parcelCurrency)),
+                            ParcelSummaryRow(
+                              label: "Subtotal".tr,
+                              value: Constant.amountShow(amount: controller.subTotal.value.toString(), currency: controller.parcelCurrency),
+                            ),
 
                             // Discount
                             ParcelSummaryRow(
@@ -197,17 +198,32 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                             ),
                             // Fixed intercity / intercountry tax: outside VAT and coupons.
                             if (controller.scopeTax > 0)
-                              ParcelSummaryRow(label: "Fixed tax".tr, value: Constant.amountShow(amount: controller.scopeTax.toString(), currency: controller.parcelCurrency)),
+                              ParcelSummaryRow(
+                                label: "Fixed tax".tr,
+                                value: Constant.amountShow(amount: controller.scopeTax.toString(), currency: controller.parcelCurrency),
+                              ),
                             // Door / pickup-point charges (priceBreakdown.pickupCharge / deliveryCharge).
                             if (controller.pickupCharge > 0)
-                              ParcelSummaryRow(label: ParcelLabels.pickupChargeLabel(controller.parcelOrder.value.pickupMethod), value: Constant.amountShow(amount: controller.pickupCharge.toString(), currency: controller.parcelCurrency)),
+                              ParcelSummaryRow(
+                                label: ParcelLabels.pickupChargeLabel(controller.parcelOrder.value.pickupMethod),
+                                value: Constant.amountShow(amount: controller.pickupCharge.toString(), currency: controller.parcelCurrency),
+                              ),
                             if (controller.deliveryCharge > 0)
-                              ParcelSummaryRow(label: ParcelLabels.deliveryChargeLabel(controller.parcelOrder.value.deliveryMethod), value: Constant.amountShow(amount: controller.deliveryCharge.toString(), currency: controller.parcelCurrency)),
+                              ParcelSummaryRow(
+                                label: ParcelLabels.deliveryChargeLabel(controller.parcelOrder.value.deliveryMethod),
+                                value: Constant.amountShow(amount: controller.deliveryCharge.toString(), currency: controller.parcelCurrency),
+                              ),
                             if (controller.smsCharge > 0)
-                              ParcelSummaryRow(label: "Receiver SMS".tr, value: Constant.amountShow(amount: controller.smsCharge.toString(), currency: controller.parcelCurrency)),
+                              ParcelSummaryRow(
+                                label: "Receiver SMS".tr,
+                                value: Constant.amountShow(amount: controller.smsCharge.toString(), currency: controller.parcelCurrency),
+                              ),
                             // The fee in the total (enabled and > 0): the line and the total agree.
                             if (controller.platformFee > 0)
-                              ParcelSummaryRow(label: "Platform fee".tr, value: Constant.amountShow(amount: controller.platformFee.toString(), currency: controller.parcelCurrency)),
+                              ParcelSummaryRow(
+                                label: "Platform fee".tr,
+                                value: Constant.amountShow(amount: controller.platformFee.toString(), currency: controller.parcelCurrency),
+                              ),
 
                             // Tax List
                             ParcelSummaryRow(
@@ -275,13 +291,7 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
               ? null
               : DsStickyBar(
                   child: controller.isQuoteRequest
-                      ? DsButton.primary(
-                          label: "Request a quote".tr,
-                          icon: Icons.request_quote_outlined,
-                          size: DsButtonSize.lg,
-                          expand: true,
-                          onPressed: () => controller.placeOrder(),
-                        )
+                      ? DsButton.primary(label: "Request a quote".tr, icon: Icons.request_quote_outlined, size: DsButtonSize.lg, expand: true, onPressed: () => controller.placeOrder())
                       : Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -337,7 +347,11 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Center(
-                  child: Container(width: 40, height: 4, decoration: BoxDecoration(color: c.borderStrong, borderRadius: DsRadius.brPill)),
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(color: c.borderStrong, borderRadius: DsRadius.brPill),
+                  ),
                 ),
                 const DsGap(DsSpace.md),
                 Row(
@@ -365,10 +379,7 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.sm),
                           child: Column(
                             children: [
-                              Visibility(
-                                visible: controller.walletSettingModel.value.isEnabled == true,
-                                child: cardDecoration(controller, PaymentGateway.wallet, "assets/images/ic_wallet.png"),
-                              ),
+                              Visibility(visible: controller.walletSettingModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.wallet, "assets/images/ic_wallet.png")),
                               Visibility(
                                 visible: controller.cashOnDeliverySettingModel.value.isEnabled == true && controller.cashAllowed,
                                 child: cardDecoration(controller, PaymentGateway.cod, "assets/images/ic_cash.png"),
@@ -386,10 +397,7 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                             Visibility(visible: controller.stripeModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.stripe, "assets/images/stripe.png")),
                             Visibility(visible: controller.payPalModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.paypal, "assets/images/paypal.png")),
                             Visibility(visible: controller.payStackModel.value.isEnable == true, child: cardDecoration(controller, PaymentGateway.payStack, "assets/images/paystack.png")),
-                            Visibility(
-                              visible: controller.mercadoPagoModel.value.isEnabled == true,
-                              child: cardDecoration(controller, PaymentGateway.mercadoPago, "assets/images/mercado-pago.png"),
-                            ),
+                            Visibility(visible: controller.mercadoPagoModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.mercadoPago, "assets/images/mercado-pago.png")),
                             Visibility(
                               visible: controller.flutterWaveModel.value.isEnable == true,
                               child: cardDecoration(controller, PaymentGateway.flutterWave, "assets/images/flutterwave_logo.png"),
@@ -397,10 +405,7 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                             Visibility(visible: controller.payFastModel.value.isEnable == true, child: cardDecoration(controller, PaymentGateway.payFast, "assets/images/payfast.png")),
                             Visibility(visible: controller.razorPayModel.value.isEnabled == true, child: cardDecoration(controller, PaymentGateway.razorpay, "assets/images/razorpay.png")),
                             Visibility(visible: controller.midTransModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.midTrans, "assets/images/midtrans.png")),
-                            Visibility(
-                              visible: controller.orangeMoneyModel.value.enable == true,
-                              child: cardDecoration(controller, PaymentGateway.orangeMoney, "assets/images/orange_money.png"),
-                            ),
+                            Visibility(visible: controller.orangeMoneyModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.orangeMoney, "assets/images/orange_money.png")),
                             Visibility(visible: controller.xenditModel.value.enable == true, child: cardDecoration(controller, PaymentGateway.xendit, "assets/images/xendit.png")),
                           ],
                         ),
@@ -498,11 +503,21 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ParcelSummaryRow(label: "Tax on Order Total".tr, value: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: controller.parcelCurrency)),
+              ParcelSummaryRow(
+                label: "Tax on Order Total".tr,
+                value: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: controller.parcelCurrency),
+              ),
               const DsDivider(spacing: DsSpace.md),
-              ParcelSummaryRow(label: "Tax on Platform Fee".tr, value: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: controller.parcelCurrency)),
+              ParcelSummaryRow(
+                label: "Tax on Platform Fee".tr,
+                value: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: controller.parcelCurrency),
+              ),
               const DsDivider(spacing: DsSpace.md),
-              ParcelSummaryRow(label: "Total Tax Amount".tr, value: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: controller.parcelCurrency), emphasis: true),
+              ParcelSummaryRow(
+                label: "Total Tax Amount".tr,
+                value: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: controller.parcelCurrency),
+                emphasis: true,
+              ),
             ],
           ),
           primaryLabel: "Close".tr,
@@ -572,7 +587,13 @@ class ParcelRouteBlock extends StatelessWidget {
             child: Column(
               children: [
                 Icon(Icons.trip_origin_rounded, size: 16, color: c.brandStrong),
-                Expanded(child: Container(width: 2, margin: const EdgeInsets.symmetric(vertical: DsSpace.xs), color: c.border)),
+                Expanded(
+                  child: Container(
+                    width: 2,
+                    margin: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+                    color: c.border,
+                  ),
+                ),
                 Icon(Icons.place_rounded, size: 18, color: c.brandStrong),
               ],
             ),
@@ -668,7 +689,11 @@ class ParcelPaymentRow extends StatelessWidget {
               Container(
                 width: 48,
                 height: 48,
-                decoration: BoxDecoration(color: Colors.white, borderRadius: DsRadius.brSm, border: Border.all(color: c.border)),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: DsRadius.brSm,
+                  border: Border.all(color: c.border),
+                ),
                 child: Padding(padding: EdgeInsets.all(name == "payFast" ? 0 : DsSpace.sm), child: Image.asset(image)),
               ),
               const DsGap(DsSpace.md),
@@ -681,11 +706,7 @@ class ParcelPaymentRow extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(
-                selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
-                size: 22,
-                color: selected ? c.brand : c.textMuted,
-              ),
+              Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, size: 22, color: selected ? c.brand : c.textMuted),
             ],
           ),
         ),
@@ -716,12 +737,10 @@ class _PayerOption extends StatelessWidget {
         children: [
           Icon(icon, size: 20, color: selected ? c.brandStrong : c.textMuted),
           const DsGap(DsSpace.sm),
-          Expanded(child: Text(label, style: t.bodyStrong, maxLines: 1, overflow: TextOverflow.ellipsis)),
-          Icon(
-            selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
-            size: 20,
-            color: selected ? c.brand : c.textMuted,
+          Expanded(
+            child: Text(label, style: t.bodyStrong, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
+          Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, size: 20, color: selected ? c.brand : c.textMuted),
         ],
       ),
     );
