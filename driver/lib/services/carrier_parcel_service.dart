@@ -2,9 +2,11 @@ import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/collection_name.dart';
+import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/send_notification.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/carrier_parcel_rules.dart';
+import 'package:driver/services/company_cash_push.dart';
 import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 
@@ -64,18 +66,18 @@ abstract final class CarrierParcelService {
   }) async {
     final String driverId = (driver.id ?? '').trim();
     if (orderId.isEmpty || driverId.isEmpty || ownerUid.isEmpty) return const CarrierAssignResult(CarrierAssignCheck.gone, failed: true);
-    final ({CarrierAssignCheck check, String? replaced}) outcome;
+    final ({CarrierAssignCheck check, String? replaced, String? tracking}) outcome;
     try {
-      outcome = await FireStoreUtils.fireStore.runTransaction<({CarrierAssignCheck check, String? replaced})>((tx) async {
+      outcome = await FireStoreUtils.fireStore.runTransaction<({CarrierAssignCheck check, String? replaced, String? tracking})>((tx) async {
         final DocumentSnapshot<Map<String, dynamic>> snap = await tx.get(_order(orderId));
         final Map<String, dynamic>? data = snap.exists ? snap.data() : null;
         final CarrierAssignCheck check = CarrierParcelRules.assignCheck(data, ownerUid: ownerUid, ownerCarrierId: ownerCarrierId, driverId: driverId);
-        if (check != CarrierAssignCheck.ok) return (check: check, replaced: null);
+        if (check != CarrierAssignCheck.ok) return (check: check, replaced: null, tracking: null);
         tx.update(_order(orderId), CarrierParcelRules.assignFields(driverId: driverId, ownerUid: ownerUid));
         tx.update(_user(driverId), {
           'orderRequestData': FieldValue.arrayUnion([orderId]),
         });
-        return (check: check, replaced: CarrierParcelRules.replacedDriver(data, driverId));
+        return (check: check, replaced: CarrierParcelRules.replacedDriver(data, driverId), tracking: data?['trackingNumber']?.toString());
       });
     } catch (e) {
       log("CarrierParcelService.assign($orderId -> $driverId) failed: $e");
@@ -99,6 +101,13 @@ abstract final class CarrierParcelService {
       // The live token (the list's copy may be old).
       final UserModel? fresh = await FireStoreUtils.getUserProfile(driverId);
       final String token = (fresh?.fcmToken ?? driver.fcmToken ?? '').trim();
+      final UserModel? owner = await FireStoreUtils.getUserProfile(ownerUid);
+      final Map<String, String> values = CarrierParcelRules.pushValues(
+        orderId: orderId,
+        trackingNumber: outcome.tracking,
+        companyName: CompanyCashPush.companyNameOf(companyName: owner?.companyName, ownerName: owner?.fullName()),
+        driverName: (fresh ?? driver).fullName(),
+      );
       pushed = await SendNotification.sendFcmMessage(
         CarrierParcelRules.assignedTemplate,
         token,
@@ -112,6 +121,8 @@ abstract final class CarrierParcelService {
           'status': 'Driver Pending',
         },
         recipient: PushRecipient.driverJob,
+        // Template carrier_parcel_assigned: {companyName}, {trackingNumber}, {driverName}.
+        placeholders: values,
       );
     } catch (e) {
       log("CarrierParcelService: the assigned push failed: $e");
@@ -129,11 +140,19 @@ abstract final class CarrierParcelService {
       if (ownerId.isEmpty) ownerId = (fallbackOwnerId ?? '').trim();
       if (ownerId.isEmpty) return;
       final UserModel? owner = await FireStoreUtils.getUserProfile(ownerId);
+      final UserModel? me = Constant.userModel;
       await SendNotification.sendFcmMessage(
         CarrierParcelRules.returnedTemplate,
         (owner?.fcmToken ?? '').trim(),
         {'type': CarrierParcelRules.ownerPushType, 'orderId': orderId},
         recipient: PushRecipient.driverJob,
+        // Template carrier_parcel_returned: {driverName}, {trackingNumber}, {companyName}.
+        placeholders: CarrierParcelRules.pushValues(
+          orderId: orderId,
+          trackingNumber: order?['trackingNumber']?.toString(),
+          companyName: CompanyCashPush.companyNameOf(companyName: owner?.companyName, ownerName: owner?.fullName()),
+          driverName: me?.fullName(),
+        ),
       );
     } catch (e) {
       log("CarrierParcelService: owner not told about the returned parcel: $e");

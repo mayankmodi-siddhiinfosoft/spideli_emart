@@ -58,6 +58,19 @@ abstract final class CarrierParcelRules {
   /// the owner assigned a parcel to them (sent with the parcel-offer data).
   static const String assignedTemplate = 'carrier_parcel_assigned';
 
+  /// `{name}` values of the [assignedTemplate] / [returnedTemplate] text
+  /// (PushTemplateText): `{trackingNumber}` (the order id when the parcel
+  /// has none), `{companyName}`, `{driverName}`. An unknown name is left out,
+  /// so the template shows its placeholder rather than an empty gap.
+  static Map<String, String> pushValues({required String orderId, String? trackingNumber, String? companyName, String? driverName}) {
+    String? clean(String? v) => (v ?? '').trim().isEmpty ? null : v!.trim();
+    return {
+      'trackingNumber': clean(trackingNumber) ?? orderId,
+      if (clean(companyName) != null) 'companyName': clean(companyName)!,
+      if (clean(driverName) != null) 'driverName': clean(driverName)!,
+    };
+  }
+
   /// `dynamic_notification` template (driver app -> the company owner): the
   /// assigned driver rejected or let the offer time out; assign again.
   static const String returnedTemplate = 'carrier_parcel_returned';

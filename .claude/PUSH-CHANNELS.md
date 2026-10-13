@@ -804,3 +804,9 @@ logged.
   on the driver app's `driver_jobs` channel (ringtone version when set), data `{type: carrier_parcel_order, orderId, trackingNumber}`; tap opens the owner's Orders.
 - Placeholders are filled by the customer app (`PushTemplateText.fill`, `{name}`, case-insensitive): `{customerName}`, `{trackingNumber}`.
   Customer builds older than a2e0eae+1 send the template text unfilled.
+
+### carrier_parcel_assigned / carrier_parcel_returned — templates live since 13 Oct 2026
+- `carrier_parcel_assigned` (doc `4Zswp3kR2NUrc5hi7zaC`, service_type `Parcel Delivery Service`): subject `New parcel from {companyName}`, message `{companyName} assigned you parcel {trackingNumber}. Accept or reject it before the time runs out.`
+  Sent by the driver app (owner account) right after `CarrierParcelService.assign` commits, to the ASSIGNED driver's live `users/{driverId}.fcmToken`, on `driver_jobs` (ringtone version when set), data = the parcel offer (`type: parcel, orderId, id, click_action: FLUTTER_NOTIFICATION_CLICK, status: Driver Pending`) → the incoming-offer popup with its countdown.
+- `carrier_parcel_returned` (doc `40LhUj6tAsplut5xw85X`): subject `Parcel {trackingNumber} not taken`, message `{driverName} did not take parcel {trackingNumber}. Open Orders to assign another driver.` Sent to the owner when the assigned driver rejects or lets the offer time out; data `{type: carrier_parcel_order, orderId}` → Orders.
+- Placeholders (driver app `PushTemplateText.fill`, `CarrierParcelRules.pushValues`): `{companyName}` (owner's companyName, else the owner's name), `{trackingNumber}` (else the order id), `{driverName}`.
