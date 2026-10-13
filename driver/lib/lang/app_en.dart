@@ -720,4 +720,5 @@ const Map<String, String> enUS = {
   "Carrier created. It will be offered to customers once the administrator has verified it.": "Carrier created. It will be offered to customers once the administrator has verified it.",
   "Please enter the prices for @region.": "Please enter the prices for @region.",
   "Carrier settings are for parcel delivery companies only.": "Carrier settings are for parcel delivery companies only.",
+  "Prices for @region": "Prices for @region",
 };

@@ -716,4 +716,5 @@ const Map<String, String> ruRU = {
   "Carrier created. It will be offered to customers once the administrator has verified it.": "Перевозчик создан. Он будет предложен клиентам после проверки администратором.",
   "Please enter the prices for @region.": "Укажите цены для @region.",
   "Carrier settings are for parcel delivery companies only.": "Настройки перевозчика доступны только компаниям по доставке посылок.",
+  "Prices for @region": "Цены для @region",
 };

@@ -716,4 +716,5 @@ const Map<String, String> jaJP = {
   "Carrier created. It will be offered to customers once the administrator has verified it.": "運送会社を作成しました。管理者が確認すると、お客様に表示されます。",
   "Please enter the prices for @region.": "@region の料金を入力してください。",
   "Carrier settings are for parcel delivery companies only.": "運送会社の設定は荷物配達会社のみが利用できます。",
+  "Prices for @region": "@region の料金",
 };

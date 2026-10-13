@@ -716,4 +716,5 @@ const Map<String, String> hiIN = {
   "Carrier created. It will be offered to customers once the administrator has verified it.": "कैरियर बन गया। व्यवस्थापक द्वारा सत्यापित किए जाने के बाद यह ग्राहकों को दिखाया जाएगा।",
   "Please enter the prices for @region.": "कृपया @region के लिए कीमतें दर्ज करें।",
   "Carrier settings are for parcel delivery companies only.": "कैरियर सेटिंग्स केवल पार्सल डिलीवरी कंपनियों के लिए हैं।",
+  "Prices for @region": "@region के लिए कीमतें",
 };

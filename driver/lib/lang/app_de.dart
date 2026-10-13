@@ -716,4 +716,5 @@ const Map<String, String> deGR = {
   "Carrier created. It will be offered to customers once the administrator has verified it.": "Spediteur erstellt. Er wird Kunden angeboten, sobald der Administrator ihn geprüft hat.",
   "Please enter the prices for @region.": "Bitte geben Sie die Preise für @region ein.",
   "Carrier settings are for parcel delivery companies only.": "Die Spediteur-Einstellungen gibt es nur für Paketlieferunternehmen.",
+  "Prices for @region": "Preise für @region",
 };

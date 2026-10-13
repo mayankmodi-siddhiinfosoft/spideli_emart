@@ -716,4 +716,5 @@ const Map<String, String> lnAr = {
   "Carrier created. It will be offered to customers once the administrator has verified it.": "تم إنشاء شركة الشحن. ستُعرض على العملاء بعد أن يتحقق منها المسؤول.",
   "Please enter the prices for @region.": "يرجى إدخال الأسعار لـ @region.",
   "Carrier settings are for parcel delivery companies only.": "إعدادات شركة الشحن متاحة لشركات توصيل الطرود فقط.",
+  "Prices for @region": "الأسعار في @region",
 };

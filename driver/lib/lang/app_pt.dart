@@ -716,4 +716,5 @@ const Map<String, String> ptPO = {
   "Carrier created. It will be offered to customers once the administrator has verified it.": "Transportadora criada. Será oferecida aos clientes depois de o administrador a verificar.",
   "Please enter the prices for @region.": "Introduza os preços para @region.",
   "Carrier settings are for parcel delivery companies only.": "As definições da transportadora são apenas para empresas de entrega de encomendas.",
+  "Prices for @region": "Preços para @region",
 };

@@ -716,4 +716,5 @@ const Map<String, String> trFR = {
   "Carrier created. It will be offered to customers once the administrator has verified it.": "Transporteur créé. Il sera proposé aux clients une fois vérifié par l'administrateur.",
   "Please enter the prices for @region.": "Veuillez saisir les prix pour @region.",
   "Carrier settings are for parcel delivery companies only.": "Les paramètres du transporteur sont réservés aux sociétés de livraison de colis.",
+  "Prices for @region": "Prix pour @region",
 };

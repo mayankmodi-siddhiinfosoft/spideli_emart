@@ -716,4 +716,5 @@ const Map<String, String> zhCH = {
   "Carrier created. It will be offered to customers once the administrator has verified it.": "承运商已创建。管理员审核后将向客户展示。",
   "Please enter the prices for @region.": "请填写 @region 的价格。",
   "Carrier settings are for parcel delivery companies only.": "承运商设置仅适用于包裹配送公司。",
+  "Prices for @region": "@region 的价格",
 };

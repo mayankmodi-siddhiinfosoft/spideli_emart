@@ -94,6 +94,7 @@ void main() {
     'Please enter this price',
     'Select a region to enter its prices.',
     'Please enter the prices for @region.',
+    'Prices for @region',
     'Please enter the phone number',
     'Please enter a valid email address',
     'Select at least one region',

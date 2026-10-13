@@ -134,21 +134,40 @@ class CarrierSetupScreen extends StatelessWidget {
                             if (checkedRegions.isEmpty)
                               Text("Select a region to enter its prices.".tr, style: context.dsText.bodySm)
                             else
+                              // One card per ticked region: each region has its own
+                              // prices, so the same fields repeat once per region.
                               for (final regionId in checkedRegions) ...[
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: DsSpace.sm),
-                                  child: Text(controller.regionLabel(regionId), style: context.dsText.titleSm),
+                                DsCard.outlined(
+                                  padding: const EdgeInsets.all(DsSpace.md),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(Icons.place_outlined, size: 18, color: context.dsColors.brand),
+                                          const DsGap(DsSpace.xs),
+                                          Expanded(
+                                            child: Text(
+                                              "Prices for @region".trParams({'region': controller.regionLabel(regionId)}),
+                                              style: context.dsText.titleSm,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const DsGap(DsSpace.md),
+                                      _priceField(controller, errors, regionId, 'baseCharge', 'Base Charge'.tr, 'e.g. 500', required: true),
+                                      _priceField(controller, errors, regionId, 'perKmCharge', 'Charge per km'.tr, 'e.g. 75', required: true),
+                                      _priceField(controller, errors, regionId, 'perKgCharge', 'Charge per kg'.tr, 'e.g. 200', required: true),
+                                      _priceField(controller, errors, regionId, 'minimumCharge', 'Minimum Charge'.tr, 'e.g. 1000', required: true),
+                                      _priceField(controller, errors, regionId, 'volumetricDivisor', 'Volumetric Divisor'.tr, controller.regionHint(regionId, 'volumetricDivisor')),
+                                      _priceField(controller, errors, regionId, 'homePickupCharge', 'Home Pickup Charge'.tr, controller.regionHint(regionId, 'homePickupCharge')),
+                                      _priceField(controller, errors, regionId, 'pointDropoffCharge', 'Point Drop-off Charge'.tr, controller.regionHint(regionId, 'pointDropoffCharge')),
+                                      _priceField(controller, errors, regionId, 'homeDeliveryCharge', 'Home Delivery Charge'.tr, controller.regionHint(regionId, 'homeDeliveryCharge')),
+                                      _priceField(controller, errors, regionId, 'pointCollectionCharge', 'Point Collection Charge'.tr, controller.regionHint(regionId, 'pointCollectionCharge'),
+                                          last: true),
+                                    ],
+                                  ),
                                 ),
-                                _priceField(controller, errors, regionId, 'baseCharge', 'Base Charge'.tr, 'e.g. 500', required: true),
-                                _priceField(controller, errors, regionId, 'perKmCharge', 'Charge per km'.tr, 'e.g. 75', required: true),
-                                _priceField(controller, errors, regionId, 'perKgCharge', 'Charge per kg'.tr, 'e.g. 200', required: true),
-                                _priceField(controller, errors, regionId, 'minimumCharge', 'Minimum Charge'.tr, 'e.g. 1000', required: true),
-                                _priceField(controller, errors, regionId, 'volumetricDivisor', 'Volumetric Divisor'.tr, controller.regionHint(regionId, 'volumetricDivisor')),
-                                _priceField(controller, errors, regionId, 'homePickupCharge', 'Home Pickup Charge'.tr, controller.regionHint(regionId, 'homePickupCharge')),
-                                _priceField(controller, errors, regionId, 'pointDropoffCharge', 'Point Drop-off Charge'.tr, controller.regionHint(regionId, 'pointDropoffCharge')),
-                                _priceField(controller, errors, regionId, 'homeDeliveryCharge', 'Home Delivery Charge'.tr, controller.regionHint(regionId, 'homeDeliveryCharge')),
-                                _priceField(controller, errors, regionId, 'pointCollectionCharge', 'Point Collection Charge'.tr, controller.regionHint(regionId, 'pointCollectionCharge'),
-                                    last: regionId == checkedRegions.last),
                                 if (regionId != checkedRegions.last) const DsGap(DsSpace.md),
                               ],
                           ],
