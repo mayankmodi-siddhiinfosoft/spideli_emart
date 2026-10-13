@@ -1062,4 +1062,7 @@ const Map<String, String> enUS = {
   "Returned": "Returned",
   // Wallet checkout that did not go through (WalletCheckout).
   "Payment failed. No money was taken from your wallet. Please try again.": "Payment failed. No money was taken from your wallet. Please try again.",
+  // Parcel weight typed in "Parcel details" (the band dropdown was removed).
+  "Please enter the parcel weight": "Please enter the parcel weight",
+  "No price is set for this weight. Please contact support.": "No price is set for this weight. Please contact support.",
 };

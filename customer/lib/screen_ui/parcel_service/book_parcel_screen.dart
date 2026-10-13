@@ -4,7 +4,6 @@ import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/utils.dart';
 import 'package:dotted_border/dotted_border.dart';
-import 'package:dropdown_textfield/dropdown_textfield.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
@@ -77,7 +76,6 @@ class BookParcelScreen extends StatelessWidget {
                 emailController: controller.senderEmailController.value,
                 cityController: controller.senderCityController.value,
                 isSender: true,
-                showWeight: controller.isCityScope,
                 context: context,
                 controller: controller,
                 onTap: () async {
@@ -130,7 +128,6 @@ class BookParcelScreen extends StatelessWidget {
                 emailController: controller.receiverEmailController.value,
                 cityController: controller.receiverCityController.value,
                 isSender: false,
-                showWeight: false,
                 context: context,
                 controller: controller,
                 onTap: () async {
@@ -238,7 +235,7 @@ class BookParcelScreen extends StatelessWidget {
       icon: Icons.straighten_rounded,
       children: [
         DsTextField(
-          hint: controller.isCityScope ? "Weight in kg (optional)".tr : "Weight in kg".tr,
+          hint: "Weight in kg".tr,
           controller: controller.weightKgController.value,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           inputFormatters: numeric,
@@ -517,7 +514,6 @@ class BookParcelScreen extends StatelessWidget {
     required TextEditingController emailController,
     required TextEditingController cityController,
     required bool isSender,
-    bool showWeight = false,
     GestureTapCallback? onTap,
     required BookParcelController controller,
     required BuildContext context,
@@ -605,31 +601,6 @@ class BookParcelScreen extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-        if (showWeight)
-          Padding(
-            padding: const EdgeInsets.only(bottom: DsSpace.lg),
-            child: DropDownTextField(
-              controller: controller.senderWeightController.value,
-              clearOption: false,
-              enableSearch: false,
-              textFieldDecoration: DsInputDecoration.of(context, hint: "Select parcel Weight".tr, prefixIcon: Icons.scale_outlined),
-              dropDownList:
-                  controller.parcelWeight.map((e) {
-                    return DropDownValueModel(
-                      name: e.title ?? 'Normal'.tr,
-                      value: e.title ?? 'Normal'.tr, // safer to use title string
-                    );
-                  }).toList(),
-              onChanged: (val) {
-                if (val is DropDownValueModel) {
-                  controller.senderWeightController.value.setDropDown(val);
-
-                  // Link it to the selectedWeight object
-                  controller.selectedWeight = controller.parcelWeight.firstWhereOrNull((e) => e.title == val.value);
-                }
-              },
-            ),
           ),
         DsTextField(hint: "Notes (Optional)".tr, controller: noteController, prefixIcon: Icons.sticky_note_2_outlined, maxLines: 3, minLines: 2, bottomSpacing: 0),
       ],

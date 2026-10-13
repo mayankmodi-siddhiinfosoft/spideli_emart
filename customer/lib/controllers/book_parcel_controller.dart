@@ -5,7 +5,6 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/models/vendor_model.dart';
 import 'package:customer/utils/address_format.dart';
 import 'package:customer/widget/geoflutterfire/src/geoflutterfire.dart';
-import 'package:dropdown_textfield/dropdown_textfield.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
@@ -33,7 +32,6 @@ class BookParcelController extends GetxController {
   final Rx<TextEditingController> senderLocationController = TextEditingController().obs;
   final Rx<TextEditingController> senderNameController = TextEditingController().obs;
   final Rx<TextEditingController> senderMobileController = TextEditingController().obs;
-  final Rx<SingleValueDropDownController> senderWeightController = SingleValueDropDownController().obs;
   final Rx<TextEditingController> senderNoteController = TextEditingController().obs;
   final Rx<TextEditingController> senderCountryCodeController = TextEditingController(text: Constant.defaultCountryCode).obs;
   final Rx<TextEditingController> senderCountryISOCodeController = TextEditingController(text: Constant.defaultCountryCode).obs;
@@ -191,7 +189,20 @@ class BookParcelController extends GetxController {
   Rx<UserLocation?> senderLocation = Rx<UserLocation?>(null);
   Rx<UserLocation?> receiverLocation = Rx<UserLocation?>(null);
 
-  ParcelWeightModel? selectedWeight;
+  /// The weight band of the parcel, picked from the weight typed in "Parcel
+  /// details" (the sender's band dropdown was removed, 13 Oct 2026): the band
+  /// whose minKg..maxKg holds the weight (the next one up across a gap), or -
+  /// for bands without kg limits - the lightest band whose title covers it.
+  /// Null until a weight is typed.
+  ParcelWeightModel? get selectedWeight {
+    final double? kg = weightKg;
+    if (kg == null || kg <= 0 || parcelWeight.isEmpty) return null;
+    final List<ParcelBand<ParcelWeightModel>> bands = weightBands;
+    if (ParcelPricing.hasKgBands(bands)) return ParcelPricing.bandFor<ParcelWeightModel>(bands, kg)?.source;
+    final ParcelWeightModel lightest = parcelWeight.reduce((a, b) => (ParcelPricing.categoryMaxKg(a.title) ?? double.infinity) <= (ParcelPricing.categoryMaxKg(b.title) ?? double.infinity) ? a : b);
+    return ParcelPricing.categoryFor<ParcelWeightModel>(categories: parcelWeight.toList(), selected: lightest, kg: kg, titleOf: (w) => w.title);
+  }
+
   ParcelCategory? selectedCategory;
 
   // UI observables
@@ -323,8 +334,11 @@ class BookParcelController extends GetxController {
       }
     }
 
-    if (isCityScope && selectedWeight == null) {
-      ShowToastDialog.showToast("Please select parcel weight".tr);
+    if ((weightKg ?? 0) <= 0) {
+      ShowToastDialog.showToast("Please enter the parcel weight".tr);
+      return false;
+    } else if (isCityScope && selectedWeight == null) {
+      ShowToastDialog.showToast("No price is set for this weight. Please contact support.".tr);
       return false;
     } else if (senderLocation.value == null || receiverLocation.value == null) {
       ShowToastDialog.showToast("Please select both sender and receiver locations".tr);

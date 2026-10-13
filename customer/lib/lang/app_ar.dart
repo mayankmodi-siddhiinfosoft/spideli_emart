@@ -1059,4 +1059,7 @@ const Map<String, String> arAR = {
   "Returned": "مُعاد",
   // Wallet checkout that did not go through (WalletCheckout).
   "Payment failed. No money was taken from your wallet. Please try again.": "فشل الدفع. لم يتم خصم أي مبلغ من محفظتك. يرجى المحاولة مرة أخرى.",
+  // Parcel weight typed in "Parcel details" (the band dropdown was removed).
+  "Please enter the parcel weight": "يرجى إدخال وزن الطرد",
+  "No price is set for this weight. Please contact support.": "لم يتم تحديد سعر لهذا الوزن. يرجى التواصل مع الدعم.",
 };
