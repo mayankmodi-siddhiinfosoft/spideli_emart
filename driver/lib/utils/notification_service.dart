@@ -4,6 +4,8 @@ import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/app/chat_screens/chat_screen.dart';
+import 'package:driver/app/owner_screen/owner_driver_verification_list_screen.dart';
+import 'package:driver/app/owner_screen/owner_driver_verification_screen.dart';
 import 'package:driver/app/verification_screen/verification_screen.dart';
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
@@ -21,6 +23,8 @@ import 'package:driver/services/driver_assignment_watcher.dart';
 import 'package:driver/services/driver_job_queue_service.dart';
 import 'package:driver/services/incoming_offer_service.dart';
 import 'package:driver/services/offer_seen_store.dart';
+import 'package:driver/services/owner_verification_rules.dart';
+import 'package:driver/services/owner_verification_service.dart';
 import 'package:driver/services/order_ringtone_service.dart';
 import 'package:driver/services/order_ringtone.dart';
 import 'package:driver/services/push_message.dart';
@@ -747,11 +751,11 @@ class NotificationService {
           .catchError((Object e) => log("Notification tap failed: $e"));
       return;
     }
-    handleMessageClick(type: field('type'), role: field('chatType'), orderId: orderId, senderId: field('senderId'))
+    handleMessageClick(type: field('type'), role: field('chatType'), orderId: orderId, senderId: field('senderId'), driverId: field('driverId'))
         .catchError((Object e) => log("Notification tap failed: $e"));
   }
 
-  static Future<void> handleMessageClick({required String type, String? senderId, String? orderId, required String role}) async {
+  static Future<void> handleMessageClick({required String type, String? senderId, String? orderId, required String role, String? driverId}) async {
     final String uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return;
     // DashboardNavigation: the running dashboards are reused (or closed
@@ -763,8 +767,8 @@ class NotificationService {
       // company owner's Orders list; any other account just opens the app.
       final UserModel? me = Constant.userModel ?? await FireStoreUtils.getUserProfile(uid);
       if (me?.isOwner == true) await DashboardNavigation.openOwnerPage(DashboardNavigation.ownerOrdersPage, me!);
-    } else if (type == 'document_verification') {
-      Get.to(() => const VerificationScreen());
+    } else if (type == OwnerVerificationPush.driverDataType || type == OwnerVerificationPush.ownerDataType) {
+      await _openDocumentPush(uid, type: type, driverId: driverId);
     } else if (type == 'orderChat') {
       ShowToastDialog.showLoader("Please wait".tr);
       UserModel? customer;
@@ -799,6 +803,35 @@ class NotificationService {
       // the home of the module the job belongs to.
       final UserModel? me = Constant.userModel ?? await FireStoreUtils.getUserProfile(uid);
       if (me != null) SignupController.navigateByUserModel(me);
+    }
+  }
+
+  /// A document push: the company owner's "document submitted" opens the
+  /// review of THAT driver (only one of the owner's own drivers; anyone else
+  /// lands on the owner's list); a driver's `document_verification` opens
+  /// its own documents ([OwnerVerificationRules.tapRoute]).
+  static Future<void> _openDocumentPush(String uid, {required String type, String? driverId}) async {
+    final UserModel? me = Constant.userModel ?? await FireStoreUtils.getUserProfile(uid);
+    switch (OwnerVerificationRules.tapRoute(type: type, driverId: driverId, isOwner: me?.isOwner == true)) {
+      case DocumentTapRoute.ownerReview:
+        UserModel? driver;
+        try {
+          driver = await OwnerVerificationService.getOwnDriver(driverId ?? '');
+        } catch (e) {
+          log("Document push: driver not loaded: $e");
+        }
+        final UserModel? found = driver;
+        if (found != null) {
+          Get.to(() => OwnerDriverVerificationScreen(driver: found));
+        } else {
+          Get.to(() => const OwnerDriverVerificationListScreen());
+        }
+      case DocumentTapRoute.ownerList:
+        Get.to(() => const OwnerDriverVerificationListScreen());
+      case DocumentTapRoute.ownDocuments:
+        Get.to(() => const VerificationScreen());
+      case DocumentTapRoute.none:
+        break;
     }
   }
 }

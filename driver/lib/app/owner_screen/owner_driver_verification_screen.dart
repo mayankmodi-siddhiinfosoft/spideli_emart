@@ -3,9 +3,9 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/document_model.dart';
 import 'package:driver/models/driver_document_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/owner_verification_rules.dart';
 import 'package:driver/services/owner_verification_service.dart';
 import 'package:driver/themes/ds/ds.dart';
-import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
@@ -25,6 +25,13 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
   DriverDocumentModel? _driverDocs;
   bool _isLoading = true;
 
+  /// The required documents or the uploads could not be read: nothing is
+  /// guessed, the screen offers a retry.
+  bool _loadFailed = false;
+
+  /// Not one of the signed-in owner's company drivers: nothing to review.
+  bool _notOwnDriver = false;
+
   @override
   void initState() {
     super.initState();
@@ -33,14 +40,25 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
   }
 
   Future<void> _loadData() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadFailed = false;
+    });
     try {
-      final reqDocs = await OwnerVerificationService.getRequiredDocuments();
-      final dDocs = await OwnerVerificationService.getDriverDocuments(_driver.id ?? '');
-      _requiredDocs = reqDocs;
-      _driverDocs = dDocs;
+      final UserModel? live = await OwnerVerificationService.getOwnDriver(_driver.id ?? '');
+      if (live == null) {
+        _notOwnDriver = true;
+        _requiredDocs = [];
+        _driverDocs = null;
+      } else {
+        _notOwnDriver = false;
+        _driver = live;
+        _requiredDocs = await OwnerVerificationService.getRequiredDocuments(live);
+        _driverDocs = await OwnerVerificationService.getDriverDocuments(live.id ?? '');
+      }
     } catch (e) {
       debugPrint('Error loading driver documents: $e');
+      _loadFailed = true;
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -48,6 +66,44 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
 
   Documents? _getDocSubmission(String docId) {
     return _driverDocs?.documents?.firstWhereOrNull((d) => d.documentId == docId);
+  }
+
+  List<Documents> get _entries => _driverDocs?.documents ?? const [];
+
+  /// Required documents the driver has not uploaded, or must upload again
+  /// (rejected / expired): what keeps the account from being verified.
+  List<DocumentModel> get _toUpload => _requiredDocs.where((r) {
+    final Documents? sub = _getDocSubmission(r.id ?? '');
+    return !OwnerVerificationRules.isUploaded(sub) || sub!.verificationStatus == 'rejected' || sub.verificationStatus == 'expired';
+  }).toList();
+
+  String _titles(Iterable<String> titles) => titles.where((t) => t.trim().isNotEmpty).join(', ');
+
+  /// Tells the owner what an action did (or why it did nothing).
+  void _showResult(OwnerVerificationResult result, {required String doneMessage, required String failedMessage}) {
+    switch (result.outcome) {
+      case OwnerVerificationOutcome.done:
+        ShowToastDialog.showToast(doneMessage);
+      case OwnerVerificationOutcome.incomplete:
+        Get.dialog(
+          AlertDialog(
+            title: Text('Driver not verified yet'.tr, style: context.dsText.title),
+            content: Text(
+              'The uploaded documents were approved. These required documents are still missing or must be uploaded again: @documents'.trParams({'documents': _titles(result.outstanding)}),
+              style: context.dsText.bodySm,
+            ),
+            actions: [TextButton(onPressed: () => Get.back(), child: Text('OK'.tr))],
+          ),
+        );
+      case OwnerVerificationOutcome.notYourDriver:
+        ShowToastDialog.showToast('This driver is not part of your company.'.tr);
+      case OwnerVerificationOutcome.notUploaded:
+        ShowToastDialog.showToast('This document has not been uploaded, or it has expired.'.tr);
+      case OwnerVerificationOutcome.noRequiredDocuments:
+        ShowToastDialog.showToast('No required driver documents found.'.tr);
+      case OwnerVerificationOutcome.failed:
+        ShowToastDialog.showToast(failedMessage);
+    }
   }
 
   void _showImageDialog(String imageUrl, String title) {
@@ -86,7 +142,7 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
     );
   }
 
-  void _showRejectDialog(DocumentModel reqDoc, Documents submission) {
+  void _showRejectDialog(DocumentModel reqDoc) {
     final reasonController = TextEditingController();
     Get.dialog(
       AlertDialog(
@@ -95,27 +151,17 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '${'Provide reason for rejecting'.tr} "${reqDoc.title ?? 'Document'}" ${'for driver'.tr} ${_driver.fullName()}:',
-              style: context.dsText.bodySm,
-            ),
+            Text('Provide the reason for rejecting "@document" for @driver:'.trParams({'document': reqDoc.title ?? '', 'driver': _driver.fullName()}), style: context.dsText.bodySm),
             const DsGap(DsSpace.md),
             TextField(
               controller: reasonController,
               maxLines: 3,
-              decoration: InputDecoration(
-                labelText: 'Rejection Reason (Required)'.tr,
-                hintText: 'e.g. Blurred photo, expired date, details mismatch',
-                border: const OutlineInputBorder(),
-              ),
+              decoration: InputDecoration(labelText: 'Rejection Reason (Required)'.tr, hintText: 'e.g. Blurred photo, expired date, details mismatch'.tr, border: const OutlineInputBorder()),
             ),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Get.back(),
-            child: Text('Cancel'.tr),
-          ),
+          TextButton(onPressed: () => Get.back(), child: Text('Cancel'.tr)),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: context.dsColors.danger),
             onPressed: () async {
@@ -126,20 +172,10 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
               }
               Get.back();
               ShowToastDialog.showLoader('Rejecting document...'.tr);
-              final success = await OwnerVerificationService.rejectDocument(
-                driverId: _driver.id ?? '',
-                documentId: reqDoc.id ?? '',
-                reason: reason,
-                driver: _driver,
-              );
+              final result = await OwnerVerificationService.rejectDocument(driverId: _driver.id ?? '', documentId: reqDoc.id ?? '', reason: reason);
               ShowToastDialog.closeLoader();
-              if (success) {
-                ShowToastDialog.showToast('Document marked as rejected'.tr);
-                setState(() => _driver.isDocumentVerify = false);
-                await _loadData();
-              } else {
-                ShowToastDialog.showToast('Failed to reject document'.tr);
-              }
+              _showResult(result, doneMessage: 'Document marked as rejected'.tr, failedMessage: 'Failed to reject document'.tr);
+              if (result.written) await _loadData();
             },
             child: Text('Reject'.tr, style: const TextStyle(color: Colors.white)),
           ),
@@ -148,30 +184,16 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
     );
   }
 
-  void _approveDoc(DocumentModel reqDoc) async {
+  Future<void> _approveDoc(DocumentModel reqDoc) async {
     ShowToastDialog.showLoader('Approving document...'.tr);
-    final success = await OwnerVerificationService.approveDocument(
-      driverId: _driver.id ?? '',
-      documentId: reqDoc.id ?? '',
-      driver: _driver,
-    );
+    final result = await OwnerVerificationService.approveDocument(driverId: _driver.id ?? '', documentId: reqDoc.id ?? '');
     ShowToastDialog.closeLoader();
-    if (success) {
-      await _loadData();
-      final updatedUser = await FireStoreUtils.getUserProfile(_driver.id ?? '');
-      if (updatedUser != null) {
-        setState(() => _driver = updatedUser);
-        if (_driver.isDocumentVerify == true) {
-          ShowToastDialog.showToast('All driver documents approved! Driver is now verified.'.tr);
-        } else {
-          ShowToastDialog.showToast('Document approved. All documents must be approved before driver is verified.'.tr);
-        }
-      } else {
-        ShowToastDialog.showToast('Document approved'.tr);
-      }
-    } else {
-      ShowToastDialog.showToast('Failed to approve document'.tr);
-    }
+    _showResult(
+      result,
+      doneMessage: result.completed ? 'All driver documents approved! Driver is now verified.'.tr : 'Document approved. All documents must be approved before driver is verified.'.tr,
+      failedMessage: 'Failed to approve document'.tr,
+    );
+    if (result.written) await _loadData();
   }
 
   void _confirmApproveAll() {
@@ -179,16 +201,14 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
       ShowToastDialog.showToast('No required driver documents found.'.tr);
       return;
     }
-
-    final int missingCount = _requiredDocs.where((req) {
-      final sub = _getDocSubmission(req.id ?? '');
-      return (sub?.frontImage ?? '').isEmpty && (sub?.backImage ?? '').isEmpty;
-    }).length;
-
-    if (missingCount > 0) {
-      ShowToastDialog.showToast(
-        'Driver has not uploaded $missingCount required document(s) yet. All documents must be submitted to verify driver.'
-            .tr,
+    final List<DocumentModel> toUpload = _toUpload;
+    final bool anyToReview = _requiredDocs.any((r) => OwnerVerificationRules.awaitsReview(_getDocSubmission(r.id ?? '')));
+    if (toUpload.isNotEmpty && !anyToReview) {
+      // Nothing the owner can approve: the driver has to upload first.
+      _showResult(
+        OwnerVerificationResult(OwnerVerificationOutcome.incomplete, outstanding: toUpload.map((d) => d.title ?? '').toList()),
+        doneMessage: '',
+        failedMessage: '',
       );
       return;
     }
@@ -197,37 +217,44 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
       AlertDialog(
         title: Text('Approve All Driver Documents'.tr, style: context.dsText.title),
         content: Text(
-          'Are you sure you want to approve all required driver documents? Once all documents are approved, ${_driver.fullName()} will be verified to take deliveries.'
-              .tr,
+          toUpload.isEmpty
+              ? 'Approve every uploaded document of @driver? Once all required documents are approved, the driver is verified to take deliveries.'.trParams({'driver': _driver.fullName()})
+              : 'Approve the uploaded documents of @driver? These required documents are still missing or must be uploaded again, so the driver will not be verified yet: @documents'.trParams({
+                  'driver': _driver.fullName(),
+                  'documents': _titles(toUpload.map((d) => d.title ?? '')),
+                }),
           style: context.dsText.bodySm,
         ),
         actions: [
-          TextButton(
-            onPressed: () => Get.back(),
-            child: Text('Cancel'.tr),
-          ),
+          TextButton(onPressed: () => Get.back(), child: Text('Cancel'.tr)),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: context.dsColors.success),
             onPressed: () async {
               Get.back();
               ShowToastDialog.showLoader('Verifying all driver documents...'.tr);
-              final success = await OwnerVerificationService.approveAllDocuments(
-                driverId: _driver.id ?? '',
-                requiredDocs: _requiredDocs,
-                driver: _driver,
-              );
+              final result = await OwnerVerificationService.approveAllDocuments(driverId: _driver.id ?? '');
               ShowToastDialog.closeLoader();
-              if (success) {
-                ShowToastDialog.showToast('All documents approved! Driver verified.'.tr);
-                setState(() => _driver.isDocumentVerify = true);
-                await _loadData();
-              } else {
-                ShowToastDialog.showToast('Failed to approve documents'.tr);
-              }
+              _showResult(result, doneMessage: 'All documents approved! Driver verified.'.tr, failedMessage: 'Failed to approve documents'.tr);
+              if (result.written) await _loadData();
             },
             child: Text('Approve All'.tr, style: const TextStyle(color: Colors.white)),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _messageState(String message, {bool retry = false}) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(DsSpace.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(message, style: context.dsText.bodySecondary, textAlign: TextAlign.center),
+            if (retry) ...[const DsGap(DsSpace.md), DsButton.primary(label: 'Retry'.tr, icon: Icons.refresh_rounded, size: DsButtonSize.sm, onPressed: _loadData)],
+          ],
+        ),
       ),
     );
   }
@@ -252,7 +279,11 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
+          : _notOwnDriver
+              ? _messageState('This driver is not part of your company.'.tr)
+              : _loadFailed
+                  ? _messageState('The documents could not be loaded. Please try again.'.tr, retry: true)
+                  : SingleChildScrollView(
               padding: const EdgeInsets.all(DsSpace.lg),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -296,10 +327,16 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              'Required: ${_requiredDocs.length} ${'Documents'.tr}',
-                              style: t.caption,
+                            Expanded(
+                              child: Text(
+                                'Required documents: @uploaded of @count uploaded'.trParams({
+                                  'uploaded': OwnerVerificationRules.uploadedCount(_requiredDocs, _entries).toString(),
+                                  'count': _requiredDocs.length.toString(),
+                                }),
+                                style: t.caption,
+                              ),
                             ),
+                            const DsGap(DsSpace.sm),
                             DsButton.success(
                               label: 'Approve All'.tr,
                               icon: Icons.done_all_rounded,
@@ -337,9 +374,9 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
     final c = context.dsColors;
     final t = context.dsText;
 
-    final String status = submission?.verificationStatus ?? 'not_submitted';
-    final bool hasFront = (submission?.frontImage ?? '').isNotEmpty;
-    final bool hasBack = (submission?.backImage ?? '').isNotEmpty;
+    final String status = OwnerVerificationRules.isUploaded(submission) || submission?.verificationStatus == 'rejected' ? submission!.verificationStatus : 'not_submitted';
+    final bool canApprove = OwnerVerificationRules.canApprove(submission);
+    final bool canReject = OwnerVerificationRules.canReject(submission);
     final bool isApproved = status == 'approved';
     final bool isRejected = status == 'rejected';
 
@@ -407,7 +444,7 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
                     const DsGap(DsSpace.xs),
                     Expanded(
                       child: Text(
-                        'Rejection Reason: ${submission.rejectReason}',
+                        'Rejection reason: @reason'.trParams({'reason': submission.rejectReason ?? ''}),
                         style: t.caption.withColor(c.dangerStrong),
                       ),
                     ),
@@ -444,17 +481,17 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 OutlinedButton.icon(
-                  onPressed: submission != null ? () => _showRejectDialog(reqDoc, submission) : null,
+                  onPressed: canReject ? () => _showRejectDialog(reqDoc) : null,
                   icon: const Icon(Icons.close_rounded, size: 18),
                   label: Text('Reject'.tr),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: c.danger,
-                    side: BorderSide(color: submission != null ? c.danger : c.border),
+                    side: BorderSide(color: canReject ? c.danger : c.border),
                   ),
                 ),
                 const DsGap(DsSpace.md),
                 ElevatedButton.icon(
-                  onPressed: (hasFront || hasBack) ? () => _approveDoc(reqDoc) : null,
+                  onPressed: canApprove && !isApproved ? () => _approveDoc(reqDoc) : null,
                   icon: const Icon(Icons.check_rounded, size: 18),
                   label: Text('Approve'.tr),
                   style: ElevatedButton.styleFrom(

@@ -3,11 +3,15 @@ import 'package:driver/models/user_model.dart';
 
 /// Who may work while their documents are still being reviewed (report Doc 37).
 ///
-/// `users.isDocumentVerify` belongs to the administrator: the panel sets it to
-/// `true` only once every required document has been approved. This app never
-/// sets it to `true` — a registration, or a company creating a driver, starts
-/// at `false` — and never writes it back on a later save
-/// (`FireStoreUtils.updateUser`).
+/// `users.isDocumentVerify` is set by the administrator: the panel sets it to
+/// `true` once every required document has been approved. This app sets it to
+/// `true` in exactly ONE place: a company owner approving every required
+/// document of one of its own company drivers (`users.ownerId` == the owner;
+/// `OwnerVerificationService` / `OwnerVerificationRules`). Never at
+/// registration or when an account is created — a registration, or a company
+/// creating a driver, starts at `false` — and never by writing it back on a
+/// later save (`FireStoreUtils.updateUser`). The owner rejecting a required
+/// document of its driver sets it back to `false`; approving never does.
 ///
 /// `isAutoVerify` is stamped at registration from the admin's
 /// `document_verification_settings` (`true` = verification was off). The live
@@ -47,7 +51,8 @@ class DocumentVerification {
   }
 
   /// The values a NEW account starts with. [isCompany] picks the owner
-  /// setting. `isDocumentVerify` is always `false`: only the admin sets it.
+  /// setting. `isDocumentVerify` is always `false`: only the admin (or a
+  /// company owner approving its own driver's documents) sets it.
   static ({bool isDocumentVerify, bool isAutoVerify}) initialFlags({required bool isCompany, bool? driverSetting, bool? ownerSetting}) {
     final bool? setting = isCompany ? (ownerSetting ?? Constant.isOwnerVerification) : (driverSetting ?? Constant.isDriverVerification);
     // Auto-verified only when the admin has explicitly switched verification

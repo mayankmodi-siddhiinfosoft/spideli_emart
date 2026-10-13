@@ -1,6 +1,8 @@
 import 'package:driver/constant/collection_name.dart';
+import 'package:driver/models/document_model.dart';
 import 'package:driver/models/driver_document_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/owner_verification_rules.dart';
 import 'package:driver/services/owner_verification_service.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/utils/fire_store_utils.dart';
@@ -21,7 +23,14 @@ class _OwnerDriverVerificationListScreenState extends State<OwnerDriverVerificat
 
   List<UserModel> _drivers = [];
   Map<String, DriverDocumentModel?> _driverDocsMap = {};
+
+  /// Each driver's required documents: what the driver app asks THAT driver
+  /// to upload (`driver`, plus `vehicle` for cab / rental drivers).
+  Map<String, List<DocumentModel>> _requiredMap = {};
   bool _isLoading = true;
+
+  /// A read failed: nothing is guessed, the screen offers a retry.
+  bool _loadFailed = false;
 
   @override
   void initState() {
@@ -37,46 +46,48 @@ class _OwnerDriverVerificationListScreenState extends State<OwnerDriverVerificat
   }
 
   Future<void> _loadFleetDrivers() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadFailed = false;
+    });
     try {
       final snap = await FireStoreUtils.fireStore
           .collection(CollectionName.users)
           .where('ownerId', isEqualTo: _ownerUid)
           .get();
 
-      final drivers = snap.docs.map((d) => UserModel.fromJson(d.data())).toList();
+      final drivers = snap.docs
+          .map((d) => UserModel.fromJson({...d.data(), 'id': d.id}))
+          .where((d) => OwnerVerificationRules.isOwnersDriver(d, _ownerUid))
+          .toList();
 
       final Map<String, DriverDocumentModel?> docsMap = {};
+      final Map<String, List<DocumentModel>> requiredMap = {};
+      // One read per distinct set of document types, not per driver.
+      final Map<String, List<DocumentModel>> byTypes = {};
       for (final driver in drivers) {
-        if ((driver.id ?? '').isNotEmpty) {
-          final docs = await OwnerVerificationService.getDriverDocuments(driver.id!);
-          docsMap[driver.id!] = docs;
-        }
+        final String id = driver.id!;
+        docsMap[id] = await OwnerVerificationService.getDriverDocuments(id);
+        final String key = FireStoreUtils.documentTypesFor(driver).join(',');
+        requiredMap[id] = byTypes[key] ??= await OwnerVerificationService.getRequiredDocuments(driver);
       }
 
       _drivers = drivers;
       _driverDocsMap = docsMap;
+      _requiredMap = requiredMap;
     } catch (e) {
       debugPrint('Error loading fleet drivers: $e');
+      _loadFailed = true;
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  String _driverStatusCategory(UserModel driver) {
-    if (driver.isDocumentVerify == true) return 'verified';
+  List<DocumentModel> _requiredFor(UserModel driver) => _requiredMap[driver.id] ?? const [];
 
-    final docs = _driverDocsMap[driver.id]?.documents ?? [];
-    if (docs.isEmpty) return 'not_submitted';
+  List<Documents> _entriesFor(UserModel driver) => _driverDocsMap[driver.id]?.documents ?? const [];
 
-    final hasRejected = docs.any((d) => d.verificationStatus == 'rejected');
-    if (hasRejected) return 'rejected';
-
-    final hasPending = docs.any((d) => d.verificationStatus == 'pending');
-    if (hasPending) return 'pending';
-
-    return 'pending';
-  }
+  String _driverStatusCategory(UserModel driver) => OwnerVerificationRules.category(driver, _requiredFor(driver), _entriesFor(driver));
 
   @override
   Widget build(BuildContext context) {
@@ -90,9 +101,28 @@ class _OwnerDriverVerificationListScreenState extends State<OwnerDriverVerificat
       );
     }
 
+    if (_loadFailed) {
+      return Scaffold(
+        appBar: DsAppBar(title: 'Driver Document Verification'.tr),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(DsSpace.xl),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('The documents could not be loaded. Please try again.'.tr, style: t.bodySecondary, textAlign: TextAlign.center),
+                const DsGap(DsSpace.md),
+                DsButton.primary(label: 'Retry'.tr, icon: Icons.refresh_rounded, size: DsButtonSize.sm, onPressed: _loadFleetDrivers),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final pendingDrivers = _drivers.where((d) => _driverStatusCategory(d) == 'pending').toList();
     final verifiedDrivers = _drivers.where((d) => _driverStatusCategory(d) == 'verified').toList();
-    final rejectedDrivers = _drivers.where((d) => _driverStatusCategory(d) == 'rejected' || _driverStatusCategory(d) == 'not_submitted').toList();
+    final rejectedDrivers = _drivers.where((d) => const {'rejected', 'missing', 'not_submitted'}.contains(_driverStatusCategory(d))).toList();
 
     return Scaffold(
       appBar: DsAppBar(
@@ -206,7 +236,7 @@ class _OwnerDriverVerificationListScreenState extends State<OwnerDriverVerificat
       itemBuilder: (context, index) {
         final driver = list[index];
         final category = _driverStatusCategory(driver);
-        final docs = _driverDocsMap[driver.id]?.documents ?? [];
+        final required = _requiredFor(driver);
 
         DsTone badgeTone;
         String badgeLabel;
@@ -219,6 +249,9 @@ class _OwnerDriverVerificationListScreenState extends State<OwnerDriverVerificat
         } else if (category == 'rejected') {
           badgeTone = DsTone.danger;
           badgeLabel = 'Rejected'.tr;
+        } else if (category == 'missing') {
+          badgeTone = DsTone.warning;
+          badgeLabel = 'Documents Missing'.tr;
         } else {
           badgeTone = DsTone.neutral;
           badgeLabel = 'No Documents'.tr;
@@ -258,10 +291,16 @@ class _OwnerDriverVerificationListScreenState extends State<OwnerDriverVerificat
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      '${docs.length} ${'Documents Submitted'.tr}',
-                      style: context.dsText.caption,
+                    Expanded(
+                      child: Text(
+                        'Required documents: @uploaded of @count uploaded'.trParams({
+                          'uploaded': OwnerVerificationRules.uploadedCount(required, _entriesFor(driver)).toString(),
+                          'count': required.length.toString(),
+                        }),
+                        style: context.dsText.caption,
+                      ),
                     ),
+                    const DsGap(DsSpace.sm),
                     DsButton.primary(
                       label: 'Review Documents'.tr,
                       icon: Icons.assignment_turned_in_outlined,

@@ -222,13 +222,13 @@ class SendNotification {
       return false;
     }
     try {
-      final NotificationModel? template = await FireStoreUtils.getNotificationContent(type);
-      if (template == null) {
+      final ({String title, String body})? text = await templateText(type, placeholders);
+      if (text == null) {
         log("Push '$type' not sent: no dynamic_notification template for it.");
         return false;
       }
-      final String title = PushTemplateText.fill(template.subject, placeholders ?? const {});
-      final String body = PushTemplateText.fill(template.message, placeholders ?? const {});
+      final String title = text.title;
+      final String body = text.body;
       final Map<String, String> data = await _recordForCustomer(
         recipient: recipient,
         customerId: customerId,
@@ -247,6 +247,17 @@ class SendNotification {
       log("Push '$type' failed: $e");
       return false;
     }
+  }
+
+  /// The `subject` / `message` of the `dynamic_notification` template [type]
+  /// with its [placeholders] filled ([PushTemplateText.fill]), or null when
+  /// there is no such template. For a sender that also stores the text (a
+  /// notification record) exactly as [sendFcmMessage] sends it.
+  static Future<({String title, String body})?> templateText(String type, Map<String, String>? placeholders) async {
+    final NotificationModel? template = await FireStoreUtils.getNotificationContent(type);
+    if (template == null) return null;
+    final Map<String, String> values = placeholders ?? const {};
+    return (title: PushTemplateText.fill(template.subject, values), body: PushTemplateText.fill(template.message, values));
   }
 
   /// A push with its own text. [customerId] (customer recipient only)

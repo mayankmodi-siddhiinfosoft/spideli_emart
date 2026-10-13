@@ -461,6 +461,13 @@ chatType: "worker", orderId, senderId, senderName}` for chat. Every message also
   - `type` = `carrier_parcel_order` / `carrier_parcel_returned` (a company
     owner): the owner dashboard's Orders page (`COMPANY-CARRIER-LINK.md`
     section 5).
+  - `type` = `driver_document_submitted` + `driverId` (a company owner): the
+    owner's document review of that driver (only one of the owner's own
+    drivers, `users.ownerId`; otherwise / without `driverId` the owner's
+    driver verification list). An owner tapping the pre-13-Oct form
+    (`document_verification` + `driverId`) is routed the same way.
+  - `type` = `document_verification` (no `driverId`, or a driver): the
+    account's own documents screen.
   - `type` in the job set above, or `new_order`, `vendor_order`,
     `parcel_order`, `rental_order`, `cab_order`: the home of the driver's module.
   - anything else: opens the app (no crash on missing / non-string keys, or when signed out).
@@ -510,6 +517,8 @@ Every push goes through `driver/lib/constant/send_notification.dart`
 | `company_cash_settlement_submitted` (a driver handed a cash settlement in; data `{type: "company_settlement_submitted", settlementId, driverId, amount}`) | the company owner (same) | `driver_notifications_channel` | `default` | `default` |
 | `company_cash_settlement_confirmed` / `company_cash_settlement_rejected` (the owner's answer; data `{type: "company_settlement_confirmed" \| "company_settlement_rejected", settlementId}`) | the driver, live `users/{driverId}.fcmToken` | `driver_notifications_channel` | `default` | `default` |
 | `company_cash_adjustment` (the owner adjusted the driver's cash ledger; data `{type: "company_cash_adjustment", adjustmentId}`) | the driver (same) | `driver_notifications_channel` | `default` | `default` |
+| `driver_document_submitted` (a company driver uploaded a document; data `{type: "driver_document_submitted", driverId, documentId}`, a tap opens the owner's review of THAT driver) | the company owner, `users/{driver.ownerId}.fcmToken` | `driver_notifications_channel` | `default` | `default` |
+| `driver_document_approved` / `driver_documents_verified` / `driver_document_rejected` (the company owner reviewed the driver's documents; data `{type: "document_verification", status: "approved" \| "all_approved" \| "rejected", documentId?, reason?, notificationId?}`, a tap opens the driver's own documents) | the company driver, live `users/{driverId}.fcmToken` (read in the review transaction); also recorded in `users/{driverId}/notifications` | `driver_notifications_channel` | `default` | `default` |
 
 Data: `{type, orderId}` (the caller's `type`, e.g. `parcel_order` /
 `rental_order`, else the template type) for order pushes; `{type: "delivery_otp", orderId}`;
@@ -550,6 +559,40 @@ channel are unchanged. Please create:
 | `company_cash_settlement_confirmed` | driver | `{driverName}`, `{amount}`, `{reference}`, `{companyName}` | Settlement confirmed | {companyName} confirmed your cash settlement of {amount}. |
 | `company_cash_settlement_rejected` | driver | `{driverName}`, `{amount}`, `{reference}`, `{companyName}`, `{reason}` | Settlement rejected | {companyName} rejected your cash settlement of {amount}: {reason} |
 | `company_cash_adjustment` | driver | `{driverName}`, `{amount}`, `{signedAmount}` (`+` credit / `-` debit, then the amount), `{reference}` (adjustment id), `{companyName}`, `{reason}` | Cash balance adjusted | {companyName} adjusted your cash balance by {signedAmount}. Reason: {reason} |
+
+### Company driver document templates (placeholders)
+
+A company owner reviews its own drivers' documents in the driver app
+(`driver/lib/services/owner_verification_service.dart`, rules in
+`owner_verification_rules.dart`). Until 13 Oct these pushes had fixed English
+text; their text now comes only from these `dynamic_notification` templates.
+**No template = no push** (logged) and, for the driver, no notification
+record. Placeholders are filled by `PushTemplateText.fill` (`{name}`,
+case-insensitive; a value the push does not have leaves the placeholder as
+written). `{companyName}` = the owner's CARRIER name
+(`delivery_carriers/{users.carrierId}.name`), else the owner's
+`companyName`, else the owner's name (`CarrierDispatchService.companyNameFor`).
+`{documentTitle}` = the admin's `documents/{id}.title`. The driver's record
+`users/{driverId}/notifications/{id}` carries the same filled title / body,
+`read: false`, `category: "account"`, `source: "driver"`, `data` = the push
+data (with `notificationId`). Please create (suggested `service_type`: the
+one the panel uses for general / account templates, e.g. `Delivery Service`;
+the app does not read it):
+
+| Template `type` | To | Placeholders | Suggested `subject` | Suggested `message` |
+|---|---|---|---|---|
+| `driver_document_approved` | driver | `{documentTitle}`, `{companyName}` | Document approved | {companyName} approved your {documentTitle}. |
+| `driver_documents_verified` | driver | `{companyName}` | Account verified | {companyName} approved all your documents. You can now accept deliveries. |
+| `driver_document_rejected` | driver | `{documentTitle}`, `{companyName}`, `{reason}` | Document rejected | {companyName} rejected your {documentTitle}: {reason}. Please upload it again. |
+| `driver_document_submitted` | company owner | `{driverName}`, `{documentTitle}` | Document to review | {driverName} uploaded {documentTitle}. Open it to approve or reject. |
+
+When each is sent: `driver_document_approved` when the owner approves one
+document and that approval does not newly verify the account, and, from
+"Approve all" while required documents are still missing, once per document
+it approved; `driver_documents_verified` when an approval completes every
+required document (the account becomes verified); `driver_document_rejected`
+when the owner rejects a document; `driver_document_submitted` when a company
+driver uploads a document.
 
 ---
 

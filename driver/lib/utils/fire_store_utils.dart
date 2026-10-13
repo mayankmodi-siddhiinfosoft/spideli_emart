@@ -1087,10 +1087,15 @@ class FireStoreUtils {
   /// for a company, "driver" otherwise) plus the vehicle documents a cab or
   /// rental driver needs (client point 25). A type the admin never created
   /// returns nothing, so this is additive.
-  static List<String> documentTypesForCurrentUser() {
-    final UserModel? me = Constant.userModel;
-    final List<String> types = [me?.isOwner == true ? "owner" : "driver"];
-    final List<String> services = me?.serviceModules ?? const <String>[];
+  static List<String> documentTypesForCurrentUser() => documentTypesFor(Constant.userModel);
+
+  /// The document types [user] has to provide (see
+  /// [documentTypesForCurrentUser]). A company owner reviewing one of its
+  /// drivers asks this for THAT driver, so the owner checks exactly what the
+  /// driver was asked to upload.
+  static List<String> documentTypesFor(UserModel? user) {
+    final List<String> types = [user?.isOwner == true ? "owner" : "driver"];
+    final List<String> services = user?.serviceModules ?? const <String>[];
     if (services.contains('cab-service') || services.contains('rental-service')) {
       types.add("vehicle");
     }
@@ -1100,26 +1105,28 @@ class FireStoreUtils {
   /// The enabled document types an actor has to provide. Several types at once
   /// (client point 25: a cab / rental driver also provides vehicle documents),
   /// read tolerantly — a type the admin never created simply returns nothing.
-  static Future<List<DocumentModel>> getDocumentListForTypes(List<String> types) async {
+  ///
+  /// A failed read returns an empty list (logged), unless [throwOnError]:
+  /// then the error reaches the caller, which must not mistake "could not
+  /// read" for "nothing required" (the company owner's verification).
+  static Future<List<DocumentModel>> getDocumentListForTypes(List<String> types, {bool throwOnError = false}) async {
     final List<String> wanted = types.map((t) => t.trim()).where((t) => t.isNotEmpty).toSet().toList();
     if (wanted.isEmpty) return [];
     final List<DocumentModel> documentList = [];
     final Set<String> seen = {};
-    await fireStore
-        .collection(CollectionName.documents)
-        .where('type', whereIn: wanted)
-        .where('enable', isEqualTo: true)
-        .get()
-        .then((value) {
+    try {
+      final value = await fireStore.collection(CollectionName.documents).where('type', whereIn: wanted).where('enable', isEqualTo: true).get();
       for (var element in value.docs) {
         DocumentModel documentModel = DocumentModel.fromJson(element.data());
-        final String id = documentModel.id ?? element.id;
+        if ((documentModel.id ?? '').trim().isEmpty) documentModel.id = element.id;
+        final String id = documentModel.id!;
         if (!seen.add(id)) continue;
         documentList.add(documentModel);
       }
-    }).catchError((error) {
+    } catch (error) {
       log(error.toString());
-    });
+      if (throwOnError) rethrow;
+    }
     return documentList;
   }
 
