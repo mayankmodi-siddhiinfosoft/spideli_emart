@@ -18,6 +18,7 @@ import 'package:driver/services/dispatch_navigation.dart';
 import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/services/dispatch_offer_service.dart';
 import 'package:driver/themes/app_them_data.dart';
+import 'package:driver/services/driver_document_status_service.dart';
 import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/region_service.dart';
@@ -300,7 +301,9 @@ class CabHomeController extends GetxController {
     final String? uid = driverModel.value.id;
     if (id == null || uid == null) return;
     // A new request needs a verified driver who is online; a ride already
-    // assigned to this driver is always accepted.
+    // assigned to this driver is always accepted. A company driver's status
+    // is computed from its documents, read now.
+    await DriverDocumentStatusService.refresh(driverModel.value);
     if (!_offerable(accepted)) {
       final bool verified = !DocumentVerification.isPending(driverModel.value);
       ShowToastDialog.showToast(verified

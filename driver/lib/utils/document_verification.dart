@@ -1,17 +1,28 @@
 import 'package:driver/constant/constant.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/driver_document_status.dart';
 
 /// Who may work while their documents are still being reviewed (report Doc 37).
 ///
-/// `users.isDocumentVerify` is set by the administrator: the panel sets it to
-/// `true` once every required document has been approved. This app sets it to
-/// `true` in exactly ONE place: a company owner approving every required
-/// document of one of its own company drivers (`users.ownerId` == the owner;
-/// `OwnerVerificationService` / `OwnerVerificationRules`). Never at
-/// registration or when an account is created — a registration, or a company
-/// creating a driver, starts at `false` — and never by writing it back on a
-/// later save (`FireStoreUtils.updateUser`). The owner rejecting a required
-/// document of its driver sets it back to `false`; approving never does.
+/// Platform drivers: `users.isDocumentVerify` is the administrator's verdict
+/// (the panel sets it once every required document has been approved); the
+/// jobs gate reads it, and expired / rejected documents additionally block
+/// going online (`FireStoreUtils.documentBlockReason`).
+///
+/// Company drivers (`users.ownerId` set, not the owner): their company owner
+/// reviews the documents. The jobs gate (offers, the owner's assignment,
+/// going online) uses the overall status computed from the required
+/// documents ([DriverDocumentStatus.overall]) — verified only when every
+/// required document is uploaded and approved — never the flag alone: a
+/// driver whose flag is true while a required document is rejected,
+/// expired or waiting for review is NOT verified. The flag is kept in step
+/// with that status by every owner action and lowered by the driver's own
+/// upload (`OwnerVerificationService`, `FireStoreUtils.uploadDriverDocument`);
+/// it decides only while no status has been computed yet for the driver
+/// ([DocumentStatusCache]).
+///
+/// A registration, or a company creating a driver, starts at `false`; the
+/// app never writes the flag back on a later save (`FireStoreUtils.updateUser`).
 ///
 /// `isAutoVerify` is stamped at registration from the admin's
 /// `document_verification_settings` (`true` = verification was off). The live
@@ -44,10 +55,29 @@ class DocumentVerification {
   /// orders, so he is not held back waiting for an approval, as the home
   /// screen and the offers gate already treat him. Expired or rejected
   /// documents still block going online (dashboard, [checksDocuments]).
-  static bool isPending(UserModel? user, {bool? driverSetting, bool? ownerSetting}) {
+  ///
+  /// A company driver ([DriverDocumentStatus.isCompanyDriver]) is pending
+  /// unless the computed overall status is verified: [overall] when the
+  /// caller has just computed it, else the last one computed for that driver
+  /// ([DocumentStatusCache]); only when none is known yet does the flag decide.
+  static bool isPending(UserModel? user, {bool? driverSetting, bool? ownerSetting, DocumentOverallStatus? overall}) {
     if (user == null) return false;
     if ((user.vendorID ?? '').isNotEmpty) return false;
-    return user.isDocumentVerify != true && checksDocuments(user, driverSetting: driverSetting, ownerSetting: ownerSetting);
+    if (!checksDocuments(user, driverSetting: driverSetting, ownerSetting: ownerSetting)) return false;
+    if (DriverDocumentStatus.isCompanyDriver(user)) {
+      final DocumentOverallStatus? status = overall ?? DocumentStatusCache.of(user.id);
+      if (status != null) return status != DocumentOverallStatus.verified;
+    }
+    return user.isDocumentVerify != true;
+  }
+
+  /// The status a screen shows for [user]'s documents when only the profile
+  /// is at hand (the owner's driver cards): the computed status when known,
+  /// else what the flag says.
+  static bool showsVerified(UserModel? user) {
+    if (user == null) return false;
+    final DocumentOverallStatus? status = DriverDocumentStatus.isCompanyDriver(user) ? DocumentStatusCache.of(user.id) : null;
+    return status != null ? status == DocumentOverallStatus.verified : user.isDocumentVerify == true;
   }
 
   /// The values a NEW account starts with. [isCompany] picks the owner

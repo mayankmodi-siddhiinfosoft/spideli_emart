@@ -9,6 +9,7 @@ import 'package:driver/services/dispatch_navigation.dart';
 import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/services/dispatch_offer_service.dart';
 import 'package:driver/services/parcel_dispatch_service.dart';
+import 'package:driver/services/driver_document_status_service.dart';
 import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/parcel_amounts.dart';
@@ -93,6 +94,8 @@ class ParcelSearchController extends GetxController {
     // this is the same rule where the write happens. Parcels already assigned
     // never come through here.
     final UserModel? me = Constant.userModel;
+    // A company driver: the status computed from its documents, read now.
+    await DriverDocumentStatusService.refresh(me);
     final bool verified = !DocumentVerification.isPending(me);
     if (me == null || !verified) {
       ShowToastDialog.showToast("Document verification is pending. Please proceed to set up your document verification.".tr);

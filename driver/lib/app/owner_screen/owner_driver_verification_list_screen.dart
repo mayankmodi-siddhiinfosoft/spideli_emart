@@ -1,15 +1,23 @@
+import 'dart:async';
+
+import 'package:driver/app/verification_screen/document_status_widgets.dart';
 import 'package:driver/constant/collection_name.dart';
-import 'package:driver/models/document_model.dart';
-import 'package:driver/models/driver_document_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/driver_document_status.dart';
+import 'package:driver/services/driver_document_status_service.dart';
 import 'package:driver/services/owner_verification_rules.dart';
-import 'package:driver/services/owner_verification_service.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'owner_driver_verification_screen.dart';
 
+/// The company owner's drivers with the overall status of their documents
+/// ([DriverDocumentStatus.overall]: not submitted / pending / action
+/// required / verified), counts per status and a filter. Live: the owner's
+/// drivers (`users` where `ownerId` == owner) and each driver's
+/// `users/{id}` + `documents_verify/{id}` are followed, so a review or an
+/// upload shows at once. Only the owner's own company drivers are listed.
 class OwnerDriverVerificationListScreen extends StatefulWidget {
   const OwnerDriverVerificationListScreen({super.key});
 
@@ -17,77 +25,101 @@ class OwnerDriverVerificationListScreen extends StatefulWidget {
   State<OwnerDriverVerificationListScreen> createState() => _OwnerDriverVerificationListScreenState();
 }
 
-class _OwnerDriverVerificationListScreenState extends State<OwnerDriverVerificationListScreen> with SingleTickerProviderStateMixin {
+class _OwnerDriverVerificationListScreenState extends State<OwnerDriverVerificationListScreen> {
   final String _ownerUid = FireStoreUtils.getCurrentUid();
-  late TabController _tabController;
+
+  /// Filter: null = all drivers.
+  DocumentOverallStatus? _filter;
 
   List<UserModel> _drivers = [];
-  Map<String, DriverDocumentModel?> _driverDocsMap = {};
-
-  /// Each driver's required documents: what the driver app asks THAT driver
-  /// to upload (`driver`, plus `vehicle` for cab / rental drivers).
-  Map<String, List<DocumentModel>> _requiredMap = {};
+  final Map<String, DriverDocumentsView> _views = {};
+  final Map<String, StreamSubscription<DriverDocumentsView>> _subs = {};
+  final Set<String> _failed = {};
+  StreamSubscription? _driversSub;
   bool _isLoading = true;
 
-  /// A read failed: nothing is guessed, the screen offers a retry.
+  /// The driver list could not be read: nothing is guessed, the screen
+  /// offers a retry.
   bool _loadFailed = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-    _loadFleetDrivers();
+    _listen();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _driversSub?.cancel();
+    for (final s in _subs.values) {
+      s.cancel();
+    }
     super.dispose();
   }
 
-  Future<void> _loadFleetDrivers() async {
+  void _listen() {
+    _driversSub?.cancel();
     setState(() {
       _isLoading = true;
       _loadFailed = false;
     });
-    try {
-      final snap = await FireStoreUtils.fireStore
-          .collection(CollectionName.users)
-          .where('ownerId', isEqualTo: _ownerUid)
-          .get();
-
-      final drivers = snap.docs
-          .map((d) => UserModel.fromJson({...d.data(), 'id': d.id}))
-          .where((d) => OwnerVerificationRules.isOwnersDriver(d, _ownerUid))
-          .toList();
-
-      final Map<String, DriverDocumentModel?> docsMap = {};
-      final Map<String, List<DocumentModel>> requiredMap = {};
-      // One read per distinct set of document types, not per driver.
-      final Map<String, List<DocumentModel>> byTypes = {};
-      for (final driver in drivers) {
-        final String id = driver.id!;
-        docsMap[id] = await OwnerVerificationService.getDriverDocuments(id);
-        final String key = FireStoreUtils.documentTypesFor(driver).join(',');
-        requiredMap[id] = byTypes[key] ??= await OwnerVerificationService.getRequiredDocuments(driver);
-      }
-
-      _drivers = drivers;
-      _driverDocsMap = docsMap;
-      _requiredMap = requiredMap;
-    } catch (e) {
-      debugPrint('Error loading fleet drivers: $e');
-      _loadFailed = true;
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+    _driversSub = FireStoreUtils.fireStore.collection(CollectionName.users).where('ownerId', isEqualTo: _ownerUid).snapshots().listen(
+      (snap) {
+        final drivers = snap.docs
+            .map((d) => UserModel.fromJson({...d.data(), 'id': d.id}))
+            .where((d) => OwnerVerificationRules.isOwnersDriver(d, _ownerUid))
+            .toList()
+          ..sort((a, b) => a.fullName().toLowerCase().compareTo(b.fullName().toLowerCase()));
+        final Set<String> ids = drivers.map((d) => d.id!).toSet();
+        for (final String gone in _subs.keys.where((id) => !ids.contains(id)).toList()) {
+          _subs.remove(gone)?.cancel();
+          _views.remove(gone);
+        }
+        for (final String id in ids) {
+          _subs[id] ??= DriverDocumentStatusService.watch(id).listen(
+            (view) {
+              if (!mounted) return;
+              setState(() {
+                _views[id] = view;
+                _failed.remove(id);
+              });
+            },
+            onError: (Object e) {
+              debugPrint('Documents of $id not loaded: $e');
+              if (mounted) setState(() => _failed.add(id));
+            },
+          );
+        }
+        if (!mounted) return;
+        setState(() {
+          _drivers = drivers;
+          _isLoading = false;
+        });
+      },
+      onError: (Object e) {
+        debugPrint('Error loading fleet drivers: $e');
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _loadFailed = true;
+          });
+        }
+      },
+    );
   }
 
-  List<DocumentModel> _requiredFor(UserModel driver) => _requiredMap[driver.id] ?? const [];
+  void _retry() {
+    for (final s in _subs.values) {
+      s.cancel();
+    }
+    _subs.clear();
+    _views.clear();
+    _failed.clear();
+    _listen();
+  }
 
-  List<Documents> _entriesFor(UserModel driver) => _driverDocsMap[driver.id]?.documents ?? const [];
-
-  String _driverStatusCategory(UserModel driver) => OwnerVerificationRules.category(driver, _requiredFor(driver), _entriesFor(driver));
+  /// The driver's status; null while its documents are loading.
+  DocumentOverallStatus? _statusOf(UserModel driver) => _views[driver.id]?.overall;
 
   @override
   Widget build(BuildContext context) {
@@ -112,7 +144,7 @@ class _OwnerDriverVerificationListScreenState extends State<OwnerDriverVerificat
               children: [
                 Text('The documents could not be loaded. Please try again.'.tr, style: t.bodySecondary, textAlign: TextAlign.center),
                 const DsGap(DsSpace.md),
-                DsButton.primary(label: 'Retry'.tr, icon: Icons.refresh_rounded, size: DsButtonSize.sm, onPressed: _loadFleetDrivers),
+                DsButton.primary(label: 'Retry'.tr, icon: Icons.refresh_rounded, size: DsButtonSize.sm, onPressed: _retry),
               ],
             ),
           ),
@@ -120,98 +152,90 @@ class _OwnerDriverVerificationListScreenState extends State<OwnerDriverVerificat
       );
     }
 
-    final pendingDrivers = _drivers.where((d) => _driverStatusCategory(d) == 'pending').toList();
-    final verifiedDrivers = _drivers.where((d) => _driverStatusCategory(d) == 'verified').toList();
-    final rejectedDrivers = _drivers.where((d) => const {'rejected', 'missing', 'not_submitted'}.contains(_driverStatusCategory(d))).toList();
+    final Map<DocumentOverallStatus, int> counts = DriverDocumentStatus.counts(_drivers.map(_statusOf).whereType<DocumentOverallStatus>());
+    final List<UserModel> shown = _filter == null ? _drivers : _drivers.where((d) => _statusOf(d) == _filter).toList();
 
     return Scaffold(
       appBar: DsAppBar(
         title: 'Driver Document Verification'.tr,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Refresh'.tr,
-            onPressed: _loadFleetDrivers,
-          ),
+          IconButton(icon: const Icon(Icons.refresh_rounded), tooltip: 'Refresh'.tr, onPressed: _retry),
         ],
       ),
-      body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) {
-          return [
-            SliverToBoxAdapter(
-              child: Padding(
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, 0),
+              child: DsCard(
+                color: c.surface,
                 padding: const EdgeInsets.all(DsSpace.lg),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Stats Card
-                    DsCard(
-                      color: c.surface,
-                      padding: const EdgeInsets.all(DsSpace.lg),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Fleet Verification Overview'.tr, style: t.overline),
-                          const DsGap(DsSpace.xs),
-                          Text('${_drivers.length} ${'Company Drivers'.tr}', style: t.headline),
-                          const DsGap(DsSpace.lg),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _statTile('Pending Review'.tr, pendingDrivers.length.toString(), c.warning),
-                              ),
-                              const DsGap(DsSpace.md),
-                              Expanded(
-                                child: _statTile('Verified'.tr, verifiedDrivers.length.toString(), c.success),
-                              ),
-                              const DsGap(DsSpace.md),
-                              Expanded(
-                                child: _statTile('Action Required'.tr, rejectedDrivers.length.toString(), c.danger),
-                              ),
-                            ],
-                          ),
+                    Text('Fleet Verification Overview'.tr, style: t.overline),
+                    const DsGap(DsSpace.xs),
+                    Text('${_drivers.length} ${'Company Drivers'.tr}', style: t.headline),
+                    const DsGap(DsSpace.lg),
+                    Row(
+                      children: [
+                        for (final s in const [DocumentOverallStatus.pending, DocumentOverallStatus.actionRequired, DocumentOverallStatus.verified, DocumentOverallStatus.notSubmitted]) ...[
+                          if (s != DocumentOverallStatus.pending) const DsGap(DsSpace.sm),
+                          Expanded(child: _statTile(s.label.tr, counts[s].toString(), c.tone(overallStatusTone(s)).main)),
                         ],
-                      ),
-                    ),
-                    const DsGap(DsSpace.md),
-                    TabBar(
-                      controller: _tabController,
-                      labelColor: c.brand,
-                      unselectedLabelColor: c.textSecondary,
-                      indicatorColor: c.brand,
-                      tabs: [
-                        Tab(text: '${'Pending'.tr} (${pendingDrivers.length})'),
-                        Tab(text: '${'Verified'.tr} (${verifiedDrivers.length})'),
-                        Tab(text: '${'Incomplete'.tr} (${rejectedDrivers.length})'),
-                        Tab(text: '${'All'.tr} (${_drivers.length})'),
                       ],
                     ),
                   ],
                 ),
               ),
             ),
-          ];
-        },
-        body: TabBarView(
-          controller: _tabController,
-          children: [
-            _buildDriverList(pendingDrivers),
-            _buildDriverList(verifiedDrivers),
-            _buildDriverList(rejectedDrivers),
-            _buildDriverList(_drivers),
-          ],
-        ),
+          ),
+          SliverToBoxAdapter(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+              child: Row(
+                children: [
+                  _filterChip(null, '${'All'.tr} (${_drivers.length})'),
+                  for (final s in DocumentOverallStatus.values) ...[
+                    const DsGap(DsSpace.sm),
+                    _filterChip(s, '${s.label.tr} (${counts[s]})'),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          if (shown.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: Text('No company drivers in this category.'.tr, style: t.bodySecondary)),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(DsSpace.lg, 0, DsSpace.lg, DsSpace.xl),
+              sliver: SliverList.builder(
+                itemCount: shown.length,
+                itemBuilder: (context, index) => _driverCard(shown[index]),
+              ),
+            ),
+        ],
       ),
+    );
+  }
+
+  Widget _filterChip(DocumentOverallStatus? status, String label) {
+    return ChoiceChip(
+      key: ValueKey('owner-documents-filter-${status?.key ?? 'all'}'),
+      label: Text(label),
+      selected: _filter == status,
+      onSelected: (_) => setState(() => _filter = status),
     );
   }
 
   Widget _statTile(String label, String value, Color color) {
     return Container(
       padding: const EdgeInsets.all(DsSpace.sm),
-      decoration: BoxDecoration(
-        color: context.dsColors.surfaceAlt,
-        borderRadius: DsRadius.brSm,
-      ),
+      decoration: BoxDecoration(color: context.dsColors.surfaceAlt, borderRadius: DsRadius.brSm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -223,101 +247,67 @@ class _OwnerDriverVerificationListScreenState extends State<OwnerDriverVerificat
     );
   }
 
-  Widget _buildDriverList(List<UserModel> list) {
-    if (list.isEmpty) {
-      return Center(
-        child: Text('No company drivers in this category.'.tr, style: context.dsText.bodySecondary),
-      );
-    }
+  Widget _driverCard(UserModel driver) {
+    final DriverDocumentsView? view = _views[driver.id];
+    final DocumentOverallStatus? status = view?.overall;
+    final bool failed = _failed.contains(driver.id);
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(DsSpace.lg),
-      itemCount: list.length,
-      itemBuilder: (context, index) {
-        final driver = list[index];
-        final category = _driverStatusCategory(driver);
-        final required = _requiredFor(driver);
-
-        DsTone badgeTone;
-        String badgeLabel;
-        if (category == 'verified') {
-          badgeTone = DsTone.success;
-          badgeLabel = 'Verified'.tr;
-        } else if (category == 'pending') {
-          badgeTone = DsTone.warning;
-          badgeLabel = 'Pending Review'.tr;
-        } else if (category == 'rejected') {
-          badgeTone = DsTone.danger;
-          badgeLabel = 'Rejected'.tr;
-        } else if (category == 'missing') {
-          badgeTone = DsTone.warning;
-          badgeLabel = 'Documents Missing'.tr;
-        } else {
-          badgeTone = DsTone.neutral;
-          badgeLabel = 'No Documents'.tr;
-        }
-
-        return Padding(
-          padding: const EdgeInsets.only(bottom: DsSpace.md),
-          child: DsCard.outlined(
-            padding: const EdgeInsets.all(DsSpace.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpace.md),
+      child: DsCard.outlined(
+        padding: const EdgeInsets.all(DsSpace.md),
+        borderColor: status == DocumentOverallStatus.actionRequired ? context.dsColors.danger : null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    DsAvatar(
-                      imageUrl: driver.profilePictureURL ?? '',
-                      name: driver.fullName(),
-                      size: 44,
-                    ),
-                    const DsGap(DsSpace.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(driver.fullName(), style: context.dsText.titleSm.w700),
-                          Text(
-                            '${driver.countryCode ?? ''} ${driver.phoneNumber ?? ''}',
-                            style: context.dsText.bodySm,
-                          ),
-                        ],
-                      ),
-                    ),
-                    DsBadge(label: badgeLabel, tone: badgeTone, small: true),
-                  ],
+                DsAvatar(imageUrl: driver.profilePictureURL ?? '', name: driver.fullName(), size: 44),
+                const DsGap(DsSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(driver.fullName(), style: context.dsText.titleSm.w700),
+                      Text('${driver.countryCode ?? ''} ${driver.phoneNumber ?? ''}', style: context.dsText.bodySm),
+                    ],
+                  ),
                 ),
-                const DsDivider(spacing: DsSpace.md),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Required documents: @uploaded of @count uploaded'.trParams({
-                          'uploaded': OwnerVerificationRules.uploadedCount(required, _entriesFor(driver)).toString(),
-                          'count': required.length.toString(),
-                        }),
-                        style: context.dsText.caption,
-                      ),
-                    ),
-                    const DsGap(DsSpace.sm),
-                    DsButton.primary(
-                      label: 'Review Documents'.tr,
-                      icon: Icons.assignment_turned_in_outlined,
-                      size: DsButtonSize.sm,
-                      onPressed: () {
-                        Get.to(() => OwnerDriverVerificationScreen(driver: driver))?.then((_) {
-                          _loadFleetDrivers();
-                        });
-                      },
-                    ),
-                  ],
+                if (status != null)
+                  DocumentOverallStatusChip(status: status)
+                else if (failed)
+                  DsBadge(label: 'Not loaded'.tr, tone: DsTone.neutral, small: true)
+                else
+                  const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+              ],
+            ),
+            const DsDivider(spacing: DsSpace.md),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    view == null
+                        ? ''
+                        : 'Required documents: @uploaded of @count uploaded'.trParams({
+                            'uploaded': view.uploadedCount.toString(),
+                            'count': view.required.length.toString(),
+                          }),
+                    style: context.dsText.caption,
+                  ),
+                ),
+                const DsGap(DsSpace.sm),
+                DsButton.primary(
+                  label: 'Review Documents'.tr,
+                  icon: Icons.assignment_turned_in_outlined,
+                  size: DsButtonSize.sm,
+                  onPressed: () => Get.to(() => OwnerDriverVerificationScreen(driver: driver)),
                 ),
               ],
             ),
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 }

@@ -4,10 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/send_notification.dart';
+import 'package:driver/models/document_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/carrier_dispatch_service.dart';
 import 'package:driver/services/carrier_parcel_rules.dart';
 import 'package:driver/services/dispatch_offer_rules.dart';
+import 'package:driver/services/driver_document_status.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 
 /// The outcome of an owner's assignment ([CarrierParcelService.assign]).
@@ -70,6 +72,17 @@ abstract final class CarrierParcelService {
     final String driverId = (driver.id ?? '').trim();
     if (orderId.isEmpty || driverId.isEmpty || ownerUid.isEmpty) return const CarrierAssignResult(CarrierAssignCheck.gone, failed: true);
     final ({CarrierAssignCheck check, String? replaced, String? tracking}) outcome;
+    // The driver's required documents: their overall status (computed in the
+    // transaction from the live record) decides, never the flag alone.
+    List<DocumentModel>? required;
+    if (DriverDocumentStatus.isCompanyDriver(driver)) {
+      try {
+        required = await FireStoreUtils.getDocumentListForTypes(FireStoreUtils.documentTypesFor(driver), throwOnError: true);
+      } catch (e) {
+        log("CarrierParcelService.assign: required documents not read: $e");
+      }
+    }
+    final List<DocumentModel>? requiredDocs = required;
     try {
       outcome = await FireStoreUtils.fireStore.runTransaction<({CarrierAssignCheck check, String? replaced, String? tracking})>((tx) async {
         final DocumentSnapshot<Map<String, dynamic>> snap = await tx.get(_order(orderId));
@@ -81,7 +94,14 @@ abstract final class CarrierParcelService {
         final DocumentSnapshot<Map<String, dynamic>> driverSnap = await tx.get(_user(driverId));
         final Map<String, dynamic>? driverData = driverSnap.exists ? driverSnap.data() : null;
         if (driverData == null) return (check: CarrierAssignCheck.gone, replaced: null, tracking: null);
-        if (!CarrierParcelRules.canTakeAssignment(UserModel.fromJson(driverData))) {
+        final UserModel live = UserModel.fromJson({...driverData, 'id': driverId});
+        DocumentOverallStatus? overall;
+        if (requiredDocs != null && DriverDocumentStatus.isCompanyDriver(live)) {
+          final DocumentSnapshot<Map<String, dynamic>> recordSnap = await tx.get(FireStoreUtils.fireStore.collection(CollectionName.documentsVerify).doc(driverId));
+          overall = DriverDocumentsView.of(user: live, required: requiredDocs, record: recordSnap.exists ? recordSnap.data() : null).overall;
+          DocumentStatusCache.put(driverId, overall);
+        }
+        if (!CarrierParcelRules.canTakeAssignment(live, overall: overall)) {
           return (check: CarrierAssignCheck.driverNotVerified, replaced: null, tracking: null);
         }
         tx.update(_order(orderId), CarrierParcelRules.assignFields(driverId: driverId, ownerUid: ownerUid));

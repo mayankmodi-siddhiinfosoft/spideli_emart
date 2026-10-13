@@ -25,6 +25,7 @@ library;
 
 import 'package:cloud_firestore/cloud_firestore.dart' show FieldValue;
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/driver_document_status.dart';
 import 'package:driver/utils/document_verification.dart';
 
 /// Why the owner may (not) assign a carrier parcel now.
@@ -238,8 +239,10 @@ abstract final class CarrierParcelRules {
 
   /// The company driver may be given a parcel: their documents are verified
   /// (or verification does not apply to them) - exactly the documents gate a
-  /// driver meets when accepting an offer ([DocumentVerification.isPending]).
-  static bool canTakeAssignment(UserModel? driver) => driver != null && !DocumentVerification.isPending(driver);
+  /// driver meets when accepting an offer ([DocumentVerification.isPending]):
+  /// the overall status computed from the required documents ([overall] when
+  /// the caller just computed it), never the flag alone.
+  static bool canTakeAssignment(UserModel? driver, {DocumentOverallStatus? overall}) => driver != null && !DocumentVerification.isPending(driver, overall: overall);
 
   /// The owner's drivers that may be offered a parcel: driver accounts of
   /// this company (not the company itself), not disabled by the admin.

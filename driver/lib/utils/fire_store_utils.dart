@@ -50,6 +50,7 @@ import 'package:driver/services/assigned_delivery_orders.dart';
 import 'package:driver/services/audio_player_service.dart';
 import 'package:driver/services/order_ringtone_service.dart';
 import 'package:driver/services/dispatch_offer_rules.dart';
+import 'package:driver/services/driver_document_status.dart';
 import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/utils/cancel_reason_list.dart';
 import 'package:driver/utils/preferences.dart';
@@ -1123,6 +1124,9 @@ class FireStoreUtils {
         if (!seen.add(id)) continue;
         documentList.add(documentModel);
       }
+      // Exactly the enabled documents of the asked types (never another
+      // holder's, e.g. `worker`).
+      return DriverDocumentStatus.requiredOf(documentList, wanted);
     } catch (error) {
       log(error.toString());
       if (throwOnError) rethrow;
@@ -1130,14 +1134,13 @@ class FireStoreUtils {
     return documentList;
   }
 
+  /// The signed-in actor's own `documents_verify` record; null when there is
+  /// none or it belongs to another holder type ([DocumentRecordType]).
   static Future<DriverDocumentModel?> getDocumentOfDriver() async {
-    DriverDocumentModel? driverDocumentModel;
-    await fireStore.collection(CollectionName.documentsVerify).doc(getCurrentUid()).get().then((value) async {
-      if (value.exists) {
-        driverDocumentModel = DriverDocumentModel.fromJson(value.data()!);
-      }
-    });
-    return driverDocumentModel;
+    final value = await fireStore.collection(CollectionName.documentsVerify).doc(getCurrentUid()).get();
+    final Map<String, dynamic>? data = value.data();
+    if (!value.exists || data == null || !DocumentRecordType.belongsTo(data['type'], documentHolderType(Constant.userModel))) return null;
+    return DriverDocumentModel.fromJson(data);
   }
 
   /// Spec 3.6: an actor whose documents are not valid cannot go online.
@@ -1258,55 +1261,79 @@ class FireStoreUtils {
 
   /// The holder `type` of `documents_verify/{uid}` — the panel's types are
   /// "driver" | "vendor" | "owner" | "provider" | "worker" (report §3 02#26).
-  /// A delivery company is an owner: its record was filed as "driver".
-  static String documentHolderType(UserModel? user) => user?.isOwner == true ? "owner" : "driver";
+  /// Every driver (platform or company driver) files `driver`, a company
+  /// `owner` ([DocumentRecordType]).
+  static String documentHolderType(UserModel? user) => DocumentRecordType.forUser(user);
 
   /// Uploads one document against the id of an admin-defined type from the
   /// `documents` collection (report Doc 36 / 41) — [documents.documentId] is
   /// always a `documents/{id}`, never a hard-coded key.
+  ///
+  /// One transaction ([DriverDocumentStatus.submit]): re-reads
+  /// `documents_verify/{uid}`, puts the entry in (status `uploaded`: a new
+  /// review, never an approval; rejection reason and reviewer cleared) and
+  /// writes only `documents`, `id` and `type` (merge). A record of another
+  /// holder type (a worker's, ...) is refused, never overwritten. For a
+  /// company driver whose overall status is no longer verified after the
+  /// upload, `users/{uid}.isDocumentVerify` is lowered to `false` in the
+  /// same transaction (field-level update; a driver never raises it).
   static Future<bool> uploadDriverDocument(Documents documents) async {
-    bool isAdded = false;
-    final String holderType = documentHolderType(Constant.userModel);
-    if ((documents.documentId ?? '').trim().isEmpty) return false;
-    DriverDocumentModel driverDocumentModel = DriverDocumentModel();
-    List<Documents> documentsList = [];
-    await fireStore.collection(CollectionName.documentsVerify).doc(getCurrentUid()).get().then((value) async {
-      if (value.exists) {
-        DriverDocumentModel newDriverDocumentModel = DriverDocumentModel.fromJson(value.data()!);
-        documentsList = newDriverDocumentModel.documents!;
-        var contain = newDriverDocumentModel.documents!.where((element) => element.documentId == documents.documentId);
-        if (contain.isEmpty) {
-          documentsList.add(documents);
-
-          driverDocumentModel.id = getCurrentUid();
-          driverDocumentModel.type = holderType;
-          driverDocumentModel.documents = documentsList;
-        } else {
-          var index = newDriverDocumentModel.documents!.indexWhere((element) => element.documentId == documents.documentId);
-
-          driverDocumentModel.id = getCurrentUid();
-          driverDocumentModel.type = holderType;
-          documentsList.removeAt(index);
-          documentsList.insert(index, documents);
-          driverDocumentModel.documents = documentsList;
-          isAdded = false;
-        }
-      } else {
-        documentsList.add(documents);
-        driverDocumentModel.id = getCurrentUid();
-        driverDocumentModel.type = holderType;
-        driverDocumentModel.documents = documentsList;
+    final String uid = getCurrentUid();
+    if (uid.isEmpty || (documents.documentId ?? '').trim().isEmpty) return false;
+    final UserModel? me = Constant.userModel;
+    final String holderType = documentHolderType(me);
+    final bool companyDriver = DriverDocumentStatus.isCompanyDriver(me);
+    // The required set decides whether the status is still verified. Not
+    // readable: the uploaded document is taken as required (the flag is
+    // lowered rather than left wrongly true).
+    List<DocumentModel>? required;
+    if (companyDriver) {
+      try {
+        required = await getDocumentListForTypes(documentTypesFor(me), throwOnError: true);
+      } catch (e) {
+        log("uploadDriverDocument: required documents not read: $e");
       }
-    });
-
-    await fireStore.collection(CollectionName.documentsVerify).doc(getCurrentUid()).set(driverDocumentModel.toJson(), SetOptions(merge: true)).then((value) {
-      isAdded = true;
-    }).catchError((error) {
-      isAdded = false;
-      log(error.toString());
-    });
-
-    return isAdded;
+    }
+    final DocumentReference<Map<String, dynamic>> docRef = fireStore.collection(CollectionName.documentsVerify).doc(uid);
+    final DocumentReference<Map<String, dynamic>> userRef = fireStore.collection(CollectionName.users).doc(uid);
+    try {
+      final DocumentSubmitPlan plan = await fireStore.runTransaction<DocumentSubmitPlan>((tx) async {
+        final DocumentSnapshot<Map<String, dynamic>> docSnap = await tx.get(docRef);
+        bool currentFlag = false;
+        if (companyDriver) {
+          final DocumentSnapshot<Map<String, dynamic>> userSnap = await tx.get(userRef);
+          currentFlag = userSnap.data()?['isDocumentVerify'] == true;
+        }
+        final DocumentSubmitPlan plan = DriverDocumentStatus.submit(
+          record: docSnap.exists ? docSnap.data() : null,
+          entry: documents,
+          recordType: holderType,
+          required: required,
+          currentFlag: currentFlag,
+          companyDriver: companyDriver,
+        );
+        if (plan.refused) return plan;
+        tx.set(
+          docRef,
+          <String, dynamic>{'id': uid, 'type': holderType, 'documents': plan.documents.map((d) => d.toJson()).toList()},
+          SetOptions(merge: true),
+        );
+        if (plan.setVerified == false) tx.update(userRef, <String, dynamic>{'isDocumentVerify': false});
+        return plan;
+      });
+      if (plan.refused) {
+        log("uploadDriverDocument refused: documents_verify/$uid belongs to another account type.");
+        return false;
+      }
+      if (companyDriver) {
+        DocumentStatusCache.put(uid, plan.overall);
+        if (plan.setVerified == false && Constant.userModel?.id == uid) Constant.userModel?.isDocumentVerify = false;
+      }
+      return true;
+    } catch (e) {
+      log("uploadDriverDocument failed: $e");
+      return false;
+    }
   }
 
   static Future<WithdrawMethodModel?> getWithdrawMethod() async {

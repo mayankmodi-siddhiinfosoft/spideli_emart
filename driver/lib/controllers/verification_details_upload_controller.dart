@@ -108,9 +108,11 @@ class DetailsUploadController extends GetxController {
       documents.value.frontImage = frontImage.value;
       documents.value.backImage = backImage.value;
       documents.value.documentId = documentModel.value.id;
-      documents.value.status = "uploaded";
-      // A re-upload starts a new review: the previous rejection reason goes.
-      documents.value.clearReview();
+      // A (re-)upload starts a new review: status `uploaded`, never an
+      // approval; the previous rejection reason and reviewer go. The save
+      // (one transaction) also lowers a company driver's isDocumentVerify
+      // when the overall status is no longer verified.
+      documents.value.resetForNewReview();
       if (expiryDate.value != null) documents.value.expiryDate = Timestamp.fromDate(expiryDate.value!);
 
       saved = await FireStoreUtils.uploadDriverDocument(documents.value);

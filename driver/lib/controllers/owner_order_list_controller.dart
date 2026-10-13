@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:get/get.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
@@ -5,6 +7,7 @@ import 'package:driver/models/section_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/carrier_parcel_rules.dart';
 import 'package:driver/services/carrier_parcel_service.dart';
+import 'package:driver/services/driver_document_status_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import '../models/cab_order_model.dart';
 import '../models/order_model.dart';
@@ -78,6 +81,9 @@ class OwnerOrderListController extends GetxController {
         }),
         FireStoreUtils.getOwnerDriver().then((drivers) {
           driverList.value = drivers;
+          // The assign sheet marks / sorts drivers by the status computed
+          // from their documents (not the flag alone).
+          unawaited(DriverDocumentStatusService.refreshAll(drivers).then((_) => driverList.refresh()));
         }),
       ]);
 

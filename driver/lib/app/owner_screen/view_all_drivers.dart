@@ -4,6 +4,7 @@ import 'package:driver/app/owner_screen/owner_driver_verification_screen.dart';
 import 'package:driver/controllers/owner_home_controller.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/online_status_rules.dart';
+import 'package:driver/utils/document_verification.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -97,7 +98,7 @@ class _DriverCard extends StatelessWidget {
     final c = context.dsColors;
     final t = context.dsText;
     final isOnline = OnlineStatusRules.isOnline(driver.isActive);
-    final isVerified = driver.isDocumentVerify == true;
+    final isVerified = DocumentVerification.showsVerified(driver);
     return DsCard.outlined(
       margin: const EdgeInsets.only(bottom: DsSpace.md),
       padding: const EdgeInsets.all(DsSpace.md),

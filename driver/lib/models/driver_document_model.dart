@@ -49,10 +49,23 @@ class Documents {
 
   static const Set<String> _reviewKeys = {'rejectReason', 'rejectionReason', 'reason'};
 
-  /// Drops the previous review outcome before a re-upload.
+  /// Who reviewed the entry and when (written by the company owner and by the
+  /// admin panel). A new upload starts a new review: they go too.
+  static const Set<String> _reviewerKeys = {'reviewedAt', 'reviewedBy', 'approvedAt', 'approvedBy', 'rejectedAt', 'rejectedBy'};
+
+  /// Drops the previous review outcome (the rejection reason).
   void clearReview() {
     rejectReason = null;
     extra.removeWhere((key, _) => _reviewKeys.contains(key));
+  }
+
+  /// A new upload by the driver: a new review, never an approval. The
+  /// rejection reason and who reviewed it / when are cleared; the status is
+  /// `uploaded` (waiting for review).
+  void resetForNewReview() {
+    clearReview();
+    extra.removeWhere((key, _) => _reviewerKeys.contains(key));
+    status = 'uploaded';
   }
 
   Documents({this.frontImage, this.status, this.documentId, this.backImage, this.rejectReason, this.expiryDate});

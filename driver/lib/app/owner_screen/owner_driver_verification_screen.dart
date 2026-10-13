@@ -1,15 +1,25 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:async';
+
+import 'package:driver/app/verification_screen/document_status_widgets.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/document_model.dart';
 import 'package:driver/models/driver_document_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/driver_document_status.dart';
+import 'package:driver/services/driver_document_status_service.dart';
 import 'package:driver/services/owner_verification_rules.dart';
 import 'package:driver/services/owner_verification_service.dart';
 import 'package:driver/themes/ds/ds.dart';
+import 'package:driver/utils/fire_store_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
+/// The company owner reviews ONE of its own drivers' documents: each
+/// required document (`driver`, plus `vehicle` for a cab / rental driver)
+/// with its file(s), status and Approve / Reject (reason mandatory), and the
+/// driver's overall status ([DriverDocumentStatus.overall]). Live: the
+/// driver's `users/{id}` and `documents_verify/{id}` are followed.
 class OwnerDriverVerificationScreen extends StatefulWidget {
   final UserModel driver;
 
@@ -22,7 +32,13 @@ class OwnerDriverVerificationScreen extends StatefulWidget {
 class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationScreen> {
   late UserModel _driver;
   List<DocumentModel> _requiredDocs = [];
-  DriverDocumentModel? _driverDocs;
+  List<Documents> _entries = const [];
+  DocumentOverallStatus _overall = DocumentOverallStatus.notSubmitted;
+
+  /// `documents_verify/{id}` belongs to another holder type (a worker's):
+  /// shown as nothing uploaded, never reviewed.
+  bool _foreignRecord = false;
+  StreamSubscription<DriverDocumentsView>? _sub;
   bool _isLoading = true;
 
   /// The required documents or the uploads could not be read: nothing is
@@ -39,7 +55,16 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
     _loadData();
   }
 
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  /// Checks the driver is one of the owner's, then follows its documents.
   Future<void> _loadData() async {
+    await _sub?.cancel();
+    _sub = null;
     setState(() {
       _isLoading = true;
       _loadFailed = false;
@@ -49,26 +74,52 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
       if (live == null) {
         _notOwnDriver = true;
         _requiredDocs = [];
-        _driverDocs = null;
-      } else {
-        _notOwnDriver = false;
-        _driver = live;
-        _requiredDocs = await OwnerVerificationService.getRequiredDocuments(live);
-        _driverDocs = await OwnerVerificationService.getDriverDocuments(live.id ?? '');
+        _entries = const [];
+        if (mounted) setState(() => _isLoading = false);
+        return;
       }
+      _notOwnDriver = false;
+      _driver = live;
     } catch (e) {
       debugPrint('Error loading driver documents: $e');
-      _loadFailed = true;
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _loadFailed = true;
+          _isLoading = false;
+        });
+      }
+      return;
     }
+    final String ownerUid = FireStoreUtils.getCurrentUid();
+    _sub = DriverDocumentStatusService.watch(_driver.id ?? '').listen(
+      (view) {
+        if (!mounted) return;
+        setState(() {
+          final UserModel? user = view.user;
+          // Moved to another company (or deleted) meanwhile: nothing to review.
+          _notOwnDriver = user == null || !OwnerVerificationRules.isOwnersDriver(user, ownerUid);
+          if (user != null) _driver = user;
+          _requiredDocs = _notOwnDriver ? [] : view.required;
+          _entries = _notOwnDriver ? const [] : view.docs;
+          _overall = view.overall;
+          _foreignRecord = view.foreignRecord;
+          _loadFailed = false;
+          _isLoading = false;
+        });
+      },
+      onError: (Object e) {
+        debugPrint('Error loading driver documents: $e');
+        if (mounted) {
+          setState(() {
+            _loadFailed = true;
+            _isLoading = false;
+          });
+        }
+      },
+    );
   }
 
-  Documents? _getDocSubmission(String docId) {
-    return _driverDocs?.documents?.firstWhereOrNull((d) => d.documentId == docId);
-  }
-
-  List<Documents> get _entries => _driverDocs?.documents ?? const [];
+  Documents? _getDocSubmission(String docId) => OwnerVerificationRules.entryFor(_entries, docId);
 
   /// Required documents the driver has not uploaded, or must upload again
   /// (rejected / expired): what keeps the account from being verified.
@@ -106,42 +157,6 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
     }
   }
 
-  void _showImageDialog(String imageUrl, String title) {
-    if (imageUrl.isEmpty) return;
-    Get.dialog(
-      Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(DsSpace.md),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            InteractiveViewer(
-              panEnabled: true,
-              minScale: 0.5,
-              maxScale: 4.0,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(DsRadius.md),
-                child: CachedNetworkImage(
-                  imageUrl: imageUrl,
-                  placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
-                  errorWidget: (context, url, error) => const Center(child: Icon(Icons.broken_image, size: 48, color: Colors.white)),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 10,
-              right: 10,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white, size: 30),
-                onPressed: () => Get.back(),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _showRejectDialog(DocumentModel reqDoc) {
     final reasonController = TextEditingController();
     Get.dialog(
@@ -175,7 +190,6 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
               final result = await OwnerVerificationService.rejectDocument(driverId: _driver.id ?? '', documentId: reqDoc.id ?? '', reason: reason);
               ShowToastDialog.closeLoader();
               _showResult(result, doneMessage: 'Document marked as rejected'.tr, failedMessage: 'Failed to reject document'.tr);
-              if (result.written) await _loadData();
             },
             child: Text('Reject'.tr, style: const TextStyle(color: Colors.white)),
           ),
@@ -193,7 +207,6 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
       doneMessage: result.completed ? 'All driver documents approved! Driver is now verified.'.tr : 'Document approved. All documents must be approved before driver is verified.'.tr,
       failedMessage: 'Failed to approve document'.tr,
     );
-    if (result.written) await _loadData();
   }
 
   void _confirmApproveAll() {
@@ -235,7 +248,6 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
               final result = await OwnerVerificationService.approveAllDocuments(driverId: _driver.id ?? '');
               ShowToastDialog.closeLoader();
               _showResult(result, doneMessage: 'All documents approved! Driver verified.'.tr, failedMessage: 'Failed to approve documents'.tr);
-              if (result.written) await _loadData();
             },
             child: Text('Approve All'.tr, style: const TextStyle(color: Colors.white)),
           ),
@@ -263,8 +275,6 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
-
-    final bool isVerified = _driver.isDocumentVerify == true;
 
     return Scaffold(
       appBar: DsAppBar(
@@ -316,11 +326,7 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
                                 ],
                               ),
                             ),
-                            DsBadge(
-                              label: isVerified ? 'Verified'.tr : 'Unverified'.tr,
-                              tone: isVerified ? DsTone.success : DsTone.warning,
-                              icon: isVerified ? Icons.verified_rounded : Icons.pending_actions_rounded,
-                            ),
+                            DocumentOverallStatusChip(status: _overall, small: false),
                           ],
                         ),
                         const DsDivider(spacing: DsSpace.md),
@@ -348,6 +354,10 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
                       ],
                     ),
                   ),
+                  if (_foreignRecord) ...[
+                    const DsGap(DsSpace.md),
+                    DsInlineAlert(tone: DsTone.warning, message: 'These documents belong to another account type and cannot be reviewed here.'.tr),
+                  ],
                   const DsGap(DsSpace.xl),
                   Text('Document Verification Checklist'.tr, style: t.titleSm.w700),
                   const DsGap(DsSpace.sm),
@@ -374,27 +384,12 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
     final c = context.dsColors;
     final t = context.dsText;
 
-    final String status = OwnerVerificationRules.isUploaded(submission) || submission?.verificationStatus == 'rejected' ? submission!.verificationStatus : 'not_submitted';
-    final bool canApprove = OwnerVerificationRules.canApprove(submission);
-    final bool canReject = OwnerVerificationRules.canReject(submission);
-    final bool isApproved = status == 'approved';
-    final bool isRejected = status == 'rejected';
-
-    DsTone statusTone = DsTone.neutral;
-    String statusText = 'Not Submitted'.tr;
-    if (status == 'approved') {
-      statusTone = DsTone.success;
-      statusText = 'Approved'.tr;
-    } else if (status == 'pending') {
-      statusTone = DsTone.warning;
-      statusText = 'Pending Review'.tr;
-    } else if (status == 'rejected') {
-      statusTone = DsTone.danger;
-      statusText = 'Rejected'.tr;
-    } else if (status == 'expired') {
-      statusTone = DsTone.danger;
-      statusText = 'Expired'.tr;
-    }
+    final String status = DriverDocumentStatus.entryStatus(submission);
+    final bool canApprove = !_foreignRecord && OwnerVerificationRules.canApprove(submission);
+    final bool canReject = !_foreignRecord && OwnerVerificationRules.canReject(submission);
+    final bool isApproved = status == DocumentEntryStatus.approved;
+    final bool isRejected = status == DocumentEntryStatus.rejected;
+    final DsTone statusTone = entryStatusTone(status);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: DsSpace.md),
@@ -419,6 +414,8 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(reqDoc.title ?? 'Document', style: t.titleSm.w600),
+                      const DsGap(DsSpace.xxs),
+                      DocumentTypeBadge(type: reqDoc.type),
                       if (submission?.expiryDate != null)
                         Text(
                           '${'Expires:'.tr} ${DateFormat('dd MMM yyyy').format(submission!.expiryDate!.toDate())}',
@@ -427,10 +424,10 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
                     ],
                   ),
                 ),
-                DsBadge(label: statusText, tone: statusTone, small: true),
+                DocumentEntryStatusChip(status: status),
               ],
             ),
-            if (submission?.rejectReason != null && submission!.rejectReason!.isNotEmpty) ...[
+            if (isRejected && (submission?.rejectReason ?? '').isNotEmpty) ...[
               const DsGap(DsSpace.sm),
               Container(
                 padding: const EdgeInsets.all(DsSpace.sm),
@@ -444,7 +441,7 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
                     const DsGap(DsSpace.xs),
                     Expanded(
                       child: Text(
-                        'Rejection reason: @reason'.trParams({'reason': submission.rejectReason ?? ''}),
+                        'Rejection reason: @reason'.trParams({'reason': submission?.rejectReason ?? ''}),
                         style: t.caption.withColor(c.dangerStrong),
                       ),
                     ),
@@ -453,27 +450,13 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
               ),
             ],
             const DsGap(DsSpace.md),
-            // Images section
-            Row(
-              children: [
-                if (reqDoc.frontSide == true)
-                  Expanded(
-                    child: _imagePreviewBox(
-                      label: 'Front Side'.tr,
-                      imageUrl: submission?.frontImage,
-                      onTap: () => _showImageDialog(submission?.frontImage ?? '', '${reqDoc.title} (Front)'),
-                    ),
-                  ),
-                if (reqDoc.frontSide == true && reqDoc.backSide == true) const DsGap(DsSpace.md),
-                if (reqDoc.backSide == true)
-                  Expanded(
-                    child: _imagePreviewBox(
-                      label: 'Back Side'.tr,
-                      imageUrl: submission?.backImage,
-                      onTap: () => _showImageDialog(submission?.backImage ?? '', '${reqDoc.title} (Back)'),
-                    ),
-                  ),
-              ],
+            // The uploaded file(s): a tap opens them full screen.
+            DocumentFilesRow(
+              frontImage: submission?.frontImage,
+              backImage: submission?.backImage,
+              frontSide: reqDoc.frontSide == true,
+              backSide: reqDoc.backSide == true,
+              title: reqDoc.title ?? '',
             ),
             const DsDivider(spacing: DsSpace.md),
             // Action Buttons
@@ -503,64 +486,6 @@ class _OwnerDriverVerificationScreenState extends State<OwnerDriverVerificationS
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _imagePreviewBox({required String label, String? imageUrl, required VoidCallback onTap}) {
-    final c = context.dsColors;
-    final t = context.dsText;
-    final hasImage = imageUrl != null && imageUrl.isNotEmpty;
-
-    return InkWell(
-      onTap: hasImage ? onTap : null,
-      borderRadius: DsRadius.brMd,
-      child: Container(
-        height: 100,
-        decoration: BoxDecoration(
-          color: c.surfaceAlt,
-          borderRadius: DsRadius.brMd,
-          border: Border.all(color: c.border),
-        ),
-        child: hasImage
-            ? Stack(
-                fit: StackFit.expand,
-                children: [
-                  ClipRRect(
-                    borderRadius: DsRadius.brMd,
-                    child: CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      fit: BoxFit.cover,
-                      placeholder: (_, _) => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                      errorWidget: (_, _, _) => const Icon(Icons.broken_image, size: 30),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 4,
-                    right: 4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(label, style: t.caption.copyWith(color: Colors.white, fontSize: 10)),
-                    ),
-                  ),
-                  const Center(child: Icon(Icons.zoom_in, color: Colors.white70, size: 28)),
-                ],
-              )
-            : Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.upload_file_outlined, color: c.textMuted, size: 24),
-                    const DsGap(DsSpace.xxs),
-                    Text(label, style: t.caption),
-                    Text('No image'.tr, style: t.caption.withColor(c.textMuted)),
-                  ],
-                ),
-              ),
       ),
     );
   }

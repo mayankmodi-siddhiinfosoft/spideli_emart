@@ -5,7 +5,9 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:dotted_border/dotted_border.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
+import 'package:driver/app/verification_screen/document_status_widgets.dart';
 import 'package:driver/controllers/verification_details_upload_controller.dart';
+import 'package:driver/services/driver_document_status.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -60,6 +62,15 @@ class VerificationDetailsUploadScreen extends StatelessWidget {
                       Text(
                         "${'Please upload a valid'.tr} $title ${'to verify your identity complete the registration process.'.tr}".tr,
                         style: t.bodySecondary,
+                      ),
+                      const DsGap(DsSpace.sm),
+                      Wrap(
+                        spacing: DsSpace.sm,
+                        runSpacing: DsSpace.sm,
+                        children: [
+                          DocumentEntryStatusChip(status: DriverDocumentStatus.entryStatus(controller.documents.value)),
+                          DocumentTypeBadge(type: controller.documentModel.value.type),
+                        ],
                       ),
                       const DsGap(DsSpace.lg),
                       if (status == 'rejected' && rejectReason != null)

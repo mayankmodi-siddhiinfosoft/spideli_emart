@@ -9,6 +9,7 @@ import 'package:driver/models/document_model.dart';
 import 'package:driver/models/driver_document_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/carrier_dispatch_service.dart';
+import 'package:driver/services/driver_document_status.dart';
 import 'package:driver/services/owner_verification_rules.dart';
 import 'package:driver/services/push_message.dart';
 import 'package:driver/utils/fire_store_utils.dart';
@@ -22,9 +23,12 @@ export 'package:driver/services/owner_verification_rules.dart' show OwnerVerific
 ///
 /// The rules (what is required, what approving / rejecting changes) are in
 /// [OwnerVerificationRules]. Each action is one Firestore transaction that
-/// writes `documents_verify/{driverId}.documents` (merged: other entries and
-/// fields are kept) and, when it changes, `users/{driverId}.isDocumentVerify`
-/// together, so the two can never diverge. The driver is then told with a
+/// writes `documents_verify/{driverId}` (`documents`, `id`, `type: driver`;
+/// merged: the record's other fields and every entry's extra fields are
+/// kept) and, when it changes, `users/{driverId}.isDocumentVerify` =
+/// overall status is verified ([DriverDocumentStatus.flagAfterReview])
+/// together, so the two can never diverge. A record of another holder type
+/// (`worker`, `owner`, ...) is never touched ([DocumentRecordType]). The driver is then told with a
 /// `dynamic_notification` template ([OwnerVerificationPush]) and a record in
 /// `users/{driverId}/notifications`.
 class OwnerVerificationService {
@@ -39,13 +43,15 @@ class OwnerVerificationService {
   static Future<List<DocumentModel>> getRequiredDocuments(UserModel driver) =>
       FireStoreUtils.getDocumentListForTypes(FireStoreUtils.documentTypesFor(driver), throwOnError: true);
 
-  /// The documents [driverId] uploaded (`documents_verify/{driverId}`), null
-  /// when there are none. Throws when the read fails.
+  /// The documents [driverId] uploaded (`documents_verify/{driverId}`, a
+  /// `driver` record), null when there are none or the record belongs to
+  /// another holder type. Throws when the read fails.
   static Future<DriverDocumentModel?> getDriverDocuments(String driverId) async {
     if (driverId.isEmpty) return null;
     final snap = await _db.collection(CollectionName.documentsVerify).doc(driverId).get();
-    if (snap.exists && snap.data() != null) return DriverDocumentModel.fromJson(snap.data()!);
-    return null;
+    final Map<String, dynamic>? data = snap.data();
+    if (!snap.exists || data == null || !DocumentRecordType.belongsTo(data['type'], DocumentRecordType.driver)) return null;
+    return DriverDocumentModel.fromJson(data);
   }
 
   /// [driverId]'s live profile when it is one of the signed-in owner's
@@ -60,13 +66,13 @@ class OwnerVerificationService {
     return UserModel.fromJson({...data, 'id': id});
   }
 
-  /// Approves one uploaded document. The account becomes verified only when
-  /// this completes the driver's required set; otherwise `isDocumentVerify`
-  /// is left as it is (never set to false here).
+  /// Approves one uploaded document. `isDocumentVerify` becomes true only
+  /// when this completes the driver's required set, false while another
+  /// required document is still missing, pending, rejected or expired.
   static Future<OwnerVerificationResult> approveDocument({required String driverId, required String documentId}) async {
     final _Applied? applied = await _apply(
       driverId,
-      (required, docs) => OwnerVerificationRules.approveOne(required: required, docs: docs, documentId: documentId),
+      (required, docs, reviewer, now) => OwnerVerificationRules.approveOne(required: required, docs: docs, documentId: documentId, reviewedBy: reviewer, reviewedAt: now),
     );
     if (applied == null) return const OwnerVerificationResult(OwnerVerificationOutcome.failed);
     if (!applied.plan.writes) return applied.result;
@@ -81,12 +87,12 @@ class OwnerVerificationService {
     return applied.result;
   }
 
-  /// Rejects one document with [reason]. A rejected required document
-  /// revokes the account's verification.
+  /// Rejects one document with [reason] (mandatory). A rejected required
+  /// document revokes the account's verification (status: action required).
   static Future<OwnerVerificationResult> rejectDocument({required String driverId, required String documentId, required String reason}) async {
     final _Applied? applied = await _apply(
       driverId,
-      (required, docs) => OwnerVerificationRules.reject(required: required, docs: docs, documentId: documentId, reason: reason),
+      (required, docs, reviewer, now) => OwnerVerificationRules.reject(required: required, docs: docs, documentId: documentId, reason: reason, reviewedBy: reviewer, reviewedAt: now),
     );
     if (applied == null) return const OwnerVerificationResult(OwnerVerificationOutcome.failed);
     if (!applied.plan.writes) return applied.result;
@@ -101,7 +107,10 @@ class OwnerVerificationService {
   /// [OwnerVerificationOutcome.incomplete] with the titles still
   /// outstanding, and the account is not verified.
   static Future<OwnerVerificationResult> approveAllDocuments({required String driverId}) async {
-    final _Applied? applied = await _apply(driverId, (required, docs) => OwnerVerificationRules.approveAll(required: required, docs: docs));
+    final _Applied? applied = await _apply(
+      driverId,
+      (required, docs, reviewer, now) => OwnerVerificationRules.approveAll(required: required, docs: docs, reviewedBy: reviewer, reviewedAt: now),
+    );
     if (applied == null) return const OwnerVerificationResult(OwnerVerificationOutcome.failed);
     if (!applied.plan.writes) return applied.result;
 
@@ -123,7 +132,7 @@ class OwnerVerificationService {
   /// transaction, its live `users` record and `documents_verify` entries;
   /// applies [plan] and writes both documents together. Null when a read or
   /// the write failed (nothing changed).
-  static Future<_Applied?> _apply(String driverId, DocumentReviewPlan Function(List<DocumentModel> required, List<Documents> docs) plan) async {
+  static Future<_Applied?> _apply(String driverId, DocumentReviewPlan Function(List<DocumentModel> required, List<Documents> docs, String reviewer, Timestamp now) plan) async {
     final String ownerUid = FireStoreUtils.getCurrentUid();
     final String id = driverId.trim();
     try {
@@ -149,15 +158,29 @@ class OwnerVerificationService {
         }
         wasVerified = user['isDocumentVerify'] == true;
         token = (user['fcmToken'] ?? '').toString().trim();
-        final List<Documents> docs = (docSnap.exists && docSnap.data() != null) ? (DriverDocumentModel.fromJson(docSnap.data()!).documents ?? <Documents>[]) : <Documents>[];
-        result = plan(required, docs);
+        final Map<String, dynamic>? record = docSnap.exists ? docSnap.data() : null;
+        if (record != null && !DocumentRecordType.belongsTo(record['type'], DocumentRecordType.driver)) {
+          // Another holder's documents (a worker, an owner): never mixed in.
+          log("Owner verification refused: documents_verify/$id is a '${record['type']}' record.");
+          result = const DocumentReviewPlan(OwnerVerificationOutcome.failed);
+          return;
+        }
+        final List<Documents> docs = DocumentRecordType.entriesOf(record, DocumentRecordType.driver);
+        result = plan(required, docs, ownerUid, Timestamp.now());
         if (!result.writes) return;
-        // Only the `documents` list is written (merge): the document's other
-        // fields stay, and every entry keeps its own extra fields.
-        tx.set(docRef, <String, dynamic>{'documents': result.documents.map((d) => d.toJson()).toList()}, SetOptions(merge: true));
+        // Field-level merge: `documents`, `id` and the holder type only; the
+        // record's other fields stay, and every entry keeps its extra fields.
+        tx.set(
+          docRef,
+          <String, dynamic>{'id': id, 'type': DocumentRecordType.driver, 'documents': result.documents.map((d) => d.toJson()).toList()},
+          SetOptions(merge: true),
+        );
         final bool? flag = result.setVerified;
         if (flag != null && flag != wasVerified) tx.update(userRef, <String, dynamic>{'isDocumentVerify': flag});
       });
+      if (result.writes) {
+        DocumentStatusCache.put(id, DriverDocumentStatus.overall(required: required, docs: result.documents, flag: result.setVerified ?? wasVerified));
+      }
       return _Applied(driver: driver, required: required, plan: result, wasVerified: wasVerified, token: token);
     } catch (e) {
       log("Owner verification of $id failed: $e");

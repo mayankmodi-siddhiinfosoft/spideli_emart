@@ -11,6 +11,7 @@ import 'package:driver/lang/app_zh.dart';
 import 'package:driver/models/document_model.dart';
 import 'package:driver/models/driver_document_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/driver_document_status.dart';
 import 'package:driver/services/owner_verification_rules.dart';
 import 'package:driver/services/push_message.dart';
 import 'package:driver/services/push_template_text.dart';
@@ -79,11 +80,11 @@ void main() {
   });
 
   group('approve one document', () {
-    test('never sets isDocumentVerify to false (an admin\'s verification stays)', () {
+    test('syncs isDocumentVerify to the overall status: false while others are outstanding', () {
       final docs = [uploaded('a'), uploaded('b')];
       final plan = OwnerVerificationRules.approveOne(required: [req('a'), req('b'), req('c')], docs: docs, documentId: 'a');
       expect(plan.outcome, OwnerVerificationOutcome.done);
-      expect(plan.setVerified, isNull);
+      expect(plan.setVerified, isFalse);
       expect(docs.first.status, 'approved');
       expect(plan.outstanding.map((d) => d.id), ['b', 'c']);
     });
@@ -93,7 +94,7 @@ void main() {
       expect(plan.setVerified, isTrue);
       expect(plan.outstanding, isEmpty);
     });
-    test('across every state, approving yields true or untouched, never false', () {
+    test('across every state, approving yields exactly overall == verified', () {
       final List<List<Documents>> states = [
         [uploaded('a')],
         [uploaded('a'), uploaded('b', status: 'rejected')],
@@ -102,7 +103,7 @@ void main() {
       ];
       for (final docs in states) {
         final plan = OwnerVerificationRules.approveOne(required: [req('a'), req('b')], docs: docs, documentId: 'a');
-        expect(plan.setVerified, isNot(false));
+        expect(plan.setVerified, DriverDocumentStatus.overall(required: [req('a'), req('b')], docs: docs) == DocumentOverallStatus.verified);
       }
     });
     test('a document that was not uploaded (or expired) cannot be approved', () {
@@ -115,6 +116,13 @@ void main() {
     test('no required documents configured: never verifies', () {
       final plan = OwnerVerificationRules.approveOne(required: [], docs: [uploaded('a')], documentId: 'a');
       expect(plan.setVerified, isNull);
+    });
+    test('stamps the reviewer', () {
+      final docs = [uploaded('a')];
+      final at = Timestamp.fromDate(DateTime(2026, 10, 13));
+      OwnerVerificationRules.approveOne(required: [req('a')], docs: docs, documentId: 'a', reviewedBy: 'owner1', reviewedAt: at);
+      expect(docs.single.toJson()['reviewedBy'], 'owner1');
+      expect(docs.single.toJson()['reviewedAt'], at);
     });
     test('keeps other entries and their extra fields, clears the old rejection', () {
       final docs = [
@@ -136,7 +144,7 @@ void main() {
       final docs = [uploaded('a')];
       final plan = OwnerVerificationRules.approveAll(required: [req('a'), req('b')], docs: docs);
       expect(plan.outcome, OwnerVerificationOutcome.incomplete);
-      expect(plan.setVerified, isNull);
+      expect(plan.setVerified, isFalse);
       expect(plan.approvedIds, ['a']);
       expect(plan.outstanding.map((d) => d.title), ['Title b']);
       // No entry is invented for the document that was never uploaded.
@@ -153,7 +161,7 @@ void main() {
       final docs = [uploaded('a'), uploaded('b', status: 'rejected'), uploaded('c', expiry: DateTime(2000))];
       final plan = OwnerVerificationRules.approveAll(required: [req('a'), req('b'), req('c')], docs: docs);
       expect(plan.outcome, OwnerVerificationOutcome.incomplete);
-      expect(plan.setVerified, isNull);
+      expect(plan.setVerified, isFalse);
       expect(docs[1].status, 'rejected');
       expect(plan.outstanding.map((d) => d.id), ['b', 'c']);
     });
@@ -171,9 +179,18 @@ void main() {
       expect(plan.documents.single.toJson()['rejectReason'], 'blurry');
       expect(plan.documents.single.status, 'rejected');
     });
-    test('an entry that is not required leaves the flag untouched', () {
-      final plan = OwnerVerificationRules.reject(required: [req('a')], docs: [uploaded('old')], documentId: 'old', reason: 'x');
-      expect(plan.setVerified, isNull);
+    test('rejecting an entry that is not required does not change the status', () {
+      final plan = OwnerVerificationRules.reject(required: [req('a')], docs: [uploaded('a', status: 'approved'), uploaded('old')], documentId: 'old', reason: 'x');
+      expect(plan.setVerified, isTrue);
+      final pending = OwnerVerificationRules.reject(required: [req('a')], docs: [uploaded('a'), uploaded('old')], documentId: 'old', reason: 'x');
+      expect(pending.setVerified, isFalse);
+    });
+    test('rejecting stores who rejected it and when', () {
+      final docs = [uploaded('a')];
+      final at = Timestamp.fromDate(DateTime(2026, 10, 13));
+      OwnerVerificationRules.reject(required: [req('a')], docs: docs, documentId: 'a', reason: 'blurry', reviewedBy: 'owner1', reviewedAt: at);
+      expect(docs.single.toJson()['reviewedBy'], 'owner1');
+      expect(docs.single.toJson()['rejectReason'], 'blurry');
     });
     test('nothing uploaded or no reason: nothing written', () {
       expect(OwnerVerificationRules.reject(required: [req('a')], docs: [], documentId: 'a', reason: 'x').writes, isFalse);
@@ -181,16 +198,17 @@ void main() {
     });
   });
 
-  group('owner list category uses the per-driver required set', () {
-    test('verified / rejected / pending / missing / not submitted', () {
+  group('owner list status uses the per-driver required set', () {
+    test('verified / action required / pending / not submitted', () {
       final required = [req('a'), req('b')];
-      expect(OwnerVerificationRules.category(driver(verified: true), required, []), 'verified');
-      expect(OwnerVerificationRules.category(driver(), required, [uploaded('a', status: 'rejected')]), 'rejected');
-      expect(OwnerVerificationRules.category(driver(), required, [uploaded('a')]), 'pending');
-      expect(OwnerVerificationRules.category(driver(), required, [uploaded('a', status: 'approved')]), 'missing');
-      expect(OwnerVerificationRules.category(driver(), required, []), 'not_submitted');
+      DocumentOverallStatus of(List<Documents> docs) => DriverDocumentStatus.overall(required: required, docs: docs);
+      expect(of([uploaded('a', status: 'approved'), uploaded('b', status: 'approved')]), DocumentOverallStatus.verified);
+      expect(of([uploaded('a', status: 'rejected')]), DocumentOverallStatus.actionRequired);
+      expect(of([uploaded('a')]), DocumentOverallStatus.pending);
+      expect(of([uploaded('a', status: 'approved')]), DocumentOverallStatus.pending);
+      expect(of([]), DocumentOverallStatus.notSubmitted);
       // An upload for a type this driver does not need does not count.
-      expect(OwnerVerificationRules.category(driver(), required, [uploaded('vehicle1')]), 'not_submitted');
+      expect(of([uploaded('vehicle1')]), DocumentOverallStatus.notSubmitted);
       expect(OwnerVerificationRules.uploadedCount(required, [uploaded('a'), uploaded('vehicle1')]), 1);
     });
   });

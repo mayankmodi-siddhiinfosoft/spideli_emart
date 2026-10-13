@@ -3,16 +3,19 @@
 /// Firebase here, so every rule is unit tested
 /// (test/owner_verification_rules_test.dart).
 ///
-/// `users.isDocumentVerify` (see `DocumentVerification`): the app sets it to
-/// `true` in exactly one place — a company owner approving every required
-/// document of one of its own drivers ([approveOne] / [approveAll] with
-/// nothing outstanding). Approving never sets it to `false`; rejecting a
-/// required document does ([reject]).
+/// `users.isDocumentVerify` of a company driver follows the overall status
+/// computed from the required documents ([DriverDocumentStatus.overall]):
+/// every owner action writes it to `overall == verified`
+/// ([DriverDocumentStatus.flagAfterReview]) in the same transaction as the
+/// documents — approving the last outstanding document sets it, rejecting a
+/// required document (or approving while another one is still pending,
+/// rejected or expired) clears it.
 library;
 
 import 'package:driver/models/document_model.dart';
 import 'package:driver/models/driver_document_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/driver_document_status.dart';
 
 /// The pushes about a company driver's documents. Their text comes only from
 /// these `dynamic_notification` templates; a missing template means no push
@@ -219,34 +222,48 @@ abstract final class OwnerVerificationRules {
   /// least one).
   static bool complete(List<DocumentModel> required, List<Documents> docs) => required.isNotEmpty && outstanding(required, docs).isEmpty;
 
-  static void _approve(Documents d) {
+  /// Approves [d]; stamps who reviewed it and when (when given).
+  static void _approve(Documents d, {String? reviewedBy, Object? reviewedAt}) {
     d.status = 'approved';
     d.clearReview();
+    _stamp(d, reviewedBy, reviewedAt);
   }
 
-  /// Approve one document. Sets `isDocumentVerify` to true only when this
-  /// completes the required set; otherwise leaves it untouched (never false:
-  /// approving must not undo an administrator's verification).
-  static DocumentReviewPlan approveOne({required List<DocumentModel> required, required List<Documents> docs, required String documentId}) {
+  static void _stamp(Documents d, String? reviewedBy, Object? reviewedAt) {
+    if ((reviewedBy ?? '').trim().isNotEmpty) d.extra['reviewedBy'] = reviewedBy!.trim();
+    if (reviewedAt != null) d.extra['reviewedAt'] = reviewedAt;
+  }
+
+  /// Approve one document. `isDocumentVerify` becomes `overall == verified`
+  /// ([DriverDocumentStatus.flagAfterReview]): true when this completes the
+  /// required set, false while another required document is still missing,
+  /// pending, rejected or expired.
+  static DocumentReviewPlan approveOne({required List<DocumentModel> required, required List<Documents> docs, required String documentId, String? reviewedBy, Object? reviewedAt}) {
     final Documents? entry = entryFor(docs, documentId);
     if (!canApprove(entry)) return const DocumentReviewPlan(OwnerVerificationOutcome.notUploaded);
-    _approve(entry!);
+    _approve(entry!, reviewedBy: reviewedBy, reviewedAt: reviewedAt);
     final List<DocumentModel> left = outstanding(required, docs);
-    final bool done = required.isNotEmpty && left.isEmpty;
-    return DocumentReviewPlan(OwnerVerificationOutcome.done, documents: docs, setVerified: done ? true : null, outstanding: left, approvedIds: [documentId]);
+    return DocumentReviewPlan(
+      OwnerVerificationOutcome.done,
+      documents: docs,
+      setVerified: DriverDocumentStatus.flagAfterReview(required: required, docs: docs),
+      outstanding: left,
+      approvedIds: [documentId],
+    );
   }
 
   /// Approve every required document the driver uploaded and that is
   /// waiting for review. Never creates an entry for a document that was not
   /// uploaded, never re-approves a rejected or expired one. Verifies the
-  /// account only when nothing required is outstanding afterwards.
-  static DocumentReviewPlan approveAll({required List<DocumentModel> required, required List<Documents> docs}) {
+  /// account only when nothing required is outstanding afterwards (and
+  /// clears the flag otherwise).
+  static DocumentReviewPlan approveAll({required List<DocumentModel> required, required List<Documents> docs, String? reviewedBy, Object? reviewedAt}) {
     if (required.isEmpty) return const DocumentReviewPlan(OwnerVerificationOutcome.noRequiredDocuments);
     final List<String> approved = [];
     for (final DocumentModel r in required) {
       final Documents? entry = entryFor(docs, r.id);
       if (awaitsReview(entry)) {
-        _approve(entry!);
+        _approve(entry!, reviewedBy: reviewedBy, reviewedAt: reviewedAt);
         approved.add(r.id ?? '');
       }
     }
@@ -254,38 +271,28 @@ abstract final class OwnerVerificationRules {
     return DocumentReviewPlan(
       left.isEmpty ? OwnerVerificationOutcome.done : OwnerVerificationOutcome.incomplete,
       documents: docs,
-      setVerified: left.isEmpty ? true : null,
+      setVerified: DriverDocumentStatus.flagAfterReview(required: required, docs: docs),
       outstanding: left,
       approvedIds: approved,
     );
   }
 
-  /// Reject one document with [reason]. A rejected REQUIRED document revokes
-  /// the account's verification (`false`); any other leaves it untouched.
-  static DocumentReviewPlan reject({required List<DocumentModel> required, required List<Documents> docs, required String documentId, required String reason}) {
+  /// Reject one document with [reason] (mandatory). A rejected REQUIRED
+  /// document makes the status "action required": the flag is cleared.
+  /// Rejecting an entry that is not required leaves the status as it is.
+  static DocumentReviewPlan reject({required List<DocumentModel> required, required List<Documents> docs, required String documentId, required String reason, String? reviewedBy, Object? reviewedAt}) {
     final Documents? entry = entryFor(docs, documentId);
     if (!canReject(entry) || reason.trim().isEmpty) return const DocumentReviewPlan(OwnerVerificationOutcome.notUploaded);
     entry!.clearReview();
     entry.status = 'rejected';
     entry.rejectReason = reason.trim();
-    final bool isRequired = required.any((r) => (r.id ?? '').trim() == documentId.trim());
-    return DocumentReviewPlan(OwnerVerificationOutcome.done, documents: docs, setVerified: isRequired ? false : null, outstanding: outstanding(required, docs));
-  }
-
-  /// The owner's list: which tab a driver is in. `verified`, `rejected`
-  /// (a required document rejected / expired), `pending` (something awaits
-  /// the owner's review, or everything is approved but the account is not
-  /// verified yet), `missing` (some required documents not uploaded),
-  /// `not_submitted` (none uploaded).
-  static String category(UserModel driver, List<DocumentModel> required, List<Documents> docs) {
-    if (driver.isDocumentVerify == true) return 'verified';
-    final List<Documents?> entries = required.map((r) => entryFor(docs, r.id)).toList();
-    if (entries.any((d) => d != null && (d.verificationStatus == 'rejected' || d.verificationStatus == 'expired'))) return 'rejected';
-    if (entries.any(awaitsReview)) return 'pending';
-    final int uploaded = entries.where(isUploaded).length;
-    if (uploaded == 0) return 'not_submitted';
-    if (uploaded < required.length) return 'missing';
-    return 'pending';
+    _stamp(entry, reviewedBy, reviewedAt);
+    return DocumentReviewPlan(
+      OwnerVerificationOutcome.done,
+      documents: docs,
+      setVerified: DriverDocumentStatus.flagAfterReview(required: required, docs: docs),
+      outstanding: outstanding(required, docs),
+    );
   }
 
   /// Number of required documents the driver uploaded.

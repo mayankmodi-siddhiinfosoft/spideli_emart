@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/models/cab_order_model.dart';
 import 'package:driver/models/parcel_order_model.dart';
 import 'package:driver/models/rental_order_model.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/driver_document_status_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:get/get.dart';
 
@@ -28,6 +31,9 @@ class OwnerHomeController extends GetxController {
     isLoading.value = true;
     driverList.value = await FireStoreUtils.getOwnerDriver();
     isLoading.value = false;
+    // The driver cards show the status computed from each driver's
+    // documents (not the flag alone).
+    unawaited(DriverDocumentStatusService.refreshAll(driverList.toList()).then((_) => driverList.refresh()));
 
     for (var driver in driverList) {
       if (driver.id != null && driver.id!.isNotEmpty) {

@@ -1,3 +1,4 @@
+import 'package:driver/services/driver_document_status_service.dart';
 import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/services/assigned_delivery_orders.dart';
@@ -98,6 +99,8 @@ class RentalBookingSearchController extends GetxController {
     // this is the same rule where the write happens. Bookings already
     // assigned never come through here.
     final UserModel? me = Constant.userModel;
+    // A company driver: the status computed from its documents, read now.
+    await DriverDocumentStatusService.refresh(me);
     final bool verified = !DocumentVerification.isPending(me);
     if (me == null || !verified) {
       ShowToastDialog.showToast("Document verification is pending. Please proceed to set up your document verification.".tr);

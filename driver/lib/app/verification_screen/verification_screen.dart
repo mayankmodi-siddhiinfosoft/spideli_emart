@@ -2,11 +2,13 @@ import 'package:driver/constant/constant.dart';
 import 'package:driver/controllers/verification_controller.dart';
 import 'package:driver/models/document_model.dart';
 import 'package:driver/models/driver_document_model.dart';
+import 'package:driver/services/driver_document_status.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
+import 'document_status_widgets.dart';
 import 'verification_details_upload_screen.dart';
 
 /// Archetype F – documents: a verification progress bar over one outlined
@@ -27,21 +29,11 @@ class VerificationScreen extends StatelessWidget {
             final c = context.dsColors;
             final t = context.dsText;
 
-            final List<DocumentModel> documents = controller.documentList.cast<DocumentModel>().toList();
-            final List<Documents> driverDocuments = controller.driverDocumentList.cast<Documents>().toList();
-
-            Documents statusOf(DocumentModel documentModel) {
-              Documents documents = Documents();
-              var contain = driverDocuments.where((element) => element.documentId == documentModel.id);
-              if (contain.isNotEmpty) {
-                documents = driverDocuments.firstWhere((itemToCheck) => itemToCheck.documentId == documentModel.id);
-              }
-              return documents;
-            }
-
-            final int approved = documents.where((d) => statusOf(d).verificationStatus == 'approved').length;
+            final List<DocumentModel> documents = controller.documentList;
+            final DocumentOverallStatus overall = controller.overall;
+            final int approved = controller.view.value?.approvedCount ?? 0;
             final double progress = documents.isEmpty ? 0 : approved / documents.length;
-            final bool allApproved = documents.isNotEmpty && approved == documents.length;
+            final bool allApproved = overall == DocumentOverallStatus.verified;
 
             return Scaffold(
               backgroundColor: c.background,
@@ -51,7 +43,7 @@ class VerificationScreen extends StatelessWidget {
                   padding: EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.xl),
                   child: DsSkeletonList(itemCount: 4, trailing: false),
                 ),
-                isEmpty: documents.isEmpty,
+                isEmpty: documents.isEmpty && !controller.loadFailed.value,
                 empty: DsEmptyState(
                   icon: Icons.folder_open_rounded,
                   title: "Document Verification".tr,
@@ -70,6 +62,12 @@ class VerificationScreen extends StatelessWidget {
                           style: t.bodySecondary,
                         ),
                         const DsGap(DsSpace.xl),
+                        if (controller.loadFailed.value) ...[
+                          DsInlineAlert(tone: DsTone.danger, message: "The documents could not be loaded. Please try again.".tr),
+                          const DsGap(DsSpace.sm),
+                          DsButton.primary(label: 'Retry'.tr, icon: Icons.refresh_rounded, size: DsButtonSize.sm, onPressed: controller.getDocument),
+                          const DsGap(DsSpace.xl),
+                        ],
                         DsCard(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -77,15 +75,19 @@ class VerificationScreen extends StatelessWidget {
                               Row(
                                 children: [
                                   DsIconWell(
-                                    icon: allApproved ? Icons.verified_rounded : Icons.badge_outlined,
-                                    tone: allApproved ? DsTone.success : DsTone.brand,
+                                    icon: overallStatusIcon(overall),
+                                    tone: overallStatusTone(overall),
                                     size: 44,
                                   ),
                                   const DsGap(DsSpace.md),
                                   Expanded(
-                                    child: Text(
-                                      allApproved ? "Approved".tr : "Pending review".tr,
-                                      style: t.titleSm,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text("Verification status".tr, style: t.caption),
+                                        const DsGap(DsSpace.xxs),
+                                        DocumentOverallStatusChip(status: overall, small: false),
+                                      ],
                                     ),
                                   ),
                                   Text("$approved/${documents.length}", style: t.titleSm.tabular),
@@ -98,6 +100,13 @@ class VerificationScreen extends StatelessWidget {
                                 label: "Document Verification".tr,
                                 showPercent: true,
                               ),
+                              if (overall == DocumentOverallStatus.actionRequired) ...[
+                                const DsGap(DsSpace.md),
+                                DsInlineAlert(
+                                  tone: DsTone.danger,
+                                  message: "A document was rejected or has expired. Upload it again to be verified.".tr,
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -108,15 +117,11 @@ class VerificationScreen extends StatelessWidget {
                             child: _DocumentCard(
                               index: i,
                               documentModel: documents[i],
-                              documents: statusOf(documents[i]),
+                              documents: controller.entryFor(documents[i]),
                               onTap: () {
-                                Get.to(const VerificationDetailsUploadScreen(), arguments: {'documentModel': documents[i]})!.then(
-                                  (value) {
-                                    if (value == true) {
-                                      controller.getDocument();
-                                    }
-                                  },
-                                );
+                                // The list follows documents_verify live: it
+                                // updates by itself after an upload.
+                                Get.to(const VerificationDetailsUploadScreen(), arguments: {'documentModel': documents[i]});
                               },
                             ),
                           ),
@@ -131,7 +136,9 @@ class VerificationScreen extends StatelessWidget {
   }
 }
 
-/// One document row: what it is, what is needed, and where it stands.
+/// One document row: what it is (name, type), the uploaded file(s), its
+/// status, the rejection reason, and a Re-upload action when it was rejected
+/// or has expired (highlighted).
 class _DocumentCard extends StatelessWidget {
   final int index;
   final DocumentModel documentModel;
@@ -149,29 +156,18 @@ class _DocumentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
-    final status = documents.verificationStatus;
-    final label = const {
-          'approved': "Approved",
-          'rejected': "Rejected",
-          'expired': "Expired",
-          'pending': "Pending review",
-        }[status]?.tr ??
-        "Not submitted".tr;
-    final DsTone tone = status == 'approved'
-        ? DsTone.success
-        : (status == 'rejected' || status == 'expired')
-            ? DsTone.danger
-            : status == 'pending'
-                ? DsTone.brand
-                : DsTone.warning;
-    final needsAction = status == 'rejected' || documents.isExpired;
+    final String status = DriverDocumentStatus.entryStatus(documents);
+    final DsTone tone = entryStatusTone(status);
+    final bool needsAction = status == DocumentEntryStatus.rejected || status == DocumentEntryStatus.expired;
+    final String title = documentModel.title ?? '';
 
     return DsFadeSlideIn(
       index: index,
       child: DsCard.outlined(
         onTap: onTap,
         borderColor: needsAction ? c.danger : null,
-        semanticLabel: "${documentModel.title}",
+        color: needsAction ? c.dangerSoft : null,
+        semanticLabel: title,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -179,7 +175,7 @@ class _DocumentCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 DsIconWell(
-                  icon: status == 'approved' ? Icons.verified_user_outlined : Icons.description_outlined,
+                  icon: status == DocumentEntryStatus.approved ? Icons.verified_user_outlined : Icons.description_outlined,
                   tone: tone,
                   size: 44,
                 ),
@@ -188,10 +184,10 @@ class _DocumentCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text("${documentModel.title}", style: t.titleSm),
+                      Text(title, style: t.titleSm),
                       const DsGap(DsSpace.xxs),
                       Text(
-                        "${documentModel.frontSide == true ? "Front" : ""} ${documentModel.backSide == true ? "And Back" : ""} ${'Photo'.tr}",
+                        "${documentModel.frontSide == true ? "Front".tr : ""} ${documentModel.backSide == true ? "And Back".tr : ""} ${'Photo'.tr}",
                         style: t.bodySm,
                       ),
                     ],
@@ -207,7 +203,8 @@ class _DocumentCard extends StatelessWidget {
               runSpacing: DsSpace.sm,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                DsStatusChip(label: label, tone: tone),
+                DocumentEntryStatusChip(status: status),
+                DocumentTypeBadge(type: documentModel.type),
                 if (documents.expiryDate != null)
                   DsBadge(
                     label: "${documents.isExpired ? 'Expired on'.tr : 'Expires on'.tr} ${Constant.timestampToDate(documents.expiryDate!)}",
@@ -217,16 +214,35 @@ class _DocumentCard extends StatelessWidget {
                   ),
               ],
             ),
-            if (status == 'rejected' && documents.rejectReason != null) ...[
+            if (status != DocumentEntryStatus.notSubmitted) ...[
+              const DsGap(DsSpace.md),
+              DocumentFilesRow(
+                frontImage: documents.frontImage,
+                backImage: documents.backImage,
+                frontSide: documentModel.frontSide == true,
+                backSide: documentModel.backSide == true,
+                title: title,
+              ),
+            ],
+            if (status == DocumentEntryStatus.rejected && (documents.rejectReason ?? '').isNotEmpty) ...[
               const DsGap(DsSpace.md),
               DsInlineAlert(
                 tone: DsTone.danger,
-                message: "${'Reason'.tr}: ${documents.rejectReason}",
+                message: 'Rejection reason: @reason'.trParams({'reason': documents.rejectReason ?? ''}),
               ),
             ],
             if (needsAction) ...[
               const DsGap(DsSpace.md),
-              Text("Tap to upload again".tr, style: t.link),
+              Align(
+                alignment: Alignment.centerRight,
+                child: DsButton.primary(
+                  key: ValueKey('document-reupload-${documentModel.id}'),
+                  label: "Re-upload".tr,
+                  icon: Icons.upload_rounded,
+                  size: DsButtonSize.sm,
+                  onPressed: onTap,
+                ),
+              ),
             ],
           ],
         ),

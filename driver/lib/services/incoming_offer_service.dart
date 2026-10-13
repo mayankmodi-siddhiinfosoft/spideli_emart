@@ -15,6 +15,8 @@ import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/services/dispatch_offer_service.dart';
 import 'package:driver/services/driver_assignment_watcher.dart';
 import 'package:driver/services/offer_seen_store.dart';
+import 'package:driver/services/driver_document_status.dart';
+import 'package:driver/services/driver_document_status_service.dart';
 import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/widget/cancel_reason_sheet.dart';
@@ -862,9 +864,12 @@ class IncomingOfferService {
       final UserModel? owner = await FireStoreUtils.getUserProfile(ownerId);
       ownerWallet = owner?.walletAmount;
     }
+    // A company driver: the status computed from its required documents,
+    // read now (the cached one when the read fails).
+    final DocumentOverallStatus? overall = await DriverDocumentStatusService.refresh(me);
     return DispatchGateRules.check(
       freelance: (me.vendorID ?? '').isEmpty,
-      documentsPending: DocumentVerification.isPending(me),
+      documentsPending: DocumentVerification.isPending(me, overall: overall),
       ownerId: me.ownerId,
       ownWallet: me.walletAmount,
       ownerWallet: ownerWallet,

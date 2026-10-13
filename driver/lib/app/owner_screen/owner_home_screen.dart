@@ -265,7 +265,7 @@ class _DriverRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
-    final bool isVerified = driverModel.isDocumentVerify == true;
+    final bool isVerified = DocumentVerification.showsVerified(driverModel);
     return DsFadeSlideIn(
       index: index,
       child: DsListTile(

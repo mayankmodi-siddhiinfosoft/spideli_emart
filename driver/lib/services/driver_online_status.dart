@@ -6,6 +6,8 @@ import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/services/driver_document_status.dart';
+import 'package:driver/services/driver_document_status_service.dart';
 import 'package:driver/services/online_status_rules.dart';
 import 'package:driver/utils/document_verification.dart';
 import 'package:driver/utils/fire_store_utils.dart';
@@ -55,6 +57,9 @@ abstract final class DriverOnlineStatus {
   static void start() {
     final String uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return;
+    // A company driver's jobs gate uses the status computed from its
+    // documents: kept live alongside the online status.
+    DriverDocumentStatusService.startOwn();
     if (_uid != uid) {
       _sub?.cancel();
       _sub = null;
@@ -86,11 +91,13 @@ abstract final class DriverOnlineStatus {
     final StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? sub = _sub;
     _sub = null;
     await sub?.cancel();
+    await DriverDocumentStatusService.stopOwn();
   }
 
   /// Forgets the driver (signed out).
   static Future<void> reset() async {
     await stop();
+    await DriverDocumentStatusService.reset();
     _uid = null;
     _online.value = null;
   }
@@ -122,14 +129,20 @@ abstract final class DriverOnlineStatus {
   /// [write] is the dashboard's `setOnline`.
   static Future<void> request(bool online, {UserModel? me, required Future<void> Function(bool online) write}) async {
     final UserModel? user = (me?.id ?? '').isNotEmpty ? me : Constant.userModel;
+    // A company driver: the status computed from its required documents,
+    // read now (the cached one when the read fails).
+    final DocumentOverallStatus? overall = online ? await DriverDocumentStatusService.refresh(user) : null;
     final OnlineSwitchStep step = OnlineStatusRules.switchRequest(
       goingOnline: online,
       checksDocuments: DocumentVerification.checksDocuments(user),
-      verificationPending: DocumentVerification.isPending(user),
+      verificationPending: DocumentVerification.isPending(user, overall: overall),
     );
     switch (step) {
       case OnlineSwitchStep.verificationPending:
-        ShowToastDialog.showToast("Document verification is pending. Please proceed to set up your document verification.".tr);
+        final DocumentOverallStatus? status = overall ?? DocumentStatusCache.of(user?.id);
+        ShowToastDialog.showToast(status == DocumentOverallStatus.actionRequired
+            ? "One of your documents was rejected or has expired. Please upload it again to go online.".tr
+            : "Document verification is pending. Please proceed to set up your document verification.".tr);
         return;
       case OnlineSwitchStep.checkDocuments:
         // Spec 3.6: expired / rejected documents block going online.
