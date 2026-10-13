@@ -8,50 +8,58 @@ import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/ui/worker/worker_document_review_screen.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 
-extension WorkerVerificationStateUi on WorkerVerificationState {
-  String get label {
-    switch (this) {
-      case WorkerVerificationState.verified:
-        return 'Verified'.tr;
-      case WorkerVerificationState.pendingReview:
-        return 'Pending review'.tr;
-      case WorkerVerificationState.rejected:
-        return 'Rejected'.tr;
-      case WorkerVerificationState.notSubmitted:
-        return 'Not submitted'.tr;
-    }
-  }
+/// Label, tone and icon of a worker's overall status (Not submitted /
+/// Pending / Action required / Verified).
+extension WorkerOverallStatusUi on WorkerOverallStatus {
+  String get label => WorkerVerificationStatusRules.overallLabel(this).tr;
 
   DsTone get tone {
     switch (this) {
-      case WorkerVerificationState.verified:
+      case WorkerOverallStatus.verified:
         return DsTone.success;
-      case WorkerVerificationState.pendingReview:
+      case WorkerOverallStatus.pending:
         return DsTone.warning;
-      case WorkerVerificationState.rejected:
+      case WorkerOverallStatus.actionRequired:
         return DsTone.danger;
-      case WorkerVerificationState.notSubmitted:
+      case WorkerOverallStatus.notSubmitted:
         return DsTone.neutral;
     }
   }
 
   IconData get icon {
     switch (this) {
-      case WorkerVerificationState.verified:
+      case WorkerOverallStatus.verified:
         return Icons.verified_user_outlined;
-      case WorkerVerificationState.pendingReview:
+      case WorkerOverallStatus.pending:
         return Icons.hourglass_top_rounded;
-      case WorkerVerificationState.rejected:
+      case WorkerOverallStatus.actionRequired:
         return Icons.gpp_bad_outlined;
-      case WorkerVerificationState.notSubmitted:
+      case WorkerOverallStatus.notSubmitted:
         return Icons.shield_outlined;
     }
   }
 }
 
-/// The provider's workers and where each stands with their documents, with
-/// the counts per state (tap a count to filter). A worker opens their
-/// document review ([WorkerDocumentReviewScreen]).
+/// "Document type: Worker" -- the record type of the documents listed or
+/// reviewed (`documents_verify.type == "worker"`).
+class WorkerDocumentTypeBadge extends StatelessWidget {
+  const WorkerDocumentTypeBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return DsBadge(
+      label: '${'Document type'.tr}: ${WorkerVerificationStatusRules.recordTypeLabel(WorkerVerificationRules.workerType).tr}',
+      icon: Icons.badge_outlined,
+      tone: DsTone.info,
+      small: true,
+    );
+  }
+}
+
+/// The provider's workers and their overall status (Not submitted / Pending /
+/// Action required / Verified), with the counts per status (tap a count to
+/// filter), all live. A worker opens their document review
+/// ([WorkerDocumentReviewScreen]).
 class WorkerVerificationScreen extends StatelessWidget {
   const WorkerVerificationScreen({super.key});
 
@@ -97,9 +105,11 @@ class WorkerVerificationScreen extends StatelessWidget {
                   ),
                   const DsGap(DsSpace.lg),
                 ],
+                const Align(alignment: AlignmentDirectional.centerStart, child: WorkerDocumentTypeBadge()),
+                const DsGap(DsSpace.md),
                 DsAdaptiveGrid(
                   minItemWidth: 150,
-                  children: WorkerVerificationState.values
+                  children: WorkerOverallStatus.values
                       .map((state) => DsStatTile(
                             label: state.label,
                             value: '${controller.countOf(state)}',
@@ -129,7 +139,7 @@ class WorkerVerificationScreen extends StatelessWidget {
                     title: controller.workers.isEmpty ? 'Worker not available.'.tr : 'No worker in this state'.tr,
                   )
                 else
-                  ...visible.map((worker) => _WorkerRow(worker: worker, state: controller.stateOf(worker), onReturn: controller.load)),
+                  ...visible.map((worker) => _WorkerRow(worker: worker, state: controller.stateOf(worker))),
               ],
             ),
           );
@@ -142,10 +152,9 @@ class WorkerVerificationScreen extends StatelessWidget {
 
 class _WorkerRow extends StatelessWidget {
   final User worker;
-  final WorkerVerificationState state;
-  final Future<void> Function() onReturn;
+  final WorkerOverallStatus state;
 
-  const _WorkerRow({required this.worker, required this.state, required this.onReturn});
+  const _WorkerRow({required this.worker, required this.state});
 
   @override
   Widget build(BuildContext context) {
@@ -155,10 +164,9 @@ class _WorkerRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: DsSpace.md),
       padding: const EdgeInsets.all(DsSpace.md),
       semanticLabel: '${worker.fullName()}, ${state.label}',
-      onTap: () async {
-        await Get.to(() => WorkerDocumentReviewScreen(workerId: worker.id));
-        await onReturn();
-      },
+      // The list is live: a decision taken on the review screen shows here
+      // without a reload.
+      onTap: () => Get.to(() => WorkerDocumentReviewScreen(workerId: worker.id)),
       child: Row(
         children: [
           DsAvatar(imageUrl: worker.profilePictureURL, name: worker.fullName(), size: 48),

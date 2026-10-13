@@ -1,6 +1,8 @@
 import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/controller/all_workers_controller.dart';
 import 'package:spideliprovider/controller/dashboard_controller.dart';
+import 'package:spideliprovider/controller/worker_verification_controller.dart';
+import 'package:spideliprovider/model/worker_verification.dart';
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/model/user.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
@@ -39,38 +41,48 @@ class AllWorkersScreen extends StatelessWidget {
                 title: 'Worker not available.'.tr,
                 message: 'Add your team members so you can assign them to bookings.'.tr,
               ),
-              builder: (_) => Column(
-                children: [
-                  // Worker verification: the provider reviews its workers'
-                  // documents (approve / reject) from here.
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.md, l.gutter, 0),
-                    child: DsCard.outlined(
-                      padding: EdgeInsets.zero,
-                      onTap: () => Get.to(() => const WorkerVerificationScreen())!.then((_) => controller.getData()),
-                      child: DsListTile(
-                        title: 'Worker verification'.tr,
-                        subtitle: 'Review and approve your workers\' documents'.tr,
-                        leadingIcon: Icons.verified_user_outlined,
-                        leadingTone: DsTone.brand,
-                        showChevron: true,
+              // Each worker's overall verification status, computed live from
+              // their required documents (never from isDocumentVerify alone).
+              builder: (_) => GetX<WorkerVerificationController>(
+                init: WorkerVerificationController(),
+                global: false,
+                builder: (verification) => Column(
+                  children: [
+                    // Worker verification: the provider reviews its workers'
+                    // documents (approve / reject) from here.
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.md, l.gutter, 0),
+                      child: DsCard.outlined(
+                        padding: EdgeInsets.zero,
+                        onTap: () => Get.to(() => const WorkerVerificationScreen())!.then((_) => controller.getData()),
+                        child: DsListTile(
+                          title: 'Worker verification'.tr,
+                          subtitle: verification.isLoading.value || verification.loadFailed.value
+                              ? 'Review and approve your workers\' documents'.tr
+                              : [WorkerOverallStatus.pending, WorkerOverallStatus.actionRequired, WorkerOverallStatus.verified]
+                                  .map((s) => '${s.label}: ${verification.countOf(s)}')
+                                  .join(' · '),
+                          leadingIcon: Icons.verified_user_outlined,
+                          leadingTone: DsTone.brand,
+                          showChevron: true,
+                        ),
                       ),
                     ),
-                  ),
-                  Expanded(
-                    child: GridView.builder(
-                      padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.md, l.gutter, DsSpace.huge + DsSpace.xxl),
-                      gridDelegate: DsLayout.gridDelegate(maxItemWidth: 420, mainAxisExtent: 136),
-                      itemCount: controller.user.length,
-                      itemBuilder: (context, index) {
-                        return DsFadeSlideIn(
-                          index: index,
-                          child: buildCategoryItem(controller.user[index], context, controller),
-                        );
-                      },
+                    Expanded(
+                      child: GridView.builder(
+                        padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.md, l.gutter, DsSpace.huge + DsSpace.xxl),
+                        gridDelegate: DsLayout.gridDelegate(maxItemWidth: 420, mainAxisExtent: 136),
+                        itemCount: controller.user.length,
+                        itemBuilder: (context, index) {
+                          return DsFadeSlideIn(
+                            index: index,
+                            child: buildCategoryItem(controller.user[index], context, controller, verification),
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             floatingActionButton: FloatingActionButton.extended(
@@ -88,7 +100,7 @@ class AllWorkersScreen extends StatelessWidget {
         });
   }
 
-  Widget buildCategoryItem(User model, BuildContext context, controller) {
+  Widget buildCategoryItem(User model, BuildContext context, controller, WorkerVerificationController verification) {
     final c = context.dsColors;
     final t = context.dsText;
     final bool isOnline = model.online == true;
@@ -155,14 +167,17 @@ class AllWorkersScreen extends StatelessWidget {
               ],
             ),
           ),
-          DsIconButton(
-            icon: model.isDocumentVerify == true ? Icons.verified_user_outlined : Icons.badge_outlined,
-            semanticLabel: 'Documents'.tr,
-            variant: DsIconButtonVariant.tonal,
-            color: model.isDocumentVerify == true ? c.successStrong : c.brandStrong,
-            size: 36,
-            onPressed: () => Get.to(() => WorkerDocumentReviewScreen(workerId: model.id))!.then((_) => controller.getData()),
-          ),
+          Obx(() {
+            final WorkerOverallStatus status = verification.stateOf(model);
+            return DsIconButton(
+              icon: status.icon,
+              semanticLabel: '${'Documents'.tr}: ${status.label}',
+              variant: DsIconButtonVariant.tonal,
+              color: c.tone(status.tone).strong,
+              size: 36,
+              onPressed: () => Get.to(() => WorkerDocumentReviewScreen(workerId: model.id))!.then((_) => controller.getData()),
+            );
+          }),
           const DsGap(DsSpace.xs),
           DsIconButton(
             icon: Icons.delete_outline_rounded,

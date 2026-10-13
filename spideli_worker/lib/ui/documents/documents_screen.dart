@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:spideliworker/controller/verification_controller.dart';
 import 'package:spideliworker/model/document_model.dart';
 import 'package:spideliworker/themes/ds/ds.dart';
+import 'package:spideliworker/services/document_service.dart';
+import 'package:spideliworker/ui/documents/document_image_viewer.dart';
 import 'package:spideliworker/ui/documents/document_upload_screen.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 
@@ -32,6 +34,37 @@ class VerificationStatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DsBadge(label: status.label.tr, tone: verificationStatusTone(status), small: true);
+  }
+}
+
+/// Tone of an overall status (Not submitted / Pending / Action required /
+/// Verified).
+DsTone overallStatusTone(WorkerOverallStatus status) {
+  switch (status) {
+    case WorkerOverallStatus.verified:
+      return DsTone.success;
+    case WorkerOverallStatus.pending:
+      return DsTone.warning;
+    case WorkerOverallStatus.actionRequired:
+      return DsTone.danger;
+    case WorkerOverallStatus.notSubmitted:
+      return DsTone.neutral;
+  }
+}
+
+/// "Document type: Worker" -- shown wherever the worker's documents are
+/// uploaded or listed (the record type is `worker`).
+class WorkerDocumentTypeBadge extends StatelessWidget {
+  const WorkerDocumentTypeBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return DsBadge(
+      label: '${'Document type'.tr}: ${WorkerVerificationStatusRules.recordTypeLabel(DocumentService.workerType).tr}',
+      icon: Icons.badge_outlined,
+      tone: DsTone.info,
+      small: true,
+    );
   }
 }
 
@@ -83,7 +116,7 @@ class DocumentsScreen extends StatelessWidget {
                   actionIcon: Icons.refresh_rounded,
                   onAction: controller.load,
                 )
-              else if (types.isEmpty && overall != VerificationStatus.approved)
+              else if (types.isEmpty && overall != WorkerOverallStatus.verified)
                 DsEmptyState(
                   icon: Icons.description_outlined,
                   title: "No documents to upload yet".tr,
@@ -97,7 +130,14 @@ class DocumentsScreen extends StatelessWidget {
                   value: approved / types.length,
                   label: 'Verification'.tr,
                   showPercent: true,
-                  tone: verificationStatusTone(overall),
+                  tone: overallStatusTone(overall),
+                ),
+              ],
+              if (controller.recordTypeConflict.value) ...[
+                const DsGap(DsSpace.lg),
+                DsInlineAlert(
+                  tone: DsTone.danger,
+                  message: "This account already has documents of another type on file. Please contact support.".tr,
                 ),
               ],
               const DsGap(DsSpace.xl),
@@ -128,16 +168,24 @@ class _DocumentRow extends StatelessWidget {
 
   const _DocumentRow({required this.type, required this.status, required this.uploaded, required this.canUpload});
 
+  bool get _needsAction => status == VerificationStatus.rejected || status == VerificationStatus.expired;
+
+  void _open() => Get.to(() => DocumentUploadScreen(documentType: type, existing: uploaded, readOnly: !canUpload));
+
   @override
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
     final DsTone tone = verificationStatusTone(status);
     final String action = canUpload ? (status == VerificationStatus.notSubmitted ? "Upload".tr : "Re-upload".tr) : "View".tr;
+    final String front = (uploaded?.frontImage ?? '').trim();
+    final String back = (uploaded?.backImage ?? '').trim();
     return DsCard.outlined(
       margin: const EdgeInsets.only(bottom: DsSpace.md),
-      onTap: () => Get.to(() => DocumentUploadScreen(documentType: type, existing: uploaded, readOnly: !canUpload)),
-      semanticLabel: (type.title ?? '').tr,
+      // A rejected / expired document stands out: the worker must send it again.
+      borderColor: _needsAction ? c.danger : null,
+      onTap: _open,
+      semanticLabel: '${(type.title ?? '').tr}, ${status.label.tr}',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -147,7 +195,7 @@ class _DocumentRow extends StatelessWidget {
               DsIconWell(
                 icon: status == VerificationStatus.approved
                     ? Icons.verified_outlined
-                    : status == VerificationStatus.rejected || status == VerificationStatus.expired
+                    : _needsAction
                         ? Icons.error_outline_rounded
                         : Icons.description_outlined,
                 tone: tone,
@@ -164,10 +212,23 @@ class _DocumentRow extends StatelessWidget {
                 ),
               ),
               const DsGap(DsSpace.sm),
-              Text(action, style: t.label.withColor(c.brandStrong)),
-              Icon(Icons.chevron_right_rounded, color: c.brandStrong),
+              if (!_needsAction) ...[
+                Text(action, style: t.label.withColor(c.brandStrong)),
+                Icon(Icons.chevron_right_rounded, color: c.brandStrong),
+              ],
             ],
           ),
+          // The uploaded file(s), full screen on tap (Storage URL as stored).
+          if (front.isNotEmpty || back.isNotEmpty) ...[
+            const DsGap(DsSpace.md),
+            Row(
+              children: [
+                if (front.isNotEmpty) Expanded(child: DocumentThumb(url: front, label: "Front side".tr)),
+                if (front.isNotEmpty && back.isNotEmpty) const DsGap(DsSpace.md),
+                if (back.isNotEmpty) Expanded(child: DocumentThumb(url: back, label: "Back side".tr)),
+              ],
+            ),
+          ],
           if (status == VerificationStatus.rejected && (uploaded?.rejectionReason ?? '').isNotEmpty) ...[
             const DsGap(DsSpace.md),
             DsInlineAlert(tone: DsTone.danger, message: "${"Reason".tr}: ${uploaded!.rejectionReason}"),
@@ -182,14 +243,20 @@ class _DocumentRow extends StatelessWidget {
               ],
             ),
           ],
+          if (_needsAction) ...[
+            const DsGap(DsSpace.md),
+            DsButton.danger(label: "Re-upload".tr, icon: Icons.upload_file_rounded, expand: true, onPressed: _open),
+          ],
         ],
       ),
     );
   }
 }
 
+/// The worker's overall status (Not submitted / Pending / Action required /
+/// Verified), on the Documents screen and the Jobs banner.
 class VerificationSummaryCard extends StatelessWidget {
-  final VerificationStatus status;
+  final WorkerOverallStatus status;
   final bool required;
   final bool dark;
 
@@ -197,29 +264,26 @@ class VerificationSummaryCard extends StatelessWidget {
 
   String get _message {
     switch (status) {
-      case VerificationStatus.approved:
+      case WorkerOverallStatus.verified:
         return "Your documents are approved. You can receive jobs.";
-      case VerificationStatus.pending:
-        return "Your documents are pending review.";
-      case VerificationStatus.rejected:
-        return "A document was rejected. Please check the reason and upload it again.";
-      case VerificationStatus.expired:
-        return "A document has expired. Please upload a valid one.";
-      case VerificationStatus.notSubmitted:
+      case WorkerOverallStatus.pending:
+        return "Some documents are missing or waiting for review.";
+      case WorkerOverallStatus.actionRequired:
+        return "A document was rejected or has expired. Please check the reason and upload it again.";
+      case WorkerOverallStatus.notSubmitted:
         return "Please upload your documents for verification.";
     }
   }
 
   IconData get _icon {
     switch (status) {
-      case VerificationStatus.approved:
+      case WorkerOverallStatus.verified:
         return Icons.verified_user_outlined;
-      case VerificationStatus.pending:
+      case WorkerOverallStatus.pending:
         return Icons.hourglass_top_rounded;
-      case VerificationStatus.rejected:
-      case VerificationStatus.expired:
+      case WorkerOverallStatus.actionRequired:
         return Icons.gpp_bad_outlined;
-      case VerificationStatus.notSubmitted:
+      case WorkerOverallStatus.notSubmitted:
         return Icons.shield_outlined;
     }
   }
@@ -228,7 +292,7 @@ class VerificationSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.dsColors;
     final t = context.dsText;
-    final DsTone tone = verificationStatusTone(status);
+    final DsTone tone = overallStatusTone(status);
     return DsCard.tinted(
       tone: tone,
       child: Column(
@@ -239,12 +303,14 @@ class VerificationSummaryCard extends StatelessWidget {
               DsIconWell(icon: _icon, tone: tone, size: 48, circle: true),
               const DsGap(DsSpace.md),
               Expanded(child: Text("Verification status".tr, style: t.titleSm)),
-              VerificationStatusChip(status: status),
+              DsBadge(label: status.label.tr, tone: tone, small: true),
             ],
           ),
+          const DsGap(DsSpace.sm),
+          const WorkerDocumentTypeBadge(),
           const DsGap(DsSpace.md),
           Text(_message.tr, style: t.bodySecondary),
-          if (required && status != VerificationStatus.approved)
+          if (required && status != WorkerOverallStatus.verified)
             Padding(
               padding: const EdgeInsets.only(top: DsSpace.sm),
               child: Row(

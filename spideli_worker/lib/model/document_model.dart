@@ -1,4 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:spideliworker/model/worker_verification_status.dart';
+
+export 'package:spideliworker/model/worker_verification_status.dart';
 
 /// A document type configured by the admin in the `documents` collection
 /// (same shape the Driver and Store apps read). Worker documents have
@@ -49,6 +52,10 @@ class WorkerDocumentModel {
     }
     return WorkerDocumentModel(id: json['id']?.toString(), type: json['type']?.toString(), documents: list);
   }
+
+  /// A `documents_verify` record of the worker (`type` "worker", or none on a
+  /// legacy record), never a driver / owner / vendor / provider one.
+  bool get isWorkerRecord => WorkerVerificationStatusRules.isWorkerRecordType(type);
 
   Documents? documentFor(String? documentId) {
     for (final d in documents) {
@@ -143,22 +150,22 @@ class Documents {
   }
 }
 
-/// Spec 3.6 statuses.
+/// Spec 3.6 statuses of one document (the shared [WorkerDocumentState], under
+/// this app's older names).
 enum VerificationStatus { notSubmitted, pending, approved, rejected, expired }
 
 extension VerificationStatusLabel on VerificationStatus {
-  String get label {
-    switch (this) {
-      case VerificationStatus.notSubmitted:
-        return 'Not submitted';
-      case VerificationStatus.pending:
-        return 'Pending review';
-      case VerificationStatus.approved:
-        return 'Approved';
-      case VerificationStatus.rejected:
-        return 'Rejected';
-      case VerificationStatus.expired:
-        return 'Expired';
-    }
-  }
+  /// Translation key ([WorkerVerificationStatusRules.documentLabel]).
+  String get label => WorkerVerificationStatusRules.documentLabel(asWorkerDocumentState);
+
+  WorkerDocumentState get asWorkerDocumentState => WorkerDocumentState.values[index];
+}
+
+extension WorkerDocumentStateMapping on WorkerDocumentState {
+  VerificationStatus get asVerificationStatus => VerificationStatus.values[index];
+}
+
+extension WorkerOverallStatusLabel on WorkerOverallStatus {
+  /// Translation key: Not submitted / Pending / Action required / Verified.
+  String get label => WorkerVerificationStatusRules.overallLabel(this);
 }

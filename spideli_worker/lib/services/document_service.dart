@@ -15,9 +15,13 @@ import 'package:spideliworker/services/firebase_helper.dart';
 /// * `settings/document_verification_settings.isWorkerVerification` turns the
 ///   requirement on (same pattern as `isDriverVerification` /
 ///   `isStoreVerification`); absent or false = no gate;
-/// * `providers_workers/{uid}.isDocumentVerify == true` = verified, set by the
-///   admin panel or by the worker's provider once every required document is
-///   approved. This app never writes it.
+/// * `providers_workers/{uid}.isDocumentVerify`: kept in sync with the
+///   required documents -- set true by the admin panel or the worker's
+///   provider once every required document is approved; this app only ever
+///   LOWERS it (a submission that leaves the worker unverified). It never
+///   makes the worker Verified on its own while verification is on
+///   ([WorkerVerificationStatusRules.overall]).
+/// Contract: `.claude/DOCUMENT-VERIFICATION-WORKER.md`.
 class DocumentService {
   DocumentService._();
 
@@ -70,60 +74,44 @@ class DocumentService {
 
   static DocumentReference<Map<String, dynamic>> verifyRef(String uid) => _db.collection(DOCUMENTS_VERIFY).doc(uid);
 
-  /// Status of one document type given what the worker uploaded. Rejected
-  /// first (its reason is shown); then expired (stored as such, or past its
-  /// `expireAt`, whether approved or still waiting); nothing sent = not
-  /// submitted; approved; anything else sent is pending review.
-  static VerificationStatus statusOf(Documents? uploaded, {DateTime? now}) {
-    if (uploaded == null) return VerificationStatus.notSubmitted;
-    final String status = (uploaded.status ?? '').trim().toLowerCase();
-    if (status == 'rejected') return VerificationStatus.rejected;
-    if (!uploaded.hasFile) return VerificationStatus.notSubmitted;
-    if (status == 'expired') return VerificationStatus.expired;
-    final Timestamp? expiry = uploaded.expiryDate;
-    if (expiry != null && expiry.toDate().isBefore(now ?? DateTime.now())) return VerificationStatus.expired;
-    if (status == 'approved' || status == 'verified') return VerificationStatus.approved;
-    return VerificationStatus.pending;
-  }
+  /// Status of one document type given what the worker uploaded
+  /// ([WorkerVerificationStatusRules.documentState], shared with the Provider
+  /// app): rejected first (its reason is shown); then not submitted (nothing
+  /// sent); expired (stored as such, or past its `expireAt`, whether approved
+  /// or still waiting); approved; anything else sent is pending review.
+  static VerificationStatus statusOf(Documents? uploaded, {DateTime? now}) => stateOf(uploaded, now: now).asVerificationStatus;
 
-  /// Overall status over the REQUIRED types only (enabled `worker` types; an
-  /// upload for a type disabled since is ignored, so it cannot lock the
-  /// worker): any rejected > any expired > any not submitted > any pending >
-  /// approved. `isDocumentVerify == true` (admin or provider approval) counts
-  /// as approved unless a document is rejected or expired. With no document
-  /// type configured nothing has been verified: approved only when
-  /// `isDocumentVerify` is set, otherwise not submitted.
-  static VerificationStatus overallStatus(List<DocumentModel> types, WorkerDocumentModel? uploaded, {bool? isDocumentVerify, DateTime? now}) {
-    if (types.isEmpty) return isDocumentVerify == true ? VerificationStatus.approved : VerificationStatus.notSubmitted;
-    final statuses = types.map((t) => statusOf(uploaded?.documentFor(t.id), now: now)).toList();
-    VerificationStatus result;
-    if (statuses.contains(VerificationStatus.rejected)) {
-      result = VerificationStatus.rejected;
-    } else if (statuses.contains(VerificationStatus.expired)) {
-      result = VerificationStatus.expired;
-    } else if (statuses.contains(VerificationStatus.notSubmitted)) {
-      result = VerificationStatus.notSubmitted;
-    } else if (statuses.contains(VerificationStatus.pending)) {
-      result = VerificationStatus.pending;
-    } else {
-      result = VerificationStatus.approved;
-    }
-    if (isDocumentVerify == true && result != VerificationStatus.rejected && result != VerificationStatus.expired) {
-      return VerificationStatus.approved;
-    }
-    return result;
-  }
+  /// [statusOf] as the shared state.
+  static WorkerDocumentState stateOf(Documents? uploaded, {DateTime? now}) => WorkerVerificationStatusRules.documentState(
+        exists: uploaded != null,
+        status: uploaded?.status,
+        hasFile: uploaded?.hasFile ?? false,
+        expireAt: uploaded?.expiryDate?.toDate(),
+        now: now ?? DateTime.now(),
+      );
+
+  /// The states of the REQUIRED documents ([types]: the enabled `worker`
+  /// types; an upload for a type disabled since is ignored, so it cannot lock
+  /// the worker).
+  static List<WorkerDocumentState> requiredStates(List<DocumentModel> types, WorkerDocumentModel? uploaded, {DateTime? now}) =>
+      types.map((t) => stateOf(uploaded?.documentFor(t.id), now: now)).toList();
+
+  /// Overall status ([WorkerVerificationStatusRules.overall]): computed from
+  /// the REQUIRED documents only. `isDocumentVerify == true` alone never makes
+  /// the worker Verified while verification is on: a pending, missing,
+  /// rejected or expired required document keeps them unverified.
+  static WorkerOverallStatus overallStatus(List<DocumentModel> types, WorkerDocumentModel? uploaded, {bool? isDocumentVerify, bool? verificationRequired, DateTime? now}) =>
+      WorkerVerificationStatusRules.overall(requiredStates(types, uploaded, now: now), isDocumentVerify: isDocumentVerify, verificationRequired: verificationRequired);
 
   /// Whether the worker may see the active jobs, start one and go online
-  /// (spec 3.6). The Provider app's worker review and job assignment apply
-  /// the same rule.
+  /// (spec 3.6), [WorkerVerificationStatusRules.canReceiveJobs]; the Provider
+  /// app's job assignment applies the same rule.
   /// * Verification off ([verificationRequired] false): always.
   /// * Not known yet (null: the settings have not been read): treated as on.
   /// * The admin's worker document types were read and there are none:
-  ///   nothing could be uploaded or approved, so the worker is not locked out
-  ///   for good (the displayed status stays "not submitted").
-  /// * Otherwise only when [overallStatus] is approved. A failed type read
-  ///   ([typesLoadFailed]) keeps the gate closed until the types arrive.
+  ///   nothing could be uploaded or approved, so the worker is not locked out.
+  /// * The types could not be read ([typesLoadFailed] with none known): closed.
+  /// * Otherwise only when [overallStatus] is Verified.
   static bool canReceiveJobs({
     required bool? verificationRequired,
     required List<DocumentModel> types,
@@ -131,10 +119,20 @@ class DocumentService {
     WorkerDocumentModel? uploaded,
     bool? isDocumentVerify,
     DateTime? now,
-  }) {
-    if (verificationRequired == false) return true;
-    if (types.isEmpty && !typesLoadFailed) return true;
-    return overallStatus(types, uploaded, isDocumentVerify: isDocumentVerify, now: now) == VerificationStatus.approved;
+  }) =>
+      WorkerVerificationStatusRules.canReceiveJobs(
+        verificationRequired: verificationRequired,
+        noRequiredTypes: types.isEmpty,
+        typesLoadFailed: typesLoadFailed,
+        overall: overallStatus(types, uploaded, isDocumentVerify: isDocumentVerify, verificationRequired: verificationRequired, now: now),
+      );
+
+  /// The worker's own record from `documents_verify/{uid}`: null when there
+  /// is none, or when the record belongs to another holder type (driver,
+  /// owner, vendor, provider) -- never read as the worker's.
+  static WorkerDocumentModel? uploadedFrom(Map<String, dynamic>? data) {
+    if (data == null || !WorkerVerificationStatusRules.isWorkerRecordType(data['type'])) return null;
+    return WorkerDocumentModel.fromJson(data);
   }
 
   /// Uploads one document photo to `workerDocument/{uid}/...`. Throws on a
@@ -193,17 +191,73 @@ class DocumentService {
     return out;
   }
 
+  /// What one submission writes ([planSubmit]).
+  ///
+  /// [documents]: the whole merged list ([mergeUpload]); [setVerified]:
+  /// `providers_workers.isDocumentVerify` to write (only ever false), null =
+  /// leave it.
+  static ({List<dynamic> documents, bool? setVerified}) planSubmit({
+    required List<dynamic> stored,
+    required Documents document,
+    required List<DocumentModel> requiredTypes,
+    bool? currentFlag,
+    Timestamp? at,
+    DateTime? now,
+  }) {
+    final List<dynamic> list = mergeUpload(stored, document, now: at);
+    final WorkerDocumentModel after = WorkerDocumentModel.fromJson({'documents': list});
+    return (
+      documents: list,
+      setVerified: WorkerVerificationStatusRules.flagAfterWorkerSubmit(requiredAfter: requiredStates(requiredTypes, after, now: now), current: currentFlag),
+    );
+  }
+
   /// Adds or replaces the entry for [document.documentId] in
-  /// `documents_verify/{uid}` with status "uploaded" (pending review), in a
-  /// transaction on the stored list ([mergeUpload]), writing only `id`,
-  /// `type` and `documents` so any other field on the record survives.
-  static Future<void> submitDocument(String uid, Documents document) async {
+  /// `documents_verify/{uid}` with status "uploaded" (pending review, never
+  /// auto-approved; the previous reason and review are cleared), in ONE
+  /// transaction that also re-reads `providers_workers/{uid}`:
+  /// * the record must be the worker's (`type` "worker", or none yet):
+  ///   another holder's record is never touched ([WorkerRecordTypeConflict]);
+  /// * only `id`, `type` and `documents` are written, so any other field on
+  ///   the record survives;
+  /// * when the worker is then no longer Verified by the REQUIRED documents
+  ///   ([requiredTypes]), `isDocumentVerify` is set false in the same
+  ///   transaction ([WorkerVerificationStatusRules.flagAfterWorkerSubmit]: a
+  ///   worker may lower, never raise, their own flag).
+  static Future<void> submitDocument(String uid, Documents document, {required List<DocumentModel> requiredTypes}) async {
     await _db.runTransaction((tx) async {
       final snap = await tx.get(verifyRef(uid));
-      final dynamic stored = snap.data()?['documents'];
-      final List<dynamic> list = mergeUpload(stored is List ? List<dynamic>.from(stored) : <dynamic>[], document);
-      final Map<String, dynamic> data = {'id': uid, 'type': workerType, 'documents': list};
+      final workerSnap = await tx.get(workerRef(uid));
+      final Map<String, dynamic>? stored = snap.data();
+      if (stored != null && !WorkerVerificationStatusRules.isWorkerRecordType(stored['type'])) {
+        throw WorkerRecordTypeConflict(stored['type']?.toString() ?? '');
+      }
+      final dynamic storedList = stored?['documents'];
+      final dynamic flag = workerSnap.data()?['isDocumentVerify'];
+      final plan = planSubmit(
+        stored: storedList is List ? List<dynamic>.from(storedList) : <dynamic>[],
+        document: document,
+        requiredTypes: requiredTypes,
+        currentFlag: flag is bool ? flag : null,
+      );
+      final Map<String, dynamic> data = {'id': uid, 'type': workerType, 'documents': plan.documents};
       tx.set(verifyRef(uid), data, SetOptions(mergeFields: data.keys.map((k) => FieldPath([k])).toList()));
+      if (plan.setVerified == false && workerSnap.exists) {
+        tx.update(workerRef(uid), {'isDocumentVerify': false});
+      }
     });
   }
+
+  static DocumentReference<Map<String, dynamic>> workerRef(String uid) => _db.collection(WORKERS).doc(uid);
+}
+
+/// `documents_verify/{uid}` holds another holder's record (driver, owner,
+/// vendor, provider): the worker's upload is refused rather than mixed in.
+class WorkerRecordTypeConflict implements Exception {
+  final String type;
+
+  const WorkerRecordTypeConflict(this.type);
+
+  @override
+  String toString() => 'documents_verify record has type "$type", not "worker"';
 }

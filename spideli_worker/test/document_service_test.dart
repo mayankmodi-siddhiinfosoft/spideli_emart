@@ -39,16 +39,16 @@ void main() {
     final types = [DocumentModel(id: 'abc123', title: 'ID Card', enable: true)];
 
     test('no types: not submitted unless the admin verified the worker', () {
-      expect(DocumentService.overallStatus(const [], null), VerificationStatus.notSubmitted);
-      expect(DocumentService.overallStatus(const [], null, isDocumentVerify: false), VerificationStatus.notSubmitted);
-      expect(DocumentService.overallStatus(const [], null, isDocumentVerify: true), VerificationStatus.approved);
+      expect(DocumentService.overallStatus(const [], null), WorkerOverallStatus.notSubmitted);
+      expect(DocumentService.overallStatus(const [], null, isDocumentVerify: false), WorkerOverallStatus.notSubmitted);
+      expect(DocumentService.overallStatus(const [], null, isDocumentVerify: true), WorkerOverallStatus.verified);
     });
 
     test('an upload is matched to its type by the type id', () {
       final uploaded = WorkerDocumentModel(id: 'w1', type: 'worker', documents: [Documents(documentId: 'abc123', frontImage: 'https://x/f.jpg', status: 'uploaded')]);
-      expect(DocumentService.overallStatus(types, uploaded), VerificationStatus.pending);
+      expect(DocumentService.overallStatus(types, uploaded), WorkerOverallStatus.pending);
       final legacy = WorkerDocumentModel(id: 'w1', type: 'worker', documents: [Documents(documentId: 'worker_identity_document', frontImage: 'https://x/f.jpg', status: 'uploaded')]);
-      expect(DocumentService.overallStatus(types, legacy), VerificationStatus.notSubmitted);
+      expect(DocumentService.overallStatus(types, legacy), WorkerOverallStatus.notSubmitted);
     });
   });
 
@@ -66,19 +66,20 @@ void main() {
       expect(DocumentService.canReceiveJobs(verificationRequired: true, types: const [], typesLoadFailed: false), isTrue);
       expect(DocumentService.canReceiveJobs(verificationRequired: true, types: const [], typesLoadFailed: false, isDocumentVerify: false), isTrue);
       // The displayed status is unchanged: nothing has been verified.
-      expect(DocumentService.overallStatus(const [], null), VerificationStatus.notSubmitted);
+      expect(DocumentService.overallStatus(const [], null), WorkerOverallStatus.notSubmitted);
     });
 
-    test('verification on, types could not be read: blocked unless approved', () {
+    test('verification on, types could not be read: blocked (the flag alone does not open it)', () {
       expect(DocumentService.canReceiveJobs(verificationRequired: true, types: const [], typesLoadFailed: true), isFalse);
-      expect(DocumentService.canReceiveJobs(verificationRequired: true, types: const [], typesLoadFailed: true, isDocumentVerify: true), isTrue);
+      expect(DocumentService.canReceiveJobs(verificationRequired: true, types: const [], typesLoadFailed: true, isDocumentVerify: true), isFalse);
     });
 
     test('verification on, types configured: only once approved', () {
       expect(DocumentService.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false), isFalse);
       expect(DocumentService.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false, uploaded: pendingUpload), isFalse);
       expect(DocumentService.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false, uploaded: approvedUpload), isTrue);
-      expect(DocumentService.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false, uploaded: pendingUpload, isDocumentVerify: true), isTrue);
+      // isDocumentVerify true with a required document still pending: closed.
+      expect(DocumentService.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false, uploaded: pendingUpload, isDocumentVerify: true), isFalse);
     });
   });
 

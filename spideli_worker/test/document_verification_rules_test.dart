@@ -46,11 +46,12 @@ void main() {
   group('overallStatus', () {
     final types = [DocumentModel(id: 'id', title: 'ID card', enable: true), DocumentModel(id: 'cv', title: 'CV', enable: true)];
 
-    test('approved only when EVERY required document is approved', () {
+    test('Verified only when EVERY required document is approved; partly sent is Pending', () {
       final one = uploads([Documents(documentId: 'id', frontImage: img, status: 'approved')]);
-      expect(DocumentService.overallStatus(types, one, now: now), VerificationStatus.notSubmitted);
+      expect(DocumentService.overallStatus(types, one, now: now), WorkerOverallStatus.pending);
       final both = uploads([Documents(documentId: 'id', frontImage: img, status: 'approved'), Documents(documentId: 'cv', frontImage: img, status: 'approved')]);
-      expect(DocumentService.overallStatus(types, both, now: now), VerificationStatus.approved);
+      expect(DocumentService.overallStatus(types, both, now: now), WorkerOverallStatus.verified);
+      expect(DocumentService.overallStatus(types, null, now: now), WorkerOverallStatus.notSubmitted);
     });
 
     test('a document type disabled later does not lock the worker', () {
@@ -60,26 +61,33 @@ void main() {
         Documents(documentId: 'cv', frontImage: img, status: 'approved'),
         Documents(documentId: 'old', frontImage: img, status: 'rejected'),
       ]);
-      expect(DocumentService.overallStatus(types, docs, now: now), VerificationStatus.approved);
+      expect(DocumentService.overallStatus(types, docs, now: now), WorkerOverallStatus.verified);
     });
 
-    test('rejected > expired > not submitted > pending', () {
+    test('rejected or expired: Action required, whatever else', () {
       expect(
           DocumentService.overallStatus(types, uploads([Documents(documentId: 'id', frontImage: img, status: 'rejected'), Documents(documentId: 'cv', frontImage: img, status: 'approved', expiryDate: past)]), now: now),
-          VerificationStatus.rejected);
+          WorkerOverallStatus.actionRequired);
       expect(DocumentService.overallStatus(types, uploads([Documents(documentId: 'id', frontImage: img, status: 'uploaded'), Documents(documentId: 'cv', frontImage: img, status: 'approved', expiryDate: past)]), now: now),
-          VerificationStatus.expired);
-      expect(DocumentService.overallStatus(types, uploads([Documents(documentId: 'id', frontImage: img, status: 'uploaded')]), now: now), VerificationStatus.notSubmitted);
+          WorkerOverallStatus.actionRequired);
+      expect(DocumentService.overallStatus(types, uploads([Documents(documentId: 'id', frontImage: img, status: 'uploaded')]), now: now), WorkerOverallStatus.pending);
       expect(DocumentService.overallStatus(types, uploads([Documents(documentId: 'id', frontImage: img, status: 'uploaded'), Documents(documentId: 'cv', frontImage: img, status: 'approved')]), now: now),
-          VerificationStatus.pending);
+          WorkerOverallStatus.pending);
     });
 
-    test('isDocumentVerify (admin or provider) approves, unless a document is rejected or expired', () {
+    test('isDocumentVerify true never verifies while a required document is pending, missing, rejected or expired', () {
       final pending = uploads([Documents(documentId: 'id', frontImage: img, status: 'uploaded')]);
-      expect(DocumentService.overallStatus(types, pending, isDocumentVerify: true, now: now), VerificationStatus.approved);
-      expect(DocumentService.overallStatus(types, null, isDocumentVerify: true, now: now), VerificationStatus.approved);
+      expect(DocumentService.overallStatus(types, pending, isDocumentVerify: true, now: now), WorkerOverallStatus.pending);
+      expect(DocumentService.overallStatus(types, null, isDocumentVerify: true, now: now), WorkerOverallStatus.notSubmitted);
       final rejected = uploads([Documents(documentId: 'id', frontImage: img, status: 'rejected')]);
-      expect(DocumentService.overallStatus(types, rejected, isDocumentVerify: true, now: now), VerificationStatus.rejected);
+      expect(DocumentService.overallStatus(types, rejected, isDocumentVerify: true, now: now), WorkerOverallStatus.actionRequired);
+    });
+
+    test('verification switched off: the flag counts unless rejected / expired', () {
+      final pending = uploads([Documents(documentId: 'id', frontImage: img, status: 'uploaded')]);
+      expect(DocumentService.overallStatus(types, pending, isDocumentVerify: true, verificationRequired: false, now: now), WorkerOverallStatus.verified);
+      final rejected = uploads([Documents(documentId: 'id', frontImage: img, status: 'rejected')]);
+      expect(DocumentService.overallStatus(types, rejected, isDocumentVerify: true, verificationRequired: false, now: now), WorkerOverallStatus.actionRequired);
     });
   });
 
@@ -96,8 +104,13 @@ void main() {
       expect(DocumentService.canReceiveJobs(verificationRequired: false, types: types, typesLoadFailed: false, isDocumentVerify: false, now: now), isTrue);
     });
 
-    test('a verified worker is never blocked', () {
-      expect(DocumentService.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false, isDocumentVerify: true, now: now), isTrue);
+    test('the flag alone does not open the gate', () {
+      expect(DocumentService.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false, isDocumentVerify: true, now: now), isFalse);
+      final pending = uploads([Documents(documentId: 'id', frontImage: img, status: 'uploaded')]);
+      expect(DocumentService.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false, uploaded: pending, isDocumentVerify: true, now: now), isFalse);
+    });
+
+    test('a worker whose required documents are all approved is never blocked', () {
       expect(DocumentService.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: true, uploaded: approved, now: now), isTrue);
       expect(DocumentService.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false, uploaded: approved, now: now), isTrue);
     });
@@ -193,6 +206,76 @@ void main() {
       expect(out.length, 2);
       expect((out[1] as Map)['documentId'], 'new');
       expect((out[1] as Map)['status'], 'uploaded');
+    });
+  });
+
+  group('submit / resubmit (planSubmit)', () {
+    final types = [DocumentModel(id: 'id', title: 'ID card', enable: true), DocumentModel(id: 'cv', title: 'CV', enable: true)];
+    final Timestamp at = Timestamp.fromDate(now);
+    final List<dynamic> verified = [
+      {'documentId': 'id', 'frontImage': img, 'status': 'approved', 'reviewedBy': 'p1'},
+      {'documentId': 'cv', 'frontImage': img, 'status': 'approved', 'reviewedBy': 'p1'},
+    ];
+
+    test('a resubmission returns the document to uploaded (never auto-approved) and lowers the flag', () {
+      final plan = DocumentService.planSubmit(stored: verified, document: Documents(documentId: 'cv', frontImage: img), requiredTypes: types, currentFlag: true, at: at, now: now);
+      final Map entry = plan.documents[1] as Map;
+      expect(entry['status'], 'uploaded');
+      expect(entry.containsKey('reviewedBy'), isFalse);
+      expect(plan.setVerified, isFalse);
+      final after = WorkerDocumentModel.fromJson({'type': 'worker', 'documents': plan.documents});
+      expect(DocumentService.overallStatus(types, after, isDocumentVerify: true, now: now), WorkerOverallStatus.pending);
+    });
+
+    test('resubmitting a rejected document: reason cleared, Pending, flag already false is left alone', () {
+      final List<dynamic> stored = [
+        {'documentId': 'id', 'frontImage': img, 'status': 'approved'},
+        {'documentId': 'cv', 'frontImage': img, 'status': 'rejected', 'rejectReason': 'Blurry'},
+      ];
+      final plan = DocumentService.planSubmit(stored: stored, document: Documents(documentId: 'cv', frontImage: img), requiredTypes: types, currentFlag: false, at: at, now: now);
+      expect((plan.documents[1] as Map).containsKey('rejectReason'), isFalse);
+      expect(plan.setVerified, isNull);
+      expect(DocumentService.overallStatus(types, WorkerDocumentModel.fromJson({'documents': plan.documents}), now: now), WorkerOverallStatus.pending);
+    });
+
+    test('a first submission with no flag yet writes false; the worker never raises it', () {
+      expect(DocumentService.planSubmit(stored: const [], document: Documents(documentId: 'id', frontImage: img), requiredTypes: types, at: at, now: now).setVerified, isFalse);
+      // A document outside the required set leaves a verified worker verified.
+      final plan = DocumentService.planSubmit(stored: verified, document: Documents(documentId: 'extra', frontImage: img), requiredTypes: types, currentFlag: true, at: at, now: now);
+      expect(plan.setVerified, isNull);
+    });
+  });
+
+  group('record type separation', () {
+    test('only the worker\'s own record is read', () {
+      final docs = [
+        {'documentId': 'id', 'frontImage': img, 'status': 'approved'},
+      ];
+      expect(DocumentService.uploadedFrom({'type': 'worker', 'documents': docs})?.documents.length, 1);
+      expect(DocumentService.uploadedFrom({'documents': docs})?.documents.length, 1, reason: 'legacy record without a type');
+      for (final other in ['driver', 'owner', 'vendor', 'provider']) {
+        expect(DocumentService.uploadedFrom({'type': other, 'documents': docs}), isNull, reason: other);
+        expect(WorkerDocumentModel.fromJson({'type': other}).isWorkerRecord, isFalse, reason: other);
+      }
+      expect(DocumentService.uploadedFrom(null), isNull);
+    });
+
+    test('a driver record never opens the jobs gate', () {
+      final types = [DocumentModel(id: 'id', title: 'ID card', enable: true)];
+      final driver = DocumentService.uploadedFrom({'type': 'driver', 'documents': [{'documentId': 'id', 'frontImage': img, 'status': 'approved'}]});
+      expect(DocumentService.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false, uploaded: driver, now: now), isFalse);
+    });
+  });
+
+  group('display labels', () {
+    test('overall and per-document labels; the statuses map 1:1', () {
+      expect(WorkerOverallStatus.values.map((s) => s.label), ['Not submitted', 'Pending', 'Action required', 'Verified']);
+      expect(VerificationStatus.values.map((s) => s.label), ['Not submitted', 'Pending review', 'Approved', 'Rejected', 'Expired']);
+      for (final s in VerificationStatus.values) {
+        expect(s.asWorkerDocumentState.asVerificationStatus, s);
+        expect(s.asWorkerDocumentState.name, s.name);
+      }
+      expect(WorkerVerificationStatusRules.recordTypeLabel(DocumentService.workerType), 'Worker');
     });
   });
 

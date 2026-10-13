@@ -8,9 +8,9 @@ import 'package:spideliprovider/model/worker_verification.dart';
 import 'package:spideliprovider/services/worker_document_push.dart';
 import 'package:spideliprovider/services/worker_verification_service.dart';
 
-/// One worker's documents, reviewed by their provider. The worker record and
-/// the uploads are followed live, so a re-upload made while the screen is
-/// open shows at once.
+/// One worker's documents, reviewed by their provider. The worker record, the
+/// uploads, the required types and the verification setting are followed
+/// live, so a re-upload (or any decision) shows at once.
 class WorkerDocumentReviewController extends GetxController {
   final String workerId;
 
@@ -27,6 +27,13 @@ class WorkerDocumentReviewController extends GetxController {
   Rxn<User> worker = Rxn<User>();
   RxList<DocumentType> types = <DocumentType>[].obs;
   RxMap<String, UploadedDocument> uploads = <String, UploadedDocument>{}.obs;
+
+  /// `documents_verify/{worker}` is another holder's record (driver, owner,
+  /// ...): nothing is shown or reviewed from it.
+  RxBool notWorkerRecord = false.obs;
+
+  /// `isWorkerVerification`; null until known (treated as on).
+  Rxn<bool> verificationRequired = Rxn<bool>();
 
   final List<StreamSubscription> _subs = [];
   bool _workerRead = false;
@@ -62,32 +69,48 @@ class WorkerDocumentReviewController extends GetxController {
       _settle();
     }));
     _subs.add(WorkerVerificationService.verifyRef(workerId).snapshots().listen((snap) {
-      uploads.value = WorkerVerificationRules.uploadsFrom(snap.data()?['documents']);
+      final data = snap.data();
+      notWorkerRecord.value = data != null && !WorkerVerificationRules.isWorkerRecord(data);
+      uploads.value = WorkerVerificationRules.uploadsFromRecord(data);
       _uploadsRead = true;
       _settle();
     }, onError: (_) {
       _uploadsRead = true;
       _settle();
     }));
-    final WorkerDocumentTypes t = await WorkerVerificationService.requiredTypes();
-    types.value = t.types;
-    typesLoadFailed.value = t.failed;
-    _typesRead = true;
-    _settle();
+    _subs.add(WorkerVerificationService.requiredTypesStream().listen((t) {
+      // A cache miss after a good read keeps the types already known.
+      if (!(t.failed && types.isNotEmpty)) {
+        types.value = t.types;
+        typesLoadFailed.value = t.failed;
+      }
+      _typesRead = true;
+      _settle();
+    }, onError: (_) {
+      typesLoadFailed.value = types.isEmpty;
+      _typesRead = true;
+      _settle();
+    }));
+    _subs.add(WorkerVerificationService.verificationRequiredStream().listen((required) {
+      if (required != null) verificationRequired.value = required;
+    }, onError: (_) {}));
   }
 
   DocumentStatus statusOf(DocumentType type) => WorkerVerificationRules.statusOf(uploads[type.id]);
 
-  WorkerVerificationState get state => WorkerVerificationRules.stateOf(types, uploads, isDocumentVerify: worker.value?.isDocumentVerify);
+  /// Not submitted / Pending / Action required / Verified, from the required
+  /// documents ([WorkerVerificationRules.overall]).
+  WorkerOverallStatus get state =>
+      WorkerVerificationRules.overall(types, uploads, isDocumentVerify: worker.value?.isDocumentVerify, verificationRequired: verificationRequired.value);
 
   List<DocumentType> get missing => WorkerVerificationRules.missing(types, uploads);
 
   /// At least one required document waits for a decision.
   bool get hasPending => types.any((t) => statusOf(t) == DocumentStatus.pendingReview);
 
-  bool get canAct => !isLoading.value && !busy.value && !notYourWorker.value && !typesLoadFailed.value;
+  bool get canAct => !isLoading.value && !busy.value && !notYourWorker.value && !notWorkerRecord.value && !typesLoadFailed.value;
 
-  Future<WorkerReviewResult> _run(WorkerReviewAction action, WorkerReviewOutcome Function(dynamic stored, String reviewerId, Timestamp at) plan, {String reason = ''}) async {
+  Future<WorkerReviewResult> _run(WorkerReviewAction action, WorkerReviewOutcome Function(dynamic stored, bool? currentFlag, String reviewerId, Timestamp at) plan, {String reason = ''}) async {
     busy.value = true;
     try {
       return await WorkerVerificationService.review(
@@ -104,18 +127,19 @@ class WorkerDocumentReviewController extends GetxController {
 
   Future<WorkerReviewResult> approve(DocumentType type) => _run(
         WorkerReviewAction.approve,
-        (stored, reviewerId, at) => WorkerVerificationRules.approve(types: types.toList(), stored: stored, documentId: type.id, reviewerId: reviewerId, at: at),
+        (stored, flag, reviewerId, at) => WorkerVerificationRules.approve(types: types.toList(), stored: stored, documentId: type.id, reviewerId: reviewerId, at: at, currentFlag: flag),
       );
 
   Future<WorkerReviewResult> reject(DocumentType type, String reason) => _run(
         WorkerReviewAction.reject,
-        (stored, reviewerId, at) => WorkerVerificationRules.reject(types: types.toList(), stored: stored, documentId: type.id, reason: reason, reviewerId: reviewerId, at: at),
+        (stored, flag, reviewerId, at) =>
+            WorkerVerificationRules.reject(types: types.toList(), stored: stored, documentId: type.id, reason: reason, reviewerId: reviewerId, at: at, currentFlag: flag),
         reason: reason,
       );
 
   Future<WorkerReviewResult> approveAll() => _run(
         WorkerReviewAction.approveAll,
-        (stored, reviewerId, at) => WorkerVerificationRules.approveAll(types: types.toList(), stored: stored, reviewerId: reviewerId, at: at),
+        (stored, flag, reviewerId, at) => WorkerVerificationRules.approveAll(types: types.toList(), stored: stored, reviewerId: reviewerId, at: at, currentFlag: flag),
       );
 
   @override

@@ -5,9 +5,11 @@ import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/constant/show_toast_dialog.dart';
 import 'package:spideliprovider/controller/assign_worker_controller.dart';
 import 'package:spideliprovider/model/user.dart';
+import 'package:spideliprovider/model/worker_verification.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/services/booking_notifier.dart';
 import 'package:spideliprovider/services/booking_push.dart';
+import 'package:spideliprovider/services/worker_verification_service.dart';
 import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:flutter/material.dart';
@@ -32,37 +34,63 @@ class AssignWorkerList extends StatelessWidget {
             title: "Worker List".tr,
             subtitle: controller.user.isEmpty ? null : '${controller.user.length} ${'online'.tr}',
             maxContentWidth: DsLayout.contentMax,
-            body: controller.user.isEmpty
+            body: controller.isLoading.value
+                ? const DsSkeletonList(itemCount: 4)
+                : controller.user.isEmpty
                 ? DsEmptyState(
                     icon: Icons.groups_outlined,
                     title: "No online worker available".tr,
-                    message: controller.hiddenUnverified.value > 0
-                        ? "Online workers whose documents are not approved cannot be assigned. Review them in Worker verification.".tr
-                        : 'Workers appear here as soon as they come online.'.tr,
+                    message: 'Workers appear here as soon as they come online.'.tr,
                   )
                 : ListView.builder(
-                    itemCount: controller.user.length,
+                    itemCount: controller.user.length + (controller.hiddenUnverified > 0 ? 1 : 0),
                     padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.xxxl),
                     itemBuilder: (context, index) {
+                      if (controller.hiddenUnverified > 0) {
+                        if (index == 0) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: DsSpace.md),
+                            child: DsInlineAlert(
+                              tone: DsTone.warning,
+                              message: "Online workers whose documents are not approved cannot be assigned. Review them in Worker verification.".tr,
+                            ),
+                          );
+                        }
+                        index -= 1;
+                      }
                       User worker = controller.user[index];
                       final bool selected = controller.selectedWorkerRadioTile.value == worker.id;
+                      // Every required document uploaded and approved (or
+                      // verification off); anyone else is greyed out with the
+                      // reason and cannot be selected.
+                      final bool assignable = controller.canAssign(worker);
+                      final WorkerAssignmentRefusal? refusal = controller.refusalOf(worker);
 
                       return DsFadeSlideIn(
                         index: index,
                         child: Semantics(
                           inMutuallyExclusiveGroup: true,
                           selected: selected,
+                          enabled: assignable,
                           child: DsCard.outlined(
                           margin: const EdgeInsets.only(bottom: DsSpace.md),
                           padding: const EdgeInsets.all(DsSpace.md),
                           borderColor: selected ? c.brand : null,
                           color: selected ? c.brandSoft : null,
-                          semanticLabel: worker.fullName().toString(),
+                          semanticLabel: assignable || refusal == null
+                              ? worker.fullName().toString()
+                              : '${worker.fullName()}, ${WorkerVerificationRules.assignmentRefusalLabel(refusal).tr}',
                           onTap: () {
+                            if (!assignable) {
+                              ShowToastDialog.showToast(WorkerVerificationRules.assignmentRefusalMessage(refusal ?? WorkerAssignmentRefusal.unknown).tr);
+                              return;
+                            }
                             controller.selectedWorkerRadioTile.value = worker.id;
                             controller.fcmToken.value = worker.fcmToken.toString();
                             controller.update();
                           },
+                          child: Opacity(
+                          opacity: assignable ? 1 : 0.5,
                           child: Row(
                             children: [
                               DsAvatar(
@@ -83,17 +111,33 @@ class AssignWorkerList extends StatelessWidget {
                                       style: t.titleSm,
                                     ),
                                     const DsGap(DsSpace.xs),
-                                    DsStatusChip(label: "Online".tr, tone: DsTone.success, pulse: true),
+                                    Wrap(
+                                      spacing: DsSpace.sm,
+                                      runSpacing: DsSpace.xs,
+                                      children: [
+                                        DsStatusChip(label: "Online".tr, tone: DsTone.success, pulse: true),
+                                        if (!assignable)
+                                          DsStatusChip(
+                                            label: WorkerVerificationRules.assignmentRefusalLabel(refusal ?? WorkerAssignmentRefusal.unknown).tr,
+                                            tone: refusal == WorkerAssignmentRefusal.pendingReview ? DsTone.warning : DsTone.danger,
+                                          ),
+                                      ],
+                                    ),
                                   ],
                                 ),
                               ),
                               const DsGap(DsSpace.sm),
                               Icon(
-                                selected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+                                !assignable
+                                    ? Icons.block_rounded
+                                    : selected
+                                        ? Icons.radio_button_checked_rounded
+                                        : Icons.radio_button_unchecked_rounded,
                                 color: selected ? c.brand : c.iconDefault,
                                 size: 24,
                               ),
                             ],
+                          ),
                           ),
                           ),
                         ),
@@ -111,11 +155,35 @@ class AssignWorkerList extends StatelessWidget {
                     if (await ProviderVerificationGate.blocks()) return;
                     ShowToastDialog.showLoader('Please wait...');
                     final String previousWorkerId = controller.onProviderOrder.value.workerId ?? '';
+                    final String previousStatus = controller.onProviderOrder.value.status;
                     final String newWorkerId = controller.selectedWorkerRadioTile.value.toString();
                     final User? selected = controller.user.firstWhereOrNull((w) => w.id == newWorkerId);
-                    controller.onProviderOrder.value.workerId = newWorkerId;
-                    controller.onProviderOrder.value.status = ORDER_STATUS_ASSIGNED;
-                    await FireStoreUtils.updateOrder(controller.onProviderOrder.value);
+                    // Assignment and reassignment: the worker's documents are
+                    // validated again at this moment, inside the write's
+                    // transaction (live documents_verify record + required
+                    // types read from the server, never the flag alone).
+                    WorkerAssignmentRefusal? refusal;
+                    try {
+                      refusal = await WorkerVerificationService.assignWorker(
+                        order: controller.onProviderOrder.value,
+                        workerId: newWorkerId,
+                        assignedStatus: ORDER_STATUS_ASSIGNED,
+                      );
+                    } catch (e) {
+                      controller.onProviderOrder.value.workerId = previousWorkerId;
+                      controller.onProviderOrder.value.status = previousStatus;
+                      ShowToastDialog.closeLoader();
+                      ShowToastDialog.showToast('Could not assign the worker. Check your connection and try again.'.tr);
+                      return;
+                    }
+                    if (refusal != null) {
+                      controller.onProviderOrder.value.workerId = previousWorkerId;
+                      controller.onProviderOrder.value.status = previousStatus;
+                      ShowToastDialog.closeLoader();
+                      ShowToastDialog.showToast(WorkerVerificationRules.assignmentRefusalMessage(refusal).tr);
+                      await controller.getData();
+                      return;
+                    }
                     // Manual assignment log (spec 10), append-only.
                     if (previousWorkerId != newWorkerId) {
                       await FireStoreUtils.logWorkerAssignment(

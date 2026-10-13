@@ -177,4 +177,10 @@ const Map<String, String> enUS = {
   "A document was rejected. Please check the reason and upload it again.": "A document was rejected. Please check the reason and upload it again.",
   "A document has expired. Please upload a valid one.": "A document has expired. Please upload a valid one.",
   "Please upload your documents for verification.": "Please upload your documents for verification.",
+  "Verified": "Verified",
+  "Action required": "Action required",
+  "Document type": "Document type",
+  "Some documents are missing or waiting for review.": "Some documents are missing or waiting for review.",
+  "A document was rejected or has expired. Please check the reason and upload it again.": "A document was rejected or has expired. Please check the reason and upload it again.",
+  "This account already has documents of another type on file. Please contact support.": "This account already has documents of another type on file. Please contact support.",
 };

@@ -7,11 +7,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:spideliworker/constant/show_toast_dialog.dart';
+import 'package:spideliworker/controller/verification_controller.dart';
 import 'package:spideliworker/main.dart';
 import 'package:spideliworker/model/document_model.dart';
 import 'package:spideliworker/services/document_service.dart';
 import 'package:spideliworker/services/worker_document_push.dart';
 import 'package:spideliworker/themes/ds/ds.dart';
+import 'package:spideliworker/ui/documents/document_image_viewer.dart';
+import 'package:spideliworker/ui/documents/documents_screen.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 
 /// Upload (or re-upload after rejection / expiry) one worker document.
@@ -125,7 +128,12 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
         expiryDate: _needsExpiry && _expiry != null ? Timestamp.fromDate(_expiry!) : null,
         extra: widget.existing == null ? null : Map<String, dynamic>.from(widget.existing!.extra),
       );
-      await DocumentService.submitDocument(uid, document);
+      // The required types decide whether the worker is still verified after
+      // this (re)submission (the flag is lowered in the same transaction).
+      final VerificationController verification = VerificationController.ensure();
+      final List<DocumentModel> required = verification.documentTypes.toList();
+      if (!required.any((t) => t.id == widget.documentType.id)) required.add(widget.documentType);
+      await DocumentService.submitDocument(uid, document, requiredTypes: required);
       // The worker's provider reviews worker documents (as does the admin).
       WorkerDocumentPush.notifyProvider(
         providerId: MyAppState.currentUser?.providerId ?? '',
@@ -137,6 +145,9 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast("Document uploaded. It is now pending review.".tr);
       Get.back(result: true);
+    } on WorkerRecordTypeConflict {
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("This account already has documents of another type on file. Please contact support.".tr);
     } catch (e) {
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast("Upload failed, please try again.".tr);
@@ -161,7 +172,8 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
           label: label.tr,
           child: InkWell(
             borderRadius: DsRadius.brLg,
-            onTap: widget.readOnly ? null : () => _pick(front),
+            // Read-only: the uploaded file full screen (Storage URL as stored).
+            onTap: widget.readOnly ? (_isRemote(path) ? () => DocumentImageViewer.open(path, label.tr) : null) : () => _pick(front),
             child: Container(
               height: 190,
               width: double.infinity,
@@ -215,6 +227,14 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
       body: ListView(
         padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.xxxl),
         children: DsFadeSlideIn.stagger([
+          Row(
+            children: [
+              const WorkerDocumentTypeBadge(),
+              const DsGap(DsSpace.sm),
+              if (widget.existing != null) VerificationStatusChip(status: DocumentService.statusOf(widget.existing)),
+            ],
+          ),
+          const DsGap(DsSpace.lg),
           if (rejected) ...[
             DsInlineAlert(
               tone: DsTone.danger,

@@ -43,7 +43,15 @@ class VerificationController extends GetxController {
 
   String get _uid => MyAppState.currentUser?.id ?? '';
 
-  VerificationStatus get overallStatus => DocumentService.overallStatus(documentTypes, uploaded.value, isDocumentVerify: isDocumentVerify.value);
+  /// `documents_verify/{uid}` holds another holder's record (driver, owner,
+  /// ...): it is not read as the worker's, and an upload is refused.
+  RxBool recordTypeConflict = false.obs;
+
+  /// Not submitted / Pending / Action required / Verified, from the REQUIRED
+  /// documents only ([DocumentService.overallStatus]); the flag alone never
+  /// verifies while verification is on.
+  WorkerOverallStatus get overallStatus =>
+      DocumentService.overallStatus(documentTypes, uploaded.value, isDocumentVerify: isDocumentVerify.value, verificationRequired: verificationRequired.value);
 
   /// Unverified workers do not see, start or get assigned jobs and cannot go
   /// online ([DocumentService.canReceiveJobs]). False while loading.
@@ -133,13 +141,17 @@ class VerificationController extends GetxController {
     }));
 
     _subs.add(DocumentService.verifyRef(uid).snapshots().listen((snap) {
-      uploaded.value = snap.exists && snap.data() != null ? WorkerDocumentModel.fromJson(snap.data()!) : null;
+      // Only the worker's own record (type "worker"): another holder's record
+      // under the same uid is never shown or counted as the worker's.
+      final Map<String, dynamic>? data = snap.exists ? snap.data() : null;
+      recordTypeConflict.value = data != null && DocumentService.uploadedFrom(data) == null;
+      uploaded.value = DocumentService.uploadedFrom(data);
       _answered('uploads');
     }, onError: (_) => _answered('uploads')));
 
-    // The admin or the provider verifies by setting
-    // providers_workers.isDocumentVerify, and the admin may move the worker
-    // to another region: follow both live.
+    // The admin or the provider sets providers_workers.isDocumentVerify (it
+    // only verifies together with the documents, see overallStatus), and the
+    // admin may move the worker to another region: follow both live.
     _subs.add(FireStoreUtils.firestore.collection(WORKERS).doc(uid).snapshots().listen((snap) {
       final data = snap.data();
       if (data != null) {

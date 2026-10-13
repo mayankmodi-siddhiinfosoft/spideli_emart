@@ -34,6 +34,8 @@ class WorkerDocumentReviewScreen extends StatelessWidget {
           body = const DsSkeletonList(itemCount: 4);
         } else if (controller.notYourWorker.value) {
           body = DsEmptyState(icon: Icons.lock_outline_rounded, tone: DsTone.warning, title: 'You can only review the documents of your own workers.'.tr);
+        } else if (controller.notWorkerRecord.value) {
+          body = DsEmptyState(icon: Icons.folder_off_outlined, tone: DsTone.warning, title: 'These documents are not worker documents and cannot be reviewed here.'.tr);
         } else if (controller.typesLoadFailed.value) {
           body = DsErrorState(title: 'Could not load the documents to review'.tr, message: 'Check your connection and try again.'.tr, onRetry: controller.load, retryLabel: 'Retry'.tr);
         } else if (controller.types.isEmpty) {
@@ -48,7 +50,8 @@ class WorkerDocumentReviewScreen extends StatelessWidget {
             ],
           );
         }
-        final bool showApproveAll = !controller.isLoading.value && !controller.notYourWorker.value && !controller.typesLoadFailed.value && controller.hasPending;
+        final bool showApproveAll =
+            !controller.isLoading.value && !controller.notYourWorker.value && !controller.notWorkerRecord.value && !controller.typesLoadFailed.value && controller.hasPending;
         return DsScaffold(
           title: controller.worker.value?.fullName() ?? 'Worker documents'.tr,
           subtitle: controller.isLoading.value || controller.notYourWorker.value ? null : controller.state.label,
@@ -94,6 +97,9 @@ class WorkerDocumentReviewScreen extends StatelessWidget {
         return false;
       case WorkerReviewRefusal.typesUnknown:
         ShowToastDialog.showToast('Could not load the documents to review'.tr);
+        return false;
+      case WorkerReviewRefusal.notWorkerRecord:
+        ShowToastDialog.showToast('These documents are not worker documents and cannot be reviewed here.'.tr);
         return false;
       case WorkerReviewRefusal.nothingToApprove:
       case null:
@@ -196,13 +202,13 @@ class _Summary extends StatelessWidget {
     final int approved = total - controller.missing.length;
     final String message;
     switch (state) {
-      case WorkerVerificationState.verified:
+      case WorkerOverallStatus.verified:
         message = 'This worker is verified and can receive jobs.'.tr;
-      case WorkerVerificationState.pendingReview:
-        message = 'Documents are waiting for your review.'.tr;
-      case WorkerVerificationState.rejected:
+      case WorkerOverallStatus.pending:
+        message = controller.hasPending ? 'Documents are waiting for your review.'.tr : 'The worker has not uploaded every required document yet.'.tr;
+      case WorkerOverallStatus.actionRequired:
         message = 'A document was rejected or has expired. The worker must upload it again.'.tr;
-      case WorkerVerificationState.notSubmitted:
+      case WorkerOverallStatus.notSubmitted:
         message = 'The worker has not uploaded every required document yet.'.tr;
     }
     return DsCard.tinted(
@@ -218,6 +224,8 @@ class _Summary extends StatelessWidget {
               DsStatusChip(label: state.label, tone: state.tone),
             ],
           ),
+          const DsGap(DsSpace.sm),
+          const WorkerDocumentTypeBadge(),
           const DsGap(DsSpace.md),
           Text(message, style: t.bodySecondary),
           const DsGap(DsSpace.md),
@@ -247,6 +255,8 @@ class _DocumentCard extends StatelessWidget {
     return DsCard.outlined(
       margin: const EdgeInsets.only(bottom: DsSpace.md),
       padding: const EdgeInsets.all(DsSpace.md),
+      // A rejected / expired document stands out.
+      borderColor: status == DocumentStatus.rejected || status == DocumentStatus.expired ? c.danger : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

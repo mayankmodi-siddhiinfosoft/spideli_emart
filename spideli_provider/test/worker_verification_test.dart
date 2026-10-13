@@ -31,16 +31,25 @@ void main() {
   group('required set and status', () {
     test('only the required (enabled worker) types count; a disabled type cannot lock the worker', () {
       final uploads = WorkerVerificationRules.uploadsFrom([entry('id', 'approved'), entry('cv', 'approved'), entry('old', 'rejected')]);
-      expect(WorkerVerificationRules.overall(types, uploads, now: now), DocumentStatus.approved);
-      expect(WorkerVerificationRules.stateOf(types, uploads, now: now), WorkerVerificationState.verified);
+      expect(WorkerVerificationRules.overall(types, uploads, now: now), WorkerOverallStatus.verified);
       expect(WorkerVerificationRules.allRequiredApproved(types, uploads, now: now), isTrue);
     });
 
-    test('list states: pending first, then rejected / expired, then not submitted', () {
-      expect(WorkerVerificationRules.stateOf(types, WorkerVerificationRules.uploadsFrom([entry('id', 'uploaded'), entry('cv', 'rejected')]), now: now), WorkerVerificationState.pendingReview);
-      expect(WorkerVerificationRules.stateOf(types, WorkerVerificationRules.uploadsFrom([entry('id', 'approved', more: {'expireAt': past})]), now: now), WorkerVerificationState.rejected);
-      expect(WorkerVerificationRules.stateOf(types, WorkerVerificationRules.uploadsFrom([entry('id', 'approved')]), now: now), WorkerVerificationState.notSubmitted);
-      expect(WorkerVerificationRules.stateOf(types, const {}, isDocumentVerify: true, now: now), WorkerVerificationState.verified);
+    test('overall: action required beats pending; partly uploaded is pending; nothing uploaded is not submitted', () {
+      expect(WorkerVerificationRules.overall(types, WorkerVerificationRules.uploadsFrom([entry('id', 'uploaded'), entry('cv', 'rejected')]), now: now), WorkerOverallStatus.actionRequired);
+      expect(WorkerVerificationRules.overall(types, WorkerVerificationRules.uploadsFrom([entry('id', 'approved', more: {'expireAt': past})]), now: now), WorkerOverallStatus.actionRequired);
+      expect(WorkerVerificationRules.overall(types, WorkerVerificationRules.uploadsFrom([entry('id', 'approved')]), now: now), WorkerOverallStatus.pending);
+      expect(WorkerVerificationRules.overall(types, const {}, now: now), WorkerOverallStatus.notSubmitted);
+    });
+
+    test('isDocumentVerify true alone never verifies while verification is on', () {
+      final pending = WorkerVerificationRules.uploadsFrom([entry('id', 'approved'), entry('cv', 'uploaded')]);
+      expect(WorkerVerificationRules.overall(types, pending, isDocumentVerify: true, verificationRequired: true, now: now), WorkerOverallStatus.pending);
+      expect(WorkerVerificationRules.overall(types, const {}, isDocumentVerify: true, now: now), WorkerOverallStatus.notSubmitted);
+      final rejected = WorkerVerificationRules.uploadsFrom([entry('id', 'rejected'), entry('cv', 'approved')]);
+      expect(WorkerVerificationRules.overall(types, rejected, isDocumentVerify: true, verificationRequired: false, now: now), WorkerOverallStatus.actionRequired);
+      // Verification switched off: the admin's flag counts (unless rejected / expired).
+      expect(WorkerVerificationRules.overall(types, pending, isDocumentVerify: true, verificationRequired: false, now: now), WorkerOverallStatus.verified);
     });
 
     test('same job gate as the Worker app', () {
@@ -50,7 +59,11 @@ void main() {
       expect(WorkerVerificationRules.canReceiveJobs(verificationRequired: null, types: types, typesLoadFailed: false, uploads: approved, now: now), isTrue);
       expect(WorkerVerificationRules.canReceiveJobs(verificationRequired: true, types: const [], typesLoadFailed: false, uploads: const {}, now: now), isTrue);
       expect(WorkerVerificationRules.canReceiveJobs(verificationRequired: true, types: const [], typesLoadFailed: true, uploads: const {}, now: now), isFalse);
-      expect(WorkerVerificationRules.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false, uploads: const {}, isDocumentVerify: true, now: now), isTrue);
+      // The flag alone does not open the gate; the documents do.
+      expect(WorkerVerificationRules.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false, uploads: const {}, isDocumentVerify: true, now: now), isFalse);
+      final pending = WorkerVerificationRules.uploadsFrom([entry('id', 'approved'), entry('cv', 'uploaded')]);
+      expect(WorkerVerificationRules.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false, uploads: pending, isDocumentVerify: true, now: now), isFalse);
+      expect(WorkerVerificationRules.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false, uploads: approved, isDocumentVerify: false, now: now), isTrue);
     });
 
     test('settings: a cache miss is unknown', () {
@@ -61,10 +74,11 @@ void main() {
   });
 
   group('approve one', () {
-    test('never un-verifies: with a document still missing the flag is left alone', () {
-      final out = WorkerVerificationRules.approve(types: types, stored: [entry('id', 'uploaded')], documentId: 'id', reviewerId: 'p1', at: at, now: now);
+    test('flag recalculated: a document still missing -> false (unless already false)', () {
+      final out = WorkerVerificationRules.approve(types: types, stored: [entry('id', 'uploaded')], documentId: 'id', reviewerId: 'p1', at: at, currentFlag: true, now: now);
       expect(out.refused, isFalse);
-      expect(out.setVerified, isNull);
+      expect(out.setVerified, isFalse);
+      expect(WorkerVerificationRules.approve(types: types, stored: [entry('id', 'uploaded')], documentId: 'id', reviewerId: 'p1', at: at, currentFlag: false, now: now).setVerified, isNull);
       expect(out.missing.map((t) => t.id), ['cv']);
       expect(out.documents.single['status'], 'approved');
     });
@@ -73,6 +87,8 @@ void main() {
       final out = WorkerVerificationRules.approve(types: types, stored: [entry('id', 'approved'), entry('cv', 'uploaded')], documentId: 'cv', reviewerId: 'p1', at: at, now: now);
       expect(out.setVerified, isTrue);
       expect(out.missing, isEmpty);
+      // Already true: nothing to write.
+      expect(WorkerVerificationRules.approve(types: types, stored: [entry('id', 'approved'), entry('cv', 'uploaded')], documentId: 'cv', reviewerId: 'p1', at: at, currentFlag: true, now: now).setVerified, isNull);
     });
 
     test('clears the old reason, records the review, keeps every other entry and field', () {
@@ -116,9 +132,12 @@ void main() {
       expect(out.documents[1]['status'], 'approved');
     });
 
-    test('a document that is no longer required leaves the flag alone', () {
-      final out = WorkerVerificationRules.reject(types: types, stored: [entry('old', 'uploaded')], documentId: 'old', reason: 'No', reviewerId: 'p1', at: at, now: now);
-      expect(out.setVerified, isNull);
+    test('a document that is no longer required: the flag follows the required ones', () {
+      final verified = WorkerVerificationRules.reject(
+          types: types, stored: [entry('id', 'approved'), entry('cv', 'approved'), entry('old', 'uploaded')], documentId: 'old', reason: 'No', reviewerId: 'p1', at: at, currentFlag: true, now: now);
+      expect(verified.setVerified, isNull);
+      final missing = WorkerVerificationRules.reject(types: types, stored: [entry('old', 'uploaded')], documentId: 'old', reason: 'No', reviewerId: 'p1', at: at, currentFlag: true, now: now);
+      expect(missing.setVerified, isFalse);
     });
   });
 
@@ -132,7 +151,7 @@ void main() {
     test('something missing: approves what was sent, does not verify, names what is missing', () {
       final out = WorkerVerificationRules.approveAll(types: types, stored: [entry('id', 'uploaded'), entry('cv', 'rejected', more: {'rejectReason': 'x'})], reviewerId: 'p1', at: at, now: now);
       expect(out.changedIds, ['id']);
-      expect(out.setVerified, isNull);
+      expect(out.setVerified, isFalse);
       expect(out.missing.map((t) => t.title), ['CV']);
       // A rejected document is not approved by "approve all".
       expect(out.documents[1]['status'], 'rejected');
@@ -144,8 +163,134 @@ void main() {
       expect(out.missing.map((t) => t.id), ['cv']);
     });
 
+    test('everything already approved but the flag is false: synced to true', () {
+      final out = WorkerVerificationRules.approveAll(types: types, stored: [entry('id', 'approved'), entry('cv', 'approved')], reviewerId: 'p1', at: at, currentFlag: false, now: now);
+      expect(out.refused, isFalse);
+      expect(out.changedIds, isEmpty);
+      expect(out.setVerified, isTrue);
+    });
+
     test('no types read: refused', () {
       expect(WorkerVerificationRules.approveAll(types: const [], stored: const [], reviewerId: 'p1', at: at, now: now).refusal, WorkerReviewRefusal.typesUnknown);
+    });
+  });
+
+  group('record type separation', () {
+    test('only worker records are read as a worker\'s uploads', () {
+      final docs = [entry('id', 'approved'), entry('cv', 'approved')];
+      expect(WorkerVerificationRules.uploadsFromRecord({'type': 'worker', 'documents': docs}).keys, ['id', 'cv']);
+      expect(WorkerVerificationRules.uploadsFromRecord({'documents': docs}).keys, ['id', 'cv'], reason: 'a legacy record without a type is the worker\'s');
+      for (final other in ['driver', 'owner', 'vendor', 'provider']) {
+        expect(WorkerVerificationRules.uploadsFromRecord({'type': other, 'documents': docs}), isEmpty, reason: other);
+        expect(WorkerVerificationRules.isWorkerRecord({'type': other}), isFalse, reason: other);
+      }
+      expect(WorkerVerificationRules.uploadsFromRecord(null), isEmpty);
+    });
+
+    test('a driver record never makes a worker assignable', () {
+      final uploads = WorkerVerificationRules.uploadsFromRecord({'type': 'driver', 'documents': [entry('id', 'approved'), entry('cv', 'approved')]});
+      expect(WorkerVerificationRules.canReceiveJobs(verificationRequired: true, types: types, typesLoadFailed: false, uploads: uploads, now: now), isFalse);
+    });
+
+    test('only enabled worker types are required', () {
+      final required = WorkerVerificationRules.requiredTypesFrom(const [
+        MapEntry('w1', <String, dynamic>{'type': 'worker', 'enable': true, 'title': 'ID card'}),
+        MapEntry('p1', <String, dynamic>{'type': 'provider', 'enable': true, 'title': 'Register'}),
+        MapEntry('d1', <String, dynamic>{'type': 'driver', 'enable': true, 'title': 'Licence'}),
+        MapEntry('w2', <String, dynamic>{'type': 'worker', 'enable': false, 'title': 'Old'}),
+      ]);
+      expect(required.map((t) => t.id), ['w1']);
+    });
+  });
+
+  group('assignment validation (every assign / reassign)', () {
+    final Map<String, dynamic> mine = {'providerId': 'p1', 'isDocumentVerify': false};
+    final Map<String, dynamic> flagged = {'providerId': 'p1', 'isDocumentVerify': true};
+    Map<String, dynamic> record(List<Map<String, dynamic>> docs, {String type = 'worker'}) => {'id': 'w1', 'type': type, 'documents': docs};
+    WorkerAssignmentRefusal? check(Map<String, dynamic>? worker, Map<String, dynamic>? rec, {bool? required = true, List<DocumentType>? ts, bool typesFailed = false, bool recFailed = false}) =>
+        WorkerVerificationRules.assignmentRefusal(
+          workerData: worker,
+          providerId: 'p1',
+          verificationRequired: required,
+          types: ts ?? types,
+          typesLoadFailed: typesFailed,
+          record: rec,
+          recordLoadFailed: recFailed,
+          now: now,
+        );
+
+    test('every required document approved: allowed', () {
+      expect(check(mine, record([entry('id', 'approved'), entry('cv', 'approved')])), isNull);
+    });
+
+    test('a required document missing: refused (documents missing)', () {
+      expect(check(mine, record([entry('id', 'approved')])), WorkerAssignmentRefusal.documentsMissing);
+      expect(check(mine, null), WorkerAssignmentRefusal.documentsMissing);
+    });
+
+    test('a required document pending verification: refused (pending review)', () {
+      expect(check(mine, record([entry('id', 'approved'), entry('cv', 'uploaded')])), WorkerAssignmentRefusal.pendingReview);
+    });
+
+    test('a required document rejected or expired: refused (rejected)', () {
+      expect(check(mine, record([entry('id', 'approved'), entry('cv', 'rejected', more: {'rejectReason': 'Blurry'})])), WorkerAssignmentRefusal.rejected);
+      expect(check(mine, record([entry('id', 'approved'), entry('cv', 'approved', more: {'expireAt': past})])), WorkerAssignmentRefusal.rejected);
+    });
+
+    test('isDocumentVerify true but a document rejected / pending / missing: still refused', () {
+      expect(check(flagged, record([entry('id', 'approved'), entry('cv', 'rejected')])), WorkerAssignmentRefusal.rejected);
+      expect(check(flagged, record([entry('id', 'approved'), entry('cv', 'uploaded')])), WorkerAssignmentRefusal.pendingReview);
+      expect(check(flagged, null), WorkerAssignmentRefusal.documentsMissing);
+    });
+
+    test('another provider\'s worker, or no worker record: refused', () {
+      expect(check({'providerId': 'p2', 'isDocumentVerify': true}, record([entry('id', 'approved'), entry('cv', 'approved')])), WorkerAssignmentRefusal.notYourWorker);
+      expect(check(null, null), WorkerAssignmentRefusal.notYourWorker);
+    });
+
+    test('a driver / owner record is never the worker\'s documents', () {
+      expect(check(mine, record([entry('id', 'approved'), entry('cv', 'approved')], type: 'driver')), WorkerAssignmentRefusal.documentsMissing);
+    });
+
+    test('verification off: allowed; no required type: allowed; types or record unreadable: refused', () {
+      expect(check(mine, null, required: false), isNull);
+      expect(check(mine, null, ts: const []), isNull);
+      expect(check(mine, null, ts: const [], typesFailed: true), WorkerAssignmentRefusal.unknown);
+      expect(check(mine, record([entry('id', 'approved'), entry('cv', 'approved')]), recFailed: true), WorkerAssignmentRefusal.unknown);
+      // The setting not read yet counts as ON.
+      expect(check(mine, record([entry('id', 'approved')]), required: null), WorkerAssignmentRefusal.documentsMissing);
+    });
+
+    test('a disabled (no longer required) document does not block', () {
+      expect(check(mine, record([entry('id', 'approved'), entry('cv', 'approved'), entry('old', 'rejected')])), isNull);
+    });
+
+    test('every refusal has a message and a short label', () {
+      for (final r in WorkerAssignmentRefusal.values) {
+        expect(WorkerVerificationRules.assignmentRefusalMessage(r), startsWith('Cannot assign'), reason: '$r');
+        expect(WorkerVerificationRules.assignmentRefusalLabel(r), isNotEmpty, reason: '$r');
+      }
+      expect(WorkerVerificationRules.assignmentRefusalLabel(WorkerAssignmentRefusal.pendingReview), 'Pending review');
+      expect(WorkerVerificationRules.assignmentRefusalLabel(WorkerAssignmentRefusal.documentsMissing), 'Documents missing');
+      expect(WorkerVerificationRules.assignmentRefusalLabel(WorkerAssignmentRefusal.rejected), 'Documents rejected');
+    });
+  });
+
+  group('labels', () {
+    test('overall statuses and the document type label', () {
+      expect(WorkerOverallStatus.values.map(WorkerVerificationStatusRules.overallLabel), ['Not submitted', 'Pending', 'Action required', 'Verified']);
+      expect(WorkerVerificationStatusRules.recordTypeLabel('worker'), 'Worker');
+      expect(WorkerVerificationStatusRules.recordTypeLabel(WorkerVerificationRules.workerType), 'Worker');
+    });
+
+    test('per-document states map 1:1 onto DocumentStatus', () {
+      expect(WorkerDocumentState.values.map((s) => s.asDocumentStatus), [
+        DocumentStatus.notSubmitted,
+        DocumentStatus.pendingReview,
+        DocumentStatus.approved,
+        DocumentStatus.rejected,
+        DocumentStatus.expired,
+      ]);
     });
   });
 

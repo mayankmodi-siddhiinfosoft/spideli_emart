@@ -97,4 +97,10 @@ const Map<String, String> lnAr = {
   "A document was rejected. Please check the reason and upload it again.": "تم رفض أحد المستندات. يرجى مراجعة السبب ورفعه مرة أخرى.",
   "A document has expired. Please upload a valid one.": "انتهت صلاحية أحد المستندات. يرجى رفع مستند صالح.",
   "Please upload your documents for verification.": "يرجى رفع مستنداتك للتحقق.",
+  "Verified": "تم التحقق",
+  "Action required": "إجراء مطلوب",
+  "Document type": "نوع المستند",
+  "Some documents are missing or waiting for review.": "بعض المستندات ناقصة أو بانتظار المراجعة.",
+  "A document was rejected or has expired. Please check the reason and upload it again.": "تم رفض أحد المستندات أو انتهت صلاحيته. يرجى مراجعة السبب ورفعه مرة أخرى.",
+  "This account already has documents of another type on file. Please contact support.": "لدى هذا الحساب مستندات من نوع آخر مسجلة. يرجى التواصل مع الدعم.",
 };
