@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Process
 import android.provider.Settings
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -24,6 +25,15 @@ class MainActivity : FlutterFragmentActivity() {
                 "autostartAllowed" -> result.success(miuiAutostartAllowed())
                 "openAutostartSettings" -> result.success(openFirst(autostartIntents() + appDetailsIntent()))
                 "openAppSettings" -> result.success(openFirst(listOf(appDetailsIntent())))
+                else -> result.notImplemented()
+            }
+        }
+        // Spideli Finance: blocks screenshots and the recent-apps preview while
+        // full card details are on screen (FinanceSecureScreen).
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "spideli/secure_screen").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "enable" -> { window.addFlags(WindowManager.LayoutParams.FLAG_SECURE); result.success(true) }
+                "disable" -> { window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE); result.success(true) }
                 else -> result.notImplemented()
             }
         }

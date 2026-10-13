@@ -1,3 +1,4 @@
+import 'package:customer/screen_ui/finance/card_screens.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/insurance_screens.dart';
 import 'package:customer/screen_ui/finance/investment_screens.dart';
@@ -108,6 +109,14 @@ class FinanceHomeScreen extends StatelessWidget {
                 subtitle: "Compare offers, get a quote, manage your policies and claims.".tr,
                 showChevron: true,
                 onTap: () => Get.to(() => const InsuranceScreen()),
+              ),
+              DsListTile(
+                leadingIcon: Icons.credit_card_outlined,
+                leadingTone: DsTone.brand,
+                title: "Virtual cards".tr,
+                subtitle: "Pay online and abroad with a virtual Visa card.".tr,
+                showChevron: true,
+                onTap: () => Get.to(() => const CardsScreen()),
               ),
             ],
           ),

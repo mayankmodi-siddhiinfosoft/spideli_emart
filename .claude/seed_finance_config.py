@@ -1,8 +1,11 @@
 # Creates the admin-level Spideli Finance configuration in the live Firestore
 # (project spideli-870b0), as listed in .claude/FINANCE-APP-CONTRACT.md:
-#   - platform_settings/kyc, /savings, /tontines, /lending, /investments, /insurance
-#                                       (sections 2.1, 8.1, 9.1, 11.1, 12.1, 13.1)
-#   - dynamic_notification templates    (sections 6, 10, 11.5, 12.4, 13.4)
+#   - platform_settings/kyc, /savings, /tontines, /lending, /investments, /insurance, /cards
+#                                       (sections 2.1, 8.1, 9.1, 11.1, 12.1, 13.1, 14.1)
+#   - dynamic_notification templates    (sections 6, 10, 11.5, 12.4, 13.4, 14.5)
+# platform_settings/cards is created WITHOUT terms / termsVersion, so virtual
+# cards stay "not available yet" until an issuer is contracted and the admin
+# adds its cardholder agreement, fees and capabilities.
 # Investment FUNDS and insurance PRODUCTS are not seeded: they are real
 # offers published by licensed managers / insurers (sections 12.2, 13.2).
 # CREATE-ONLY: a document or template type that already exists is skipped,
@@ -93,7 +96,20 @@ INSURANCE = {
     'claims': {'maxFiles': 5},
 }
 
-SETTINGS = {'kyc': KYC, 'savings': SAVINGS, 'tontines': TONTINES, 'lending': LENDING, 'investments': INVESTMENTS, 'insurance': INSURANCE}
+CARDS = {
+    'currencies': ['XAF'],
+    'issuerName': '',
+    'network': 'visa',
+    'maxCardsPerUser': 3,
+    'fundingMethods': ['wallet', 'mobile_money', 'wave'],
+    'minFunding': {'XAF': 1000},
+    'maxFunding': {'XAF': 500000},
+    'fundingFeePercent': 0,
+    'capabilities': {'withdraw': False, 'renew': False, 'onlineToggle': False, 'internationalToggle': False, 'secureDetails': 'none'},
+    # 'terms' and 'termsVersion': the issuer's cardholder agreement, added by the admin.
+}
+
+SETTINGS = {'kyc': KYC, 'savings': SAVINGS, 'tontines': TONTINES, 'lending': LENDING, 'investments': INVESTMENTS, 'insurance': INSURANCE, 'cards': CARDS}
 
 TEMPLATES = [
     ('kyc_submitted', 'Verification received', 'We received your documents. Our team will review them shortly.'),
@@ -154,6 +170,21 @@ TEMPLATES = [
     ('insurance_claim_approved', 'Claim approved', 'Your {productName} claim was approved for {amount}.'),
     ('insurance_claim_rejected', 'Claim not approved', 'Your {productName} claim was not approved: {reason}'),
     ('insurance_claim_paid', 'Claim paid', '{amount} was paid for your {productName} claim.'),
+    ('card_created', 'Your virtual card is ready', 'Your virtual card ending in {last4} is ready to use.'),
+    ('card_creation_failed', 'Card not created', 'Your virtual card could not be created: {reason}. Any fee paid will be refunded.'),
+    ('card_funded', 'Card topped up', '{amount} was added to your card ending in {last4}.'),
+    ('card_funding_failed', 'Card top-up failed', 'Your top-up of {amount} to the card ending in {last4} did not go through.'),
+    ('card_transaction', 'Card payment', '{amount} paid at {merchantName} with your card ending in {last4}.'),
+    ('card_transaction_declined', 'Card payment declined', 'A payment of {amount} at {merchantName} was declined: {reason}'),
+    ('card_refund', 'Card refund', '{merchantName} refunded {amount} to your card ending in {last4}.'),
+    ('card_frozen', 'Card frozen', 'Your card ending in {last4} is frozen. If you did not do this, contact support.'),
+    ('card_unfrozen', 'Card unfrozen', 'Your card ending in {last4} is active again. If you did not do this, freeze it and contact support.'),
+    ('card_details_viewed', 'Card details viewed', 'The details of your card ending in {last4} were shown at {time}. If this was not you, freeze the card and contact support.'),
+    ('card_limits_updated', 'Card limits changed', 'The limits of your card ending in {last4} were changed. If you did not do this, contact support.'),
+    ('card_withdrawal_completed', 'Card balance moved', '{amount} was moved from your card ending in {last4}.'),
+    ('card_expiring', 'Card expiring soon', 'Your card ending in {last4} expires on {expiry}. Renew it to keep paying.'),
+    ('card_renewed', 'Card renewed', 'Your new virtual card ending in {last4} is ready.'),
+    ('card_terminated', 'Card deleted', 'Your card ending in {last4} was deleted. {amount} was returned to your wallet.'),
 ]
 # The admin panel groups templates by service_type; account-level customer
 # templates already use this group.

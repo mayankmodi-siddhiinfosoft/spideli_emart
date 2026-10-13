@@ -780,3 +780,140 @@ Claim payouts go to the wallet or a saved Mobile Money number chosen with the in
 | `insurance_claim_approved` | user | `{productName}`, `{amount}` |
 | `insurance_claim_rejected` | user | `{productName}`, `{reason}` |
 | `insurance_claim_paid` | user | `{productName}`, `{amount}` |
+
+---
+
+## 14. Virtual cards (brief section 12)
+
+App code: `customer/lib/screen_ui/finance/card_screens.dart`, `customer/lib/service/finance_card_service.dart`, `customer/lib/screen_ui/finance/finance_security.dart` (re-authentication, screenshot blocking), rules in `customer/lib/utils/finance_card_rules.dart` (tested in `customer/test/finance_card_rules_test.dart`). Entry: Spideli Finance > Services > **Virtual cards**.
+
+**Model:** cards are issued by an **approved issuer** (BIN sponsor / card programme manager) through the server. The issuer is the source of truth for card status, balance, limits and transactions; the server mirrors only **non-sensitive display metadata** to Firestore.
+
+**Card data (PCI DSS):**
+- **Never** store the full card number (PAN) or the CVV in Firestore, Storage, logs, analytics or crash reports.
+- `virtual_cards` holds only `last4`, expiry, holder name, status, balance and labels.
+- The issuer's references (card token, account id) live in a server-only collection (e.g. `virtual_cards_private/{cardId}`), unreadable by clients.
+
+### 14.1 `platform_settings/cards` (admin config)
+
+```jsonc
+{
+  "currencies": ["XAF"],
+  "issuerName": "<issuer>",
+  "network": "visa",
+  "maxCardsPerUser": 3,                          // cards that are requested / active / frozen
+  "issuanceFee": { "XAF": 1000 },                // minor units; omit or 0 = free
+  "monthlyFee":  { "XAF": 500 },
+  "renewalFee":  { "XAF": 0 },
+  "fundingMethods": ["wallet", "mobile_money", "wave"],
+  "minFunding": { "XAF": 1000 }, "maxFunding": { "XAF": 500000 },
+  "fundingFeePercent": 1.5,                      // added on top of the amount the card receives
+  "limits": {                                    // the ceilings of the user's own limits
+    "maxPerTransaction": { "XAF": 300000 }, "maxDaily": { "XAF": 500000 }, "maxMonthly": { "XAF": 2000000 }
+  },
+  "capabilities": {                              // what THIS issuer supports; anything missing = not offered
+    "withdraw": false,                           // card balance back to the wallet / Mobile Money
+    "renew": true,
+    "onlineToggle": false, "internationalToggle": false,
+    "secureDetails": "hosted"                    // "hosted" | "direct" | "none" (section 14.3)
+  },
+  "terms": "<the issuer's cardholder agreement>", // REQUIRED
+  "termsVersion": 1                               // REQUIRED, >= 1
+}
+```
+
+Required: "Virtual cards are not available yet" when it is missing, or has no valid currency, no funding method, no `terms` or no `termsVersion`. **Only fill `terms` / `termsVersion` once an issuer is contracted**: until then the module stays hidden behind that message.
+
+### 14.2 Collections (SERVER writes all of them)
+
+**`virtual_cards/{cardId}`**:
+- `{ userId, label, network, last4, expiryMonth, expiryYear, cardholderName, currency, balance, status, frozenBy, replacedBy, reason, createdAt }`;
+- `status`: `requested` → `active` ⇄ `frozen` → `terminated`; also `expired`, or `failed` (creation refused; `reason`, and refund the fee);
+- `frozenBy`: `user` (the user may unfreeze), or `issuer` / `admin` (fraud, compliance: only staff unfreeze);
+- `balance` is the issuer's available balance, refreshed on every event (webhook) and on each app action;
+- `cardholderName` comes from the user's **verified KYC name**, never from the app.
+
+**`card_transactions/{id}`**: `{ userId, cardId, type: purchase | refund | funding | withdrawal | fee | reversal | authorization, status: pending | completed | declined | reversed, amount, currency, originalAmount, originalCurrency, merchantName, merchantCountry, declineReason, createdAt }`, from the issuer's **verified** webhooks.
+
+**`card_funding_requests/{id}`**: `{ userId, cardId, type: fund | withdraw, amount, fee, currency, status: pending | processing | succeeded | failed, reference, createdAt }`.
+
+**`card_limit_settings/{cardId}`**: `{ userId, cardId, perTransaction, daily, monthly (null = the issuer's maximum), allowOnline, allowInternational, status: pending | applied, updatedAt }`.
+
+App queries (with indexes):
+
+```
+virtual_cards         where userId == <uid> orderBy createdAt desc limit 20                    -> (userId ASC, createdAt DESC)
+card_transactions     where userId == <uid> and cardId == X orderBy createdAt desc limit 50   -> (userId ASC, cardId ASC, createdAt DESC)
+card_funding_requests where userId == <uid> and cardId == X orderBy createdAt desc limit 10   -> (userId ASC, cardId ASC, createdAt DESC)
+virtual_cards/{id}, card_limit_settings/{cardId}: single documents
+```
+
+Rules: owner read only (`resource.data.userId == request.auth.uid`), plus staff; **no client writes**; `virtual_cards_private` readable by no client.
+
+### 14.3 Showing the card details
+
+The app shows the full number, expiry and CVV only after **re-authentication**, and only through the mode set in `capabilities.secureDetails`:
+- **`hosted`** (recommended): `cardSecureDetailsLink` returns `{ url, expiresAt }`, a single-use, short-lived (≤ 5 min) **https** link to the issuer's PCI-compliant page. The app opens it in an in-app browser tab; neither the app nor the server ever sees the data.
+- **`direct`**: `cardRevealDetails` returns `{ number, expiryMonth, expiryYear, cvv, cardholderName }` from the issuer's secure retrieval API, relayed in memory only. This puts the relay in PCI scope: use it only if your environment is certified for it. The app:
+  - shows them for 60 seconds, blocking screenshots and screen recording (Android `FLAG_SECURE`);
+  - hides them when the app goes to the background;
+  - lets the user copy the number only (cleared from the clipboard after a minute), never the CVV;
+  - never stores or logs them.
+- **`none`**: no "Show details" button.
+
+Record every reveal (time, device, IP) and send the `card_details_viewed` security notice.
+
+### 14.4 Callables
+
+**Re-authentication:** for the functions marked **R**, refuse with reason `reauth_required` unless `request.auth.token.auth_time` is within the last **5 minutes**. Before calling them, the app re-authenticates the user (password, SMS code, Google or Apple, the way they signed in), or skips that step when the sign-in is under 4 minutes old.
+
+| Function | Request | Server checks |
+|---|---|---|
+| `cardCreate` | `{ label?, currency, termsVersion, payment? (when there is an issuance fee), idempotencyKey }` -> payment reply (section 8.4) or `{ cardId }` | KYC-verified (the issuer's KYC level); under `maxCardsPerUser` (else `card_limit_reached`); current `termsVersion`; record the acceptance; collect the fee; create the card at the issuer (`requested` → `active` / `failed`) |
+| `cardFund` | `{ cardId, amount, payment, idempotencyKey }` | owner; `active`; `minFunding`..`maxFunding` (else `amount_out_of_range`); the payment is `amount + fee` (section 8.4); load the card **only after the payment is confirmed** |
+| `cardWithdraw` **R** | `{ cardId, amount, destination, idempotencyKey }` | `capabilities.withdraw` (else `not_supported`); owner; `amount ≤ balance` at the issuer |
+| `cardFreeze` | `{ cardId }` | owner; `active` → `frozen` with `frozenBy: "user"` (no re-auth: freezing must be instant) |
+| `cardUnfreeze` **R** | `{ cardId }` | owner; `frozen` with `frozenBy == "user"` |
+| `cardSetLimits` **R** | `{ cardId, perTransaction, daily, monthly (null = maximum), allowOnline?, allowInternational? }` | owner; within the config ceilings; per transaction ≤ daily ≤ monthly; toggles only if supported |
+| `cardSecureDetailsLink` **R** | `{ cardId }` -> `{ url, expiresAt }` | owner; `active`; mode `hosted` |
+| `cardRevealDetails` **R** | `{ cardId }` -> `{ number, expiryMonth, expiryYear, cvv, cardholderName }` | owner; `active`; mode `direct`; rate-limited |
+| `cardRenew` | `{ cardId, payment?, idempotencyKey }` | `capabilities.renew`; owner; `expired` or expiring within 30 days, not already replaced; the new card gets `replacedBy` on the old one |
+| `cardTerminate` **R** | `{ cardId }` | owner; `active`, `expired`, or frozen by the user; close it at the issuer and return any balance to the wallet (ledger) |
+
+Reasons the app maps (`FinanceErrors`): `reauth_required`, `card_limit_reached`, `card_not_active`, `issuer_unavailable`, `amount_out_of_range`, `not_supported`, `terms_outdated`, `insufficient_funds`.
+
+**Never trust the app:**
+- balances and statuses only from the issuer;
+- funding is idempotent on `idempotencyKey`;
+- monthly fees are charged by the server per the disclosed terms;
+- verify the issuer's webhook signatures;
+- App Check on every card function.
+
+### 14.5 Jobs and notifications (SERVER)
+
+**Jobs:**
+- process the issuer's webhooks (authorisations, settlements, declines, refunds, status) into `card_transactions` and `virtual_cards.balance`;
+- charge monthly fees;
+- mark cards `expired`;
+- remind users 30 days before expiry;
+- reconcile with the issuer daily.
+
+**Templates** (`dynamic_notification`, `source: "finance"`; the **security** ones should always be sent, whatever the user's preferences):
+
+| Template `type` | To | Placeholders |
+|---|---|---|
+| `card_created` | user | `{last4}` |
+| `card_creation_failed` | user | `{reason}` |
+| `card_funded` | user | `{amount}`, `{last4}` |
+| `card_funding_failed` | user | `{amount}`, `{last4}` |
+| `card_transaction` | user | `{amount}`, `{merchantName}`, `{last4}` |
+| `card_transaction_declined` | user | `{amount}`, `{merchantName}`, `{reason}` |
+| `card_refund` | user | `{amount}`, `{merchantName}`, `{last4}` |
+| `card_frozen` (security) | user | `{last4}` |
+| `card_unfrozen` (security) | user | `{last4}` |
+| `card_details_viewed` (security) | user | `{last4}`, `{time}` |
+| `card_limits_updated` (security) | user | `{last4}` |
+| `card_withdrawal_completed` | user | `{amount}`, `{last4}` |
+| `card_expiring` | user | `{last4}`, `{expiry}` |
+| `card_renewed` | user | `{last4}` |
+| `card_terminated` (security) | user | `{last4}`, `{amount}` (balance returned) |

@@ -182,6 +182,12 @@ abstract final class FinanceErrors {
     'policy_not_active': 'This policy is not active.',
     'claim_not_editable': 'This claim can no longer be changed.',
     'insurer_unavailable': 'The insurer cannot be reached right now. Please try again later.',
+    'reauth_required': 'For your security, confirm your identity and try again.',
+    'card_limit_reached': 'You already have the maximum number of cards.',
+    'card_not_active': 'This card cannot be used for this action right now.',
+    'issuer_unavailable': 'The card issuer cannot be reached right now. Please try again later.',
+    'amount_out_of_range': 'This amount is outside the allowed range.',
+    'not_supported': 'The card issuer does not support this action.',
     'sign_in_required': 'Please sign in again.',
     'unauthenticated': 'Please sign in again.',
   };
