@@ -1,4 +1,5 @@
 import 'package:customer/screen_ui/finance/finance_ui.dart';
+import 'package:customer/screen_ui/finance/investment_screens.dart';
 import 'package:customer/screen_ui/finance/kyc_screen.dart';
 import 'package:customer/screen_ui/finance/lending_screens.dart';
 import 'package:customer/screen_ui/finance/savings_screens.dart';
@@ -90,6 +91,14 @@ class FinanceHomeScreen extends StatelessWidget {
                 subtitle: "Borrow from, and lend to, the members of your groups.".tr,
                 showChevron: true,
                 onTap: () => Get.to(() => const LoansScreen()),
+              ),
+              DsListTile(
+                leadingIcon: Icons.trending_up_rounded,
+                leadingTone: DsTone.brand,
+                title: "Investments".tr,
+                subtitle: "Invest in funds, follow your portfolio and redeem.".tr,
+                showChevron: true,
+                onTap: () => Get.to(() => const InvestmentsScreen()),
               ),
             ],
           ),
@@ -236,6 +245,7 @@ class _Overview extends StatelessWidget {
             _ModuleCard(
               icon: Icons.trending_up_rounded,
               title: "Investments".tr,
+              onTap: () => Get.to(() => const InvestmentsScreen()),
               rows: s.investments == null
                   ? null
                   : [

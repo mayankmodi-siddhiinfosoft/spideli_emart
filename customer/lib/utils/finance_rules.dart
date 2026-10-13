@@ -170,6 +170,13 @@ abstract final class FinanceErrors {
     'kyc_file_missing': 'The upload did not finish. Please try again.',
     'kyc_invalid_transition': 'This action is no longer possible. Please refresh.',
     'insufficient_funds': 'Insufficient balance.',
+    'fund_closed': 'This fund does not accept new investments at the moment.',
+    'terms_outdated': 'The fund terms changed. Please read and accept the new version.',
+    'below_minimum': 'The amount is below the minimum.',
+    'not_eligible': 'You are not eligible for this fund.',
+    'locked_up': 'Part of this investment is still in its lock-up period.',
+    'redemption_not_allowed': 'This fund does not accept redemptions at the moment.',
+    'insufficient_units': 'You do not hold enough units for this redemption.',
     'sign_in_required': 'Please sign in again.',
     'unauthenticated': 'Please sign in again.',
   };

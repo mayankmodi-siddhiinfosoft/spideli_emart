@@ -533,3 +533,120 @@ The app shows the live tally from `votes` and these rules.
 | `loan_repayment_overdue` | borrower | `{amount}` |
 | `loan_lender_repayment` | each lender | `{amount}`, `{borrowerName}` |
 | `loan_repaid` | borrower and lenders | `{amount}` |
+
+---
+
+## 12. Investments (brief section 4)
+
+App code: `customer/lib/screen_ui/finance/investment_screens.dart`, `customer/lib/service/finance_investment_service.dart`, rules in `customer/lib/utils/finance_investment_rules.dart` (tested in `customer/test/finance_investment_rules_test.dart`). Entry: Spideli Finance > Services > **Investments** (Portfolio / Funds / Orders), and the overview's investments card.
+
+**Model:** fund managers / the admin publish funds. A KYC-verified user subscribes an amount: they pay, then units are bought at the unit price (NAV) of the processing date. They redeem part or all of the redeemable position, and the money is settled to a wallet or Mobile Money number. **Fund valuations, unit counts, gains, fees charged and settlements are server-only.** Offering collective investments is regulated: publish a fund only with the manager's licence and legal sign-off for the country.
+
+### 12.1 `platform_settings/investments` (admin config)
+
+```jsonc
+{
+  "currencies": ["XAF"],
+  "assetClasses": ["money_market", "bonds", "equities", "real_estate", "agriculture", "infrastructure", "mixed"],   // the catalog filter order
+  "paymentMethods": ["wallet", "mobile_money", "wave"],     // to pay subscriptions and receive redemptions
+  "riskDisclosure": "Investing carries risks…",             // REQUIRED: shown and accepted before every subscription
+  "simulator": { "maxYears": 30 }                            // optional, 1-50 (default 30)
+}
+```
+
+Required: "Investments are not available yet" when it is missing or has no valid currency, no payment method, or no `riskDisclosure`.
+
+### 12.2 Collections (SERVER writes all of them)
+
+**`investment_funds/{fundId}`** (catalog; the app lists `published == true`):
+- `name`, `manager`, `description`, `objective`, `assetClass`, `riskLevel` (1-7), `currency`, `order` (display order, optional);
+- `minInvestment`, `minAdditional` (optional; the minimum once the user holds units), in minor units;
+- `fees: { subscriptionPercent, managementPercent (a year), redemptionPercent, performancePercent }`;
+- `navPerUnit` (unit price in minor units, decimals allowed), `navDate`;
+- `lockUpDays`, `settlementDays` (business days), `redemption: { allowed, partial }`;
+- `terms` (text), `termsVersion` (≥ 1; **a new version whenever the terms change**), `documents: [{ name, storagePath | url (https) }]`, `eligibility` (plain-language text);
+- `performance: { ytd, oneYear, threeYears, fiveYears, sinceInception }` (percent, from the official valuations);
+- `status`: `open` | `closed` (no new subscriptions) | `suspended` (no orders), `published: bool`.
+
+The app offers "Invest" only for an `open` fund with a `navPerUnit` and a `termsVersion`.
+
+**`investment_valuations/{id}`**: `{ fundId, date, navPerUnit }`, one per published price (the price history chart, last 90).
+
+**`investment_holdings/{uid}_{fundId}`** (one position per user and fund):
+- `{ userId, fundId, fundName, assetClass, currency, units, redeemableUnits, redeemableValue, investedAmount, currentValue, realizedGains, unrealizedGains, lockedUntil, valuedAt }`;
+- `redeemableUnits` / `redeemableValue` exclude the units still in their lock-up; `lockedUntil` is when the next locked units free up;
+- revalue at each new `navPerUnit`.
+
+**`investment_subscriptions/{id}`**:
+- `{ userId, fundId, fundName, currency, amount, fee, netAmount, units, navPerUnit, termsVersion, signatureName, acceptedAt, paymentId, reference, status, reason, tradeDate, createdAt }`;
+- `status`: `pending_payment` → `paid` → `processing` → `completed` (units allocated), or `payment_failed` / `rejected` (with `reason`) / `cancelled`.
+
+**`investment_redemptions/{id}`**:
+- `{ userId, fundId, fundName, currency, full, amount (null for a full redemption until processed), fee, netAmount, units, navPerUnit, destination, reference, status, reason, tradeDate, expectedSettlementDate, settledAt, createdAt }`;
+- `status`: `submitted` → `processing` → `settling` → `settled`, or `rejected` / `cancelled`.
+
+**`investment_transactions/{id}`**: `{ userId, fundId, type: subscription | redemption | fee | distribution | adjustment, amount, units, navPerUnit, currency, reference, createdAt }`. Also post each money movement to the ledger (section 4.2).
+
+**`investment_reports/{id}`**: `{ userId, title, period, storagePath, createdAt }`, a PDF in Storage at `investment_reports/{uid}/{file}.pdf` (monthly / annual statements, tax certificates).
+
+**`finance_summaries/{uid}.investments`** (section 4.3), plus **`allocation: { <assetClass>: currentValue }`** (minor units): the app shows the shares of each class and computes only the display percentages.
+
+App queries (with indexes):
+
+```
+investment_funds where published == true limit 100                                           -> equality only
+investment_valuations where fundId == X orderBy date desc limit 90                           -> (fundId ASC, date DESC)
+investment_holdings where userId == <uid>                                                     -> equality only
+investment_subscriptions where userId == <uid> orderBy createdAt desc limit 50                -> (userId ASC, createdAt DESC)
+investment_redemptions where userId == <uid> orderBy createdAt desc limit 50                  -> (userId ASC, createdAt DESC)
+investment_transactions where userId == <uid> and fundId == X orderBy createdAt desc limit 50 -> (userId ASC, fundId ASC, createdAt DESC)
+investment_reports where userId == <uid> orderBy createdAt desc limit 24                      -> (userId ASC, createdAt DESC)
+investment_funds/{id}, investment_holdings/{uid}_{fundId}, investment_subscriptions/{id}, investment_redemptions/{id}: single documents
+```
+
+Rules:
+- `platform_settings/investments`, published `investment_funds` and `investment_valuations`: any signed-in user.
+- Holdings, subscriptions, redemptions, transactions, reports: `resource.data.userId == request.auth.uid` (plus staff).
+- **No client writes** to any of them.
+- Storage: `investment_funds/{fundId}/**` read by signed-in users; `investment_reports/{uid}/**` read by its owner only; no client writes.
+
+### 12.3 Callables
+
+| Function | Request | Server checks |
+|---|---|---|
+| `investmentSubscribe` | `{ fundId, amount, currency, termsVersion, riskAcknowledged: true, signatureName, payment, idempotencyKey }` -> `{ subscriptionId, status, instructions?, reference? }` (as section 8.4) | KYC-verified and eligible for the fund; fund `open`; `currency` is the fund's; `amount ≥ minInvestment` (`minAdditional` for a holder); `termsVersion` is the **current** one (else `terms_outdated`); `riskAcknowledged`; record the acceptance (time, terms version, signature name, device) as the electronic agreement; payment as section 8.4 |
+| `investmentRedeem` | `{ fundId, full, amount? (when not full), destination, idempotencyKey }` -> `{ redemptionId, status }` | the holder; fund not `suspended` and `redemption.allowed`; partial only if `redemption.partial`; `amount ≤ redeemableValue` (lock-up respected); `destination` as section 8.4 |
+| `investmentCancelRedemption` | `{ redemptionId }` | the holder; only `submitted` |
+
+Reasons the app maps to a translated message (`FinanceErrors`): `fund_closed`, `terms_outdated`, `below_minimum`, `not_eligible`, `locked_up`, `redemption_not_allowed`, `insufficient_units`.
+
+**Processing:**
+- a subscription becomes `paid` only on the provider's verified confirmation (section 8.4), then is executed at the next `navPerUnit`: `units = netAmount / navPerUnit`, `fee = amount × subscriptionPercent`;
+- a redemption is executed at the next `navPerUnit`, the fee is deducted, and it is settled to `destination` within `settlementDays`, idempotent on the redemption id;
+- realized gains are booked on redemption (cost basis: your documented method, e.g. average cost); unrealized gains on each revaluation.
+
+The fee and unit figures in the app are labelled **estimates at the last price**; the return simulator is labelled an **illustration** (constant yearly return, before fees and taxes, not guaranteed).
+
+### 12.4 Jobs and notifications (SERVER)
+
+**Jobs:**
+- publish each new `navPerUnit` to the fund and `investment_valuations`, then revalue the holdings and `finance_summaries/{uid}.investments`;
+- execute pending subscriptions and redemptions at the new price;
+- settle redemptions and reconcile payments;
+- generate the periodic statements into `investment_reports`.
+
+**Templates** (`dynamic_notification`, `source: "finance"`):
+
+| Template `type` | To | Placeholders |
+|---|---|---|
+| `investment_subscription_received` | investor | `{amount}`, `{fundName}` |
+| `investment_payment_confirmed` | investor | `{amount}`, `{fundName}` |
+| `investment_payment_failed` | investor | `{amount}`, `{fundName}` |
+| `investment_units_allocated` | investor | `{units}`, `{fundName}`, `{navPerUnit}` |
+| `investment_subscription_rejected` | investor | `{amount}`, `{fundName}`, `{reason}` |
+| `investment_redemption_received` | investor | `{fundName}` |
+| `investment_redemption_processed` | investor | `{amount}`, `{fundName}`, `{settlementDate}` |
+| `investment_redemption_settled` | investor | `{amount}`, `{fundName}` |
+| `investment_redemption_rejected` | investor | `{fundName}`, `{reason}` |
+| `investment_report_available` | investor | `{period}` |
+| `investment_terms_updated` | holders of the fund | `{fundName}` |

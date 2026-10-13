@@ -430,6 +430,7 @@ class _GoalBody extends StatelessWidget {
                               currency: cur,
                               methods: methods,
                               submit: (destination) => FinanceGroupService.requestWithdrawal(goal.id, amount, destination, key),
+                              payout: true,
                             );
                           },
                   ),

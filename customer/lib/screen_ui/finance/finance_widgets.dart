@@ -102,7 +102,8 @@ Future<int?> askAmount(BuildContext context, {required String title, required St
 /// The payment step of a contribution: method (from the admin's
 /// `paymentMethods`), a confirmation summary, then the server's request.
 /// [submit] receives the chosen payment and returns the server's reply
-/// (`status`, `instructions`, `reference`).
+/// (`status`, `instructions`, `reference`). With [payout] the user chooses
+/// where to RECEIVE [amount] (withdrawals, redemptions) instead.
 abstract final class FinancePaySheet {
   static Future<void> show(
     BuildContext context, {
@@ -111,6 +112,7 @@ abstract final class FinancePaySheet {
     required String currency,
     required List<String> methods,
     required Future<Map<String, dynamic>> Function(Map<String, dynamic> payment) submit,
+    bool payout = false,
   }) async {
     final saved = await SavedPaymentMethods.load().catchError((_) => <SavedPaymentMethod>[]);
     // The options: the wallet, then each saved number of an allowed type.
@@ -130,7 +132,7 @@ abstract final class FinancePaySheet {
           children: [
             Text(FinanceMoney.format(amount, currency), textAlign: TextAlign.center, style: DsTypography.title.tabular),
             const DsGap(DsSpace.md),
-            Text("Pay with".tr, style: DsTypography.titleSm),
+            Text((payout ? "Receive the money on" : "Pay with").tr, style: DsTypography.titleSm),
             const DsGap(DsSpace.xs),
             if (options.isEmpty)
               Text("Add a Mobile Money number to pay.".tr, style: DsTypography.body)
@@ -157,11 +159,11 @@ abstract final class FinancePaySheet {
                 ),
               ),
             const DsGap(DsSpace.md),
-            Text("Check the amount and the payment method. You confirm the payment next.".tr, style: DsTypography.caption),
+            Text((payout ? "Check the amount and where you receive it." : "Check the amount and the payment method. You confirm the payment next.").tr, style: DsTypography.caption),
             const DsGap(DsSpace.sm),
             DsButton.primary(
-              label: "${"Confirm and pay".tr} ${FinanceMoney.format(amount, currency)}",
-              icon: Icons.lock_outline_rounded,
+              label: payout ? "Confirm".tr : "${"Confirm and pay".tr} ${FinanceMoney.format(amount, currency)}",
+              icon: payout ? Icons.check_rounded : Icons.lock_outline_rounded,
               expand: true,
               onPressed: selected == null ? null : () => Get.back(result: true),
             ),
@@ -177,7 +179,7 @@ abstract final class FinancePaySheet {
       final String status = reply['status']?.toString() ?? '';
       final String instructions = reply['instructions']?.toString() ?? '';
       await DsBottomSheet.show(
-        title: (status == 'succeeded' ? "Payment received" : "Payment started").tr,
+        title: (payout ? "Request sent" : (status == 'succeeded' ? "Payment received" : "Payment started")).tr,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -185,7 +187,9 @@ abstract final class FinancePaySheet {
             Text(
               instructions.isNotEmpty
                   ? instructions
-                  : (status == 'succeeded'
+                  : (payout
+                          ? "The money is sent once your request is processed. You can follow it here."
+                          : status == 'succeeded'
                           ? "Your payment was received."
                           : "Approve the payment on your phone if you are asked to. This page updates when the payment is confirmed.")
                       .tr,

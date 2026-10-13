@@ -1,7 +1,10 @@
 # Creates the admin-level Spideli Finance configuration in the live Firestore
 # (project spideli-870b0), as listed in .claude/FINANCE-APP-CONTRACT.md:
-#   - platform_settings/kyc, /savings, /tontines, /lending  (sections 2.1, 8.1, 9.1, 11.1)
-#   - dynamic_notification templates                        (sections 6, 10, 11.5)
+#   - platform_settings/kyc, /savings, /tontines, /lending, /investments
+#                                       (sections 2.1, 8.1, 9.1, 11.1, 12.1)
+#   - dynamic_notification templates    (sections 6, 10, 11.5, 12.4)
+# Investment FUNDS are not seeded: fund managers / the admin publish real
+# funds in investment_funds (section 12.2).
 # CREATE-ONLY: a document or template type that already exists is skipped,
 # never overwritten. DRY RUN by default; writes only with --apply.
 #
@@ -71,7 +74,19 @@ LENDING = {
     'paymentMethods': ['wallet', 'mobile_money', 'wave'],
 }
 
-SETTINGS = {'kyc': KYC, 'savings': SAVINGS, 'tontines': TONTINES, 'lending': LENDING}
+INVESTMENTS = {
+    'currencies': ['XAF'],
+    'assetClasses': ['money_market', 'bonds', 'equities', 'real_estate', 'agriculture', 'infrastructure', 'mixed'],
+    'paymentMethods': ['wallet', 'mobile_money', 'wave'],
+    'riskDisclosure': (
+        'Investing carries risks. The value of your investment and the income from it can go down as well as up, '
+        'and you may get back less than you invested. Past performance does not predict future returns. '
+        'Read the fund documents before investing.'
+    ),
+    'simulator': {'maxYears': 30},
+}
+
+SETTINGS = {'kyc': KYC, 'savings': SAVINGS, 'tontines': TONTINES, 'lending': LENDING, 'investments': INVESTMENTS}
 
 TEMPLATES = [
     ('kyc_submitted', 'Verification received', 'We received your documents. Our team will review them shortly.'),
@@ -106,6 +121,17 @@ TEMPLATES = [
     ('loan_repayment_overdue', 'Repayment overdue', 'Your loan repayment of {amount} is overdue.'),
     ('loan_lender_repayment', 'Repayment received', 'You received {amount} from {borrowerName}\'s loan repayment.'),
     ('loan_repaid', 'Loan repaid', 'The loan of {amount} is fully repaid.'),
+    ('investment_subscription_received', 'Investment request received', 'We received your request to invest {amount} in {fundName}.'),
+    ('investment_payment_confirmed', 'Payment confirmed', 'Your payment of {amount} for {fundName} is confirmed. Units are bought at the next unit price.'),
+    ('investment_payment_failed', 'Investment payment failed', 'Your payment of {amount} for {fundName} did not go through.'),
+    ('investment_units_allocated', 'Units allocated', '{units} units of {fundName} were allocated to you at {navPerUnit} per unit.'),
+    ('investment_subscription_rejected', 'Investment not accepted', 'Your investment of {amount} in {fundName} was not accepted: {reason}'),
+    ('investment_redemption_received', 'Redemption request received', 'We received your redemption request for {fundName}.'),
+    ('investment_redemption_processed', 'Redemption processed', 'Your redemption from {fundName} was processed. {amount} will be paid out by {settlementDate}.'),
+    ('investment_redemption_settled', 'Redemption paid out', '{amount} from {fundName} was paid out.'),
+    ('investment_redemption_rejected', 'Redemption not accepted', 'Your redemption from {fundName} was not accepted: {reason}'),
+    ('investment_report_available', 'New investment statement', 'Your investment statement for {period} is available.'),
+    ('investment_terms_updated', 'Fund terms updated', 'The terms of {fundName} changed. Read them before your next investment.'),
 ]
 # The admin panel groups templates by service_type; account-level customer
 # templates already use this group.
