@@ -10,6 +10,7 @@ import 'package:spideliprovider/model/notification_model.dart';
 import 'package:spideliprovider/services/customer_notification.dart';
 import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/services/push_message.dart';
+import 'package:spideliprovider/services/push_template_text.dart';
 
 import '../constant/constants.dart';
 
@@ -134,9 +135,10 @@ class SendNotification {
   /// token yet, stale after a reinstall -- so status pushes never arrived.
   ///
   /// [recipient] overrides the app derived from [type]. The title and body
-  /// are always the template's `subject` / `message`: when the template is
-  /// not set up, nothing is sent (no "setup notification" stub, no app text).
-  static Future<bool> sendFcmMessage(String type, String token, Map<String, dynamic>? payload, {String? recipientId, PushApp? recipient}) async {
+  /// are always the template's `subject` / `message`, with its `{placeholders}`
+  /// filled from [values] ([PushTemplateText]): when the template is not set
+  /// up, nothing is sent (no "setup notification" stub, no app text).
+  static Future<bool> sendFcmMessage(String type, String token, Map<String, dynamic>? payload, {String? recipientId, PushApp? recipient, Map<String, String> values = const {}}) async {
     try {
       final PushApp app = recipient ?? recipientForKind(type);
       final String target = await _currentToken(app, recipientId, fallback: token);
@@ -154,8 +156,8 @@ class SendNotification {
         log("Push '$type' not sent: no notification template.");
         return false;
       }
-      final String title = template.subject ?? '';
-      final String body = template.message ?? '';
+      final String title = PushTemplateText.fill(template.subject, values);
+      final String body = PushTemplateText.fill(template.message, values);
       final Map<String, String> data = await _recordForCustomer(
         data: buildPushData(payload, kind: type),
         title: title,

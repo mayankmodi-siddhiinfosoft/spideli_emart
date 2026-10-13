@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
+import 'package:spideliprovider/ui/worker/worker_document_review_screen.dart';
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/firebase_options.dart';
 import 'package:spideliprovider/main.dart';
@@ -308,6 +309,9 @@ class NotificationService {
           // The drawer position of Help & Support moves with the optional
           // Subscription item, so the screen is opened directly.
           Get.to(() => HelpSupportScreen());
+          break;
+        case ProviderTapKind.workerDocuments:
+          Get.to(() => WorkerDocumentReviewScreen(workerId: target.workerId), preventDuplicates: false);
           break;
         case ProviderTapKind.none:
           break;

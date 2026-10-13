@@ -301,7 +301,10 @@ class BookingPushDeduper {
 // -----------------------------------------------------------------------------
 
 /// The screen a tapped push opens in this app.
-enum ProviderTapKind { bookingDetails, bookingList, orderChat, providerChat, adminChat, none }
+///
+/// [workerDocuments]: a worker sent a document for review
+/// (`worker_document_submitted`): that worker's review screen.
+enum ProviderTapKind { bookingDetails, bookingList, orderChat, providerChat, adminChat, workerDocuments, none }
 
 class ProviderTapTarget {
   final ProviderTapKind kind;
@@ -309,16 +312,19 @@ class ProviderTapTarget {
   /// The booking ('' when there is none).
   final String orderId;
 
-  const ProviderTapTarget(this.kind, [this.orderId = '']);
+  /// The worker of a [ProviderTapKind.workerDocuments] tap ('' otherwise).
+  final String workerId;
+
+  const ProviderTapTarget(this.kind, [this.orderId = '', this.workerId = '']);
 
   @override
-  bool operator ==(Object other) => other is ProviderTapTarget && other.kind == kind && other.orderId == orderId;
+  bool operator ==(Object other) => other is ProviderTapTarget && other.kind == kind && other.orderId == orderId && other.workerId == workerId;
 
   @override
-  int get hashCode => Object.hash(kind, orderId);
+  int get hashCode => Object.hash(kind, orderId, workerId);
 
   @override
-  String toString() => 'ProviderTapTarget(${kind.name}${orderId.isEmpty ? '' : ', $orderId'})';
+  String toString() => 'ProviderTapTarget(${kind.name}${orderId.isEmpty ? '' : ', $orderId'}${workerId.isEmpty ? '' : ', worker $workerId'})';
 }
 
 /// Whether [data] is an on-demand booking push: `type` provider_order (or an
@@ -354,6 +360,9 @@ ProviderTapTarget providerTapTarget(Map<dynamic, dynamic>? data) {
     case 'admin_chat':
     case 'admin':
       return const ProviderTapTarget(ProviderTapKind.adminChat);
+    case 'worker_document_submitted':
+      final String workerId = pushDataString(data, 'workerId');
+      return isOpenableOrderId(workerId) ? ProviderTapTarget(ProviderTapKind.workerDocuments, '', workerId) : const ProviderTapTarget(ProviderTapKind.none);
     default:
       return const ProviderTapTarget(ProviderTapKind.none);
   }

@@ -10,6 +10,7 @@ import 'package:spideliworker/constant/show_toast_dialog.dart';
 import 'package:spideliworker/main.dart';
 import 'package:spideliworker/model/document_model.dart';
 import 'package:spideliworker/services/document_service.dart';
+import 'package:spideliworker/services/worker_document_push.dart';
 import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 
@@ -37,6 +38,7 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
   String _front = '';
   String _back = '';
   DateTime? _expiry;
+  bool _submitting = false;
 
   bool get _needsFront => widget.documentType.frontSide == true || widget.documentType.backSide != true;
 
@@ -78,7 +80,7 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
     );
     if (source == null) return;
     try {
-      final XFile? image = await _picker.pickImage(source: source, imageQuality: 80);
+      final XFile? image = await _picker.pickImage(source: source, imageQuality: 80, maxWidth: DocumentService.maxImageSide, maxHeight: DocumentService.maxImageSide);
       if (image == null) return;
       setState(() => front ? _front = image.path : _back = image.path);
     } catch (e) {
@@ -96,6 +98,7 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
   }
 
   Future<void> _submit() async {
+    if (_submitting) return;
     if (_needsFront && _front.isEmpty) {
       ShowToastDialog.showToast("Please add the front side.".tr);
       return;
@@ -110,6 +113,7 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
     }
     final String uid = MyAppState.currentUser?.id ?? '';
     if (uid.isEmpty) return;
+    _submitting = true;
     ShowToastDialog.showLoader("Please wait...".tr);
     try {
       final String front = (_front.isNotEmpty && !_isRemote(_front)) ? await DocumentService.uploadFile(File(_front), uid) : _front;
@@ -122,12 +126,22 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
         extra: widget.existing == null ? null : Map<String, dynamic>.from(widget.existing!.extra),
       );
       await DocumentService.submitDocument(uid, document);
+      // The worker's provider reviews worker documents (as does the admin).
+      WorkerDocumentPush.notifyProvider(
+        providerId: MyAppState.currentUser?.providerId ?? '',
+        workerId: uid,
+        workerName: MyAppState.currentUser?.fullName() ?? '',
+        documentId: widget.documentType.id ?? '',
+        documentTitle: widget.documentType.title ?? '',
+      );
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast("Document uploaded. It is now pending review.".tr);
       Get.back(result: true);
     } catch (e) {
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast("Upload failed, please try again.".tr);
+    } finally {
+      _submitting = false;
     }
   }
 
@@ -193,15 +207,21 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
     // Subscribes the screen to theme changes.
     Provider.of<DarkThemeProvider>(context);
     final l = context.dsLayout;
-    final String? reason = widget.existing?.rejectionReason;
+    final String reason = widget.existing?.rejectionReason ?? '';
+    final bool rejected = DocumentService.statusOf(widget.existing) == VerificationStatus.rejected;
     return DsScaffold(
       title: (widget.documentType.title ?? '').tr,
       maxContentWidth: DsLayout.contentMax,
       body: ListView(
         padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.xxxl),
         children: DsFadeSlideIn.stagger([
-          if (widget.existing?.status == 'rejected' && (reason ?? '').isNotEmpty) ...[
-            DsInlineAlert(tone: DsTone.danger, icon: Icons.gpp_bad_outlined, title: "Rejected".tr, message: reason!),
+          if (rejected) ...[
+            DsInlineAlert(
+              tone: DsTone.danger,
+              icon: Icons.gpp_bad_outlined,
+              title: "Rejected".tr,
+              message: reason.isNotEmpty ? reason : "This document was rejected. Please upload it again.".tr,
+            ),
             const DsGap(DsSpace.xl),
           ],
           if (_needsFront) _imageBox(context, "Front side", _front, true),

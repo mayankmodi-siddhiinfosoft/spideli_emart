@@ -195,6 +195,8 @@ class NotificationService {
           unawaited(_openJob(value('orderId')));
         case PushRoute.jobList:
           _openJobList();
+        case PushRoute.documents:
+          _openDashboardTab(1);
         case PushRoute.chat:
           // The sender of the push is the other side of the chat.
           Get.to(const ChatScreen(), arguments: {
@@ -267,16 +269,19 @@ class NotificationService {
   }
 
   /// Back to the dashboard, on the Jobs tab. Never throws.
-  static void _openJobList() {
+  static void _openJobList() => _openDashboardTab(0);
+
+  /// Back to the dashboard on tab [index] (0 Jobs, 1 Documents). Never throws.
+  static void _openDashboardTab(int index) {
     try {
       Get.until((route) => route.isFirst);
       if (Get.isRegistered<DashBoardController>()) {
         final DashBoardController dashboard = Get.find<DashBoardController>();
-        dashboard.selectedIndex.value = 0;
-        if (dashboard.pageController.hasClients) dashboard.pageController.jumpToPage(0);
+        dashboard.selectedIndex.value = index;
+        if (dashboard.pageController.hasClients) dashboard.pageController.jumpToPage(index);
       }
     } catch (e) {
-      log("Job list not opened: $e");
+      log("Dashboard tab $index not opened: $e");
     }
   }
 

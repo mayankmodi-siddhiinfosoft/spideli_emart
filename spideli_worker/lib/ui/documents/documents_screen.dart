@@ -90,7 +90,7 @@ class DocumentsScreen extends StatelessWidget {
                   message: "The administrator has not set up any worker documents. They will appear here when available.".tr,
                 )
               else
-                VerificationSummaryCard(status: overall, required: controller.verificationRequired.value, dark: dark),
+                VerificationSummaryCard(status: overall, required: controller.verificationRequired.value != false, dark: dark),
               if (types.isNotEmpty) ...[
                 const DsGap(DsSpace.lg),
                 DsProgressBar(
@@ -200,7 +200,7 @@ class VerificationSummaryCard extends StatelessWidget {
       case VerificationStatus.approved:
         return "Your documents are approved. You can receive jobs.";
       case VerificationStatus.pending:
-        return "Your documents are pending review by the administrator.";
+        return "Your documents are pending review.";
       case VerificationStatus.rejected:
         return "A document was rejected. Please check the reason and upload it again.";
       case VerificationStatus.expired:

@@ -12,6 +12,7 @@ import 'package:spideliworker/model/user.dart';
 import 'package:spideliworker/services/customer_notification.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/services/push_message.dart';
+import 'package:spideliworker/services/push_template_text.dart';
 
 /// Every push the worker app sends: job status to the customer
 /// ([sendFcmMessage]) and chat messages ([sendChatFcmMessage]).
@@ -129,6 +130,35 @@ class SendNotification {
         return false;
       }
       return await _send(token: token, title: title, body: body, data: data, kind: type, recipient: recipient);
+    } catch (e) {
+      debugPrint('push "$type" not sent: $e');
+      return false;
+    }
+  }
+
+  /// A push from the `dynamic_notification` template [type] with its
+  /// `{placeholders}` filled from [values] ([PushTemplateText]). Nothing is
+  /// sent when the template has not been created (never the "setup
+  /// notification" stub) or the recipient has no usable token.
+  static Future<bool> sendTemplatePush(String type, {required String token, required PushRecipient recipient, Map<String, String> values = const {}, Map<String, dynamic>? payload}) async {
+    if (!isUsableFcmToken(token)) {
+      debugPrint('push "$type" skipped: the recipient has no FCM token');
+      return false;
+    }
+    try {
+      final NotificationModel? template = await FireStoreUtils.getNotificationContent(type);
+      if (template == null || !PushTemplateText.isSetUp(type: type, templateId: template.id, templateType: template.type, subject: template.subject, message: template.message)) {
+        debugPrint('push "$type" not sent: no notification template');
+        return false;
+      }
+      return await _send(
+        token: token,
+        title: PushTemplateText.fill(template.subject, values),
+        body: PushTemplateText.fill(template.message, values),
+        data: fcmDataPayload(payload, fallbackType: type),
+        kind: type,
+        recipient: recipient,
+      );
     } catch (e) {
       debugPrint('push "$type" not sent: $e');
       return false;

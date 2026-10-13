@@ -963,14 +963,19 @@ class FireStoreUtils {
   }
 
   /// Creates `providers_workers/{id}`, stamped with the provider's region
-  /// (spec 18.12) when known.
+  /// (spec 18.12) when known. A new worker is never verified (report Doc 37):
+  /// `isDocumentVerify: false` until every required document is approved by
+  /// the provider (Worker verification) or the admin panel.
   static Future<String?> firebaseCreateNewWorker(User user) async {
     final String? regionId = user.regionId ?? currentProviderRegionId();
     return await firestore
         .collection(WORKERS)
         .doc(user.id)
-        .set({...user.toJson(), if (regionId != null && regionId.isNotEmpty) 'regionId': regionId}).then((value) => null, onError: (e) => e);
+        .set({...newWorkerRecord(user.toJson()), if (regionId != null && regionId.isNotEmpty) 'regionId': regionId}).then((value) => null, onError: (e) => e);
   }
+
+  /// The record of a NEW worker: [data] with `isDocumentVerify` false.
+  static Map<String, dynamic> newWorkerRecord(Map<String, dynamic> data) => {...data, 'isDocumentVerify': false};
 
   static Future<List<User>> getAllWorkers() async {
     List<User> products = [];

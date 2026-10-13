@@ -43,7 +43,7 @@ class DashBoardController extends GetxController {
   @override
   void onInit() {
     // Verification status + worker region, read by Jobs / Documents / Profile.
-    Get.put(VerificationController());
+    VerificationController.ensure();
     getData();
     super.onInit();
   }

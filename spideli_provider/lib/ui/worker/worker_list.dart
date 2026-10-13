@@ -7,6 +7,8 @@ import 'package:spideliprovider/services/firebase_helper.dart';
 import 'package:spideliprovider/themes/ds/ds.dart';
 import 'package:spideliprovider/ui/add_worker/add_or_update_worker.dart';
 import 'package:spideliprovider/ui/dashboard/dashboard_screen.dart';
+import 'package:spideliprovider/ui/worker/worker_document_review_screen.dart';
+import 'package:spideliprovider/ui/worker/worker_verification_screen.dart';
 import 'package:spideliprovider/utils/dark_theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -37,16 +39,38 @@ class AllWorkersScreen extends StatelessWidget {
                 title: 'Worker not available.'.tr,
                 message: 'Add your team members so you can assign them to bookings.'.tr,
               ),
-              builder: (_) => GridView.builder(
-                padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.md, l.gutter, DsSpace.huge + DsSpace.xxl),
-                gridDelegate: DsLayout.gridDelegate(maxItemWidth: 420, mainAxisExtent: 136),
-                itemCount: controller.user.length,
-                itemBuilder: (context, index) {
-                  return DsFadeSlideIn(
-                    index: index,
-                    child: buildCategoryItem(controller.user[index], context, controller),
-                  );
-                },
+              builder: (_) => Column(
+                children: [
+                  // Worker verification: the provider reviews its workers'
+                  // documents (approve / reject) from here.
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.md, l.gutter, 0),
+                    child: DsCard.outlined(
+                      padding: EdgeInsets.zero,
+                      onTap: () => Get.to(() => const WorkerVerificationScreen())!.then((_) => controller.getData()),
+                      child: DsListTile(
+                        title: 'Worker verification'.tr,
+                        subtitle: 'Review and approve your workers\' documents'.tr,
+                        leadingIcon: Icons.verified_user_outlined,
+                        leadingTone: DsTone.brand,
+                        showChevron: true,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: GridView.builder(
+                      padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.md, l.gutter, DsSpace.huge + DsSpace.xxl),
+                      gridDelegate: DsLayout.gridDelegate(maxItemWidth: 420, mainAxisExtent: 136),
+                      itemCount: controller.user.length,
+                      itemBuilder: (context, index) {
+                        return DsFadeSlideIn(
+                          index: index,
+                          child: buildCategoryItem(controller.user[index], context, controller),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
             floatingActionButton: FloatingActionButton.extended(
@@ -131,6 +155,15 @@ class AllWorkersScreen extends StatelessWidget {
               ],
             ),
           ),
+          DsIconButton(
+            icon: model.isDocumentVerify == true ? Icons.verified_user_outlined : Icons.badge_outlined,
+            semanticLabel: 'Documents'.tr,
+            variant: DsIconButtonVariant.tonal,
+            color: model.isDocumentVerify == true ? c.successStrong : c.brandStrong,
+            size: 36,
+            onPressed: () => Get.to(() => WorkerDocumentReviewScreen(workerId: model.id))!.then((_) => controller.getData()),
+          ),
+          const DsGap(DsSpace.xs),
           DsIconButton(
             icon: Icons.delete_outline_rounded,
             semanticLabel: 'Delete'.tr,

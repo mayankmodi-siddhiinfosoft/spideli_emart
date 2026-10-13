@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:spideliworker/constant/constants.dart';
 import 'package:spideliworker/constant/show_toast_dialog.dart';
 import 'package:spideliworker/controller/profile_controller.dart';
-import 'package:spideliworker/controller/verification_controller.dart';
+import 'package:spideliworker/ui/documents/verification_gate.dart';
 import 'package:spideliworker/main.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/services/notification_service.dart';
@@ -227,10 +227,7 @@ class ProfileScreen extends StatelessWidget {
                   value: online,
                   onChanged: (value) async {
                     // Spec 3.6: unverified workers cannot go online.
-                    if (value && Get.isRegistered<VerificationController>() && !Get.find<VerificationController>().canReceiveJobs) {
-                      ShowToastDialog.showToast("Your documents must be approved before you can go online.".tr);
-                      return;
-                    }
+                    if (value && !await VerificationGate.allows(message: "Your documents must be approved before you can go online.")) return;
                     controller.online.value = value;
                     MyAppState.currentUser!.online = controller.online.value;
                     await FireStoreUtils.updateCurrentUser(MyAppState.currentUser!);

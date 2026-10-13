@@ -333,7 +333,8 @@ and `apns.sound` overrides; the key is never downloaded, no fallback on error.
   stays `01` because it is what the app already used, so devices keep it. The
   manifest `com.google.firebase.messaging.default_notification_channel_id` is
   `01` (it had none), so a push with no channel id or an unknown one lands on it.
-- **Senders to the worker** (provider: `worker_assigned`; customer: chat) should
+- **Senders to the worker** (provider: `worker_assigned`, `worker_document_approved`,
+  `worker_documents_verified`, `worker_document_rejected`; customer: chat) should
   use `channel_id: "01"`, `sound: "default"` and `apns.payload.aps.sound: "default"`.
 - **Data the worker routes on** (all values strings; `spideli_worker/lib/services/push_message.dart` `pushRouteFor`):
   - `type` = `provider_order` + `orderId` (or any type with an `orderId`): opens the booking.
@@ -341,6 +342,8 @@ and `apns.sound` overrides; the key is never downloaded, no fallback on error.
     chat with the sender as the other side; without `orderId`/`senderId`: the inbox.
   - `type` = `provider_chat` + `orderId` (+ the full chat arguments): the chat (legacy).
   - `type` = `admin` / `admin_chat`, or `chatType` = `admin`: Help & Support.
+  - `type` = `worker_document_approved` / `worker_documents_verified` /
+    `worker_document_rejected`: the Documents tab.
   - anything else: opens the app (no crash on missing keys).
 - **Token:** `providers_workers/{uid}.fcmToken` (NOT `users/`), written
   field-level only by `NotificationService` on every start when signed in,
@@ -364,8 +367,10 @@ The channel is chosen in `spideli_worker/lib/services/push_message.dart`
 | `service_completed` | customer (same lookup) | `high_importance_channel` | `default` | `default` |
 | `service_charges` (extra charges) | customer (same lookup) | `high_importance_channel` | `default` | `default` |
 | chat (`chat`) | customer (`users/{id}`, or `providers_workers/{id}`) | `chat_messages` | `chat_message` | `chat_message.wav` |
+| `worker_document_submitted` (`{workerName}`, `{documentTitle}`; not sent when the template is missing) | the worker's provider, fresh `users/{providerId}.fcmToken` | `01` | `default` | `default` |
 
-Data: `{type: "provider_order", orderId}` for job status; `{type: "orderChat" | "admin",
+Data: `{type: "provider_order", orderId}` for job status; `{type: "worker_document_submitted",
+workerId, providerId, documentId}` for a document upload; `{type: "orderChat" | "admin",
 chatType: "worker", orderId, senderId, senderName}` for chat. Every message also carries
 `android.priority: high`, `apns-priority: 10` and `aps.content-available: 1`
 (legacy path); the server path sends `kind` plus the same `android.channelId` /
@@ -722,7 +727,7 @@ transaction, only while it still equals the dead token (under
   had none), so a push with no channel id (the customer sends `booking_placed`
   that way) or an unknown one lands on it.
 - **Senders to the provider** (customer: `booking_placed` and chat; worker:
-  chat) should use `channel_id: "01"`, `sound: "default"` and
+  chat and `worker_document_submitted`) should use `channel_id: "01"`, `sound: "default"` and
   `apns.payload.aps.sound: "default"`. Leaving the channel out also works (the
   manifest default is `01`).
 - **Data the provider routes on** (all values strings; `NotificationService._route`):
@@ -731,6 +736,8 @@ transaction, only while it still equals the dead token (under
     opens that chat with the sender as the other side.
   - `type` = `provider_chat` + `orderId` (+ the full chat arguments): the chat (legacy).
   - `type` = `admin_chat` / `admin`: Help & Support.
+  - `type` = `worker_document_submitted` + `workerId`: that worker's document
+    review (Worker verification).
   - missing ids or anything else: nothing is opened, nothing crashes. A tap
     that arrives before the dashboard is up (cold start, signed out) is kept
     and opened once the dashboard shows.
@@ -763,6 +770,7 @@ The channel is chosen in `spideli_provider/lib/services/push_message.dart`
 | `service_completed` | customer | same | `high_importance_channel` | `default` | `default` |
 | `service_charges` | customer | same | `high_importance_channel` | `default` | `default` |
 | `worker_assigned` | worker | `providers_workers/{workerId}.fcmToken`, falls back to the list copy | `01` | `default` | `default` |
+| `worker_document_approved` (`{documentTitle}`, `{providerName}`), `worker_documents_verified` (`{providerName}`), `worker_document_rejected` (`{documentTitle}`, `{providerName}`, `{reason}`) | worker | `providers_workers/{workerId}.fcmToken` | `01` | `default` | `default` |
 | chat (`chat`) to a customer | customer | `users/{id}` (re-read when the open-time copy has none) | `chat_messages` | `chat_message` | `chat_message.wav` |
 | chat (`chat`) to a worker (record has `providerId`, role not `customer`) | worker | `providers_workers/{id}` | `chat_messages` | `chat_message` | `chat_message.wav` |
 

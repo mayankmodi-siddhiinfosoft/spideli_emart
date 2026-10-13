@@ -58,15 +58,20 @@ class WorkerDocumentModel {
   }
 }
 
-/// One uploaded document. The Driver app writes `documentId`, `frontImage`,
-/// `backImage` and `status` ("uploaded" -> "approved" / "rejected", set by the
-/// admin). This app keeps those four and adds, additively:
-/// * `expiryDate` (Timestamp) -- entered by the worker when the document type
-///   has `expireAt == true`; an approved document past it is "expired".
-/// * `rejectionReason` -- written by the admin; read tolerantly from
-///   `rejectionReason` / `rejectReason` / `reason`.
-/// * `uploadedAt` (Timestamp).
-/// Unknown keys found on an entry are carried over on re-upload.
+/// One uploaded document, an entry of `documents_verify/{uid}.documents`
+/// (admin panel contract, `.claude/BUG-REPORT-01-ADMIN.md` 24+25):
+/// `documentId`, `frontImage`, `backImage` and `status` ("uploaded" ->
+/// "approved" / "rejected", set by the admin panel or the worker's provider).
+/// Additively, as the Provider app writes for its own documents:
+/// * `expireAt` (Timestamp) -- entered by the worker when the document type
+///   has `expireAt == true`; a document past it is "expired". The older
+///   `expiryDate` key is still read.
+/// * `submittedAt` (Timestamp) -- when the worker sent it. The older
+///   `uploadedAt` key is still read.
+/// * the reviewer's reason: written as `rejectReason` (panel), read from any
+///   of [reasonKeys].
+/// Every other key of a stored entry (`number`, `reviewedAt`, ...) is kept in
+/// [extra] and written back unchanged.
 class Documents {
   String? documentId;
   String? frontImage;
@@ -74,28 +79,53 @@ class Documents {
   String? status;
   Timestamp? expiryDate;
   String? rejectionReason;
-  Timestamp? uploadedAt;
+  Timestamp? submittedAt;
   Map<String, dynamic> extra;
 
-  Documents({this.documentId, this.frontImage, this.backImage, this.status, this.expiryDate, this.rejectionReason, this.uploadedAt, Map<String, dynamic>? extra})
+  Documents({this.documentId, this.frontImage, this.backImage, this.status, this.expiryDate, this.rejectionReason, this.submittedAt, Map<String, dynamic>? extra})
       : extra = extra ?? {};
 
-  static const List<String> _known = ['documentId', 'frontImage', 'backImage', 'status', 'expireAt', 'expiryDate', 'rejectionReason', 'uploadedAt'];
+  /// Keys a reviewer's reason is stored under; `rejectReason` (the admin
+  /// panel's) first.
+  static const List<String> reasonKeys = ['rejectReason', 'rejectionReason', 'rejectedReason', 'rejected_reason', 'reason'];
+
+  /// The previous decision's fields, dropped when the worker sends the
+  /// document again (a new submission has not been reviewed).
+  static const List<String> reviewKeys = [...reasonKeys, 'reviewedAt', 'reviewedBy', 'reviewedByRole'];
+
+  static const List<String> _known = ['documentId', 'frontImage', 'backImage', 'status', 'expireAt', 'expiryDate', 'submittedAt', 'uploadedAt', ...reasonKeys];
+
+  static Timestamp? _timestamp(dynamic value) {
+    if (value is Timestamp) return value;
+    if (value is String && value.isNotEmpty) {
+      final DateTime? date = DateTime.tryParse(value);
+      if (date != null) return Timestamp.fromDate(date);
+    }
+    return null;
+  }
 
   factory Documents.fromJson(Map<String, dynamic> json) {
-    final dynamic reason = json['rejectionReason'] ?? json['rejectReason'] ?? json['reason'];
-    final dynamic expiry = json['expiryDate'] ?? json['expireAt'];
+    String? reason;
+    for (final key in reasonKeys) {
+      final String text = json[key]?.toString().trim() ?? '';
+      if (text.isNotEmpty && text.toLowerCase() != 'null') {
+        reason = text;
+        break;
+      }
+    }
     return Documents(
       documentId: json['documentId']?.toString(),
       frontImage: json['frontImage']?.toString(),
       backImage: json['backImage']?.toString(),
       status: json['status']?.toString(),
-      expiryDate: expiry is Timestamp ? expiry : null,
-      rejectionReason: (reason == null || reason.toString().isEmpty) ? null : reason.toString(),
-      uploadedAt: json['uploadedAt'] is Timestamp ? json['uploadedAt'] : null,
+      expiryDate: _timestamp(json['expireAt']) ?? _timestamp(json['expiryDate']),
+      rejectionReason: reason,
+      submittedAt: _timestamp(json['submittedAt']) ?? _timestamp(json['uploadedAt']),
       extra: Map<String, dynamic>.from(json)..removeWhere((k, _) => _known.contains(k)),
     );
   }
+
+  bool get hasFile => (frontImage ?? '').trim().isNotEmpty || (backImage ?? '').trim().isNotEmpty;
 
   Map<String, dynamic> toJson() {
     return {
@@ -105,11 +135,10 @@ class Documents {
       'backImage': backImage ?? '',
       'status': status,
       // `expireAt` is the key the Driver app and the provider app already write
-      // for the expiry date, so the admin panel only has to read one. Reading
-      // stays tolerant of the older `expiryDate`.
+      // for the expiry date, so the admin panel only has to read one.
       if (expiryDate != null) 'expireAt': expiryDate,
-      if (rejectionReason != null) 'rejectionReason': rejectionReason,
-      if (uploadedAt != null) 'uploadedAt': uploadedAt,
+      if (rejectionReason != null) 'rejectReason': rejectionReason,
+      if (submittedAt != null) 'submittedAt': submittedAt,
     };
   }
 }

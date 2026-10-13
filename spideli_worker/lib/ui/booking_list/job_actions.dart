@@ -12,13 +12,13 @@ import 'package:provider/provider.dart';
 import 'package:signature/signature.dart';
 import 'package:spideliworker/constant/constants.dart';
 import 'package:spideliworker/constant/show_toast_dialog.dart';
-import 'package:spideliworker/controller/verification_controller.dart';
 import 'package:spideliworker/model/onprovider_order_model.dart';
 import 'package:spideliworker/services/firebase_helper.dart';
 import 'package:spideliworker/services/push_message.dart';
 import 'package:spideliworker/services/send_notification.dart';
 import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/booking_list/verify_otp_screen.dart';
+import 'package:spideliworker/ui/documents/verification_gate.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 
 /// Job status flow (spec 11), shared by the job list and the job detail:
@@ -31,14 +31,6 @@ import 'package:spideliworker/utils/dark_theme_provider.dart';
 /// (FireStoreUtils.updateOrderFields), so `regionId` and panel fields survive.
 class JobActions {
   JobActions._();
-
-  static bool _verifiedOrWarn() {
-    if (Get.isRegistered<VerificationController>() && !Get.find<VerificationController>().canReceiveJobs) {
-      ShowToastDialog.showToast("Your documents must be approved before you can work on jobs.".tr);
-      return false;
-    }
-    return true;
-  }
 
   /// The data of a push about [order] after a worker action
   /// (`.claude/ONDEMAND-NOTIFICATIONS.md`): `type` `provider_order`, the
@@ -84,8 +76,10 @@ class JobActions {
     }
   }
 
+  /// Starting a job needs approved documents (spec 3.6), checked from the
+  /// list, the details and a details screen opened from a push alike.
   static Future<void> start(OnProviderOrderModel order) async {
-    if (!_verifiedOrWarn()) return;
+    if (!await VerificationGate.allows(message: "Your documents must be approved before you can work on jobs.")) return;
     final Timestamp schedule = order.newScheduleDateTime ?? order.scheduleDateTime ?? Timestamp.now();
     if (!schedule.toDate().isBefore(DateTime.now())) {
       Get.showSnackbar(GetSnackBar(message: '${"You can start booking on".tr} ${DateFormat("EEE dd MMMM , hh:mm a").format(schedule.toDate())}.', duration: 5.seconds));

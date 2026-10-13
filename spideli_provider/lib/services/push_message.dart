@@ -57,13 +57,16 @@ PushRoute pushRouteFor(PushApp app, {String? kind}) {
 }
 
 /// Who receives a `dynamic_notification` template sent by this app: a worker
-/// for an assignment, a reassignment away or a declined booking, the customer
-/// for every booking status.
+/// for an assignment, a reassignment away, a declined booking or a decision
+/// on their documents; the customer for every booking status.
 PushApp recipientForKind(String kind) {
   switch (kind.trim()) {
     case 'worker_assigned':
     case 'worker_unassigned':
     case 'provider_rejected_worker':
+    case 'worker_document_approved':
+    case 'worker_documents_verified':
+    case 'worker_document_rejected':
       return PushApp.worker;
     default:
       return PushApp.customer;

@@ -358,7 +358,32 @@ Map<String, String> onDemandPushData({
 /// [jobList] is the Jobs tab: an on-demand booking push without a usable
 /// `orderId`, or one telling the worker the booking was taken off them
 /// (`worker_unassigned`).
-enum PushRoute { none, booking, jobList, chat, inbox, legacyProviderChat, adminChat }
+///
+/// [documents] is the Documents tab: a decision on the worker's documents
+/// ([workerDocumentPushTypes]).
+enum PushRoute { none, booking, jobList, chat, inbox, legacyProviderChat, adminChat, documents }
+
+/// `dynamic_notification` templates of the worker's document review, sent by
+/// the Provider app to the worker (the admin panel's own decision pushes, if
+/// it sends them with these types, open the same screen).
+class WorkerDocumentPushType {
+  WorkerDocumentPushType._();
+
+  /// To the provider, from this app: `{workerName}`, `{documentTitle}`.
+  static const String submitted = 'worker_document_submitted';
+
+  /// To the worker: `{documentTitle}`, `{providerName}`.
+  static const String approved = 'worker_document_approved';
+
+  /// To the worker: `{providerName}`.
+  static const String verified = 'worker_documents_verified';
+
+  /// To the worker: `{documentTitle}`, `{providerName}`, `{reason}`.
+  static const String rejected = 'worker_document_rejected';
+}
+
+/// The pushes a worker receives about their documents.
+const Set<String> workerDocumentPushTypes = {WorkerDocumentPushType.approved, WorkerDocumentPushType.verified, WorkerDocumentPushType.rejected};
 
 String _value(Map<String, dynamic> data, String key) {
   final String text = (data[key] ?? '').toString().trim();
@@ -377,11 +402,13 @@ String _value(Map<String, dynamic> data, String key) {
 ///   chat; without the order or the sender: the inbox.
 /// - `provider_chat` + `orderId`: the chat, with the arguments in the payload.
 /// - `admin` / `admin_chat`, or chatType `admin`: Help & Support.
+/// - a document decision ([workerDocumentPushTypes]): the Documents tab.
 /// - any other type that carries an `orderId`: the booking.
 PushRoute pushRouteFor(Map<String, dynamic> data) {
   final String type = _value(data, 'type');
   final String orderId = _value(data, 'orderId');
   if (type == 'admin' || type == 'admin_chat' || _value(data, 'chatType').toLowerCase() == 'admin') return PushRoute.adminChat;
+  if (workerDocumentPushTypes.contains(type)) return PushRoute.documents;
   switch (type) {
     case 'orderChat':
     case 'chat':

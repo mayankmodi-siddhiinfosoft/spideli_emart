@@ -36,7 +36,9 @@ class AssignWorkerList extends StatelessWidget {
                 ? DsEmptyState(
                     icon: Icons.groups_outlined,
                     title: "No online worker available".tr,
-                    message: 'Workers appear here as soon as they come online.'.tr,
+                    message: controller.hiddenUnverified.value > 0
+                        ? "Online workers whose documents are not approved cannot be assigned. Review them in Worker verification.".tr
+                        : 'Workers appear here as soon as they come online.'.tr,
                   )
                 : ListView.builder(
                     itemCount: controller.user.length,

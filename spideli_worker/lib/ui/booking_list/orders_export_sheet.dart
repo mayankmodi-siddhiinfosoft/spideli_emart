@@ -106,16 +106,7 @@ class _OrdersExportSheetState extends State<OrdersExportSheet> {
   /// completed jobs are exported, as the screen shows).
   Future<bool> _canReceiveJobs() async {
     if (!Get.isRegistered<VerificationController>()) return false;
-    final VerificationController verification = Get.find<VerificationController>();
-    if (verification.isLoading.value) {
-      try {
-        await verification.isLoading.stream.firstWhere((loading) => !loading).timeout(const Duration(seconds: 15));
-      } catch (e) {
-        log('Orders export: verification state not loaded: $e');
-        return false;
-      }
-    }
-    return verification.canReceiveJobs;
+    return Get.find<VerificationController>().checkCanReceiveJobs();
   }
 
   Future<void> _export() async {
