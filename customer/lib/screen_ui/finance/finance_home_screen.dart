@@ -114,7 +114,7 @@ class _BalanceHero extends StatelessWidget {
         final stats = <FinHeroStat>[
           if (s?.investments != null) FinHeroStat("Invested".tr, m(s!.investments!['currentValuation'])),
           if (s?.savings != null) FinHeroStat("Saved so far".tr, m(s!.savings!['savedAmount'])),
-          if (s?.loans != null) FinHeroStat("Borrowed, to repay".tr, m(s!.loans!['borrowedOutstanding'])),
+          if (s?.loans != null) FinHeroStat("Still to repay".tr, m(s!.loans!['borrowedOutstanding'])),
         ];
         return FinHero(
           label: "Available balance".tr,
