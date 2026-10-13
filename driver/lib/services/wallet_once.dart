@@ -18,6 +18,10 @@ abstract final class WalletOnce {
   static String driverRowId(String orderId) => 'driver_$orderId';
   static String referralRowId(String orderId) => 'referral_$orderId';
 
+  /// The referral row of a parcel / cab / rental order ([kind] = `parcel`,
+  /// `cab`, `rental`): distinct from the delivery's [referralRowId].
+  static String referralRowIdFor(String kind, String orderId) => 'referral_${kind}_$orderId';
+
   /// Writes [row] as `wallet/{rowId}` and adds [amount] to `users/{userId}.wallet_amount`,
   /// unless that row already exists. Returns true when it paid now.
   static Future<bool> pay({required String rowId, required Map<String, dynamic> row, required String? userId, required num amount}) async {

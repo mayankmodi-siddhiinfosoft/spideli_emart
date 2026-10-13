@@ -29,9 +29,10 @@ class ParcelHomeController extends GetxController {
 
   @override
   void onInit() {
-    // TODO: implement onInit
     getParcelList();
     _listenOnGoingParcels();
+    // Earnings of a completion interrupted earlier (creditPending): finish them.
+    ParcelTrackingService.resumePendingCredits();
     super.onInit();
   }
 

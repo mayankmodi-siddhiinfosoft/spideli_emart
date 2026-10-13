@@ -834,8 +834,9 @@ service cloud.firestore {
     // TODO (delete): open to signed-in accounts, as before. TODO (driver
     // writes): the driver app updates only status, driverId, driverID,
     // driver, rejectedByDrivers, driverRejections, receiverPickupDateTime,
-    // regionId, parcelStatus, trackingEvents, deliveryProof, driverCredited
-    // (checked 7 Oct) - turn that into an allowlist once the panel's and the
+    // regionId, parcelStatus, trackingEvents, deliveryProof, driverCredited,
+    // creditPending (checked 7 Oct; creditPending 13 Oct: owed earnings of a
+    // completion, cleared once credited) - turn that into an allowlist once the panel's and the
     // pickup points' writers are known.
     match /parcel_orders/{id} {
       allow read, delete: if signedIn();

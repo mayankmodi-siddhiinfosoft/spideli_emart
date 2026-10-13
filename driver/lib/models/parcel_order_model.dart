@@ -147,8 +147,13 @@ class ParcelOrderModel {
     return shown.contains('+') ? '+$digits' : digits;
   }
 
-  /// Set (in a transaction) when the driver completion / wallet credit was claimed — at most once per order.
+  /// Set once every wallet movement of the completion is done
+  /// (`ParcelCompletionRules`): the earnings were paid.
   bool? driverCredited;
+
+  /// Set by the completion claim with `Order Completed`, cleared once the
+  /// earnings are credited: true = completed but the earnings are still owed.
+  bool? creditPending;
   String? parcelStatus;
   List<ParcelTrackingEvent> trackingEvents = [];
   Map<String, dynamic>? deliveryProof;
@@ -288,6 +293,7 @@ class ParcelOrderModel {
     receiverPhone = str(json['receiverPhone']);
     receiverCountryCode = str(json['receiverCountryCode']);
     driverCredited = json['driverCredited'] == true;
+    creditPending = json['creditPending'] == true;
     parcelStatus = str(json['parcelStatus']);
     deliveryProof = map(json['deliveryProof']);
     trackingEvents = [];

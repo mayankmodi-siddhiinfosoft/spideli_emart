@@ -10,6 +10,7 @@ import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/parcel_amounts.dart';
 import 'package:driver/services/company_cash_service.dart';
 import 'package:driver/services/parcel_flow_rules.dart';
+import 'package:driver/services/wallet_once.dart';
 import 'package:flutter/foundation.dart';
 
 /// Parcel tracking statuses (PARCEL-CONTRACT.md, spec 7.5) — `parcel_orders.parcelStatus`.
@@ -215,9 +216,11 @@ class ParcelTrackingService {
   static String driverFinalStatus(ParcelOrderModel o) =>
       o.deliveryMethod == 'pickup_point' ? ParcelTrackingStatus.atDestinationPoint : ParcelTrackingStatus.delivered;
 
-  /// Assigned to me, the final step (or later) is recorded, but the order was never completed / credited.
+  /// Assigned to me, the final step (or later) is recorded, but the order was never completed / credited
+  /// (or it was completed and its earnings are still owed: `creditPending`).
   static bool awaitingCompletion(ParcelOrderModel o) {
-    if (!isAssignedToMe(o) || o.status == Constant.orderCompleted || o.driverCredited == true || _isCancelled(o)) return false;
+    if (!isAssignedToMe(o) || o.driverCredited == true || _isCancelled(o)) return false;
+    if (o.status == Constant.orderCompleted) return o.creditPending == true;
     final current = currentStatus(o);
     if (current == ParcelTrackingStatus.returned) return false;
     return o.parcelStatus != null && ParcelTrackingStatus.rank(current) >= ParcelTrackingStatus.rank(driverFinalStatus(o));
@@ -266,7 +269,7 @@ class ParcelTrackingService {
     if (ParcelTrackingStatus.rank(currentStatus(fresh)) < ParcelTrackingStatus.rank(status) || fresh.parcelStatus == null) {
       await _writeStatus(fresh, status, deliveryProof: deliveryProof, note: note);
     }
-    if (isDriverFinalStep(fresh, status) && isAssignedToMe(fresh) && fresh.status != Constant.orderCompleted) {
+    if (isDriverFinalStep(fresh, status) && isAssignedToMe(fresh) && (fresh.status != Constant.orderCompleted || fresh.creditPending == true)) {
       await completeOrder(fresh);
     }
   }
@@ -377,26 +380,17 @@ class ParcelTrackingService {
     await _applyStatus(fresh, driverFinalStatus(fresh), deliveryProof: deliveryProof);
   }
 
-  /// Sets `Order Completed` and claims `driverCredited` in one transaction — only when the order is not already
-  /// completed / credited / cancelled. True = this call won and must credit the wallet.
-  static Future<bool> _claimCompletion(String orderId) async {
-    return FireStoreUtils.fireStore.runTransaction<bool>((transaction) async {
+  /// Sets `Order Completed` with `creditPending: true` in one transaction ([ParcelCompletionRules]): `claim` =
+  /// this call completed the order and must credit the earnings; `resume` = it was completed earlier and its
+  /// earnings are still owed; `refused` = nothing to do.
+  static Future<ParcelCompletionClaim> _claimCompletion(String orderId) async {
+    final String uid = FireStoreUtils.getCurrentUid();
+    return FireStoreUtils.fireStore.runTransaction<ParcelCompletionClaim>((transaction) async {
       final ref = _doc(orderId);
       final snap = await transaction.get(ref);
-      final data = snap.data();
-      if (!snap.exists || data == null) return false;
-      final status = data['status']?.toString();
-      final parcelStatus = data['parcelStatus']?.toString();
-      if (data['driverCredited'] == true ||
-          status == Constant.orderCompleted ||
-          status == Constant.orderCancelled ||
-          status == Constant.orderRejected ||
-          parcelStatus == ParcelTrackingStatus.cancelled ||
-          parcelStatus == ParcelTrackingStatus.returned) {
-        return false;
-      }
-      transaction.update(ref, {'status': Constant.orderCompleted, 'driverCredited': true});
-      return true;
+      final ParcelCompletionClaim decision = ParcelCompletionRules.claimDecision(snap.exists ? snap.data() : null, uid);
+      if (decision == ParcelCompletionClaim.claim) transaction.update(ref, ParcelCompletionRules.claimFields);
+      return decision;
     });
   }
 
@@ -411,10 +405,11 @@ class ParcelTrackingService {
   }
 
   /// The existing eMart completion: `Order Completed`, wallet credit, commission, customer notification and
-  /// referral — at most once per order (a stale list, a second screen or a retry cannot pay twice).
+  /// referral — at most once per order (a stale list, a second screen or a retry cannot pay twice), and never
+  /// lost: the earnings are owed (`creditPending`) until every wallet movement is done ([_creditCompletion]).
   static Future<void> completeOrder(ParcelOrderModel o) async {
-    final won = await _claimCompletion(o.id!);
-    if (!won) {
+    final ParcelCompletionClaim claim = await _claimCompletion(o.id!);
+    if (claim == ParcelCompletionClaim.refused) {
       final fresh = await getById(o.id!);
       if (fresh?.status == Constant.orderCompleted) {
         o.status = Constant.orderCompleted;
@@ -428,9 +423,16 @@ class ParcelTrackingService {
       throw 'This parcel can no longer be completed.';
     }
     o.status = Constant.orderCompleted;
-    o.driverCredited = true;
+    o.creditPending = true;
     await _releaseFromDriver(o.id!);
-    await _updateWalletAmount(o);
+    // The earnings: a failure here leaves the order `creditPending`, finished later ([resumePendingCredits]).
+    try {
+      await _creditCompletion(o);
+    } catch (e) {
+      debugPrint('ParcelTrackingService.completeOrder credit pending $e');
+    }
+    // A resumed completion already told the customer and the owner the first time.
+    if (claim == ParcelCompletionClaim.resume) return;
     try {
       final Map<String, dynamic> payLoad = <String, dynamic>{"type": "parcel_order", "orderId": o.id};
       await SendNotification.notifyCustomer(Constant.parcelCompleted,
@@ -438,28 +440,72 @@ class ParcelTrackingService {
 
       // The company owner of a carrier / fleet parcel (template).
       await _notifyOwner(o, ParcelStatusPush.ownerDeliveredTemplate);
+    } catch (e) {
+      debugPrint('ParcelTrackingService.completeOrder notification $e');
+    }
+  }
 
-      // Record COD collection in Company Cash Ledger if driver belongs to a company
-      final bool isCod = o.paymentMethod == PaymentGateway.cod.name;
-      // The snapshot written at accept, else the signed-in (assigned) driver:
-      // a panel-assigned parcel may carry no snapshot.
-      final UserModel? driver = (o.driver?.ownerId ?? '').isNotEmpty ? o.driver : Constant.userModel;
-      if (isCod && driver?.ownerId != null && driver!.ownerId!.isNotEmpty) {
-        final ParcelAmounts amounts = ParcelAmounts.of(o);
-        await CompanyCashService.recordCodCollection(
-          order: o,
-          driver: driver,
-          amount: amounts.total,
-        );
+  /// Everything the completion owes, each part once per order so a retry pays only what is missing: the wallet
+  /// movements, the company cash collection (deduplicated by order) and the referral. Then, and only then, the
+  /// order is marked `driverCredited`. Throws when a part failed (the order stays `creditPending`).
+  static Future<void> _creditCompletion(ParcelOrderModel o) async {
+    await _updateWalletAmount(o);
+
+    // Record COD collection in Company Cash Ledger if driver belongs to a company
+    final bool isCod = o.paymentMethod == PaymentGateway.cod.name;
+    // The snapshot written at accept, else the signed-in (assigned) driver:
+    // a panel-assigned parcel may carry no snapshot.
+    final UserModel? driver = (o.driver?.ownerId ?? '').isNotEmpty ? o.driver : Constant.userModel;
+    if (isCod && driver?.ownerId != null && driver!.ownerId!.isNotEmpty) {
+      final ParcelAmounts amounts = ParcelAmounts.of(o);
+      await CompanyCashService.recordCodCollection(
+        order: o,
+        driver: driver,
+        amount: amounts.total,
+      );
+    }
+
+    if (await FireStoreUtils.getParcelFirstOrderOrNOt(o)) {
+      await FireStoreUtils.updateParcelReferralAmount(o);
+    }
+
+    await _doc(o.id!).update(ParcelCompletionRules.creditedFields);
+    o.driverCredited = true;
+    o.creditPending = false;
+  }
+
+  /// Completions of this driver whose earnings were not finished (the app stopped, or a write failed, between
+  /// the claim and the credit): finish them now. Called when the parcel home opens. Never throws.
+  static Future<void> resumePendingCredits() async {
+    final String uid = FireStoreUtils.getCurrentUid();
+    if (uid.isEmpty) return;
+    try {
+      final snap = await FireStoreUtils.fireStore
+          .collection(CollectionName.parcelOrders)
+          .where('driverId', isEqualTo: uid)
+          .where('creditPending', isEqualTo: true)
+          .get();
+      for (final doc in snap.docs) {
+        try {
+          final ParcelOrderModel o = ParcelOrderModel.fromJson(doc.data());
+          if (o.id == null) continue;
+          if (await _claimCompletion(o.id!) != ParcelCompletionClaim.resume) continue;
+          await _creditCompletion(o);
+        } catch (e) {
+          debugPrint('ParcelTrackingService.resumePendingCredits ${doc.id} $e');
+        }
       }
     } catch (e) {
-      debugPrint('ParcelTrackingService.completeOrder notification/ledger $e');
+      debugPrint('ParcelTrackingService.resumePendingCredits $e');
     }
-    await FireStoreUtils.getParcelFirstOrderOrNOt(o).then((value) async {
-      if (value == true) {
-        await FireStoreUtils.updateParcelReferralAmount(o);
-      }
-    });
+  }
+
+  /// One wallet movement of the completion of [o]: the `wallet` row and the balance change, in one transaction,
+  /// at most once per order and [purpose] ([WalletOnce]).
+  static Future<void> _payOnce(ParcelOrderModel o, String purpose, WalletTransactionModel row, num balanceChange) async {
+    final String rowId = ParcelCompletionRules.walletRowId(purpose, o.id!);
+    row.id = rowId;
+    await WalletOnce.pay(rowId: rowId, row: row.toJson(), userId: row.userId, amount: balanceChange);
   }
 
   static Future<void> _updateWalletAmount(ParcelOrderModel orderModel) async {
@@ -515,11 +561,7 @@ class ParcelTrackingService {
           note: "Booking amount credited",
           paymentStatus: "success");
 
-      await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-        if (value == true) {
-          await FireStoreUtils.updateUserWallet(amount: totalAmount.toString(), userId: walletUserId);
-        }
-      });
+      await _payOnce(orderModel, ParcelCompletionRules.credit, transactionModel, totalAmount);
     }
 
     WalletTransactionModel transactionModel = WalletTransactionModel(
@@ -534,11 +576,7 @@ class ParcelTrackingService {
         note: "Admin commission deducted",
         paymentStatus: "success");
 
-    await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-      if (value == true) {
-        await FireStoreUtils.updateUserWallet(amount: "-${adminComm.toString()}", userId: walletUserId);
-      }
-    });
+    await _payOnce(orderModel, ParcelCompletionRules.commission, transactionModel, -adminComm);
 
     // Cash collected by the driver includes the fixed scope tax, which belongs to the platform.
     if (isCod && scopeTax > 0) {
@@ -554,11 +592,7 @@ class ParcelTrackingService {
           note: "Parcel fixed tax deducted",
           paymentStatus: "success");
 
-      await FireStoreUtils.setWalletTransaction(taxTransaction).then((value) async {
-        if (value == true) {
-          await FireStoreUtils.updateUserWallet(amount: "-${scopeTax.toString()}", userId: walletUserId);
-        }
-      });
+      await _payOnce(orderModel, ParcelCompletionRules.fixedTax, taxTransaction, -scopeTax);
     }
 
     // Likewise the receiver-SMS fee (point 54): collected in cash with the
@@ -577,11 +611,7 @@ class ParcelTrackingService {
           note: "Parcel receiver SMS fee deducted",
           paymentStatus: "success");
 
-      await FireStoreUtils.setWalletTransaction(smsTransaction).then((value) async {
-        if (value == true) {
-          await FireStoreUtils.updateUserWallet(amount: "-${smsCharge.toString()}", userId: walletUserId);
-        }
-      });
+      await _payOnce(orderModel, ParcelCompletionRules.smsFee, smsTransaction, -smsCharge);
     }
 
     // And the platform fee with its taxes: the customer's total includes them
@@ -603,11 +633,7 @@ class ParcelTrackingService {
           note: "Parcel platform fee deducted",
           paymentStatus: "success");
 
-      await FireStoreUtils.setWalletTransaction(feeTransaction).then((value) async {
-        if (value == true) {
-          await FireStoreUtils.updateUserWallet(amount: "-${platformFeeShare.toString()}", userId: walletUserId);
-        }
-      });
+      await _payOnce(orderModel, ParcelCompletionRules.platformFee, feeTransaction, -platformFeeShare);
     }
   }
 

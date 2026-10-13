@@ -654,9 +654,9 @@ Data of these pushes: `{type: "parcel_order", orderId, parcelStatus}`. Each push
 
 ### 4.4 Completion, wallet and commission (`completeOrder`, `parcel_tracking_service.dart:415-463`)
 
-1. **Claim once** (transaction `_claimCompletion`, `:382-400`). Refused if `driverCredited == true`, the order is completed / cancelled / rejected, or `parcelStatus` is `Cancelled` / `Returned`. It writes `{status: "Order Completed", driverCredited: true}` **before** the wallet is credited (section 9.2, P10).
+1. **Claim once** (transaction `_claimCompletion`; rules `ParcelCompletionRules.claimDecision`, `parcel_flow_rules.dart`). Refused if `driverCredited == true`, the order is cancelled / rejected, or `parcelStatus` is `Cancelled` / `Returned`. It writes `{status: "Order Completed", creditPending: true}`. An order already `Order Completed` with `creditPending: true` and naming this driver is **resumed** instead (its earnings are still owed).
 2. `users/{me}.inProgressOrderID` −= id (`:406-411`).
-3. **Wallet** (`_updateWalletAmount`, `:465-612`). The wallet user is the driver, or the **owner** for a driver with `ownerId`:
+3. **Wallet** (`_updateWalletAmount`). The wallet user is the driver, or the **owner** for a driver with `ownerId`. Each movement is paid **once per order** with `WalletOnce` (row id `parcel_<purpose>_<orderId>`: `credit`, `commission`, `fixed_tax`, `sms_fee`, `platform_fee`; the row and the balance in one transaction), so a retry pays only what is missing:
 
    | Payment | Credit (`wallet` row, `isTopUp: true`) | Debits (a `wallet` row each, then `users/{walletUser}.wallet_amount`) |
    |---|---|---|
@@ -664,7 +664,8 @@ Data of these pushes: `{type: "parcel_order", orderId, parcelStatus}`. Each push
    | Cash (`payment_method == "cod"`) | none (the driver holds the cash = `ParcelAmounts.total`) | commission; "Parcel fixed tax deducted"; "Parcel receiver SMS fee deducted"; "Parcel platform fee deducted" |
 4. **Pushes**: `parcel_completed` → customer; `carrier_parcel_delivered` → owner (`:436-440`).
 5. **Company cash** (a cash parcel by a driver with `ownerId`): a `company_cash_ledger` row `type: "collection"`, plus `company_cash_collected` → owner (`:447-454`; `company_cash_service.dart:27-94`).
-6. **Referral** on the customer's first parcel (`updateParcelReferralAmount`, `:458-462`; `fire_store_utils.dart:1509-1580`). See section 9.2, P23.
+6. **Referral** on the customer's first parcel: once per order, row `referral_parcel_<orderId>` (`_payOrderReferral`, `fire_store_utils.dart`).
+7. **Credited**: only after steps 3, 5 and 6 succeed is the order marked `{driverCredited: true, creditPending: false}`. If any of them fails, the order stays `creditPending` and the assigned driver's app finishes it the next time the parcel home opens (`resumePendingCredits`). Pushes (step 4) are sent once, on the first run.
 
 ### 4.5 Customer communication during the trip
 
@@ -1152,7 +1153,7 @@ OWNER ─assign TX (verified driver)─► Driver Pending (assignedBy) ─► pu
 | P7 | `job_assigned` is not live, so the driver app's watcher announces a parcel assignment with the `new_delivery_order` text. | `driver_assignment_watcher.dart:569`, `:99` | Delivery wording on a parcel; create `job_assigned`. |
 | P8 | Customer push taps for parcels only open the app; the Notification Center row does open the details. | `customer/lib/utils/push_tap.dart:36-57` | Add a `parcel_order` tap route. |
 | P9 | `company_*` cash pushes have no tap route in the driver app. | `driver/lib/utils/notification_service.dart` | A tap just opens the app. |
-| P10 | Completion: `_claimCompletion` sets `driverCredited: true` **before** the wallet credit. The wallet rows, pushes and ledger row are separate writes; the ledger duplicate check is a query, not a transaction. | `parcel_tracking_service.dart:398` vs `:433`; `company_cash_service.dart:40-49` | A crash in between loses the earnings, and `awaitingCompletion` is then false, so there is no retry. |
+| P10 | **FIXED (13 Oct 2026, after this review).** The claim used to set `driverCredited: true` before the wallet credit, so a crash in between lost the earnings. Now the claim writes `creditPending: true`, each wallet movement and the referral are paid once per order (`WalletOnce`), `driverCredited` is set only after they succeed, and an unfinished completion is resumed (`resumePendingCredits`). Remaining: the cash-ledger duplicate check is still a query, not a transaction. | `parcel_flow_rules.dart` (`ParcelCompletionRules`); `parcel_tracking_service.dart`; `company_cash_service.dart:40-49` | |
 | P11 | The scan path's `In Transit` write is a plain update (no transaction, no cancel guard), and any fleet member can trigger it. | `parcel_tracking_service.dart:284-291` | Race with a concurrent cancel. |
 | P12 | In `onLegacyPickup`, a `_writeStatus` failure is swallowed. | `parcel_tracking_service.dart:350-352` | The order can be `In Transit` with no `Collected` step and no push. |
 | P13 | `Driver Accepted` → `Order Completed` without `In Transit` is possible: a same-city, point-to-point parcel scanned straight to `At destination pickup point`. | `parcel_tracking_service.dart:284` | Inconsistent history. |
@@ -1165,7 +1166,7 @@ OWNER ─assign TX (verified driver)─► Driver Pending (assignedBy) ─► pu
 | P20 | The owner's parcel section checks the literal `'parcel_delivery'`, while the carrier screens normalise (`parcel-service` too). | `owner_order_list_controller.dart:76` vs `carrier_setup_form.dart:26-33` | An owner stored as `parcel-service` with no `carrierId` and no `sectionIds` sees no parcel section. |
 | P21 | Carrier set-up: if a carrier with `ownerId == owner` already exists, `createOwnCarrier` binds it and **discards the newly entered form**, including the prices. | `carrier_dispatch_service.dart:73-78` | Rare (a set-up whose binding did not land), but the owner's input is lost silently. |
 | P22 | Drivers whose types require no documents fall back to the flag, which the owner cannot set (`noRequiredDocuments`). | `owner_verification_rules.dart:261`; `document_verification.dart:44-48` | Such drivers stay unassignable unless verification is off or [ADMIN] sets the flag. |
-| P23 | Referral: `updateParcelReferralAmount` increments `wallet_amount` **and then** calls `updateUserWallet` for the same amount (credited twice). The "first order" check counts cancelled parcels too. | `driver/lib/utils/fire_store_utils.dart:1555-1558`, `:1573`, `:1509-1518` | The referrer gets double the referral amount. |
+| P23 | **Double credit FIXED (13 Oct 2026, after this review)** for parcel, cab and rental: one `WalletOnce` payment per order (`referral_<kind>_<orderId>`) instead of an increment plus `updateUserWallet`. Remaining: the "first order" check counts cancelled parcels too. | `driver/lib/utils/fire_store_utils.dart` (`_payOrderReferral`, `getParcelFirstOrderOrNOt`) | |
 | P24 | A commission `wallet` row is written even when the commission is 0. | `parcel_tracking_service.dart:525-541` | Noise in the wallet history. |
 | P25 | The booking email's `{deliverydate}` comes from `receiverPickupDateTime`, which `goToCart` sets to "now". The Same city distance error says "1 km" but checks 0.5. | `book_parcel_controller.dart:557`, `:445-447` | Wrong date in the email; misleading error text. |
 | P26 | Pickup points are filtered by R, not by the chosen carrier's region Rc. | `book_parcel_screen.dart:330`; `parcel_shipping_models.dart:107` | A carrier priced in another candidate region can be paired with R's points. |

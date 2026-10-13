@@ -1453,58 +1453,8 @@ class FireStoreUtils {
     return isFirst;
   }
 
-  static Future updateReferralAmountCabService(CabOrderModel orderModel) async {
-    ReferralModel? referralModel;
-    SectionModel? sectionModel;
-    await getSectionBySectionId(orderModel.sectionId.toString()).then((value) {
-      sectionModel = value;
-    });
-    await fireStore.collection(CollectionName.referral).doc(orderModel.authorID).get().then((value) {
-      if (value.data() != null) {
-        referralModel = ReferralModel.fromJson(value.data()!);
-      } else {
-        return;
-      }
-    });
-
-    if (referralModel != null) {
-      if (referralModel!.referralBy != null && referralModel!.referralBy!.isNotEmpty) {
-        await fireStore.collection(CollectionName.users).doc(referralModel!.referralBy).get().then((value) async {
-          DocumentSnapshot<Map<String, dynamic>> userDocument = value;
-          if (userDocument.data() != null && userDocument.exists) {
-            try {
-              UserModel user = UserModel.fromJson(userDocument.data()!);
-              await fireStore
-                  .collection(CollectionName.users)
-                  .doc(user.id)
-                  .update({"wallet_amount": FieldValue.increment(double.parse(sectionModel!.referralAmount.toString()))});
-
-              WalletTransactionModel transactionModel = WalletTransactionModel(
-                  id: Constant.getUuid(),
-                  amount: double.parse(sectionModel!.referralAmount.toString()),
-                  date: Timestamp.now(),
-                  paymentMethod: "Referral Amount",
-                  transactionUser: "user",
-                  userId: referralModel!.referralBy.toString(),
-                  isTopup: true,
-                  note: "Wallet Top-up",
-                  paymentStatus: "success");
-
-              await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-                if (value == true) {
-                  await FireStoreUtils.updateUserWallet(amount: sectionModel!.referralAmount.toString(), userId: referralModel!.referralBy.toString()).then((value) {});
-                }
-              });
-            } catch (e) {
-              log(e.toString());
-            }
-          }
-        });
-      } else {
-        return;
-      }
-    }
-  }
+  static Future updateReferralAmountCabService(CabOrderModel orderModel) =>
+      _payOrderReferral(kind: 'cab', orderId: orderModel.id, authorId: orderModel.authorID, sectionId: orderModel.sectionId);
 
   static Future<bool> getParcelFirstOrderOrNOt(ParcelOrderModel orderModel) async {
     bool isFirst = true;
@@ -1530,113 +1480,47 @@ class FireStoreUtils {
     return isFirst;
   }
 
-  static Future updateParcelReferralAmount(ParcelOrderModel orderModel) async {
-    ReferralModel? referralModel;
-    SectionModel? sectionModel;
-    print(orderModel.authorID);
-    await getSectionBySectionId(orderModel.sectionId.toString()).then((value) {
-      sectionModel = value;
-    });
-    await fireStore.collection(CollectionName.referral).doc(orderModel.authorID).get().then((value) {
-      if (value.data() != null) {
-        referralModel = ReferralModel.fromJson(value.data()!);
-      } else {
-        return;
-      }
-    });
+  /// Throws on failure: the parcel completion then stays `creditPending` and is retried.
+  static Future updateParcelReferralAmount(ParcelOrderModel orderModel) =>
+      _payOrderReferral(kind: 'parcel', orderId: orderModel.id, authorId: orderModel.authorID, sectionId: orderModel.sectionId, rethrowErrors: true);
 
-    if (referralModel != null) {
-      if (referralModel!.referralBy != null && referralModel!.referralBy!.isNotEmpty) {
-        await fireStore.collection(CollectionName.users).doc(referralModel!.referralBy).get().then((value) async {
-          DocumentSnapshot<Map<String, dynamic>> userDocument = value;
-          if (userDocument.data() != null && userDocument.exists) {
-            try {
-              UserModel user = UserModel.fromJson(userDocument.data()!);
-              await fireStore
-                  .collection(CollectionName.users)
-                  .doc(user.id)
-                  .update({"wallet_amount": FieldValue.increment(double.parse(sectionModel!.referralAmount.toString()))});
+  static Future updateRentalReferralAmount(RentalOrderModel orderModel) =>
+      _payOrderReferral(kind: 'rental', orderId: orderModel.id, authorId: orderModel.authorID, sectionId: orderModel.sectionId);
 
-              WalletTransactionModel transactionModel = WalletTransactionModel(
-                  id: Constant.getUuid(),
-                  amount: double.parse(sectionModel!.referralAmount.toString()),
-                  date: Timestamp.now(),
-                  paymentMethod: "Referral Amount",
-                  transactionUser: "user",
-                  userId: referralModel!.referralBy.toString(),
-                  isTopup: true,
-                  note: "Wallet Top-up",
-                  paymentStatus: "success");
-
-              await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-                if (value == true) {
-                  await FireStoreUtils.updateUserWallet(amount: sectionModel!.referralAmount.toString(), userId: referralModel!.referralBy.toString()).then((value) {});
-                }
-              });
-            } catch (error) {
-              log(error.toString());
-            }
-            print("data val");
-          }
-        });
-      } else {
-        return;
-      }
-    }
-  }
-
-  static Future updateRentalReferralAmount(RentalOrderModel orderModel) async {
-    ReferralModel? referralModel;
-    SectionModel? sectionModel;
-    print(orderModel.authorID);
-    await getSectionBySectionId(orderModel.sectionId.toString()).then((value) {
-      sectionModel = value;
-    });
-    await fireStore.collection(CollectionName.referral).doc(orderModel.authorID).get().then((value) {
-      if (value.data() != null) {
-        referralModel = ReferralModel.fromJson(value.data()!);
-      } else {
-        return;
-      }
-    });
-
-    if (referralModel != null) {
-      if (referralModel!.referralBy != null && referralModel!.referralBy!.isNotEmpty) {
-        await fireStore.collection(CollectionName.users).doc(referralModel!.referralBy).get().then((value) async {
-          DocumentSnapshot<Map<String, dynamic>> userDocument = value;
-          if (userDocument.data() != null && userDocument.exists) {
-            try {
-              UserModel user = UserModel.fromJson(userDocument.data()!);
-              await fireStore
-                  .collection(CollectionName.users)
-                  .doc(user.id)
-                  .update({"wallet_amount": FieldValue.increment(double.parse(sectionModel!.referralAmount.toString()))});
-
-              WalletTransactionModel transactionModel = WalletTransactionModel(
-                  id: Constant.getUuid(),
-                  amount: double.parse(sectionModel!.referralAmount.toString()),
-                  date: Timestamp.now(),
-                  paymentMethod: "Referral Amount",
-                  transactionUser: "user",
-                  userId: referralModel!.referralBy.toString(),
-                  isTopup: true,
-                  note: "Wallet Top-up",
-                  paymentStatus: "success");
-
-              await FireStoreUtils.setWalletTransaction(transactionModel).then((value) async {
-                if (value == true) {
-                  await FireStoreUtils.updateUserWallet(amount: sectionModel!.referralAmount.toString(), userId: referralModel!.referralBy.toString()).then((value) {});
-                }
-              });
-            } catch (error) {
-              log(error.toString());
-            }
-            print("data val");
-          }
-        });
-      } else {
-        return;
-      }
+  /// The customer's referrer gets the section's referral amount for this
+  /// order, ONCE: the `wallet` row `referral_<kind>_<orderId>` and the
+  /// referrer's balance are written in one transaction ([WalletOnce]). It used
+  /// to add the amount twice (a `wallet_amount` increment, then
+  /// [updateUserWallet] again) and to pay again on a retried completion.
+  static Future<void> _payOrderReferral(
+      {required String kind, required String? orderId, required String? authorId, required String? sectionId, bool rethrowErrors = false}) async {
+    if ((orderId ?? '').isEmpty || (authorId ?? '').isEmpty) return;
+    try {
+      final SectionModel? section = await getSectionBySectionId(sectionId.toString());
+      final num amount = num.tryParse(section?.referralAmount?.toString() ?? '') ?? 0;
+      if (amount <= 0) return;
+      final referral = await fireStore.collection(CollectionName.referral).doc(authorId).get();
+      if (referral.data() == null) return;
+      final String referrer = (ReferralModel.fromJson(referral.data()!).referralBy ?? '').trim();
+      if (referrer.isEmpty) return;
+      final referrerDoc = await fireStore.collection(CollectionName.users).doc(referrer).get();
+      if (!referrerDoc.exists) return;
+      final String rowId = WalletOnce.referralRowIdFor(kind, orderId!);
+      final WalletTransactionModel row = WalletTransactionModel(
+          id: rowId,
+          amount: amount.toDouble(),
+          date: Timestamp.now(),
+          paymentMethod: "Referral Amount",
+          transactionUser: "user",
+          userId: referrer,
+          isTopup: true,
+          orderId: orderId,
+          note: "Wallet Top-up",
+          paymentStatus: "success");
+      await WalletOnce.pay(rowId: rowId, row: row.toJson(), userId: referrer, amount: amount);
+    } catch (e) {
+      log('referral $kind $orderId: $e');
+      if (rethrowErrors) rethrow;
     }
   }
 
