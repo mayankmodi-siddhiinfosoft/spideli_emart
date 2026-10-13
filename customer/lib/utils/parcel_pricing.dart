@@ -500,31 +500,57 @@ class ParcelPricing {
     return a.maxKg! > b.maxKg! + _eps;
   }
 
-  /// The order's region R (the SENDER's region: carriers, prices, currency,
-  /// pickup points and payment methods all follow it). A sender's location
-  /// often lies outside every delivery-zone polygon (a whole country is one
-  /// region), and an unresolved R used to offer EVERY carrier and price in the
-  /// default currency (FCFA shown to an India customer, brief 12 Oct section 9):
+  /// The candidate regions of the order, in order of preference (the SENDER's
+  /// region: carriers, prices, currency, pickup points and payment methods all
+  /// follow it). The first one is the primary region R (the platform option,
+  /// pickup points); a carrier that names its regions is priced with the first
+  /// candidate it serves (`DeliveryCarrierModel.servedRegion`).
   ///
-  ///  1. the single region of the zone(s) around the sender ([atSender]); with
-  ///     several, the customer's own region when it is one of them;
+  ///  1. every region of the zones around the sender ([senderZones], one list
+  ///     per zone containing the sender) - a zone often serves a country
+  ///     region AND a city region ("Yaounde": Cameroun + Yaounde-Cameroun);
   ///  2. else the published regions of the sender's country ([countryRegions],
-  ///     on `countryCode`): the only one, or the customer's region among them;
-  ///  3. else, the country not resolving, the customer's region
-  ///     ([customerRegion], the website's active region).
-  /// Null when none of these decides.
-  static String? resolveOrderRegion({List<String> atSender = const [], List<String> countryRegions = const [], String? customerRegion}) {
+  ///     on `countryCode`);
+  ///  3. else the customer's region ([customerRegion]).
+  ///
+  /// Only regions that exist ([exists]; null = no region data, keep all) are
+  /// kept: a zone still listing a deleted region ("Worldwide") must not make
+  /// the order ambiguous. Order: the customer's own region first when it is a
+  /// candidate, then the most specific - the region served by the fewest
+  /// published zones ([allZones]; Yaounde-Cameroun before the country-level
+  /// Cameroun) - ties in their original order.
+  ///
+  /// It used to return a single region and nothing at all when the sender's
+  /// zone served several regions and the customer's own was not one of them;
+  /// every carrier with `regionIds` was then dropped and the carrier choice
+  /// disappeared from the parcel flow.
+  static List<String> orderRegionCandidates({
+    List<List<String>> senderZones = const [],
+    List<List<String>> allZones = const [],
+    bool Function(String regionId)? exists,
+    List<String> countryRegions = const [],
+    String? customerRegion,
+  }) {
     final String mine = (customerRegion ?? '').trim();
-    String? pick(List<String> ids) {
-      final List<String> list = ids.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
-      if (list.length == 1) return list.first;
-      if (list.isEmpty) return null;
-      return list.contains(mine) ? mine : null;
+    List<String> clean(Iterable<String> ids) => ids.map((e) => e.trim()).where((e) => e.isNotEmpty && (exists == null || exists(e))).toSet().toList();
+    final List<List<String>> counted = allZones.isNotEmpty ? allZones : senderZones;
+    int zonesServing(String id) => counted.where((z) => z.contains(id)).length;
+    List<String> ordered(List<String> ids) {
+      final List<({String id, int index, int zones})> rows = [for (int i = 0; i < ids.length; i++) (id: ids[i], index: i, zones: zonesServing(ids[i]))];
+      rows.sort((a, b) {
+        final int am = a.id == mine ? 0 : 1, bm = b.id == mine ? 0 : 1;
+        if (am != bm) return am.compareTo(bm);
+        if (a.zones != b.zones) return a.zones.compareTo(b.zones);
+        return a.index.compareTo(b.index);
+      });
+      return rows.map((r) => r.id).toList();
     }
 
-    if (atSender.isNotEmpty) return pick(atSender);
-    if (countryRegions.isNotEmpty) return pick(countryRegions);
-    return mine.isEmpty ? null : mine;
+    final List<String> atSender = clean(senderZones.expand((z) => z));
+    if (atSender.isNotEmpty) return ordered(atSender);
+    final List<String> inCountry = clean(countryRegions);
+    if (inCountry.isNotEmpty) return ordered(inCountry);
+    return clean([mine]);
   }
 
   // ---- Step 5: options ---------------------------------------------------------

@@ -82,10 +82,16 @@ class BookParcelController extends GetxController {
   /// when the customer asks for a price ([bookNow]).
   ParcelPricingSettings pricingSettings = const ParcelPricingSettings();
 
-  /// `regions/{R}.parcelPricing` of the sender's region R, read when the
-  /// customer asks for a price ([bookNow]). Unset until then / when the admin
-  /// has not saved the region: no divisor, charges 0, fixed charges 0.
+  /// `regions/{R}.parcelPricing` of the primary region R (the platform
+  /// option), read when the customer asks for a price ([bookNow]). Unset
+  /// until then / when the admin has not saved the region: no divisor,
+  /// charges 0, fixed charges 0.
   RegionParcelPricing regionPricing = const RegionParcelPricing();
+
+  /// `regions/{id}.parcelPricing` of every candidate region
+  /// ([originRegionCandidates]): a carrier is priced in the first candidate
+  /// it serves.
+  Map<String, RegionParcelPricing> candidateRegionPricing = const {};
 
   static num? _dimension(TextEditingController c) => num.tryParse(c.text.trim().replaceAll(',', '.'));
 
@@ -121,14 +127,27 @@ class BookParcelController extends GetxController {
 
   double get chargedWeightCharge => parcelNumber(chargedWeight?.deliveryCharge) ?? 0;
 
-  /// The order's region R ([ParcelPricing.resolveOrderRegion]): the sender's
-  /// zone region, else the sender's country's region, else the customer's.
-  /// Decides the carriers offered, their prices and the currency shown.
-  String? get originRegionId => ParcelPricing.resolveOrderRegion(
-        atSender: RegionService.regionIdsAt(senderLocation.value?.latitude, senderLocation.value?.longitude),
+  /// The order's candidate regions, in order of preference
+  /// ([ParcelPricing.orderRegionCandidates]): every existing region of the
+  /// zones around the sender, else the sender's country's regions, else the
+  /// customer's. Decides the carriers offered, their prices and currency.
+  List<String> get originRegionCandidates => ParcelPricing.orderRegionCandidates(
+        senderZones: RegionService.zoneRegionListsAt(senderLocation.value?.latitude, senderLocation.value?.longitude),
+        allZones: RegionService.publishedZoneRegionLists,
+        // A zone may still list a deleted region; with no region data at all
+        // (not loaded / none configured) nothing is dropped.
+        exists: RegionService.hasRegions ? (id) => RegionService.regionById(id) != null : null,
         countryRegions: RegionService.regionIdsForCountry(senderCountryCode.value),
         customerRegion: RegionService.customerRegionId,
       );
+
+  /// The primary region R (first candidate): the platform option's prices and
+  /// currency, the pickup points. A carrier option carries its own region
+  /// ([ParcelCarrierOption.regionId]).
+  String? get originRegionId {
+    final List<String> candidates = originRegionCandidates;
+    return candidates.isEmpty ? null : candidates.first;
+  }
 
   String? get destinationRegionId => RegionService.regionAt(receiverLocation.value?.latitude, receiverLocation.value?.longitude);
 
@@ -381,7 +400,10 @@ class BookParcelController extends GetxController {
       await RegionService.ensureLoaded();
       distance.value = 0.0;
       pricingSettings = await ParcelShippingService.pricingSettings();
-      regionPricing = await ParcelShippingService.regionParcelPricing(originRegionId);
+      final List<String> candidates = originRegionCandidates;
+      final List<RegionParcelPricing> pricings = await Future.wait(candidates.map(ParcelShippingService.regionParcelPricing));
+      candidateRegionPricing = {for (int i = 0; i < candidates.length; i++) candidates[i]: pricings[i]};
+      regionPricing = candidates.isEmpty ? const RegionParcelPricing() : candidateRegionPricing[candidates.first]!;
       chargedWeight = null;
 
       if (isCityScope) {
@@ -433,11 +455,14 @@ class BookParcelController extends GetxController {
   /// the platform's drivers at the default setting (distance x the band of the
   /// chargeable weight) first, then the eligible carriers on their rate card.
   /// Other scopes: the eligible carriers. Empty = not served (quote request).
-  /// Every amount is in region R's currency (R = the sender's region).
+  /// Every amount is in the currency of the option's region
+  /// ([ParcelCarrierOption.regionId]): the primary region R for the platform,
+  /// the first candidate region a carrier serves for that carrier.
   Future<List<ParcelCarrierOption>> carrierOptions() async {
     final ParcelPricingSettings settings = pricingSettings;
     final RegionParcelPricing region = regionPricing;
-    final String? regionId = originRegionId;
+    final List<String> candidates = originRegionCandidates;
+    final String? regionId = candidates.isEmpty ? null : candidates.first;
     final List<DeliveryCarrierModel> carriers = await ParcelShippingService.carriers();
 
     // Carriers' per-km prices are per km, whatever the app's distance unit.
@@ -462,36 +487,29 @@ class BookParcelController extends GetxController {
       );
       if (quote != null) {
         chargedWeight = ParcelPricing.bandFor<ParcelWeightModel>(weightBands, quote.chargeableKg ?? 0, selected: selected == null ? null : _band(selected))?.source;
-        options.add(ParcelCarrierOption(carrier: null, quote: quote));
+        options.add(ParcelCarrierOption(carrier: null, quote: quote, regionId: regionId));
       }
     }
 
     final commission = Constant.sectionConstantModel?.adminCommision;
-    final List<ParcelCarrierOption> carrierOffers = [];
-    for (final carrier in carriers) {
-      final ParcelRateCard card = carrier.rateCardFor(regionId);
-      ParcelQuote? quote = ParcelPricing.carrierQuote(
-        scope: scope.value,
-        card: card,
-        distanceKm: km,
-        actualKg: actualWeightKg,
-        lengthCm: lengthCm,
-        widthCm: widthCm,
-        heightCm: heightCm,
-        pickupMethod: pickupMethod.value,
-        deliveryMethod: deliveryMethod.value,
-        region: region,
-      );
-      if (quote == null) continue;
-      if (!carrier.isEligible(originRegionId: regionId, chargeableKg: quote.chargeableKg ?? 0, scope: scope.value)) continue;
-      if (settings.commissionAsExtra && commission?.isEnabled == true) {
-        quote = quote.copyWith(
-          commission: ParcelPricing.commissionOn(amount: quote.carrierPrice + quote.extraKgCharge, type: commission?.commissionType, value: double.tryParse(commission?.amount?.toString() ?? '')),
-        );
-      }
-      carrierOffers.add(ParcelCarrierOption(carrier: carrier, quote: quote));
-    }
-    carrierOffers.sort((a, b) => a.quote.total.compareTo(b.quote.total));
+    final List<ParcelCarrierOption> carrierOffers = ParcelCarrierOption.carrierOffers(
+      carriers: carriers,
+      candidates: candidates,
+      regionPricing: candidateRegionPricing,
+      scope: scope.value,
+      distanceKm: km,
+      actualKg: actualWeightKg,
+      lengthCm: lengthCm,
+      widthCm: widthCm,
+      heightCm: heightCm,
+      pickupMethod: pickupMethod.value,
+      deliveryMethod: deliveryMethod.value,
+      adjust: settings.commissionAsExtra && commission?.isEnabled == true
+          ? (quote) => quote.copyWith(
+              commission: ParcelPricing.commissionOn(amount: quote.carrierPrice + quote.extraKgCharge, type: commission?.commissionType, value: double.tryParse(commission?.amount?.toString() ?? '')),
+            )
+          : null,
+    );
     options.addAll(carrierOffers);
     return options;
   }
@@ -505,6 +523,7 @@ class BookParcelController extends GetxController {
     // (the base price): VAT, % coupons, commission and the driver's credit
     // never apply to them (app-spec-parcel-pricing step 6).
     final double scopeTax = quoteRequest ? 0.0 : (option?.quote.fixedTax ?? 0.0);
+    final String? orderRegionId = option?.regionId ?? originRegionId;
     ParcelOrderModel order = ParcelOrderModel(
       id: Constant.getUuid(),
       subTotal: (quoteRequest ? 0.0 : (option != null ? option.quote.subTotal : subTotal.value)).toString(),
@@ -582,14 +601,15 @@ class BookParcelController extends GetxController {
       ..carrierName = option?.carrier?.name
       ..carrierOwnerId = option?.carrier?.ownerId
       ..quoteRequested = quoteRequest ? true : null
-      ..regionId = originRegionId;
+      // The option's own region (a carrier: the region it is priced in).
+      ..regionId = orderRegionId;
     if (quoteRequest) {
       order.status = ParcelShipping.quoteRequestedStatus;
       order.sendToDriver = false;
     } else if (option != null) {
       // app-spec-parcel-pricing section 7. `total` and `smsCharge` are
       // completed at checkout (what the customer actually pays).
-      order.priceBreakdown = option.quote.breakdown(currency: RegionService.currencyForRecord(originRegionId)?.code ?? '');
+      order.priceBreakdown = option.quote.breakdown(currency: RegionService.currencyForRecord(orderRegionId)?.code ?? '');
     }
     // Dispatch geo-points follow where the parcel physically is: a driver
     // collects at the origin pickup point / delivers to the destination one.

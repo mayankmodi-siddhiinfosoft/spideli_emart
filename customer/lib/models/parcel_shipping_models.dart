@@ -188,7 +188,8 @@ class DeliveryCarrierModel {
   /// empty `regionIds` = served everywhere. A carrier that names its regions
   /// is offered ONLY in one of them: with the order's region R unresolved it
   /// is not offered at all (it used to be offered everywhere - three Yaounde
-  /// carriers shown to an India customer, brief 12 Oct section 9).
+  /// carriers shown to an India customer, brief 12 Oct section 9). Pass the
+  /// region it is priced in, [servedRegion] of the order's candidates.
   bool isEligible({required String? originRegionId, required double chargeableKg, required String scope}) {
     if (!publish || isVerified == false) return false;
     if (!ParcelPricing.handlesScope(deliveryScopes, scope)) return false;
@@ -196,6 +197,19 @@ class DeliveryCarrierModel {
     if (regionIds.isNotEmpty && !regionIds.contains(region)) return false;
     if (maxWeight != null && maxWeight! > 0 && maxWeight! + 1e-9 < chargeableKg) return false;
     return true;
+  }
+
+  /// The region this carrier serves the order in, from the order's candidate
+  /// regions in order of preference (`ParcelPricing.orderRegionCandidates`):
+  /// the first candidate in its `regionIds`; null when it serves none of them.
+  /// A carrier without `regionIds` (served everywhere) uses the primary
+  /// region, the first candidate (null when there is none).
+  String? servedRegion(List<String> candidates) {
+    if (regionIds.isEmpty) return candidates.isEmpty ? null : candidates.first;
+    for (final String c in candidates) {
+      if (regionIds.contains(c)) return c;
+    }
+    return null;
   }
 
   /// The rate card for a shipment from [regionId] (the region of the
@@ -216,5 +230,58 @@ class ParcelCarrierOption {
   final DeliveryCarrierModel? carrier;
   final ParcelQuote quote;
 
-  ParcelCarrierOption({required this.carrier, required this.quote});
+  /// The region this option is priced in and the order is written with
+  /// (`regionId`, its currency, payment methods, SMS fee): the carrier's
+  /// [DeliveryCarrierModel.servedRegion], the primary region for the platform.
+  final String? regionId;
+
+  ParcelCarrierOption({required this.carrier, required this.quote, this.regionId});
+
+  /// The carriers offered for a shipment (spec steps 2-6), cheapest first.
+  /// [candidates]: the order's regions in order of preference
+  /// (`ParcelPricing.orderRegionCandidates`). Each carrier is priced in the
+  /// first candidate it serves, R_c ([DeliveryCarrierModel.servedRegion]):
+  /// its `regionPricing[R_c]`, else its flat prices; option charges from that
+  /// card, else `regions[R_c].parcelPricing` ([regionPricing]); the fixed
+  /// charge from `regions[R_c].parcelPricing`. A carrier serving none of the
+  /// candidates, without a price, or not eligible ([DeliveryCarrierModel.isEligible])
+  /// is left out. [adjust] adds the commission when it is charged as an extra.
+  static List<ParcelCarrierOption> carrierOffers({
+    required List<DeliveryCarrierModel> carriers,
+    required List<String> candidates,
+    Map<String, RegionParcelPricing> regionPricing = const {},
+    required String scope,
+    required double distanceKm,
+    required double actualKg,
+    num? lengthCm,
+    num? widthCm,
+    num? heightCm,
+    required String pickupMethod,
+    required String deliveryMethod,
+    ParcelQuote Function(ParcelQuote quote)? adjust,
+  }) {
+    final List<ParcelCarrierOption> offers = [];
+    for (final DeliveryCarrierModel carrier in carriers) {
+      final String? region = carrier.servedRegion(candidates);
+      if (carrier.regionIds.isNotEmpty && region == null) continue;
+      ParcelQuote? quote = ParcelPricing.carrierQuote(
+        scope: scope,
+        card: carrier.rateCardFor(region),
+        distanceKm: distanceKm,
+        actualKg: actualKg,
+        lengthCm: lengthCm,
+        widthCm: widthCm,
+        heightCm: heightCm,
+        pickupMethod: pickupMethod,
+        deliveryMethod: deliveryMethod,
+        region: regionPricing[region] ?? const RegionParcelPricing(),
+      );
+      if (quote == null) continue;
+      if (!carrier.isEligible(originRegionId: region, chargeableKg: quote.chargeableKg ?? 0, scope: scope)) continue;
+      if (adjust != null) quote = adjust(quote);
+      offers.add(ParcelCarrierOption(carrier: carrier, quote: quote, regionId: region));
+    }
+    offers.sort((a, b) => a.quote.total.compareTo(b.quote.total));
+    return offers;
+  }
 }

@@ -21,25 +21,52 @@ Pure pricing: `customer/lib/utils/parcel_pricing.dart` (unit tested in
 | Settings | `regions/{R}.parcelPricing` (missing map = all unset), `delivery_carriers/{id}.regionPricing.<R>` (flat fields only without an entry for R; the flat card never carries the five values). Numbers parsed defensively (`"20"`, `null`, `""`) | `RegionParcelPricing`, `ParcelRateCard`, `parcelNumber` |
 | 1 scope | The customer still picks Same city / Other city / Other country and the app's existing validation is kept; city names now compare trimmed, lower-case, without accents. `ParcelPricing.scopeFor` is the spec section 5 rule (zone fallback included) | `ParcelPlace.cityMatches`, `scopeFor` |
 | 2 weight | divisor = carrier `regionPricing[R].volumetricDivisor` if > 0, else region's if > 0, else none; volumetricKg = L x W x H / divisor (2 decimals, 0 without a divisor or all three sides); chargeableKg = max(real, volumetric), 2 decimals | `resolveVolumetricDivisor`, `weightFor` |
-| 3 carriers | `publish` (and not explicitly `isVerified: false`, as before), R in `regionIds` (or none), scope in `deliveryScopes` (missing / empty = all), `maxWeight` unset or >= chargeableKg | `DeliveryCarrierModel.isEligible` |
+| 3 carriers | `publish` (and not explicitly `isVerified: false`, as before), one of the order's candidate regions in `regionIds` (or none; R_c below), scope in `deliveryScopes` (missing / empty = all), `maxWeight` unset or >= chargeableKg | `DeliveryCarrierModel.servedRegion`, `isEligible`, `ParcelCarrierOption.carrierOffers` |
 | 4 base | `rate_card`: base + perKm x km + perKg x chargeableKg, at least minimumCharge. `default` (no carrier, same city only, as before): band with minKg <= chargeableKg <= maxKg (maxKg null = no limit; a gap goes to the next band up) -> distance x `delivery_charge`; bands without minKg / maxKg: the old title matching. `extraKgCharge` 0. Carrier rate tables (`rate_table`) removed; `route_table` never used | `rateCardPrice`, `bandFor`, `carrierQuote`, `defaultQuote` |
 | 5 options | pickupCharge = homePickupCharge / pointDropoffCharge by `pickupMethod`; deliveryCharge = homeDeliveryCharge / pointCollectionCharge by `deliveryMethod`; carrier value if set (0 = free), else region, else 0 | `resolveOptionCharges` |
 | 6 fixedTax | region `intercityFixedTax` / `intercountryFixedTax`, city 0, not set 0; never the carrier's | `RegionParcelPricing.fixedTaxFor` |
 | 7 total | `subTotal` = carrierPrice (+ commission only when `commissionAsExtra`, as before). Checkout: subTotal - coupon + order taxes + platform fee + its taxes + fixedTax (`parcelScopeTax`) + options + SMS fee = what wallet / gateway / cash charges, written to `priceBreakdown.total` | `ParcelOrderConfirmationController.calculatePrice` |
 
 **Region R, carriers and currency (fixes of 12 Oct, brief section 9 / web
-report 41).** R = `ParcelPricing.resolveOrderRegion`: the single region of the
-zone(s) around the sender, else the only published region of the sender's
-country (`countryCode`), else (several) the customer's own region among them,
-else - the country unknown - the customer's region; null when nothing decides.
-A sender outside every zone polygon used to leave R empty, and then every
-carrier was offered and every amount shown in the default currency (FCFA to an
-India customer). Now a carrier with `regionIds` is offered only when R is one
-of them (`DeliveryCarrierModel.isEligible`; R unresolved = only carriers with
-no `regionIds`), every parcel amount is formatted with
-`RegionService.currencyForRecord(R)` and `priceBreakdown.currency` is its code.
-A carrier with no price at all for R (no `regionPricing[R]` prices and no flat
-prices) gives no quote and is left out, as on the website.
+report 41; candidates since 13 Oct).** The order has CANDIDATE regions,
+`ParcelPricing.orderRegionCandidates`, in order of preference:
+
+1. every region of the published zones containing the sender
+   (`RegionService.zoneRegionListsAt`) - a zone often serves a country region
+   and a city region ("Yaounde": Cameroun + Yaounde-Cameroun) - keeping only
+   regions that exist (`regions/{id}`; a zone may still list a deleted one,
+   "Worldwide" does); else
+2. the published regions of the sender's country (`countryCode`); else
+3. the customer's region (`RegionService.customerRegionId`).
+
+Order: the customer's own region first when it is a candidate, then the most
+specific - the region served by the fewest published zones (Yaounde-Cameroun,
+1 zone, before Cameroun, 2) - ties in zone order.
+
+* **Platform option** (no carrier): R = the first candidate - its band,
+  region charges, fixed charge and currency; also the pickup points.
+* **A carrier with `regionIds`** is offered when ANY candidate is in its
+  `regionIds`, and priced in R_c = the first candidate it serves:
+  `regionPricing[R_c]`, else its flat prices; options from that card, else
+  `regions[R_c].parcelPricing`; fixed charge from `regions[R_c].parcelPricing`.
+  A carrier without `regionIds` uses R. No candidate at all: only carriers
+  without `regionIds`.
+* The option carries its region (`ParcelCarrierOption.regionId`): the order is
+  written with `regionId` = R_c (the platform: R), so its currency,
+  `priceBreakdown.currency`, payment methods, SMS fee and receipts follow the
+  option. The selection screen shows each option in its own region's currency.
+
+Until 13 Oct R was ONE region, null whenever the sender's zone served several
+regions and the customer's own was not among them - which, with the live
+zones, was every Yaounde / Douala sender: every carrier with `regionIds` was
+then dropped and, same city home to home, the carrier-selection screen was
+skipped ("the carrier choice disappeared"). Before 12 Oct an unresolved R
+offered every carrier in the default currency (FCFA to an India customer);
+that stays fixed: a carrier is never offered outside its regions.
+A carrier with no price at all for R_c (no `regionPricing[R_c]` prices and no
+flat prices, e.g. IT ADVISORY) gives no quote and is left out, as on the
+website. Tested on the live shapes in
+`customer/test/parcel_carrier_regions_test.dart`.
 
 **Weight band: moves up, never down** (`ParcelPricing.bandFor` with the
 customer's band): the heavier of the band chosen and the band containing the

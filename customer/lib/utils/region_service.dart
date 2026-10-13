@@ -391,18 +391,26 @@ class RegionService {
     return const [];
   }
 
-  /// Regions of the published delivery zone(s) containing a point.
-  static List<String> regionIdsAt(double? latitude, double? longitude) {
+  static Iterable<ZoneModel> get _publishedZones =>
+      (_zones.isNotEmpty ? _zones.values : Constant.zoneList).where((zone) => zone.publish != false && zone.area != null && zone.area!.isNotEmpty);
+
+  /// The regions of each published delivery zone containing a point, one
+  /// list per zone (a zone may serve a country region and a city region).
+  static List<List<String>> zoneRegionListsAt(double? latitude, double? longitude) {
     if (latitude == null || longitude == null || (latitude == 0 && longitude == 0)) return const [];
     final point = LatLng(latitude, longitude);
-    final zones = _zones.isNotEmpty ? _zones.values : Constant.zoneList;
-    final Set<String> ids = {};
-    for (final zone in zones) {
-      if (zone.publish == false || zone.area == null || zone.area!.isEmpty) continue;
-      if (Constant.isPointInPolygon(point, zone.area!)) ids.addAll(regionIdsOfZone(zone));
-    }
-    return ids.toList();
+    return [
+      for (final zone in _publishedZones)
+        if (Constant.isPointInPolygon(point, zone.area!)) regionIdsOfZone(zone),
+    ];
   }
+
+  /// The regions of every published delivery zone, one list per zone (how
+  /// many zones serve a region: the fewer, the more specific it is).
+  static List<List<String>> get publishedZoneRegionLists => [for (final zone in _publishedZones) regionIdsOfZone(zone)];
+
+  /// Regions of the published delivery zone(s) containing a point.
+  static List<String> regionIdsAt(double? latitude, double? longitude) => zoneRegionListsAt(latitude, longitude).expand((ids) => ids).toSet().toList();
 
   /// The single region a point (e.g. a ride's pickup) resolves to, else null.
   static String? regionAt(double? latitude, double? longitude) {

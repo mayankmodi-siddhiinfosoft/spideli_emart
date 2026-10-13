@@ -58,20 +58,20 @@ void main() {
     });
   });
 
-  group('the order region R (resolveOrderRegion)', () {
-    test('the sender\'s zone region wins', () {
-      expect(ParcelPricing.resolveOrderRegion(atSender: ['dla'], countryRegions: ['dla', 'yde'], customerRegion: 'yde'), 'dla');
+  group('the order\'s candidate regions (orderRegionCandidates)', () {
+    test('the sender\'s zone regions win over the country and the customer', () {
+      expect(ParcelPricing.orderRegionCandidates(senderZones: [['dla']], countryRegions: ['dla', 'yde'], customerRegion: 'yde'), ['dla']);
     });
-    test('outside every zone: the sender country\'s only region', () {
-      expect(ParcelPricing.resolveOrderRegion(countryRegions: ['in'], customerRegion: 'yde'), 'in');
+    test('outside every zone: the sender country\'s regions', () {
+      expect(ParcelPricing.orderRegionCandidates(countryRegions: ['in'], customerRegion: 'yde'), ['in']);
     });
-    test('several regions: the customer\'s own one among them, else none', () {
-      expect(ParcelPricing.resolveOrderRegion(atSender: ['dla', 'yde'], customerRegion: 'yde'), 'yde');
-      expect(ParcelPricing.resolveOrderRegion(countryRegions: ['dla', 'yde'], customerRegion: 'in'), isNull);
+    test('several regions: all kept (never none), the customer\'s own one first', () {
+      expect(ParcelPricing.orderRegionCandidates(senderZones: [['dla', 'yde']], customerRegion: 'yde'), ['yde', 'dla']);
+      expect(ParcelPricing.orderRegionCandidates(countryRegions: ['dla', 'yde'], customerRegion: 'in'), ['dla', 'yde']);
     });
     test('country unknown: the customer\'s region', () {
-      expect(ParcelPricing.resolveOrderRegion(customerRegion: 'in'), 'in');
-      expect(ParcelPricing.resolveOrderRegion(), isNull);
+      expect(ParcelPricing.orderRegionCandidates(customerRegion: 'in'), ['in']);
+      expect(ParcelPricing.orderRegionCandidates(), isEmpty);
     });
   });
 
@@ -84,7 +84,7 @@ void main() {
       ],
       currencies: {'xaf': CurrencyModel(id: 'xaf', code: 'XAF', symbol: 'FCFA'), 'inr': CurrencyModel(id: 'inr', code: 'INR', symbol: '₹')},
     );
-    final String? r = ParcelPricing.resolveOrderRegion(countryRegions: RegionService.regionIdsForCountry('in'), customerRegion: 'yde');
+    final String? r = ParcelPricing.orderRegionCandidates(countryRegions: RegionService.regionIdsForCountry('in'), customerRegion: 'yde').firstOrNull;
     expect(r, 'in');
     expect(RegionService.currencyForRecord(r)?.code, 'INR');
     final ParcelQuote q = ParcelQuote(carrierPrice: 118, source: ParcelPriceSource.rateCard);

@@ -38,7 +38,9 @@ class _ParcelCarrierSelectionScreenState extends State<ParcelCarrierSelectionScr
     final c = context.dsColors;
     final t = context.dsText;
     final l = context.dsLayout;
-    final CurrencyModel? currency = RegionService.currencyForRecord(controller.originRegionId);
+    // Each option in the currency of its own region (a carrier: the region
+    // it is priced in); the selected one for the breakdown and the total.
+    final CurrencyModel? currency = options.isEmpty ? RegionService.currencyForRecord(controller.originRegionId) : _currencyOf(options[selected]);
     return DsScaffold(
       title: "Choose a carrier".tr,
       maxContentWidth: DsLayout.contentMax,
@@ -87,7 +89,7 @@ class _ParcelCarrierSelectionScreenState extends State<ParcelCarrierSelectionScr
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 DsSectionHeader(title: "Choose a carrier".tr, subtitle: "${options.length} ${'available'.tr}"),
-                for (int i = 0; i < options.length; i++) _optionTile(options[i], i, currency),
+                for (int i = 0; i < options.length; i++) _optionTile(options[i], i, _currencyOf(options[i])),
                 const DsGap(DsSpace.sm),
                 ParcelBreakdownCard(
                   currency: currency,
@@ -138,6 +140,8 @@ class _ParcelCarrierSelectionScreenState extends State<ParcelCarrierSelectionScr
       ),
     );
   }
+
+  CurrencyModel? _currencyOf(ParcelCarrierOption option) => RegionService.currencyForRecord(option.regionId ?? controller.originRegionId);
 
   Widget _optionTile(ParcelCarrierOption option, int index, CurrencyModel? currency) {
     final c = context.dsColors;
