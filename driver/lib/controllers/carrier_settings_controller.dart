@@ -70,8 +70,6 @@ class CarrierSettingsController extends GetxController {
   /// Admin-owned values, read only.
   final RxString code = ''.obs;
   final RxList<String> regionNames = <String>[].obs;
-  final RxMap<String, String> identification = <String, String>{}.obs;
-  final RxMap<String, bool> identificationFiles = <String, bool>{}.obs;
 
   @override
   void onInit() {
@@ -143,8 +141,6 @@ class CarrierSettingsController extends GetxController {
         }
       }
       pricedRegionIds.value = found.regionIds;
-      identification.value = {for (final f in const ['operatingLicence', 'commercialRegister', 'uniqueIdNumber']) f: found.text(f)};
-      identificationFiles.value = {for (final f in const ['operatingLicenceFile', 'commercialRegisterFile', 'uniqueIdNumberFile']) f: found.text(f).isNotEmpty};
     }
     isLoading.value = false;
     update();

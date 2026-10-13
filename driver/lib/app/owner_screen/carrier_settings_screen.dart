@@ -254,22 +254,18 @@ class CarrierSettingsScreen extends StatelessWidget {
                             ),
                             const DsGap(DsSpace.lg),
 
-                            // ── Registration ──────────────────────────────────────
+                            // ── Regions (no documents here: the administrator
+                            // checks the company, the app submits none) ─────────
                             DsFormSection(
-                              title: "Company Registration".tr,
-                              subtitle: "Verified by the administrator from your company profile.".tr,
-                              icon: Icons.badge_outlined,
+                              title: "Regions served".tr,
+                              icon: Icons.map_outlined,
                               children: [
                                 if (controller.code.value.isNotEmpty)
                                   DsInfoRow(label: 'Carrier Code'.tr, value: controller.code.value, divider: true),
                                 DsInfoRow(
                                   label: 'Regions'.tr,
                                   value: controller.regionNames.isEmpty ? '—' : controller.regionNames.join(', '),
-                                  divider: true,
                                 ),
-                                DsInfoRow(label: 'Operating Licence'.tr, value: _withFile(controller, 'operatingLicence'), divider: true),
-                                DsInfoRow(label: 'Commercial Register'.tr, value: _withFile(controller, 'commercialRegister'), divider: true),
-                                DsInfoRow(label: 'Unique ID Number'.tr, value: _withFile(controller, 'uniqueIdNumber')),
                               ],
                             ),
                             if (carrierId.isNotEmpty) ...[
@@ -337,13 +333,6 @@ class CarrierSettingsScreen extends StatelessWidget {
       default:
         return unit;
     }
-  }
-
-  static String _withFile(CarrierSettingsController controller, String field) {
-    final String number = controller.identification[field] ?? '';
-    final bool hasFile = controller.identificationFiles['${field}File'] ?? false;
-    final String file = hasFile ? 'Document on file'.tr : 'No document'.tr;
-    return number.isEmpty ? file : '$number · $file';
   }
 
   static Widget _scopeCheckbox(
