@@ -28,6 +28,8 @@ const Map<String, String> lnAr = {
   "The period cannot be longer than one year.": "لا يمكن أن تتجاوز الفترة سنة واحدة.",
   "No bookings in this period": "لا توجد حجوزات في هذه الفترة",
   "Choose other dates to export your bookings.": "اختر تواريخ أخرى لتصدير حجوزاتك.",
+  "All statuses": "كل الحالات",
+  "No bookings with the status \"@status\" in this period. Choose other dates or another status.": "لا توجد حجوزات بالحالة \"@status\" في هذه الفترة. اختر تواريخ أخرى أو حالة أخرى.",
   "Could not create the PDF. Please try again.": "تعذّر إنشاء ملف PDF. يرجى المحاولة مرة أخرى.",
   "Could not share the document.": "تعذّرت مشاركة المستند.",
   "Booking history": "سجل الحجوزات",

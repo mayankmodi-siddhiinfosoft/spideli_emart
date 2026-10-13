@@ -14,9 +14,21 @@ class OrderHistoryPdfHeader {
   /// The section the history belongs to ("Food", "Cab" ...); may be empty.
   final String serviceName;
   final ExportPeriod period;
+
+  /// The status filter the export was made with, as printed ("All statuses",
+  /// "Completed" ...).
+  final String statusLabel;
   final DateTime generatedAt;
 
-  const OrderHistoryPdfHeader({required this.appName, required this.customerName, required this.title, required this.serviceName, required this.period, required this.generatedAt});
+  const OrderHistoryPdfHeader({
+    required this.appName,
+    required this.customerName,
+    required this.title,
+    required this.serviceName,
+    required this.period,
+    required this.statusLabel,
+    required this.generatedAt,
+  });
 }
 
 /// Builds the order-history statement: header, summary (orders, totals per
@@ -86,6 +98,7 @@ class OrderHistoryPdf {
     y += text(h.serviceName.isEmpty ? h.title : '${h.title} - ${h.serviceName}', headingFont, 0, width) + 8;
     if (h.customerName.trim().isNotEmpty) pair(OrderHistoryExport.label('Customer'), h.customerName.trim());
     pair(OrderHistoryExport.label('Period'), '${_day.format(h.period.from)} - ${_day.format(h.period.to)}');
+    pair(OrderHistoryExport.label('Status'), h.statusLabel.trim().isEmpty ? OrderHistoryExport.label('All statuses') : h.statusLabel.trim());
     pair(OrderHistoryExport.label('Generated on'), _dateTime.format(h.generatedAt));
     y += 6;
     rule();

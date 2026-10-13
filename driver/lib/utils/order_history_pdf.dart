@@ -62,11 +62,14 @@ class OrderHistoryPdf {
   ///
   /// [headerLines] are printed under the title (app, driver or company,
   /// selected driver...). [showEarnings] adds the delivery charge and tip
-  /// columns the delivery history card shows.
+  /// columns the delivery history card shows. [statusFilter] is the chosen
+  /// status filter, translated ("All statuses", a tab or one status), printed
+  /// under the period.
   static List<int> build({
     required OrderHistoryPdfLabels labels,
     required List<String> headerLines,
     required ExportDateRange range,
+    String? statusFilter,
     required DateTime generatedAt,
     required List<OrderExportRow> rows,
     required bool showEarnings,
@@ -83,6 +86,7 @@ class OrderHistoryPdf {
     }
     w.gap(2);
     w.pair(labels.period, '${_day.format(range.from)} - ${_day.format(range.to)}');
+    if ((statusFilter ?? '').trim().isNotEmpty) w.pair(labels.status, statusFilter!.trim());
     w.pair(labels.generatedOn, _dayTime.format(generatedAt));
     w.gap(8);
     w.rule();

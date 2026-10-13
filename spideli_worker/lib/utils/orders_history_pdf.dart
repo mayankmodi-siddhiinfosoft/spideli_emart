@@ -16,10 +16,23 @@ class OrdersHistoryPdfData {
   /// The worker (signed-in user) the history belongs to.
   final String ownerName;
   final ExportPeriod period;
+
+  /// The status choice of the export ("All statuses" by default).
+  final JobStatusFilter status;
   final DateTime generatedAt;
   final List<ExportRow> rows;
 
-  const OrdersHistoryPdfData({required this.appName, required this.ownerName, required this.period, required this.generatedAt, required this.rows});
+  const OrdersHistoryPdfData({
+    required this.appName,
+    required this.ownerName,
+    required this.period,
+    this.status = JobStatusFilter.all,
+    required this.generatedAt,
+    required this.rows,
+  });
+
+  /// `orders_<status>_<from>_<to>.pdf` ([OrdersHistoryExport.fileName]).
+  String get fileName => OrdersHistoryExport.fileName(period, statusLabel: status.label);
 }
 
 /// Booking history PDF (syncfusion_flutter_pdf, same look as the Customer /
@@ -103,6 +116,7 @@ class OrdersHistoryPdf {
     y += text(label('Booking history'), headingFont) + 6;
     if (d.ownerName.trim().isNotEmpty) pair(label('Worker'), d.ownerName.trim());
     pair(label('Period'), '${_day.format(d.period.from)} - ${_day.format(d.period.to)}');
+    pair(label('Status'), label(d.status.labelKey));
     pair(label('Generated on'), _dayTime.format(d.generatedAt));
     y += 6;
     page.graphics.drawLine(rulePen, Offset(0, y), Offset(width, y));
@@ -182,11 +196,11 @@ class OrdersHistoryPdf {
   }
 
   /// Builds the PDF and writes it to a temporary file named
-  /// [OrdersHistoryExport.fileName] (`orders_<from>_<to>.pdf`).
+  /// [OrdersHistoryPdfData.fileName] (`orders_<status>_<from>_<to>.pdf`).
   static Future<File> writeFile(OrdersHistoryPdfData data) async {
     final List<int> bytes = build(data);
     final Directory dir = await getTemporaryDirectory();
-    final File file = File('${dir.path}/${OrdersHistoryExport.fileName(data.period)}');
+    final File file = File('${dir.path}/${data.fileName}');
     await file.writeAsBytes(bytes, flush: true);
     return file;
   }
@@ -195,11 +209,11 @@ class OrdersHistoryPdf {
   /// Drive, ...) or send it (mail, WhatsApp, ...). [origin] anchors the
   /// share popover on iPad.
   static Future<void> share(File file, OrdersHistoryPdfData data, {Rect? origin}) async {
-    final String name = OrdersHistoryExport.fileName(data.period);
+    final String name = data.fileName;
     await SharePlus.instance.share(
       ShareParams(
         files: [XFile(file.path, mimeType: 'application/pdf', name: name)],
-        subject: '${label('Booking history')} ${_day.format(data.period.from)} - ${_day.format(data.period.to)}',
+        subject: '${label('Booking history')} (${label(data.status.labelKey)}) ${_day.format(data.period.from)} - ${_day.format(data.period.to)}',
         sharePositionOrigin: origin,
       ),
     );

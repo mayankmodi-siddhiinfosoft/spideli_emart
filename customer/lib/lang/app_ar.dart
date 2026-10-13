@@ -883,6 +883,10 @@ const Map<String, String> arAR = {
   "Mail": "بريد",
   "Rental": "تأجير",
   "Booking": "حجز",
+  "All statuses": "جميع الحالات",
+  "Placed": "تم الطلب",
+  "Checking your orders in this period...": "جارٍ التحقق من طلباتك في هذه الفترة...",
+  "You have no orders with the status @status in this period.": "ليس لديك أي طلبات بالحالة @status في هذه الفترة.",
 
   // Notification Center and unread badges (.claude/CUSTOMER-NOTIFICATIONS.md).
   "Notifications": "الإشعارات",

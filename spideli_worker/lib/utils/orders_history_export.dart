@@ -1,3 +1,4 @@
+import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:spideliworker/constant/constants.dart';
 import 'package:spideliworker/model/currency_model.dart';
@@ -24,7 +25,17 @@ class OrdersHistoryExport {
   /// whose documents are not approved ([canReceiveJobs] false) sees only the
   /// Completed tab - the Assigned and In progress tabs are hidden behind the
   /// verification card - so the export must not list active jobs either.
-  static List<String> statusesFor({required bool canReceiveJobs}) => canReceiveJobs ? statuses : const [ORDER_STATUS_COMPLETED];
+  ///
+  /// [status] narrows them to the chosen group (the export sheet's status
+  /// choice); the result is empty when that group is not shown to this
+  /// worker (e.g. Assigned while the documents are not approved).
+  static List<String> statusesFor({required bool canReceiveJobs, JobStatusFilter status = JobStatusFilter.all}) {
+    final List<String> visible = canReceiveJobs ? statuses : const [ORDER_STATUS_COMPLETED];
+    return [
+      for (final String s in visible)
+        if (status.matches(s)) s,
+    ];
+  }
 
   /// Default period length, in days (today included).
   static const int defaultDays = 30;
@@ -64,18 +75,34 @@ class OrdersHistoryExport {
 
   // ---------------- file ----------------
 
-  /// `orders_<from>_<to>.pdf`, dates as yyyy-MM-dd.
-  static String fileName(ExportPeriod period) {
+  /// `orders_<status>_<from>_<to>.pdf`: [statusLabel] (the translated
+  /// status choice) through [fileNamePart], dates as yyyy-MM-dd.
+  static String fileName(ExportPeriod period, {required String statusLabel}) {
     final DateFormat f = DateFormat('yyyy-MM-dd');
-    return 'orders_${f.format(period.from)}_${f.format(period.to)}.pdf';
+    return 'orders_${fileNamePart(statusLabel)}_${f.format(period.from)}_${f.format(period.to)}.pdf';
   }
+
+  /// [label] reduced to a file-name part: letters (any script, with their
+  /// marks) and digits, every other run of characters a single "-", lower
+  /// case; [fallback] when nothing is left.
+  static String fileNamePart(String label, {String fallback = 'all'}) {
+    final String part = label.toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{M}\p{N}]+', unicode: true), '-').replaceAll(RegExp(r'^-+|-+$'), '');
+    return part.isEmpty ? fallback : part;
+  }
+
+  /// Text under "No bookings in this period": the existing hint for all
+  /// statuses, else one naming the (translated) status.
+  static String emptyMessage(JobStatusFilter status) => status.isAll
+      ? 'Choose other dates to export your bookings.'.tr
+      : 'No bookings with the status "@status" in this period. Choose other dates or another status.'.trParams({'status': status.label});
 
   // ---------------- rows and totals ----------------
 
   /// Is [createdAt] inside [period] (local days, both ends inclusive)?
   static bool inPeriod(DateTime createdAt, ExportPeriod period) => !createdAt.isBefore(period.start) && createdAt.isBefore(period.endExclusive);
 
-  /// One row per booking, oldest first. The amount is the booking's "Total
+  /// One row per booking whose status is one of [status]'s (all the Jobs
+  /// statuses by default), oldest first. The amount is the booking's "Total
   /// Amount" exactly as the booking details screen computes it
   /// ([BookingAmounts]), in the booking's own currency: [currencyFor] its
   /// `regionId` (RegionService.currencyForRegion), else [fallback] (the
@@ -85,18 +112,20 @@ class OrdersHistoryExport {
     List<OnProviderOrderModel> orders, {
     required CurrencyModel? Function(String? regionId) currencyFor,
     required CurrencyModel fallback,
+    JobStatusFilter status = JobStatusFilter.all,
   }) {
     final List<ExportRow> rows = [
       for (final OnProviderOrderModel order in orders)
-        ExportRow(
-          date: order.createdAt.toDate(),
-          id: order.id,
-          shortId: shortBookingId(order.id),
-          service: order.provider.title ?? '',
-          statusLabel: jobStatusLabel(order.status),
-          amount: BookingAmounts.of(order).totalAmount,
-          currency: currencyFor(order.regionId) ?? fallback,
-        ),
+        if (status.matches(order.status))
+          ExportRow(
+            date: order.createdAt.toDate(),
+            id: order.id,
+            shortId: shortBookingId(order.id),
+            service: order.provider.title ?? '',
+            statusLabel: jobStatusLabel(order.status),
+            amount: BookingAmounts.of(order).totalAmount,
+            currency: currencyFor(order.regionId) ?? fallback,
+          ),
     ];
     rows.sort((a, b) {
       final int byDate = a.date.compareTo(b.date);
@@ -140,6 +169,42 @@ class OrdersHistoryExport {
 
   /// Can [s] be written with the PDF standard (Latin-1) fonts?
   static bool isLatin1(String s) => s.runes.every((r) => r <= 0xFF);
+}
+
+/// Status choice of the export: every status of the Jobs tabs, or the
+/// statuses of one tab (Assigned = accepted / assigned, In progress =
+/// ongoing, Completed).
+class JobStatusFilter {
+  /// Stable id (tests, logs).
+  final String id;
+
+  /// Untranslated label, a key of lib/lang (the Jobs tab names).
+  final String labelKey;
+
+  /// The booking statuses this choice exports.
+  final List<String> statuses;
+
+  const JobStatusFilter._(this.id, this.labelKey, this.statuses);
+
+  /// Default: every Jobs status ([OrdersHistoryExport.statuses]).
+  static const JobStatusFilter all = JobStatusFilter._('all', 'All statuses', OrdersHistoryExport.statuses);
+  static const JobStatusFilter assigned = JobStatusFilter._('assigned', 'Assigned', [ORDER_STATUS_ACCEPTED, ORDER_STATUS_ASSIGNED]);
+  static const JobStatusFilter inProgress = JobStatusFilter._('in_progress', 'In progress', [ORDER_STATUS_ONGOING]);
+  static const JobStatusFilter completed = JobStatusFilter._('completed', 'Completed', [ORDER_STATUS_COMPLETED]);
+
+  /// The choices of the export sheet, in this order ("All statuses" first,
+  /// then the Jobs tabs).
+  static const List<JobStatusFilter> values = [all, assigned, inProgress, completed];
+
+  bool get isAll => identical(this, all);
+
+  /// Translated label.
+  String get label => labelKey.tr;
+
+  bool matches(String status) => statuses.contains(status);
+
+  @override
+  String toString() => 'JobStatusFilter($id)';
 }
 
 /// A period of whole local days, both ends inclusive.

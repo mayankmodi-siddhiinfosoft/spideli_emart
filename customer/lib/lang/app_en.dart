@@ -886,6 +886,10 @@ const Map<String, String> enUS = {
   "Mail": "Mail",
   "Rental": "Rental",
   "Booking": "Booking",
+  "All statuses": "All statuses",
+  "Placed": "Placed",
+  "Checking your orders in this period...": "Checking your orders in this period...",
+  "You have no orders with the status @status in this period.": "You have no orders with the status @status in this period.",
 
   // Notification Center and unread badges (.claude/CUSTOMER-NOTIFICATIONS.md).
   "Notifications": "Notifications",

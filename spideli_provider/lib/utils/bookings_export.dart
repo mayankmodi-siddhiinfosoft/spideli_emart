@@ -23,6 +23,64 @@ const List<String> exportedBookingStatuses = [
   ORDER_STATUS_CANCELLED,
 ];
 
+/// Status choice of the export: every status the booking list shows, or one
+/// group of them, grouped like the booking-list chips and tabs (the New
+/// Booking tab is Pending; Today / Upcoming split Accepted and On Going by
+/// date; the Cancelled tab holds rejected and cancelled bookings).
+class BookingStatusFilter {
+  /// Stable id (tests, logs).
+  final String id;
+
+  /// Untranslated label, a key of lib/lang.
+  final String labelKey;
+
+  /// The booking statuses this choice exports.
+  final List<String> statuses;
+
+  const BookingStatusFilter._(this.id, this.labelKey, this.statuses);
+
+  /// Default: every status ([exportedBookingStatuses]).
+  static const BookingStatusFilter all = BookingStatusFilter._('all', 'All statuses', exportedBookingStatuses);
+  static const BookingStatusFilter pending = BookingStatusFilter._('pending', 'Pending', [ORDER_STATUS_PLACED]);
+  static const BookingStatusFilter accepted = BookingStatusFilter._('accepted', 'Accepted', [ORDER_STATUS_ACCEPTED, ORDER_STATUS_ASSIGNED]);
+  static const BookingStatusFilter ongoing = BookingStatusFilter._('ongoing', 'On Going', [ORDER_STATUS_ONGOING]);
+  static const BookingStatusFilter completed = BookingStatusFilter._('completed', 'Completed', [ORDER_STATUS_COMPLETED]);
+  static const BookingStatusFilter cancelled = BookingStatusFilter._('cancelled', 'Cancelled / Rejected', [ORDER_STATUS_REJECTED, ORDER_STATUS_CANCELLED]);
+
+  /// The choices of the export sheet, in this order ("All statuses" first).
+  static const List<BookingStatusFilter> values = [all, pending, accepted, ongoing, completed, cancelled];
+
+  bool get isAll => identical(this, all);
+
+  /// Translated label.
+  String get label => labelKey.tr;
+
+  bool matches(String status) => statuses.contains(status);
+
+  @override
+  String toString() => 'BookingStatusFilter($id)';
+}
+
+/// [label] reduced to a file-name part: letters (any script) and digits,
+/// every other run of characters a single "-", lower case; [fallback] when
+/// nothing is left. Marks (Arabic vowels...) stay with their letter.
+String fileNamePart(String label, {String fallback = 'all'}) {
+  final String part = label.toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{M}\p{N}]+', unicode: true), '-').replaceAll(RegExp(r'^-+|-+$'), '');
+  return part.isEmpty ? fallback : part;
+}
+
+/// `orders_<status>_<from>_<to>.pdf`: [statusLabel] (the translated status
+/// choice) through [fileNamePart], dates as yyyy-MM-dd.
+String bookingsExportFileName(ExportRange range, String statusLabel) {
+  final DateFormat f = DateFormat('yyyy-MM-dd');
+  return 'orders_${fileNamePart(statusLabel)}_${f.format(range.from)}_${f.format(range.to)}.pdf';
+}
+
+/// Message when the period has no booking: the existing one for all
+/// statuses, else one naming the (translated) status.
+String noBookingsMessage(BookingStatusFilter filter) =>
+    filter.isAll ? 'No bookings in this period.'.tr : 'No bookings with the status "@status" in this period.'.trParams({'status': filter.label});
+
 /// Why a chosen period cannot be exported.
 enum ExportRangeError { toBeforeFrom, tooLong }
 
@@ -68,12 +126,6 @@ class ExportRange {
         ExportRangeError.toBeforeFrom => 'The end date must be on or after the start date.'.tr,
         ExportRangeError.tooLong => 'The period cannot be longer than one year.'.tr,
       };
-
-  /// `orders_<from>_<to>.pdf`, dates as yyyy-MM-dd.
-  String get fileName {
-    final DateFormat f = DateFormat('yyyy-MM-dd');
-    return 'orders_${f.format(from)}_${f.format(to)}.pdf';
-  }
 }
 
 /// The status label the booking list shows on its chips (`_statusChip`),
@@ -145,18 +197,20 @@ String currencyKeyOf(CurrencyModel? currency) {
   return (currency?.symbol ?? '').trim();
 }
 
-/// Rows of [orders] created inside [range], oldest first. [currencyFor]
+/// Rows of [orders] created inside [range] and in one of [status]'s
+/// statuses, oldest first. [currencyFor]
 /// resolves a booking's currency (the app passes
 /// `RegionService.currencyForBooking`); a test passes its own.
 List<BookingExportRow> buildBookingExportRows(
   Iterable<OnProviderOrderModel> orders,
   ExportRange range, {
   required CurrencyModel? Function(String? regionId) currencyFor,
+  BookingStatusFilter status = BookingStatusFilter.all,
 }) {
   final List<BookingExportRow> rows = [];
   for (final OnProviderOrderModel order in orders) {
     final DateTime created = order.createdAt.toDate();
-    if (!range.contains(created)) continue;
+    if (!range.contains(created) || !status.matches(order.status)) continue;
     rows.add(BookingExportRow(
       createdAt: created,
       id: order.id,

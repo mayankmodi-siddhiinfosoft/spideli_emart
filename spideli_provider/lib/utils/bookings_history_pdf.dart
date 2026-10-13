@@ -21,24 +21,30 @@ class BookingsHistoryPdf {
   static const String appName = 'Spideli Provider';
 
   /// Builds the document and writes it to the temporary directory as
-  /// [ExportRange.fileName].
-  static Future<File> save({required ExportRange range, required List<BookingExportRow> rows, User? provider, DateTime? generatedAt}) async {
-    final List<int> bytes = build(range: range, rows: rows, provider: provider, generatedAt: generatedAt ?? DateTime.now());
+  /// [bookingsExportFileName] (status and period).
+  static Future<File> save({
+    required ExportRange range,
+    required List<BookingExportRow> rows,
+    BookingStatusFilter status = BookingStatusFilter.all,
+    User? provider,
+    DateTime? generatedAt,
+  }) async {
+    final List<int> bytes = build(range: range, rows: rows, status: status, provider: provider, generatedAt: generatedAt ?? DateTime.now());
     final Directory dir = await getTemporaryDirectory();
-    final File file = File('${dir.path}/${range.fileName}');
+    final File file = File('${dir.path}/${bookingsExportFileName(range, status.label)}');
     await file.writeAsBytes(bytes, flush: true);
     return file;
   }
 
   /// Opens the share sheet (save to Files, e-mail, WhatsApp...).
-  static Future<void> share(File file, ExportRange range) async {
+  static Future<void> share(File file, ExportRange range, {BookingStatusFilter status = BookingStatusFilter.all}) async {
     final String period = periodLabel(range);
     await SharePlus.instance.share(
       ShareParams(
         files: [XFile(file.path, mimeType: 'application/pdf')],
-        fileNameOverrides: [range.fileName],
-        subject: '${'Booking history'.tr} $period',
-        text: '$appName - ${'Booking history'.tr} $period',
+        fileNameOverrides: [bookingsExportFileName(range, status.label)],
+        subject: '${'Booking history'.tr} (${status.label}) $period',
+        text: '$appName - ${'Booking history'.tr} (${status.label}) $period',
       ),
     );
   }
@@ -54,7 +60,13 @@ class BookingsHistoryPdf {
   }
 
   /// The PDF bytes.
-  static List<int> build({required ExportRange range, required List<BookingExportRow> rows, User? provider, required DateTime generatedAt}) {
+  static List<int> build({
+    required ExportRange range,
+    required List<BookingExportRow> rows,
+    BookingStatusFilter status = BookingStatusFilter.all,
+    User? provider,
+    required DateTime generatedAt,
+  }) {
     final PdfDocument document = PdfDocument();
     document.pageSettings.margins.all = 36;
 
@@ -105,6 +117,7 @@ class BookingsHistoryPdf {
     final String name = providerName(provider);
     if (name.isNotEmpty) pair('Provider'.tr, name);
     pair('Period'.tr, periodLabel(range));
+    pair('Status'.tr, pdfLabel(status.labelKey));
     pair('Generated on'.tr, DateFormat('dd MMM yyyy, HH:mm').format(generatedAt));
     y += 6;
     page.graphics.drawLine(rulePen, Offset(0, y), Offset(width, y));
@@ -183,6 +196,14 @@ class BookingsHistoryPdf {
     document.dispose();
     log('BookingsHistoryPdf: ${rows.length} rows, ${bytes.length} bytes');
     return bytes;
+  }
+
+  /// Translation of [key], or [key] itself (English) when the translation
+  /// cannot be written with the standard PDF fonts (Arabic), so the chosen
+  /// status stays readable instead of "????".
+  static String pdfLabel(String key) {
+    final String value = key.tr;
+    return value.runes.every((r) => r <= 0xFF) ? value : key;
   }
 
   /// The standard PDF fonts only cover Latin-1: anything else (Arabic...)

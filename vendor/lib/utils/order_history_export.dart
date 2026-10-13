@@ -3,8 +3,10 @@ import 'dart:developer';
 
 import 'package:get/get.dart';
 import 'package:vendor/constant/constant.dart';
+import 'package:vendor/controller/home_controller.dart';
 import 'package:vendor/models/currency_model.dart';
 import 'package:vendor/models/order_model.dart';
+import 'package:vendor/utils/scheduled_order.dart';
 
 /// Pure parts of "Export PDF" of the store's order history: the period
 /// rules, the table rows and the summary. No Firestore and no UI here, so
@@ -63,8 +65,26 @@ class OrderExportRange {
   /// Number of days in the period, both ends included (DST safe).
   int get dayCount => DateTime.utc(to.year, to.month, to.day).difference(DateTime.utc(from.year, from.month, from.day)).inDays + 1;
 
-  /// `orders_2026-09-08_2026-10-07.pdf`.
-  String get fileName => 'orders_${ymd(from)}_${ymd(to)}.pdf';
+  /// `orders_2026-09-08_2026-10-07.pdf`, or with the chosen status
+  /// [status] (a label, sanitised by [fileNamePart]):
+  /// `orders_preparing_2026-09-08_2026-10-07.pdf`.
+  String fileName({String? status}) {
+    final String part = status == null ? '' : fileNamePart(status);
+    return part.isEmpty ? 'orders_${ymd(from)}_${ymd(to)}.pdf' : 'orders_${part}_${ymd(from)}_${ymd(to)}.pdf';
+  }
+
+  /// [value] made safe for a file name: letters and digits (any script)
+  /// kept and lower-cased, every other run of characters (spaces, slashes,
+  /// dots, quotes...) turned into one `-`, no `-` at either end, at most
+  /// [maxLength] characters. Empty when nothing usable is left.
+  static String fileNamePart(String value, {int maxLength = 40}) {
+    String part = value.toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), '-');
+    part = part.replaceAll(RegExp(r'^-+|-+$'), '');
+    if (part.runes.length > maxLength) {
+      part = String.fromCharCodes(part.runes.take(maxLength)).replaceAll(RegExp(r'-+$'), '');
+    }
+    return part;
+  }
 
   /// `2026-09-08`, always in Western digits whatever the app language.
   static String ymd(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${_two(d.month)}-${_two(d.day)}';
@@ -82,6 +102,70 @@ class OrderExportRange {
 
   @override
   int get hashCode => Object.hash(from, to);
+}
+
+/// Which orders the export lists: all of them, or the orders of one of the
+/// home screen's order tabs (same statuses, same grouping as
+/// [HomeController]'s tab split).
+enum OrderExportStatus {
+  all,
+
+  /// `Order Placed` and due now (the New tab).
+  newOrders,
+
+  /// `Order Placed` and waiting for its scheduled time (the Scheduled tab).
+  scheduled,
+
+  /// [HomeController.preparingStatuses]: accepted, waiting for / with a driver.
+  preparing,
+
+  /// [HomeController.readyStatuses]: shipped or in transit.
+  ready,
+  completed,
+  rejected,
+  cancelled;
+
+  /// Label (translation key): "All statuses" or the home tab's label.
+  String get labelKey => switch (this) {
+    OrderExportStatus.all => 'All statuses',
+    OrderExportStatus.newOrders => 'New',
+    OrderExportStatus.scheduled => 'Scheduled',
+    OrderExportStatus.preparing => 'Preparing',
+    OrderExportStatus.ready => 'Ready',
+    OrderExportStatus.completed => 'Completed',
+    OrderExportStatus.rejected => 'Rejected',
+    OrderExportStatus.cancelled => 'Cancelled',
+  };
+
+  /// The stored statuses this choice covers; empty for [all] (every status,
+  /// also one no tab lists).
+  List<String> get statuses => switch (this) {
+    OrderExportStatus.all => const [],
+    OrderExportStatus.newOrders || OrderExportStatus.scheduled => const [Constant.orderPlaced],
+    OrderExportStatus.preparing => HomeController.preparingStatuses,
+    OrderExportStatus.ready => HomeController.readyStatuses,
+    OrderExportStatus.completed => const [Constant.orderCompleted],
+    OrderExportStatus.rejected => const [Constant.orderRejected],
+    OrderExportStatus.cancelled => const [Constant.orderCancelled],
+  };
+
+  /// True when [order] is listed under this choice at [now]. An `Order
+  /// Placed` order is Scheduled while its due time (scheduled time minus
+  /// [lead], [ScheduledOrderRule]) is after [now], and New otherwise - as the
+  /// home tabs split them.
+  bool matches(OrderModel order, {required DateTime now, Duration lead = Duration.zero}) {
+    switch (this) {
+      case OrderExportStatus.all:
+        return true;
+      case OrderExportStatus.newOrders:
+      case OrderExportStatus.scheduled:
+        if (order.status != Constant.orderPlaced) return false;
+        final bool waiting = ScheduledOrderRule.isScheduledFuture(status: order.status, scheduleTime: order.scheduleTime?.toDate(), now: now, lead: lead);
+        return this == OrderExportStatus.scheduled ? waiting : !waiting;
+      default:
+        return statuses.contains(order.status);
+    }
+  }
 }
 
 /// One line of the exported table.
@@ -265,20 +349,27 @@ class OrderHistoryExport {
     }
   }
 
-  /// Rows of [orders] created inside [range], oldest first, one per order id.
-  /// Orders without a creation time are left out (they cannot be placed in a
-  /// period, and the range query never returns them).
+  /// Rows of [orders] created inside [range] and matching [status] (at
+  /// [now], default the current time; [lead] is the scheduled-order lead
+  /// time), oldest first, one per order id. Orders without a creation time
+  /// are left out (they cannot be placed in a period, and the range query
+  /// never returns them).
   static Future<List<OrderExportRow>> buildRows(
     List<OrderModel> orders, {
     required OrderExportRange range,
     required FutureOr<double?> Function(OrderModel order) amountOf,
     required CurrencyModel? Function(String? regionId) currencyOf,
+    OrderExportStatus status = OrderExportStatus.all,
+    DateTime? now,
+    Duration lead = Duration.zero,
   }) async {
+    final DateTime at = now ?? DateTime.now();
     final Set<String> seen = {};
     final List<OrderExportRow> rows = [];
     for (final OrderModel order in orders) {
       final DateTime? createdAt = order.createdAt?.toDate();
       if (createdAt == null || !range.contains(createdAt)) continue;
+      if (!status.matches(order, now: at, lead: lead)) continue;
       final String id = order.id ?? '';
       if (id.isNotEmpty && !seen.add(id)) continue;
       rows.add(

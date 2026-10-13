@@ -106,6 +106,11 @@ void main() {
     // Wallet checkout (WalletCheckout.failureMessage).
     'You do not have sufficient wallet balance',
     'Payment failed. No money was taken from your wallet. Please try again.',
+    // Order history PDF export: the status filter.
+    'All statuses',
+    'Placed',
+    'Checking your orders in this period...',
+    'You have no orders with the status @status in this period.',
   ];
   const maps = <String, Map<String, String>>{'en_US': enUS, 'ar_AR': arAR};
   final placeholder = RegExp(r'@\w+');

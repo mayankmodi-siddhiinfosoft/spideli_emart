@@ -40,8 +40,21 @@ class OrderHistoryPdf {
 
   static String periodText(OrderExportRange range) => '${OrderExportRange.dmy(range.from)} - ${OrderExportRange.dmy(range.to)}';
 
+  /// The chosen status as printed in the PDF (and used in the file name):
+  /// translated, or English when the translation cannot be drawn.
+  static String statusText(OrderExportStatus status) => label(status.labelKey);
+
+  /// The file name of the export of [status] over [range], e.g.
+  /// `orders_preparing_2026-09-08_2026-10-07.pdf` (status sanitised).
+  static String fileName(OrderExportRange range, OrderExportStatus status) {
+    final String name = range.fileName(status: statusText(status));
+    // A label with nothing usable left falls back to its English key.
+    return name == range.fileName() ? range.fileName(status: status.labelKey) : name;
+  }
+
   static List<int> build({
     required OrderExportRange range,
+    OrderExportStatus status = OrderExportStatus.all,
     required List<OrderExportRow> rows,
     required OrderExportSummary summary,
     required String appName,
@@ -71,7 +84,7 @@ class OrderHistoryPdf {
     PdfCompositeField(
       font: smallFont,
       brush: muted,
-      text: safe('$storeName - ${periodText(range)}    {0} / {1}'),
+      text: safe('$storeName - ${periodText(range)} - ${statusText(status)}    {0} / {1}'),
       fields: <PdfAutomaticField>[pageNumber, pageCount],
     ).draw(footer.graphics, const Offset(0, 6));
     document.template.bottom = footer;
@@ -104,6 +117,7 @@ class OrderHistoryPdf {
     if (storeName.trim().isNotEmpty) y += text(storeName, titleFont) + 4;
     y += text(label('Order history'), headingFont) + 6;
     pair(label('Period'), '${periodText(range)} (${labelParams('@count days', {'count': '${range.dayCount}'})})');
+    pair(label('Status'), statusText(status));
     pair(label('Generated on'), OrderExportRange.dmyHm(generatedAt));
     y += 6;
     rule();

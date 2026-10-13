@@ -14,13 +14,14 @@ import 'package:spideliprovider/utils/bookings_export.dart';
 import 'package:spideliprovider/utils/bookings_history_pdf.dart';
 
 /// "Export PDF" of the booking history: pick a period (default: the last 30
-/// days, at most one year), load the provider's bookings created in it, and
-/// share them as a PDF.
+/// days, at most one year) and a status ("All statuses" by default, or one
+/// group of the booking list's statuses), load the provider's bookings
+/// created in it with that status, and share them as a PDF.
 abstract final class ExportBookingsSheet {
   static Future<void> show() {
     return DsBottomSheet.show<void>(
       title: 'Export PDF'.tr,
-      subtitle: 'Choose the period to export'.tr,
+      subtitle: 'Choose the period and the status to export'.tr,
       child: const _ExportBookingsBody(),
     );
   }
@@ -35,6 +36,7 @@ class _ExportBookingsBody extends StatefulWidget {
 
 class _ExportBookingsBodyState extends State<_ExportBookingsBody> {
   late ExportRange _range = ExportRange.lastDays(DateTime.now());
+  BookingStatusFilter _status = BookingStatusFilter.all;
   bool _loading = false;
 
   /// Message shown under the dates: nothing to export, or a failure.
@@ -63,6 +65,7 @@ class _ExportBookingsBodyState extends State<_ExportBookingsBody> {
 
   Future<void> _export() async {
     final ExportRange range = _range;
+    final BookingStatusFilter status = _status;
     if (range.validate() != null || _loading) return;
     final String? providerId = MyAppState.currentUser?.id;
     if (providerId == null || providerId.isEmpty) return;
@@ -74,26 +77,26 @@ class _ExportBookingsBodyState extends State<_ExportBookingsBody> {
     try {
       final List<OnProviderOrderModel> bookings = await FireStoreUtils.getProviderBookingsCreatedBetween(
         providerId: providerId,
-        statuses: exportedBookingStatuses,
+        statuses: status.statuses,
         start: range.start,
         endExclusive: range.endExclusive,
       );
-      final List<BookingExportRow> rows = buildBookingExportRows(bookings, range, currencyFor: RegionService.currencyForBooking);
+      final List<BookingExportRow> rows = buildBookingExportRows(bookings, range, currencyFor: RegionService.currencyForBooking, status: status);
       if (rows.isEmpty) {
         if (!mounted) return;
         setState(() {
           _loading = false;
           _noticeTone = DsTone.info;
-          _notice = 'No bookings in this period.'.tr;
+          _notice = noBookingsMessage(status);
         });
         return;
       }
-      final File file = await BookingsHistoryPdf.save(range: range, rows: rows, provider: MyAppState.currentUser);
+      final File file = await BookingsHistoryPdf.save(range: range, rows: rows, status: status, provider: MyAppState.currentUser);
       if (!mounted) return;
       setState(() => _loading = false);
       Navigator.of(context).pop();
       try {
-        await BookingsHistoryPdf.share(file, range);
+        await BookingsHistoryPdf.share(file, range, status: status);
       } catch (e) {
         log('Booking history share failed: $e');
         ShowToastDialog.showToast('Could not export the booking history. Please try again.'.tr);
@@ -119,6 +122,25 @@ class _ExportBookingsBodyState extends State<_ExportBookingsBody> {
         _DateField(label: 'From'.tr, date: _range.from, enabled: !_loading, onTap: () => _pick(from: true)),
         const DsGap(DsSpace.sm),
         _DateField(label: 'To'.tr, date: _range.to, enabled: !_loading, onTap: () => _pick(from: false)),
+        const DsGap(DsSpace.md),
+        DsDropdown<BookingStatusFilter>(
+          label: 'Status'.tr,
+          prefixIcon: Icons.filter_list_rounded,
+          value: _status,
+          bottomSpacing: 0,
+          items: [
+            for (final BookingStatusFilter f in BookingStatusFilter.values) DropdownMenuItem<BookingStatusFilter>(value: f, child: Text(f.label)),
+          ],
+          onChanged: _loading
+              ? null
+              : (BookingStatusFilter? f) {
+                  if (f == null) return;
+                  setState(() {
+                    _status = f;
+                    _notice = null;
+                  });
+                },
+        ),
         if (error != null) ...[
           const DsGap(DsSpace.md),
           DsInlineAlert(tone: DsTone.danger, message: ExportRange.message(error)),

@@ -9,14 +9,16 @@ import 'package:customer/utils/order_history_limit.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-/// "Export PDF" of a history screen: choose a period, get the orders of that
-/// period as a PDF in the share sheet.
+/// "Export PDF" of a history screen: choose a period and a status ("All
+/// statuses" or one of the screen's tabs), get those orders as a PDF in the
+/// share sheet.
 ///
 /// Customers with an active order-history plan only (client rule). Without
 /// one the button is shown with a lock, and tapping it explains why and offers
 /// the plans. The lock is only a hint: the plan is re-read when the button is
 /// tapped and again when the export starts, so a plan that expired meanwhile
-/// never exports.
+/// never exports - and the export service itself refuses every step to a
+/// customer without one ([OrderHistoryExportService.ensureEntitled]).
 class OrderHistoryExportButton extends StatefulWidget {
   final OrderHistoryKind kind;
 
@@ -63,13 +65,13 @@ class _OrderHistoryExportButtonState extends State<OrderHistoryExportButton> {
         await _refresh();
         return;
       }
-      final ExportPeriod? period = await DsBottomSheet.show<ExportPeriod>(
+      final OrderHistoryExportRequest? request = await DsBottomSheet.show<OrderHistoryExportRequest>(
         title: "Export PDF".tr,
         subtitle: "Your orders of the chosen period, as a PDF you can save or send.".tr,
-        child: const ExportPeriodSheet(),
+        child: ExportPeriodSheet(kind: widget.kind),
       );
-      if (period == null) return;
-      final bool exported = await OrderHistoryExportFlow.run(widget.kind, period);
+      if (request == null) return;
+      final bool exported = await OrderHistoryExportFlow.run(widget.kind, request);
       if (!exported) await _refresh();
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -126,8 +128,9 @@ class OrderHistoryExportFlow {
     if (seePlans == true) await Get.to(() => const MyPlanScreen());
   }
 
-  /// Loads, builds and shares. True when the share sheet was reached.
-  static Future<bool> run(OrderHistoryKind kind, ExportPeriod period) async {
+  /// Loads, filters by status, builds and shares. True when the share sheet
+  /// was reached or there was nothing to export.
+  static Future<bool> run(OrderHistoryKind kind, OrderHistoryExportRequest request) async {
     ShowToastDialog.showLoader("Preparing your PDF...".tr);
     bool loaderOpen = true;
     void closeLoader() {
@@ -136,22 +139,19 @@ class OrderHistoryExportFlow {
     }
 
     try {
-      // Re-checked at the moment of export, on fresh data.
-      if (!await OrderHistoryExportService.canExport()) {
-        closeLoader();
-        await showLocked();
-        return false;
-      }
-      final List<OrderExportRow> rows = await OrderHistoryExportService.loadRows(kind, period);
-      if (rows.isEmpty) {
-        closeLoader();
-        ShowToastDialog.showToast("You have no orders in this period.".tr);
+      // The service re-checks the plan at the moment of export, on fresh data.
+      final file = await OrderHistoryExportService.exportPdf(kind, request);
+      closeLoader();
+      if (file == null) {
+        ShowToastDialog.showToast(OrderHistoryExport.noOrdersMessage(request.status));
         return true;
       }
-      final file = await OrderHistoryExportService.writePdf(kind, period, rows);
-      closeLoader();
-      await OrderHistoryExportService.share(file, period);
+      await OrderHistoryExportService.share(file);
       return true;
+    } on OrderHistoryExportLocked {
+      closeLoader();
+      await showLocked();
+      return false;
     } catch (e, s) {
       log("OrderHistoryExport failed: $e", stackTrace: s);
       closeLoader();
@@ -161,10 +161,14 @@ class OrderHistoryExportFlow {
   }
 }
 
-/// From / To, both days included, last 30 days by default, a year at most.
-/// Resolves the bottom sheet with the [ExportPeriod].
+/// From / To, both days included, last 30 days by default, a year at most;
+/// then the status: "All statuses" (default) or one of the history screen's
+/// tabs that has orders in the period (with their count). Resolves the bottom
+/// sheet with the [OrderHistoryExportRequest].
 class ExportPeriodSheet extends StatefulWidget {
-  const ExportPeriodSheet({super.key});
+  final OrderHistoryKind kind;
+
+  const ExportPeriodSheet({super.key, required this.kind});
 
   @override
   State<ExportPeriodSheet> createState() => _ExportPeriodSheetState();
@@ -173,6 +177,18 @@ class ExportPeriodSheet extends StatefulWidget {
 class _ExportPeriodSheetState extends State<ExportPeriodSheet> {
   late DateTime _from;
   late DateTime _to;
+  ExportStatusFilter _status = ExportStatusFilter.all;
+
+  /// The rows of [_rowsPeriod] (all statuses), read to offer the statuses.
+  List<OrderExportRow>? _rows;
+  ExportPeriod? _rowsPeriod;
+  bool _loading = false;
+
+  /// The period's orders could not be read: every tab is offered.
+  bool _loadFailed = false;
+
+  /// Ignores a read that finished after the period changed again.
+  int _generation = 0;
 
   @override
   void initState() {
@@ -180,6 +196,45 @@ class _ExportPeriodSheetState extends State<ExportPeriodSheet> {
     final ExportPeriod initial = ExportPeriod.lastDays(DateTime.now());
     _from = initial.from;
     _to = initial.to;
+    _loading = true;
+    _fetch(initial, ++_generation);
+  }
+
+  /// After a day was picked: reads the statuses of the new period.
+  void _reload() {
+    final int generation = ++_generation;
+    final bool valid = ExportPeriod.validate(_from, _to) == null;
+    setState(() {
+      _rows = null;
+      _rowsPeriod = null;
+      _loadFailed = false;
+      _loading = valid;
+    });
+    if (valid) _fetch(ExportPeriod(_from, _to), generation);
+  }
+
+  Future<void> _fetch(ExportPeriod period, int generation) async {
+    List<OrderExportRow>? rows;
+    try {
+      rows = await OrderHistoryExportService.loadRows(widget.kind, period);
+    } catch (e) {
+      // Locked or unreadable: the export itself re-checks and explains.
+      log("ExportPeriodSheet: statuses not read: $e");
+    }
+    if (!mounted || generation != _generation) return;
+    setState(() {
+      _loading = false;
+      _loadFailed = rows == null;
+      _rows = rows;
+      _rowsPeriod = rows == null ? null : period;
+      if (!_options.contains(_status)) _status = ExportStatusFilter.all;
+    });
+  }
+
+  List<ExportStatusFilter> get _options {
+    if (_loadFailed) return OrderHistoryExport.statusOptions(widget.kind, null);
+    if (_rows == null) return const [ExportStatusFilter.all];
+    return OrderHistoryExport.statusOptions(widget.kind, _rows);
   }
 
   Future<void> _pickDay({required bool start}) async {
@@ -200,6 +255,14 @@ class _ExportPeriodSheetState extends State<ExportPeriodSheet> {
         _to = ExportPeriod.dayOf(day);
       }
     });
+    _reload();
+  }
+
+  void _export() {
+    final ExportPeriod period = ExportPeriod(_from, _to);
+    Get.back<OrderHistoryExportRequest>(
+      result: OrderHistoryExportRequest(period: period, status: _status, rows: _rowsPeriod == period ? _rows : null),
+    );
   }
 
   @override
@@ -207,6 +270,9 @@ class _ExportPeriodSheetState extends State<ExportPeriodSheet> {
     final c = context.dsColors;
     final t = context.dsText;
     final ExportPeriodError? error = ExportPeriod.validate(_from, _to);
+    final List<ExportStatusFilter> options = _options;
+    final int selected = options.indexOf(_status);
+    final List<OrderExportRow>? rows = _rows;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -223,12 +289,39 @@ class _ExportPeriodSheetState extends State<ExportPeriodSheet> {
           const DsGap(DsSpace.sm),
           Text(ExportPeriod.errorMessage(error), style: t.caption.copyWith(color: c.danger)),
         ],
+        if (error == null) ...[
+          const DsGap(DsSpace.md),
+          DsFieldLabel("Status".tr),
+          if (_loading)
+            Row(
+              children: [
+                const DsSpinner(size: 16, strokeWidth: 2),
+                const DsGap(DsSpace.sm),
+                Expanded(child: Text("Checking your orders in this period...".tr, style: t.caption)),
+              ],
+            )
+          else ...[
+            DsSegmentedTabs(
+              scrollable: true,
+              index: selected < 0 ? 0 : selected,
+              onChanged: (i) => setState(() => _status = options[i]),
+              segments: [
+                for (final ExportStatusFilter o in options)
+                  DsSegment(o.label, count: rows == null ? null : OrderHistoryExport.filterByStatus(rows, o).length),
+              ],
+            ),
+            if (rows != null && rows.isEmpty) ...[
+              const DsGap(DsSpace.sm),
+              Text("You have no orders in this period.".tr, style: t.caption),
+            ],
+          ],
+        ],
         const DsGap(DsSpace.md),
         DsButton.primary(
           label: "Export PDF".tr,
           icon: Icons.picture_as_pdf_outlined,
           expand: true,
-          onPressed: error != null ? null : () => Get.back<ExportPeriod>(result: ExportPeriod(_from, _to)),
+          onPressed: error != null || _loading ? null : _export,
         ),
       ],
     );

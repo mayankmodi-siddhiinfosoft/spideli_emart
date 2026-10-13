@@ -1,5 +1,9 @@
+import 'dart:ui';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get/get.dart';
+import 'package:spideliworker/lang/app_ar.dart';
 import 'package:spideliworker/constant/constants.dart';
 import 'package:spideliworker/model/currency_model.dart';
 import 'package:spideliworker/model/onprovider_order_model.dart';
@@ -86,8 +90,99 @@ void main() {
     });
   });
 
-  test('file name: orders_<from>_<to>.pdf', () {
-    expect(OrdersHistoryExport.fileName(ExportPeriod(DateTime(2026, 9, 8, 13), DateTime(2026, 10, 7))), 'orders_2026-09-08_2026-10-07.pdf');
+  test('file name: orders_<status>_<from>_<to>.pdf', () {
+    final ExportPeriod p = ExportPeriod(DateTime(2026, 9, 8, 13), DateTime(2026, 10, 7));
+    expect(OrdersHistoryExport.fileName(p, statusLabel: JobStatusFilter.all.label), 'orders_all-statuses_2026-09-08_2026-10-07.pdf');
+    expect(OrdersHistoryExport.fileName(p, statusLabel: JobStatusFilter.inProgress.label), 'orders_in-progress_2026-09-08_2026-10-07.pdf');
+    expect(OrdersHistoryPdfData(appName: 'a', ownerName: '', period: p, status: JobStatusFilter.completed, generatedAt: DateTime(2026), rows: const []).fileName,
+        'orders_completed_2026-09-08_2026-10-07.pdf');
+  });
+
+  group('status filter', () {
+    test('choices: All statuses first, then the Jobs tabs', () {
+      expect(JobStatusFilter.values.map((f) => f.labelKey), ['All statuses', 'Assigned', 'In progress', 'Completed']);
+      expect(JobStatusFilter.values.first, same(JobStatusFilter.all));
+      expect(JobStatusFilter.all.isAll, isTrue);
+      expect(JobStatusFilter.assigned.isAll, isFalse);
+      expect(JobStatusFilter.all.statuses, OrdersHistoryExport.statuses);
+    });
+
+    test('the tabs cover every exported status exactly once', () {
+      final List<String> grouped = [for (final JobStatusFilter f in JobStatusFilter.values.skip(1)) ...f.statuses];
+      expect(grouped.toSet(), OrdersHistoryExport.statuses.toSet());
+      expect(grouped.length, OrdersHistoryExport.statuses.length);
+    });
+
+    test('statuses read for a choice, within what the Jobs screen shows the worker', () {
+      expect(OrdersHistoryExport.statusesFor(canReceiveJobs: true, status: JobStatusFilter.all), OrdersHistoryExport.statuses);
+      expect(OrdersHistoryExport.statusesFor(canReceiveJobs: true, status: JobStatusFilter.assigned), [ORDER_STATUS_ACCEPTED, ORDER_STATUS_ASSIGNED]);
+      expect(OrdersHistoryExport.statusesFor(canReceiveJobs: true, status: JobStatusFilter.inProgress), [ORDER_STATUS_ONGOING]);
+      expect(OrdersHistoryExport.statusesFor(canReceiveJobs: true, status: JobStatusFilter.completed), [ORDER_STATUS_COMPLETED]);
+      expect(OrdersHistoryExport.statusesFor(canReceiveJobs: false, status: JobStatusFilter.all), [ORDER_STATUS_COMPLETED]);
+      expect(OrdersHistoryExport.statusesFor(canReceiveJobs: false, status: JobStatusFilter.completed), [ORDER_STATUS_COMPLETED]);
+      expect(OrdersHistoryExport.statusesFor(canReceiveJobs: false, status: JobStatusFilter.assigned), isEmpty);
+      expect(OrdersHistoryExport.statusesFor(canReceiveJobs: false, status: JobStatusFilter.inProgress), isEmpty);
+    });
+
+    test('rows: only the bookings of the chosen status, all by default', () {
+      final List<OnProviderOrderModel> orders = [
+        booking(id: 'accepted', createdAt: DateTime(2026, 10, 1), status: ORDER_STATUS_ACCEPTED),
+        booking(id: 'assigned', createdAt: DateTime(2026, 10, 2), status: ORDER_STATUS_ASSIGNED),
+        booking(id: 'ongoing', createdAt: DateTime(2026, 10, 3), status: ORDER_STATUS_ONGOING),
+        booking(id: 'completed', createdAt: DateTime(2026, 10, 4), status: ORDER_STATUS_COMPLETED),
+        booking(id: 'cancelled', createdAt: DateTime(2026, 10, 5), status: ORDER_STATUS_CANCELLED),
+        booking(id: 'placed', createdAt: DateTime(2026, 10, 6), status: ORDER_STATUS_PLACED),
+      ];
+      List<String> ids([JobStatusFilter? f]) =>
+          (f == null ? OrdersHistoryExport.buildRows(orders, currencyFor: (_) => null, fallback: usd) : OrdersHistoryExport.buildRows(orders, currencyFor: (_) => null, fallback: usd, status: f))
+              .map((r) => r.id)
+              .toList();
+      expect(ids(), ['accepted', 'assigned', 'ongoing', 'completed']);
+      expect(ids(JobStatusFilter.all), ['accepted', 'assigned', 'ongoing', 'completed']);
+      expect(ids(JobStatusFilter.assigned), ['accepted', 'assigned']);
+      expect(ids(JobStatusFilter.inProgress), ['ongoing']);
+      expect(ids(JobStatusFilter.completed), ['completed']);
+      for (final JobStatusFilter f in JobStatusFilter.values.skip(1)) {
+        for (final ExportRow row in OrdersHistoryExport.buildRows(orders, currencyFor: (_) => null, fallback: usd, status: f)) {
+          expect(row.statusLabel, f.labelKey);
+        }
+      }
+    });
+
+    test('file-name part: letters and digits of any script, "-" between', () {
+      expect(OrdersHistoryExport.fileNamePart('All statuses'), 'all-statuses');
+      expect(OrdersHistoryExport.fileNamePart(' In / progress '), 'in-progress');
+      expect(OrdersHistoryExport.fileNamePart('a/b\\c:d*e?f"g<h>i|j'), 'a-b-c-d-e-f-g-h-i-j');
+      expect(OrdersHistoryExport.fileNamePart('../../etc'), 'etc');
+      expect(OrdersHistoryExport.fileNamePart('قيد التنفيذ'), 'قيد-التنفيذ');
+      expect(OrdersHistoryExport.fileNamePart('مُسند'), 'مُسند');
+      expect(OrdersHistoryExport.fileNamePart(' / '), 'all');
+    });
+
+    test('empty message names the status, except for all statuses', () {
+      expect(OrdersHistoryExport.emptyMessage(JobStatusFilter.all), 'Choose other dates to export your bookings.');
+      expect(OrdersHistoryExport.emptyMessage(JobStatusFilter.assigned), 'No bookings with the status "Assigned" in this period. Choose other dates or another status.');
+    });
+
+    group('translated', () {
+      setUp(() {
+        Get.addTranslations({'ar': lnAr});
+        Get.locale = const Locale('ar');
+      });
+      tearDown(() {
+        Get.locale = const Locale('en');
+        Get.translations.clear();
+      });
+
+      test('labels, empty message, file name; the PDF prints the status in English', () {
+        expect(JobStatusFilter.values.map((f) => f.label), ['كل الحالات', 'مُسند', 'قيد التنفيذ', 'مكتمل']);
+        expect(OrdersHistoryExport.emptyMessage(JobStatusFilter.completed), 'لا توجد حجوزات بالحالة "مكتمل" في هذه الفترة. اختر تواريخ أخرى أو حالة أخرى.');
+        expect(OrdersHistoryExport.emptyMessage(JobStatusFilter.all), 'اختر تواريخ أخرى لتصدير حجوزاتك.');
+        expect(OrdersHistoryExport.fileName(ExportPeriod(DateTime(2026, 9, 8), DateTime(2026, 10, 7)), statusLabel: JobStatusFilter.inProgress.label),
+            'orders_قيد-التنفيذ_2026-09-08_2026-10-07.pdf');
+        expect(OrdersHistoryPdf.label(JobStatusFilter.inProgress.labelKey), 'In progress');
+      });
+    });
   });
 
   test('exports the statuses of the Jobs tabs only', () {
@@ -194,6 +289,7 @@ void main() {
       appName: 'spideli Worker',
       ownerName: 'Jane Worker',
       period: period,
+      status: JobStatusFilter.completed,
       generatedAt: DateTime(2026, 10, 7, 10),
       rows: OrdersHistoryExport.buildRows(many, currencyFor: (_) => null, fallback: usd),
     ));
@@ -204,6 +300,8 @@ void main() {
     expect(first, contains('Booking history'));
     expect(first, contains('Jane Worker'));
     expect(first, contains('01 Sep 2026 - 30 Sep 2026'));
+    expect(first, contains('Status'));
+    expect(first, contains('Completed'));
     expect(first, contains('120'));
     // 10 + 11 + ... + 129 = 8340
     expect(first, contains(r'$ 8340.00'));

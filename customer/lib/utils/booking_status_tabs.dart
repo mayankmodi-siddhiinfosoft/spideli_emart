@@ -32,6 +32,15 @@ abstract final class BookingStatusTabs {
   /// The only terminal "stopped" statuses of a booking.
   static const Set<String> cancelled = {Constant.orderRejected, Constant.orderCancelled};
 
+  /// On-demand bookings (`provider_orders`, "Booking History"): the Placed
+  /// tab - every booking a provider has not completed or cancelled yet.
+  static const Set<String> onDemandPlaced = {Constant.orderPlaced, Constant.orderAccepted, Constant.orderAssigned, Constant.orderOngoing, Constant.orderInTransit};
+
+  /// On-demand bookings: the Cancelled tab. `provider_orders` are not
+  /// dispatched by the Cloud Functions, so a "Driver Rejected" there is not
+  /// waiting for another driver: it is listed as cancelled.
+  static const Set<String> onDemandCancelled = {Constant.orderRejected, Constant.orderCancelled, Constant.driverRejected};
+
   /// The dispatch is offering the booking to a driver, or looking for the
   /// next one after a reject / timeout: no driver is on it yet.
   static bool isWaitingForDriver(String? status) => status == Constant.driverPending || status == Constant.driverRejected;

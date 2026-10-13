@@ -231,7 +231,10 @@ const Map<String, String> enUS = {
   "This booking is no longer available.": "This booking is no longer available.",
   // Booking history export (PDF over a period).
   "Export PDF": "Export PDF",
-  "Choose the period to export": "Choose the period to export",
+  "Choose the period and the status to export": "Choose the period and the status to export",
+  "All statuses": "All statuses",
+  "Cancelled / Rejected": "Cancelled / Rejected",
+  "No bookings with the status \"@status\" in this period.": "No bookings with the status \"@status\" in this period.",
   "From": "From",
   "To": "To",
   "The end date must be on or after the start date.": "The end date must be on or after the start date.",

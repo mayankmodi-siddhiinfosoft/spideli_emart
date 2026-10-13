@@ -19,7 +19,10 @@ const Map<String, String> lnAr = {
   "This booking is no longer available.": "هذا الحجز لم يعد متاحًا.",
   // Booking history export (PDF over a period).
   "Export PDF": "تصدير PDF",
-  "Choose the period to export": "اختر الفترة المراد تصديرها",
+  "Choose the period and the status to export": "اختر الفترة والحالة المراد تصديرهما",
+  "All statuses": "كل الحالات",
+  "Cancelled / Rejected": "ملغى / مرفوض",
+  "No bookings with the status \"@status\" in this period.": "لا توجد حجوزات بالحالة \"@status\" في هذه الفترة.",
   "From": "من",
   "To": "إلى",
   "The end date must be on or after the start date.": "يجب أن يكون تاريخ النهاية في تاريخ البداية أو بعده.",

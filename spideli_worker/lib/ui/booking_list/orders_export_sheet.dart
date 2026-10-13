@@ -19,9 +19,11 @@ import 'package:spideliworker/utils/region_service.dart';
 /// "Export PDF" of the booking history (Jobs screen, header action).
 ///
 /// The worker picks a period (default: the last 30 days, at most one year,
-/// whole local days); the sheet then reads every booking of that period the
-/// Jobs screen lists (Assigned, In progress, Completed), builds the PDF and
-/// opens the share sheet. An empty period shows a message and no PDF.
+/// whole local days) and a status ("All statuses" by default, or one Jobs
+/// tab: Assigned, In progress, Completed); the sheet then reads every booking
+/// of that period and status the Jobs screen lists, builds the PDF and opens
+/// the share sheet. An empty result shows a message (naming the status) and
+/// no PDF.
 class OrdersExportSheet extends StatefulWidget {
   /// Anchor of the share popover on iPad (the header button).
   final Rect? shareOrigin;
@@ -48,6 +50,7 @@ class _OrdersExportSheetState extends State<OrdersExportSheet> {
   final TextEditingController _fromController = TextEditingController();
   final TextEditingController _toController = TextEditingController();
   bool _busy = false;
+  JobStatusFilter _status = JobStatusFilter.all;
 
   /// "No bookings in this period" - shown after a search came back empty.
   bool _empty = false;
@@ -123,6 +126,7 @@ class _OrdersExportSheetState extends State<OrdersExportSheet> {
       return;
     }
     final ExportPeriod period = ExportPeriod(_from, _to);
+    final JobStatusFilter status = _status;
     setState(() {
       _busy = true;
       _empty = false;
@@ -131,12 +135,16 @@ class _OrdersExportSheetState extends State<OrdersExportSheet> {
       await RegionService.ensureLoaded();
       final bool canReceiveJobs = await _canReceiveJobs();
       if (!mounted) return;
-      final List<OnProviderOrderModel> orders = await FireStoreUtils.getWorkerBookingsInPeriod(
-        workerId: workerId,
-        statuses: OrdersHistoryExport.statusesFor(canReceiveJobs: canReceiveJobs),
-        start: period.start,
-        endExclusive: period.endExclusive,
-      );
+      final List<String> statuses = OrdersHistoryExport.statusesFor(canReceiveJobs: canReceiveJobs, status: status);
+      // No status to read (a tab hidden from this worker): nothing to export.
+      final List<OnProviderOrderModel> orders = statuses.isEmpty
+          ? const []
+          : await FireStoreUtils.getWorkerBookingsInPeriod(
+              workerId: workerId,
+              statuses: statuses,
+              start: period.start,
+              endExclusive: period.endExclusive,
+            );
       if (!mounted) return;
       if (orders.isEmpty) {
         setState(() {
@@ -149,11 +157,13 @@ class _OrdersExportSheetState extends State<OrdersExportSheet> {
         appName: 'spideli Worker',
         ownerName: MyAppState.currentUser?.fullName() ?? '',
         period: period,
+        status: status,
         generatedAt: DateTime.now(),
         rows: OrdersHistoryExport.buildRows(
           orders,
           currencyFor: RegionService.currencyForRegion,
           fallback: currencyData ?? CurrencyModel(),
+          status: status,
         ),
       );
       final File file = await OrdersHistoryPdf.writeFile(data);
@@ -200,12 +210,29 @@ class _OrdersExportSheetState extends State<OrdersExportSheet> {
           errorText: error?.tr,
           onTap: _busy ? null : () => _pick(from: false),
         ),
+        DsDropdown<JobStatusFilter>(
+          label: 'Status'.tr,
+          prefixIcon: Icons.filter_list_rounded,
+          value: _status,
+          items: [
+            for (final JobStatusFilter f in JobStatusFilter.values) DropdownMenuItem<JobStatusFilter>(value: f, child: Text(f.label)),
+          ],
+          onChanged: _busy
+              ? null
+              : (JobStatusFilter? f) {
+                  if (f == null) return;
+                  setState(() {
+                    _status = f;
+                    _empty = false;
+                  });
+                },
+        ),
         if (_empty) ...[
           DsInlineAlert(
             tone: DsTone.info,
             icon: Icons.event_busy_outlined,
             title: 'No bookings in this period'.tr,
-            message: 'Choose other dates to export your bookings.'.tr,
+            message: OrdersHistoryExport.emptyMessage(_status),
           ),
           const DsGap(DsSpace.lg),
         ],

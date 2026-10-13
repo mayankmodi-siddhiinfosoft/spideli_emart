@@ -21,9 +21,19 @@ import 'package:customer/utils/order_history_export.dart';
 import 'package:customer/utils/order_history_pdf.dart';
 import 'package:customer/utils/parcel_receipt_pdf.dart' show ParcelAmounts;
 import 'package:customer/utils/region_service.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:get/get.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+
+/// Thrown by every export step of [OrderHistoryExportService] when the
+/// customer has no active order-history subscription.
+class OrderHistoryExportLocked implements Exception {
+  const OrderHistoryExportLocked();
+
+  @override
+  String toString() => 'OrderHistoryExportLocked: an active order history subscription is required';
+}
 
 /// Loads the signed-in customer's orders of one history screen over an
 /// [ExportPeriod], prices each one exactly as its detail screen / receipt
@@ -48,7 +58,19 @@ class OrderHistoryExportService {
   ///
   /// Throws when the user document cannot be read: the caller refuses the
   /// export (fails closed) rather than guess.
-  static Future<bool> canExport() async => CustomerPlanService.hasFullHistory(await CustomerPlanService.currentUserData());
+  static Future<bool> canExport() async => CustomerPlanService.hasFullHistory(await readUserData());
+
+  /// Where [canExport] reads the user document from. Tests replace it.
+  @visibleForTesting
+  static Future<Map<String, dynamic>?> Function() readUserData = CustomerPlanService.currentUserData;
+
+  /// The gate of every step that reads orders or produces the document, so
+  /// it holds whatever screen or widget starts the export: throws
+  /// [OrderHistoryExportLocked] for a customer without an active plan, before
+  /// anything else is read.
+  static Future<void> ensureEntitled() async {
+    if (!await canExport()) throw const OrderHistoryExportLocked();
+  }
 
   // ---------------- loading ----------------
 
@@ -77,8 +99,14 @@ class OrderHistoryExportService {
     return list;
   }
 
-  /// The rows of [kind] in [period], oldest first.
+  /// The rows of [kind] in [period], all statuses, oldest first. Subscribers
+  /// only ([ensureEntitled]).
   static Future<List<OrderExportRow>> loadRows(OrderHistoryKind kind, ExportPeriod period) async {
+    await ensureEntitled();
+    return _loadRows(kind, period);
+  }
+
+  static Future<List<OrderExportRow>> _loadRows(OrderHistoryKind kind, ExportPeriod period) async {
     await RegionService.ensureLoaded();
     final List<OrderExportRow> rows;
     switch (kind) {
@@ -311,9 +339,27 @@ class OrderHistoryExportService {
     }
   }
 
-  /// Builds the PDF of [rows] and writes it to the temporary directory as
-  /// `orders_<from>_<to>.pdf`.
-  static Future<File> writePdf(OrderHistoryKind kind, ExportPeriod period, List<OrderExportRow> rows) async {
+  /// The whole export of [request] for [kind]: the subscription is checked
+  /// again on fresh data ([ensureEntitled] - throws
+  /// [OrderHistoryExportLocked]), the period's rows are read (unless the
+  /// request carries them already), kept to the request's status, and
+  /// written as the PDF. Null when no order of the period has that status.
+  static Future<File?> exportPdf(OrderHistoryKind kind, OrderHistoryExportRequest request) async {
+    await ensureEntitled();
+    final List<OrderExportRow> all = request.rows ?? await _loadRows(kind, request.period);
+    final List<OrderExportRow> rows = OrderHistoryExport.filterByStatus(all, request.status);
+    if (rows.isEmpty) return null;
+    return _writePdf(kind, request.period, request.status, rows);
+  }
+
+  /// Builds the PDF of [rows] (already kept to [status]) and writes it to the
+  /// temporary directory as [OrderHistoryExport.fileName]. Subscribers only.
+  static Future<File> writePdf(OrderHistoryKind kind, ExportPeriod period, ExportStatusFilter status, List<OrderExportRow> rows) async {
+    await ensureEntitled();
+    return _writePdf(kind, period, status, rows);
+  }
+
+  static Future<File> _writePdf(OrderHistoryKind kind, ExportPeriod period, ExportStatusFilter status, List<OrderExportRow> rows) async {
     final String app = OrderHistoryExport.label('spideli');
     final OrderHistoryPdfHeader header = OrderHistoryPdfHeader(
       appName: app.capitalizeFirst ?? app,
@@ -321,20 +367,21 @@ class OrderHistoryExportService {
       title: _historyTitle(kind),
       serviceName: OrderHistoryExport.printable(Constant.sectionConstantModel?.name ?? '', ''),
       period: period,
+      statusLabel: status.printLabel,
       generatedAt: DateTime.now(),
     );
     final List<int> bytes = OrderHistoryPdf.build(header, rows, OrderHistoryExport.summarize(rows));
     final Directory dir = await getTemporaryDirectory();
-    final File file = File('${dir.path}/${period.fileName}');
+    final File file = File('${dir.path}/${OrderHistoryExport.fileName(period, status)}');
     await file.writeAsBytes(bytes, flush: true);
     return file;
   }
 
   /// The share sheet, from which the customer saves or sends the PDF.
-  static Future<void> share(File file, ExportPeriod period) async {
+  static Future<void> share(File file) async {
     final String title = "Order history".tr;
     await SharePlus.instance.share(
-      ShareParams(files: [XFile(file.path, mimeType: 'application/pdf')], subject: '$title ${period.fileName}'),
+      ShareParams(files: [XFile(file.path, mimeType: 'application/pdf')], subject: '$title ${file.uri.pathSegments.last}'),
     );
   }
 }

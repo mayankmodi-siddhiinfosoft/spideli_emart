@@ -5,6 +5,16 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
 import 'package:vendor/constant/constant.dart';
+import 'package:vendor/controller/home_controller.dart';
+import 'package:vendor/lang/app_ar.dart';
+import 'package:vendor/lang/app_de.dart';
+import 'package:vendor/lang/app_en.dart';
+import 'package:vendor/lang/app_fr.dart';
+import 'package:vendor/lang/app_hi.dart';
+import 'package:vendor/lang/app_ja.dart';
+import 'package:vendor/lang/app_pt.dart';
+import 'package:vendor/lang/app_ru.dart';
+import 'package:vendor/lang/app_zh.dart';
 import 'package:vendor/models/cart_product_model.dart';
 import 'package:vendor/models/currency_model.dart';
 import 'package:vendor/models/order_model.dart';
@@ -16,8 +26,14 @@ import 'package:vendor/utils/order_history_pdf.dart';
 final CurrencyModel usd = CurrencyModel(code: 'USD', symbol: r'$', decimalDigits: 2, symbolAtRight: false);
 final CurrencyModel eur = CurrencyModel(code: 'EUR', symbol: 'EUR', decimalDigits: 2, symbolAtRight: true);
 
-OrderModel order(String id, DateTime? createdAt, {String status = Constant.orderCompleted, String? regionId, bool takeAway = false}) =>
-    OrderModel(id: id, createdAt: createdAt == null ? null : Timestamp.fromDate(createdAt), status: status, takeAway: takeAway)..regionId = regionId;
+OrderModel order(String id, DateTime? createdAt, {String status = Constant.orderCompleted, String? regionId, bool takeAway = false, DateTime? scheduleTime}) =>
+    OrderModel(
+      id: id,
+      createdAt: createdAt == null ? null : Timestamp.fromDate(createdAt),
+      status: status,
+      takeAway: takeAway,
+      scheduleTime: scheduleTime == null ? null : Timestamp.fromDate(scheduleTime),
+    )..regionId = regionId;
 
 OrderExportRow row(String id, double? amount, {CurrencyModel? currency, String status = Constant.orderCompleted, DateTime? at}) =>
     OrderExportRow(orderId: id, createdAt: at ?? DateTime(2026, 10, 1), takeAway: false, status: status, amount: amount, currency: currency);
@@ -82,8 +98,25 @@ void main() {
     });
 
     test('file name carries the period', () {
-      expect(OrderExportRange(DateTime(2026, 9, 8), DateTime(2026, 10, 7)).fileName, 'orders_2026-09-08_2026-10-07.pdf');
-      expect(OrderExportRange(DateTime(2026, 1, 5), DateTime(2026, 1, 5)).fileName, 'orders_2026-01-05_2026-01-05.pdf');
+      expect(OrderExportRange(DateTime(2026, 9, 8), DateTime(2026, 10, 7)).fileName(), 'orders_2026-09-08_2026-10-07.pdf');
+      expect(OrderExportRange(DateTime(2026, 1, 5), DateTime(2026, 1, 5)).fileName(), 'orders_2026-01-05_2026-01-05.pdf');
+    });
+
+    test('file name carries the status, sanitised', () {
+      final OrderExportRange r = OrderExportRange(DateTime(2026, 9, 8), DateTime(2026, 10, 7));
+      expect(r.fileName(status: 'Preparing'), 'orders_preparing_2026-09-08_2026-10-07.pdf');
+      expect(r.fileName(status: 'All statuses'), 'orders_all-statuses_2026-09-08_2026-10-07.pdf');
+      expect(r.fileName(status: ' En préparation / Prêtes! '), 'orders_en-préparation-prêtes_2026-09-08_2026-10-07.pdf');
+      expect(r.fileName(status: '../a\\b:c*?"<>|'), 'orders_a-b-c_2026-09-08_2026-10-07.pdf');
+      // Nothing usable: no status part.
+      expect(r.fileName(status: ' /.. '), 'orders_2026-09-08_2026-10-07.pdf');
+    });
+
+    test('file name parts are length-limited and never end with a dash', () {
+      expect(OrderExportRange.fileNamePart('a' * 60).length, 40);
+      expect(OrderExportRange.fileNamePart('${'a' * 39} b'), 'a' * 39);
+      expect(OrderExportRange.fileNamePart('Готовятся'), 'готовятся');
+      expect(OrderExportRange.fileNamePart('准备中'), '准备中');
     });
   });
 
@@ -161,6 +194,120 @@ void main() {
     });
   });
 
+  group('status', () {
+    final OrderExportRange range = OrderExportRange(DateTime(2026, 9, 1), DateTime(2026, 9, 30));
+    final DateTime now = DateTime(2026, 9, 20, 12);
+    final List<OrderModel> orders = [
+      order('placed-now-00000001', DateTime(2026, 9, 20, 10), status: Constant.orderPlaced),
+      order('placed-due-00000002', DateTime(2026, 9, 19), status: Constant.orderPlaced, scheduleTime: DateTime(2026, 9, 20, 11)),
+      order('placed-later-000003', DateTime(2026, 9, 19), status: Constant.orderPlaced, scheduleTime: DateTime(2026, 9, 21, 9)),
+      order('accepted-00000000004', DateTime(2026, 9, 2), status: Constant.orderAccepted),
+      order('drv-pending-0000005', DateTime(2026, 9, 3), status: Constant.driverPending),
+      order('drv-rejected-000006', DateTime(2026, 9, 4), status: Constant.driverRejected),
+      order('drv-accepted-000007', DateTime(2026, 9, 5), status: Constant.driverAccepted),
+      order('shipped-000000000008', DateTime(2026, 9, 6), status: Constant.orderShipped),
+      order('in-transit-000000009', DateTime(2026, 9, 7), status: Constant.orderInTransit),
+      order('completed-0000000010', DateTime(2026, 9, 8), status: Constant.orderCompleted),
+      order('rejected-00000000011', DateTime(2026, 9, 9), status: Constant.orderRejected),
+      order('cancelled-0000000012', DateTime(2026, 9, 10), status: Constant.orderCancelled),
+      order('unknown-000000000013', DateTime(2026, 9, 11), status: 'Something Else'),
+      order('outside-000000000014', DateTime(2026, 10, 2), status: Constant.orderCompleted), // after the period
+    ];
+
+    Future<List<String>> idsFor(OrderExportStatus status, {Duration lead = Duration.zero}) async {
+      final List<OrderExportRow> rows = await OrderHistoryExport.buildRows(orders, range: range, amountOf: (_) => 1.0, currencyOf: (_) => usd, status: status, now: now, lead: lead);
+      return rows.map((r) => r.orderId).toList();
+    }
+
+    test('the choices are All statuses then the home tabs, in order', () {
+      expect(OrderExportStatus.values.first, OrderExportStatus.all);
+      expect(OrderExportStatus.values.map((s) => s.labelKey), ['All statuses', 'New', 'Scheduled', 'Preparing', 'Ready', 'Completed', 'Rejected', 'Cancelled']);
+    });
+
+    test('groups use the home screen statuses', () {
+      expect(OrderExportStatus.all.statuses, isEmpty);
+      expect(OrderExportStatus.newOrders.statuses, [Constant.orderPlaced]);
+      expect(OrderExportStatus.scheduled.statuses, [Constant.orderPlaced]);
+      expect(OrderExportStatus.preparing.statuses, HomeController.preparingStatuses);
+      expect(OrderExportStatus.ready.statuses, HomeController.readyStatuses);
+      expect(OrderExportStatus.completed.statuses, [Constant.orderCompleted]);
+      expect(OrderExportStatus.rejected.statuses, [Constant.orderRejected]);
+      expect(OrderExportStatus.cancelled.statuses, [Constant.orderCancelled]);
+    });
+
+    test('all statuses keeps every order of the period, also an unknown status', () async {
+      final List<String> ids = await idsFor(OrderExportStatus.all);
+      expect(ids.length, 13);
+      expect(ids, contains('unknown-000000000013'));
+      expect(ids, isNot(contains('outside-000000000014')));
+    });
+
+    test('each status exports only its orders', () async {
+      expect(await idsFor(OrderExportStatus.newOrders), unorderedEquals(['placed-now-00000001', 'placed-due-00000002']));
+      expect(await idsFor(OrderExportStatus.scheduled), ['placed-later-000003']);
+      expect(await idsFor(OrderExportStatus.preparing), ['accepted-00000000004', 'drv-pending-0000005', 'drv-rejected-000006', 'drv-accepted-000007']);
+      expect(await idsFor(OrderExportStatus.ready), ['shipped-000000000008', 'in-transit-000000009']);
+      expect(await idsFor(OrderExportStatus.completed), ['completed-0000000010']);
+      expect(await idsFor(OrderExportStatus.rejected), ['rejected-00000000011']);
+      expect(await idsFor(OrderExportStatus.cancelled), ['cancelled-0000000012']);
+    });
+
+    test('a scheduled order is New once its due time (minus the lead time) has come', () async {
+      // Due at 21 Sep 09:00 - 22 h = 20 Sep 11:00, before "now".
+      expect(await idsFor(OrderExportStatus.scheduled, lead: const Duration(hours: 22)), isEmpty);
+      expect(await idsFor(OrderExportStatus.newOrders, lead: const Duration(hours: 22)), contains('placed-later-000003'));
+      final OrderModel o = orders[2];
+      expect(OrderExportStatus.scheduled.matches(o, now: now), isTrue);
+      expect(OrderExportStatus.newOrders.matches(o, now: DateTime(2026, 9, 21, 9)), isTrue);
+    });
+
+    test('every status choice has a file name', () {
+      for (final OrderExportStatus status in OrderExportStatus.values) {
+        final String name = OrderHistoryPdf.fileName(range, status);
+        expect(name, startsWith('orders_'));
+        expect(name, endsWith('_2026-09-01_2026-09-30.pdf'));
+        expect(name, isNot(contains(' ')));
+      }
+      expect(OrderHistoryPdf.fileName(range, OrderExportStatus.newOrders), 'orders_new_2026-09-01_2026-09-30.pdf');
+    });
+
+    test('the status label is translated when the PDF fonts can draw it', () {
+      Get.addTranslations({
+        'fr': {'Preparing': 'En préparation'},
+        'ru': {'Preparing': 'Готовятся'},
+      });
+      Get.locale = const Locale('fr');
+      expect(OrderHistoryPdf.statusText(OrderExportStatus.preparing), 'En préparation');
+      expect(OrderHistoryPdf.fileName(range, OrderExportStatus.preparing), 'orders_en-préparation_2026-09-01_2026-09-30.pdf');
+      Get.locale = const Locale('ru');
+      expect(OrderHistoryPdf.statusText(OrderExportStatus.preparing), 'Preparing');
+      expect(OrderHistoryPdf.fileName(range, OrderExportStatus.preparing), 'orders_preparing_2026-09-01_2026-09-30.pdf');
+      Get.locale = null;
+    });
+
+    test('every status label and message is translated in every language', () {
+      final Map<String, Map<String, String>> languages = {'ar': lnAr, 'de': deGR, 'en': enUS, 'fr': trFR, 'hi': hiIN, 'ja': jaJP, 'pt': ptPO, 'ru': ruRU, 'zh': zhCH};
+      final List<String> keys = [
+        for (final OrderExportStatus status in OrderExportStatus.values) status.labelKey,
+        'Status',
+        'Every order of the store created in the chosen period with the chosen status is included. The period can be up to one year.',
+        'There is no order with the status @status between @from and @to. Choose another period or status to export.',
+        'Orders in every status.',
+        'Placed orders the store can accept or reject now.',
+        'Placed orders waiting for their scheduled time.',
+        'Includes: @statuses',
+      ];
+      for (final MapEntry<String, Map<String, String>> language in languages.entries) {
+        for (final String key in keys) {
+          expect(language.value[key], isNotNull, reason: '${language.key}: $key');
+          for (final String param in RegExp(r'@\w+').allMatches(key).map((m) => m[0]!)) {
+            expect(language.value[key], contains(param), reason: '${language.key}: $key');
+          }
+        }
+      }
+    });
+  });
+
   group('summary', () {
     test('totals per currency, without cancelled, rejected or unpriced orders', () {
       final OrderExportSummary s = OrderExportSummary.of([
@@ -215,6 +362,7 @@ void main() {
       ];
       final List<int> bytes = OrderHistoryPdf.build(
         range: range,
+        status: OrderExportStatus.completed,
         rows: rows,
         summary: OrderExportSummary.of(rows),
         appName: 'spideli Store',

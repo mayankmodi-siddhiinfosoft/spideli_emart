@@ -2,6 +2,7 @@ import 'package:get/get.dart';
 import '../models/onprovider_order_model.dart';
 import '../models/worker_model.dart';
 import '../service/fire_store_utils.dart';
+import '../utils/booking_status_tabs.dart';
 
 class MyBookingOnDemandController extends GetxController {
   RxList<OnProviderOrderModel> orders = <OnProviderOrderModel>[].obs;
@@ -53,13 +54,13 @@ class MyBookingOnDemandController extends GetxController {
   List<OnProviderOrderModel> getOrdersForTab(String tab) {
     switch (tab) {
       case "Placed":
-        return orders.where((order) => ["Order Placed", "Order Accepted", "Order Assigned", "Order Ongoing", "In Transit"].contains(order.status)).toList();
+        return orders.where((order) => BookingStatusTabs.onDemandPlaced.contains(order.status)).toList();
 
       case "Completed":
-        return orders.where((order) => ["Order Completed"].contains(order.status)).toList();
+        return orders.where((order) => BookingStatusTabs.completed.contains(order.status)).toList();
 
       case "Cancelled":
-        return orders.where((order) => ["Order Rejected", "Order Cancelled", "Driver Rejected"].contains(order.status)).toList();
+        return orders.where((order) => BookingStatusTabs.onDemandCancelled.contains(order.status)).toList();
 
       default:
         return [];

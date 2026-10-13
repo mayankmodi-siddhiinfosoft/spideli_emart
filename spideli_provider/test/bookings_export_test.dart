@@ -1,5 +1,9 @@
+import 'dart:ui';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get/get.dart';
+import 'package:spideliprovider/lang/app_ar.dart';
 import 'package:spideliprovider/constant/constants.dart';
 import 'package:spideliprovider/model/currency_model.dart';
 import 'package:spideliprovider/model/onprovider_order_model.dart';
@@ -79,8 +83,103 @@ void main() {
       expect(ExportRange(DateTime(2024, 2, 29), DateTime(2025, 3, 1)).validate(), ExportRangeError.tooLong);
     });
 
-    test('file name', () {
-      expect(ExportRange(DateTime(2026, 9, 8), DateTime(2026, 10, 7)).fileName, 'orders_2026-09-08_2026-10-07.pdf');
+    test('file name: status and period', () {
+      final range = ExportRange(DateTime(2026, 9, 8), DateTime(2026, 10, 7));
+      expect(bookingsExportFileName(range, BookingStatusFilter.all.label), 'orders_all-statuses_2026-09-08_2026-10-07.pdf');
+      expect(bookingsExportFileName(range, BookingStatusFilter.ongoing.label), 'orders_on-going_2026-09-08_2026-10-07.pdf');
+      expect(bookingsExportFileName(range, BookingStatusFilter.cancelled.label), 'orders_cancelled-rejected_2026-09-08_2026-10-07.pdf');
+    });
+  });
+
+  group('status filter', () {
+    final range = ExportRange(DateTime(2026, 9, 1), DateTime(2026, 9, 30));
+    const List<String> every = [
+      ORDER_STATUS_PLACED,
+      ORDER_STATUS_ACCEPTED,
+      ORDER_STATUS_ASSIGNED,
+      ORDER_STATUS_ONGOING,
+      ORDER_STATUS_COMPLETED,
+      ORDER_STATUS_REJECTED,
+      ORDER_STATUS_CANCELLED,
+    ];
+    final orders = [
+      for (int i = 0; i < every.length; i++) booking(id: 'b$i', createdAt: DateTime(2026, 9, 1 + i), status: every[i]),
+      booking(id: 'unknown', createdAt: DateTime(2026, 9, 10), status: 'Order Something'),
+      booking(id: 'out', createdAt: DateTime(2026, 10, 1), status: ORDER_STATUS_COMPLETED),
+    ];
+    List<String> ids(BookingStatusFilter f) => buildBookingExportRows(orders, range, currencyFor: currencyFor, status: f).map((r) => r.id).toList();
+
+    test('choices: All statuses first, then the booking list groups', () {
+      expect(BookingStatusFilter.values.map((f) => f.labelKey), ['All statuses', 'Pending', 'Accepted', 'On Going', 'Completed', 'Cancelled / Rejected']);
+      expect(BookingStatusFilter.values.first, same(BookingStatusFilter.all));
+      expect(BookingStatusFilter.all.isAll, isTrue);
+      expect(BookingStatusFilter.completed.isAll, isFalse);
+    });
+
+    test('the groups cover every exported status exactly once', () {
+      final grouped = [for (final f in BookingStatusFilter.values.skip(1)) ...f.statuses];
+      expect(grouped.toSet(), exportedBookingStatuses.toSet());
+      expect(grouped.length, exportedBookingStatuses.length);
+      expect(BookingStatusFilter.all.statuses, exportedBookingStatuses);
+    });
+
+    test('all statuses: every booking-list status of the period, by default', () {
+      expect(buildBookingExportRows(orders, range, currencyFor: currencyFor).map((r) => r.id), ['b0', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6']);
+      expect(ids(BookingStatusFilter.all), ['b0', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6']);
+    });
+
+    test('one status group: only its bookings of the period', () {
+      expect(ids(BookingStatusFilter.pending), ['b0']);
+      expect(ids(BookingStatusFilter.accepted), ['b1', 'b2']);
+      expect(ids(BookingStatusFilter.ongoing), ['b3']);
+      expect(ids(BookingStatusFilter.completed), ['b4']);
+      expect(ids(BookingStatusFilter.cancelled), ['b5', 'b6']);
+    });
+
+    test('row labels match the chosen group', () {
+      for (final f in BookingStatusFilter.values.skip(1)) {
+        for (final row in buildBookingExportRows(orders, range, currencyFor: currencyFor, status: f)) {
+          expect(f.labelKey.contains(row.statusLabel), isTrue, reason: '${f.id}: ${row.statusLabel}');
+        }
+      }
+    });
+
+    test('file-name part: letters and digits of any script, "-" between', () {
+      expect(fileNamePart('All statuses'), 'all-statuses');
+      expect(fileNamePart('  Cancelled / Rejected  '), 'cancelled-rejected');
+      expect(fileNamePart('a/b\\c:d*e?f"g<h>i|j'), 'a-b-c-d-e-f-g-h-i-j');
+      expect(fileNamePart('../../etc'), 'etc');
+      expect(fileNamePart('ملغى / مرفوض'), 'ملغى-مرفوض');
+      expect(fileNamePart('مُسند'), 'مُسند');
+      expect(fileNamePart(' / '), 'all');
+    });
+
+    test('empty message names the status, except for all statuses', () {
+      expect(noBookingsMessage(BookingStatusFilter.all), 'No bookings in this period.');
+      expect(noBookingsMessage(BookingStatusFilter.completed), 'No bookings with the status "Completed" in this period.');
+    });
+
+    group('translated', () {
+      setUp(() {
+        Get.addTranslations({'ar': lnAr});
+        Get.locale = const Locale('ar');
+      });
+      tearDown(() {
+        Get.locale = const Locale('en');
+        Get.translations.clear();
+      });
+
+      test('labels, empty message and file name', () {
+        expect(BookingStatusFilter.values.map((f) => f.label), ['كل الحالات', 'قيد الانتظار', 'مقبول', 'جارٍ', 'مكتمل', 'ملغى / مرفوض']);
+        expect(noBookingsMessage(BookingStatusFilter.completed), 'لا توجد حجوزات بالحالة "مكتمل" في هذه الفترة.');
+        expect(noBookingsMessage(BookingStatusFilter.all), 'لا توجد حجوزات في هذه الفترة.');
+        expect(
+          bookingsExportFileName(ExportRange(DateTime(2026, 9, 8), DateTime(2026, 10, 7)), BookingStatusFilter.cancelled.label),
+          'orders_ملغى-مرفوض_2026-09-08_2026-10-07.pdf',
+        );
+        // The PDF fonts cannot write Arabic: the status is printed in English.
+        expect(BookingsHistoryPdf.pdfLabel(BookingStatusFilter.cancelled.labelKey), 'Cancelled / Rejected');
+      });
     });
   });
 
@@ -187,12 +286,15 @@ void main() {
       for (int i = 0; i < 180; i++) booking(id: 'booking-$i', createdAt: DateTime(2026, 1, 1).add(Duration(hours: i * 20)), regionId: i.isEven ? 'eu' : null),
     ];
     final rows = buildBookingExportRows(orders, range, currencyFor: currencyFor);
-    final bytes = BookingsHistoryPdf.build(range: range, rows: rows, generatedAt: DateTime(2026, 7, 1));
+    final bytes = BookingsHistoryPdf.build(range: range, rows: rows, status: BookingStatusFilter.completed, generatedAt: DateTime(2026, 7, 1));
     expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
     final PdfDocument doc = PdfDocument(inputBytes: bytes);
     expect(doc.pages.count, greaterThan(1));
     final String text = PdfTextExtractor(doc).extractText();
     expect(text, contains('Booking history'));
+    expect(text, contains('Status'));
+    expect(text, contains('Completed'));
+    expect(text, contains('01 Jan 2026 - 30 Jun 2026'));
     expect(text, contains('#ooking-0'));
     expect(text, contains('#king-179'));
     doc.dispose();

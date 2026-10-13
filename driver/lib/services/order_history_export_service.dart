@@ -60,25 +60,35 @@ class OwnerExportScope extends OrderExportScope {
 class OrderHistoryExportService {
   OrderHistoryExportService._();
 
-  /// Full flow after the period was picked: loader, load, PDF, share.
-  static Future<void> export(OrderExportScope scope, ExportDateRange range) async {
+  /// Message of an export that found nothing (untranslated key; `@status`
+  /// is the chosen status filter).
+  static const String noOrdersWithStatusKey = 'No orders with the status "@status" found for this period.';
+
+  /// The empty-export toast, translated: the period alone for all statuses,
+  /// else the period and the chosen status.
+  static String emptyMessage(OrderExportStatusFilter status) =>
+      status.isAll ? "No orders found for this period.".tr : noOrdersWithStatusKey.trParams({'status': status.key.tr});
+
+  /// Full flow after the period and the status were picked: loader, load,
+  /// PDF, share.
+  static Future<void> export(OrderExportScope scope, ExportDateRange range, {OrderExportStatusFilter status = OrderExportStatusFilter.all}) async {
     ShowToastDialog.showLoader("Please wait".tr);
     File? file;
     String? message;
     try {
-      final List<OrderExportRow> rows = orderExportRowsInRange(await loadRows(scope, range), range);
+      final List<OrderExportRow> rows = orderExportRowsInRange(await loadRows(scope, range), range, status: status);
       if (rows.isEmpty) {
-        message = "No orders found for this period.";
+        message = emptyMessage(status);
       } else {
-        file = await _save(scope, range, rows);
+        file = await _save(scope, range, status, rows);
       }
     } catch (e, s) {
       log("Order history export failed: $e", stackTrace: s);
-      message = "Could not create the PDF. Please try again.";
+      message = "Could not create the PDF. Please try again.".tr;
     }
     ShowToastDialog.closeLoader();
     if (message != null) {
-      ShowToastDialog.showToast(message.tr);
+      ShowToastDialog.showToast(message);
       return;
     }
     try {
@@ -135,30 +145,44 @@ class OrderHistoryExportService {
     return (await Future.wait(loads)).expand((rows) => rows).toList();
   }
 
-  /// The owner order list (OwnerOrderListController.fetchOrdersForSection):
-  /// per owner section, the section's collection for each of its drivers, with
-  /// the list's status tabs.
+  /// Parcel sections: the flags the owner order list treats as parcel.
+  static bool isParcelFlag(String? flag) => flag == 'parcel_delivery' || flag == 'parcel-service' || flag == 'parcel';
+
+  /// The owner order list (OwnerOrderListController): its sections (the
+  /// owner's own, plus the parcel sections of a delivery company), for each
+  /// one the drivers of its driver filter, with the list's queries and tabs.
   static Future<List<OrderExportRow>> _ownerRows(OwnerExportScope scope, ExportDateRange range) async {
-    final List<String> ownerSectionIds = Constant.userModel?.sectionIds ?? [];
-    final List<SectionModel> sections = (await FireStoreUtils.getAllActiveSections()).where((s) => s.id != null && ownerSectionIds.contains(s.id)).toList();
-    final List<UserModel> drivers = scope.driver != null ? [scope.driver!] : await FireStoreUtils.getOwnerDriver();
+    final UserModel? me = Constant.userModel;
+    final List<String> ownerSectionIds = me?.sectionIds ?? [];
+    final bool parcelCompany = (me?.carrierId ?? '').isNotEmpty || me?.serviceTypes?.contains('parcel_delivery') == true;
+    final List<SectionModel> sections = (await FireStoreUtils.getAllActiveSections())
+        .where((s) => s.id != null && (ownerSectionIds.contains(s.id) || (isParcelFlag(s.serviceTypeFlag) && parcelCompany)))
+        .toList();
+    final List<UserModel> fleet = scope.driver != null ? [scope.driver!] : await FireStoreUtils.getOwnerDriver();
     final OwnerOrderListController shown = OwnerOrderListController();
 
     final List<OrderExportRow> rows = [];
+    bool parcelsLoaded = false;
     for (final SectionModel section in sections) {
       final String sectionId = section.id!;
-      final List<String> driverIds =
-          drivers.where((d) => d.sectionIds?.contains(sectionId) == true).map((d) => d.id ?? '').where((id) => id.isNotEmpty).toList();
+      // OwnerOrderListController.filteredDrivers: the section's drivers, all
+      // of them when none names the section yet.
+      final List<UserModel> inSection = fleet.where((d) => d.sectionIds?.contains(sectionId) == true).toList();
+      final List<String> driverIds = (inSection.isNotEmpty ? inSection : fleet).map((d) => d.id ?? '').where((id) => id.isNotEmpty).toList();
       final String name = section.name ?? Constant.sectionNameFromId(sectionId);
+      if (isParcelFlag(section.serviceTypeFlag)) {
+        // The parcel list is not per section (FireStoreUtils.getParcelOrdersBySection),
+        // so it is loaded once.
+        if (parcelsLoaded) continue;
+        parcelsLoaded = true;
+        rows.addAll(_parcelRows(await _ownerParcels(driverIds, range, allOfCompany: scope.driver == null)));
+        continue;
+      }
       for (final String did in driverIds) {
         switch (section.serviceTypeFlag) {
           case 'cab-service':
             shown.cabOrders.assignAll(_parse(await _query(CollectionName.ridesBooking, {'driverId': did, 'sectionId': sectionId}, range), CabOrderModel.fromJson));
             rows.addAll(_cabRows([for (final tab in shown.cabTabTitles) ...shown.getCabOrdersForTab(tab)], sectionName: name));
-            break;
-          case 'parcel_delivery':
-            shown.parcelOrders.assignAll(_parse(await _query(CollectionName.parcelOrders, {'driverId': did, 'sectionId': sectionId}, range), ParcelOrderModel.fromJson));
-            rows.addAll(_parcelRows([for (final tab in shown.parcelTabTitles) ...shown.getParcelOrdersForTab(tab)], sectionName: name));
             break;
           case 'rental-service':
             shown.rentalOrders.assignAll(_parse(await _query(CollectionName.rentalOrders, {'driverId': did, 'sectionId': sectionId}, range), RentalOrderModel.fromJson));
@@ -175,6 +199,35 @@ class OrderHistoryExportService {
       }
     }
     return rows;
+  }
+
+  /// The owner's parcel list ("All" tab of FireStoreUtils.getParcelOrdersBySection):
+  /// the company's carrier parcels (assigned or still waiting for the owner)
+  /// and every parcel of its drivers. With one driver picked in the list's
+  /// filter ([allOfCompany] false), only that driver's parcels.
+  static Future<List<ParcelOrderModel>> _ownerParcels(List<String> driverIds, ExportDateRange range, {required bool allOfCompany}) async {
+    final String uid = FireStoreUtils.getCurrentUid();
+    final String carrierId = (Constant.userModel?.carrierId ?? '').trim();
+    final List<Map<String, String>> queries = [
+      if (allOfCompany && uid.isNotEmpty) ...[
+        {'carrierOwnerId': uid},
+        {'companyOwnerId': uid},
+      ],
+      if (allOfCompany && carrierId.isNotEmpty) {'carrierId': carrierId},
+      for (final String did in driverIds) {'driverId': did},
+    ];
+    final Map<String, ParcelOrderModel> byId = {};
+    for (final Map<String, String> equals in queries) {
+      try {
+        for (final ParcelOrderModel order in _parse(await _query(CollectionName.parcelOrders, equals, range), ParcelOrderModel.fromJson)) {
+          if (order.id != null) byId[order.id!] = order;
+        }
+      } catch (e) {
+        // As the list: one failing query does not hide the others' parcels.
+        log("Order export: parcel query $equals failed: $e");
+      }
+    }
+    return byId.values.toList();
   }
 
   /// The history query (equality on the owner fields, newest first) with a
@@ -382,18 +435,24 @@ class OrderHistoryExportService {
     return lines;
   }
 
-  static Future<File> _save(OrderExportScope scope, ExportDateRange range, List<OrderExportRow> rows) async {
+  /// The status filter as the PDF prints it (translated when the PDF font can
+  /// draw it, else English).
+  static String statusFilterLabel(OrderExportStatusFilter status) => _label(status.key);
+
+  static Future<File> _save(OrderExportScope scope, ExportDateRange range, OrderExportStatusFilter status, List<OrderExportRow> rows) async {
     final bool showEarnings = scope is DriverExportScope && scope.showEarnings && rows.any((r) => r.type == OrderExportType.delivery);
+    final String statusLabel = statusFilterLabel(status);
     final List<int> bytes = OrderHistoryPdf.build(
       labels: labels(),
       headerLines: await _headerLines(scope),
       range: range,
+      statusFilter: statusLabel,
       generatedAt: DateTime.now(),
       rows: rows,
       showEarnings: showEarnings,
     );
     final Directory dir = await getTemporaryDirectory();
-    final File file = File('${dir.path}/${orderExportFileName(range)}');
+    final File file = File('${dir.path}/${orderExportFileName(range, statusLabel: status.isAll ? null : statusLabel)}');
     await file.writeAsBytes(bytes, flush: true);
     return file;
   }

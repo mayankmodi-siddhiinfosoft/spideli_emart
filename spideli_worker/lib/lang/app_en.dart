@@ -112,6 +112,8 @@ const Map<String, String> enUS = {
   "The period cannot be longer than one year.": "The period cannot be longer than one year.",
   "No bookings in this period": "No bookings in this period",
   "Choose other dates to export your bookings.": "Choose other dates to export your bookings.",
+  "All statuses": "All statuses",
+  "No bookings with the status \"@status\" in this period. Choose other dates or another status.": "No bookings with the status \"@status\" in this period. Choose other dates or another status.",
   "Could not create the PDF. Please try again.": "Could not create the PDF. Please try again.",
   "Could not share the document.": "Could not share the document.",
   "Booking history": "Booking history",

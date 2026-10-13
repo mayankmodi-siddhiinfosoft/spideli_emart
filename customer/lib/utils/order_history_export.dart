@@ -1,12 +1,15 @@
 import 'package:customer/utils/booking_status_tabs.dart';
 import 'package:customer/constant/constant.dart';
+import 'package:customer/controllers/order_controller.dart';
 import 'package:customer/models/currency_model.dart';
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:customer/utils/order_receipt_pdf.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
 /// The pure rules of "export my order history as a PDF over a period": the
-/// period, the table rows, the totals per currency and the file name. No
+/// period, the status filter, the table rows, the totals per currency and the
+/// file name. No
 /// Firestore, no widgets - the loading lives in `order_history_export_service.dart`.
 
 /// Which history screen the export was started from. Each history screen lists
@@ -93,14 +96,70 @@ class ExportPeriod {
 
   static final DateFormat _fileDay = DateFormat('yyyy-MM-dd', 'en_US');
 
+  /// `2026-09-08_2026-10-07` - the period part of the file names.
+  String get fileDays => '${_fileDay.format(from)}_${_fileDay.format(to)}';
+
   /// `orders_2026-09-08_2026-10-07.pdf`.
-  String get fileName => 'orders_${_fileDay.format(from)}_${_fileDay.format(to)}.pdf';
+  String get fileName => 'orders_$fileDays.pdf';
 
   @override
   bool operator ==(Object other) => other is ExportPeriod && other.from == from && other.to == to;
 
   @override
   int get hashCode => Object.hash(from, to);
+}
+
+/// One choice of the export's status filter: "All statuses", one tab of the
+/// history screen the export was started from (with exactly the statuses that
+/// tab lists), or a status that no tab of that screen lists.
+class ExportStatusFilter {
+  /// The English label - a translation key ("All statuses", "On Going", or
+  /// the raw status for a status no tab lists).
+  final String labelKey;
+
+  /// The raw statuses this choice keeps; null keeps every order.
+  final Set<String>? statuses;
+
+  const ExportStatusFilter._(this.labelKey, this.statuses);
+
+  /// A tab of a history screen, or a single status.
+  const ExportStatusFilter.group(String labelKey, Set<String> statuses) : this._(labelKey, statuses);
+
+  /// The default: every order of the period, whatever its status.
+  static const ExportStatusFilter all = ExportStatusFilter._('All statuses', null);
+
+  bool get isAll => statuses == null;
+
+  /// Whether an order stored with [status] is exported under this choice.
+  bool matches(String? status) => statuses == null || statuses!.contains((status ?? '').trim());
+
+  /// The label on screen, in the app language.
+  String get label => labelKey.tr;
+
+  /// The label in the PDF (translated when the PDF font can draw it).
+  String get printLabel => OrderHistoryExport.label(labelKey);
+
+  @override
+  bool operator ==(Object other) => other is ExportStatusFilter && other.labelKey == labelKey && setEquals(other.statuses, statuses);
+
+  @override
+  int get hashCode => Object.hash(labelKey, statuses == null ? null : Object.hashAllUnordered(statuses!));
+
+  @override
+  String toString() => 'ExportStatusFilter($labelKey)';
+}
+
+/// What the export sheet resolves with: the period, the status filter and -
+/// when the sheet already read them to offer the statuses - the period's
+/// rows (all statuses), so they are not read twice.
+class OrderHistoryExportRequest {
+  final ExportPeriod period;
+  final ExportStatusFilter status;
+
+  /// Every row of [period] (not yet filtered by [status]); null = not loaded.
+  final List<OrderExportRow>? rows;
+
+  const OrderHistoryExportRequest({required this.period, this.status = ExportStatusFilter.all, this.rows});
 }
 
 /// One line of the exported table.
@@ -187,7 +246,7 @@ class OrderHistoryExport {
   /// tab. `provider_orders` are not dispatched by the Cloud Functions, so a
   /// "Driver Rejected" there is not waiting for another driver: it stays
   /// voided, as that screen lists it.
-  static const Set<String> onDemandCancelledStatuses = {Constant.orderRejected, Constant.orderCancelled, Constant.driverRejected};
+  static const Set<String> onDemandCancelledStatuses = BookingStatusTabs.onDemandCancelled;
 
   /// Whether an order of [kind] with [status] is listed as cancelled by its
   /// history screen - and so left out of the PDF totals.
@@ -203,6 +262,100 @@ class OrderHistoryExport {
         return bookingCancelledStatuses.contains(status);
     }
   }
+
+  // ---------------- status filter ----------------
+
+  /// The tabs of the history screen [kind] is exported from, in the screen's
+  /// order and with the statuses the screen's own tab filter uses ("All" is
+  /// [ExportStatusFilter.all]):
+  ///  - My Order (food, e-commerce): In Progress, Delivered, Cancelled,
+  ///    Rejected ([OrderController]).
+  ///  - Ride History: New, On Going, Completed, Cancelled.
+  ///  - Parcel History: New, In Transit, Delivered, Cancelled.
+  ///  - Rental History: New, On Going, Completed, Cancelled.
+  ///  - Booking History (on-demand): Placed, Completed, Cancelled.
+  static List<ExportStatusFilter> statusGroups(OrderHistoryKind kind) {
+    switch (kind) {
+      case OrderHistoryKind.shopping:
+        return [
+          ExportStatusFilter.group('In Progress', OrderController.inProgressStatuses),
+          const ExportStatusFilter.group('Delivered', {Constant.orderCompleted}),
+          const ExportStatusFilter.group('Cancelled', {Constant.orderCancelled}),
+          const ExportStatusFilter.group('Rejected', {Constant.orderRejected}),
+        ];
+      case OrderHistoryKind.rides:
+        return const [
+          ExportStatusFilter.group('New', BookingStatusTabs.rideNew),
+          ExportStatusFilter.group('On Going', BookingStatusTabs.onGoing),
+          ExportStatusFilter.group('Completed', BookingStatusTabs.completed),
+          ExportStatusFilter.group('Cancelled', BookingStatusTabs.cancelled),
+        ];
+      case OrderHistoryKind.parcels:
+        return const [
+          ExportStatusFilter.group('New', BookingStatusTabs.parcelNew),
+          ExportStatusFilter.group('In Transit', BookingStatusTabs.parcelInTransit),
+          ExportStatusFilter.group('Delivered', BookingStatusTabs.completed),
+          ExportStatusFilter.group('Cancelled', BookingStatusTabs.cancelled),
+        ];
+      case OrderHistoryKind.rentals:
+        return const [
+          ExportStatusFilter.group('New', BookingStatusTabs.rentalNew),
+          ExportStatusFilter.group('On Going', BookingStatusTabs.onGoing),
+          ExportStatusFilter.group('Completed', BookingStatusTabs.completed),
+          ExportStatusFilter.group('Cancelled', BookingStatusTabs.cancelled),
+        ];
+      case OrderHistoryKind.onDemand:
+        return const [
+          ExportStatusFilter.group('Placed', BookingStatusTabs.onDemandPlaced),
+          ExportStatusFilter.group('Completed', BookingStatusTabs.completed),
+          ExportStatusFilter.group('Cancelled', BookingStatusTabs.onDemandCancelled),
+        ];
+    }
+  }
+
+  /// The choices the export sheet offers: "All statuses" first, then the tabs
+  /// of [kind] that hold at least one of [rows], in the screen's order, then
+  /// any status of [rows] that no tab lists (e.g. a food order still "Order
+  /// Placed", which My Order only shows under All), alphabetically - so every
+  /// order of the period can be reached and no choice exports nothing.
+  ///
+  /// [rows] null (not loaded, or could not be read): every tab of [kind].
+  static List<ExportStatusFilter> statusOptions(OrderHistoryKind kind, Iterable<OrderExportRow>? rows) {
+    final List<ExportStatusFilter> groups = statusGroups(kind);
+    if (rows == null) return [ExportStatusFilter.all, ...groups];
+    final Set<String> present = {for (final OrderExportRow r in rows) r.status.trim()}..remove('');
+    final Set<String> listed = {for (final ExportStatusFilter g in groups) ...g.statuses!};
+    final List<String> others = present.difference(listed).toList()..sort();
+    return [
+      ExportStatusFilter.all,
+      ...groups.where((g) => g.statuses!.any(present.contains)),
+      for (final String s in others) ExportStatusFilter.group(s, {s}),
+    ];
+  }
+
+  /// The rows exported under [status], in their incoming order.
+  static List<OrderExportRow> filterByStatus(List<OrderExportRow> rows, ExportStatusFilter status) =>
+      status.isAll ? List<OrderExportRow>.of(rows) : rows.where((r) => status.matches(r.status)).toList();
+
+  /// A label made safe for a file name: lower case, letters and digits kept
+  /// (accented letters too), every other run of characters turned into one
+  /// "-", at most [maxLength] characters; "status" when nothing is left.
+  static String fileNamePart(String label, {int maxLength = 40}) {
+    String s = label.trim().toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), '-');
+    if (s.length > maxLength) s = s.substring(0, maxLength);
+    s = s.replaceAll(RegExp(r'^-+|-+$'), '');
+    return s.isEmpty ? 'status' : s;
+  }
+
+  /// `orders_<status>_<from>_<to>.pdf`, e.g.
+  /// `orders_all-statuses_2026-09-08_2026-10-07.pdf` or
+  /// `orders_on-going_2026-09-08_2026-10-07.pdf` - the status as the PDF
+  /// prints it ([ExportStatusFilter.printLabel]), sanitised.
+  static String fileName(ExportPeriod period, ExportStatusFilter status) => 'orders_${fileNamePart(status.printLabel)}_${period.fileDays}.pdf';
+
+  /// The "nothing to export" message, naming the status unless it is "All".
+  static String noOrdersMessage(ExportStatusFilter status) =>
+      status.isAll ? "You have no orders in this period.".tr : "You have no orders with the status @status in this period.".trParams({'status': status.label});
 
   /// Totals are grouped by how the currency prints (code, symbol, decimals,
   /// symbol side), so two regions with separate documents of the same

@@ -17,9 +17,10 @@ import 'package:vendor/utils/order_history_export.dart';
 import 'package:vendor/utils/order_history_pdf.dart';
 import 'package:vendor/utils/region_service.dart';
 
-/// "Export PDF" of the store's order history over a period: pick the period,
-/// load every order of the current store created in it (all statuses, as the
-/// home tabs list them), build the PDF and open the share sheet.
+/// "Export PDF" of the store's order history over a period: pick the period
+/// and the status (all statuses, or one home tab's), load the orders of the
+/// current store created in the period, keep the ones with that status,
+/// build the PDF and open the share sheet.
 class OrderHistoryExportFlow {
   OrderHistoryExportFlow._();
 
@@ -33,21 +34,22 @@ class OrderHistoryExportFlow {
       ShowToastDialog.showToast("You don’t have permission to view orders.".tr);
       return;
     }
-    final OrderExportRange? range = await showModalBottomSheet<OrderExportRange>(
+    final (OrderExportRange, OrderExportStatus)? choice = await showModalBottomSheet<(OrderExportRange, OrderExportStatus)>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _ExportPeriodSheet(initial: OrderExportRange.lastDays(DateTime.now()), storeName: store.title ?? ''),
     );
-    if (range == null) return;
-    await _export(range, store);
+    if (choice == null) return;
+    await _export(choice.$1, choice.$2, store);
   }
 
-  static Future<void> _export(OrderExportRange range, VendorModel shownStore) async {
+  static Future<void> _export(OrderExportRange range, OrderExportStatus status, VendorModel shownStore) async {
     final String storeId = (Constant.userModel?.vendorID ?? '').trim();
     if (storeId.isEmpty) return;
     ShowToastDialog.showLoader("Loading orders...".tr);
     final File file;
+    final String fileName;
     try {
       // Order currencies (one per region) must be known before pricing.
       await RegionService.ensureLoaded();
@@ -62,13 +64,22 @@ class OrderHistoryExportFlow {
         range: range,
         amountOf: OrderHistoryExport.storeTotalOf,
         currencyOf: RegionService.currencyForOrder,
+        status: status,
+        now: DateTime.now(),
+        lead: Constant.scheduleLeadTime,
       );
       if (rows.isEmpty) {
         ShowToastDialog.closeLoader();
         await DsDialog.show(
           DsDialog(
             title: "No orders in this period".tr,
-            message: "There is no order between @from and @to. Choose another period to export.".trParams({'from': _shownDay(range.from), 'to': _shownDay(range.to)}),
+            message: status == OrderExportStatus.all
+                ? "There is no order between @from and @to. Choose another period to export.".trParams({'from': _shownDay(range.from), 'to': _shownDay(range.to)})
+                : "There is no order with the status @status between @from and @to. Choose another period or status to export.".trParams({
+                    'status': status.labelKey.tr,
+                    'from': _shownDay(range.from),
+                    'to': _shownDay(range.to),
+                  }),
             icon: Icons.receipt_long_outlined,
             tone: DsTone.neutral,
             primaryLabel: "OK".tr,
@@ -81,6 +92,7 @@ class OrderHistoryExportFlow {
       if (shownStore.id != storeId) storeName = (await FireStoreUtils.getVendorById(storeId))?.title ?? '';
       final List<int> bytes = OrderHistoryPdf.build(
         range: range,
+        status: status,
         rows: rows,
         summary: OrderExportSummary.of(rows),
         appName: 'spideli Store'.tr,
@@ -88,7 +100,8 @@ class OrderHistoryExportFlow {
         generatedAt: DateTime.now(),
       );
       final Directory dir = await getTemporaryDirectory();
-      file = File('${dir.path}/${range.fileName}');
+      fileName = OrderHistoryPdf.fileName(range, status);
+      file = File('${dir.path}/$fileName');
       await file.writeAsBytes(bytes, flush: true);
     } catch (e, s) {
       log("Order history PDF failed: $e", stackTrace: s);
@@ -98,11 +111,11 @@ class OrderHistoryExportFlow {
     }
     ShowToastDialog.closeLoader();
     try {
-      final String period = '${_shownDay(range.from)} - ${_shownDay(range.to)}';
+      final String period = '${_shownDay(range.from)} - ${_shownDay(range.to)} (${status.labelKey.tr})';
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(file.path, mimeType: 'application/pdf')],
-          fileNameOverrides: [range.fileName],
+          fileNameOverrides: [fileName],
           subject: "${"Order history".tr} $period",
           text: "${"Order history".tr} $period",
         ),
@@ -116,8 +129,9 @@ class OrderHistoryExportFlow {
   static String _shownDay(DateTime day) => DateFormat('dd MMM yyyy').format(day);
 }
 
-/// Period picker: a range calendar (today at the latest), the chosen period
-/// in words, and why it cannot be exported when it cannot.
+/// Period and status picker: a range calendar (today at the latest), the
+/// chosen period in words (or why it cannot be exported), then the status:
+/// "All statuses" (default) or one of the home screen's order tabs.
 class _ExportPeriodSheet extends StatefulWidget {
   final OrderExportRange initial;
   final String storeName;
@@ -129,8 +143,17 @@ class _ExportPeriodSheet extends StatefulWidget {
 }
 
 class _ExportPeriodSheetState extends State<_ExportPeriodSheet> {
+  /// What the chosen status covers, in words.
+  static String _statusHint(OrderExportStatus status) => switch (status) {
+    OrderExportStatus.all => "Orders in every status.".tr,
+    OrderExportStatus.newOrders => "Placed orders the store can accept or reject now.".tr,
+    OrderExportStatus.scheduled => "Placed orders waiting for their scheduled time.".tr,
+    _ => "Includes: @statuses".trParams({'statuses': status.statuses.map((s) => s.tr).join(', ')}),
+  };
+
   DateTime? _from;
   DateTime? _to;
+  OrderExportStatus _status = OrderExportStatus.all;
 
   @override
   void initState() {
@@ -162,7 +185,7 @@ class _ExportPeriodSheetState extends State<_ExportPeriodSheet> {
               label: "Export".tr,
               icon: Icons.picture_as_pdf_outlined,
               expand: true,
-              onPressed: range == null ? null : () => Navigator.of(context).pop(range),
+              onPressed: range == null ? null : () => Navigator.of(context).pop((range, _status)),
             ),
           ),
         ],
@@ -171,7 +194,7 @@ class _ExportPeriodSheetState extends State<_ExportPeriodSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text("Every order of the store created in the chosen period is included, whatever its status. The period can be up to one year.".tr, style: t.bodySm.withColor(c.textSecondary)),
+          Text("Every order of the store created in the chosen period with the chosen status is included. The period can be up to one year.".tr, style: t.bodySm.withColor(c.textSecondary)),
           const DsGap(DsSpace.md),
           SizedBox(
             height: 330,
@@ -228,6 +251,27 @@ class _ExportPeriodSheetState extends State<_ExportPeriodSheet> {
             )
           else
             DsInlineAlert(tone: DsTone.warning, message: OrderExportRange.messageOf(error!).tr),
+          const DsGap(DsSpace.lg),
+          DsFieldLabel("Status".tr),
+          Wrap(
+            spacing: DsSpace.sm,
+            runSpacing: DsSpace.sm,
+            children: [
+              for (final OrderExportStatus status in OrderExportStatus.values)
+                ChoiceChip(
+                  label: Text(status.labelKey.tr),
+                  selected: _status == status,
+                  showCheckmark: false,
+                  selectedColor: c.brand,
+                  backgroundColor: c.surfaceRaised,
+                  side: BorderSide(color: _status == status ? c.brand : c.divider),
+                  labelStyle: (_status == status ? DsTypography.label : DsTypography.body).copyWith(color: _status == status ? c.onBrand : c.textPrimary),
+                  onSelected: (_) => setState(() => _status = status),
+                ),
+            ],
+          ),
+          const DsGap(DsSpace.sm),
+          Text(_statusHint(_status), style: t.bodySm.withColor(c.textMuted)),
         ],
       ),
     );
