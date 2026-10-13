@@ -708,9 +708,12 @@ const Map<String, String> zhCH = {
   "Add photo": "添加照片",
   "Remove": "移除",
   "Your carrier could not be created. Please try again.": "无法创建承运商，请重试。",
-  "Carrier created. Add your prices per region, then wait for the administrator's verification.": "承运商已创建。请填写各地区价格，然后等待管理员审核。",
   "Please enter the phone number": "请输入电话号码",
   "Please enter a valid email address": "请输入有效的电子邮箱地址",
   "Select at least one region": "请至少选择一个地区",
   "Could not pick the image.": "无法选择图片。",
+  "Please enter this price": "请输入此价格",
+  "Select a region to enter its prices.": "请选择一个地区以填写其价格。",
+  "Carrier created. It will be offered to customers once the administrator has verified it.": "承运商已创建。管理员审核后将向客户展示。",
+  "Please enter the prices for @region.": "请填写 @region 的价格。",
 };

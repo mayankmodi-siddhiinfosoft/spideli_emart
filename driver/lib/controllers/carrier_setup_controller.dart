@@ -5,6 +5,7 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/delivery_carrier_model.dart';
 import 'package:driver/models/region_model.dart';
 import 'package:driver/services/carrier_dispatch_service.dart';
+import 'package:driver/utils/carrier_settings_form.dart';
 import 'package:driver/utils/carrier_setup_form.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:flutter/material.dart';
@@ -14,8 +15,8 @@ import 'package:image_picker/image_picker.dart';
 
 /// "Set up your carrier": a company owner with no carrier creates its own
 /// (`CarrierSetupForm`, `CarrierDispatchService.createOwnCarrier`). The
-/// carrier waits for the administrator's verification and publication;
-/// prices per region are entered afterwards in Carrier settings.
+/// carrier waits for the administrator's verification and publication.
+/// Each selected region's prices are entered here (required).
 class CarrierSetupController extends GetxController {
   final RxBool isLoading = true.obs;
   final RxBool isSaving = false.obs;
@@ -38,6 +39,34 @@ class CarrierSetupController extends GetxController {
 
   final RxMap<String, String> errors = <String, String>{}.obs;
 
+  /// Price inputs per region: "regionId|field" -> controller.
+  final Map<String, TextEditingController> regionFields = {};
+
+  TextEditingController regionControllerFor(String regionId, String field) =>
+      regionFields.putIfAbsent(CarrierSettingsForm.regionKey(regionId, field), () => TextEditingController());
+
+  Map<String, Map<String, String>> get _regionTexts => {
+        for (final regionId in regionIds)
+          regionId: {for (final f in DeliveryCarrierModel.chargeFields) f: regionControllerFor(regionId, f).text},
+      };
+
+  /// "Littoral (FCFA)": a region's prices are in its own currency.
+  String regionLabel(String regionId) {
+    final String name = RegionService.regionById(regionId)?.name ?? regionId;
+    final currency = RegionService.currencyForRegion(regionId);
+    final String unit = (currency?.symbol ?? '').trim().isNotEmpty ? currency!.symbol!.trim() : (currency?.code ?? '').trim();
+    return unit.isEmpty ? name : '$name ($unit)';
+  }
+
+  /// The hint of an optional door / pickup-point value: the region default.
+  String regionHint(String regionId, String field) {
+    final num? def = RegionService.parcelPricingDefault(regionId, field);
+    if (field == 'volumetricDivisor') {
+      return def != null && def > 0 ? 'Region default: @value'.trParams({'value': DeliveryCarrierModel.formatNumber(def)}) : 'Region default: size not used'.tr;
+    }
+    return 'Region default: @value'.trParams({'value': DeliveryCarrierModel.formatNumber(def ?? 0)});
+  }
+
   final ImagePicker _imagePicker = ImagePicker();
 
   @override
@@ -48,7 +77,7 @@ class CarrierSetupController extends GetxController {
 
   @override
   void onClose() {
-    for (final c in fields.values) {
+    for (final c in [...fields.values, ...regionFields.values]) {
       c.dispose();
     }
     super.onClose();
@@ -78,6 +107,7 @@ class CarrierSetupController extends GetxController {
   void toggleRegion(String regionId) {
     regionIds.contains(regionId) ? regionIds.remove(regionId) : regionIds.add(regionId);
     errors.remove('regionIds');
+    errors.removeWhere((key, _) => key.startsWith('$regionId|'));
   }
 
   void toggleDeliveryScope(String scope) {
@@ -113,10 +143,15 @@ class CarrierSetupController extends GetxController {
       regionIds: regionIds.toList(),
       deliveryScopes: deliveryScopes.toList(),
       deliveryTimeUnit: deliveryTimeUnit.value,
+      regionTexts: _regionTexts,
     );
     errors.value = {for (final e in check.errors.entries) e.key: e.value.tr};
     if (errors.isNotEmpty) {
-      ShowToastDialog.showToast(errors.values.first);
+      // A missing / invalid price: name the region, the carrier is not created.
+      final String? priceKey = check.errors.keys.where((k) => k.contains('|')).firstOrNull;
+      ShowToastDialog.showToast(priceKey == null
+          ? errors.values.first
+          : "Please enter the prices for @region.".trParams({'region': regionLabel(priceKey.split('|').first)}));
       return false;
     }
 
@@ -136,13 +171,14 @@ class CarrierSetupController extends GetxController {
         deliveryScopes: deliveryScopes.toList(),
         deliveryTimeUnit: deliveryTimeUnit.value,
         files: uploaded,
+        regionTexts: _regionTexts,
       );
       final String? id = await CarrierDispatchService.createOwnCarrier(ownerId: ownerId, data: built.data);
       if (id == null) {
         ShowToastDialog.showToast("Your carrier could not be created. Please try again.".tr);
         return false;
       }
-      ShowToastDialog.showToast("Carrier created. Add your prices per region, then wait for the administrator's verification.".tr);
+      ShowToastDialog.showToast("Carrier created. It will be offered to customers once the administrator has verified it.".tr);
       return true;
     } catch (e) {
       ShowToastDialog.showToast("Your carrier could not be created. Please try again.".tr);

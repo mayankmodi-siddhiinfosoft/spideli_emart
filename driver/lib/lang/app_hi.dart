@@ -708,9 +708,12 @@ const Map<String, String> hiIN = {
   "Add photo": "फ़ोटो जोड़ें",
   "Remove": "हटाएँ",
   "Your carrier could not be created. Please try again.": "आपका कैरियर नहीं बनाया जा सका। कृपया पुनः प्रयास करें।",
-  "Carrier created. Add your prices per region, then wait for the administrator's verification.": "कैरियर बन गया। प्रत्येक क्षेत्र के लिए अपनी कीमतें जोड़ें, फिर व्यवस्थापक के सत्यापन की प्रतीक्षा करें।",
   "Please enter the phone number": "कृपया फ़ोन नंबर दर्ज करें",
   "Please enter a valid email address": "कृपया एक मान्य ईमेल पता दर्ज करें",
   "Select at least one region": "कम से कम एक क्षेत्र चुनें",
   "Could not pick the image.": "छवि नहीं चुनी जा सकी।",
+  "Please enter this price": "कृपया यह कीमत दर्ज करें",
+  "Select a region to enter its prices.": "कीमतें दर्ज करने के लिए एक क्षेत्र चुनें।",
+  "Carrier created. It will be offered to customers once the administrator has verified it.": "कैरियर बन गया। व्यवस्थापक द्वारा सत्यापित किए जाने के बाद यह ग्राहकों को दिखाया जाएगा।",
+  "Please enter the prices for @region.": "कृपया @region के लिए कीमतें दर्ज करें।",
 };

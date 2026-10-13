@@ -712,9 +712,12 @@ const Map<String, String> enUS = {
   "Add photo": "Add photo",
   "Remove": "Remove",
   "Your carrier could not be created. Please try again.": "Your carrier could not be created. Please try again.",
-  "Carrier created. Add your prices per region, then wait for the administrator's verification.": "Carrier created. Add your prices per region, then wait for the administrator's verification.",
   "Please enter the phone number": "Please enter the phone number",
   "Please enter a valid email address": "Please enter a valid email address",
   "Select at least one region": "Select at least one region",
   "Could not pick the image.": "Could not pick the image.",
+  "Please enter this price": "Please enter this price",
+  "Select a region to enter its prices.": "Select a region to enter its prices.",
+  "Carrier created. It will be offered to customers once the administrator has verified it.": "Carrier created. It will be offered to customers once the administrator has verified it.",
+  "Please enter the prices for @region.": "Please enter the prices for @region.",
 };

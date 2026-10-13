@@ -708,9 +708,12 @@ const Map<String, String> lnAr = {
   "Add photo": "إضافة صورة",
   "Remove": "إزالة",
   "Your carrier could not be created. Please try again.": "تعذر إنشاء شركة الشحن. يرجى المحاولة مرة أخرى.",
-  "Carrier created. Add your prices per region, then wait for the administrator's verification.": "تم إنشاء شركة الشحن. أضف أسعارك لكل منطقة، ثم انتظر تحقق المسؤول.",
   "Please enter the phone number": "يرجى إدخال رقم الهاتف",
   "Please enter a valid email address": "يرجى إدخال بريد إلكتروني صالح",
   "Select at least one region": "اختر منطقة واحدة على الأقل",
   "Could not pick the image.": "تعذر اختيار الصورة.",
+  "Please enter this price": "يرجى إدخال هذا السعر",
+  "Select a region to enter its prices.": "اختر منطقة لإدخال أسعارها.",
+  "Carrier created. It will be offered to customers once the administrator has verified it.": "تم إنشاء شركة الشحن. ستُعرض على العملاء بعد أن يتحقق منها المسؤول.",
+  "Please enter the prices for @region.": "يرجى إدخال الأسعار لـ @region.",
 };

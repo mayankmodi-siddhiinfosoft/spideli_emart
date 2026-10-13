@@ -708,9 +708,12 @@ const Map<String, String> jaJP = {
   "Add photo": "写真を追加",
   "Remove": "削除",
   "Your carrier could not be created. Please try again.": "運送会社を作成できませんでした。もう一度お試しください。",
-  "Carrier created. Add your prices per region, then wait for the administrator's verification.": "運送会社を作成しました。地域ごとの料金を入力し、管理者の確認をお待ちください。",
   "Please enter the phone number": "電話番号を入力してください",
   "Please enter a valid email address": "有効なメールアドレスを入力してください",
   "Select at least one region": "地域を1つ以上選択してください",
   "Could not pick the image.": "画像を選択できませんでした。",
+  "Please enter this price": "この料金を入力してください",
+  "Select a region to enter its prices.": "料金を入力する地域を選択してください。",
+  "Carrier created. It will be offered to customers once the administrator has verified it.": "運送会社を作成しました。管理者が確認すると、お客様に表示されます。",
+  "Please enter the prices for @region.": "@region の料金を入力してください。",
 };

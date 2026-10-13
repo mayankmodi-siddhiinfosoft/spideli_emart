@@ -708,9 +708,12 @@ const Map<String, String> ptPO = {
   "Add photo": "Adicionar foto",
   "Remove": "Remover",
   "Your carrier could not be created. Please try again.": "Não foi possível criar a sua transportadora. Tente novamente.",
-  "Carrier created. Add your prices per region, then wait for the administrator's verification.": "Transportadora criada. Adicione os seus preços por região e aguarde a verificação do administrador.",
   "Please enter the phone number": "Introduza o número de telefone",
   "Please enter a valid email address": "Introduza um endereço de e-mail válido",
   "Select at least one region": "Selecione pelo menos uma região",
   "Could not pick the image.": "Não foi possível selecionar a imagem.",
+  "Please enter this price": "Introduza este preço",
+  "Select a region to enter its prices.": "Selecione uma região para introduzir os seus preços.",
+  "Carrier created. It will be offered to customers once the administrator has verified it.": "Transportadora criada. Será oferecida aos clientes depois de o administrador a verificar.",
+  "Please enter the prices for @region.": "Introduza os preços para @region.",
 };

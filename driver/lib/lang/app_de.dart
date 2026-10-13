@@ -708,9 +708,12 @@ const Map<String, String> deGR = {
   "Add photo": "Foto hinzufügen",
   "Remove": "Entfernen",
   "Your carrier could not be created. Please try again.": "Ihr Spediteur konnte nicht erstellt werden. Bitte versuchen Sie es erneut.",
-  "Carrier created. Add your prices per region, then wait for the administrator's verification.": "Spediteur erstellt. Tragen Sie Ihre Preise pro Region ein und warten Sie auf die Prüfung durch den Administrator.",
   "Please enter the phone number": "Bitte geben Sie die Telefonnummer ein",
   "Please enter a valid email address": "Bitte geben Sie eine gültige E-Mail-Adresse ein",
   "Select at least one region": "Wählen Sie mindestens eine Region",
   "Could not pick the image.": "Das Bild konnte nicht ausgewählt werden.",
+  "Please enter this price": "Bitte geben Sie diesen Preis ein",
+  "Select a region to enter its prices.": "Wählen Sie eine Region, um ihre Preise einzugeben.",
+  "Carrier created. It will be offered to customers once the administrator has verified it.": "Spediteur erstellt. Er wird Kunden angeboten, sobald der Administrator ihn geprüft hat.",
+  "Please enter the prices for @region.": "Bitte geben Sie die Preise für @region ein.",
 };

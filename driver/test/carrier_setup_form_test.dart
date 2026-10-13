@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// "Set up your carrier": what the owner's own carrier is created with.
 void main() {
+  const price = {'baseCharge': '500', 'perKmCharge': '75', 'perKgCharge': '200', 'minimumCharge': '1000'};
   Map<String, String> texts({String name = 'MK Carrier', String phone = '670000000', String email = '', Map<String, String> extra = const {}}) =>
       {'name': name, 'phone': phone, 'email': email, ...extra};
 
@@ -12,6 +13,7 @@ void main() {
     List<String> regions = const ['R1'],
     List<String> scopes = const ['city', 'intercity'],
     Map<String, String> files = const {},
+    Map<String, Map<String, String>>? prices,
   }) =>
       CarrierSetupForm.build(
         ownerId: 'owner1',
@@ -21,6 +23,7 @@ void main() {
         deliveryScopes: scopes,
         deliveryTimeUnit: 'hours',
         files: files,
+        regionTexts: prices ?? {for (final r in regions) r: price},
       );
 
   test('a new carrier waits for the administrator and is bound to its owner', () {
@@ -70,5 +73,35 @@ void main() {
     expect(r.data['photo'], 'https://x/logo.jpg');
     expect(r.data['operatingLicenceFile'], 'https://x/ol.jpg');
     expect(r.data.containsKey('commercialRegisterFile'), isFalse);
+  });
+
+  test('every selected region gets its prices; the first region is mirrored flat', () {
+    final r = build(regions: const ['R1', 'R2'], prices: {
+      'R1': price,
+      'R2': {'baseCharge': '700', 'perKmCharge': '80', 'perKgCharge': '0', 'minimumCharge': '1200', 'homePickupCharge': '300', 'volumetricDivisor': ''},
+    });
+    expect(r.errors, isEmpty);
+    expect(r.data['regionPricing'], {
+      'R1': {'baseCharge': 500, 'perKmCharge': 75, 'perKgCharge': 200, 'minimumCharge': 1000},
+      'R2': {'baseCharge': 700, 'perKmCharge': 80, 'perKgCharge': 0, 'minimumCharge': 1200, 'homePickupCharge': 300},
+    });
+    expect([r.data['baseCharge'], r.data['perKmCharge'], r.data['perKgCharge'], r.data['minimumCharge']], [500, 75, 200, 1000]);
+  });
+
+  test('no carrier without prices: the four prices are required for every selected region', () {
+    final none = build(regions: const ['R1', 'R2'], prices: {'R1': price});
+    expect(none.data, isEmpty);
+    expect(none.errors.keys.toSet(), {'R2|baseCharge', 'R2|perKmCharge', 'R2|perKgCharge', 'R2|minimumCharge'});
+    expect(none.errors.values.toSet(), {CarrierSetupForm.errPrice});
+
+    final bad = build(prices: {
+      'R1': {'baseCharge': '500', 'perKmCharge': '', 'perKgCharge': '-2', 'minimumCharge': '1000', 'homeDeliveryCharge': 'x'},
+    });
+    expect(bad.data, isEmpty);
+    expect(bad.errors, {
+      'R1|perKmCharge': CarrierSetupForm.errPrice,
+      'R1|perKgCharge': CarrierSettingsForm.errNegative,
+      'R1|homeDeliveryCharge': CarrierSettingsForm.errNumber,
+    });
   });
 }

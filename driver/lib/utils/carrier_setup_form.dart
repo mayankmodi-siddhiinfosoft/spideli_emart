@@ -9,7 +9,9 @@ import 'package:driver/utils/carrier_settings_form.dart';
 /// `test/carrier_setup_form_test.dart`. The new carrier is always
 /// `isVerified: false`, `publish: false`, `ownerId` = the owner: customers
 /// are offered it only once the administrator verifies and publishes it.
-/// Prices per region are filled afterwards in Carrier settings.
+/// Every selected region must get its prices (`regionPricing.<regionId>`):
+/// the four prices are required — without them the carrier is not created —
+/// the five door / pickup-point values are optional (blank = region default).
 ///
 /// Error values are untranslated message keys (the caller calls `.tr`).
 class CarrierSetupForm {
@@ -18,6 +20,7 @@ class CarrierSetupForm {
   static const String errPhone = 'Please enter the phone number';
   static const String errEmail = 'Please enter a valid email address';
   static const String errRegions = 'Select at least one region';
+  static const String errPrice = 'Please enter this price';
 
   /// The registration numbers and their document photo fields.
   static const List<String> registrationFields = ['operatingLicence', 'commercialRegister', 'uniqueIdNumber'];
@@ -29,7 +32,8 @@ class CarrierSetupForm {
   /// [texts]: name, phone, email, conditions, maxWeight, minDeliveryTime,
   /// maxDeliveryTime and the [registrationFields]. [files]: uploaded URLs by
   /// file field (`operatingLicenceFile`, ...) and `photo` (the logo).
-  /// Returns the document to create, or the errors (field -> message key).
+  /// [regionTexts]: regionId -> charge field -> text (error key
+  /// [CarrierSettingsForm.regionKey]). Returns the document to create, or the errors (field -> message key).
   static ({Map<String, dynamic> data, Map<String, String> errors}) build({
     required String ownerId,
     required Map<String, String> texts,
@@ -38,6 +42,7 @@ class CarrierSetupForm {
     required List<String> deliveryScopes,
     required String deliveryTimeUnit,
     Map<String, String> files = const {},
+    Map<String, Map<String, String>> regionTexts = const {},
   }) {
     final Map<String, String> errors = {};
     String text(String field) => (texts[field] ?? '').trim();
@@ -64,6 +69,24 @@ class CarrierSetupForm {
     final num? minTime = numbers['minDeliveryTime'], maxTime = numbers['maxDeliveryTime'];
     if (minTime != null && maxTime != null && minTime > maxTime) errors['maxDeliveryTime'] = CarrierSettingsForm.errTimes;
 
+    // Prices per selected region: no carrier without them.
+    final Map<String, Map<String, num>> regionPricing = {};
+    for (final regionId in regions) {
+      final Map<String, num> block = {};
+      for (final field in DeliveryCarrierModel.chargeFields) {
+        final String key = CarrierSettingsForm.regionKey(regionId, field);
+        final (num? value, String? error) = CarrierSettingsForm.parse(regionTexts[regionId]?[field] ?? '');
+        if (error != null) {
+          errors[key] = error;
+        } else if (value != null) {
+          block[field] = value;
+        } else if (DeliveryCarrierModel.standardChargeFields.contains(field)) {
+          errors[key] = errPrice;
+        }
+      }
+      regionPricing[regionId] = block;
+    }
+
     if (errors.isNotEmpty) return (data: const <String, dynamic>{}, errors: errors);
 
     final String unit = deliveryTimeUnit.trim();
@@ -78,6 +101,9 @@ class CarrierSetupForm {
       for (final entry in numbers.entries)
         if (entry.value != null) entry.key: entry.value,
       if (unit.isNotEmpty) DeliveryCarrierModel.unitField: unit,
+      DeliveryCarrierModel.regionPricingField: regionPricing,
+      // The flat prices carry the FIRST region's, as the panel writes them.
+      for (final field in DeliveryCarrierModel.standardChargeFields) field: regionPricing[regions.first]![field],
       for (final field in registrationFields) field: text(field),
       for (final field in registrationFields)
         if ((files[fileField(field)] ?? '').trim().isNotEmpty) fileField(field): files[fileField(field)]!.trim(),

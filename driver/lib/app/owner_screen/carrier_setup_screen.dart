@@ -5,6 +5,7 @@ import 'package:driver/controllers/carrier_settings_controller.dart';
 import 'package:driver/controllers/carrier_setup_controller.dart';
 import 'package:driver/models/delivery_carrier_model.dart';
 import 'package:driver/themes/ds/ds.dart';
+import 'package:driver/utils/carrier_settings_form.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -120,6 +121,36 @@ class CarrierSetupScreen extends StatelessWidget {
                                 if (region != controller.regions.last) const DsGap(DsSpace.sm),
                               ],
                             if (errors.containsKey('regionIds')) _error(context, errors['regionIds']!),
+                          ],
+                        ),
+                        const DsGap(DsSpace.lg),
+
+                        // ── Pricing per region (required to create) ───────────
+                        DsFormSection(
+                          title: "Pricing per region".tr,
+                          subtitle: "Each region you serve has its own prices, in that region's currency. Leave a door / pickup-point value empty to use the region's default; 0 means free.".tr,
+                          icon: Icons.payments_outlined,
+                          children: [
+                            if (checkedRegions.isEmpty)
+                              Text("Select a region to enter its prices.".tr, style: context.dsText.bodySm)
+                            else
+                              for (final regionId in checkedRegions) ...[
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: DsSpace.sm),
+                                  child: Text(controller.regionLabel(regionId), style: context.dsText.titleSm),
+                                ),
+                                _priceField(controller, errors, regionId, 'baseCharge', 'Base Charge'.tr, 'e.g. 500', required: true),
+                                _priceField(controller, errors, regionId, 'perKmCharge', 'Charge per km'.tr, 'e.g. 75', required: true),
+                                _priceField(controller, errors, regionId, 'perKgCharge', 'Charge per kg'.tr, 'e.g. 200', required: true),
+                                _priceField(controller, errors, regionId, 'minimumCharge', 'Minimum Charge'.tr, 'e.g. 1000', required: true),
+                                _priceField(controller, errors, regionId, 'volumetricDivisor', 'Volumetric Divisor'.tr, controller.regionHint(regionId, 'volumetricDivisor')),
+                                _priceField(controller, errors, regionId, 'homePickupCharge', 'Home Pickup Charge'.tr, controller.regionHint(regionId, 'homePickupCharge')),
+                                _priceField(controller, errors, regionId, 'pointDropoffCharge', 'Point Drop-off Charge'.tr, controller.regionHint(regionId, 'pointDropoffCharge')),
+                                _priceField(controller, errors, regionId, 'homeDeliveryCharge', 'Home Delivery Charge'.tr, controller.regionHint(regionId, 'homeDeliveryCharge')),
+                                _priceField(controller, errors, regionId, 'pointCollectionCharge', 'Point Collection Charge'.tr, controller.regionHint(regionId, 'pointCollectionCharge'),
+                                    last: regionId == checkedRegions.last),
+                                if (regionId != checkedRegions.last) const DsGap(DsSpace.md),
+                              ],
                           ],
                         ),
                         const DsGap(DsSpace.lg),
@@ -256,6 +287,21 @@ class CarrierSetupScreen extends StatelessWidget {
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
       textInputAction: TextInputAction.next,
+    );
+  }
+
+  static Widget _priceField(CarrierSetupController controller, Map<String, String> errors, String regionId, String field, String label, String hint,
+      {bool required = false, bool last = false}) {
+    return DsTextField(
+      label: label,
+      hint: hint,
+      requiredMark: required,
+      controller: controller.regionControllerFor(regionId, field),
+      errorText: errors[CarrierSettingsForm.regionKey(regionId, field)],
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+      textInputAction: TextInputAction.next,
+      bottomSpacing: last ? 0 : DsSpace.lg,
     );
   }
 

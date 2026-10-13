@@ -708,9 +708,12 @@ const Map<String, String> trFR = {
   "Add photo": "Ajouter une photo",
   "Remove": "Supprimer",
   "Your carrier could not be created. Please try again.": "Votre transporteur n'a pas pu être créé. Veuillez réessayer.",
-  "Carrier created. Add your prices per region, then wait for the administrator's verification.": "Transporteur créé. Ajoutez vos prix par région, puis attendez la vérification de l'administrateur.",
   "Please enter the phone number": "Veuillez saisir le numéro de téléphone",
   "Please enter a valid email address": "Veuillez saisir une adresse e-mail valide",
   "Select at least one region": "Sélectionnez au moins une région",
   "Could not pick the image.": "Impossible de sélectionner l'image.",
+  "Please enter this price": "Veuillez saisir ce prix",
+  "Select a region to enter its prices.": "Sélectionnez une région pour saisir ses prix.",
+  "Carrier created. It will be offered to customers once the administrator has verified it.": "Transporteur créé. Il sera proposé aux clients une fois vérifié par l'administrateur.",
+  "Please enter the prices for @region.": "Veuillez saisir les prix pour @region.",
 };
