@@ -650,3 +650,133 @@ The fee and unit figures in the app are labelled **estimates at the last price**
 | `investment_redemption_rejected` | investor | `{fundName}`, `{reason}` |
 | `investment_report_available` | investor | `{period}` |
 | `investment_terms_updated` | holders of the fund | `{fundName}` |
+
+---
+
+## 13. Online insurance (brief section 8)
+
+App code: `customer/lib/screen_ui/finance/insurance_screens.dart`, `customer/lib/service/finance_insurance_service.dart`, rules in `customer/lib/utils/finance_insurance_rules.dart` (tested in `customer/test/finance_insurance_rules_test.dart`). Entry: Spideli Finance > Services > **Insurance** (My policies / Quotes / Claims / Insurance offers), and the overview's insurance card.
+
+**Model:** Spideli distributes products of **authorised insurers** (`insurance_partners`). The server talks to each insurer's API (or its back office) and writes only **verified** responses. **A policy is never `active`, and a claim never `approved` / `paid`, until the insurer or its verified integration confirms it.** Distribution needs the right intermediary licence in each country.
+
+### 13.1 `platform_settings/insurance` (admin config)
+
+```jsonc
+{
+  "currencies": ["XAF"],
+  "categories": ["health", "life", "auto", "home", "travel", "business", "agriculture", "device", "funeral"],   // the catalog filter order
+  "paymentMethods": ["wallet", "mobile_money", "wave"],
+  "claims": { "maxFiles": 5 }                        // photos per claim / response, 1-20 (default 5)
+}
+```
+
+Required: "Insurance is not available yet" when it is missing or has no valid currency, category or payment method.
+
+### 13.2 Collections (SERVER writes all of them)
+
+**`insurance_partners/{partnerId}`**: `{ name, licenceNumber, country, contact, api: <server-only settings, never readable by clients> }`. The app does not read it: products carry `partnerName`.
+
+**`insurance_products/{productId}`** (catalog; the app lists `published == true`):
+- `partnerId`, `partnerName`, `category`, `name`, `summary`, `description`, `currency`, `order` (optional);
+- `coverages: [{ name, description, limit }]`, `exclusions: [string]`, `deductible`, `waitingPeriodDays`, `termMonths`;
+- `rating` (optional; without it the app offers a quote but no simulation):
+
+```jsonc
+"rating": {
+  "basePremium": 60000,                                   // a year, minor units
+  "frequencies": { "annual": 0, "monthly": 5 },           // allowed: annual, semiannual, quarterly, monthly; value = loading %
+  "factors": [                                            // the quote questions, also sent to the insurer as `answers`
+    { "key": "age", "label": "Age", "type": "number", "unit": "years", "min": 18, "max": 75,
+      "bands": [ { "upTo": 30, "multiplier": 1 }, { "upTo": 50, "multiplier": 1.3 }, { "upTo": 75, "multiplier": 1.8 } ] },
+    { "key": "level", "label": "Cover level", "type": "select",
+      "options": [ { "value": "basic", "label": "Basic", "multiplier": 1 }, { "value": "plus", "label": "Plus", "multiplier": 1.5 } ] }
+  ]
+}
+```
+
+- `terms`, `termsVersion` (≥ 1), `documents: [{ name, storagePath | url (https) }]` (policy wording, product information sheet), `status: open | closed`, `published`.
+- **Simulation** (labelled an estimate): `basePremium × Π multipliers`, then `× (1 + loading%) / payments a year`, rounded to minor units. Factor labels are shown as written: write them in the users' language.
+
+**`insurance_quotes/{quoteId}`**:
+- `{ userId, productId, productName, partnerName, category, answers, frequency, coverStart, coverEnd, currency, premium (a year), installmentAmount, deductible, coverages, documents, terms, termsVersion, validUntil, insurerReference, status, reason, policyId, createdAt }`;
+- `status`: `requested` → `quoted` (the insurer priced it) → `accepted` (policy created), or `declined` (by the user), `expired` (after `validUntil`), `rejected` (the insurer will not cover; `reason`).
+
+**`insurance_policies/{policyId}`**:
+- `{ userId, quoteId, productId, productName, partnerName, category, policyNumber, status, currency, premium, frequency, installmentAmount, deductible, coverages, coverStart, coverEnd, nextPremiumDue, autoRenew, renewalPremium, renewalDate, documents: [{ name, storagePath }], reason, createdAt }`;
+- `status`: `pending_activation` (paid, waiting for the insurer) → `active` → `renewal_due` → `active` (renewed) or `expired`. Also `lapsed` (premium unpaid), `cancellation_requested` → `cancelled`, and `rejected` (the insurer refused after payment: **refund** the premium).
+- Policy documents (certificate, schedule) go to Storage under `insurance_policies/{uid}/{policyId}/`.
+
+**`insurance_premiums/{premiumId}`**: `{ userId, policyId, amount, currency, dueDate, status: upcoming | due | overdue | processing | paid | failed, paidAt, reference }`.
+
+**`insurance_claims/{claimId}`**:
+- `{ userId, policyId, policyNumber, productName, currency, incidentDate, description, amountClaimed, approvedAmount, paidAmount, paidAt, insurerReference, documents: [{ name, storagePath }], status, reason, createdAt }`;
+- `status`: `submitted` → `under_review` → (`info_requested` → `under_review` …) → `approved` → `paid`, or `rejected` (`reason`), `withdrawn`;
+- for `info_requested`, put the insurer's question in `reason`; keep the full exchange in `insurance_claims/{claimId}/events` (server).
+
+App queries (with indexes):
+
+```
+insurance_products where published == true limit 100                                        -> equality only
+insurance_quotes   where userId == <uid> orderBy createdAt desc limit 50                     -> (userId ASC, createdAt DESC)
+insurance_policies where userId == <uid> orderBy createdAt desc limit 50                     -> (userId ASC, createdAt DESC)
+insurance_claims   where userId == <uid> orderBy createdAt desc limit 50                     -> (userId ASC, createdAt DESC)
+insurance_claims   where userId == <uid> and policyId == X orderBy createdAt desc            -> (userId ASC, policyId ASC, createdAt DESC)
+insurance_premiums where userId == <uid> and policyId == X orderBy dueDate                   -> (userId ASC, policyId ASC, dueDate ASC)
+insurance_products/{id}, insurance_quotes/{id}, insurance_policies/{id}, insurance_claims/{id}: single documents
+```
+
+Rules:
+- `platform_settings/insurance` and published products: any signed-in user. `insurance_partners`: staff only.
+- Quotes, policies, premiums, claims: `resource.data.userId == request.auth.uid` (plus staff and the insurer's authorised users).
+- **No client writes.**
+- Storage: `insurance_claims/{uid}/{claimId}/{file}` created by the owner (images, size cap, no overwrite), read by the owner, staff and the insurer; `insurance_policies/{uid}/**` read by the owner; product documents read by signed-in users.
+
+### 13.3 Callables
+
+| Function | Request | Server checks |
+|---|---|---|
+| `insuranceRequestQuote` | `{ productId, answers, frequency, coverStart (yyyy-MM-dd) }` -> `{ quoteId }` | KYC-verified; product `open`; every factor answered within range; `frequency` allowed; `coverStart` today .. +180 days; then ask the insurer and store its answer |
+| `insuranceDeclineQuote` | `{ quoteId }` | the owner; `quoted` |
+| `insuranceAcceptQuote` | `{ quoteId, termsVersion, signatureName, payment, idempotencyKey }` -> payment reply (section 8.4) | the owner; `quoted` and before `validUntil` (else `quote_expired`); current `termsVersion` (else `terms_outdated`); record the acceptance (time, terms version, signature name, device) as the electronic signature; collect the first premium; create the policy `pending_activation`; **activate only on the insurer's confirmation** |
+| `insurancePayPremium` | `{ policyId, premiumId, payment, idempotencyKey }` | the owner; premium `due` / `overdue` / `failed` |
+| `insuranceRenewPolicy` | `{ policyId, payment, idempotencyKey }` | the owner; `renewal_due` with a `renewalPremium` confirmed by the insurer |
+| `insuranceSetAutoRenew` | `{ policyId, autoRenew }` | the owner; `active` / `renewal_due` |
+| `insuranceRequestCancellation` | `{ policyId, reason? }` | the owner; `active` / `renewal_due`; forward to the insurer; `cancelled` (and any refund) only on its confirmation |
+| `insuranceCreateClaim` | `{ policyId, incidentDate (yyyy-MM-dd), description, amountClaimed }` -> `{ claimId }` | the owner; policy `active` / `renewal_due` (else `policy_not_active`); incident within the cover period and after the waiting period |
+| `insuranceRegisterClaimDocument` | `{ claimId, storagePath, name }` | the owner; the path is theirs; type and size |
+| `insuranceSubmitClaim` | `{ claimId }` | the owner; then forward the claim and its files to the insurer |
+| `insuranceRespondClaim` | `{ claimId, message? }` (after registering new files) | the owner; `info_requested` (else `claim_not_editable`); back to `under_review` |
+| `insuranceWithdrawClaim` | `{ claimId }` | the owner; `submitted` / `under_review` / `info_requested` |
+
+Reasons the app maps (`FinanceErrors`): `quote_expired`, `terms_outdated`, `product_closed`, `policy_not_active`, `claim_not_editable`, `insurer_unavailable`, `not_eligible`.
+
+Claim payouts go to the wallet or a saved Mobile Money number chosen with the insurer's process (the app does not ask for a destination yet), and are posted to the ledger.
+
+### 13.4 Jobs and notifications (SERVER)
+
+**Jobs:**
+- expire quotes after `validUntil`;
+- premium reminders, then `overdue` and `lapsed` per the policy terms;
+- renewal: obtain `renewalPremium` from the insurer before `coverEnd`, set `renewal_due`; with `autoRenew`, collect it from the wallet if allowed, otherwise remind;
+- poll or receive the insurer's status updates (activation, claim decisions, payments), verified;
+- keep `finance_summaries/{uid}.insurance` up to date (`activePolicies`, `nextRenewalDate`, `openClaims`).
+
+**Templates** (`dynamic_notification`, `source: "finance"`):
+
+| Template `type` | To | Placeholders |
+|---|---|---|
+| `insurance_quote_ready` | user | `{productName}`, `{amount}`, `{validUntil}` |
+| `insurance_quote_rejected` | user | `{productName}`, `{reason}` |
+| `insurance_policy_active` | user | `{productName}`, `{policyNumber}`, `{coverStart}` |
+| `insurance_policy_rejected` | user | `{productName}`, `{reason}` |
+| `insurance_premium_due` | user | `{productName}`, `{amount}`, `{dueDate}` |
+| `insurance_premium_overdue` | user | `{productName}`, `{amount}` |
+| `insurance_policy_lapsed` | user | `{productName}` |
+| `insurance_renewal_due` | user | `{productName}`, `{amount}`, `{renewalDate}` |
+| `insurance_policy_renewed` | user | `{productName}`, `{coverEnd}` |
+| `insurance_policy_cancelled` | user | `{productName}` |
+| `insurance_claim_received` | user | `{productName}`, `{amount}` |
+| `insurance_claim_info_requested` | user | `{productName}`, `{reason}` |
+| `insurance_claim_approved` | user | `{productName}`, `{amount}` |
+| `insurance_claim_rejected` | user | `{productName}`, `{reason}` |
+| `insurance_claim_paid` | user | `{productName}`, `{amount}` |

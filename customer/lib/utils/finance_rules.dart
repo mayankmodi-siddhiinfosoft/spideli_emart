@@ -177,6 +177,11 @@ abstract final class FinanceErrors {
     'locked_up': 'Part of this investment is still in its lock-up period.',
     'redemption_not_allowed': 'This fund does not accept redemptions at the moment.',
     'insufficient_units': 'You do not hold enough units for this redemption.',
+    'quote_expired': 'This quote is no longer valid. Request a new one.',
+    'product_closed': 'This insurance is not offered at the moment.',
+    'policy_not_active': 'This policy is not active.',
+    'claim_not_editable': 'This claim can no longer be changed.',
+    'insurer_unavailable': 'The insurer cannot be reached right now. Please try again later.',
     'sign_in_required': 'Please sign in again.',
     'unauthenticated': 'Please sign in again.',
   };

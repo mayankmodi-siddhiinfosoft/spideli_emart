@@ -1,10 +1,10 @@
 # Creates the admin-level Spideli Finance configuration in the live Firestore
 # (project spideli-870b0), as listed in .claude/FINANCE-APP-CONTRACT.md:
-#   - platform_settings/kyc, /savings, /tontines, /lending, /investments
-#                                       (sections 2.1, 8.1, 9.1, 11.1, 12.1)
-#   - dynamic_notification templates    (sections 6, 10, 11.5, 12.4)
-# Investment FUNDS are not seeded: fund managers / the admin publish real
-# funds in investment_funds (section 12.2).
+#   - platform_settings/kyc, /savings, /tontines, /lending, /investments, /insurance
+#                                       (sections 2.1, 8.1, 9.1, 11.1, 12.1, 13.1)
+#   - dynamic_notification templates    (sections 6, 10, 11.5, 12.4, 13.4)
+# Investment FUNDS and insurance PRODUCTS are not seeded: they are real
+# offers published by licensed managers / insurers (sections 12.2, 13.2).
 # CREATE-ONLY: a document or template type that already exists is skipped,
 # never overwritten. DRY RUN by default; writes only with --apply.
 #
@@ -86,7 +86,14 @@ INVESTMENTS = {
     'simulator': {'maxYears': 30},
 }
 
-SETTINGS = {'kyc': KYC, 'savings': SAVINGS, 'tontines': TONTINES, 'lending': LENDING, 'investments': INVESTMENTS}
+INSURANCE = {
+    'currencies': ['XAF'],
+    'categories': ['health', 'life', 'auto', 'home', 'travel', 'business', 'agriculture', 'device', 'funeral'],
+    'paymentMethods': ['wallet', 'mobile_money', 'wave'],
+    'claims': {'maxFiles': 5},
+}
+
+SETTINGS = {'kyc': KYC, 'savings': SAVINGS, 'tontines': TONTINES, 'lending': LENDING, 'investments': INVESTMENTS, 'insurance': INSURANCE}
 
 TEMPLATES = [
     ('kyc_submitted', 'Verification received', 'We received your documents. Our team will review them shortly.'),
@@ -132,6 +139,21 @@ TEMPLATES = [
     ('investment_redemption_rejected', 'Redemption not accepted', 'Your redemption from {fundName} was not accepted: {reason}'),
     ('investment_report_available', 'New investment statement', 'Your investment statement for {period} is available.'),
     ('investment_terms_updated', 'Fund terms updated', 'The terms of {fundName} changed. Read them before your next investment.'),
+    ('insurance_quote_ready', 'Your quote is ready', 'Your {productName} quote is ready: {amount}. It is valid until {validUntil}.'),
+    ('insurance_quote_rejected', 'Quote not offered', 'The insurer cannot offer {productName}: {reason}'),
+    ('insurance_policy_active', 'Your policy is active', 'Your {productName} policy {policyNumber} is active from {coverStart}.'),
+    ('insurance_policy_rejected', 'Policy not accepted', 'The insurer did not accept your {productName} policy: {reason}. Your payment will be refunded.'),
+    ('insurance_premium_due', 'Premium reminder', 'Your {productName} premium of {amount} is due on {dueDate}.'),
+    ('insurance_premium_overdue', 'Premium overdue', 'Your {productName} premium of {amount} is overdue. Pay it to stay covered.'),
+    ('insurance_policy_lapsed', 'You are no longer covered', 'Your {productName} policy lapsed because a premium was not paid.'),
+    ('insurance_renewal_due', 'Renewal due', 'Your {productName} policy renews for {amount}. Renew before {renewalDate}.'),
+    ('insurance_policy_renewed', 'Policy renewed', 'Your {productName} policy is renewed until {coverEnd}.'),
+    ('insurance_policy_cancelled', 'Policy cancelled', 'Your {productName} policy is cancelled.'),
+    ('insurance_claim_received', 'Claim received', 'We received your {productName} claim of {amount} and sent it to the insurer.'),
+    ('insurance_claim_info_requested', 'More information needed', 'The insurer needs more information about your {productName} claim: {reason}'),
+    ('insurance_claim_approved', 'Claim approved', 'Your {productName} claim was approved for {amount}.'),
+    ('insurance_claim_rejected', 'Claim not approved', 'Your {productName} claim was not approved: {reason}'),
+    ('insurance_claim_paid', 'Claim paid', '{amount} was paid for your {productName} claim.'),
 ]
 # The admin panel groups templates by service_type; account-level customer
 # templates already use this group.

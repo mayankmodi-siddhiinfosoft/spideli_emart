@@ -1,4 +1,5 @@
 import 'package:customer/screen_ui/finance/finance_ui.dart';
+import 'package:customer/screen_ui/finance/insurance_screens.dart';
 import 'package:customer/screen_ui/finance/investment_screens.dart';
 import 'package:customer/screen_ui/finance/kyc_screen.dart';
 import 'package:customer/screen_ui/finance/lending_screens.dart';
@@ -99,6 +100,14 @@ class FinanceHomeScreen extends StatelessWidget {
                 subtitle: "Invest in funds, follow your portfolio and redeem.".tr,
                 showChevron: true,
                 onTap: () => Get.to(() => const InvestmentsScreen()),
+              ),
+              DsListTile(
+                leadingIcon: Icons.health_and_safety_outlined,
+                leadingTone: DsTone.brand,
+                title: "Insurance".tr,
+                subtitle: "Compare offers, get a quote, manage your policies and claims.".tr,
+                showChevron: true,
+                onTap: () => Get.to(() => const InsuranceScreen()),
               ),
             ],
           ),
@@ -296,6 +305,7 @@ class _Overview extends StatelessWidget {
             _ModuleCard(
               icon: Icons.health_and_safety_outlined,
               title: "Insurance".tr,
+              onTap: () => Get.to(() => const InsuranceScreen()),
               rows: s.insurance == null
                   ? null
                   : [
