@@ -719,5 +719,4 @@ const Map<String, String> trFR = {
   "Prices for @region": "Prix pour @region",
   "Distance price (per km)": "Prix selon la distance (par km)",
   "Weight price (per kg)": "Prix selon le poids (par kg)",
-  "Assigned by the administrator": "Attribué par l'administrateur",
 };

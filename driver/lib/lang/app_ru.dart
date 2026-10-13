@@ -719,5 +719,4 @@ const Map<String, String> ruRU = {
   "Prices for @region": "Цены для @region",
   "Distance price (per km)": "Цена за расстояние (за км)",
   "Weight price (per kg)": "Цена за вес (за кг)",
-  "Assigned by the administrator": "Назначается администратором",
 };

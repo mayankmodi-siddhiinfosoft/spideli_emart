@@ -93,17 +93,6 @@ class CarrierSettingsScreen extends StatelessWidget {
                               title: "Carrier Identity".tr,
                               icon: Icons.local_shipping_outlined,
                               children: [
-                                // Assigned by the administrator: shown, never edited.
-                                DsTextField(
-                                  key: ValueKey('carrier-code-${controller.code.value}'),
-                                  label: 'Carrier Code'.tr,
-                                  hint: 'Assigned by the administrator'.tr,
-                                  initialValue: controller.code.value,
-                                  readOnly: true,
-                                  prefixIcon: Icons.tag_rounded,
-                                  suffix: Icon(Icons.lock_outline_rounded, size: 18, color: context.dsColors.textMuted),
-                                  helper: "Only the administrator can change this.".tr,
-                                ),
                                 DsTextField(
                                   label: 'Carrier Name'.tr,
                                   hint: 'Enter carrier name'.tr,
@@ -271,6 +260,8 @@ class CarrierSettingsScreen extends StatelessWidget {
                               subtitle: "Verified by the administrator from your company profile.".tr,
                               icon: Icons.badge_outlined,
                               children: [
+                                if (controller.code.value.isNotEmpty)
+                                  DsInfoRow(label: 'Carrier Code'.tr, value: controller.code.value, divider: true),
                                 DsInfoRow(
                                   label: 'Regions'.tr,
                                   value: controller.regionNames.isEmpty ? '—' : controller.regionNames.join(', '),

@@ -719,5 +719,4 @@ const Map<String, String> lnAr = {
   "Prices for @region": "الأسعار في @region",
   "Distance price (per km)": "سعر المسافة (لكل كم)",
   "Weight price (per kg)": "سعر الوزن (لكل كغ)",
-  "Assigned by the administrator": "يعيّنه المسؤول",
 };

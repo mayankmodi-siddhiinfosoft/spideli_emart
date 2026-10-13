@@ -57,7 +57,6 @@ void main() {
     'Company Registration',
     'Verified by the administrator from your company profile.',
     'Carrier Code',
-    'Assigned by the administrator',
     'Regions',
     'Unique ID Number',
     'Carrier reference',

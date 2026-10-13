@@ -719,5 +719,4 @@ const Map<String, String> jaJP = {
   "Prices for @region": "@region の料金",
   "Distance price (per km)": "距離料金（1 km あたり）",
   "Weight price (per kg)": "重量料金（1 kg あたり）",
-  "Assigned by the administrator": "管理者が割り当てます",
 };
