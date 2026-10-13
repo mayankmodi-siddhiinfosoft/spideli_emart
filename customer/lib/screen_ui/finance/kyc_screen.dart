@@ -79,7 +79,11 @@ class _StartViewState extends State<_StartView> {
   @override
   Widget build(BuildContext context) {
     final latest = widget.latest;
-    final levels = widget.settings.levelsFor(_accountType).where((l) => !widget.approvedLevels.contains(l.id)).toList();
+    final approved = [for (final id in widget.approvedLevels) ?widget.settings.levels[id]];
+    final levels = widget.settings
+        .levelsFor(_accountType)
+        .where((l) => !widget.approvedLevels.contains(l.id) && !approved.any((a) => l.coveredBy(a)))
+        .toList();
     final bool hasBusiness = widget.settings.levelsFor('business').isNotEmpty;
     return ListView(
       padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),

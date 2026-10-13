@@ -146,4 +146,26 @@ void main() {
     expect(String.fromCharCodes(empty.take(5)), '%PDF-');
     expect(full.length, greaterThan(empty.length));
   });
+
+  test('a level already covered by an approved one is not offered again', () {
+    const basic = KycLevel(id: 'basic', accountTypes: ['individual'], requiredDocuments: [
+      ['national_id', 'passport'],
+      ['selfie'],
+    ]);
+    const full = KycLevel(id: 'full', accountTypes: ['individual'], requiredDocuments: [
+      ['national_id', 'passport'],
+      ['selfie'],
+      ['proof_of_address'],
+    ]);
+    const business = KycLevel(id: 'business', accountTypes: ['business'], requiredDocuments: [
+      ['national_id', 'passport'],
+      ['business_registration'],
+    ]);
+    expect(basic.coveredBy(full), isTrue);
+    expect(full.coveredBy(basic), isFalse);
+    expect(business.coveredBy(full), isFalse);
+    // A narrower approved choice satisfies a wider group ("passport" meets "ID or passport").
+    expect(const KycLevel(id: 'x', accountTypes: [], requiredDocuments: [['national_id', 'passport']])
+        .coveredBy(const KycLevel(id: 'y', accountTypes: [], requiredDocuments: [['passport']])), isTrue);
+  });
 }

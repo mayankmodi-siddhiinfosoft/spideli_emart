@@ -524,9 +524,9 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     errorText: _amount.text.isEmpty ? null : cfg.amountProblem(amount, _currency)?.tr,
                     helper: [
-                      if (cfg.minAmount[_currency] != null) '${"Minimum".tr} ${FinanceMoney.format(cfg.minAmount[_currency]!, _currency)}',
-                      if (cfg.maxAmount[_currency] != null) '${"Maximum".tr} ${FinanceMoney.format(cfg.maxAmount[_currency]!, _currency)}',
-                    ].join(' · '),
+                      if (cfg.minAmount[_currency] != null) FinanceMoney.format(cfg.minAmount[_currency]!, _currency),
+                      if (cfg.maxAmount[_currency] != null) FinanceMoney.format(cfg.maxAmount[_currency]!, _currency),
+                    ].join(' - '),
                     onChanged: (_) => setState(() {}),
                   ),
                 ),

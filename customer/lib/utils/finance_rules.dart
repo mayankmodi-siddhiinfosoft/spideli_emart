@@ -160,6 +160,12 @@ class KycLevel {
   final List<List<String>> requiredDocuments;
 
   const KycLevel({required this.id, required this.accountTypes, required this.requiredDocuments});
+
+  /// True when an approved [other] level already proves everything this one
+  /// asks for (each of its document groups is met by one of [other]'s), so
+  /// there is no point offering it ("basic" once "full" is approved).
+  bool coveredBy(KycLevel other) =>
+      requiredDocuments.every((group) => other.requiredDocuments.any((o) => o.isNotEmpty && o.every(group.contains)));
 }
 
 class KycDocumentRef {
