@@ -9,7 +9,7 @@ import 'package:spideliworker/themes/ds/ds.dart';
 import 'package:spideliworker/ui/booking_list/booking_details_screen.dart';
 import 'package:spideliworker/ui/booking_list/job_actions.dart';
 import 'package:spideliworker/ui/booking_list/orders_export_sheet.dart';
-import 'package:spideliworker/ui/documents/documents_screen.dart';
+import 'package:spideliworker/ui/documents/verification_notice_banner.dart';
 import 'package:spideliworker/utils/booking_amount.dart';
 import 'package:spideliworker/utils/dark_theme_provider.dart';
 import 'package:spideliworker/utils/region_service.dart';
@@ -128,6 +128,8 @@ class _BookingListScreenState extends State<BookingListScreen> with SingleTicker
               ),
             ),
           ),
+          // Documents not verified: why no jobs arrive, and the way to fix it.
+          DsResponsive(child: VerificationNoticeBanner(padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, 0))),
           Padding(
             padding: EdgeInsets.fromLTRB(l.gutter, DsSpace.lg, l.gutter, DsSpace.sm),
             child: DsResponsive(
@@ -200,21 +202,17 @@ class _JobList extends StatelessWidget {
     return GetBuilder<VerificationController>(builder: (verification) {
       return Obx(() {
         if (verification.isLoading.value) return const DsSkeletonList(itemCount: 4, leading: true, trailing: false);
+        // The dashboard's verification notice above carries the status and
+        // the documents button; the list only says why it is empty.
         if (!verification.canReceiveJobs) {
           return SingleChildScrollView(
             padding: const EdgeInsets.symmetric(vertical: DsSpace.lg),
-            child: Column(
-              children: DsFadeSlideIn.stagger([
-                VerificationSummaryCard(status: verification.overallStatus, required: true, dark: themeChange.getTheme()),
-                const DsGap(DsSpace.lg),
-                DsButton.primary(
-                  label: "My documents".tr,
-                  icon: Icons.badge_outlined,
-                  size: DsButtonSize.lg,
-                  expand: true,
-                  onPressed: () => Get.to(() => const DocumentsScreen(isBack: true)),
-                ),
-              ]),
+            child: DsEmptyState(
+              icon: Icons.lock_clock_outlined,
+              tone: DsTone.warning,
+              compact: true,
+              title: "Jobs are locked".tr,
+              message: "You will not receive jobs until your documents are approved.".tr,
             ),
           );
         }

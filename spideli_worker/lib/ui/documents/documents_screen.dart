@@ -52,6 +52,34 @@ DsTone overallStatusTone(WorkerOverallStatus status) {
   }
 }
 
+/// The explanation of an overall status (a translation key).
+String overallStatusMessage(WorkerOverallStatus status) {
+  switch (status) {
+    case WorkerOverallStatus.verified:
+      return "Your documents are approved. You can receive jobs.";
+    case WorkerOverallStatus.pending:
+      return "Some documents are missing or waiting for review.";
+    case WorkerOverallStatus.actionRequired:
+      return "A document was rejected or has expired. Please check the reason and upload it again.";
+    case WorkerOverallStatus.notSubmitted:
+      return "Please upload your documents for verification.";
+  }
+}
+
+/// The icon of an overall status.
+IconData overallStatusIcon(WorkerOverallStatus status) {
+  switch (status) {
+    case WorkerOverallStatus.verified:
+      return Icons.verified_user_outlined;
+    case WorkerOverallStatus.pending:
+      return Icons.hourglass_top_rounded;
+    case WorkerOverallStatus.actionRequired:
+      return Icons.gpp_bad_outlined;
+    case WorkerOverallStatus.notSubmitted:
+      return Icons.shield_outlined;
+  }
+}
+
 /// "Document type: Worker" -- shown wherever the worker's documents are
 /// uploaded or listed (the record type is `worker`).
 class WorkerDocumentTypeBadge extends StatelessWidget {
@@ -262,32 +290,6 @@ class VerificationSummaryCard extends StatelessWidget {
 
   const VerificationSummaryCard({super.key, required this.status, required this.required, required this.dark});
 
-  String get _message {
-    switch (status) {
-      case WorkerOverallStatus.verified:
-        return "Your documents are approved. You can receive jobs.";
-      case WorkerOverallStatus.pending:
-        return "Some documents are missing or waiting for review.";
-      case WorkerOverallStatus.actionRequired:
-        return "A document was rejected or has expired. Please check the reason and upload it again.";
-      case WorkerOverallStatus.notSubmitted:
-        return "Please upload your documents for verification.";
-    }
-  }
-
-  IconData get _icon {
-    switch (status) {
-      case WorkerOverallStatus.verified:
-        return Icons.verified_user_outlined;
-      case WorkerOverallStatus.pending:
-        return Icons.hourglass_top_rounded;
-      case WorkerOverallStatus.actionRequired:
-        return Icons.gpp_bad_outlined;
-      case WorkerOverallStatus.notSubmitted:
-        return Icons.shield_outlined;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = context.dsColors;
@@ -300,7 +302,7 @@ class VerificationSummaryCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              DsIconWell(icon: _icon, tone: tone, size: 48, circle: true),
+              DsIconWell(icon: overallStatusIcon(status), tone: tone, size: 48, circle: true),
               const DsGap(DsSpace.md),
               Expanded(child: Text("Verification status".tr, style: t.titleSm)),
               DsBadge(label: status.label.tr, tone: tone, small: true),
@@ -309,7 +311,7 @@ class VerificationSummaryCard extends StatelessWidget {
           const DsGap(DsSpace.sm),
           const WorkerDocumentTypeBadge(),
           const DsGap(DsSpace.md),
-          Text(_message.tr, style: t.bodySecondary),
+          Text(overallStatusMessage(status).tr, style: t.bodySecondary),
           if (required && status != WorkerOverallStatus.verified)
             Padding(
               padding: const EdgeInsets.only(top: DsSpace.sm),
