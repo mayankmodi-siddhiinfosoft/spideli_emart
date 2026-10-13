@@ -91,6 +91,10 @@ class CarrierSetupController extends GetxController {
     controllerFor('phone').text = (owner?.phoneNumber ?? '').trim();
     controllerFor('email').text = (owner?.email ?? '').trim();
     countryCode.value = (owner?.countryCode ?? '').trim();
+    // The registration numbers the company gave at sign-up.
+    controllerFor('operatingLicence').text = (owner?.operatingLicence ?? '').trim();
+    controllerFor('commercialRegister').text = (owner?.commercialRegister ?? '').trim();
+    controllerFor('uniqueIdNumber').text = (owner?.uniqueIdNumber ?? '').trim();
     await RegionService.ensureLoaded();
     regions.value = RegionService.publishedRegions;
     final String? own = await RegionService.resolveUserRegionId(owner);

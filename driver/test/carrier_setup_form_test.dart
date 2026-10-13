@@ -104,4 +104,21 @@ void main() {
       'R1|homeDeliveryCharge': CarrierSettingsForm.errNumber,
     });
   });
+
+  group('needsSetup: a Parcel company owner without a carrier', () {
+    bool needs({bool owner = true, List<String>? services = const ['parcel_delivery'], String? carrier}) =>
+        CarrierSetupForm.needsSetup(isOwner: owner, serviceTypes: services, carrierId: carrier);
+
+    test('owner with Parcel and no carrier: yes (either Parcel spelling)', () {
+      expect(needs(), isTrue);
+      expect(needs(services: const ['cab-service', 'parcel-service']), isTrue);
+      expect(needs(carrier: '  '), isTrue);
+    });
+    test('already has a carrier: no', () => expect(needs(carrier: 'zqNp'), isFalse));
+    test('owner without the Parcel service: no', () {
+      expect(needs(services: const ['cab-service', 'delivery-service']), isFalse);
+      expect(needs(services: null), isFalse);
+    });
+    test('not an owner: no', () => expect(needs(owner: false), isFalse));
+  });
 }

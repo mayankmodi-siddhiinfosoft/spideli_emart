@@ -54,9 +54,15 @@ carrier, and never changes `isVerified` / `publish` / `code`.
 
 ### 2a. "Set up your carrier" (13 Oct 2026)
 
-An owner (`isOwner == true`) with no `carrierId` sees *"You have not set up
-your carrier yet."* with a **Set up your carrier** button, on the owner home
-and in Carrier settings. The form (`driver/lib/app/owner_screen/carrier_setup_screen.dart`,
+An owner (`isOwner == true`) **registered with the Parcel service**
+(`serviceTypes` holds `parcel_delivery` / `parcel-service`) and with no
+`carrierId` (`CarrierSetupForm.needsSetup`) is taken to **Set up your carrier**
+automatically when the owner dashboard opens (right after sign-up, or at the
+first login once approved; once per app launch, so closing it leaves the owner
+on the dashboard). The owner home then shows *"You have not set up your carrier
+yet."* with a **Set up your carrier** button; Carrier settings offers the same
+button to any owner without a carrier. The registration numbers given at
+sign-up are pre-filled. The form (`driver/lib/app/owner_screen/carrier_setup_screen.dart`,
 pure rules `driver/lib/utils/carrier_setup_form.dart`) asks for:
 
 | Field | Required | Stored as |

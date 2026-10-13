@@ -1,9 +1,12 @@
+import 'package:driver/app/owner_screen/carrier_setup_screen.dart';
 import 'package:driver/constant/collection_name.dart';
 import 'package:driver/constant/constant.dart';
 import 'package:driver/models/user_model.dart';
+import 'package:driver/utils/carrier_setup_form.dart';
 import 'package:driver/utils/fire_store_utils.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:driver/utils/preferences.dart';
+import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 
 import '../themes/theme_controller.dart';
@@ -40,9 +43,23 @@ class OwnerDashboardController extends GetxController{
           userModel.value = UserModel.fromJson(event.data()!);
           Constant.userModel = UserModel.fromJson(event.data()!);
           RegionService.applyDriver(Constant.userModel);
+          _openCarrierSetupIfNeeded(userModel.value);
         }
       },
     );
+  }
+
+  /// Opened once per app launch: closing it leaves the owner on the
+  /// dashboard (the home reminder and Carrier settings still lead to it).
+  static bool _carrierSetupShown = false;
+
+  /// A company owner registered with the Parcel service and without a carrier
+  /// lands on "Set up your carrier" ([CarrierSetupForm.needsSetup]).
+  void _openCarrierSetupIfNeeded(UserModel user) {
+    if (_carrierSetupShown) return;
+    if (!CarrierSetupForm.needsSetup(isOwner: user.isOwner == true, serviceTypes: user.serviceTypes, carrierId: user.carrierId)) return;
+    _carrierSetupShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) => Get.to(() => const CarrierSetupScreen()));
   }
 
   RxString isDarkMode = "Light".obs;

@@ -10,6 +10,7 @@ import 'package:driver/controllers/owner_home_controller.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
+import 'package:driver/utils/carrier_setup_form.dart';
 import 'package:driver/utils/document_verification.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -84,10 +85,11 @@ class OwnerHomeScreen extends StatelessWidget {
                                           )
                                         : const SizedBox();
                                   }),
-                                  // No carrier bound yet: the owner sets one up
-                                  // (CarrierSetupScreen, 13 Oct 2026).
+                                  // A Parcel company without a carrier: it sets one
+                                  // up (CarrierSetupScreen, 13 Oct 2026).
                                   Obx(() {
-                                    final bool noCarrier = (dashController.userModel.value.carrierId ?? '').isEmpty;
+                                    final UserModel owner = dashController.userModel.value;
+                                    final bool noCarrier = CarrierSetupForm.needsSetup(isOwner: owner.isOwner == true, serviceTypes: owner.serviceTypes, carrierId: owner.carrierId);
                                     if (!noCarrier) return const SizedBox.shrink();
                                     return Padding(
                                       padding: const EdgeInsets.only(bottom: DsSpace.md),

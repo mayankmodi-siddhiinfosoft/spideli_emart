@@ -1,4 +1,5 @@
 import 'package:driver/models/delivery_carrier_model.dart';
+import 'package:driver/services/dispatch_offer_rules.dart';
 import 'package:driver/utils/carrier_settings_form.dart';
 
 /// The owner's "Set up your carrier" form: a company owner with no carrier
@@ -16,6 +17,14 @@ import 'package:driver/utils/carrier_settings_form.dart';
 /// Error values are untranslated message keys (the caller calls `.tr`).
 class CarrierSetupForm {
   CarrierSetupForm._();
+
+  /// Whether this account must set up its carrier: a company owner that
+  /// registered with the Parcel service (`serviceTypes` holds
+  /// `parcel_delivery` / `parcel-service`) and has no carrier yet. The owner
+  /// dashboard then opens "Set up your carrier" by itself, and the owner
+  /// home shows the reminder.
+  static bool needsSetup({required bool isOwner, required Iterable<String>? serviceTypes, required String? carrierId}) =>
+      isOwner && DriverServiceTypes.normalizeAll(serviceTypes).contains(DriverServiceTypes.parcel) && (carrierId ?? '').trim().isEmpty;
 
   static const String errPhone = 'Please enter the phone number';
   static const String errEmail = 'Please enter a valid email address';
