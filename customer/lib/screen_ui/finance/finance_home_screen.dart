@@ -1,5 +1,7 @@
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/kyc_screen.dart';
+import 'package:customer/screen_ui/finance/savings_screens.dart';
+import 'package:customer/screen_ui/finance/tontine_screens.dart';
 import 'package:customer/screen_ui/finance/transactions_screen.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/themes/ds/ds.dart';
@@ -60,6 +62,28 @@ class FinanceHomeScreen extends StatelessWidget {
           const _VerificationCard(),
           const DsGap(DsSpace.lg),
           const _Balances(),
+          const DsGap(DsSpace.lg),
+          DsTileGroup(
+            title: "Services".tr,
+            children: [
+              DsListTile(
+                leadingIcon: Icons.savings_outlined,
+                leadingTone: DsTone.brand,
+                title: "Savings goals".tr,
+                subtitle: "Save for a home, studies, travel, health or a project, alone or together.".tr,
+                showChevron: true,
+                onTap: () => Get.to(() => const SavingsListScreen()),
+              ),
+              DsListTile(
+                leadingIcon: Icons.groups_2_outlined,
+                leadingTone: DsTone.brand,
+                title: "Tontines".tr,
+                subtitle: "Save as a group and receive the pot in turn.".tr,
+                showChevron: true,
+                onTap: () => Get.to(() => const TontineListScreen()),
+              ),
+            ],
+          ),
           const DsGap(DsSpace.lg),
           const _Overview(),
           const DsGap(DsSpace.lg),
@@ -214,6 +238,7 @@ class _Overview extends StatelessWidget {
             _ModuleCard(
               icon: Icons.savings_outlined,
               title: "Savings goals".tr,
+              onTap: () => Get.to(() => const SavingsListScreen()),
               rows: s.savings == null
                   ? null
                   : [
@@ -225,6 +250,7 @@ class _Overview extends StatelessWidget {
             _ModuleCard(
               icon: Icons.groups_2_outlined,
               title: "Tontines".tr,
+              onTap: () => Get.to(() => const TontineListScreen()),
               rows: s.tontines == null
                   ? null
                   : [
@@ -308,8 +334,9 @@ class _ModuleCard extends StatelessWidget {
   final List<(String, String)>? rows;
   final double? progress;
   final String? alert;
+  final VoidCallback? onTap;
 
-  const _ModuleCard({required this.icon, required this.title, required this.rows, this.progress, this.alert});
+  const _ModuleCard({required this.icon, required this.title, required this.rows, this.progress, this.alert, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -318,6 +345,7 @@ class _ModuleCard extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: DsSpace.sm),
       child: DsCard.outlined(
         padding: const EdgeInsets.all(DsSpace.md),
+        onTap: onTap,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

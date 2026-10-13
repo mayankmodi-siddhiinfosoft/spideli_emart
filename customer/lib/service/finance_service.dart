@@ -32,7 +32,12 @@ abstract final class FinanceService {
   static FirebaseFunctions get _functions => FirebaseFunctions.instanceFor(region: 'us-central1');
   static FirebaseFirestore get _db => FirebaseFirestore.instance;
 
+  static String get uid => _uid;
+
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  /// A finance callable; a refusal becomes a [FinanceException] with the server's reason.
+  static Future<Map<String, dynamic>> call(String name, Map<String, dynamic> data) => _call(name, data);
 
   static Future<Map<String, dynamic>> _call(String name, Map<String, dynamic> data) async {
     try {
