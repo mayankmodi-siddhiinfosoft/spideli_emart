@@ -159,6 +159,8 @@ The dashboard's totals. The brief forbids client-side totals, so **the server ma
 
 The KYC queries are equality-only and need none.
 
+**Deployed (13 Oct 2026):** every composite index the finance screens need (all sections, 38 indexes) is in `.claude/firestore.indexes.json` together with the project's existing indexes, and was deployed with `firebase deploy --only firestore:indexes --config .claude/firebase.json --project spideli-870b0`. Merge that file into your own index file so a later deploy does not drop them.
+
 ---
 
 ## 6. Notifications (SERVER)
