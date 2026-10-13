@@ -280,7 +280,7 @@ Drivers created by the owner in the app (`driver_create_controller.dart`) get `i
 
 ### 2.7 `dynamic_notification` templates
 
-Shape: `{type, subject, message, service_type: "Parcel Delivery Service"}`. Placeholders are `{name}`, case-insensitive. Status checked in Firestore on 13 Oct 2026 (live: `carrier_parcel_order`, `carrier_parcel_assigned`, `carrier_parcel_returned`, `parcel_accepted`, `parcel_completed`, `parcel_rejected`; every other type below still has to be created):
+Shape: `{type, subject, message, service_type: "Parcel Delivery Service"}`. Placeholders are `{name}`, case-insensitive. Status checked in Firestore on 13 Oct 2026: **every type in this table is live** (the ten missing ones were created the same day; edit the wording in the admin panel, keep the placeholder names):
 
 | `type` | Recipient | Status | Placeholders the app fills |
 |---|---|---|---|
@@ -290,16 +290,16 @@ Shape: `{type, subject, message, service_type: "Parcel Delivery Service"}`. Plac
 | `parcel_accepted` | customer | existing (older) | none |
 | `parcel_completed` | customer | existing (older) | none |
 | `parcel_rejected` | (customer) | existing (older) | **not sent by any app code today** |
-| `parcel_picked_up` | customer | **to create (probably missing)** | none (data carries `parcelStatus`) |
-| `parcel_in_transit` | customer | **to create** | none |
-| `parcel_arrived_destination` | customer | **to create** | none |
-| `carrier_parcel_picked_up` | company owner | **to create** | **none: the app passes no placeholder values**, so write plain text |
-| `carrier_parcel_delivered` | company owner | **to create** | **none** (plain text) |
-| `company_cash_collected` | company owner | **to create** | `{driverName}`, `{amount}`, `{orderId}`, `{companyName}` |
-| `company_cash_settlement_submitted` | company owner | **to create** | `{driverName}`, `{amount}`, `{reference}`, `{companyName}` |
-| `company_cash_settlement_confirmed` | company driver | **to create** | `{driverName}`, `{amount}`, `{reference}`, `{companyName}` |
-| `company_cash_settlement_rejected` | company driver | **to create** | the same + `{reason}` |
-| `company_cash_adjustment` | company driver | **to create** | the same + `{signedAmount}`, `{reason}` |
+| `parcel_picked_up` | customer | **live** (13 Oct) | none (data carries `parcelStatus`) |
+| `parcel_in_transit` | customer | **live** (13 Oct) | none |
+| `parcel_arrived_destination` | customer | **live** (13 Oct) | none |
+| `carrier_parcel_picked_up` | company owner | **live** (13 Oct) | **none: the app passes no placeholder values**, so write plain text |
+| `carrier_parcel_delivered` | company owner | **live** (13 Oct) | **none** (plain text) |
+| `company_cash_collected` | company owner | **live** (13 Oct) | `{driverName}`, `{amount}`, `{orderId}`, `{companyName}` |
+| `company_cash_settlement_submitted` | company owner | **live** (13 Oct) | `{driverName}`, `{amount}`, `{reference}`, `{companyName}` |
+| `company_cash_settlement_confirmed` | company driver | **live** (13 Oct) | `{driverName}`, `{amount}`, `{reference}`, `{companyName}` |
+| `company_cash_settlement_rejected` | company driver | **live** (13 Oct) | the same + `{reason}` |
+| `company_cash_adjustment` | company driver | **live** (13 Oct) | the same + `{signedAmount}`, `{reason}` |
 
 **What happens when a template is missing:**
 - **Driver app sender:** nothing is sent and nothing is recorded (only logged).
