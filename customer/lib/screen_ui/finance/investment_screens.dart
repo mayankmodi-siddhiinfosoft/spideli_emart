@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/finance_widgets.dart';
 import 'package:customer/service/finance_group_service.dart';
@@ -10,17 +11,12 @@ import 'package:customer/utils/finance_investment_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 String _date(DateTime? d) => d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
 
-DsTone _tone(String? s) => switch (s) {
-      'completed' || 'settled' || 'succeeded' => DsTone.success,
-      'payment_failed' || 'rejected' || 'failed' => DsTone.danger,
-      'pending_payment' || 'submitted' => DsTone.warning,
-      'paid' || 'processing' || 'settling' => DsTone.info,
-      _ => DsTone.neutral,
-    };
+/// Sections of list rows: the rows carry their own vertical padding.
+const EdgeInsets _listPad = EdgeInsets.symmetric(horizontal: DsSpace.lg);
 
 DsTone _riskTone(int level) => switch (RiskScale.band(level)) {
       'low' => DsTone.success,
@@ -28,21 +24,25 @@ DsTone _riskTone(int level) => switch (RiskScale.band(level)) {
       _ => DsTone.danger,
     };
 
-DsTone _gainTone(num v) => v > 0 ? DsTone.success : (v < 0 ? DsTone.danger : DsTone.neutral);
+/// Performance (gains, returns) in its sign colour: green up, red down,
+/// default when flat. This is performance, not money leaving the account.
+Color? _gainColor(BuildContext context, num v) {
+  final c = DsColors.of(context);
+  return v > 0 ? c.successStrong : (v < 0 ? c.dangerStrong : null);
+}
 
-String _signed(int minor, String currency) => FinanceMoney.signed(minor, currency);
+IconData _assetIcon(String? assetClass) => switch (assetClass) {
+      'money_market' => Icons.account_balance_outlined,
+      'bonds' => Icons.request_quote_outlined,
+      'equities' => Icons.show_chart_rounded,
+      'real_estate' => Icons.apartment_outlined,
+      'agriculture' => Icons.agriculture_outlined,
+      'infrastructure' => Icons.foundation_outlined,
+      'mixed' => Icons.donut_small_outlined,
+      _ => Icons.trending_up_rounded,
+    };
 
-Widget _row(BuildContext context, String label, String value, {Color? color}) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: Text(label, style: DsTypography.body.copyWith(color: DsColors.of(context).textSecondary))),
-          const DsGap(DsSpace.sm),
-          Flexible(child: Align(alignment: AlignmentDirectional.centerEnd, child: Text(value, textAlign: TextAlign.end, style: DsTypography.bodyStrong.copyWith(color: color).tabular))),
-        ],
-      ),
-    );
+String _fundStatus(String s) => const {'open': 'Open', 'closed': 'Closed to new investments', 'suspended': 'Suspended'}[s] ?? s;
 
 Widget _caption(BuildContext context, String text) => Text(text, style: DsTypography.caption.copyWith(color: DsColors.of(context).textSecondary));
 
@@ -54,6 +54,65 @@ Future<void> _open({String? storagePath, String? url}) async {
   } catch (_) {
     ShowToastDialog.closeLoader();
     ShowToastDialog.showToast("Could not open this document.".tr);
+  }
+}
+
+/// A section title above a bare surface (FinMetrics), styled like FinSection's.
+class _Overline extends StatelessWidget {
+  final String text;
+
+  const _Overline(this.text);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: FinSpace.section, bottom: DsSpace.sm, left: DsSpace.xxs, right: DsSpace.xxs),
+        child: Semantics(header: true, child: Text(text.toUpperCase(), style: FinText.sectionTitle(context))),
+      );
+}
+
+/// The asset class as a 40 px icon square, like the leading icon of FinListTile.
+class _AssetWell extends StatelessWidget {
+  final String assetClass;
+
+  const _AssetWell({required this.assetClass});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = DsColors.of(context).tone(DsTone.brand);
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(color: t.soft, borderRadius: DsRadius.brSm),
+      child: Icon(_assetIcon(assetClass), size: 20, color: t.strong),
+    );
+  }
+}
+
+/// A current value with its change in percent below it (performance, coloured by sign).
+class _ValueChange extends StatelessWidget {
+  final String value;
+  final double? percent;
+  final num gains;
+
+  const _ValueChange({required this.value, required this.percent, required this.gains});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DsColors.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(value, style: DsTypography.bodyStrong.copyWith(color: c.textPrimary).tabular),
+        if (percent != null) ...[
+          const DsGap(DsSpace.xxs),
+          Text(
+            InvestmentLabels.percent(percent, signed: true),
+            style: DsTypography.caption.copyWith(color: _gainColor(context, gains) ?? c.textSecondary, fontWeight: FontWeight.w600).tabular,
+          ),
+        ],
+      ],
+    );
   }
 }
 
@@ -76,9 +135,8 @@ class _InvestmentsScreenState extends State<InvestmentsScreen> {
       future: _config,
       builder: (context, cfgSnap) {
         final cfg = cfgSnap.data;
-        return DsScaffold(
+        return FinScaffold(
           title: "Investments".tr,
-          maxContentWidth: DsLayout.contentMax,
           actions: [
             if (cfg != null)
               DsIconButton(
@@ -88,18 +146,17 @@ class _InvestmentsScreenState extends State<InvestmentsScreen> {
               ),
           ],
           body: cfgSnap.connectionState == ConnectionState.waiting
-              ? const Padding(padding: EdgeInsets.all(DsSpace.lg), child: DsSkeletonList(itemCount: 3))
+              ? FinBody(children: [FinState.loading()])
               : cfg == null
-                  ? DsEmptyState(icon: Icons.trending_up_rounded, title: "Investments are not available yet.".tr)
-                  : ListView(
-                      padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+                  ? FinBody(children: [FinState.empty(Icons.trending_up_rounded, "Investments are not available yet.".tr)])
+                  : FinBody(
                       children: [
+                        const _PortfolioHero(),
                         DsSegmentedTabs(
                           segments: [DsSegment("Portfolio".tr), DsSegment("Funds".tr), DsSegment("Orders".tr)],
                           index: _tab,
                           onChanged: (i) => setState(() => _tab = i),
                         ),
-                        const DsGap(DsSpace.lg),
                         switch (_tab) {
                           0 => _Portfolio(config: cfg, onBrowse: () => setState(() => _tab = 1)),
                           1 => _Catalog(config: cfg),
@@ -114,6 +171,37 @@ class _InvestmentsScreenState extends State<InvestmentsScreen> {
 }
 
 // ---------------------------------------------------------------- portfolio
+
+/// The focal point: the portfolio value and the server's totals. Shown once
+/// the user has a portfolio (finance_summaries/{uid}.investments).
+class _PortfolioHero extends StatelessWidget {
+  const _PortfolioHero();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: FinanceInvestmentService.portfolio(),
+      builder: (context, snap) {
+        final p = snap.data;
+        final String cur = p?['currency']?.toString() ?? '';
+        if (p == null || cur.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: FinSpace.section),
+          child: FinHero(
+            label: "Portfolio value".tr,
+            amount: FinanceMoney.format(FinanceSummary.intOf(p['currentValuation']), cur),
+            caption: "At the latest unit prices. Unrealized gains become final only when you redeem.".tr,
+            stats: [
+              FinHeroStat("Invested".tr, FinanceMoney.format(FinanceSummary.intOf(p['investedCapital']), cur)),
+              FinHeroStat("Unrealized".tr, FinanceMoney.signed(FinanceSummary.intOf(p['unrealizedGains']), cur)),
+              FinHeroStat("Realized".tr, FinanceMoney.signed(FinanceSummary.intOf(p['realizedGains']), cur)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
 
 class _Portfolio extends StatelessWidget {
   final InvestmentConfig config;
@@ -132,135 +220,67 @@ class _Portfolio extends StatelessWidget {
             final p = snap.data;
             final String cur = p?['currency']?.toString() ?? '';
             if (p == null || cur.isEmpty) return const SizedBox.shrink();
-            final int value = FinanceSummary.intOf(p['currentValuation']);
-            final int realized = FinanceSummary.intOf(p['realizedGains']);
-            final int unrealized = FinanceSummary.intOf(p['unrealizedGains']);
             final shares = Allocation.shares(p['allocation'] is Map ? Map<String, dynamic>.from(p['allocation'] as Map) : null);
-            return Padding(
-              padding: const EdgeInsets.only(bottom: DsSpace.lg),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  DsCard.tinted(
-                    tone: DsTone.brand,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _caption(context, "Portfolio value".tr),
-                        Text(FinanceMoney.format(value, cur), style: DsTypography.title.tabular),
-                        const DsGap(DsSpace.sm),
-                        _row(context, "Invested capital".tr, FinanceMoney.format(FinanceSummary.intOf(p['investedCapital']), cur)),
-                        _row(context, "Unrealized gains".tr, _signed(unrealized, cur), color: DsColors.of(context).tone(_gainTone(unrealized)).main),
-                        _row(context, "Realized gains".tr, _signed(realized, cur), color: DsColors.of(context).tone(_gainTone(realized)).main),
-                      ],
-                    ),
-                  ),
-                  if (shares.isNotEmpty) ...[
-                    const DsGap(DsSpace.md),
-                    DsFormSection(title: "Asset allocation".tr, icon: Icons.pie_chart_outline_rounded, children: [_AllocationBar(shares: shares, currency: cur)]),
-                  ],
-                ],
-              ),
+            if (shares.isEmpty) return const SizedBox.shrink();
+            return FinSection(
+              title: "Asset allocation".tr,
+              padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, DsSpace.sm),
+              children: [
+                FinShareBar(parts: [
+                  for (final s in shares)
+                    (InvestmentLabels.assetClass(s.assetClass).tr, s.value.toDouble(), '${FinanceMoney.format(s.value, cur)} · ${ltr('${s.percent} %')}'),
+                ]),
+              ],
             );
           },
         ),
         StreamBuilder<List<Holding>>(
           stream: FinanceInvestmentService.holdings(),
           builder: (context, snap) {
-            if (snap.hasError) return DsErrorState(message: "Could not load your investments.".tr, compact: true);
-            if (!snap.hasData) return const DsSkeletonList(itemCount: 2);
+            if (snap.hasError) return FinState.error("Could not load your investments.".tr);
+            if (!snap.hasData) return FinState.loading(rows: 2);
             if (snap.data!.isEmpty) {
-              return DsEmptyState(
-                icon: Icons.trending_up_rounded,
-                title: "You have no investment yet.".tr,
+              return FinState.empty(
+                Icons.trending_up_rounded,
+                "You have no investment yet.".tr,
                 message: "Browse the funds, compare their risk and fees, and invest from the amount that suits you.".tr,
                 actionLabel: "Browse the funds".tr,
                 onAction: onBrowse,
-                compact: true,
               );
             }
-            return DsFormSection(
+            return FinSection(
               title: "My funds".tr,
-              icon: Icons.account_balance_outlined,
+              divided: true,
+              padding: _listPad,
               children: [
                 for (final h in snap.data!)
-                  DsListTile(
-                    padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
-                    leadingIcon: Icons.trending_up_rounded,
-                    leadingTone: _gainTone(h.unrealizedGains),
+                  FinListTile(
+                    icon: _assetIcon(h.assetClass),
+                    iconTone: DsTone.brand,
                     title: h.fundName,
                     subtitle: '${InvestmentLabels.units(h.units)} ${"units".tr} · ${InvestmentLabels.assetClass(h.assetClass).tr}',
-                    trailing: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(FinanceMoney.format(h.currentValue, h.currency), style: DsTypography.bodyStrong.tabular),
-                        Text(InvestmentLabels.percent(h.unrealizedPercent, signed: true),
-                            style: DsTypography.caption.copyWith(color: DsColors.of(context).tone(_gainTone(h.unrealizedGains)).main)),
-                      ],
-                    ),
+                    trailing: _ValueChange(value: FinanceMoney.format(h.currentValue, h.currency), percent: h.unrealizedPercent, gains: h.unrealizedGains),
+                    chevron: true,
                     onTap: () => Get.to(() => HoldingScreen(fundId: h.fundId, config: config)),
                   ),
               ],
             );
           },
         ),
-        const DsGap(DsSpace.lg),
         const _Reports(),
-        const DsGap(DsSpace.lg),
-        DsTileGroup(
+        FinSection(
+          padding: _listPad,
           children: [
-            DsListTile(
-              leadingIcon: Icons.calculate_outlined,
-              leadingTone: DsTone.brand,
+            FinListTile(
+              icon: Icons.calculate_outlined,
+              iconTone: DsTone.brand,
               title: "Return simulator".tr,
               subtitle: "See how an amount could grow over time.".tr,
-              showChevron: true,
+              chevron: true,
               onTap: () => Get.to(() => ReturnSimulatorScreen(config: config)),
             ),
           ],
         ),
-      ],
-    );
-  }
-}
-
-/// The allocation as one stacked bar and a legend (server values).
-class _AllocationBar extends StatelessWidget {
-  final List<AllocationShare> shares;
-  final String currency;
-
-  const _AllocationBar({required this.shares, required this.currency});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DsColors.of(context);
-    final palette = [c.brand, c.info, c.success, c.warning, c.danger, c.textMuted];
-    Color color(int i) => palette[i % palette.length];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(DsRadius.sm),
-          child: SizedBox(
-            height: 14,
-            child: Row(children: [
-              for (final (i, s) in shares.indexed)
-                if (s.percent > 0) Expanded(flex: s.percent, child: Container(color: color(i))),
-            ]),
-          ),
-        ),
-        const DsGap(DsSpace.sm),
-        for (final (i, s) in shares.indexed)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            child: Row(children: [
-              Container(width: 10, height: 10, decoration: BoxDecoration(color: color(i), shape: BoxShape.circle)),
-              const DsGap(DsSpace.sm),
-              Expanded(child: Text(InvestmentLabels.assetClass(s.assetClass).tr, style: DsTypography.body)),
-              Text('${FinanceMoney.format(s.value, currency)} · ${s.percent} %', style: DsTypography.bodyStrong.tabular),
-            ]),
-          ),
       ],
     );
   }
@@ -276,17 +296,18 @@ class _Reports extends StatelessWidget {
       builder: (context, snap) {
         final list = (snap.data ?? const []).where((r) => (r['storagePath'] ?? '').toString().isNotEmpty).toList();
         if (list.isEmpty) return const SizedBox.shrink();
-        return DsFormSection(
+        final c = DsColors.of(context);
+        return FinSection(
           title: "Statements and reports".tr,
-          icon: Icons.picture_as_pdf_outlined,
+          divided: true,
+          padding: _listPad,
           children: [
             for (final r in list)
-              DsListTile(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                leadingIcon: Icons.picture_as_pdf_outlined,
+              FinListTile(
+                icon: Icons.picture_as_pdf_outlined,
                 title: r['title']?.toString() ?? "Statement".tr,
                 subtitle: FinanceUi.day(r['createdAt']),
-                trailing: const Icon(Icons.download_rounded),
+                trailing: Icon(Icons.download_rounded, size: 20, color: c.textMuted),
                 onTap: () => _open(storagePath: r['storagePath'].toString()),
               ),
           ],
@@ -316,14 +337,15 @@ class _CatalogState extends State<_Catalog> {
     return StreamBuilder<List<Fund>>(
       stream: FinanceInvestmentService.funds(),
       builder: (context, snap) {
-        if (snap.hasError) return DsErrorState(message: "Could not load the funds.".tr, compact: true);
-        if (!snap.hasData) return const DsSkeletonList(itemCount: 3);
+        if (snap.hasError) return FinState.error("Could not load the funds.".tr);
+        if (!snap.hasData) return FinState.loading();
         final all = snap.data!;
         final classes = {...widget.config.assetClasses.where((c) => all.any((f) => f.assetClass == c)), ...all.map((f) => f.assetClass)}.toList();
         final funds = all.where((f) => (_assetClass == null || f.assetClass == _assetClass) && (_risk == null || RiskScale.band(f.riskLevel) == _risk)).toList();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const DsGap(DsSpace.lg),
             if (classes.length > 1)
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -351,11 +373,16 @@ class _CatalogState extends State<_Catalog> {
                   ),
               ],
             ),
-            const DsGap(DsSpace.md),
             if (funds.isEmpty)
-              DsEmptyState(icon: Icons.search_off_rounded, title: (all.isEmpty ? "No fund is open yet." : "No fund matches these filters.").tr, compact: true)
+              FinState.empty(Icons.search_off_rounded, (all.isEmpty ? "No fund is open yet." : "No fund matches these filters.").tr)
             else
-              for (final f in funds) _FundCard(fund: f, config: widget.config),
+              FinSection(
+                top: DsSpace.md,
+                divided: true,
+                padding: _listPad,
+                footnote: "Past performance does not predict future returns.".tr,
+                children: [for (final f in funds) _FundRow(fund: f, config: widget.config)],
+              ),
           ],
         );
       },
@@ -363,45 +390,135 @@ class _CatalogState extends State<_Catalog> {
   }
 }
 
-class _FundCard extends StatelessWidget {
+/// A fund of the catalog: asset class, risk on the 1-7 scale, minimum and
+/// the past 1-year return.
+class _FundRow extends StatelessWidget {
   final Fund fund;
   final InvestmentConfig config;
 
-  const _FundCard({required this.fund, required this.config});
+  const _FundRow({required this.fund, required this.config});
 
   @override
   Widget build(BuildContext context) {
+    final c = DsColors.of(context);
     final f = fund;
     final double? oneYear = f.performance['oneYear'];
-    return Padding(
-      padding: const EdgeInsets.only(bottom: DsSpace.sm),
-      child: DsCard.outlined(
+    return MergeSemantics(
+      child: InkWell(
         onTap: () => Get.to(() => FundScreen(fundId: f.id, config: config)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(children: [
-              Expanded(child: Text(f.name, style: DsTypography.titleSm)),
-              if (f.status != 'open') DsBadge(label: _fundStatus(f.status).tr, small: true),
-            ]),
-            if (f.manager.isNotEmpty) _caption(context, f.manager),
-            const DsGap(DsSpace.sm),
-            Wrap(spacing: DsSpace.xs, runSpacing: DsSpace.xs, children: [
-              DsBadge(label: InvestmentLabels.assetClass(f.assetClass).tr, tone: DsTone.info, small: true),
-              DsBadge(label: '${RiskScale.label(f.riskLevel).tr} · ${f.riskLevel}/7', tone: _riskTone(f.riskLevel), small: true),
-            ]),
-            const DsGap(DsSpace.sm),
-            _row(context, "From".tr, FinanceMoney.format(f.minInvestment, f.currency)),
-            if (oneYear != null)
-              _row(context, "1-year return".tr, InvestmentLabels.percent(oneYear, signed: true), color: DsColors.of(context).tone(_gainTone(oneYear)).main),
-          ],
+        borderRadius: DsRadius.brSm,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _AssetWell(assetClass: f.assetClass),
+              const DsGap(DsSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(f.name, style: DsTypography.bodyStrong.copyWith(color: c.textPrimary), maxLines: 2, overflow: TextOverflow.ellipsis),
+                    const DsGap(DsSpace.xxs),
+                    Text(
+                      [InvestmentLabels.assetClass(f.assetClass).tr, if (f.manager.isNotEmpty) f.manager].join(' · '),
+                      style: DsTypography.caption.copyWith(color: c.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const DsGap(DsSpace.sm),
+                    _RiskMeter(level: f.riskLevel),
+                    if (f.status != 'open') ...[
+                      const DsGap(DsSpace.sm),
+                      FinStatusChip(status: f.status, label: _fundStatus(f.status).tr),
+                    ],
+                    const DsGap(DsSpace.md),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: _Figure(label: "Minimum".tr, value: FinanceMoney.format(f.minInvestment, f.currency))),
+                        if (oneYear != null)
+                          Expanded(
+                            child: _Figure(
+                              label: "Past 1-year return".tr,
+                              value: InvestmentLabels.percent(oneYear, signed: true),
+                              color: _gainColor(context, oneYear),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const DsGap(DsSpace.xs),
+              Icon(Directionality.of(context) == TextDirection.rtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: c.textMuted),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-String _fundStatus(String s) => const {'open': 'Open', 'closed': 'Closed to new investments', 'suspended': 'Suspended'}[s] ?? s;
+/// A small label / value pair inside a row.
+class _Figure extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? color;
+
+  const _Figure({required this.label, required this.value, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DsColors.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: DsTypography.caption.copyWith(color: c.textSecondary)),
+        const DsGap(DsSpace.xxs),
+        Text(value, style: DsTypography.bodyStrong.copyWith(color: color ?? c.textPrimary).tabular),
+      ],
+    );
+  }
+}
+
+/// The 1-7 risk scale, compact: the fund's level highlighted, and its label.
+class _RiskMeter extends StatelessWidget {
+  final int level;
+
+  const _RiskMeter({required this.level});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DsColors.of(context);
+    final active = c.tone(_riskTone(level)).main;
+    return Semantics(
+      label: '${"Risk level".tr} $level / 7, ${RiskScale.label(level).tr}',
+      child: ExcludeSemantics(
+        child: Row(
+          children: [
+            for (int i = 1; i <= 7; i++)
+              Container(
+                width: 10,
+                height: 6,
+                margin: const EdgeInsetsDirectional.only(end: 2),
+                decoration: BoxDecoration(color: i == level ? active : c.surfaceAlt, borderRadius: BorderRadius.circular(2)),
+              ),
+            const DsGap(DsSpace.sm),
+            Flexible(
+              child: Text(
+                '${RiskScale.label(level).tr} · ${ltr('$level/7')}',
+                style: DsTypography.caption.copyWith(color: c.textSecondary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 // --------------------------------------------------------------------- fund
 
@@ -423,9 +540,8 @@ class FundScreen extends StatelessWidget {
           builder: (context, hs) {
             final h = hs.data;
             final bool holder = h?.hasUnits == true;
-            return DsScaffold(
-              title: f?.name ?? "Fund".tr,
-              maxContentWidth: DsLayout.contentMax,
+            return FinScaffold(
+              title: "Fund".tr,
               bottomBar: f == null || !f.acceptsSubscriptions
                   ? null
                   : DsStickyBar(
@@ -440,9 +556,9 @@ class FundScreen extends StatelessWidget {
                       ),
                     ),
               body: snap.hasError
-                  ? DsErrorState(message: "Could not load this fund.".tr)
+                  ? FinBody(children: [FinState.error("Could not load this fund.".tr)])
                   : f == null
-                      ? const Padding(padding: EdgeInsets.all(DsSpace.lg), child: DsSkeletonForm(fields: 5))
+                      ? const FinBody(children: [DsSkeletonForm(fields: 5)])
                       : _FundBody(fund: f, holding: h, config: config),
             );
           },
@@ -461,140 +577,136 @@ class _FundBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = DsColors.of(context);
     final f = fund;
     final h = holding;
     String pct(double v) => InvestmentLabels.percent(v);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+    final periods = [for (final p in InvestmentLabels.periods) if (f.performance[p] != null) p];
+    return FinBody(
       children: [
-        DsCard.tinted(
-          tone: DsTone.brand,
-          child: Column(
+        FinHeader(
+          icon: _assetIcon(f.assetClass),
+          overline: InvestmentLabels.assetClass(f.assetClass).tr,
+          title: f.name,
+          subtitle: f.manager.isEmpty ? null : '${"Managed by".tr} ${f.manager}',
+          status: f.status == 'open' ? null : f.status,
+          statusLabel: f.status == 'open' ? null : _fundStatus(f.status).tr,
+          below: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(children: [
-                Expanded(child: Text(f.name, style: DsTypography.title)),
-                if (f.status != 'open') DsBadge(label: _fundStatus(f.status).tr, tone: DsTone.warning),
-              ]),
-              if (f.manager.isNotEmpty) _caption(context, '${"Managed by".tr} ${f.manager}'),
-              const DsGap(DsSpace.sm),
-              Align(alignment: AlignmentDirectional.centerStart, child: DsBadge(label: InvestmentLabels.assetClass(f.assetClass).tr, tone: DsTone.info, small: true)),
+              Divider(height: 1, thickness: 1, color: c.divider),
               const DsGap(DsSpace.md),
               _RiskScaleView(level: f.riskLevel),
             ],
           ),
         ),
-        if (h != null && h.hasUnits) ...[
-          const DsGap(DsSpace.md),
-          DsCard.outlined(
-            onTap: () => Get.to(() => HoldingScreen(fundId: f.id, config: config)),
-            child: Row(children: [
-              DsIconWell(icon: Icons.account_balance_wallet_outlined, tone: _gainTone(h.unrealizedGains)),
-              const DsGap(DsSpace.md),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text("Your position".tr, style: DsTypography.titleSm),
-                  _caption(context, '${InvestmentLabels.units(h.units)} ${"units".tr} · ${InvestmentLabels.percent(h.unrealizedPercent, signed: true)}'),
-                ]),
-              ),
-              Text(FinanceMoney.format(h.currentValue, h.currency), style: DsTypography.bodyStrong.tabular),
-              const Icon(Icons.chevron_right_rounded),
-            ]),
-          ),
-        ],
-        if (f.objective.isNotEmpty || f.description.isNotEmpty) ...[
-          const DsGap(DsSpace.md),
-          DsFormSection(
-            title: "Objective".tr,
-            icon: Icons.flag_outlined,
+        if (h != null && h.hasUnits)
+          FinSection(
+            title: "Your position".tr,
+            padding: _listPad,
             children: [
-              if (f.objective.isNotEmpty) Text(f.objective, style: DsTypography.bodyStrong),
-              if (f.description.isNotEmpty) Padding(padding: const EdgeInsets.only(top: DsSpace.xs), child: Text(f.description, style: DsTypography.body)),
+              FinListTile(
+                icon: Icons.account_balance_wallet_outlined,
+                iconTone: DsTone.brand,
+                title: "Current value".tr,
+                subtitle: '${InvestmentLabels.units(h.units)} ${"units".tr} · ${"Invested capital".tr} ${FinanceMoney.format(h.investedAmount, h.currency)}',
+                trailing: _ValueChange(value: FinanceMoney.format(h.currentValue, h.currency), percent: h.unrealizedPercent, gains: h.unrealizedGains),
+                chevron: true,
+                onTap: () => Get.to(() => HoldingScreen(fundId: f.id, config: config)),
+              ),
             ],
           ),
-        ],
-        const DsGap(DsSpace.md),
-        DsFormSection(
+        if (f.objective.isNotEmpty || f.description.isNotEmpty)
+          FinSection(
+            title: "Objective".tr,
+            padding: const EdgeInsets.all(DsSpace.lg),
+            children: [
+              if (f.objective.isNotEmpty) Text(f.objective, style: DsTypography.bodyStrong.copyWith(color: c.textPrimary)),
+              if (f.description.isNotEmpty)
+                Padding(
+                  padding: EdgeInsets.only(top: f.objective.isNotEmpty ? DsSpace.xs : 0),
+                  child: Text(f.description, style: DsTypography.body.copyWith(color: c.textSecondary)),
+                ),
+            ],
+          ),
+        FinSection(
           title: "Key facts".tr,
-          icon: Icons.fact_check_outlined,
+          divided: true,
           children: [
-            _row(context, "Unit price".tr, f.navPerUnit == null ? '-' : FinanceMoney.format(f.navPerUnit!, f.currency)),
-            if (f.navDate != null) _row(context, "Price date".tr, _date(f.navDate)),
-            _row(context, "Minimum investment".tr, FinanceMoney.format(f.minInvestment, f.currency)),
-            if (f.minAdditional != f.minInvestment) _row(context, "Minimum further investment".tr, FinanceMoney.format(f.minAdditional, f.currency)),
-            _row(context, "Subscription fee".tr, pct(f.subscriptionFeePercent)),
-            _row(context, "Management fee".tr, '${pct(f.managementFeePercent)} ${"a year".tr}'),
-            _row(context, "Redemption fee".tr, pct(f.redemptionFeePercent)),
-            if (f.performanceFeePercent > 0) _row(context, "Performance fee".tr, pct(f.performanceFeePercent)),
-            _row(context, "Lock-up period".tr, f.lockUpDays == 0 ? "None".tr : '${f.lockUpDays} ${"days".tr}'),
-            _row(context, "Redemptions".tr, !f.redemptionAllowed ? "Not possible".tr : (f.partialRedemption ? "Partial or full" : "Full only").tr),
-            _row(context, "Paid out within".tr, '${f.settlementDays} ${"business days".tr}'),
-            if (f.eligibility.isNotEmpty) Padding(padding: const EdgeInsets.only(top: DsSpace.sm), child: DsInlineAlert(tone: DsTone.info, title: "Who can invest".tr, message: f.eligibility)),
+            FinRow("Unit price".tr, f.navPerUnit == null ? '-' : FinanceMoney.format(f.navPerUnit!, f.currency)),
+            if (f.navDate != null) FinRow("Price date".tr, _date(f.navDate)),
+            FinRow("Minimum investment".tr, FinanceMoney.format(f.minInvestment, f.currency)),
+            if (f.minAdditional != f.minInvestment) FinRow("Minimum further investment".tr, FinanceMoney.format(f.minAdditional, f.currency)),
+            FinRow("Subscription fee".tr, pct(f.subscriptionFeePercent)),
+            FinRow("Management fee".tr, '${pct(f.managementFeePercent)} ${"a year".tr}'),
+            FinRow("Redemption fee".tr, pct(f.redemptionFeePercent)),
+            if (f.performanceFeePercent > 0) FinRow("Performance fee".tr, pct(f.performanceFeePercent)),
+            FinRow("Lock-up period".tr, f.lockUpDays == 0 ? "None".tr : '${f.lockUpDays} ${"days".tr}'),
+            FinRow("Redemptions".tr, !f.redemptionAllowed ? "Not possible".tr : (f.partialRedemption ? "Partial or full" : "Full only").tr),
+            FinRow("Paid out within".tr, '${f.settlementDays} ${"business days".tr}'),
           ],
         ),
-        if (f.performance.isNotEmpty) ...[
-          const DsGap(DsSpace.md),
-          DsFormSection(
+        if (f.eligibility.isNotEmpty) FinNotice(f.eligibility, title: "Who can invest".tr),
+        if (periods.isNotEmpty)
+          FinSection(
             title: "Past performance".tr,
-            icon: Icons.show_chart_rounded,
+            divided: true,
+            footnote: "Past performance does not predict future returns.".tr,
             children: [
-              for (final p in InvestmentLabels.periods)
-                if (f.performance[p] != null)
-                  _row(context, InvestmentLabels.period(p).tr, InvestmentLabels.percent(f.performance[p], signed: true),
-                      color: DsColors.of(context).tone(_gainTone(f.performance[p]!)).main),
-              _caption(context, "Past performance does not predict future returns.".tr),
+              for (final p in periods)
+                FinRow(
+                  InvestmentLabels.period(p).tr,
+                  InvestmentLabels.percent(f.performance[p], signed: true),
+                  valueColor: _gainColor(context, f.performance[p]!),
+                ),
             ],
           ),
-        ],
         StreamBuilder<List<NavPoint>>(
           stream: FinanceInvestmentService.valuations(f.id),
           builder: (context, snap) {
             final points = snap.data ?? const <NavPoint>[];
             if (points.length < 2) return const SizedBox.shrink();
-            final double? change = navChangePercent(points);
-            return Padding(
-              padding: const EdgeInsets.only(top: DsSpace.md),
-              child: DsFormSection(
-                title: "Unit price history".tr,
-                icon: Icons.timeline_rounded,
-                trailing: change == null ? null : DsBadge(label: InvestmentLabels.percent(change, signed: true), tone: _gainTone(change), small: true),
-                children: [_NavChart(points: points, currency: f.currency)],
-              ),
+            return FinSection(
+              title: "Unit price history".tr,
+              padding: const EdgeInsets.all(DsSpace.lg),
+              children: [_NavChart(points: points, currency: f.currency)],
             );
           },
         ),
-        if (f.documents.isNotEmpty) ...[
-          const DsGap(DsSpace.md),
-          DsFormSection(
+        if (f.documents.isNotEmpty)
+          FinSection(
             title: "Documents".tr,
-            icon: Icons.folder_open_outlined,
+            divided: true,
+            padding: _listPad,
             children: [
               for (final d in f.documents)
-                DsListTile(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  leadingIcon: Icons.description_outlined,
+                FinListTile(
+                  icon: Icons.description_outlined,
                   title: d.name,
-                  trailing: const Icon(Icons.open_in_new_rounded),
+                  trailing: Icon(Icons.open_in_new_rounded, size: 20, color: c.textMuted),
                   onTap: () => _open(storagePath: d.storagePath, url: d.url),
                 ),
             ],
           ),
-        ],
-        if (f.terms.isNotEmpty) ...[
-          const DsGap(DsSpace.md),
-          DsFormSection(
+        if (f.terms.isNotEmpty)
+          FinSection(
             title: "Terms".tr,
-            subtitle: '${"Version".tr} ${f.termsVersion}',
-            icon: Icons.gavel_rounded,
-            children: [Text(f.terms, style: DsTypography.body)],
+            padding: const EdgeInsets.all(DsSpace.lg),
+            footnote: '${"Version".tr} ${f.termsVersion}',
+            children: [Text(f.terms, style: DsTypography.body.copyWith(color: c.textPrimary))],
           ),
-        ],
-        const DsGap(DsSpace.md),
-        DsButton.secondary(
-          label: "Simulate a return".tr,
-          icon: Icons.calculate_outlined,
-          expand: true,
-          onPressed: () => Get.to(() => ReturnSimulatorScreen(config: config, currency: f.currency, annualPercent: f.performance['oneYear'])),
+        FinSection(
+          padding: _listPad,
+          children: [
+            FinListTile(
+              icon: Icons.calculate_outlined,
+              iconTone: DsTone.brand,
+              title: "Simulate a return".tr,
+              subtitle: "See how an amount could grow over time.".tr,
+              chevron: true,
+              onTap: () => Get.to(() => ReturnSimulatorScreen(config: config, currency: f.currency, annualPercent: f.performance['oneYear'])),
+            ),
+          ],
         ),
       ],
     );
@@ -618,25 +730,26 @@ class _RiskScaleView extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(children: [
-              Expanded(child: Text("Risk level".tr, style: DsTypography.label)),
-              Text(RiskScale.label(level).tr, style: DsTypography.bodyStrong.copyWith(color: active)),
+              Expanded(child: Text("Risk level".tr, style: DsTypography.labelSm.copyWith(color: c.textSecondary))),
+              Text(RiskScale.label(level).tr, style: DsTypography.bodyStrong.copyWith(color: c.tone(_riskTone(level)).strong)),
             ]),
-            const DsGap(DsSpace.xs),
+            const DsGap(DsSpace.sm),
             Row(children: [
               for (int i = 1; i <= 7; i++)
                 Expanded(
                   child: Container(
                     height: 28,
-                    margin: const EdgeInsetsDirectional.only(end: 4),
+                    margin: EdgeInsetsDirectional.only(end: i < 7 ? 4 : 0),
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(color: i == level ? active : c.surfaceAlt, borderRadius: BorderRadius.circular(DsRadius.sm)),
-                    child: Text('$i', style: DsTypography.label.copyWith(color: i == level ? Colors.white : c.textSecondary)),
+                    decoration: BoxDecoration(color: i == level ? active : c.surfaceAlt, borderRadius: DsRadius.brSm),
+                    child: Text('$i', style: DsTypography.labelSm.copyWith(color: i == level ? Colors.white : c.textSecondary).tabular),
                   ),
                 ),
             ]),
             const DsGap(DsSpace.xs),
             Row(children: [
               Expanded(child: _caption(context, "Lower risk, lower potential return".tr)),
+              const DsGap(DsSpace.sm),
               Expanded(child: Text("Higher risk, higher potential return".tr, textAlign: TextAlign.end, style: DsTypography.caption.copyWith(color: c.textSecondary))),
             ]),
           ],
@@ -646,7 +759,7 @@ class _RiskScaleView extends StatelessWidget {
   }
 }
 
-/// The unit price over time, as a line.
+/// The unit price over time, as a line, with its change over the period.
 class _NavChart extends StatelessWidget {
   final List<NavPoint> points;
   final String currency;
@@ -655,24 +768,49 @@ class _NavChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = DsColors.of(context);
     final double lo = points.map((p) => p.nav).reduce(math.min);
     final double hi = points.map((p) => p.nav).reduce(math.max);
+    final double? change = navChangePercent(points);
     return Semantics(
-      label: '${"Unit price".tr}: ${FinanceMoney.format(points.first.nav, currency)} ${_date(points.first.date)}, ${FinanceMoney.format(points.last.nav, currency)} ${_date(points.last.date)}',
+      label:
+          '${"Unit price".tr}: ${FinanceMoney.format(points.first.nav, currency)} ${_date(points.first.date)}, ${FinanceMoney.format(points.last.nav, currency)} ${_date(points.last.date)}',
       child: ExcludeSemantics(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(children: [
-              Expanded(child: _caption(context, '${"High".tr} ${FinanceMoney.format(hi, currency)}')),
-              _caption(context, '${"Low".tr} ${FinanceMoney.format(lo, currency)}'),
-            ]),
-            const DsGap(DsSpace.xs),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    _caption(context, "Unit price".tr),
+                    const DsGap(DsSpace.xxs),
+                    Text(FinanceMoney.format(points.last.nav, currency), style: DsTypography.titleSm.copyWith(color: c.textPrimary).tabular),
+                  ]),
+                ),
+                if (change != null)
+                  Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    _caption(context, "Change".tr),
+                    const DsGap(DsSpace.xxs),
+                    Text(
+                      InvestmentLabels.percent(change, signed: true),
+                      style: DsTypography.titleSm.copyWith(color: _gainColor(context, change) ?? c.textPrimary).tabular,
+                    ),
+                  ]),
+              ],
+            ),
+            const DsGap(DsSpace.md),
             FinanceLineChart(values: points.map((p) => p.nav).toList()),
             const DsGap(DsSpace.xs),
             Row(children: [
               Expanded(child: _caption(context, _date(points.first.date))),
               _caption(context, _date(points.last.date)),
+            ]),
+            const DsGap(DsSpace.sm),
+            Row(children: [
+              Expanded(child: _caption(context, '${"High".tr} ${FinanceMoney.format(hi, currency)}')),
+              _caption(context, '${"Low".tr} ${FinanceMoney.format(lo, currency)}'),
             ]),
           ],
         ),
@@ -738,15 +876,15 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = DsColors.of(context);
     final f = widget.fund;
     final int min = f.minimumFor(holder: widget.holder);
     final int? amount = FinanceAmount.parse(_amount.text, f.currency);
     final bool tooLow = amount != null && amount < min;
     final estimate = amount == null || tooLow ? null : InvestmentCalculator.subscription(f, amount);
     final bool ready = estimate != null && _termsAccepted && _riskAccepted && _signature.text.trim().length >= 3;
-    return DsScaffold(
+    return FinScaffold(
       title: "Invest".tr,
-      maxContentWidth: DsLayout.contentMax,
       bottomBar: DsStickyBar(
         child: FinanceKycGate(
           builder: (context, verified) => DsButton.primary(
@@ -758,13 +896,24 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
           ),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+      body: FinBody(
         children: [
-          DsFormSection(
-            title: f.name,
-            subtitle: '${RiskScale.label(f.riskLevel).tr} · ${f.riskLevel}/7',
-            icon: Icons.trending_up_rounded,
+          FinSection(
+            top: 0,
+            title: "Fund".tr,
+            padding: _listPad,
+            children: [
+              FinListTile(
+                icon: _assetIcon(f.assetClass),
+                iconTone: DsTone.brand,
+                title: f.name,
+                subtitle: '${InvestmentLabels.assetClass(f.assetClass).tr} · ${RiskScale.label(f.riskLevel).tr} · ${ltr('${f.riskLevel}/7')}',
+              ),
+            ],
+          ),
+          FinSection(
+            title: "Amount".tr,
+            padding: const EdgeInsets.all(DsSpace.lg),
             children: [
               DsTextField(
                 label: "${"Amount".tr} (${f.currency})",
@@ -779,68 +928,71 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
             ],
           ),
           if (estimate != null) ...[
-            const DsGap(DsSpace.lg),
-            DsFormSection(
+            FinSection(
               title: "Estimate".tr,
-              icon: Icons.calculate_outlined,
+              divided: true,
               children: [
-                _row(context, "You pay".tr, FinanceMoney.format(estimate.gross, f.currency)),
-                _row(context, "Subscription fee".tr, '${FinanceMoney.format(estimate.fee, f.currency)} (${InvestmentLabels.percent(f.subscriptionFeePercent)})'),
-                _row(context, "Invested in the fund".tr, FinanceMoney.format(estimate.net, f.currency)),
-                if (estimate.units != null) _row(context, "Estimated units".tr, InvestmentLabels.units(estimate.units!)),
-                if (f.navPerUnit != null) _row(context, "Last unit price".tr, '${FinanceMoney.format(f.navPerUnit!, f.currency)} · ${_date(f.navDate)}'),
-                if (f.lockUpDays > 0) _row(context, "Lock-up period".tr, '${f.lockUpDays} ${"days".tr}'),
-                _caption(context, "Units are bought at the unit price of the processing date, after your payment is confirmed. The final number of units can differ from this estimate.".tr),
+                FinRow("You pay".tr, FinanceMoney.format(estimate.gross, f.currency), strong: true),
+                FinRow("Subscription fee".tr, '${FinanceMoney.format(estimate.fee, f.currency)} (${InvestmentLabels.percent(f.subscriptionFeePercent)})'),
+                FinRow("Invested in the fund".tr, FinanceMoney.format(estimate.net, f.currency)),
+                if (estimate.units != null) FinRow("Estimated units".tr, InvestmentLabels.units(estimate.units!)),
+                if (f.navPerUnit != null) FinRow("Last unit price".tr, FinanceMoney.format(f.navPerUnit!, f.currency), sub: f.navDate == null ? null : _date(f.navDate)),
+                if (f.lockUpDays > 0) FinRow("Lock-up period".tr, '${f.lockUpDays} ${"days".tr}'),
               ],
             ),
+            FinNotice(
+              "Units are bought at the unit price of the processing date, after your payment is confirmed. The final number of units can differ from this estimate.".tr,
+            ),
           ],
-          const DsGap(DsSpace.lg),
-          DsFormSection(
+          FinSection(
             title: "Risks".tr,
-            icon: Icons.warning_amber_rounded,
             children: [
-              DsInlineAlert(tone: DsTone.warning, message: widget.config.riskDisclosure),
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
+              FinNotice(widget.config.riskDisclosure, tone: DsTone.warning),
+              _Consent(
                 value: _riskAccepted,
-                onChanged: (v) => setState(() => _riskAccepted = v ?? false),
-                title: Text("I understand that the value of my investment can go down as well as up, and that I may lose part of the money invested.".tr),
+                onChanged: (v) => setState(() => _riskAccepted = v),
+                text: "I understand that the value of my investment can go down as well as up, and that I may lose part of the money invested.".tr,
               ),
             ],
           ),
-          const DsGap(DsSpace.lg),
-          DsFormSection(
+          FinSection(
             title: "Fund terms".tr,
-            subtitle: '${"Version".tr} ${f.termsVersion}',
-            icon: Icons.gavel_rounded,
             children: [
+              Padding(
+                padding: const EdgeInsets.only(top: DsSpace.sm, bottom: DsSpace.xs),
+                child: _caption(context, '${"Version".tr} ${f.termsVersion}'),
+              ),
               if (f.terms.isNotEmpty)
-                ConstrainedBox(
+                Container(
                   constraints: const BoxConstraints(maxHeight: 220),
-                  child: Scrollbar(child: SingleChildScrollView(child: Text(f.terms, style: DsTypography.body))),
+                  margin: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+                  padding: const EdgeInsets.all(DsSpace.md),
+                  decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brSm),
+                  child: Scrollbar(child: SingleChildScrollView(child: Text(f.terms, style: DsTypography.body.copyWith(color: c.textPrimary)))),
                 ),
               for (final d in f.documents)
-                DsListTile(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  leadingIcon: Icons.description_outlined,
+                FinListTile(
+                  icon: Icons.description_outlined,
                   title: d.name,
-                  trailing: const Icon(Icons.open_in_new_rounded),
+                  trailing: Icon(Icons.open_in_new_rounded, size: 20, color: c.textMuted),
                   onTap: () => _open(storagePath: d.storagePath, url: d.url),
                 ),
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
+              _Consent(
                 value: _termsAccepted,
-                onChanged: (v) => setState(() => _termsAccepted = v ?? false),
-                title: Text("I have read the fund terms and documents, and I accept them.".tr),
+                onChanged: (v) => setState(() => _termsAccepted = v),
+                text: "I have read the fund terms and documents, and I accept them.".tr,
               ),
             ],
           ),
-          const DsGap(DsSpace.lg),
-          DsFormSection(
+          FinSection(
             title: "Electronic signature".tr,
-            subtitle: "Type your full name to sign the subscription. It is recorded with the date and the terms version.".tr,
-            icon: Icons.draw_outlined,
+            padding: const EdgeInsets.all(DsSpace.lg),
             children: [
+              Text(
+                "Type your full name to sign the subscription. It is recorded with the date and the terms version.".tr,
+                style: DsTypography.bodySm.copyWith(color: c.textSecondary),
+              ),
+              const DsGap(DsSpace.md),
               DsTextField(
                 label: "Full name".tr,
                 controller: _signature,
@@ -855,6 +1007,24 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
       ),
     );
   }
+}
+
+/// A consent line: checkbox first, then what the user agrees to.
+class _Consent extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final String text;
+
+  const _Consent({required this.value, required this.onChanged, required this.text});
+
+  @override
+  Widget build(BuildContext context) => CheckboxListTile(
+        contentPadding: EdgeInsets.zero,
+        controlAffinity: ListTileControlAffinity.leading,
+        value: value,
+        onChanged: (v) => onChanged(v ?? false),
+        title: Text(text, style: DsTypography.body.copyWith(color: DsColors.of(context).textPrimary)),
+      );
 }
 
 // ------------------------------------------------------------------ holding
@@ -873,21 +1043,37 @@ class HoldingScreen extends StatelessWidget {
       builder: (context, fs) => StreamBuilder<Holding?>(
         stream: FinanceInvestmentService.holding(fundId),
         builder: (context, hs) {
+          final pageContext = context;
           final f = fs.data;
           final h = hs.data;
-          return DsScaffold(
+          final Holding? shown = !hs.hasError && hs.connectionState != ConnectionState.waiting && h != null && h.hasUnits ? h : null;
+          Widget? bar;
+          if (shown != null && f != null && f.redemptionAllowed && f.status != 'suspended' && shown.redeemableValue > 0) {
+            bar = DsStickyBar(
+              child: FinanceKycGate(
+                builder: (context, verified) => DsButton.secondary(
+                  label: "Redeem".tr,
+                  icon: Icons.south_west_rounded,
+                  size: DsButtonSize.lg,
+                  expand: true,
+                  onPressed: verified ? () => _redeem(pageContext, shown, f, config) : null,
+                ),
+              ),
+            );
+          }
+          return FinScaffold(
             title: h?.fundName ?? f?.name ?? "My investment".tr,
-            maxContentWidth: DsLayout.contentMax,
             actions: [
               if (f != null) DsIconButton(icon: Icons.info_outline_rounded, semanticLabel: "Fund details".tr, onPressed: () => Get.to(() => FundScreen(fundId: fundId, config: config))),
             ],
+            bottomBar: bar,
             body: hs.hasError
-                ? DsErrorState(message: "Could not load your investment.".tr)
+                ? FinBody(children: [FinState.error("Could not load your investment.".tr)])
                 : hs.connectionState == ConnectionState.waiting
-                    ? const Padding(padding: EdgeInsets.all(DsSpace.lg), child: DsSkeletonForm(fields: 4))
-                    : h == null || !h.hasUnits
-                        ? DsEmptyState(icon: Icons.trending_up_rounded, title: "You hold no units of this fund.".tr)
-                        : _HoldingBody(holding: h, fund: f, config: config),
+                    ? const FinBody(children: [DsSkeletonForm(fields: 4)])
+                    : shown == null
+                        ? FinBody(children: [FinState.empty(Icons.trending_up_rounded, "You hold no units of this fund.".tr)])
+                        : _HoldingBody(holding: shown, fund: f),
           );
         },
       ),
@@ -895,154 +1081,138 @@ class HoldingScreen extends StatelessWidget {
   }
 }
 
-class _HoldingBody extends StatelessWidget {
-  final Holding holding;
-  final Fund? fund;
-  final InvestmentConfig config;
-
-  const _HoldingBody({required this.holding, required this.fund, required this.config});
-
-  Future<void> _redeem(BuildContext context) async {
-    final h = holding;
-    final f = fund!;
-    bool full = !f.partialRedemption;
-    int? amount;
-    if (f.partialRedemption) {
-      final choice = await DsBottomSheet.show<String>(
-        title: "Redeem".tr,
-        child: Column(
+/// Redeeming part or all of a holding: what, the estimate, then where to receive it.
+Future<void> _redeem(BuildContext context, Holding h, Fund f, InvestmentConfig config) async {
+  bool full = !f.partialRedemption;
+  int? amount;
+  if (f.partialRedemption) {
+    final choice = await finSheet<String>(
+      title: "Redeem".tr,
+      child: Builder(
+        builder: (context) => Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            DsListTile(
-              padding: EdgeInsets.zero,
-              leadingIcon: Icons.pie_chart_outline_rounded,
+            FinListTile(
+              icon: Icons.pie_chart_outline_rounded,
               title: "Part of my investment".tr,
               subtitle: "Choose an amount".tr,
-              showChevron: true,
+              chevron: true,
               onTap: () => Get.back(result: 'partial'),
             ),
-            DsListTile(
-              padding: EdgeInsets.zero,
-              leadingIcon: Icons.circle_outlined,
+            Divider(height: 1, thickness: 1, color: DsColors.of(context).divider),
+            FinListTile(
+              icon: Icons.account_balance_wallet_outlined,
               title: "All that can be redeemed".tr,
-              subtitle: '${"About".tr} ${FinanceMoney.format(h.redeemableValue, h.currency)}',
-              showChevron: true,
+              subtitle: '≈ ${FinanceMoney.format(h.redeemableValue, h.currency)}',
+              chevron: true,
               onTap: () => Get.back(result: 'full'),
             ),
           ],
         ),
-      );
-      if (choice == null || !context.mounted) return;
-      full = choice == 'full';
-      if (!full) {
-        amount = await askAmount(context, title: "How much do you redeem?".tr, currency: h.currency, max: h.redeemableValue);
-        if (amount == null || !context.mounted) return;
-      }
-    }
-    final int gross = amount ?? h.redeemableValue;
-    final estimate = InvestmentCalculator.redemption(f, gross);
-    final ok = await DsBottomSheet.show<bool>(
-      title: "Redemption estimate".tr,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _row(context, (full ? "Whole redeemable position" : "Amount redeemed").tr, FinanceMoney.format(gross, h.currency)),
-          if (estimate.units != null) _row(context, "Estimated units".tr, InvestmentLabels.units(full ? h.redeemableUnits : estimate.units!)),
-          _row(context, "Redemption fee".tr, '${FinanceMoney.format(estimate.fee, h.currency)} (${InvestmentLabels.percent(f.redemptionFeePercent)})'),
-          _row(context, "You receive about".tr, FinanceMoney.format(estimate.net, h.currency)),
-          _row(context, "Paid out within".tr, '${f.settlementDays} ${"business days".tr}'),
-          const DsGap(DsSpace.sm),
-          _caption(context, "The final amount uses the unit price of the processing date.".tr),
-          const DsGap(DsSpace.md),
-          DsButton.primary(label: "Continue".tr, expand: true, onPressed: () => Get.back(result: true)),
-        ],
       ),
     );
-    if (ok != true || !context.mounted) return;
-    final key = FinanceGroupService.newRequestKey();
-    await FinancePaySheet.show(
-      context,
-      title: "Redeem".tr,
-      amount: gross,
-      currency: h.currency,
-      methods: config.paymentMethods,
-      payout: true,
-      submit: (destination) => FinanceInvestmentService.redeem(fundId: h.fundId, full: full, amount: amount, destination: destination, requestKey: key),
-    );
+    if (choice == null || !context.mounted) return;
+    full = choice == 'full';
+    if (!full) {
+      amount = await askAmount(context, title: "How much do you redeem?".tr, currency: h.currency, max: h.redeemableValue);
+      if (amount == null || !context.mounted) return;
+    }
   }
+  final int gross = amount ?? h.redeemableValue;
+  final estimate = InvestmentCalculator.redemption(f, gross);
+  final ok = await finConfirm(
+    title: "Redemption estimate".tr,
+    message: "The final amount uses the unit price of the processing date.".tr,
+    lines: [
+      ((full ? "Whole redeemable position" : "Amount redeemed").tr, FinanceMoney.format(gross, h.currency)),
+      if (estimate.units != null) ("Estimated units".tr, InvestmentLabels.units(full ? h.redeemableUnits : estimate.units!)),
+      ("Redemption fee".tr, '${FinanceMoney.format(estimate.fee, h.currency)} (${InvestmentLabels.percent(f.redemptionFeePercent)})'),
+      ("Paid out within".tr, '${f.settlementDays} ${"business days".tr}'),
+    ],
+    total: ("You receive about".tr, FinanceMoney.format(estimate.net, h.currency)),
+    confirmLabel: "Continue".tr,
+  );
+  if (!ok || !context.mounted) return;
+  final key = FinanceGroupService.newRequestKey();
+  await FinancePaySheet.show(
+    context,
+    title: "Redeem".tr,
+    amount: gross,
+    currency: h.currency,
+    methods: config.paymentMethods,
+    payout: true,
+    submit: (destination) => FinanceInvestmentService.redeem(fundId: h.fundId, full: full, amount: amount, destination: destination, requestKey: key),
+  );
+}
+
+class _HoldingBody extends StatelessWidget {
+  final Holding holding;
+  final Fund? fund;
+
+  const _HoldingBody({required this.holding, required this.fund});
 
   @override
   Widget build(BuildContext context) {
     final h = holding;
     final f = fund;
-    final bool canRedeem = f != null && f.redemptionAllowed && f.status != 'suspended' && h.redeemableValue > 0;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+    final double? unrealizedPercent = h.unrealizedPercent;
+    return FinBody(
       children: [
-        DsCard.tinted(
-          tone: DsTone.brand,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _caption(context, "Current value".tr),
-              Text(FinanceMoney.format(h.currentValue, h.currency), style: DsTypography.title.tabular),
-              if (h.valuedAt != null) _caption(context, '${"Valued on".tr} ${_date(h.valuedAt)}'),
-              const DsGap(DsSpace.sm),
-              _row(context, "Units".tr, InvestmentLabels.units(h.units)),
-              _row(context, "Invested capital".tr, FinanceMoney.format(h.investedAmount, h.currency)),
-              _row(context, "Unrealized gains".tr, '${_signed(h.unrealizedGains, h.currency)} (${InvestmentLabels.percent(h.unrealizedPercent, signed: true)})',
-                  color: DsColors.of(context).tone(_gainTone(h.unrealizedGains)).main),
-              _row(context, "Realized gains".tr, _signed(h.realizedGains, h.currency), color: DsColors.of(context).tone(_gainTone(h.realizedGains)).main),
-              if (f?.navPerUnit != null) _row(context, "Unit price".tr, '${FinanceMoney.format(f!.navPerUnit!, f.currency)} · ${_date(f.navDate)}'),
-            ],
-          ),
+        FinHeader(
+          icon: _assetIcon(h.assetClass),
+          overline: "Current value".tr,
+          title: FinanceMoney.format(h.currentValue, h.currency),
+          subtitle: h.valuedAt == null ? null : '${"Valued on".tr} ${_date(h.valuedAt)}',
         ),
         const DsGap(DsSpace.md),
-        if (h.partlyLocked)
-          Padding(
-            padding: const EdgeInsets.only(bottom: DsSpace.md),
-            child: DsInlineAlert(
-              tone: DsTone.info,
-              title: "Lock-up period".tr,
-              message:
-                  '${"Redeemable now".tr}: ${InvestmentLabels.units(h.redeemableUnits)} ${"units".tr} (${FinanceMoney.format(h.redeemableValue, h.currency)}).${h.lockedUntil == null ? '' : ' ${"The rest from".tr} ${_date(h.lockedUntil)}.'}',
-            ),
+        FinMetrics(items: [
+          FinMetric("Units".tr, InvestmentLabels.units(h.units)),
+          FinMetric("Invested capital".tr, FinanceMoney.format(h.investedAmount, h.currency)),
+          FinMetric(
+            "Unrealized gains".tr,
+            FinanceMoney.signed(h.unrealizedGains, h.currency),
+            sub: unrealizedPercent == null ? null : InvestmentLabels.percent(unrealizedPercent, signed: true),
+            color: _gainColor(context, h.unrealizedGains),
           ),
-        if (canRedeem)
-          FinanceKycGate(
-            builder: (context, verified) => DsButton.secondary(
-              label: "Redeem".tr,
-              icon: Icons.south_west_rounded,
-              expand: true,
-              onPressed: verified ? () => _redeem(context) : null,
-            ),
-          )
-        else if (f != null && !f.redemptionAllowed)
-          DsInlineAlert(tone: DsTone.neutral, message: "This fund does not accept redemptions at the moment.".tr),
-        const DsGap(DsSpace.lg),
+          FinMetric("Realized gains".tr, FinanceMoney.signed(h.realizedGains, h.currency), color: _gainColor(context, h.realizedGains)),
+          if (f?.navPerUnit != null) FinMetric("Unit price".tr, FinanceMoney.format(f!.navPerUnit!, f.currency), sub: f.navDate == null ? null : _date(f.navDate)),
+        ]),
+        if (h.partlyLocked)
+          FinNotice(
+            '${"Redeemable now".tr}: ${InvestmentLabels.units(h.redeemableUnits)} ${"units".tr} (${FinanceMoney.format(h.redeemableValue, h.currency)}).${h.lockedUntil == null ? '' : ' ${"The rest from".tr} ${_date(h.lockedUntil)}.'}',
+            title: "Lock-up period".tr,
+          ),
+        if (f != null && !f.redemptionAllowed) FinNotice("This fund does not accept redemptions at the moment.".tr, tone: DsTone.neutral),
         StreamBuilder<List<Map<String, dynamic>>>(
           stream: FinanceInvestmentService.transactions(h.fundId),
           builder: (context, snap) {
+            if (!snap.hasData && !snap.hasError) return FinState.loading(rows: 2);
             final list = snap.data ?? const [];
             if (list.isEmpty) return const SizedBox.shrink();
-            return DsFormSection(
+            return FinSection(
               title: "History".tr,
-              icon: Icons.receipt_long_outlined,
+              divided: true,
+              padding: _listPad,
               children: [
                 for (final t in list)
-                  DsListTile(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    leadingIcon: t['type'] == 'redemption' ? Icons.south_west_rounded : Icons.north_east_rounded,
-                    leadingTone: t['type'] == 'redemption' || t['type'] == 'distribution' ? DsTone.success : DsTone.brand,
-                    title: '${InvestmentLabels.transaction(t['type']?.toString()).tr} · ${FinanceMoney.format(FinanceSummary.intOf(t['amount']), h.currency)}',
-                    subtitle: [
-                      FinanceUi.day(t['createdAt']),
-                      if (t['units'] is num) '${InvestmentLabels.units((t['units'] as num).toDouble())} ${"units".tr}',
-                      if (t['navPerUnit'] is num) '@ ${FinanceMoney.format(t['navPerUnit'] as num, h.currency)}',
-                    ].join(' · '),
-                  ),
+                  Builder(builder: (context) {
+                    final String? type = t['type']?.toString();
+                    final bool back = type == 'redemption' || type == 'distribution';
+                    final int amount = FinanceSummary.intOf(t['amount']);
+                    return FinListTile(
+                      icon: back ? Icons.south_west_rounded : Icons.north_east_rounded,
+                      iconTone: back ? DsTone.success : DsTone.neutral,
+                      title: InvestmentLabels.transaction(type).tr,
+                      subtitle: [
+                        FinanceUi.day(t['createdAt']),
+                        if (t['units'] is num) '${InvestmentLabels.units((t['units'] as num).toDouble())} ${"units".tr}',
+                        if (t['navPerUnit'] is num) '@ ${FinanceMoney.format(t['navPerUnit'] as num, h.currency)}',
+                      ].join(' · '),
+                      amount: FinanceMoney.format(amount, h.currency),
+                      amountColor: back ? finAmountColor(context, amount) : null,
+                    );
+                  }),
               ],
             );
           },
@@ -1065,39 +1235,36 @@ class _Orders extends StatelessWidget {
       builder: (context, ss) => StreamBuilder<List<Map<String, dynamic>>>(
         stream: FinanceInvestmentService.redemptions(),
         builder: (context, rs) {
-          if (ss.hasError || rs.hasError) return DsErrorState(message: "Could not load your orders.".tr, compact: true);
-          if (!ss.hasData || !rs.hasData) return const DsSkeletonList(itemCount: 3);
+          if (ss.hasError || rs.hasError) return FinState.error("Could not load your orders.".tr);
+          if (!ss.hasData || !rs.hasData) return FinState.loading();
           final orders = [
             for (final o in ss.data!) ('investment_subscriptions', o),
             for (final o in rs.data!) ('investment_redemptions', o),
           ]..sort((a, b) => (FinanceGroupService.toDate(b.$2['createdAt']) ?? DateTime(0)).compareTo(FinanceGroupService.toDate(a.$2['createdAt']) ?? DateTime(0)));
-          if (orders.isEmpty) return DsEmptyState(icon: Icons.receipt_long_outlined, title: "You have no investment order yet.".tr, compact: true);
-          return Column(
+          if (orders.isEmpty) return FinState.empty(Icons.receipt_long_outlined, "You have no investment order yet.".tr);
+          return FinSection(
+            divided: true,
+            padding: _listPad,
             children: [
               for (final (collection, o) in orders)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: DsSpace.sm),
-                  child: DsCard.outlined(
+                Builder(builder: (context) {
+                  final bool redemption = collection == 'investment_redemptions';
+                  final String? status = o['status']?.toString();
+                  final String type = (redemption ? "Redemption" : "Investment").tr;
+                  final String fund = (o['fundName'] ?? '').toString();
+                  return FinListTile(
+                    icon: redemption ? Icons.south_west_rounded : Icons.north_east_rounded,
+                    iconTone: redemption ? DsTone.success : DsTone.neutral,
+                    title: fund.isNotEmpty ? fund : type,
+                    subtitle: [if (fund.isNotEmpty) type, FinanceUi.day(o['createdAt'])].join(' · '),
+                    amount: o['full'] == true && o['amount'] == null
+                        ? "All".tr
+                        : FinanceMoney.format(FinanceSummary.intOf(o['amount']), o['currency']?.toString() ?? ''),
+                    status: status ?? '',
+                    statusLabel: InvestmentOrders.label(status).tr,
                     onTap: () => Get.to(() => InvestmentOrderScreen(collection: collection, orderId: o['id'].toString())),
-                    child: Row(children: [
-                      DsIconWell(
-                        icon: collection == 'investment_redemptions' ? Icons.south_west_rounded : Icons.north_east_rounded,
-                        tone: _tone(o['status']?.toString()),
-                      ),
-                      const DsGap(DsSpace.md),
-                      Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(
-                            '${(collection == 'investment_redemptions' ? "Redemption" : "Investment").tr} · ${o['full'] == true && o['amount'] == null ? "All".tr : FinanceMoney.format(FinanceSummary.intOf(o['amount']), o['currency']?.toString() ?? '')}',
-                            style: DsTypography.titleSm.tabular,
-                          ),
-                          _caption(context, '${o['fundName'] ?? ''} · ${FinanceUi.day(o['createdAt'])}'),
-                        ]),
-                      ),
-                      DsBadge(label: InvestmentOrders.label(o['status']?.toString()).tr, tone: _tone(o['status']?.toString()), small: true),
-                    ]),
-                  ),
-                ),
+                  );
+                }),
             ],
           );
         },
@@ -1120,13 +1287,12 @@ class InvestmentOrderScreen extends StatelessWidget {
       stream: FinanceInvestmentService.order(collection, orderId),
       builder: (context, snap) {
         final o = snap.data;
-        return DsScaffold(
+        return FinScaffold(
           title: (redemption ? "Redemption" : "Investment").tr,
-          maxContentWidth: DsLayout.contentMax,
           body: snap.hasError
-              ? DsErrorState(message: "Could not load this order.".tr)
+              ? FinBody(children: [FinState.error("Could not load this order.".tr)])
               : o == null
-                  ? const Padding(padding: EdgeInsets.all(DsSpace.lg), child: DsSkeletonForm(fields: 4))
+                  ? const FinBody(children: [DsSkeletonForm(fields: 4)])
                   : _orderBody(context, o, redemption),
         );
       },
@@ -1134,75 +1300,68 @@ class InvestmentOrderScreen extends StatelessWidget {
   }
 
   Widget _orderBody(BuildContext context, Map<String, dynamic> o, bool redemption) {
+    final c = DsColors.of(context);
     final String status = o['status']?.toString() ?? '';
     final String cur = o['currency']?.toString() ?? '';
+    final String fund = (o['fundName'] ?? '').toString();
     final steps = redemption ? InvestmentOrders.redemptionSteps : InvestmentOrders.subscriptionSteps;
     final int at = steps.indexOf(status);
     String m(dynamic v) => FinanceMoney.format(FinanceSummary.intOf(v), cur);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+    final String amount = o['amount'] == null ? "All that can be redeemed".tr : m(o['amount']);
+    return FinBody(
       children: [
-        DsCard.tinted(
-          tone: _tone(status),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(children: [
-                Expanded(child: Text(o['amount'] == null ? "All that can be redeemed".tr : m(o['amount']), style: DsTypography.title.tabular)),
-                DsBadge(label: InvestmentOrders.label(status).tr, tone: _tone(status)),
-              ]),
-              if ((o['fundName'] ?? '').toString().isNotEmpty) _caption(context, o['fundName'].toString()),
-              if ((o['reason'] ?? '').toString().isNotEmpty)
-                Padding(padding: const EdgeInsets.only(top: DsSpace.sm), child: DsInlineAlert(tone: _tone(status), title: "Reason".tr, message: o['reason'].toString())),
-            ],
-          ),
+        FinHeader(
+          icon: redemption ? Icons.south_west_rounded : Icons.north_east_rounded,
+          overline: fund.isNotEmpty ? fund : null,
+          title: amount,
+          status: status.isEmpty ? null : status,
+          statusLabel: InvestmentOrders.label(status).tr,
+          below: !InvestmentOrders.ended(status) && at >= 0
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Divider(height: 1, thickness: 1, color: c.divider),
+                    const DsGap(DsSpace.md),
+                    FinTrack(steps: [for (final s in steps) InvestmentOrders.label(s).tr], current: at),
+                  ],
+                )
+              : null,
         ),
-        const DsGap(DsSpace.md),
-        if (!InvestmentOrders.ended(status) && at >= 0)
-          DsTimeline(
-            steps: [
-              for (final (i, s) in steps.indexed)
-                DsTimelineStep(
-                  title: InvestmentOrders.label(s).tr,
-                  state: i < at || (i == at && i == steps.length - 1) ? DsStepState.done : (i == at ? DsStepState.current : DsStepState.upcoming),
-                ),
-            ],
-          ),
-        const DsGap(DsSpace.md),
-        DsFormSection(
+        if ((o['reason'] ?? '').toString().isNotEmpty) FinNotice(o['reason'].toString(), title: "Reason".tr, tone: FinStatus.tone(status)),
+        FinSection(
           title: "Details".tr,
-          icon: Icons.receipt_long_outlined,
+          divided: true,
           children: [
-            if (o['fee'] != null) _row(context, "Fee".tr, m(o['fee'])),
-            if (o['netAmount'] != null) _row(context, (redemption ? "Paid out" : "Invested in the fund").tr, m(o['netAmount'])),
-            if (o['units'] is num) _row(context, "Units".tr, InvestmentLabels.units((o['units'] as num).toDouble())),
-            if (o['navPerUnit'] is num) _row(context, "Unit price".tr, FinanceMoney.format(o['navPerUnit'] as num, cur)),
-            if (o['termsVersion'] != null) _row(context, "Terms version".tr, '${o['termsVersion']}'),
-            _row(context, "Requested on".tr, FinanceUi.date(o['createdAt'])),
-            if (o['tradeDate'] != null) _row(context, "Processed on".tr, FinanceUi.date(o['tradeDate'])),
-            if (o['expectedSettlementDate'] != null && o['settledAt'] == null) _row(context, "Expected payment".tr, FinanceUi.day(o['expectedSettlementDate'])),
-            if (o['settledAt'] != null) _row(context, "Paid out on".tr, FinanceUi.date(o['settledAt'])),
-            if ((o['reference'] ?? '').toString().isNotEmpty) _row(context, "Reference".tr, o['reference'].toString()),
+            if (o['fee'] != null) FinRow("Fee".tr, m(o['fee'])),
+            if (o['netAmount'] != null) FinRow((redemption ? "Paid out" : "Invested in the fund").tr, m(o['netAmount'])),
+            if (o['units'] is num) FinRow("Units".tr, InvestmentLabels.units((o['units'] as num).toDouble())),
+            if (o['navPerUnit'] is num) FinRow("Unit price".tr, FinanceMoney.format(o['navPerUnit'] as num, cur)),
+            if (o['termsVersion'] != null) FinRow("Terms version".tr, '${o['termsVersion']}'),
+            FinRow("Requested on".tr, FinanceUi.date(o['createdAt'])),
+            if (o['tradeDate'] != null) FinRow("Processed on".tr, FinanceUi.date(o['tradeDate'])),
+            if (o['expectedSettlementDate'] != null && o['settledAt'] == null) FinRow("Expected payment".tr, FinanceUi.day(o['expectedSettlementDate'])),
+            if (o['settledAt'] != null) FinRow("Paid out on".tr, FinanceUi.date(o['settledAt'])),
+            if ((o['reference'] ?? '').toString().isNotEmpty) FinRow("Reference".tr, ltrRef(o['reference'])),
           ],
         ),
         if (redemption && InvestmentOrders.canCancelRedemption(status))
           Padding(
-            padding: const EdgeInsets.only(top: DsSpace.lg),
+            padding: const EdgeInsets.only(top: FinSpace.section),
             child: DsButton.ghost(
               label: "Cancel this redemption".tr,
               icon: Icons.close_rounded,
+              expand: true,
               onPressed: () async {
-                final ok = await showDialog<bool>(
-                  context: context,
-                  builder: (c) => AlertDialog(
-                    title: Text("Cancel this redemption?".tr),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(c, false), child: Text("Keep it".tr)),
-                      TextButton(onPressed: () => Navigator.pop(c, true), child: Text("Cancel it".tr)),
-                    ],
-                  ),
+                final ok = await finConfirm(
+                  title: "Cancel this redemption?".tr,
+                  lines: [
+                    if (fund.isNotEmpty) ("Fund".tr, fund),
+                    ("Amount redeemed".tr, amount),
+                  ],
+                  confirmLabel: "Cancel this redemption".tr,
+                  destructive: true,
                 );
-                if (ok == true) await FinanceUi.run(() => FinanceInvestmentService.cancelRedemption(o['id'].toString()), success: "Redemption cancelled");
+                if (ok) await FinanceUi.run(() => FinanceInvestmentService.cancelRedemption(o['id'].toString()), success: "Redemption cancelled");
               },
             ),
           ),
@@ -1241,53 +1400,53 @@ class _ReturnSimulatorScreenState extends State<ReturnSimulatorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final c = DsColors.of(context);
     final int initial = FinanceAmount.parse(_initial.text, _currency) ?? 0;
     final int monthly = FinanceAmount.parse(_monthly.text, _currency) ?? 0;
     final years = initial + monthly == 0 ? const <SimulationYear>[] : ReturnSimulator.project(initial: initial, monthly: monthly, annualPercent: _rate, years: _years);
     final last = years.isEmpty ? null : years.last;
-    final int maxValue = years.isEmpty ? 1 : math.max(1, years.map((y) => math.max(y.value, y.contributed)).reduce(math.max));
-    return DsScaffold(
+    return FinScaffold(
       title: "Return simulator".tr,
-      maxContentWidth: DsLayout.contentMax,
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+      body: FinBody(
         children: [
-          DsFormSection(
+          FinSection(
+            top: 0,
             title: "Your plan".tr,
-            icon: Icons.tune_rounded,
+            padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, DsSpace.sm),
             children: [
-              Row(children: [
-                Expanded(
-                  child: DsTextField(
-                    label: "Starting amount".tr,
-                    controller: _initial,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-                if (widget.config.currencies.length > 1) ...[
-                  const DsGap(DsSpace.sm),
-                  SizedBox(
-                    width: 110,
-                    child: DsDropdown<String>(
-                      label: "Currency".tr,
-                      value: _currency,
-                      items: [for (final cur in widget.config.currencies) DropdownMenuItem(value: cur, child: Text(cur))],
-                      onChanged: (v) => setState(() => _currency = v ?? _currency),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: DsTextField(
+                      label: "Starting amount".tr,
+                      controller: _initial,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: (_) => setState(() {}),
                     ),
                   ),
+                  if (widget.config.currencies.length > 1) ...[
+                    const DsGap(DsSpace.sm),
+                    SizedBox(
+                      width: 110,
+                      child: DsDropdown<String>(
+                        label: "Currency".tr,
+                        value: _currency,
+                        items: [for (final cur in widget.config.currencies) DropdownMenuItem(value: cur, child: Text(cur))],
+                        onChanged: (v) => setState(() => _currency = v ?? _currency),
+                      ),
+                    ),
+                  ],
                 ],
-              ]),
+              ),
               DsTextField(
                 label: "Added every month".tr,
                 controller: _monthly,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 onChanged: (_) => setState(() {}),
               ),
-              Text('${"Yearly return".tr}: ${InvestmentLabels.percent(_rate, signed: true)}', style: DsTypography.label),
+              _SliderLabel(label: "Yearly return".tr, value: InvestmentLabels.percent(_rate, signed: true)),
               Slider(value: _rate, min: -10, max: 25, divisions: 70, label: InvestmentLabels.percent(_rate), onChanged: (v) => setState(() => _rate = v)),
-              Text('${"Duration".tr}: $_years ${"years".tr}', style: DsTypography.label),
+              _SliderLabel(label: "Duration".tr, value: '$_years ${"years".tr}'),
               Slider(
                 value: _years.toDouble(),
                 min: 1,
@@ -1298,68 +1457,111 @@ class _ReturnSimulatorScreenState extends State<ReturnSimulatorScreen> {
               ),
             ],
           ),
-          const DsGap(DsSpace.lg),
           if (last == null)
-            DsEmptyState(icon: Icons.calculate_outlined, title: "Enter an amount to see a projection.".tr, compact: true)
-          else
-            DsFormSection(
-              title: "Projection".tr,
-              icon: Icons.insights_outlined,
-              children: [
-                _row(context, "You put in".tr, FinanceMoney.format(last.contributed, _currency)),
-                _row(context, "Estimated value".tr, FinanceMoney.format(last.value, _currency)),
-                _row(context, "Estimated gains".tr, _signed(last.gains, _currency), color: c.tone(_gainTone(last.gains)).main),
-                const DsGap(DsSpace.md),
-                Semantics(
-                  label: '${"Estimated value".tr} ${FinanceMoney.format(last.value, _currency)} ${"after".tr} $_years ${"years".tr}',
-                  child: ExcludeSemantics(
-                    child: SizedBox(
-                      height: 120,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          for (final y in years)
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 1),
-                                child: Stack(
-                                  alignment: Alignment.bottomCenter,
-                                  children: [
-                                    Container(height: 120 * y.value / maxValue, color: c.tone(_gainTone(y.gains)).main.withValues(alpha: 0.5)),
-                                    Container(height: 120 * math.min(y.contributed, y.value) / maxValue, color: c.brand),
-                                  ],
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const DsGap(DsSpace.xs),
-                Row(children: [
-                  Expanded(child: _caption(context, '1 ${"year".tr}')),
-                  _caption(context, '$_years ${"years".tr}'),
-                ]),
-                const DsGap(DsSpace.sm),
-                Row(children: [
-                  Container(width: 10, height: 10, color: c.brand),
-                  const DsGap(DsSpace.xs),
-                  _caption(context, "Money put in".tr),
-                  const DsGap(DsSpace.lg),
-                  Container(width: 10, height: 10, color: c.tone(_gainTone(last.gains)).main.withValues(alpha: 0.5)),
-                  const DsGap(DsSpace.xs),
-                  _caption(context, "Growth".tr),
-                ]),
-              ],
-            ),
-          const DsGap(DsSpace.md),
-          DsInlineAlert(
-            tone: DsTone.info,
-            message: "This is an illustration with a constant yearly return, before fees and taxes. Real returns vary from year to year, can be negative, and are not guaranteed.".tr,
+            FinState.empty(Icons.calculate_outlined, "Enter an amount to see a projection.".tr)
+          else ...[
+            _Overline("Projection".tr),
+            FinMetrics(items: [
+              FinMetric("You put in".tr, FinanceMoney.format(last.contributed, _currency)),
+              FinMetric("Estimated value".tr, FinanceMoney.format(last.value, _currency), sub: '${"after".tr} $_years ${"years".tr}'),
+              FinMetric("Estimated gains".tr, FinanceMoney.signed(last.gains, _currency), color: _gainColor(context, last.gains)),
+              FinMetric("Yearly return".tr, InvestmentLabels.percent(_rate, signed: true)),
+            ]),
+            const DsGap(DsSpace.md),
+            FinSurface(padding: const EdgeInsets.all(DsSpace.lg), child: _ProjectionChart(years: years, currency: _currency)),
+          ],
+          FinNotice(
+            "This is an illustration with a constant yearly return, before fees and taxes. Real returns vary from year to year, can be negative, and are not guaranteed.".tr,
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SliderLabel extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _SliderLabel({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DsColors.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: DsSpace.xs),
+      child: Row(children: [
+        Expanded(child: Text(label, style: DsTypography.label.copyWith(color: c.textPrimary))),
+        Text(value, style: DsTypography.bodyStrong.copyWith(color: c.textPrimary).tabular),
+      ]),
+    );
+  }
+}
+
+/// The projection per year: the money put in, and the estimated gain (or
+/// loss) on top of it.
+class _ProjectionChart extends StatelessWidget {
+  final List<SimulationYear> years;
+  final String currency;
+
+  const _ProjectionChart({required this.years, required this.currency});
+
+  @override
+  Widget build(BuildContext context) {
+    const double height = 120;
+    final c = DsColors.of(context);
+    final brand = FinColors.brand(context);
+    final last = years.last;
+    final int maxValue = math.max(1, years.map((y) => math.max(y.value, y.contributed)).reduce(math.max));
+    final Color change = (last.gains >= 0 ? c.success : c.danger).withValues(alpha: 0.5);
+    Widget key(Color color, String label) => Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 10, height: 10, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
+          const DsGap(DsSpace.xs),
+          _caption(context, label),
+        ]);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          label: '${"Estimated value".tr} ${FinanceMoney.format(last.value, currency)} ${"after".tr} ${years.length} ${"years".tr}',
+          child: ExcludeSemantics(
+            child: SizedBox(
+              height: height,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (final y in years)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 1),
+                        child: Stack(
+                          alignment: Alignment.bottomCenter,
+                          children: [
+                            Container(
+                              height: height * math.max(y.value, y.contributed) / maxValue,
+                              decoration: BoxDecoration(color: change, borderRadius: const BorderRadius.vertical(top: Radius.circular(2))),
+                            ),
+                            Container(height: height * math.min(y.value, y.contributed) / maxValue, color: brand),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const DsGap(DsSpace.xs),
+        Row(children: [
+          Expanded(child: _caption(context, '1 ${"year".tr}')),
+          _caption(context, '${years.length} ${"years".tr}'),
+        ]),
+        const DsGap(DsSpace.md),
+        Wrap(spacing: DsSpace.lg, runSpacing: DsSpace.xs, children: [
+          key(brand, (last.gains >= 0 ? "Money put in" : "Estimated value").tr),
+          key(change, "Estimated gains".tr),
+        ]),
+      ],
     );
   }
 }

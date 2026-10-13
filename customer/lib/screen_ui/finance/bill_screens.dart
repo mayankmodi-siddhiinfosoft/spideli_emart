@@ -1,3 +1,4 @@
+import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/finance_security.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/finance_widgets.dart';
@@ -23,6 +24,8 @@ IconData _icon(String? category) => switch (category) {
       _ => Icons.receipt_outlined,
     };
 
+// ------------------------------------------------------------------ overview
+
 /// Spideli Finance > Pay bills. `platform_settings/bills` must exist (admin).
 class BillsScreen extends StatelessWidget {
   const BillsScreen({super.key});
@@ -33,43 +36,28 @@ class BillsScreen extends StatelessWidget {
       future: FinanceTransferService.billsConfig(),
       builder: (context, cfgSnap) {
         final cfg = cfgSnap.data;
-        return DsScaffold(
+        return FinScaffold(
           title: "Pay bills".tr,
-          maxContentWidth: DsLayout.contentMax,
-          body: cfgSnap.connectionState == ConnectionState.waiting
-              ? const Padding(padding: EdgeInsets.all(DsSpace.lg), child: DsSkeletonList(itemCount: 3))
-              : cfg == null
-                  ? DsEmptyState(icon: Icons.receipt_outlined, title: "Bill payments are not available yet.".tr)
-                  : ListView(
-                      padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
-                      children: [
-                        _SavedAccounts(config: cfg),
-                        Text("What do you want to pay?".tr, style: DsTypography.titleSm),
-                        const DsGap(DsSpace.sm),
-                        GridView.count(
-                          crossAxisCount: 3,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          mainAxisSpacing: DsSpace.sm,
-                          crossAxisSpacing: DsSpace.sm,
-                          childAspectRatio: 1.05,
-                          children: [
-                            for (final c in cfg.categories)
-                              DsCard.outlined(
-                                padding: const EdgeInsets.all(DsSpace.sm),
-                                onTap: () => Get.to(() => BillerListScreen(category: c, config: cfg)),
-                                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                                  DsIconWell(icon: _icon(c), tone: DsTone.brand),
-                                  const DsGap(DsSpace.xs),
-                                  Text(BillLabels.category(c).tr, textAlign: TextAlign.center, style: DsTypography.label, maxLines: 2, overflow: TextOverflow.ellipsis),
-                                ]),
-                              ),
-                          ],
-                        ),
-                        const DsGap(DsSpace.lg),
-                        _BillHistory(config: cfg),
-                      ],
-                    ),
+          body: FinBody(children: [
+            if (cfgSnap.connectionState == ConnectionState.waiting)
+              FinState.loading()
+            else if (cfg == null)
+              FinState.empty(Icons.receipt_outlined, "Bill payments are not available yet.".tr)
+            else ...[
+              FinSection(
+                title: "What do you want to pay?".tr,
+                top: 0,
+                padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.md),
+                children: [
+                  FinActions(actions: [
+                    for (final c in cfg.categories) FinAction(_icon(c), BillLabels.category(c).tr, () => Get.to(() => BillerListScreen(category: c, config: cfg))),
+                  ]),
+                ],
+              ),
+              _SavedAccounts(config: cfg),
+              _BillHistory(config: cfg),
+            ],
+          ]),
         );
       },
     );
@@ -88,27 +76,30 @@ class _SavedAccounts extends StatelessWidget {
       builder: (context, snap) {
         final list = snap.data ?? const [];
         if (list.isEmpty) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.only(bottom: DsSpace.lg),
-          child: DsFormSection(
-            title: "My bills".tr,
-            icon: Icons.bookmark_outline_rounded,
-            children: [
-              for (final a in list)
-                DsListTile(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  leadingIcon: _icon(a['category']?.toString()),
-                  title: a['nickname']?.toString().isNotEmpty == true ? a['nickname'].toString() : (a['billerName']?.toString() ?? '-'),
-                  subtitle: '${a['billerName'] ?? ''} · ${a['account'] ?? ''}',
+        return FinSection(
+          title: "My bills".tr,
+          divided: true,
+          padding: paymentListPadding,
+          children: [
+            for (final a in list)
+              Builder(builder: (context) {
+                final String nickname = (a['nickname'] ?? '').toString();
+                final String biller = a['billerName']?.toString() ?? '-';
+                final String account = (a['account'] ?? '').toString();
+                return FinListTile(
+                  icon: _icon(a['category']?.toString()),
+                  iconTone: DsTone.brand,
+                  title: nickname.isNotEmpty ? nickname : biller,
+                  subtitle: [if (nickname.isNotEmpty) biller, if (account.isNotEmpty) ltr(account)].join(' · '),
                   trailing: DsIconButton(
                     icon: Icons.close_rounded,
                     semanticLabel: "Remove".tr,
                     onPressed: () => FinanceUi.run(() => FinanceTransferService.deleteSavedAccount(a['id'].toString())),
                   ),
                   onTap: () => Get.to(() => BillPayScreen(billerId: a['billerId'].toString(), config: config, account: a['account']?.toString())),
-                ),
-            ],
-          ),
+                );
+              }),
+          ],
         );
       },
     );
@@ -125,23 +116,30 @@ class _BillHistory extends StatelessWidget {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: FinanceTransferService.billPayments(),
       builder: (context, snap) {
-        if (snap.hasError) return DsErrorState(message: "Could not load your bill payments.".tr, compact: true);
-        if (!snap.hasData) return const DsSkeletonList(itemCount: 3);
-        return DsFormSection(
+        if (snap.hasError) return FinState.error("Could not load your bill payments.".tr);
+        if (!snap.hasData) return FinState.loading();
+        if (snap.data!.isEmpty) return FinState.empty(Icons.receipt_long_outlined, "You have not paid a bill yet.".tr);
+        return FinSection(
           title: "History".tr,
-          icon: Icons.receipt_long_outlined,
+          divided: true,
+          padding: paymentListPadding,
           children: [
-            if (snap.data!.isEmpty) Text("You have not paid a bill yet.".tr, style: DsTypography.body),
             for (final p in snap.data!)
-              DsListTile(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                leadingIcon: _icon(p['category']?.toString()),
-                leadingTone: paymentTone(p['status']?.toString()),
-                title: p['billerName']?.toString() ?? '-',
-                subtitle: '${paymentDate(p['createdAt'])} · ${PaymentFlow.label(p['status']?.toString()).tr}',
-                trailing: Text(FinanceMoney.format(FinanceSummary.intOf(p['total'] ?? p['amount']), p['currency']?.toString() ?? ''), style: DsTypography.bodyStrong.tabular),
-                onTap: () => Get.to(() => BillPaymentScreen(requestId: p['id'].toString(), config: config)),
-              ),
+              Builder(builder: (context) {
+                final String status = p['status']?.toString() ?? '';
+                final String account = (p['account'] ?? '').toString();
+                final int total = FinanceSummary.intOf(p['total'] ?? p['amount']);
+                return FinListTile(
+                  icon: _icon(p['category']?.toString()),
+                  title: p['billerName']?.toString() ?? '-',
+                  subtitle: [if (account.isNotEmpty) ltr(account), paymentDate(p['createdAt'])].join(' · '),
+                  amount: FinanceMoney.format(total, p['currency']?.toString() ?? ''),
+                  amountColor: paymentAmountColor(context, status, -total),
+                  status: status.isEmpty ? null : status,
+                  statusLabel: status.isEmpty ? null : PaymentFlow.label(status).tr,
+                  onTap: () => Get.to(() => BillPaymentScreen(requestId: p['id'].toString(), config: config)),
+                );
+              }),
           ],
         );
       },
@@ -157,28 +155,29 @@ class BillerListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DsScaffold(
+    return FinScaffold(
       title: BillLabels.category(category).tr,
-      maxContentWidth: DsLayout.contentMax,
       body: StreamBuilder<List<Biller>>(
         stream: FinanceTransferService.billers(category),
         builder: (context, snap) {
-          if (snap.hasError) return DsErrorState(message: "Could not load the billers.".tr);
-          if (!snap.hasData) return const Padding(padding: EdgeInsets.all(DsSpace.lg), child: DsSkeletonList(itemCount: 3));
+          if (snap.hasError) return FinBody(children: [FinState.error("Could not load the billers.".tr)]);
+          if (!snap.hasData) return FinBody(children: [FinState.loading()]);
           final list = snap.data!.where((b) => config.currencies.contains(b.currency)).toList();
-          if (list.isEmpty) return DsEmptyState(icon: _icon(category), title: "No biller is available in this category yet.".tr);
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+          if (list.isEmpty) return FinBody(children: [FinState.empty(_icon(category), "No biller is available in this category yet.".tr)]);
+          return FinBody(
             children: [
-              DsTileGroup(
+              FinSection(
+                top: 0,
+                divided: true,
+                padding: paymentListPadding,
                 children: [
                   for (final b in list)
-                    DsListTile(
-                      leadingIcon: _icon(b.category),
-                      leadingTone: DsTone.brand,
+                    FinListTile(
+                      icon: _icon(b.category),
+                      iconTone: DsTone.brand,
                       title: b.name,
                       subtitle: b.country.isEmpty ? null : b.country,
-                      showChevron: true,
+                      chevron: true,
                       onTap: () => Get.to(() => BillPayScreen(billerId: b.id, config: config)),
                     ),
                 ],
@@ -269,22 +268,34 @@ class _BillPayScreenState extends State<BillPayScreen> {
       builder: (context, snap) {
         final b = snap.data;
         if (b == null) {
-          return DsScaffold(
+          return FinScaffold(
             title: "Pay a bill".tr,
-            maxContentWidth: DsLayout.contentMax,
-            body: snap.connectionState == ConnectionState.waiting
-                ? const Padding(padding: EdgeInsets.all(DsSpace.lg), child: DsSkeletonForm(fields: 3))
-                : DsErrorState(message: "This biller is not available.".tr),
+            body: FinBody(children: [
+              snap.connectionState == ConnectionState.waiting ? FinState.loading(rows: 3) : FinState.error("This biller is not available.".tr),
+            ]),
           );
         }
+        final c = DsColors.of(context);
         final bool accountOk = b.accountValid(_account.text);
         final bool needsLookup = b.lookup && _lookup == null;
         final int? amount = _amountOf(b);
         final String? problem = needsLookup || amount == null ? null : b.amountProblem(amount, due: _due);
         final int fee = amount == null ? 0 : b.fee.feeFor(amount, b.currency);
-        return DsScaffold(
+        final bool packages = b.amountType == 'packages';
+        final bool fixedDue = b.amountType == 'due' && !b.partialPayment;
+        final l = _lookup;
+        final lookupRows = <Widget>[
+          if (l != null && (l['customerName'] ?? '').toString().isNotEmpty)
+            FinRow(
+              "Customer".tr,
+              l['customerName'].toString(),
+              trailing: Icon(Icons.verified_rounded, size: 18, color: c.successStrong, semanticLabel: "Verified".tr),
+            ),
+          if (l != null && l['amountDue'] != null) FinRow("Amount due".tr, FinanceMoney.format(_due ?? 0, b.currency), strong: true),
+          if (l != null && l['dueDate'] != null) FinRow("Due date".tr, paymentDay(l['dueDate'])),
+        ];
+        return FinScaffold(
           title: b.name,
-          maxContentWidth: DsLayout.contentMax,
           bottomBar: DsStickyBar(
             child: FinanceKycGate(
               builder: (context, verified) => needsLookup
@@ -292,12 +303,12 @@ class _BillPayScreenState extends State<BillPayScreen> {
                   : DsButton.primary(label: "Continue".tr, size: DsButtonSize.lg, expand: true, onPressed: verified && accountOk && amount != null && problem == null ? () => _continue(b) : null),
             ),
           ),
-          body: ListView(
-            padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+          body: FinBody(
             children: [
-              DsFormSection(
-                title: BillLabels.category(b.category).tr,
-                icon: _icon(b.category),
+              FinSection(
+                title: "Account".tr,
+                top: 0,
+                padding: paymentFormPadding,
                 children: [
                   DsTextField(
                     label: b.accountLabel.isEmpty ? "Account or contract number".tr : b.accountLabel,
@@ -306,28 +317,23 @@ class _BillPayScreenState extends State<BillPayScreen> {
                     requiredMark: true,
                     errorText: _account.text.trim().isNotEmpty && !accountOk ? "Check this number.".tr : null,
                     onChanged: (_) => setState(() => _lookup = null),
-                    bottomSpacing: 0,
+                  ),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: _save,
+                    onChanged: (v) => setState(() => _save = v ?? false),
+                    title: Text("Save this account for next time".tr, style: DsTypography.body.copyWith(color: c.textPrimary)),
                   ),
                 ],
               ),
-              if (_lookup != null) ...[
-                const DsGap(DsSpace.md),
-                DsCard.tinted(
-                  tone: DsTone.success,
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    if ((_lookup!['customerName'] ?? '').toString().isNotEmpty) paymentRow(context, "Customer".tr, _lookup!['customerName'].toString()),
-                    if (_lookup!['amountDue'] != null) paymentRow(context, "Amount due".tr, FinanceMoney.format(_due ?? 0, b.currency), strong: true),
-                    if (_lookup!['dueDate'] != null) paymentRow(context, "Due date".tr, paymentDay(_lookup!['dueDate'])),
-                  ]),
-                ),
-              ],
+              if (lookupRows.isNotEmpty) FinSection(title: "Bill details".tr, divided: true, children: lookupRows),
               if (!needsLookup) ...[
-                const DsGap(DsSpace.lg),
-                DsFormSection(
-                  title: (b.amountType == 'packages' ? "Package" : "Amount").tr,
-                  icon: Icons.payments_outlined,
+                FinSection(
+                  title: (packages ? "Package" : "Amount").tr,
+                  padding: packages || fixedDue ? null : paymentFormPadding,
                   children: [
-                    if (b.amountType == 'packages')
+                    if (packages)
                       RadioGroup<String>(
                         groupValue: _package,
                         onChanged: (v) => setState(() => _package = v),
@@ -336,13 +342,13 @@ class _BillPayScreenState extends State<BillPayScreen> {
                             RadioListTile<String>(
                               contentPadding: EdgeInsets.zero,
                               value: p.code,
-                              title: Text(p.name),
-                              secondary: Text(FinanceMoney.format(p.amount, b.currency), style: DsTypography.bodyStrong.tabular),
+                              title: Text(p.name, style: DsTypography.body.copyWith(color: c.textPrimary)),
+                              secondary: Text(FinanceMoney.format(p.amount, b.currency), style: DsTypography.bodyStrong.copyWith(color: c.textPrimary).tabular),
                             ),
                         ]),
                       )
-                    else if (b.amountType == 'due' && !b.partialPayment)
-                      paymentRow(context, "Amount".tr, FinanceMoney.format(_due ?? 0, b.currency))
+                    else if (fixedDue)
+                      FinRow("Amount".tr, FinanceMoney.format(_due ?? 0, b.currency))
                     else
                       DsTextField(
                         label: "${"Amount".tr} (${b.currency})",
@@ -355,18 +361,18 @@ class _BillPayScreenState extends State<BillPayScreen> {
                         errorText: problem?.tr,
                         onChanged: (_) => setState(() {}),
                       ),
-                    if (amount != null && problem == null) ...[
-                      paymentRow(context, "Estimated fee".tr, fee == 0 ? "Free".tr : FinanceMoney.format(fee, b.currency)),
-                      paymentRow(context, "Estimated total".tr, FinanceMoney.format(amount + fee, b.currency)),
-                    ],
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: _save,
-                      onChanged: (v) => setState(() => _save = v ?? false),
-                      title: Text("Save this account for next time".tr),
-                    ),
                   ],
                 ),
+                if (amount != null && problem == null)
+                  FinSection(
+                    title: "Estimate".tr,
+                    children: [
+                      FinRow("Amount".tr, FinanceMoney.format(amount, b.currency)),
+                      FinRow("Estimated fee".tr, fee == 0 ? "Free".tr : FinanceMoney.format(fee, b.currency)),
+                      Divider(height: DsSpace.lg, color: c.divider),
+                      FinRow("Estimated total".tr, FinanceMoney.format(amount + fee, b.currency), strong: true),
+                    ],
+                  ),
               ],
             ],
           ),
@@ -391,13 +397,12 @@ class BillPaymentScreen extends StatelessWidget {
       stream: FinanceTransferService.billPayment(requestId),
       builder: (context, snap) {
         final p = snap.data;
-        return DsScaffold(
+        return FinScaffold(
           title: "Bill payment".tr,
-          maxContentWidth: DsLayout.contentMax,
           body: snap.hasError
-              ? DsErrorState(message: "Could not load this payment.".tr)
+              ? FinBody(children: [FinState.error("Could not load this payment.".tr)])
               : p == null
-                  ? const Padding(padding: EdgeInsets.all(DsSpace.lg), child: DsSkeletonForm(fields: 4))
+                  ? FinBody(children: [FinState.loading(rows: 4)])
                   : _body(context, p),
         );
       },
@@ -418,25 +423,25 @@ class BillPaymentScreen extends StatelessWidget {
       ("Amount".tr, m(p['amount'])),
       ("Fee".tr, FinanceSummary.intOf(p['fee']) == 0 ? "Free".tr : m(p['fee'])),
     ];
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+    final String? category = p['category']?.toString();
+    final String biller = (p['billerName'] ?? '').toString();
+    final String account = (p['account'] ?? '').toString();
+    final String reason = (p['reason'] ?? '').toString();
+    final String reference = (p['reference'] ?? '').toString();
+    final String billerReference = (p['billerReference'] ?? '').toString();
+    final String tokenLabel = (p['tokenLabel'] ?? '').toString();
+    final track = paymentTrack(status);
+    return FinBody(
       children: [
-        DsCard.tinted(
-          tone: paymentTone(status),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(children: [
-                Expanded(child: Text(m(total), style: DsTypography.title.tabular)),
-                DsBadge(label: PaymentFlow.label(status).tr, tone: paymentTone(status)),
-              ]),
-              Text('${p['billerName'] ?? ''} · ${p['account'] ?? ''}', style: DsTypography.body),
-              if ((p['reason'] ?? '').toString().isNotEmpty)
-                Padding(padding: const EdgeInsets.only(top: DsSpace.sm), child: DsInlineAlert(tone: paymentTone(status), title: "Reason".tr, message: p['reason'].toString())),
-            ],
-          ),
+        FinHeader(
+          overline: category == null || category.isEmpty ? null : BillLabels.category(category).tr,
+          title: m(total),
+          subtitle: [if (biller.isNotEmpty) biller, if (account.isNotEmpty) ltr(account)].join(' · '),
+          status: status.isEmpty ? null : status,
+          statusLabel: PaymentFlow.label(status).tr,
+          icon: _icon(category),
+          below: reason.isEmpty ? null : DsInlineAlert(tone: FinStatus.tone(status), title: "Reason".tr, message: reason),
         ),
-        const DsGap(DsSpace.md),
         if (PaymentFlow.canConfirm(status, null, DateTime.now()))
           PaymentConfirmCard(
             lines: details,
@@ -462,50 +467,42 @@ class BillPaymentScreen extends StatelessWidget {
             },
           )
         else ...[
-          if (status == 'completed' && token.isNotEmpty) ...[
-            DsCard.outlined(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Text(p['tokenLabel']?.toString() ?? "Your code".tr, style: DsTypography.label),
-                const DsGap(DsSpace.xs),
-                Row(children: [
-                  Expanded(child: SelectableText(token, style: DsTypography.title.copyWith(letterSpacing: 2, fontFeatures: const [FontFeature.tabularFigures()]))),
-                  DsIconButton(
-                    icon: Icons.copy_rounded,
-                    semanticLabel: "Copy".tr,
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: token));
-                      ShowToastDialog.showToast("Copied".tr);
-                    },
-                  ),
-                ]),
-                if ((p['units'] ?? '').toString().isNotEmpty) Text('${"Units".tr}: ${p['units']}', style: DsTypography.caption),
-              ]),
-            ),
-            const DsGap(DsSpace.md),
-          ],
-          paymentTimeline(status),
-          const DsGap(DsSpace.md),
-          DsFormSection(
+          if (status == 'completed' && token.isNotEmpty)
+            _TokenCard(label: tokenLabel.isEmpty ? "Your code".tr : tokenLabel, token: token, units: (p['units'] ?? '').toString()),
+          if (track != null) FinSection(title: "Status".tr, padding: const EdgeInsets.all(DsSpace.lg), children: [track]),
+          if (status == 'pending')
+            FinNotice("Approve the payment on your phone if you are asked to. This page updates when the payment is confirmed.".tr),
+          FinSection(
             title: "Details".tr,
-            icon: Icons.receipt_long_outlined,
+            divided: true,
             children: [
-              for (final (l, v) in details) paymentRow(context, l, v),
-              paymentRow(context, "Total paid".tr, m(total)),
-              paymentRow(context, "Date".tr, paymentDate(p['createdAt'])),
-              if (p['completedAt'] != null) paymentRow(context, "Completed on".tr, paymentDate(p['completedAt'])),
-              if ((p['reference'] ?? '').toString().isNotEmpty) paymentRow(context, "Reference".tr, p['reference'].toString()),
-              if ((p['billerReference'] ?? '').toString().isNotEmpty) paymentRow(context, "Biller reference".tr, p['billerReference'].toString()),
+              for (final (l, v) in details) FinRow(l, v),
+              FinRow("Total paid".tr, m(total), strong: true),
+              FinRow("Date".tr, paymentDate(p['createdAt'])),
+              if (p['completedAt'] != null) FinRow("Completed on".tr, paymentDate(p['completedAt'])),
+              if (reference.isNotEmpty) FinRow("Reference".tr, ltrRef(reference)),
+              if (billerReference.isNotEmpty) FinRow("Biller reference".tr, ltrRef(billerReference)),
             ],
           ),
-          if (status == 'pending')
-            Padding(
-              padding: const EdgeInsets.only(top: DsSpace.md),
-              child: DsInlineAlert(tone: DsTone.info, message: "Approve the payment on your phone if you are asked to. This page updates when the payment is confirmed.".tr),
+          if (PaymentFlow.canCancel(status)) ...[
+            const DsGap(DsSpace.lg),
+            DsButton.ghost(
+              label: "Cancel this payment".tr,
+              icon: Icons.close_rounded,
+              expand: true,
+              onPressed: () async {
+                final ok = await finConfirm(
+                  title: "Cancel this payment?".tr,
+                  lines: [("Biller".tr, p['billerName']?.toString() ?? '-'), ("Total".tr, m(total))],
+                  confirmLabel: "Cancel this payment".tr,
+                  destructive: true,
+                );
+                if (ok) await FinanceUi.run(() => FinanceTransferService.cancelBill(requestId), success: "Payment cancelled");
+              },
             ),
-          if (PaymentFlow.canCancel(status))
-            DsButton.ghost(label: "Cancel this payment".tr, icon: Icons.close_rounded, onPressed: () => FinanceUi.run(() => FinanceTransferService.cancelBill(requestId), success: "Payment cancelled")),
+          ],
           if (status == 'completed' || status == 'reversed') ...[
-            const DsGap(DsSpace.md),
+            const DsGap(FinSpace.section),
             DsButton.secondary(
               label: "Share the receipt".tr,
               icon: Icons.ios_share_rounded,
@@ -527,6 +524,62 @@ class BillPaymentScreen extends StatelessWidget {
           ],
         ],
       ],
+    );
+  }
+}
+
+/// The biller's code (a prepaid electricity token...): what the user came
+/// for, so it stands alone, large, left-to-right and one tap from the clipboard.
+class _TokenCard extends StatelessWidget {
+  final String label;
+  final String token;
+  final String units;
+
+  const _TokenCard({required this.label, required this.token, required this.units});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DsColors.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: FinSpace.section),
+      child: FinSurface(
+        padding: const EdgeInsets.all(DsSpace.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(children: [
+              Icon(Icons.key_rounded, size: 18, color: FinColors.brand(context)),
+              const DsGap(DsSpace.xs),
+              Expanded(child: Semantics(header: true, child: Text(label, style: DsTypography.labelSm.copyWith(color: c.textSecondary)))),
+            ]),
+            const DsGap(DsSpace.md),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.lg),
+              decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brSm),
+              child: SelectableText(
+                token,
+                textAlign: TextAlign.center,
+                textDirection: TextDirection.ltr,
+                style: FinText.amount.copyWith(color: c.textPrimary, letterSpacing: 2),
+              ),
+            ),
+            if (units.isNotEmpty) ...[
+              const DsGap(DsSpace.sm),
+              Text('${"Units".tr}: ${ltr(units)}', textAlign: TextAlign.center, style: DsTypography.bodySm.copyWith(color: c.textSecondary)),
+            ],
+            const DsGap(DsSpace.md),
+            DsButton.secondary(
+              label: "Copy".tr,
+              icon: Icons.copy_rounded,
+              expand: true,
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: token));
+                ShowToastDialog.showToast("Copied".tr);
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

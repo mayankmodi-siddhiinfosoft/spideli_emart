@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/kyc_screen.dart';
 import 'package:customer/screen_ui/subscriptions/saved_payment_methods_screen.dart';
 import 'package:customer/service/finance_group_service.dart';
@@ -68,36 +69,84 @@ class FinanceKycGate extends StatelessWidget {
   }
 }
 
+/// Sheets open in their own route, outside [FinScaffold]: pin the finance
+/// accent there too so buttons and selections stay navy.
+Widget _finAccent(Widget child) => Builder(
+      builder: (context) => DsAccentScope(color: Theme.of(context).brightness == Brightness.dark ? FinColors.navyDark : FinColors.navy, child: child),
+    );
+
 /// Asks for an amount in [currency]; returns minor units or null.
 Future<int?> askAmount(BuildContext context, {required String title, required String currency, int? max, String? hint}) {
   final ctrl = TextEditingController();
-  return DsBottomSheet.show<int>(
+  return finSheet<int>(
     title: title,
-    child: StatefulBuilder(
-      builder: (context, setState) {
-        final int? value = FinanceAmount.parse(ctrl.text, currency);
-        final bool tooMuch = value != null && max != null && value > max;
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            DsTextField(
-              label: "${"Amount".tr} ($currency)",
-              hint: hint,
-              controller: ctrl,
-              autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              onChanged: (_) => setState(() {}),
-              errorText: tooMuch ? "${"At most".tr} ${FinanceMoney.format(max, currency)}" : null,
-            ),
-            DsButton.primary(
-              label: "Continue".tr,
-              expand: true,
-              onPressed: value == null || tooMuch ? null : () => Get.back(result: value),
-            ),
-          ],
-        );
-      },
+    child: _finAccent(
+      StatefulBuilder(
+        builder: (context, setState) {
+          final c = DsColors.of(context);
+          final int? value = FinanceAmount.parse(ctrl.text, currency);
+          final bool tooMuch = value != null && max != null && value > max;
+          final String? error = tooMuch ? "${"At most".tr} ${FinanceMoney.format(max, currency)}" : null;
+          final String? helper = error ?? hint ?? (max == null ? null : "${"At most".tr} ${FinanceMoney.format(max, currency)}");
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text("Amount".tr.toUpperCase(), style: FinText.sectionTitle(context)),
+              const DsGap(DsSpace.sm),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+                decoration: BoxDecoration(
+                  color: c.isDark ? c.surfaceAlt : FinColors.page(context),
+                  borderRadius: FinSpace.br,
+                  border: Border.all(color: error != null ? c.danger : c.border, width: error != null ? 1.5 : 1),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Semantics(
+                        label: "${"Amount".tr} ($currency)",
+                        textField: true,
+                        child: TextField(
+                          controller: ctrl,
+                          autofocus: true,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          textInputAction: TextInputAction.done,
+                          // Digits and group spaces stay in order inside Arabic text.
+                          textDirection: TextDirection.ltr,
+                          cursorColor: FinColors.brand(context),
+                          style: FinText.amount.copyWith(color: c.textPrimary),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.zero,
+                            hintText: '0',
+                            hintStyle: FinText.amount.copyWith(color: c.textMuted),
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ),
+                    ),
+                    const DsGap(DsSpace.sm),
+                    Text(currency, style: DsTypography.titleSm.copyWith(color: c.textSecondary)),
+                  ],
+                ),
+              ),
+              if (helper != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: DsSpace.sm, left: DsSpace.xxs, right: DsSpace.xxs),
+                  child: Text(helper, style: DsTypography.caption.copyWith(color: error != null ? c.danger : c.textSecondary)),
+                ),
+              const DsGap(DsSpace.xl),
+              DsButton.primary(
+                label: "Continue".tr,
+                expand: true,
+                onPressed: value == null || tooMuch ? null : () => Get.back(result: value),
+              ),
+            ],
+          );
+        },
+      ),
     ),
   );
 }
@@ -119,92 +168,158 @@ abstract final class FinancePaySheet {
   }) async {
     final saved = await SavedPaymentMethods.load().catchError((_) => <SavedPaymentMethod>[]);
     // The options: the wallet, then each saved number of an allowed type.
-    final options = <(String, Map<String, dynamic>)>[
-      if (methods.contains('wallet')) (GroupLabels.method('wallet').tr, FinanceGroupService.paymentOf('wallet')),
+    // (title, number, icon, the payment sent to the server)
+    final options = <(String, String?, IconData, Map<String, dynamic>)>[
+      if (methods.contains('wallet')) (GroupLabels.method('wallet').tr, null, Icons.account_balance_wallet_outlined, FinanceGroupService.paymentOf('wallet')),
       for (final m in saved)
-        if (methods.contains(m.type)) ('${m.title.tr} · ${m.number}', FinanceGroupService.paymentOf(m.type, operator: m.operator, number: m.number)),
+        if (methods.contains(m.type))
+          (m.title.tr, m.number, Icons.phone_iphone_rounded, FinanceGroupService.paymentOf(m.type, operator: m.operator, number: m.number)),
     ];
     if (!context.mounted) return;
     int? selected = options.isEmpty ? null : 0;
-    final confirmed = await DsBottomSheet.show<bool>(
+    final confirmed = await finSheet<bool>(
       title: title,
-      child: StatefulBuilder(
-        builder: (context, setState) => Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(FinanceMoney.format(amount, currency), textAlign: TextAlign.center, style: DsTypography.title.tabular),
-            const DsGap(DsSpace.md),
-            Text((payout ? "Receive the money on" : "Pay with").tr, style: DsTypography.titleSm),
-            const DsGap(DsSpace.xs),
-            if (options.isEmpty)
-              Text("Add a Mobile Money number to pay.".tr, style: DsTypography.body)
-            else
-              for (int i = 0; i < options.length; i++)
-                RadioListTile<int>(
-                  contentPadding: EdgeInsets.zero,
-                  value: i,
-                  groupValue: selected,
-                  title: Text(options[i].$1),
-                  onChanged: (v) => setState(() => selected = v),
+      child: _finAccent(
+        StatefulBuilder(
+          builder: (context, setState) {
+            final c = DsColors.of(context);
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // What is paid (or received): the focal figure of the sheet.
+                Semantics(
+                  container: true,
+                  label: '${(payout ? "Amount" : "You pay").tr}: ${FinanceMoney.format(amount, currency)}',
+                  child: ExcludeSemantics(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text((payout ? "Amount" : "You pay").tr, style: DsTypography.caption.copyWith(color: c.textSecondary)),
+                      const DsGap(DsSpace.xxs),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(FinanceMoney.format(amount, currency), style: FinText.amount.copyWith(color: c.textPrimary)),
+                      ),
+                    ]),
+                  ),
                 ),
-            if (methods.any((m) => m != 'wallet'))
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: DsButton.ghost(
-                  label: "Manage payment numbers".tr,
-                  icon: Icons.add_rounded,
-                  size: DsButtonSize.sm,
-                  onPressed: () {
-                    Get.back(result: false);
-                    Get.to(() => const SavedPaymentMethodsScreen());
-                  },
+                const DsGap(DsSpace.xl),
+                Semantics(
+                  header: true,
+                  child: Text((payout ? "Receive the money on" : "Pay with").tr.toUpperCase(), style: FinText.sectionTitle(context)),
                 ),
-              ),
-            const DsGap(DsSpace.md),
-            Text((payout ? "Check the amount and where you receive it." : "Check the amount and the payment method. You confirm the payment next.").tr, style: DsTypography.caption),
-            const DsGap(DsSpace.sm),
-            DsButton.primary(
-              label: payout ? "Confirm".tr : "${"Confirm and pay".tr} ${FinanceMoney.format(amount, currency)}",
-              icon: payout ? Icons.check_rounded : Icons.lock_outline_rounded,
-              expand: true,
-              onPressed: selected == null ? null : () => Get.back(result: true),
-            ),
-          ],
+                const DsGap(DsSpace.sm),
+                if (options.isEmpty)
+                  DsInlineAlert(tone: DsTone.warning, message: "Add a Mobile Money number to pay.".tr)
+                else
+                  FinSurface(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (int i = 0; i < options.length; i++) ...[
+                          if (i > 0) Divider(height: 1, thickness: 1, color: c.divider),
+                          _MethodRow(
+                            title: options[i].$1,
+                            number: options[i].$2,
+                            icon: options[i].$3,
+                            selected: selected == i,
+                            first: i == 0,
+                            last: i == options.length - 1,
+                            onTap: () => setState(() => selected = i),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                if (methods.any((m) => m != 'wallet'))
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: DsButton.ghost(
+                      label: "Manage payment numbers".tr,
+                      icon: Icons.add_rounded,
+                      size: DsButtonSize.sm,
+                      onPressed: () {
+                        Get.back(result: false);
+                        Get.to(() => const SavedPaymentMethodsScreen());
+                      },
+                    ),
+                  ),
+                const DsGap(DsSpace.md),
+                Text(
+                  (payout ? "Check the amount and where you receive it." : "Check the amount and the payment method. You confirm the payment next.").tr,
+                  style: DsTypography.caption.copyWith(color: c.textSecondary),
+                ),
+                const DsGap(DsSpace.md),
+                DsButton.primary(
+                  label: payout ? "Confirm".tr : "${"Confirm and pay".tr} ${FinanceMoney.format(amount, currency)}",
+                  icon: payout ? Icons.check_rounded : Icons.lock_outline_rounded,
+                  expand: true,
+                  onPressed: selected == null ? null : () => Get.back(result: true),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
     if (confirmed != true || selected == null) return;
     ShowToastDialog.showLoader("Please wait...".tr);
     try {
-      final reply = await submit(options[selected!].$2);
+      final reply = await submit(options[selected!].$4);
       ShowToastDialog.closeLoader();
       final String status = reply['status']?.toString() ?? '';
       final String instructions = reply['instructions']?.toString() ?? '';
-      await DsBottomSheet.show(
+      // Success is shown only when the server says the money arrived.
+      final bool received = !payout && status == 'succeeded';
+      await finSheet(
         title: (payout ? "Request sent" : (status == 'succeeded' ? "Payment received" : "Payment started")).tr,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              instructions.isNotEmpty
-                  ? instructions
-                  : (payout
-                          ? "The money is sent once your request is processed. You can follow it here."
-                          : status == 'succeeded'
-                          ? "Your payment was received."
-                          : "Approve the payment on your phone if you are asked to. This page updates when the payment is confirmed.")
-                      .tr,
-              style: DsTypography.body,
-            ),
-            if ((reply['reference'] ?? '').toString().isNotEmpty) ...[
-              const DsGap(DsSpace.sm),
-              Text("${"Reference".tr}: ${reply['reference']}", style: DsTypography.caption),
-            ],
-            const DsGap(DsSpace.md),
-            DsButton.primary(label: "OK".tr, expand: true, onPressed: () => Get.back()),
-          ],
+        child: _finAccent(
+          Builder(
+            builder: (context) {
+              final c = DsColors.of(context);
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(children: [
+                    DsIconWell(
+                      icon: received ? Icons.check_circle_rounded : (payout ? Icons.schedule_send_rounded : Icons.hourglass_top_rounded),
+                      tone: received ? DsTone.success : DsTone.info,
+                      size: 44,
+                    ),
+                    const DsGap(DsSpace.md),
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(FinanceMoney.format(amount, currency), style: FinText.amount.copyWith(color: c.textPrimary)),
+                      ),
+                    ),
+                  ]),
+                  const DsGap(DsSpace.lg),
+                  Text(
+                    instructions.isNotEmpty
+                        ? instructions
+                        : (payout
+                                ? "The money is sent once your request is processed. You can follow it here."
+                                : status == 'succeeded'
+                                ? "Your payment was received."
+                                : "Approve the payment on your phone if you are asked to. This page updates when the payment is confirmed.")
+                            .tr,
+                    style: DsTypography.body.copyWith(color: c.textPrimary),
+                  ),
+                  if ((reply['reference'] ?? '').toString().isNotEmpty) ...[
+                    const DsGap(DsSpace.sm),
+                    Divider(height: DsSpace.lg, color: c.divider),
+                    FinRow("Reference".tr, ltrRef(reply['reference'])),
+                  ],
+                  const DsGap(DsSpace.lg),
+                  DsButton.primary(label: "OK".tr, expand: true, onPressed: () => Get.back()),
+                ],
+              );
+            },
+          ),
         ),
       );
     } on FinanceException catch (e) {
@@ -214,6 +329,69 @@ abstract final class FinancePaySheet {
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast(FinanceErrors.messageKey(null).tr);
     }
+  }
+}
+
+/// One payment method of the pay sheet: a clear, full-width selectable row.
+class _MethodRow extends StatelessWidget {
+  final String title;
+  final String? number;
+  final IconData icon;
+  final bool selected;
+  final bool first;
+  final bool last;
+  final VoidCallback onTap;
+
+  const _MethodRow({required this.title, required this.number, required this.icon, required this.selected, required this.first, required this.last, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DsColors.of(context);
+    final Color brand = FinColors.brand(context);
+    final radius = BorderRadius.vertical(
+      top: first ? const Radius.circular(FinSpace.radius - 1) : Radius.zero,
+      bottom: last ? const Radius.circular(FinSpace.radius - 1) : Radius.zero,
+    );
+    return Semantics(
+      selected: selected,
+      inMutuallyExclusiveGroup: true,
+      button: true,
+      label: number == null ? title : '$title, $number',
+      onTap: onTap,
+      child: ExcludeSemantics(
+        child: Material(
+          color: selected ? c.brandSoft : Colors.transparent,
+          borderRadius: radius,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: radius,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 56),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
+                child: Row(children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(color: selected ? c.surface : c.surfaceAlt, borderRadius: DsRadius.brSm),
+                    child: Icon(icon, size: 20, color: selected ? brand : c.textSecondary),
+                  ),
+                  const DsGap(DsSpace.md),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(title, style: DsTypography.bodyStrong.copyWith(color: c.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      if (number != null && number!.isNotEmpty) Text(ltr(number!), style: DsTypography.caption.copyWith(color: c.textSecondary).tabular),
+                    ]),
+                  ),
+                  const DsGap(DsSpace.sm),
+                  Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: selected ? brand : c.textMuted, size: 22),
+                ]),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

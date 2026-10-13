@@ -233,7 +233,9 @@ abstract final class InvestmentLabels {
   /// "12.5 %" with a sign for gains, "-" when unknown.
   static String percent(double? p, {bool signed = false}) {
     if (p == null) return '-';
-    final String s = p.toStringAsFixed(p.abs() >= 100 ? 0 : 2).replaceFirst(RegExp(r'\.?0+$'), '');
+    final String fixed = p.toStringAsFixed(p.abs() >= 100 ? 0 : 2);
+    // Trailing zeros only after a decimal point ("100" stays "100", "4.50" becomes "4.5").
+    final String s = fixed.contains('.') ? fixed.replaceFirst(RegExp(r'\.?0+$'), '') : fixed;
     return ltr('${signed && p > 0 ? '+' : ''}$s %');
   }
 

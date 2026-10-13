@@ -1,3 +1,4 @@
+import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/finance_widgets.dart';
 import 'package:customer/service/finance_group_service.dart';
@@ -12,6 +13,18 @@ import 'package:intl/intl.dart';
 
 String _date(DateTime? d) => d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
 
+String _statusLabel(String s) => const {'active': 'Active', 'completed': 'Completed', 'cancelled': 'Cancelled'}[s] ?? s;
+
+/// Form sections: room above the first label; every field brings its own
+/// bottom spacing.
+const EdgeInsets _formPadding = EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, DsSpace.xs);
+
+/// An empty line inside a section ("No contribution yet.").
+Widget _quiet(BuildContext context, String text) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
+      child: Text(text, style: DsTypography.body.copyWith(color: DsColors.of(context).textSecondary)),
+    );
+
 /// Spideli Finance > Savings goals: the user's goals and invitations.
 /// `platform_settings/savings` must exist (admin), else "not available".
 class SavingsListScreen extends StatelessWidget {
@@ -23,9 +36,8 @@ class SavingsListScreen extends StatelessWidget {
       future: FinanceGroupService.savingsConfig(),
       builder: (context, cfgSnap) {
         final cfg = cfgSnap.data;
-        return DsScaffold(
+        return FinScaffold(
           title: "Savings goals".tr,
-          maxContentWidth: DsLayout.contentMax,
           bottomBar: cfg == null
               ? null
               : DsStickyBar(
@@ -37,16 +49,110 @@ class SavingsListScreen extends StatelessWidget {
                     onPressed: () => Get.to(() => SavingsGoalFormScreen(config: cfg)),
                   ),
                 ),
-          body: cfgSnap.connectionState == ConnectionState.waiting
-              ? const Padding(padding: EdgeInsets.all(DsSpace.lg), child: DsSkeletonList(itemCount: 3))
-              : cfg == null
-                  ? DsEmptyState(icon: Icons.savings_outlined, title: "Savings goals are not available yet.".tr)
-                  : ListView(
-                      padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
-                      children: const [_GoalInvitations(), _GoalList()],
-                    ),
+          body: FinBody(
+            children: [
+              if (cfgSnap.connectionState == ConnectionState.waiting)
+                FinState.loading()
+              else if (cfg == null)
+                FinState.empty(Icons.savings_outlined, "Savings goals are not available yet.".tr)
+              else
+                ...const [_SavingsHero(), _GoalInvitations(), _GoalList()],
+            ],
+          ),
         );
       },
+    );
+  }
+}
+
+/// The focal point: what the user has saved in their goals, as the server
+/// totals it (finance_summaries/{uid}); hidden until there is a summary.
+class _SavingsHero extends StatelessWidget {
+  const _SavingsHero();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<FinanceSummary?>(
+      stream: FinanceService.summary(),
+      builder: (context, snap) {
+        final s = snap.data;
+        final savings = s?.savings;
+        if (s == null || savings == null) return const SizedBox.shrink();
+        String m(dynamic v) => FinanceMoney.format(FinanceSummary.intOf(v), s.currency);
+        final double? progress = s.savingsProgress;
+        return FinHero(
+          label: "Saved so far".tr,
+          amount: m(savings['savedAmount']),
+          caption: '${FinanceSummary.intOf(savings['activeGoals'])} ${"active".tr} · ${"Target amount".tr} ${m(savings['targetAmount'])}',
+          footer: progress == null ? null : _HeroProgress(value: progress),
+        );
+      },
+    );
+  }
+}
+
+/// A progress bar drawn for the navy hero panel (the brand bar would not show on it).
+class _HeroProgress extends StatelessWidget {
+  final double value;
+
+  const _HeroProgress({required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final double v = value.clamp(0.0, 1.0);
+    final String pct = '${(v * 100).round()}%';
+    return Semantics(
+      value: pct,
+      child: Row(
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: DsRadius.brPill,
+              child: SizedBox(
+                height: 6,
+                child: Stack(children: [
+                  Container(color: Colors.white.withValues(alpha: 0.16)),
+                  FractionallySizedBox(alignment: AlignmentDirectional.centerStart, widthFactor: v, child: Container(color: Colors.white)),
+                ]),
+              ),
+            ),
+          ),
+          const DsGap(DsSpace.sm),
+          Text(pct, style: DsTypography.caption.copyWith(color: Colors.white, fontWeight: FontWeight.w600).tabular),
+        ],
+      ),
+    );
+  }
+}
+
+/// An invitation row: what it is, then decline / join.
+class _Invitation extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onDecline;
+  final VoidCallback onJoin;
+
+  const _Invitation({required this.icon, required this.title, required this.subtitle, required this.onDecline, required this.onJoin});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FinListTile(icon: icon, iconTone: DsTone.brand, title: title, subtitle: subtitle),
+        Padding(
+          padding: const EdgeInsets.only(bottom: DsSpace.sm),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              DsButton.ghost(label: "Decline".tr, size: DsButtonSize.sm, onPressed: onDecline),
+              const DsGap(DsSpace.sm),
+              DsButton.tonal(label: "Join".tr, icon: Icons.check_rounded, size: DsButtonSize.sm, onPressed: onJoin),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -61,23 +167,17 @@ class _GoalInvitations extends StatelessWidget {
       builder: (context, snap) {
         final invites = snap.data ?? const [];
         if (invites.isEmpty) return const SizedBox.shrink();
-        return DsFormSection(
+        return FinSection(
           title: "Invitations".tr,
-          icon: Icons.mail_outline_rounded,
+          divided: true,
           children: [
             for (final g in invites)
-              DsListTile(
-                padding: EdgeInsets.zero,
-                leadingIcon: Icons.groups_outlined,
+              _Invitation(
+                icon: Icons.groups_outlined,
                 title: g.name,
                 subtitle: '${GroupLabels.purpose(g.purpose).tr} · ${FinanceMoney.format(g.targetAmount, g.currency)}',
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DsButton.ghost(label: "Decline".tr, size: DsButtonSize.sm, onPressed: () => FinanceUi.run(() => FinanceGroupService.respondToGoalInvite(g.id, false))),
-                    DsButton.tonal(label: "Join".tr, size: DsButtonSize.sm, onPressed: () => FinanceUi.run(() => FinanceGroupService.respondToGoalInvite(g.id, true), success: "You joined the goal")),
-                  ],
-                ),
+                onDecline: () => FinanceUi.run(() => FinanceGroupService.respondToGoalInvite(g.id, false)),
+                onJoin: () => FinanceUi.run(() => FinanceGroupService.respondToGoalInvite(g.id, true), success: "You joined the goal"),
               ),
           ],
         );
@@ -94,43 +194,23 @@ class _GoalList extends StatelessWidget {
     return StreamBuilder<List<SavingsGoal>>(
       stream: FinanceGroupService.myGoals(),
       builder: (context, snap) {
-        if (snap.hasError) return DsErrorState(message: "Could not load your savings goals.".tr, compact: true);
-        if (!snap.hasData) return const DsSkeletonList(itemCount: 3);
+        if (snap.hasError) return FinState.error("Could not load your savings goals.".tr);
+        if (!snap.hasData) return FinState.loading();
         final goals = snap.data!;
         if (goals.isEmpty) {
-          return DsEmptyState(
-            icon: Icons.savings_outlined,
-            title: "No savings goal yet".tr,
+          return FinState.empty(
+            Icons.savings_outlined,
+            "No savings goal yet".tr,
             message: "Save step by step for a home, studies, travel, health or a project.".tr,
-            compact: true,
           );
         }
+        final active = goals.where((g) => g.isActive).toList();
+        final closed = goals.where((g) => !g.isActive).toList();
         return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (final g in goals)
-              Padding(
-                padding: const EdgeInsets.only(bottom: DsSpace.sm),
-                child: DsCard.outlined(
-                  onTap: () => Get.to(() => SavingsGoalScreen(goalId: g.id)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(child: Text(g.name, style: DsTypography.titleSm)),
-                          if (!g.isActive) DsBadge(label: _statusLabel(g.status).tr, small: true),
-                          if (g.isGroup) const Padding(padding: EdgeInsetsDirectional.only(start: DsSpace.xs), child: Icon(Icons.groups_outlined, size: 18)),
-                        ],
-                      ),
-                      Text('${GroupLabels.purpose(g.purpose).tr}${g.deadline == null ? '' : ' · ${"by".tr} ${_date(g.deadline)}'}', style: DsTypography.caption),
-                      const DsGap(DsSpace.sm),
-                      DsProgressBar(value: g.progress),
-                      const DsGap(DsSpace.xs),
-                      Text('${FinanceMoney.format(g.savedAmount, g.currency)} / ${FinanceMoney.format(g.targetAmount, g.currency)}', style: DsTypography.bodyStrong.tabular),
-                    ],
-                  ),
-                ),
-              ),
+            if (active.isNotEmpty) FinSection(title: "Active goals".tr, divided: true, children: [for (final g in active) _GoalTile(goal: g)]),
+            if (closed.isNotEmpty) FinSection(title: "Closed".tr, divided: true, children: [for (final g in closed) _GoalTile(goal: g)]),
           ],
         );
       },
@@ -138,7 +218,52 @@ class _GoalList extends StatelessWidget {
   }
 }
 
-String _statusLabel(String s) => const {'active': 'Active', 'completed': 'Completed', 'cancelled': 'Cancelled'}[s] ?? s;
+/// A goal in the list: name, purpose and deadline, what is saved, and the
+/// progress toward the target.
+class _GoalTile extends StatelessWidget {
+  final SavingsGoal goal;
+
+  const _GoalTile({required this.goal});
+
+  @override
+  Widget build(BuildContext context) {
+    final g = goal;
+    final bool completed = g.status == 'completed';
+    return MergeSemantics(
+      child: InkWell(
+        onTap: () => Get.to(() => SavingsGoalScreen(goalId: g.id)),
+        borderRadius: DsRadius.brSm,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: DsSpace.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              FinListTile(
+                icon: g.isGroup ? Icons.groups_outlined : Icons.savings_outlined,
+                iconTone: completed ? DsTone.success : (g.isActive ? DsTone.brand : DsTone.neutral),
+                title: g.name,
+                subtitle: '${GroupLabels.purpose(g.purpose).tr}${g.deadline == null ? '' : ' · ${"by".tr} ${_date(g.deadline)}'}',
+                amount: FinanceMoney.format(g.savedAmount, g.currency),
+                status: g.isActive ? null : g.status,
+                statusLabel: g.isActive ? null : _statusLabel(g.status).tr,
+                chevron: true,
+              ),
+              Padding(
+                // Aligned with the text, after the 40 px icon and its gap.
+                padding: const EdgeInsetsDirectional.only(start: 40 + DsSpace.md),
+                child: FinProgress(
+                  value: g.progress,
+                  label: '${"Target amount".tr} ${FinanceMoney.format(g.targetAmount, g.currency)}',
+                  tone: completed ? DsTone.success : DsTone.brand,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// New savings goal. Choices come from the admin configuration.
 class SavingsGoalFormScreen extends StatefulWidget {
@@ -198,16 +323,15 @@ class _SavingsGoalFormScreenState extends State<SavingsGoalFormScreen> {
   @override
   Widget build(BuildContext context) {
     final cfg = widget.config;
-    return DsScaffold(
+    return FinScaffold(
       title: "New savings goal".tr,
-      maxContentWidth: DsLayout.contentMax,
       bottomBar: DsStickyBar(child: DsButton.primary(label: "Create goal".tr, size: DsButtonSize.lg, expand: true, onPressed: _save)),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+      body: FinBody(
         children: [
-          DsFormSection(
+          FinSection(
             title: "Goal".tr,
-            icon: Icons.flag_outlined,
+            top: 0,
+            padding: _formPadding,
             children: [
               DsTextField(label: "Name".tr, controller: _name, requiredMark: true),
               DsDropdown<String>(
@@ -218,6 +342,7 @@ class _SavingsGoalFormScreenState extends State<SavingsGoalFormScreen> {
               ),
               DsTextField(label: "Description".tr, controller: _description, maxLines: 3),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(child: DsTextField(label: "Target amount".tr, controller: _target, requiredMark: true, keyboardType: const TextInputType.numberWithOptions(decimal: true))),
                   const DsGap(DsSpace.sm),
@@ -242,16 +367,14 @@ class _SavingsGoalFormScreenState extends State<SavingsGoalFormScreen> {
                   final d = await showDatePicker(context: context, initialDate: _deadline ?? DateTime(now.year + 1, now.month, now.day), firstDate: now, lastDate: DateTime(now.year + 30));
                   if (d != null) setState(() => _deadline = d);
                 },
-                bottomSpacing: 0,
               ),
             ],
           ),
-          if (cfg.frequencies.isNotEmpty) ...[
-            const DsGap(DsSpace.lg),
-            DsFormSection(
+          if (cfg.frequencies.isNotEmpty)
+            FinSection(
               title: "Scheduled contributions (optional)".tr,
-              subtitle: "We remind you when a contribution is due.".tr,
-              icon: Icons.event_repeat_outlined,
+              padding: _formPadding,
+              footnote: "We remind you when a contribution is due.".tr,
               children: [
                 DsDropdown<String?>(
                   label: "Frequency".tr,
@@ -263,19 +386,16 @@ class _SavingsGoalFormScreenState extends State<SavingsGoalFormScreen> {
                   onChanged: (v) => setState(() => _frequency = v),
                 ),
                 if (_frequency != null)
-                  DsTextField(label: "${"Amount each time".tr} ($_currency)", controller: _scheduleAmount, keyboardType: const TextInputType.numberWithOptions(decimal: true), bottomSpacing: 0),
+                  DsTextField(label: "${"Amount each time".tr} ($_currency)", controller: _scheduleAmount, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
               ],
             ),
-          ],
-          if (cfg.groupGoals) ...[
-            const DsGap(DsSpace.lg),
-            DsFormSection(
+          if (cfg.groupGoals)
+            FinSection(
               title: "Save together (optional)".tr,
-              subtitle: "Invite people by the email of their Spideli account. They join when they accept.".tr,
-              icon: Icons.group_add_outlined,
-              children: [DsTextField(label: "Emails, separated by commas".tr, controller: _invites, keyboardType: TextInputType.emailAddress, bottomSpacing: 0)],
+              padding: _formPadding,
+              footnote: "Invite people by the email of their Spideli account. They join when they accept.".tr,
+              children: [DsTextField(label: "Emails, separated by commas".tr, controller: _invites, keyboardType: TextInputType.emailAddress)],
             ),
-          ],
         ],
       ),
     );
@@ -296,18 +416,22 @@ class SavingsGoalScreen extends StatelessWidget {
         stream: FinanceGroupService.goal(goalId),
         builder: (context, snap) {
           final g = snap.data;
-          return DsScaffold(
+          return FinScaffold(
             title: g?.name ?? "Savings goal".tr,
-            maxContentWidth: DsLayout.contentMax,
             body: snap.hasError
-                ? DsErrorState(message: "Could not load this goal.".tr)
+                ? FinBody(children: [FinState.error("Could not load this goal.".tr)])
                 : g == null
-                    ? const Padding(padding: EdgeInsets.all(DsSpace.lg), child: DsSkeletonForm(fields: 4))
+                    ? FinBody(children: [FinState.loading(rows: 4)])
                     : StreamBuilder<List<Map<String, dynamic>>>(
                         stream: FinanceGroupService.goalContributions(goalId),
                         builder: (context, cSnap) {
                           final contributions = cSnap.data ?? const [];
-                          return _GoalBody(goal: g, config: cfgSnap.data, contributions: contributions);
+                          return _GoalBody(
+                            goal: g,
+                            config: cfgSnap.data,
+                            contributions: contributions,
+                            loadingContributions: !cSnap.hasData && !cSnap.hasError,
+                          );
                         },
                       ),
           );
@@ -321,8 +445,9 @@ class _GoalBody extends StatelessWidget {
   final SavingsGoal goal;
   final SavingsConfig? config;
   final List<Map<String, dynamic>> contributions;
+  final bool loadingContributions;
 
-  const _GoalBody({required this.goal, required this.config, required this.contributions});
+  const _GoalBody({required this.goal, required this.config, required this.contributions, this.loadingContributions = false});
 
   @override
   Widget build(BuildContext context) {
@@ -340,188 +465,191 @@ class _GoalBody extends StatelessWidget {
     final bool isOwner = goal.ownerId == FinanceService.uid;
     final methods = config?.paymentMethods ?? const ['wallet'];
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
+    return FinBody(
       children: [
-        DsCard.tinted(
-          tone: goal.status == 'completed' ? DsTone.success : DsTone.brand,
-          child: Row(
+        // Money actions need a verified identity; the gate shows how to get it.
+        if (goal.isActive)
+          FinanceKycGate(builder: (context, verified) => _hero(context, verified: verified, isOwner: isOwner, methods: methods))
+        else
+          _hero(context, verified: false, isOwner: isOwner, methods: methods),
+        FinSection(
+          title: "Plan".tr,
+          divided: true,
+          children: [
+            FinRow("Purpose".tr, GroupLabels.purpose(goal.purpose).tr),
+            if (goal.deadline != null) FinRow("Deadline".tr, _date(goal.deadline)),
+            FinRow("Schedule".tr, goal.frequency == null ? Frequency.label(null).tr : '${FinanceMoney.format(goal.scheduleAmount, cur)} · ${Frequency.label(goal.frequency).tr}'),
+            if (goal.isGroup) FinRow("Members".tr, '${goal.memberIds.length}'),
+          ],
+        ),
+        FinSection(
+          title: "Projection".tr,
+          divided: true,
+          children: [
+            FinRow("Projected completion".tr, projected == null ? "Not enough savings yet to estimate".tr : _date(projected)),
+            if (needed != null && goal.remaining > 0) FinRow("Needed per month to meet the deadline".tr, FinanceMoney.format(needed, cur)),
+          ],
+        ),
+        // The projection is an estimate, and says so.
+        FinNotice(
+          "Projections are estimates from your schedule or past contributions, not a guarantee.".tr,
+          title: onTrack == null ? null : (onTrack ? "On track for your deadline." : "At this pace you will finish after your deadline.").tr,
+          tone: onTrack == null ? DsTone.info : (onTrack ? DsTone.success : DsTone.warning),
+        ),
+        if (loadingContributions)
+          FinState.loading(rows: 2)
+        else
+          FinSection(
+            title: "Contributions".tr,
+            divided: true,
             children: [
-              DsProgressRing(value: goal.progress, center: Text('${(goal.progress * 100).round()}%', style: DsTypography.titleSm)),
-              const DsGap(DsSpace.lg),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text("Saved".tr, style: DsTypography.caption),
-                    Text(FinanceMoney.format(goal.savedAmount, cur), style: DsTypography.title.tabular),
-                    Text('${"of".tr} ${FinanceMoney.format(goal.targetAmount, cur)} · ${"remaining".tr} ${FinanceMoney.format(goal.remaining, cur)}', style: DsTypography.caption),
-                    if (!goal.isActive) Padding(padding: const EdgeInsets.only(top: 4), child: DsBadge(label: _statusLabel(goal.status).tr, small: true)),
-                  ],
-                ),
-              ),
+              if (contributions.isEmpty) _quiet(context, "No contribution yet.".tr),
+              for (final x in contributions) _contribution(context, x),
             ],
           ),
-        ),
-        const DsGap(DsSpace.md),
-        DsFormSection(
-          title: "Plan".tr,
-          icon: Icons.insights_outlined,
-          children: [
-            _row(context, "Purpose".tr, GroupLabels.purpose(goal.purpose).tr),
-            if (goal.deadline != null) _row(context, "Deadline".tr, _date(goal.deadline)),
-            _row(context, "Schedule".tr, goal.frequency == null ? Frequency.label(null).tr : '${FinanceMoney.format(goal.scheduleAmount, cur)} · ${Frequency.label(goal.frequency).tr}'),
-            _row(context, "Projected completion".tr, projected == null ? "Not enough savings yet to estimate".tr : _date(projected)),
-            if (needed != null && goal.remaining > 0) _row(context, "Needed per month to meet the deadline".tr, FinanceMoney.format(needed, cur)),
-            if (onTrack != null)
-              Padding(
-                padding: const EdgeInsets.only(top: DsSpace.sm),
-                child: DsInlineAlert(
-                  tone: onTrack ? DsTone.success : DsTone.warning,
-                  message: (onTrack ? "On track for your deadline." : "At this pace you will finish after your deadline.").tr,
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.only(top: DsSpace.sm),
-              child: Text("Projections are estimates from your schedule or past contributions, not a guarantee.".tr, style: DsTypography.caption.copyWith(color: c.textSecondary)),
-            ),
-          ],
-        ),
-        const DsGap(DsSpace.md),
-        if (goal.isActive)
-          FinanceKycGate(
-            builder: (context, verified) => Wrap(
-              spacing: DsSpace.sm,
-              runSpacing: DsSpace.sm,
-              children: [
-                DsButton.primary(
-                  label: "Add money".tr,
-                  icon: Icons.add_rounded,
-                  onPressed: !verified
-                      ? null
-                      : () async {
-                          final amount = await askAmount(context, title: "Add money".tr, currency: cur);
-                          if (amount == null || !context.mounted) return;
-                          final key = FinanceGroupService.newRequestKey();
-                          await FinancePaySheet.show(
-                            context,
-                            title: "${"Add money to".tr} ${goal.name}",
-                            amount: amount,
-                            currency: cur,
-                            methods: methods,
-                            submit: (payment) => FinanceGroupService.contributeToGoal(goal.id, amount, payment, key),
-                          );
-                        },
-                ),
-                if (goal.savedAmount > 0 && (config?.earlyWithdrawal == true || goal.remaining == 0))
-                  DsButton.secondary(
-                    label: "Withdraw".tr,
-                    icon: Icons.south_west_rounded,
-                    onPressed: !verified
-                        ? null
-                        : () async {
-                            final amount = await askAmount(context, title: "Withdraw".tr, currency: cur, max: goal.savedAmount);
-                            if (amount == null || !context.mounted) return;
-                            final key = FinanceGroupService.newRequestKey();
-                            await FinancePaySheet.show(
-                              context,
-                              title: "Withdraw to".tr,
-                              amount: amount,
-                              currency: cur,
-                              methods: methods,
-                              submit: (destination) => FinanceGroupService.requestWithdrawal(goal.id, amount, destination, key),
-                              payout: true,
-                            );
-                          },
-                  ),
-                if (isOwner && config?.groupGoals == true)
-                  DsButton.ghost(
-                    label: "Invite".tr,
-                    icon: Icons.person_add_alt_outlined,
-                    onPressed: () async {
-                      final email = await _askEmail(context);
-                      if (email != null) await FinanceUi.run(() => FinanceGroupService.inviteToGoal(goal.id, email), success: "Invitation sent");
-                    },
-                  ),
-                if (isOwner)
-                  DsButton.ghost(
-                    label: "Cancel goal".tr,
-                    icon: Icons.close_rounded,
-                    onPressed: () async {
-                      final ok = await showDialog<bool>(
-                        context: context,
-                        builder: (c) => AlertDialog(
-                          title: Text("Cancel this goal?".tr),
-                          content: Text("The money saved is returned according to the withdrawal rules. This cannot be undone.".tr),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(c, false), child: Text("Keep it".tr)),
-                            TextButton(onPressed: () => Navigator.pop(c, true), child: Text("Cancel goal".tr)),
-                          ],
-                        ),
-                      );
-                      if (ok == true) await FinanceUi.run(() => FinanceGroupService.cancelGoal(goal.id), success: "Goal cancelled");
-                    },
-                  ),
-              ],
-            ),
-          ),
-        const DsGap(DsSpace.lg),
-        DsFormSection(
-          title: "Contributions".tr,
-          icon: Icons.receipt_long_outlined,
-          children: [
-            if (contributions.isEmpty) Text("No contribution yet.".tr, style: DsTypography.body),
-            for (final x in contributions)
-              DsListTile(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                leadingIcon: Icons.south_west_rounded,
-                leadingTone: x['status'] == 'succeeded' ? DsTone.success : (x['status'] == 'failed' ? DsTone.danger : DsTone.neutral),
-                title: FinanceMoney.format(FinanceSummary.intOf(x['amount']), x['currency']?.toString() ?? cur),
-                subtitle: '${FinanceUi.date(x['createdAt'])} · ${GroupLabels.contribution(x['status']?.toString()).tr}${(x['reference'] ?? '').toString().isEmpty ? '' : ' · ${ltrRef(x['reference'])}'}',
-              ),
-          ],
-        ),
-        const DsGap(DsSpace.lg),
         StreamBuilder<List<Map<String, dynamic>>>(
           stream: FinanceGroupService.goalWithdrawals(goal.id),
           builder: (context, snap) {
             final list = snap.data ?? const [];
             if (list.isEmpty) return const SizedBox.shrink();
-            return DsFormSection(
+            return FinSection(
               title: "Withdrawals".tr,
-              icon: Icons.north_east_rounded,
-              children: [
-                for (final w in list)
-                  DsListTile(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    leadingIcon: Icons.north_east_rounded,
-                    title: FinanceMoney.format(FinanceSummary.intOf(w['amount']), w['currency']?.toString() ?? cur),
-                    subtitle: '${FinanceUi.date(w['createdAt'])} · ${GroupLabels.withdrawal(w['status']?.toString()).tr}${(w['reason'] ?? '').toString().isEmpty ? '' : ' · ${w['reason']}'}',
-                  ),
-              ],
+              divided: true,
+              children: [for (final w in list) _withdrawal(context, w)],
             );
           },
         ),
+        if (goal.isActive && isOwner)
+          Padding(
+            padding: const EdgeInsets.only(top: FinSpace.section),
+            child: DsButton.ghost(
+              label: "Cancel goal".tr,
+              icon: Icons.close_rounded,
+              expand: true,
+              color: c.danger,
+              onPressed: () async {
+                final ok = await finConfirm(
+                  title: "Cancel this goal?".tr,
+                  message: "The money saved is returned according to the withdrawal rules. This cannot be undone.".tr,
+                  lines: [("Saved so far".tr, FinanceMoney.format(goal.savedAmount, cur))],
+                  confirmLabel: "Cancel goal".tr,
+                  destructive: true,
+                );
+                if (ok) await FinanceUi.run(() => FinanceGroupService.cancelGoal(goal.id), success: "Goal cancelled");
+              },
+            ),
+          ),
       ],
     );
   }
 
-  static Widget _row(BuildContext context, String label, String value) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: Text(label, style: DsTypography.body.copyWith(color: DsColors.of(context).textSecondary))),
-            const DsGap(DsSpace.sm),
-            Flexible(child: Align(alignment: AlignmentDirectional.centerEnd, child: Text(value, textAlign: TextAlign.end, style: DsTypography.bodyStrong.tabular))),
-          ],
+  /// The focal point: what is saved, of what, the progress and the actions.
+  Widget _hero(BuildContext context, {required bool verified, required bool isOwner, required List<String> methods}) {
+    final g = goal;
+    final String cur = g.currency;
+    final actions = <FinAction>[
+      if (g.isActive) ...[
+        FinAction(
+          Icons.add_rounded,
+          "Add money".tr,
+          !verified
+              ? null
+              : () async {
+                  final amount = await askAmount(context, title: "Add money".tr, currency: cur);
+                  if (amount == null || !context.mounted) return;
+                  final key = FinanceGroupService.newRequestKey();
+                  await FinancePaySheet.show(
+                    context,
+                    title: "${"Add money to".tr} ${g.name}",
+                    amount: amount,
+                    currency: cur,
+                    methods: methods,
+                    submit: (payment) => FinanceGroupService.contributeToGoal(g.id, amount, payment, key),
+                  );
+                },
         ),
-      );
+        if (g.savedAmount > 0 && (config?.earlyWithdrawal == true || g.remaining == 0))
+          FinAction(
+            Icons.south_west_rounded,
+            "Withdraw".tr,
+            !verified
+                ? null
+                : () async {
+                    final amount = await askAmount(context, title: "Withdraw".tr, currency: cur, max: g.savedAmount);
+                    if (amount == null || !context.mounted) return;
+                    final key = FinanceGroupService.newRequestKey();
+                    await FinancePaySheet.show(
+                      context,
+                      title: "Withdraw to".tr,
+                      amount: amount,
+                      currency: cur,
+                      methods: methods,
+                      submit: (destination) => FinanceGroupService.requestWithdrawal(g.id, amount, destination, key),
+                      payout: true,
+                    );
+                  },
+          ),
+        if (isOwner && config?.groupGoals == true)
+          FinAction(Icons.person_add_alt_outlined, "Invite".tr, () async {
+            final email = await _askEmail(context);
+            if (email != null) await FinanceUi.run(() => FinanceGroupService.inviteToGoal(g.id, email), success: "Invitation sent");
+          }),
+      ],
+    ];
+    return FinHero(
+      label: "Saved so far".tr,
+      amount: FinanceMoney.format(g.savedAmount, cur),
+      caption: '${"of".tr} ${FinanceMoney.format(g.targetAmount, cur)} · ${"remaining".tr} ${FinanceMoney.format(g.remaining, cur)}',
+      trailing: g.isActive ? null : FinStatusChip(status: g.status, label: _statusLabel(g.status).tr, icon: true),
+      footer: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _HeroProgress(value: g.progress),
+          if (actions.isNotEmpty) ...[const DsGap(DsSpace.lg), FinActions(onHero: true, actions: actions)],
+        ],
+      ),
+    );
+  }
+
+  Widget _contribution(BuildContext context, Map<String, dynamic> x) {
+    final String status = x['status']?.toString() ?? '';
+    final int amount = FinanceSummary.intOf(x['amount']);
+    final String reference = (x['reference'] ?? '').toString();
+    return FinListTile(
+      icon: Icons.south_west_rounded,
+      iconTone: status == 'succeeded' ? DsTone.success : (status == 'failed' ? DsTone.danger : DsTone.neutral),
+      title: FinanceUi.date(x['createdAt']),
+      subtitle: reference.isEmpty ? null : ltrRef(reference),
+      amount: FinanceMoney.signed(amount, x['currency']?.toString() ?? goal.currency),
+      // Money in once received; a failed or refunded one is shown muted.
+      amountColor: switch (status) {
+        'succeeded' => finAmountColor(context, amount),
+        'failed' || 'refunded' => DsColors.of(context).textMuted,
+        _ => null,
+      },
+      status: status,
+      statusLabel: GroupLabels.contribution(x['status']?.toString()).tr,
+    );
+  }
+
+  Widget _withdrawal(BuildContext context, Map<String, dynamic> w) {
+    final String status = w['status']?.toString() ?? '';
+    final String reason = (w['reason'] ?? '').toString();
+    return FinListTile(
+      icon: Icons.north_east_rounded,
+      title: FinanceUi.date(w['createdAt']),
+      subtitle: reason.isEmpty ? null : reason,
+      amount: FinanceMoney.signed(-FinanceSummary.intOf(w['amount']), w['currency']?.toString() ?? goal.currency),
+      amountColor: status == 'rejected' ? DsColors.of(context).textMuted : null,
+      status: status,
+      statusLabel: GroupLabels.withdrawal(w['status']?.toString()).tr,
+    );
+  }
 }
 
 Future<String?> _askEmail(BuildContext context) {
   final ctrl = TextEditingController();
-  return DsBottomSheet.show<String>(
+  return finSheet<String>(
     title: "Invite by email".tr,
     child: StatefulBuilder(
       builder: (context, setState) {
@@ -531,7 +659,7 @@ Future<String?> _askEmail(BuildContext context) {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             DsTextField(label: "Email of their Spideli account".tr, controller: ctrl, autofocus: true, keyboardType: TextInputType.emailAddress, onChanged: (_) => setState(() {})),
-            DsButton.primary(label: "Send invitation".tr, expand: true, onPressed: ok ? () => Get.back(result: ctrl.text.trim().toLowerCase()) : null),
+            DsButton.primary(label: "Send invitation".tr, icon: Icons.send_rounded, expand: true, onPressed: ok ? () => Get.back(result: ctrl.text.trim().toLowerCase()) : null),
           ],
         );
       },

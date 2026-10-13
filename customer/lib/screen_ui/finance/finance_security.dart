@@ -1,3 +1,4 @@
+import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -76,7 +77,7 @@ abstract final class FinanceReauth {
 
   static Future<bool> _password(User user) async {
     final ctrl = TextEditingController();
-    final String? password = await DsBottomSheet.show<String>(
+    final String? password = await finSheet<String>(
       title: "Confirm it is you".tr,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -96,7 +97,7 @@ abstract final class FinanceReauth {
 
   static Future<String?> _askCode(String phone) {
     final ctrl = TextEditingController();
-    return DsBottomSheet.show<String>(
+    return finSheet<String>(
       title: "Confirm it is you".tr,
       child: Column(
         mainAxisSize: MainAxisSize.min,

@@ -116,6 +116,10 @@ void main() {
     String plain(String s) => s.replaceAll(RegExp('[\u2066-\u2069]'), '');
     expect(plain(InvestmentLabels.percent(5.1, signed: true)), '+5.1 %');
     expect(plain(InvestmentLabels.percent(-2)), '-2 %');
+    expect(plain(InvestmentLabels.percent(100)), '100 %');
+    expect(plain(InvestmentLabels.percent(150, signed: true)), '+150 %');
+    expect(plain(InvestmentLabels.percent(4.5)), '4.5 %');
+    expect(plain(InvestmentLabels.percent(0)), '0 %');
     expect(InvestmentLabels.percent(null), '-');
     expect(InvestmentLabels.units(78.4), '78.4');
     expect(InvestmentLabels.units(100), '100');
