@@ -38,11 +38,11 @@ class CarrierDispatchService {
 
   // ── The company's own carrier document (client point 18) ────────────────
 
-  /// The `delivery_carriers` row the admin bound this owner account to
+  /// The `delivery_carriers` row this owner account is bound to
   /// (`users/{uid}.carrierId`, APP-SPEC-CARRIER-OWNER-BINDING), or null when
-  /// there is none yet ("Your carrier has not been set up yet"). The app never
-  /// creates a carrier, never links one and never searches for one by other
-  /// fields: the admin binds owners to carriers.
+  /// there is none yet ("set up your carrier"). Never searched for by other
+  /// fields: the binding is the admin's, or the owner's own set-up
+  /// ([createOwnCarrier]).
   static Future<DeliveryCarrierModel?> myCarrier({UserModel? user}) async {
     final UserModel? me = user ?? Constant.userModel;
     final String carrierId = (me?.carrierId ?? '').trim();
@@ -56,6 +56,42 @@ class CarrierDispatchService {
       log("CarrierDispatchService.myCarrier failed: $e");
     }
     return null;
+  }
+
+  /// "Set up your carrier" (13 Oct 2026): creates the owner's own carrier
+  /// from [data] (`CarrierSetupForm.build`: `ownerId` = [ownerId],
+  /// `isVerified` / `publish` false) and binds the owner to it
+  /// (`users/{ownerId}.carrierId`) in one batch. A carrier this owner
+  /// already created (`ownerId` == the owner, e.g. a set-up whose binding did
+  /// not land) is bound instead of creating a second one. Returns the carrier
+  /// id, or null when nothing could be written.
+  static Future<String?> createOwnCarrier({required String ownerId, required Map<String, dynamic> data}) async {
+    final String owner = ownerId.trim();
+    if (owner.isEmpty || data['ownerId'] != owner) return null;
+    final FirebaseFirestore db = FireStoreUtils.fireStore;
+    try {
+      final existing = await db.collection(collectionName).where('ownerId', isEqualTo: owner).limit(1).get();
+      final WriteBatch batch = db.batch();
+      final DocumentReference<Map<String, dynamic>> ref;
+      if (existing.docs.isNotEmpty) {
+        ref = existing.docs.first.reference;
+      } else {
+        ref = db.collection(collectionName).doc();
+        batch.set(ref, {
+          ...data,
+          'id': ref.id,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      batch.update(db.collection(CollectionName.users).doc(owner), {'carrierId': ref.id});
+      await batch.commit();
+      if (Constant.userModel?.id == owner) Constant.userModel?.carrierId = ref.id;
+      return ref.id;
+    } catch (e) {
+      log("CarrierDispatchService.createOwnCarrier failed: $e");
+      return null;
+    }
   }
 
   static final Map<String, String> _carrierNames = {};

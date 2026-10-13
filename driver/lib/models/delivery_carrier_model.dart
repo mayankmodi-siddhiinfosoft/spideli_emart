@@ -15,9 +15,10 @@
 /// ([editableFields]) and its `regionPricing` blocks, always under those exact
 /// keys, through field-path `update()`s ([updatePaths]). Everything the admin
 /// owns ([readOnlyFields]: verification, publish, owner, code, regions,
-/// documents, the region fixed charges) is shown, never written. The app never
-/// creates a carrier or links one to an account: the admin binds owners to
-/// carriers (`users/{ownerId}.carrierId` <-> `delivery_carriers/{id}.ownerId`).
+/// documents, the region fixed charges) is shown, never written. The admin
+/// binds owners to carriers (`users/{ownerId}.carrierId` <->
+/// `delivery_carriers/{id}.ownerId`); an owner with none creates its own
+/// once (`CarrierSetupForm`, 13 Oct 2026), unverified and unpublished.
 ///
 /// Report Doc 43: pricing is per region. `regionPricing` is the source of
 /// truth:

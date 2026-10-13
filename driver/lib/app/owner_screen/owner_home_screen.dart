@@ -1,4 +1,6 @@
 import 'package:driver/services/online_status_rules.dart';
+import 'package:driver/app/owner_screen/carrier_settings_screen.dart';
+import 'package:driver/app/owner_screen/carrier_setup_screen.dart';
 import 'package:driver/app/owner_screen/driver_create_screen.dart';
 import 'package:driver/app/owner_screen/owner_driver_verification_screen.dart';
 import 'package:driver/app/owner_screen/view_all_drivers.dart';
@@ -82,8 +84,8 @@ class OwnerHomeScreen extends StatelessWidget {
                                           )
                                         : const SizedBox();
                                   }),
-                                  // No carrier bound yet: only the admin binds one
-                                  // (the app never creates a carrier).
+                                  // No carrier bound yet: the owner sets one up
+                                  // (CarrierSetupScreen, 13 Oct 2026).
                                   Obx(() {
                                     final bool noCarrier = (dashController.userModel.value.carrierId ?? '').isEmpty;
                                     if (!noCarrier) return const SizedBox.shrink();
@@ -92,7 +94,15 @@ class OwnerHomeScreen extends StatelessWidget {
                                       child: DsInlineAlert(
                                         tone: DsTone.info,
                                         icon: Icons.local_shipping_outlined,
-                                        message: "Your carrier has not been set up yet — please contact Spideli.".tr,
+                                        message: "You have not set up your carrier yet.".tr,
+                                        actionLabel: "Set up your carrier".tr,
+                                        onAction: () async {
+                                          final created = await Get.to(() => const CarrierSetupScreen());
+                                          if (created != true) return;
+                                          dashController.userModel.value.carrierId = Constant.userModel?.carrierId;
+                                          dashController.userModel.refresh();
+                                          Get.to(() => const CarrierSettingsScreen());
+                                        },
                                       ),
                                     );
                                   }),

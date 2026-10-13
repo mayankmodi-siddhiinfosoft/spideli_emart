@@ -308,6 +308,16 @@ service cloud.firestore {
       return !ch.hasAny(privilegedKeys().concat(['wallet_amount'])) || selfPrivilegedOk(ch);
     }
 
+    // "Set up your carrier" (13 Oct 2026): an owner without a carrier binds
+    // the one it creates in the same batch (CarrierDispatchService
+    // .createOwnCarrier): its ownerId is the owner. Never a re-bind.
+    function ownCarrierLinkOk() {
+      let newId = txt(request.resource.data, 'carrierId');
+      return flag(oldU(), 'isOwner') && txt(oldU(), 'carrierId') == '' && newId != ''
+        && existsAfter(/databases/$(database)/documents/delivery_carriers/$(newId))
+        && txt(getAfter(/databases/$(database)/documents/delivery_carriers/$(newId)).data, 'ownerId') == uid();
+    }
+
     function selfPrivilegedOk(ch) {
       let customerSide = txt(oldU(), 'role') in ['customer', 'user'];
       return (!('role' in ch) || sameTxt('role'))
@@ -317,7 +327,7 @@ service cloud.firestore {
         && (!('isOwner' in ch) || notRaised('isOwner'))
         && (!('ownerId' in ch) || sameTxt('ownerId'))
         && (!('employeePermissionId' in ch) || sameTxt('employeePermissionId'))
-        && (!('carrierId' in ch) || sameTxt('carrierId'))
+        && (!('carrierId' in ch) || sameTxt('carrierId') || ownCarrierLinkOk())
         && (!('vendorID' in ch) || vendorIdOk())
         && (!ch.hasAny(planKeys()) || !planChanged(customerSide) || planWriteOk(customerSide))
         && (!('businessProfile' in ch) || businessOk())
@@ -929,7 +939,8 @@ service cloud.firestore {
     // Driver app (company account) maintains its own carrier's commercial
     // fields only (DeliveryCarrierModel.editableFields) and its per-region
     // prices (regionPricing.<regionId>.<charge>, report Doc 43); the panel owns
-    // the rest, including the link users/{companyId}.carrierId
+    // the rest, including the link users/{companyId}.carrierId (except the
+    // owner's first own set-up, ownCarrierCreateOk / ownCarrierLinkOk)
     // (.claude/COMPANY-CARRIER-LINK.md). The fallbacks after the explicit link
     // are the owner fields the app also reads (CarrierDispatchService.myCarrier).
     function linkedCarrier(carrierId) {
@@ -964,7 +975,19 @@ service cloud.firestore {
           'maxWeight', 'minDeliveryTime', 'maxDeliveryTime', 'deliveryTimeUnit',
           'regionPricing'])
         && regionPricingOk(request.resource.data.diff(resource.data).affectedKeys())));
-      allow create, delete: if isAdmin();
+      // An owner without a carrier creates its own (13 Oct 2026): bound to
+      // itself, unverified and unpublished until the admin decides; never
+      // the admin's code or fixed taxes.
+      allow create: if isAdmin() || ownCarrierCreateOk();
+      allow delete: if isAdmin();
+    }
+
+    function ownCarrierCreateOk() {
+      let d = request.resource.data;
+      return hasProfile() && flag(myProfile(), 'isOwner') && txt(myProfile(), 'carrierId') == ''
+        && txt(d, 'ownerId') == uid()
+        && d.get('isVerified', true) == false && d.get('publish', true) == false
+        && !d.keys().hasAny(['code', 'intercityFixedTax', 'intercountryFixedTax', 'regionPricing']);
     }
 
     // =========================================================================

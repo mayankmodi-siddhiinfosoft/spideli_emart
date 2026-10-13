@@ -75,6 +75,28 @@ void main() {
     'This value cannot be negative',
     'The maximum delivery time must not be less than the minimum',
     'At least one delivery scope must be selected',
+    // "Set up your carrier" (13 Oct 2026).
+    'Set up your carrier',
+    'You have not set up your carrier yet.',
+    "Enter your carrier's details to receive parcel orders from customers.",
+    "Enter your carrier's details. Customers can choose your carrier once the administrator has verified and published it.",
+    'Carrier Logo',
+    'Regions served',
+    'Select the regions where your carrier delivers (at least one).',
+    'No region is available yet. Please contact Spideli.',
+    'Checked by the administrator before your carrier is verified.',
+    'Document photo',
+    'Create carrier',
+    'Add photo',
+    'Remove',
+    'Your carrier could not be created. Please try again.',
+    "Carrier created. Add your prices per region, then wait for the administrator's verification.",
+    'Please enter the phone number',
+    'Please enter a valid email address',
+    'Select at least one region',
+    'Could not pick the image.',
+    'Phone Number',
+    'Email Address',
   ];
   const maps = <String, Map<String, String>>{'en': enUS, 'ar': lnAr, 'de': deGR, 'fr': trFR, 'hi': hiIN, 'ja': jaJP, 'pt': ptPO, 'ru': ruRU, 'zh': zhCH};
   final placeholder = RegExp(r'@\w+');
@@ -87,9 +109,4 @@ void main() {
     });
   }
 
-  test('the carrier is never created in the app: its creation strings are gone', () {
-    for (final k in const ['Create Carrier', 'Create Carrier for Parcel Delivery', 'Please create a carrier first to enable parcel delivery service.']) {
-      expect(enUS.containsKey(k), isFalse, reason: k);
-    }
-  });
 }

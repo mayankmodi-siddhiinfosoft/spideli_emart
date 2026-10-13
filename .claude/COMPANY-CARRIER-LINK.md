@@ -11,8 +11,10 @@ keeps its current lookup; the panel half is specified here, not guessed in code.
 **Short version:** the admin sets **`users/{companyId}.carrierId` =
 the id of a `delivery_carriers` document** (and, since the binding of 9 Oct,
 `delivery_carriers/{id}.ownerId`). The company then edits that carrier's
-commercial settings and per-region prices from the driver app. **The app never
-creates a carrier or links one** (section 2).
+commercial settings and per-region prices from the driver app. **Since 13 Oct
+2026 an owner with no carrier can also create its own** from the app
+("Set up your carrier", section 2a); it stays unverified and unpublished until
+the admin verifies and publishes it.
 
 ---
 
@@ -45,15 +47,49 @@ When the owner has no `carrierId` the screen (and the owner's home) only says
 *"Your carrier has not been set up yet — please contact Spideli."* (translated)
 and writes nothing.
 
-**The app never creates a carrier and never links one (12 Oct 2026).** The admin
-binds owners to carriers (`users/{ownerId}.carrierId` <->
-`delivery_carriers/{carrierId}.ownerId`). An uncommitted build briefly had an
-in-app "Create carrier" flow (`CarrierDispatchService.createCarrier`, a
-carrier created at company sign-up, `enableParcelDeliveryServiceForOwner`, a
-"carrier required" dialog when an owner picked the parcel section, and new
-company drivers given the owner's `carrierId`); all of it was removed before
-release. The app never writes `users.carrierId`, `delivery_carriers.ownerId` or
-a new `delivery_carriers` document.
+**Superseded on 13 Oct 2026** (the 12 Oct rule "the app never creates a carrier
+and never links one" no longer holds): see 2a. The app still never re-binds an
+owner who already has a carrier, never writes `ownerId` of an existing
+carrier, and never changes `isVerified` / `publish` / `code`.
+
+### 2a. "Set up your carrier" (13 Oct 2026)
+
+An owner (`isOwner == true`) with no `carrierId` sees *"You have not set up
+your carrier yet."* with a **Set up your carrier** button, on the owner home
+and in Carrier settings. The form (`driver/lib/app/owner_screen/carrier_setup_screen.dart`,
+pure rules `driver/lib/utils/carrier_setup_form.dart`) asks for:
+
+| Field | Required | Stored as |
+|---|---|---|
+| Carrier name (pre-filled from `companyName`) | yes | `name` |
+| Phone + dial code | yes | `phone`, `countryCode` |
+| Email | no (valid if given) | `email` |
+| Logo photo | no | `photo` |
+| Regions served (published `regions`) | at least one | `regionIds` |
+| Delivery scopes | at least one | `deliveryScopes` |
+| Max weight, min / max delivery time, unit, conditions | no | `maxWeight`, `minDeliveryTime`, `maxDeliveryTime`, `deliveryTimeUnit`, `conditions` |
+| Operating licence, commercial register, unique ID (+ a photo each) | no | `operatingLicence`, `commercialRegister`, `uniqueIdNumber`, `...File` |
+
+`CarrierDispatchService.createOwnCarrier` writes, in ONE batch, the new
+`delivery_carriers/{id}` with `ownerId` = the owner, **`isVerified: false`,
+`publish: false`**, `createdFrom: "driver_app"`, `createdAt` / `updatedAt`,
+and `users/{ownerId}.carrierId = id`. A carrier already carrying
+`ownerId` == the owner (a set-up whose binding did not land) is bound
+instead of creating a second one. Photos go to Storage
+`carrierDocuments/{ownerId}/`.
+
+The customer app offers only carriers with `publish == true` and
+`isVerified != false`, so a new carrier is invisible to customers until the
+admin verifies and publishes it. After creating it the owner lands in Carrier
+settings and fills the prices per region. **Admin panel:** list carriers with
+`createdFrom == "driver_app"` and `isVerified == false` for review, set
+`code`, verify and publish.
+
+Rules draft: `ownCarrierCreateOk` (create: owner without a carrier, `ownerId`
+== self, `isVerified` / `publish` explicitly false, no `code` / fixed taxes /
+`regionPricing`) and `ownCarrierLinkOk` (the owner's `carrierId` may go from
+empty to a carrier whose `ownerId` is the owner, checked with `getAfter` in the
+same batch).
 
 > Please write `carrierId`, not `deliveryCarrierId`. A company document with
 > only `deliveryCarrierId` is read as linked, but its next profile save writes

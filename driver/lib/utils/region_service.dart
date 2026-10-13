@@ -97,6 +97,10 @@ class RegionService {
     return list;
   }
 
+  /// The published regions (an explicit `publish: false` is hidden), by name.
+  static List<RegionModel> get publishedRegions =>
+      _regions.values.where((r) => r.publish).toList()..sort((a, b) => (a.name ?? '').toLowerCase().compareTo((b.name ?? '').toLowerCase()));
+
   static RegionModel? regionById(String? regionId) => (regionId == null || regionId.isEmpty) ? null : _regions[regionId];
 
   /// Returns the `parcelPricing` defaults map for [regionId], or null.

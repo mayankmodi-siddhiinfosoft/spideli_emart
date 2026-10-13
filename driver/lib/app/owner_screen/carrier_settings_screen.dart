@@ -1,4 +1,5 @@
 import 'package:country_code_picker/country_code_picker.dart';
+import 'package:driver/app/owner_screen/carrier_setup_screen.dart';
 import 'package:driver/controllers/carrier_settings_controller.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:flutter/material.dart';
@@ -8,8 +9,8 @@ import 'package:get/get.dart';
 /// The owner's "Carrier settings" (APP-DEV-BRIEF 12 Oct 2026 section 6): the
 /// carrier the admin bound to this owner account, its price per region
 /// (the four prices and the five door / pickup-point values), the delivery
-/// scopes and the service parameters. The app never creates a carrier: with
-/// none bound, it says so and the owner contacts Spideli.
+/// scopes and the service parameters. With none bound yet, the owner sets
+/// one up ([CarrierSetupScreen], 13 Oct 2026).
 class CarrierSettingsScreen extends StatelessWidget {
   const CarrierSettingsScreen({super.key});
 
@@ -45,7 +46,14 @@ class CarrierSettingsScreen extends StatelessWidget {
                   ? DsEmptyState(
                       icon: Icons.local_shipping_outlined,
                       tone: DsTone.brand,
-                      title: "Your carrier has not been set up yet — please contact Spideli.".tr,
+                      title: "You have not set up your carrier yet.".tr,
+                      message: "Enter your carrier's details to receive parcel orders from customers.".tr,
+                      actionLabel: "Set up your carrier".tr,
+                      actionIcon: Icons.add_business_outlined,
+                      onAction: () async {
+                        final created = await Get.to(() => const CarrierSetupScreen());
+                        if (created == true) controller.load();
+                      },
                     )
                   : SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.xxxl),
