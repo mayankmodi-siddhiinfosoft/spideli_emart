@@ -24,7 +24,11 @@ class CarrierAssignResult {
   /// The write itself failed (offline, refused).
   final bool failed;
 
-  const CarrierAssignResult(this.check, {this.pushed = false, this.failed = false});
+  /// For [CarrierAssignCheck.driverNotVerified]: the driver's overall
+  /// document status that refused the assignment (why, for the owner).
+  final DocumentOverallStatus? overall;
+
+  const CarrierAssignResult(this.check, {this.pushed = false, this.failed = false, this.overall});
 
   bool get isDone => check == CarrierAssignCheck.ok && !failed;
 }
@@ -71,7 +75,7 @@ abstract final class CarrierParcelService {
   }) async {
     final String driverId = (driver.id ?? '').trim();
     if (orderId.isEmpty || driverId.isEmpty || ownerUid.isEmpty) return const CarrierAssignResult(CarrierAssignCheck.gone, failed: true);
-    final ({CarrierAssignCheck check, String? replaced, String? tracking}) outcome;
+    final ({CarrierAssignCheck check, String? replaced, String? tracking, DocumentOverallStatus? overall}) outcome;
     // The driver's required documents: their overall status (computed in the
     // transaction from the live record) decides, never the flag alone.
     List<DocumentModel>? required;
@@ -83,17 +87,22 @@ abstract final class CarrierParcelService {
       }
     }
     final List<DocumentModel>? requiredDocs = required;
+    // A company driver's verification must be checked against the required
+    // documents: when they could not be read, nothing is assigned.
+    if (DriverDocumentStatus.isCompanyDriver(driver) && requiredDocs == null) {
+      return const CarrierAssignResult(CarrierAssignCheck.verificationUnavailable);
+    }
     try {
-      outcome = await FireStoreUtils.fireStore.runTransaction<({CarrierAssignCheck check, String? replaced, String? tracking})>((tx) async {
+      outcome = await FireStoreUtils.fireStore.runTransaction<({CarrierAssignCheck check, String? replaced, String? tracking, DocumentOverallStatus? overall})>((tx) async {
         final DocumentSnapshot<Map<String, dynamic>> snap = await tx.get(_order(orderId));
         final Map<String, dynamic>? data = snap.exists ? snap.data() : null;
         final CarrierAssignCheck check = CarrierParcelRules.assignCheck(data, ownerUid: ownerUid, ownerCarrierId: ownerCarrierId, driverId: driverId);
-        if (check != CarrierAssignCheck.ok) return (check: check, replaced: null, tracking: null);
+        if (check != CarrierAssignCheck.ok) return (check: check, replaced: null, tracking: null, overall: null);
         // The driver's LIVE record (the owner's list may be old): an
         // unverified driver could not accept the offer, so it is refused here.
         final DocumentSnapshot<Map<String, dynamic>> driverSnap = await tx.get(_user(driverId));
         final Map<String, dynamic>? driverData = driverSnap.exists ? driverSnap.data() : null;
-        if (driverData == null) return (check: CarrierAssignCheck.gone, replaced: null, tracking: null);
+        if (driverData == null) return (check: CarrierAssignCheck.gone, replaced: null, tracking: null, overall: null);
         final UserModel live = UserModel.fromJson({...driverData, 'id': driverId});
         DocumentOverallStatus? overall;
         if (requiredDocs != null && DriverDocumentStatus.isCompanyDriver(live)) {
@@ -102,19 +111,19 @@ abstract final class CarrierParcelService {
           DocumentStatusCache.put(driverId, overall);
         }
         if (!CarrierParcelRules.canTakeAssignment(live, overall: overall)) {
-          return (check: CarrierAssignCheck.driverNotVerified, replaced: null, tracking: null);
+          return (check: CarrierAssignCheck.driverNotVerified, replaced: null, tracking: null, overall: overall);
         }
         tx.update(_order(orderId), CarrierParcelRules.assignFields(driverId: driverId, ownerUid: ownerUid));
         tx.update(_user(driverId), {
           'orderRequestData': FieldValue.arrayUnion([orderId]),
         });
-        return (check: check, replaced: CarrierParcelRules.replacedDriver(data, driverId), tracking: data?['trackingNumber']?.toString());
+        return (check: check, replaced: CarrierParcelRules.replacedDriver(data, driverId), tracking: data?['trackingNumber']?.toString(), overall: overall);
       });
     } catch (e) {
       log("CarrierParcelService.assign($orderId -> $driverId) failed: $e");
       return const CarrierAssignResult(CarrierAssignCheck.ok, failed: true);
     }
-    if (outcome.check != CarrierAssignCheck.ok) return CarrierAssignResult(outcome.check);
+    if (outcome.check != CarrierAssignCheck.ok) return CarrierAssignResult(outcome.check, overall: outcome.overall);
 
     final String? replaced = outcome.replaced;
     if (replaced != null && replaced.isNotEmpty) {

@@ -689,4 +689,9 @@ const Map<String, String> jaJP = {
   "Expires on": "有効期限：",
   "Driver Documents": "ドライバーの書類",
   "Document Verification Checklist": "書類認証チェックリスト",
+  // Owner assignment refused: why (the driver's documents).
+  "This driver has not uploaded the required documents yet. Assign parcels once you have approved them all.": "このドライバーはまだ必要な書類をアップロードしていません。すべて承認してから荷物を割り当ててください。",
+  "Some of this driver's required documents are missing or waiting for your review. Approve all of them before assigning parcels.": "このドライバーの必要書類の一部が未提出、または確認待ちです。荷物を割り当てる前にすべて承認してください。",
+  "A required document of this driver was rejected or has expired. The driver must upload it again and you must approve it before assigning parcels.": "このドライバーの必要書類が却下されたか期限切れです。ドライバーが再アップロードし、あなたが承認してから荷物を割り当ててください。",
+  "Could not check this driver's documents. Please try again.": "このドライバーの書類を確認できませんでした。もう一度お試しください。",
 };

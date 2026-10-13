@@ -689,4 +689,9 @@ const Map<String, String> zhCH = {
   "Expires on": "到期日",
   "Driver Documents": "司机文件",
   "Document Verification Checklist": "文件验证清单",
+  // Owner assignment refused: why (the driver's documents).
+  "This driver has not uploaded the required documents yet. Assign parcels once you have approved them all.": "该司机尚未上传所需证件。请在全部审核通过后再分配包裹。",
+  "Some of this driver's required documents are missing or waiting for your review. Approve all of them before assigning parcels.": "该司机的部分必需证件缺失或等待您审核。请在全部审核通过后再分配包裹。",
+  "A required document of this driver was rejected or has expired. The driver must upload it again and you must approve it before assigning parcels.": "该司机的一份必需证件被拒绝或已过期。司机必须重新上传，并由您审核通过后才能分配包裹。",
+  "Could not check this driver's documents. Please try again.": "无法检查该司机的证件。请重试。",
 };

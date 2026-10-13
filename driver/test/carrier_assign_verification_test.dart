@@ -1,6 +1,7 @@
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/carrier_parcel_rules.dart';
 import 'package:driver/services/carrier_parcel_service.dart';
+import 'package:driver/services/driver_document_status.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 UserModel driver(String id, {bool? verified, bool? autoVerify = false, bool online = true, String name = 'D'}) => UserModel.fromJson({
@@ -41,6 +42,18 @@ void main() {
     });
     test('the refusal has its own check value', () {
       expect(CarrierAssignCheck.values, contains(CarrierAssignCheck.driverNotVerified));
+    });
+  });
+
+  group('why an owner assignment is refused', () {
+    test('a message per overall document status', () {
+      expect(CarrierParcelRules.notVerifiedMessageKey(DocumentOverallStatus.notSubmitted), contains('not uploaded the required documents'));
+      expect(CarrierParcelRules.notVerifiedMessageKey(DocumentOverallStatus.pending), contains('missing or waiting for your review'));
+      expect(CarrierParcelRules.notVerifiedMessageKey(DocumentOverallStatus.actionRequired), contains('rejected or has expired'));
+      expect(CarrierParcelRules.notVerifiedMessageKey(null), contains('not verified yet'));
+    });
+    test('an unreadable required list has its own refusal', () {
+      expect(CarrierAssignCheck.values, contains(CarrierAssignCheck.verificationUnavailable));
     });
   });
 }

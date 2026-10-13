@@ -55,6 +55,10 @@ enum CarrierAssignCheck {
   /// accept the offer (the documents gate of every offer), so it would only
   /// time out and come back to the owner.
   driverNotVerified,
+
+  /// The driver's required documents could not be read, so their
+  /// verification could not be checked: nothing is assigned.
+  verificationUnavailable,
 }
 
 abstract final class CarrierParcelRules {
@@ -243,6 +247,21 @@ abstract final class CarrierParcelRules {
   /// the overall status computed from the required documents ([overall] when
   /// the caller just computed it), never the flag alone.
   static bool canTakeAssignment(UserModel? driver, {DocumentOverallStatus? overall}) => driver != null && !DocumentVerification.isPending(driver, overall: overall);
+
+  /// Why an assignment was refused for the driver's documents (the owner's
+  /// message): every required document must be uploaded AND approved.
+  static String notVerifiedMessageKey(DocumentOverallStatus? overall) {
+    switch (overall) {
+      case DocumentOverallStatus.notSubmitted:
+        return "This driver has not uploaded the required documents yet. Assign parcels once you have approved them all.";
+      case DocumentOverallStatus.pending:
+        return "Some of this driver's required documents are missing or waiting for your review. Approve all of them before assigning parcels.";
+      case DocumentOverallStatus.actionRequired:
+        return "A required document of this driver was rejected or has expired. The driver must upload it again and you must approve it before assigning parcels.";
+      default:
+        return "This driver's documents are not verified yet. Verify the driver before assigning parcels.";
+    }
+  }
 
   /// The owner's drivers that may be offered a parcel: driver accounts of
   /// this company (not the company itself), not disabled by the admin.

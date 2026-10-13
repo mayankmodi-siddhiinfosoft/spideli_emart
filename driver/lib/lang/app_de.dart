@@ -689,4 +689,9 @@ const Map<String, String> deGR = {
   "Expires on": "Läuft ab am",
   "Driver Documents": "Fahrerdokumente",
   "Document Verification Checklist": "Checkliste Dokumentenprüfung",
+  // Owner assignment refused: why (the driver's documents).
+  "This driver has not uploaded the required documents yet. Assign parcels once you have approved them all.": "Dieser Fahrer hat die erforderlichen Dokumente noch nicht hochgeladen. Weisen Sie Pakete zu, sobald Sie alle genehmigt haben.",
+  "Some of this driver's required documents are missing or waiting for your review. Approve all of them before assigning parcels.": "Einige erforderliche Dokumente dieses Fahrers fehlen oder warten auf Ihre Prüfung. Genehmigen Sie alle, bevor Sie Pakete zuweisen.",
+  "A required document of this driver was rejected or has expired. The driver must upload it again and you must approve it before assigning parcels.": "Ein erforderliches Dokument dieses Fahrers wurde abgelehnt oder ist abgelaufen. Der Fahrer muss es erneut hochladen und Sie müssen es genehmigen, bevor Sie Pakete zuweisen.",
+  "Could not check this driver's documents. Please try again.": "Die Dokumente dieses Fahrers konnten nicht geprüft werden. Bitte versuchen Sie es erneut.",
 };

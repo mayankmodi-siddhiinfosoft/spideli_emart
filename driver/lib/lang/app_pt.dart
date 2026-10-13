@@ -689,4 +689,9 @@ const Map<String, String> ptPO = {
   "Expires on": "Expira em",
   "Driver Documents": "Documentos do motorista",
   "Document Verification Checklist": "Lista de verificação de documentos",
+  // Owner assignment refused: why (the driver's documents).
+  "This driver has not uploaded the required documents yet. Assign parcels once you have approved them all.": "Este motorista ainda não enviou os documentos obrigatórios. Atribua encomendas depois de aprovar todos.",
+  "Some of this driver's required documents are missing or waiting for your review. Approve all of them before assigning parcels.": "Alguns documentos obrigatórios deste motorista estão em falta ou aguardam a sua revisão. Aprove todos antes de atribuir encomendas.",
+  "A required document of this driver was rejected or has expired. The driver must upload it again and you must approve it before assigning parcels.": "Um documento obrigatório deste motorista foi rejeitado ou expirou. O motorista deve enviá-lo novamente e você deve aprová-lo antes de atribuir encomendas.",
+  "Could not check this driver's documents. Please try again.": "Não foi possível verificar os documentos deste motorista. Tente novamente.",
 };

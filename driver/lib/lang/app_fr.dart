@@ -689,4 +689,9 @@ const Map<String, String> trFR = {
   "Expires on": "Expire le",
   "Driver Documents": "Documents du chauffeur",
   "Document Verification Checklist": "Liste de vérification des documents",
+  // Owner assignment refused: why (the driver's documents).
+  "This driver has not uploaded the required documents yet. Assign parcels once you have approved them all.": "Ce chauffeur n'a pas encore envoyé les documents requis. Attribuez des colis une fois que vous les aurez tous approuvés.",
+  "Some of this driver's required documents are missing or waiting for your review. Approve all of them before assigning parcels.": "Certains documents requis de ce chauffeur manquent ou attendent votre vérification. Approuvez-les tous avant d'attribuer des colis.",
+  "A required document of this driver was rejected or has expired. The driver must upload it again and you must approve it before assigning parcels.": "Un document requis de ce chauffeur a été refusé ou a expiré. Le chauffeur doit l'envoyer à nouveau et vous devez l'approuver avant d'attribuer des colis.",
+  "Could not check this driver's documents. Please try again.": "Impossible de vérifier les documents de ce chauffeur. Veuillez réessayer.",
 };

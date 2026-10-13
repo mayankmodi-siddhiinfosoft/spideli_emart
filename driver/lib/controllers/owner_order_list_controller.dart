@@ -330,7 +330,9 @@ class OwnerOrderListController extends GetxController {
       case CarrierAssignCheck.notPaid:
         ShowToastDialog.showToast("This quote is not paid yet.".tr);
       case CarrierAssignCheck.driverNotVerified:
-        ShowToastDialog.showToast("This driver's documents are not verified yet. Verify the driver before assigning parcels.".tr);
+        ShowToastDialog.showToast(CarrierParcelRules.notVerifiedMessageKey(result.overall).tr);
+      case CarrierAssignCheck.verificationUnavailable:
+        ShowToastDialog.showToast("Could not check this driver's documents. Please try again.".tr);
       case CarrierAssignCheck.notMine:
       case CarrierAssignCheck.ended:
       case CarrierAssignCheck.gone:

@@ -689,4 +689,9 @@ const Map<String, String> hiIN = {
   "Expires on": "समाप्ति तिथि",
   "Driver Documents": "ड्राइवर दस्तावेज़",
   "Document Verification Checklist": "दस्तावेज़ सत्यापन चेकलिस्ट",
+  // Owner assignment refused: why (the driver's documents).
+  "This driver has not uploaded the required documents yet. Assign parcels once you have approved them all.": "इस ड्राइवर ने अभी तक आवश्यक दस्तावेज़ अपलोड नहीं किए हैं। सभी को स्वीकृत करने के बाद पार्सल सौंपें।",
+  "Some of this driver's required documents are missing or waiting for your review. Approve all of them before assigning parcels.": "इस ड्राइवर के कुछ आवश्यक दस्तावेज़ नहीं हैं या आपकी समीक्षा की प्रतीक्षा में हैं। पार्सल सौंपने से पहले सभी को स्वीकृत करें।",
+  "A required document of this driver was rejected or has expired. The driver must upload it again and you must approve it before assigning parcels.": "इस ड्राइवर का एक आवश्यक दस्तावेज़ अस्वीकृत हुआ या उसकी अवधि समाप्त हो गई है। ड्राइवर को इसे फिर से अपलोड करना होगा और पार्सल सौंपने से पहले आपको इसे स्वीकृत करना होगा।",
+  "Could not check this driver's documents. Please try again.": "इस ड्राइवर के दस्तावेज़ जाँचे नहीं जा सके। कृपया फिर से प्रयास करें।",
 };

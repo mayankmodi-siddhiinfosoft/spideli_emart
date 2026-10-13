@@ -693,4 +693,9 @@ const Map<String, String> enUS = {
   "Expires on": "Expires on",
   "Driver Documents": "Driver Documents",
   "Document Verification Checklist": "Document Verification Checklist",
+  // Owner assignment refused: why (the driver's documents).
+  "This driver has not uploaded the required documents yet. Assign parcels once you have approved them all.": "This driver has not uploaded the required documents yet. Assign parcels once you have approved them all.",
+  "Some of this driver's required documents are missing or waiting for your review. Approve all of them before assigning parcels.": "Some of this driver's required documents are missing or waiting for your review. Approve all of them before assigning parcels.",
+  "A required document of this driver was rejected or has expired. The driver must upload it again and you must approve it before assigning parcels.": "A required document of this driver was rejected or has expired. The driver must upload it again and you must approve it before assigning parcels.",
+  "Could not check this driver's documents. Please try again.": "Could not check this driver's documents. Please try again.",
 };

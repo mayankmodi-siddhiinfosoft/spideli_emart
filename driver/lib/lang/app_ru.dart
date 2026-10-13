@@ -689,4 +689,9 @@ const Map<String, String> ruRU = {
   "Expires on": "Истекает",
   "Driver Documents": "Документы водителя",
   "Document Verification Checklist": "Чек-лист проверки документов",
+  // Owner assignment refused: why (the driver's documents).
+  "This driver has not uploaded the required documents yet. Assign parcels once you have approved them all.": "Этот водитель ещё не загрузил обязательные документы. Назначайте посылки после того, как одобрите их все.",
+  "Some of this driver's required documents are missing or waiting for your review. Approve all of them before assigning parcels.": "Некоторые обязательные документы этого водителя отсутствуют или ждут вашей проверки. Одобрите их все, прежде чем назначать посылки.",
+  "A required document of this driver was rejected or has expired. The driver must upload it again and you must approve it before assigning parcels.": "Обязательный документ этого водителя отклонён или просрочен. Водитель должен загрузить его заново, а вы должны его одобрить, прежде чем назначать посылки.",
+  "Could not check this driver's documents. Please try again.": "Не удалось проверить документы этого водителя. Попробуйте ещё раз.",
 };

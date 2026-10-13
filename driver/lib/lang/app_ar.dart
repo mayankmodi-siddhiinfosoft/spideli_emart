@@ -689,4 +689,9 @@ const Map<String, String> lnAr = {
   "Expires on": "تنتهي في",
   "Driver Documents": "مستندات السائق",
   "Document Verification Checklist": "قائمة التحقق من المستندات",
+  // Owner assignment refused: why (the driver's documents).
+  "This driver has not uploaded the required documents yet. Assign parcels once you have approved them all.": "لم يرفع هذا السائق المستندات المطلوبة بعد. أسند الطرود بعد أن توافق عليها جميعًا.",
+  "Some of this driver's required documents are missing or waiting for your review. Approve all of them before assigning parcels.": "بعض المستندات المطلوبة لهذا السائق مفقودة أو بانتظار مراجعتك. وافق عليها جميعًا قبل إسناد الطرود.",
+  "A required document of this driver was rejected or has expired. The driver must upload it again and you must approve it before assigning parcels.": "تم رفض مستند مطلوب لهذا السائق أو انتهت صلاحيته. يجب على السائق رفعه مرة أخرى ويجب أن توافق عليه قبل إسناد الطرود.",
+  "Could not check this driver's documents. Please try again.": "تعذر التحقق من مستندات هذا السائق. يرجى المحاولة مرة أخرى.",
 };
