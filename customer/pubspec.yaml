@@ -95,6 +95,7 @@ dependencies:
   intl: ^0.20.3
   uuid: ^4.6.0
   flutter_google_places_hoc081098: ^2.0.0
+  cloud_functions: ^6.5.0
 
 
 dependency_overrides:

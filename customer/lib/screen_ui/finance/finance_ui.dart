@@ -1,0 +1,51 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/themes/show_toast_dialog.dart';
+import 'package:customer/service/finance_service.dart';
+import 'package:customer/utils/finance_rules.dart';
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:intl/intl.dart';
+
+/// Shared bits of the Spideli Finance screens.
+abstract final class FinanceUi {
+  static DsTone tone(String key) {
+    switch (key) {
+      case 'success':
+        return DsTone.success;
+      case 'warning':
+        return DsTone.warning;
+      case 'danger':
+        return DsTone.danger;
+      case 'info':
+        return DsTone.info;
+    }
+    return DsTone.neutral;
+  }
+
+  static Widget kycBadge(String? status) => DsBadge(label: KycStatus.label(status).tr, tone: tone(KycStatus.tone(status)));
+
+  static String date(dynamic value) {
+    if (value is! Timestamp) return '-';
+    return DateFormat('dd MMM yyyy, HH:mm').format(value.toDate());
+  }
+
+  /// Runs [action] behind the loader; a server refusal becomes its translated message.
+  static Future<bool> run(Future<void> Function() action, {String? success}) async {
+    ShowToastDialog.showLoader("Please wait...".tr);
+    try {
+      await action();
+      ShowToastDialog.closeLoader();
+      if (success != null) ShowToastDialog.showToast(success.tr);
+      return true;
+    } on FinanceException catch (e) {
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast(FinanceErrors.messageKey(e.reason).tr);
+      return false;
+    } catch (_) {
+      ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast(FinanceErrors.messageKey(null).tr);
+      return false;
+    }
+  }
+}

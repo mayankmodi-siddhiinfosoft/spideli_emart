@@ -36,6 +36,7 @@ import '../../subscriptions/business_account_screen.dart';
 import '../../subscriptions/my_plan_screen.dart';
 import '../../subscriptions/my_store_subscriptions_screen.dart';
 import '../../subscriptions/saved_payment_methods_screen.dart';
+import 'package:customer/screen_ui/finance/finance_home_screen.dart';
 
 /// Archetype **H — profile / settings**: an identity header card followed by
 /// grouped setting rows, a destructive group and the app version.
@@ -162,6 +163,10 @@ class ProfileScreen extends StatelessWidget {
                               }),
                               _tile(context, "assets/images/ic_profile.svg", "Business account".tr, () {
                                 Get.to(() => const BusinessAccountScreen());
+                              }),
+                              // Spideli Finance: identity verification, balances, activity.
+                              _tile(context, "assets/icons/ic_wallet.svg", "Spideli Finance".tr, () {
+                                Get.to(() => const FinanceHomeScreen());
                               }),
                             ],
                           ),

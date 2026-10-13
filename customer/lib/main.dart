@@ -6,8 +6,10 @@ import 'package:customer/themes/easy_loading_config.dart';
 import 'package:customer/utils/notification_service.dart';
 import 'package:customer/utils/preferences.dart';
 import 'package:cupertino_ui/cupertino_ui.dart' as cupertino_ui;
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:get/get.dart';
@@ -20,6 +22,18 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   FirebaseApp firebaseApp = await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // App Check: the Spideli Finance functions refuse calls without a valid
+  // token (finance/README.md). Debug builds use the debug provider (register
+  // its token in the Firebase console); activating it changes nothing for the
+  // rest of the app until App Check enforcement is turned on in the console.
+  try {
+    await FirebaseAppCheck.instance.activate(
+      providerAndroid: kDebugMode ? const AndroidDebugProvider() : const AndroidPlayIntegrityProvider(),
+      providerApple: kDebugMode ? const AppleDebugProvider() : const AppleAppAttestWithDeviceCheckFallbackProvider(),
+    );
+  } catch (e) {
+    debugPrint('App Check not activated: $e');
+  }
 
   // Push: one top-level background handler, registered before runApp, and the
   // Android channel created before any push can arrive.
