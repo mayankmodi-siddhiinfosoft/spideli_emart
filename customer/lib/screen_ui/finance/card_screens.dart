@@ -587,7 +587,7 @@ class _TransactionTile extends StatelessWidget {
         if ((t['declineReason'] ?? '').toString().isNotEmpty) t['declineReason'].toString(),
       ].join(' · '),
       trailing: Text(
-        '${credit ? '+' : '-'}${FinanceMoney.format(amount, currency)}$original',
+        '${FinanceMoney.signed(credit ? amount : -amount, currency)}$original',
         style: DsTypography.bodyStrong.copyWith(
           color: status == 'declined' ? DsColors.of(context).textMuted : (credit ? DsColors.of(context).success : null),
           decoration: status == 'declined' || status == 'reversed' ? TextDecoration.lineThrough : null,

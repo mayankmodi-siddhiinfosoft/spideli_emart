@@ -317,7 +317,7 @@ class _BillPayScreenState extends State<BillPayScreen> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                     if ((_lookup!['customerName'] ?? '').toString().isNotEmpty) paymentRow(context, "Customer".tr, _lookup!['customerName'].toString()),
                     if (_lookup!['amountDue'] != null) paymentRow(context, "Amount due".tr, FinanceMoney.format(_due ?? 0, b.currency), strong: true),
-                    if (_lookup!['dueDate'] != null) paymentRow(context, "Due date".tr, paymentDate(_lookup!['dueDate']).split(',').first),
+                    if (_lookup!['dueDate'] != null) paymentRow(context, "Due date".tr, paymentDay(_lookup!['dueDate'])),
                   ]),
                 ),
               ],

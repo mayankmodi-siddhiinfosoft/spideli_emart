@@ -301,7 +301,7 @@ class _Overview extends StatelessWidget {
               children: [
                 Expanded(child: Text("Overview".tr, style: DsTypography.titleSm.copyWith(color: DsColors.of(context).textPrimary))),
                 if (s.updatedAt != null)
-                  Text("${"Updated".tr} ${DateFormat('dd MMM, HH:mm').format(s.updatedAt!)}", style: DsTypography.caption.copyWith(color: DsColors.of(context).textSecondary)),
+                  Text("${"Updated".tr} ${ltr(DateFormat('dd MMM, HH:mm').format(s.updatedAt!))}", style: DsTypography.caption.copyWith(color: DsColors.of(context).textSecondary)),
               ],
             ),
             const DsGap(DsSpace.sm),
@@ -314,7 +314,7 @@ class _Overview extends StatelessWidget {
                   : [
                       ("Invested capital".tr, m(s.investments!['investedCapital'])),
                       ("Current value".tr, m(s.investments!['currentValuation'])),
-                      ("Gains and losses".tr, '${s.totalGains > 0 ? '+' : ''}${m(s.totalGains)}'),
+                      ("Gains and losses".tr, FinanceMoney.signed(s.totalGains, s.currency)),
                     ],
             ),
             _ModuleCard(
@@ -338,8 +338,8 @@ class _Overview extends StatelessWidget {
                   : [
                       ("Active tontines".tr, '${FinanceSummary.intOf(s.tontines!['active'])}'),
                       if (s.tontines!['nextContributionAmount'] != null)
-                        ("Next contribution".tr, '${m(s.tontines!['nextContributionAmount'])} · ${FinanceUi.date(s.tontines!['nextContributionDate']).split(',').first}'),
-                      if (s.tontines!['nextPayoutDate'] != null) ("Next payout".tr, FinanceUi.date(s.tontines!['nextPayoutDate']).split(',').first),
+                        ("Next contribution".tr, '${m(s.tontines!['nextContributionAmount'])} · ${FinanceUi.day(s.tontines!['nextContributionDate'])}'),
+                      if (s.tontines!['nextPayoutDate'] != null) ("Next payout".tr, FinanceUi.day(s.tontines!['nextPayoutDate'])),
                     ],
             ),
             _ModuleCard(
@@ -352,7 +352,7 @@ class _Overview extends StatelessWidget {
                       ("Borrowed, outstanding".tr, m(s.loans!['borrowedOutstanding'])),
                       ("Lent, outstanding".tr, m(s.loans!['lentOutstanding'])),
                       if (s.loans!['nextRepaymentAmount'] != null)
-                        ("Next repayment".tr, '${m(s.loans!['nextRepaymentAmount'])} · ${FinanceUi.date(s.loans!['nextRepaymentDate']).split(',').first}'),
+                        ("Next repayment".tr, '${m(s.loans!['nextRepaymentAmount'])} · ${FinanceUi.day(s.loans!['nextRepaymentDate'])}'),
                     ],
               alert: FinanceSummary.intOf(s.loans?['overdueCount']) > 0 ? "A repayment is overdue.".tr : null,
             ),
@@ -364,7 +364,7 @@ class _Overview extends StatelessWidget {
                   ? null
                   : [
                       ("Active policies".tr, '${FinanceSummary.intOf(s.insurance!['activePolicies'])}'),
-                      if (s.insurance!['nextRenewalDate'] != null) ("Next renewal".tr, FinanceUi.date(s.insurance!['nextRenewalDate']).split(',').first),
+                      if (s.insurance!['nextRenewalDate'] != null) ("Next renewal".tr, FinanceUi.day(s.insurance!['nextRenewalDate'])),
                       ("Open claims".tr, '${FinanceSummary.intOf(s.insurance!['openClaims'])}'),
                     ],
             ),

@@ -11,7 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
-String _date(DateTime? d) => d == null ? '-' : DateFormat('dd MMM yyyy').format(d);
+String _date(DateTime? d) => d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
 
 DsTone _statusTone(String? s) => switch (s) {
       'paid' || 'succeeded' || 'resolved' || 'completed' => DsTone.success,
@@ -741,7 +741,7 @@ class _History extends StatelessWidget {
                   leadingIcon: Icons.north_east_rounded,
                   leadingTone: _statusTone(p['status']?.toString()),
                   title: '${FinanceMoney.format(FinanceSummary.intOf(p['amount']), tontine.currency)} → ${_nameOf(members, p['beneficiaryUserId']?.toString())}',
-                  subtitle: '${"Cycle".tr} ${p['cycleNumber'] ?? '-'} · ${GroupLabels.payout(p['status']?.toString()).tr}${(p['reference'] ?? '').toString().isEmpty ? '' : ' · ${p['reference']}'}',
+                  subtitle: '${"Cycle".tr} ${p['cycleNumber'] ?? '-'} · ${GroupLabels.payout(p['status']?.toString()).tr}${(p['reference'] ?? '').toString().isEmpty ? '' : ' · ${ltrRef(p['reference'])}'}',
                 ),
             ],
           ),

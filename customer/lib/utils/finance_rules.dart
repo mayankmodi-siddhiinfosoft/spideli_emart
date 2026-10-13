@@ -6,6 +6,13 @@
 /// is missing before calling it.
 library;
 
+/// [s] as a left-to-right isolate (U+2066 ... U+2069): dates, amounts and
+/// references keep their order inside right-to-left (Arabic) text.
+String ltr(String s) => '\u2066$s\u2069';
+
+/// A reference ("SPL-DEMO-0005") kept on one line and in order: non-breaking hyphens, left-to-right.
+String ltrRef(Object? s) => ltr('${s ?? ''}'.replaceAll('-', '\u2011'));
+
 /// Money as the ledger stores it: integer minor units + ISO code.
 abstract final class FinanceMoney {
   /// ISO 4217 exponents (a standard, not a business value), as on the server.
@@ -15,8 +22,16 @@ abstract final class FinanceMoney {
 
   static int exponent(String currency) => _exponents[currency] ?? 2;
 
-  /// "1 500 000 XAF", "12.50 USD", "-0.05 EUR".
-  static String format(num minor, String currency) {
+  /// The amount as a left-to-right isolate (U+2066 ... U+2069), so it reads
+  /// "245 000 XAF" inside right-to-left (Arabic) text instead of having its
+  /// digit groups reordered. Invisible in left-to-right text.
+  static String format(num minor, String currency) => ltr(plain(minor, currency));
+
+  /// "+1 500 XAF" / "-1 500 XAF": the sign stays with the amount in right-to-left text.
+  static String signed(num minor, String currency) => ltr('${minor > 0 ? '+' : ''}${plain(minor, currency)}');
+
+  /// "1 500 000 XAF", "12.50 USD", "-0.05 EUR" (no direction marks: PDFs, tests).
+  static String plain(num minor, String currency) {
     final int e = exponent(currency);
     final int value = minor.round();
     final bool negative = value < 0;

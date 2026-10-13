@@ -12,7 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
-String _date(DateTime? d) => d == null ? '-' : DateFormat('dd MMM yyyy').format(d);
+String _date(DateTime? d) => d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
 
 DsTone _tone(String? s) => switch (s) {
       'completed' || 'settled' || 'succeeded' => DsTone.success,
@@ -30,7 +30,7 @@ DsTone _riskTone(int level) => switch (RiskScale.band(level)) {
 
 DsTone _gainTone(num v) => v > 0 ? DsTone.success : (v < 0 ? DsTone.danger : DsTone.neutral);
 
-String _signed(int minor, String currency) => '${minor > 0 ? '+' : ''}${FinanceMoney.format(minor, currency)}';
+String _signed(int minor, String currency) => FinanceMoney.signed(minor, currency);
 
 Widget _row(BuildContext context, String label, String value, {Color? color}) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -285,7 +285,7 @@ class _Reports extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 2),
                 leadingIcon: Icons.picture_as_pdf_outlined,
                 title: r['title']?.toString() ?? "Statement".tr,
-                subtitle: FinanceUi.date(r['createdAt']).split(',').first,
+                subtitle: FinanceUi.day(r['createdAt']),
                 trailing: const Icon(Icons.download_rounded),
                 onTap: () => _open(storagePath: r['storagePath'].toString()),
               ),
@@ -478,7 +478,7 @@ class _FundBody extends StatelessWidget {
               ]),
               if (f.manager.isNotEmpty) _caption(context, '${"Managed by".tr} ${f.manager}'),
               const DsGap(DsSpace.sm),
-              DsBadge(label: InvestmentLabels.assetClass(f.assetClass).tr, tone: DsTone.info, small: true),
+              Align(alignment: AlignmentDirectional.centerStart, child: DsBadge(label: InvestmentLabels.assetClass(f.assetClass).tr, tone: DsTone.info, small: true)),
               const DsGap(DsSpace.md),
               _RiskScaleView(level: f.riskLevel),
             ],
@@ -1038,7 +1038,7 @@ class _HoldingBody extends StatelessWidget {
                     leadingTone: t['type'] == 'redemption' || t['type'] == 'distribution' ? DsTone.success : DsTone.brand,
                     title: '${InvestmentLabels.transaction(t['type']?.toString()).tr} · ${FinanceMoney.format(FinanceSummary.intOf(t['amount']), h.currency)}',
                     subtitle: [
-                      FinanceUi.date(t['createdAt']).split(',').first,
+                      FinanceUi.day(t['createdAt']),
                       if (t['units'] is num) '${InvestmentLabels.units((t['units'] as num).toDouble())} ${"units".tr}',
                       if (t['navPerUnit'] is num) '@ ${FinanceMoney.format(t['navPerUnit'] as num, h.currency)}',
                     ].join(' · '),
@@ -1091,7 +1091,7 @@ class _Orders extends StatelessWidget {
                             '${(collection == 'investment_redemptions' ? "Redemption" : "Investment").tr} · ${o['full'] == true && o['amount'] == null ? "All".tr : FinanceMoney.format(FinanceSummary.intOf(o['amount']), o['currency']?.toString() ?? '')}',
                             style: DsTypography.titleSm.tabular,
                           ),
-                          _caption(context, '${o['fundName'] ?? ''} · ${FinanceUi.date(o['createdAt']).split(',').first}'),
+                          _caption(context, '${o['fundName'] ?? ''} · ${FinanceUi.day(o['createdAt'])}'),
                         ]),
                       ),
                       DsBadge(label: InvestmentOrders.label(o['status']?.toString()).tr, tone: _tone(o['status']?.toString()), small: true),
@@ -1180,7 +1180,7 @@ class InvestmentOrderScreen extends StatelessWidget {
             if (o['termsVersion'] != null) _row(context, "Terms version".tr, '${o['termsVersion']}'),
             _row(context, "Requested on".tr, FinanceUi.date(o['createdAt'])),
             if (o['tradeDate'] != null) _row(context, "Processed on".tr, FinanceUi.date(o['tradeDate'])),
-            if (o['expectedSettlementDate'] != null && o['settledAt'] == null) _row(context, "Expected payment".tr, FinanceUi.date(o['expectedSettlementDate']).split(',').first),
+            if (o['expectedSettlementDate'] != null && o['settledAt'] == null) _row(context, "Expected payment".tr, FinanceUi.day(o['expectedSettlementDate'])),
             if (o['settledAt'] != null) _row(context, "Paid out on".tr, FinanceUi.date(o['settledAt'])),
             if ((o['reference'] ?? '').toString().isNotEmpty) _row(context, "Reference".tr, o['reference'].toString()),
           ],

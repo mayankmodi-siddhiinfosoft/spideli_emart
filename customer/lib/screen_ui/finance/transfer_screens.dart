@@ -35,9 +35,14 @@ Widget paymentRow(BuildContext context, String label, String value, {bool strong
       ),
     );
 
+String paymentDay(dynamic v) {
+  final d = FinanceGroupService.toDate(v);
+  return d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
+}
+
 String paymentDate(dynamic v) {
   final d = FinanceGroupService.toDate(v);
-  return d == null ? '-' : DateFormat('dd MMM yyyy, HH:mm').format(d);
+  return d == null ? '-' : ltr(DateFormat('dd MMM yyyy, HH:mm').format(d));
 }
 
 /// The status timeline of a transfer or bill payment (none once it failed).
@@ -227,7 +232,7 @@ class _History extends StatelessWidget {
                   leadingTone: paymentTone(t['status']?.toString()),
                   title: out ? (t['recipientName']?.toString() ?? '-') : (t['senderName']?.toString() ?? '-'),
                   subtitle: '${paymentDate(t['createdAt'])} · ${PaymentFlow.label(t['status']?.toString()).tr}',
-                  trailing: Text('${out ? '-' : '+'}${FinanceMoney.format(amount, cur)}',
+                  trailing: Text(FinanceMoney.signed(out ? -amount : amount, cur),
                       style: DsTypography.bodyStrong.copyWith(color: out ? null : DsColors.of(context).success).tabular),
                   onTap: () => Get.to(() => TransferScreen(transferId: t['id'].toString(), config: config)),
                 );
@@ -536,7 +541,7 @@ class TransferScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(children: [
-                Expanded(child: Text('${out ? '-' : '+'}${m(out ? total : (t['receiveAmount'] ?? amount))}', style: DsTypography.title.tabular)),
+                Expanded(child: Text(FinanceMoney.signed(out ? -total : FinanceSummary.intOf(t['receiveAmount'] ?? amount), cur), style: DsTypography.title.tabular)),
                 DsBadge(label: PaymentFlow.label(status).tr, tone: paymentTone(status)),
               ]),
               Text('${(out ? "To" : "From").tr} $counterpart', style: DsTypography.body),

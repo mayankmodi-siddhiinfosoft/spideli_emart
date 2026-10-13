@@ -5,10 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// The customer side of Spideli Finance mirrors the server's rules.
 void main() {
   test('money formats integer minor units with the ISO exponent, like the server', () {
-    expect(FinanceMoney.format(1500000, 'XAF'), '1 500 000 XAF');
-    expect(FinanceMoney.format(1250, 'USD'), '12.50 USD');
-    expect(FinanceMoney.format(-5, 'EUR'), '-0.05 EUR');
-    expect(FinanceMoney.format(0, 'XOF'), '0 XOF');
+    expect(FinanceMoney.plain(1500000, 'XAF'), '1 500 000 XAF');
+    expect(FinanceMoney.plain(1250, 'USD'), '12.50 USD');
+    expect(FinanceMoney.plain(-5, 'EUR'), '-0.05 EUR');
+    expect(FinanceMoney.plain(0, 'XOF'), '0 XOF');
+    // Shown as one left-to-right unit inside Arabic text.
+    expect(FinanceMoney.format(1500000, 'XAF'), '\u20661 500 000 XAF\u2069');
   });
 
   test('KYC status labels, tones and editability', () {

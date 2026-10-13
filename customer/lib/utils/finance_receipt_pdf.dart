@@ -11,8 +11,8 @@ class FinanceReceiptPdf {
 
   static final DateFormat _dateTime = DateFormat('yyyy-MM-dd HH:mm', 'en_US');
 
-  /// The standard PDF fonts cover Latin-1 only.
-  static String _safe(String s) => String.fromCharCodes(s.runes.map((r) => r <= 0xFF ? r : 0x3F));
+  /// The standard PDF fonts cover Latin-1 only (direction marks are dropped).
+  static String _safe(String s) => String.fromCharCodes(s.runes.where((r) => r < 0x2066 || r > 0x2069).map((r) => r <= 0xFF ? r : 0x3F));
 
   static List<int> build({
     required String title,

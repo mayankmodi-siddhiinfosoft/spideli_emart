@@ -15,7 +15,10 @@ import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
-String _date(DateTime? d) => d == null ? '-' : DateFormat('dd MMM yyyy').format(d);
+/// "12%", "2.5%" (no trailing ".0").
+String _pct(num v) => '${v == v.roundToDouble() ? v.round() : v}%';
+
+String _date(DateTime? d) => d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
 
 DsTone _tone(String? s) => switch (s) {
       'active' || 'repaid' || 'paid' || 'succeeded' => DsTone.success,
@@ -308,8 +311,8 @@ class _LoanApplyScreenState extends State<LoanApplyScreen> {
                 _row(context, "Total interest".tr, FinanceMoney.format(estimate.totalInterest, _currency)),
                 _row(context, "Fee".tr, FinanceMoney.format(estimate.fee, _currency)),
                 _row(context, "Total to repay".tr, FinanceMoney.format(estimate.totalRepaid, _currency)),
-                _row(context, "Interest".tr, '${cfg.annualInterestPercent}% ${"a year".tr} (${(cfg.interestMethod == 'flat' ? 'flat rate' : 'on the remaining balance').tr})'),
-                if (cfg.latePenaltyPercent > 0) _row(context, "Late payment penalty".tr, '${cfg.latePenaltyPercent}%'),
+                _row(context, "Interest".tr, '${_pct(cfg.annualInterestPercent)} ${"a year".tr} (${(cfg.interestMethod == 'flat' ? 'flat rate' : 'on the remaining balance').tr})'),
+                if (cfg.latePenaltyPercent > 0) _row(context, "Late payment penalty".tr, _pct(cfg.latePenaltyPercent)),
                 Align(
                   alignment: AlignmentDirectional.centerStart,
                   child: DsButton.ghost(
@@ -538,7 +541,7 @@ class _Voting extends StatelessWidget {
           _row(context, "Votes".tr, '${tally.cast} / ${tally.eligible} (${"needed".tr}: ${tally.needed})'),
           _row(context, "Approve / decline".tr, '${tally.yes} / ${tally.no}'),
           _row(context, "Approval needed".tr, '${tally.approvalPercent}%'),
-          if (l.votingEndsAt != null) _row(context, "Voting closes".tr, DateFormat('dd MMM yyyy, HH:mm').format(l.votingEndsAt!)),
+          if (l.votingEndsAt != null) _row(context, "Voting closes".tr, ltr(DateFormat('dd MMM yyyy, HH:mm').format(l.votingEndsAt!))),
           const DsGap(DsSpace.sm),
           StreamBuilder<Map<String, dynamic>?>(
             stream: FinanceLendingService.myVote(l.id),
@@ -746,7 +749,7 @@ class _Schedule extends StatelessWidget {
                             leadingIcon: Icons.north_east_rounded,
                             leadingTone: _tone(r['status']?.toString()),
                             title: FinanceMoney.format(FinanceSummary.intOf(r['amount']), l.currency),
-                            subtitle: '${FinanceUi.date(r['createdAt'])} · ${GroupLabels.contribution(r['status']?.toString()).tr}${(r['reference'] ?? '').toString().isEmpty ? '' : ' · ${r['reference']}'}',
+                            subtitle: '${FinanceUi.date(r['createdAt'])} · ${GroupLabels.contribution(r['status']?.toString()).tr}${(r['reference'] ?? '').toString().isEmpty ? '' : ' · ${ltrRef(r['reference'])}'}',
                           ),
                       ],
                     ),

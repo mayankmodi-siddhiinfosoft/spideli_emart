@@ -15,7 +15,7 @@ import 'package:intl/intl.dart';
 
 String _date(dynamic v) {
   final d = v is DateTime ? v : FinanceGroupService.toDate(v);
-  return d == null ? '-' : DateFormat('dd MMM yyyy').format(d);
+  return d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
 }
 
 DsTone _tone(String? s) => switch (s) {

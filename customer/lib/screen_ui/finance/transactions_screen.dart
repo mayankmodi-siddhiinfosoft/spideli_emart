@@ -56,7 +56,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
             children: [
               Expanded(
                 child: DsButton.secondary(
-                  label: _range == null ? "Any date".tr : "${FinanceUi.date(Timestamp.fromDate(_range!.start)).split(',').first} – ${FinanceUi.date(Timestamp.fromDate(_range!.end)).split(',').first}",
+                  label: _range == null ? "Any date".tr : "${FinanceUi.day(Timestamp.fromDate(_range!.start))} – ${FinanceUi.day(Timestamp.fromDate(_range!.end))}",
                   icon: Icons.date_range_rounded,
                   size: DsButtonSize.sm,
                   onPressed: _pickRange,
@@ -159,9 +159,9 @@ class _TransactionListState extends State<TransactionList> {
       leadingIcon: signed >= 0 ? Icons.south_west_rounded : Icons.north_east_rounded,
       leadingTone: signed >= 0 ? DsTone.success : DsTone.neutral,
       title: LedgerView.typeLabel(t['type']?.toString()).tr,
-      subtitle: '${FinanceUi.date(t['createdAt'])} · ${t['reference'] ?? ''}${reversed ? ' · ${"Reversed".tr}' : ''}',
+      subtitle: '${FinanceUi.date(t['createdAt'])} · ${ltrRef(t['reference'])}${reversed ? ' · ${"Reversed".tr}' : ''}',
       trailing: Text(
-        '${signed > 0 ? '+' : ''}${FinanceMoney.format(signed, currency)}',
+        FinanceMoney.signed(signed, currency),
         style: DsTypography.titleSm.copyWith(color: signed >= 0 ? c.successStrong : c.textPrimary, decoration: reversed ? TextDecoration.lineThrough : null).tabular,
       ),
       onTap: () => _details(context, t, signed),

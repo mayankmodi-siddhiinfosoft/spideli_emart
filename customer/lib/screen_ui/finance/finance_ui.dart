@@ -27,7 +27,13 @@ abstract final class FinanceUi {
 
   static String date(dynamic value) {
     if (value is! Timestamp) return '-';
-    return DateFormat('dd MMM yyyy, HH:mm').format(value.toDate());
+    return ltr(DateFormat('dd MMM yyyy, HH:mm').format(value.toDate()));
+  }
+
+  /// The day only: "05 Oct 2026".
+  static String day(dynamic value) {
+    if (value is! Timestamp) return '-';
+    return ltr(DateFormat('dd MMM yyyy').format(value.toDate()));
   }
 
   /// Runs [action] behind the loader; a server refusal becomes its translated message.

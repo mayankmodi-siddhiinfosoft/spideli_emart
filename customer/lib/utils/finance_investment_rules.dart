@@ -10,6 +10,8 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:customer/utils/finance_rules.dart' show ltr;
+
 int _int(dynamic v) => v is num ? v.round() : int.tryParse('${v ?? ''}') ?? 0;
 
 double _num(dynamic v) => v is num ? v.toDouble() : double.tryParse('${v ?? ''}') ?? 0;
@@ -232,7 +234,7 @@ abstract final class InvestmentLabels {
   static String percent(double? p, {bool signed = false}) {
     if (p == null) return '-';
     final String s = p.toStringAsFixed(p.abs() >= 100 ? 0 : 2).replaceFirst(RegExp(r'\.?0+$'), '');
-    return '${signed && p > 0 ? '+' : ''}$s %';
+    return ltr('${signed && p > 0 ? '+' : ''}$s %');
   }
 
   /// Units with up to 4 decimals: "12.3456", "100".

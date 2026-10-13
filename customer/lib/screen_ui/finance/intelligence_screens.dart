@@ -14,9 +14,9 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
-String _date(DateTime? d) => d == null ? '-' : DateFormat('dd MMM yyyy').format(d);
+String _date(DateTime? d) => d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
 
-String _dateTime(DateTime? d) => d == null ? '-' : DateFormat('dd MMM yyyy, HH:mm').format(d);
+String _dateTime(DateTime? d) => d == null ? '-' : ltr(DateFormat('dd MMM yyyy, HH:mm').format(d));
 
 Widget _caption(BuildContext context, String text) => Text(text, style: DsTypography.caption.copyWith(color: DsColors.of(context).textSecondary));
 

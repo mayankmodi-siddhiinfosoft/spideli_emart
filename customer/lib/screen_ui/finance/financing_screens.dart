@@ -21,7 +21,7 @@ DsTone _tone(String? s) => switch (s) {
 
 String _date(dynamic v) {
   final d = FinanceGroupService.toDate(v);
-  return d == null ? '-' : DateFormat('dd MMM yyyy').format(d);
+  return d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
 }
 
 Widget _row(BuildContext context, String label, String value) => Padding(

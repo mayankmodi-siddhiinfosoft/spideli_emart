@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
-String _date(DateTime? d) => d == null ? '-' : DateFormat('dd MMM yyyy').format(d);
+String _date(DateTime? d) => d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
 
 /// Spideli Finance > Savings goals: the user's goals and invitations.
 /// `platform_settings/savings` must exist (admin), else "not available".
@@ -477,7 +477,7 @@ class _GoalBody extends StatelessWidget {
                 leadingIcon: Icons.south_west_rounded,
                 leadingTone: x['status'] == 'succeeded' ? DsTone.success : (x['status'] == 'failed' ? DsTone.danger : DsTone.neutral),
                 title: FinanceMoney.format(FinanceSummary.intOf(x['amount']), x['currency']?.toString() ?? cur),
-                subtitle: '${FinanceUi.date(x['createdAt'])} · ${GroupLabels.contribution(x['status']?.toString()).tr}${(x['reference'] ?? '').toString().isEmpty ? '' : ' · ${x['reference']}'}',
+                subtitle: '${FinanceUi.date(x['createdAt'])} · ${GroupLabels.contribution(x['status']?.toString()).tr}${(x['reference'] ?? '').toString().isEmpty ? '' : ' · ${ltrRef(x['reference'])}'}',
               ),
           ],
         ),

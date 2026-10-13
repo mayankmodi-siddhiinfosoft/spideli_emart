@@ -113,8 +113,9 @@ void main() {
   });
 
   test('display formats', () {
-    expect(InvestmentLabels.percent(5.1, signed: true), '+5.1 %');
-    expect(InvestmentLabels.percent(-2), '-2 %');
+    String plain(String s) => s.replaceAll(RegExp('[\u2066-\u2069]'), '');
+    expect(plain(InvestmentLabels.percent(5.1, signed: true)), '+5.1 %');
+    expect(plain(InvestmentLabels.percent(-2)), '-2 %');
     expect(InvestmentLabels.percent(null), '-');
     expect(InvestmentLabels.units(78.4), '78.4');
     expect(InvestmentLabels.units(100), '100');
