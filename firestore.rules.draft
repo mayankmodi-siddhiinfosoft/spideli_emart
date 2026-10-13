@@ -977,7 +977,7 @@ service cloud.firestore {
         && regionPricingOk(request.resource.data.diff(resource.data).affectedKeys())));
       // An owner without a carrier creates its own (13 Oct 2026): bound to
       // itself, unverified and unpublished until the admin decides; never
-      // the admin's code or fixed taxes; prices only for its own regions.
+      // the admin's code or fixed taxes.
       allow create: if isAdmin() || ownCarrierCreateOk();
       allow delete: if isAdmin();
     }
@@ -987,8 +987,7 @@ service cloud.firestore {
       return hasProfile() && flag(myProfile(), 'isOwner') && txt(myProfile(), 'carrierId') == ''
         && txt(d, 'ownerId') == uid()
         && d.get('isVerified', true) == false && d.get('publish', true) == false
-        && !d.keys().hasAny(['code', 'intercityFixedTax', 'intercountryFixedTax'])
-        && mapOrEmpty(d.get('regionPricing', {})).keys().hasOnly(listOrEmpty(d.get('regionIds', [])));
+        && !d.keys().hasAny(['code', 'intercityFixedTax', 'intercountryFixedTax', 'regionPricing']);
     }
 
     // =========================================================================

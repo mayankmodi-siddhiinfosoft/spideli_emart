@@ -5,7 +5,6 @@ import 'package:driver/constant/show_toast_dialog.dart';
 import 'package:driver/models/delivery_carrier_model.dart';
 import 'package:driver/models/region_model.dart';
 import 'package:driver/services/carrier_dispatch_service.dart';
-import 'package:driver/utils/carrier_settings_form.dart';
 import 'package:driver/utils/carrier_setup_form.dart';
 import 'package:driver/utils/region_service.dart';
 import 'package:flutter/material.dart';
@@ -15,8 +14,8 @@ import 'package:image_picker/image_picker.dart';
 
 /// "Set up your carrier": a company owner with no carrier creates its own
 /// (`CarrierSetupForm`, `CarrierDispatchService.createOwnCarrier`). The
-/// carrier waits for the administrator's verification and publication. No
-/// documents are submitted; each selected region gets its prices here.
+/// carrier waits for the administrator's verification and publication;
+/// prices per region are entered afterwards in Carrier settings.
 class CarrierSetupController extends GetxController {
   final RxBool isLoading = true.obs;
   final RxBool isSaving = false.obs;
@@ -33,36 +32,9 @@ class CarrierSetupController extends GetxController {
   final RxList<RegionModel> regions = <RegionModel>[].obs;
   final RxList<String> regionIds = <String>[].obs;
 
-  /// Local path of the picked logo (`photo`), uploaded on submit.
+  /// Local image paths picked for the logo (`photo`) and the registration
+  /// documents (`operatingLicenceFile`, ...), uploaded on submit.
   final RxMap<String, String> pickedFiles = <String, String>{}.obs;
-
-  /// Price inputs per region: "regionId|field" -> controller.
-  final Map<String, TextEditingController> regionFields = {};
-
-  TextEditingController regionControllerFor(String regionId, String field) =>
-      regionFields.putIfAbsent(CarrierSettingsForm.regionKey(regionId, field), () => TextEditingController());
-
-  Map<String, Map<String, String>> get _regionTexts => {
-        for (final regionId in regionIds)
-          regionId: {for (final f in DeliveryCarrierModel.chargeFields) f: regionControllerFor(regionId, f).text},
-      };
-
-  /// "Littoral (FCFA)": a region's prices are in its own currency.
-  String regionLabel(String regionId) {
-    final String name = RegionService.regionById(regionId)?.name ?? regionId;
-    final currency = RegionService.currencyForRegion(regionId);
-    final String unit = (currency?.symbol ?? '').trim().isNotEmpty ? currency!.symbol!.trim() : (currency?.code ?? '').trim();
-    return unit.isEmpty ? name : '$name ($unit)';
-  }
-
-  /// The hint of an optional door / pickup-point value: the region default.
-  String regionHint(String regionId, String field) {
-    final num? def = RegionService.parcelPricingDefault(regionId, field);
-    if (field == 'volumetricDivisor') {
-      return def != null && def > 0 ? 'Region default: @value'.trParams({'value': DeliveryCarrierModel.formatNumber(def)}) : 'Region default: size not used'.tr;
-    }
-    return 'Region default: @value'.trParams({'value': DeliveryCarrierModel.formatNumber(def ?? 0)});
-  }
 
   final RxMap<String, String> errors = <String, String>{}.obs;
 
@@ -76,7 +48,7 @@ class CarrierSetupController extends GetxController {
 
   @override
   void onClose() {
-    for (final c in [...fields.values, ...regionFields.values]) {
+    for (final c in fields.values) {
       c.dispose();
     }
     super.onClose();
@@ -106,7 +78,6 @@ class CarrierSetupController extends GetxController {
   void toggleRegion(String regionId) {
     regionIds.contains(regionId) ? regionIds.remove(regionId) : regionIds.add(regionId);
     errors.remove('regionIds');
-    errors.removeWhere((key, _) => key.startsWith('$regionId|'));
   }
 
   void toggleDeliveryScope(String scope) {
@@ -142,7 +113,6 @@ class CarrierSetupController extends GetxController {
       regionIds: regionIds.toList(),
       deliveryScopes: deliveryScopes.toList(),
       deliveryTimeUnit: deliveryTimeUnit.value,
-      regionTexts: _regionTexts,
     );
     errors.value = {for (final e in check.errors.entries) e.key: e.value.tr};
     if (errors.isNotEmpty) {
@@ -153,10 +123,11 @@ class CarrierSetupController extends GetxController {
     isSaving.value = true;
     ShowToastDialog.showLoader("Please wait".tr);
     try {
-      final String logoPath = pickedFiles['photo'] ?? '';
-      final String logoUrl = logoPath.isEmpty
-          ? ''
-          : await Constant.uploadUserImageToFireStorage(File(logoPath), 'carrierDocuments/$ownerId', 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      final Map<String, String> uploaded = {};
+      for (final entry in pickedFiles.entries) {
+        final String name = '${entry.key}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        uploaded[entry.key] = await Constant.uploadUserImageToFireStorage(File(entry.value), 'carrierDocuments/$ownerId', name);
+      }
       final built = CarrierSetupForm.build(
         ownerId: ownerId,
         texts: texts,
@@ -164,15 +135,14 @@ class CarrierSetupController extends GetxController {
         regionIds: regionIds.toList(),
         deliveryScopes: deliveryScopes.toList(),
         deliveryTimeUnit: deliveryTimeUnit.value,
-        regionTexts: _regionTexts,
-        logoUrl: logoUrl,
+        files: uploaded,
       );
       final String? id = await CarrierDispatchService.createOwnCarrier(ownerId: ownerId, data: built.data);
       if (id == null) {
         ShowToastDialog.showToast("Your carrier could not be created. Please try again.".tr);
         return false;
       }
-      ShowToastDialog.showToast("Carrier created. It will be offered to customers once the administrator has verified it.".tr);
+      ShowToastDialog.showToast("Carrier created. Add your prices per region, then wait for the administrator's verification.".tr);
       return true;
     } catch (e) {
       ShowToastDialog.showToast("Your carrier could not be created. Please try again.".tr);

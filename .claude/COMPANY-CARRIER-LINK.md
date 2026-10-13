@@ -68,31 +68,26 @@ pure rules `driver/lib/utils/carrier_setup_form.dart`) asks for:
 | Regions served (published `regions`) | at least one | `regionIds` |
 | Delivery scopes | at least one | `deliveryScopes` |
 | Max weight, min / max delivery time, unit, conditions | no | `maxWeight`, `minDeliveryTime`, `maxDeliveryTime`, `deliveryTimeUnit`, `conditions` |
-| Prices of each selected region: base, per km, per kg, minimum | yes | `regionPricing.<regionId>.<field>`; the first region's four also flat |
-| The five door / pickup-point values of each region | no (blank = region default) | `regionPricing.<regionId>.<field>` |
-
-**No documents are submitted from the app** (licence, register, ID and their
-photos were removed on 13 Oct 2026, and Carrier settings no longer lists
-them): the administrator checks the company.
+| Operating licence, commercial register, unique ID (+ a photo each) | no | `operatingLicence`, `commercialRegister`, `uniqueIdNumber`, `...File` |
 
 `CarrierDispatchService.createOwnCarrier` writes, in ONE batch, the new
 `delivery_carriers/{id}` with `ownerId` = the owner, **`isVerified: false`,
 `publish: false`**, `createdFrom: "driver_app"`, `createdAt` / `updatedAt`,
 and `users/{ownerId}.carrierId = id`. A carrier already carrying
 `ownerId` == the owner (a set-up whose binding did not land) is bound
-instead of creating a second one. The logo goes to Storage
+instead of creating a second one. Photos go to Storage
 `carrierDocuments/{ownerId}/`.
 
 The customer app offers only carriers with `publish == true` and
 `isVerified != false`, so a new carrier is invisible to customers until the
-admin verifies and publishes it. The prices can be changed later in Carrier
-settings. **Admin panel:** list carriers with
+admin verifies and publishes it. After creating it the owner lands in Carrier
+settings and fills the prices per region. **Admin panel:** list carriers with
 `createdFrom == "driver_app"` and `isVerified == false` for review, set
 `code`, verify and publish.
 
 Rules draft: `ownCarrierCreateOk` (create: owner without a carrier, `ownerId`
-== self, `isVerified` / `publish` explicitly false, no `code` / fixed taxes,
-`regionPricing` only for its `regionIds`) and `ownCarrierLinkOk` (the owner's `carrierId` may go from
+== self, `isVerified` / `publish` explicitly false, no `code` / fixed taxes /
+`regionPricing`) and `ownCarrierLinkOk` (the owner's `carrierId` may go from
 empty to a carrier whose `ownerId` is the owner, checked with `getAfter` in the
 same batch).
 

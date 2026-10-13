@@ -5,17 +5,16 @@ import 'package:driver/controllers/carrier_settings_controller.dart';
 import 'package:driver/controllers/carrier_setup_controller.dart';
 import 'package:driver/models/delivery_carrier_model.dart';
 import 'package:driver/themes/ds/ds.dart';
-import 'package:driver/utils/carrier_settings_form.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 
 /// "Set up your carrier" (13 Oct 2026): the company owner enters its own
-/// carrier details and its prices per region (no documents). Returns `true`
-/// (Get.back result) once the carrier is created and bound. The carrier is
-/// offered to customers only after the administrator verifies and
-/// publishes it.
+/// carrier details. Returns `true` (Get.back result) once the carrier is
+/// created and bound; Carrier settings then shows it with its prices per
+/// region. The carrier is offered to customers only after the
+/// administrator verifies and publishes it.
 class CarrierSetupScreen extends StatelessWidget {
   const CarrierSetupScreen({super.key});
 
@@ -125,36 +124,6 @@ class CarrierSetupScreen extends StatelessWidget {
                         ),
                         const DsGap(DsSpace.lg),
 
-                        // ── Pricing per region ─────────────────────────────────
-                        DsFormSection(
-                          title: "Pricing per region".tr,
-                          subtitle: "Each region you serve has its own prices, in that region's currency. Leave a door / pickup-point value empty to use the region's default; 0 means free.".tr,
-                          icon: Icons.payments_outlined,
-                          children: [
-                            if (checkedRegions.isEmpty)
-                              Text("Select a region to enter its prices.".tr, style: context.dsText.bodySm)
-                            else
-                              for (final regionId in checkedRegions) ...[
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: DsSpace.sm),
-                                  child: Text(controller.regionLabel(regionId), style: context.dsText.titleSm),
-                                ),
-                                _priceField(controller, errors, regionId, 'baseCharge', 'Base Charge'.tr, 'e.g. 500', required: true),
-                                _priceField(controller, errors, regionId, 'perKmCharge', 'Charge per km'.tr, 'e.g. 75', required: true),
-                                _priceField(controller, errors, regionId, 'perKgCharge', 'Charge per kg'.tr, 'e.g. 200', required: true),
-                                _priceField(controller, errors, regionId, 'minimumCharge', 'Minimum Charge'.tr, 'e.g. 1000', required: true),
-                                _priceField(controller, errors, regionId, 'volumetricDivisor', 'Volumetric Divisor'.tr, controller.regionHint(regionId, 'volumetricDivisor')),
-                                _priceField(controller, errors, regionId, 'homePickupCharge', 'Home Pickup Charge'.tr, controller.regionHint(regionId, 'homePickupCharge')),
-                                _priceField(controller, errors, regionId, 'pointDropoffCharge', 'Point Drop-off Charge'.tr, controller.regionHint(regionId, 'pointDropoffCharge')),
-                                _priceField(controller, errors, regionId, 'homeDeliveryCharge', 'Home Delivery Charge'.tr, controller.regionHint(regionId, 'homeDeliveryCharge')),
-                                _priceField(controller, errors, regionId, 'pointCollectionCharge', 'Point Collection Charge'.tr, controller.regionHint(regionId, 'pointCollectionCharge'),
-                                    last: regionId == checkedRegions.last),
-                                if (regionId != checkedRegions.last) const DsGap(DsSpace.md),
-                              ],
-                          ],
-                        ),
-                        const DsGap(DsSpace.lg),
-
                         // ── Delivery Scopes ───────────────────────────────────
                         DsFormSection(
                           title: "Delivery Scopes".tr,
@@ -223,6 +192,31 @@ class CarrierSetupScreen extends StatelessWidget {
                             ),
                           ],
                         ),
+                        const DsGap(DsSpace.lg),
+
+                        // ── Registration ──────────────────────────────────────
+                        DsFormSection(
+                          title: "Company Registration".tr,
+                          subtitle: "Checked by the administrator before your carrier is verified.".tr,
+                          icon: Icons.badge_outlined,
+                          children: [
+                            for (final (field, label) in [
+                              ('operatingLicence', 'Operating Licence'.tr),
+                              ('commercialRegister', 'Commercial Register'.tr),
+                              ('uniqueIdNumber', 'Unique ID Number'.tr),
+                            ]) ...[
+                              DsTextField(
+                                label: label,
+                                hint: label,
+                                controller: controller.controllerFor(field),
+                                textInputAction: TextInputAction.next,
+                                bottomSpacing: DsSpace.sm,
+                              ),
+                              _imageRow(context, controller, picked, '${field}File', 'Document photo'.tr),
+                              if (field != 'uniqueIdNumber') const DsGap(DsSpace.lg),
+                            ],
+                          ],
+                        ),
                       ]),
                     ),
                   ),
@@ -262,21 +256,6 @@ class CarrierSetupScreen extends StatelessWidget {
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
       textInputAction: TextInputAction.next,
-    );
-  }
-
-  static Widget _priceField(CarrierSetupController controller, Map<String, String> errors, String regionId, String field, String label, String hint,
-      {bool required = false, bool last = false}) {
-    return DsTextField(
-      label: label,
-      hint: hint,
-      requiredMark: required,
-      controller: controller.regionControllerFor(regionId, field),
-      errorText: errors[CarrierSettingsForm.regionKey(regionId, field)],
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-      textInputAction: TextInputAction.next,
-      bottomSpacing: last ? 0 : DsSpace.lg,
     );
   }
 
