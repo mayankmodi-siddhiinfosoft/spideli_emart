@@ -795,3 +795,12 @@ customer app for a future scheduled order) is set `true` with
 `Order Placed` first is marked with `scheduledNotificationSkipped` and never
 pushed. Errors are logged without tokens; an `UNREGISTERED` token is only
 logged.
+
+
+### carrier_parcel_order (company owner) — template live since 13 Oct 2026
+- `dynamic_notification` doc `q74bfr6cSZlG79KgScBe`: type `carrier_parcel_order`, service_type `Parcel Delivery Service`,
+  subject `New parcel order {trackingNumber}`, message `{customerName} booked a parcel with your company. Tracking number: {trackingNumber}. Open Orders to assign a driver.`
+- Sent by the customer app when a parcel booked with a carrier is placed (not for a quote request; on quote payment), to `users/{carrierOwnerId}.fcmToken`,
+  on the driver app's `driver_jobs` channel (ringtone version when set), data `{type: carrier_parcel_order, orderId, trackingNumber}`; tap opens the owner's Orders.
+- Placeholders are filled by the customer app (`PushTemplateText.fill`, `{name}`, case-insensitive): `{customerName}`, `{trackingNumber}`.
+  Customer builds older than a2e0eae+1 send the template text unfilled.

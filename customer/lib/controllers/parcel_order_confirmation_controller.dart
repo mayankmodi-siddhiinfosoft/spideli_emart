@@ -250,11 +250,15 @@ class ParcelOrderConfirmationController extends GetxController {
     if (ownerId.isEmpty || (order.id ?? '').isEmpty) return;
     try {
       final UserModel? owner = await FireStoreUtils.getUserProfile(ownerId);
+      final String tracking = (order.trackingNumber ?? '').trim().isNotEmpty ? order.trackingNumber!.trim() : (order.id ?? '');
+      final String customerName = (order.author?.fullName() ?? '').trim().isNotEmpty ? order.author!.fullName().trim() : (order.sender?.name ?? '').trim();
       await SendNotification.sendFcmMessage(
         CarrierOwnerLink.orderTemplate,
         (owner?.fcmToken ?? '').trim(),
-        {'type': CarrierOwnerLink.ownerPushType, 'orderId': order.id},
+        {'type': CarrierOwnerLink.ownerPushType, 'orderId': order.id, 'trackingNumber': tracking},
         recipient: PushRecipient.driver,
+        // Template carrier_parcel_order: {customerName}, {trackingNumber}.
+        placeholders: {'customerName': customerName, 'trackingNumber': tracking},
       );
     } catch (e) {
       log("Carrier owner push failed: $e");

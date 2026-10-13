@@ -6,6 +6,7 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/models/notification_model.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/service/push_message.dart';
+import 'package:customer/utils/push_template_text.dart';
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:googleapis_auth/auth_io.dart';
@@ -60,15 +61,25 @@ class SendNotification {
   }
 
   /// A template push (`dynamic_notification` of [type]) to [token].
-  /// [recipient] picks the receiving app's channel and sound.
-  static Future<bool> sendFcmMessage(String type, String token, Map<String, dynamic>? payload, {PushRecipient? recipient}) async {
+  /// [recipient] picks the receiving app's channel and sound. [placeholders]
+  /// fill `{name}` markers in the template's subject and message
+  /// ([PushTemplateText]).
+  static Future<bool> sendFcmMessage(String type, String token, Map<String, dynamic>? payload, {PushRecipient? recipient, Map<String, String>? placeholders}) async {
     if (!PushPayload.isUsableToken(token)) {
       log('push "$type" not sent: the recipient has no FCM token');
       return false;
     }
     try {
       final NotificationModel? template = await FireStoreUtils.getNotificationContent(type);
-      return await _send(token: token, title: template?.subject ?? '', body: template?.message ?? '', payload: payload, kind: type, recipient: recipient);
+      final Map<String, String> values = placeholders ?? const {};
+      return await _send(
+        token: token,
+        title: PushTemplateText.fill(template?.subject, values),
+        body: PushTemplateText.fill(template?.message, values),
+        payload: payload,
+        kind: type,
+        recipient: recipient,
+      );
     } catch (e) {
       log('push "$type" failed (${e.runtimeType})');
       return false;
