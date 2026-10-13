@@ -39,7 +39,7 @@ Widget _row(BuildContext context, String label, String value, {Color? color}) =>
         children: [
           Expanded(child: Text(label, style: DsTypography.body.copyWith(color: DsColors.of(context).textSecondary))),
           const DsGap(DsSpace.sm),
-          Flexible(child: Text(value, textAlign: TextAlign.end, style: DsTypography.bodyStrong.copyWith(color: color).tabular)),
+          Flexible(child: Align(alignment: AlignmentDirectional.centerEnd, child: Text(value, textAlign: TextAlign.end, style: DsTypography.bodyStrong.copyWith(color: color).tabular))),
         ],
       ),
     );
@@ -964,7 +964,7 @@ class _HoldingBody extends StatelessWidget {
     final key = FinanceGroupService.newRequestKey();
     await FinancePaySheet.show(
       context,
-      title: "Receive the money on".tr,
+      title: "Redeem".tr,
       amount: gross,
       currency: h.currency,
       methods: config.paymentMethods,

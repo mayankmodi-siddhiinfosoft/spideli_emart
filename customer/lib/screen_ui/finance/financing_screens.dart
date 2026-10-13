@@ -31,7 +31,7 @@ Widget _row(BuildContext context, String label, String value) => Padding(
         children: [
           Expanded(child: Text(label, style: DsTypography.body.copyWith(color: DsColors.of(context).textSecondary))),
           const DsGap(DsSpace.sm),
-          Flexible(child: Text(value, textAlign: TextAlign.end, style: DsTypography.bodyStrong.tabular)),
+          Flexible(child: Align(alignment: AlignmentDirectional.centerEnd, child: Text(value, textAlign: TextAlign.end, style: DsTypography.bodyStrong.tabular))),
         ],
       ),
     );

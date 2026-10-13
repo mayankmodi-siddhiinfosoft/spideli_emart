@@ -47,6 +47,7 @@ class FinanceKycGate extends StatelessWidget {
       builder: (context, snap) {
         final bool verified = (snap.data?['kycLevel']?.toString() ?? '').isNotEmpty;
         return Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (snap.hasData && !verified)

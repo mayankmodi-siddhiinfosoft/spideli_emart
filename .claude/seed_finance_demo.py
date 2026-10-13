@@ -9,6 +9,7 @@
 #   python3 .claude/seed_finance_demo.py --uid <uid>             # show the plan
 #   python3 .claude/seed_finance_demo.py --uid <uid> --apply     # create it
 #   python3 .claude/seed_finance_demo.py --uid <uid> --delete    # remove it again
+#   python3 .claude/seed_finance_demo.py --uid <uid> --fix-monthly  # rewrite only the dashboard chart months
 import datetime
 import json
 import sys
@@ -246,6 +247,22 @@ add('financing_reviews', 'demo_review2', {'ownerId': UID, 'applicationId': 'demo
 add('investor_profiles', UID, {'currency': CUR, 'sectors': ['agriculture', 'technology'], 'countries': ['CM'], 'types': [], 'minTicket': 100000, 'maxTicket': 1000000, 'maxRisk': 5, 'maxHorizonMonths': 36, 'updatedAt': NOW})
 
 # -- dashboard totals
+def month_ago(k):
+    y, m = NOW.year, NOW.month - k
+    while m < 1:
+        y, m = y - 1, m + 12
+    return f'{y}-{m:02d}'
+
+
+MONTHLY = [
+    {'month': month_ago(k), 'moneyIn': m_in, 'moneyOut': m_out}
+    for k, (m_in, m_out) in reversed(list(enumerate([(350000, 105000), (120000, 90000), (80000, 60000), (150000, 140000), (60000, 45000), (90000, 70000)])))
+]
+if '--fix-monthly' in sys.argv:
+    st, body = request('PATCH', f'{BASE}/finance_summaries/{UID}?updateMask.fieldPaths=monthly&key={KEY}', {'fields': {'monthly': enc(MONTHLY)}})
+    print(f"monthly: {[m['month'] for m in MONTHLY]} -> {'patched' if st == 200 else error(body)}")
+    sys.exit(0 if st == 200 else 1)
+
 add('finance_summaries', UID, {
     'currency': CUR, 'updatedAt': NOW,
     'investments': {'investedCapital': 100000, 'currentValuation': 104300, 'realizedGains': 0, 'unrealizedGains': 4300, 'allocation': {'money_market': 104300}},
@@ -254,10 +271,7 @@ add('finance_summaries', UID, {
     'loans': {'borrowedOutstanding': outstanding, 'lentOutstanding': 0, 'nextRepaymentAmount': inst[1]['amount'], 'nextRepaymentDate': inst[1]['dueDate'], 'overdueCount': 0},
     'insurance': {'activePolicies': 1, 'nextRenewalDate': days(305), 'openClaims': 1},
     'payments': {'last30Days': {'deposits': 350000, 'withdrawals': 15000, 'transfers': 90000, 'cardPayments': 0, 'billPayments': 15000}},
-    'monthly': [
-        {'month': (NOW.replace(day=1) - datetime.timedelta(days=31 * k)).strftime('%Y-%m'), 'moneyIn': m_in, 'moneyOut': m_out}
-        for k, (m_in, m_out) in reversed(list(enumerate([(350000, 105000), (120000, 90000), (80000, 60000), (150000, 140000), (60000, 45000), (90000, 70000)])))
-    ],
+    'monthly': MONTHLY,
 })
 
 KYC_FIELDS = {'kycStatus': 'approved', 'kycLevel': 'full', 'demoKyc': True}
