@@ -817,7 +817,11 @@ class OwnerOrderListScreen extends StatelessWidget {
                           final driver = displayDrivers[i];
                           final bool isCurrent = order.driverId == driver.id;
                           final bool online = driver.isActive == true;
+                          // Same documents gate as the driver's Accept: an
+                          // unverified driver could not take the parcel.
+                          final bool verified = CarrierParcelRules.canTakeAssignment(driver);
                           final List<String> notes = [
+                            if (!verified) "Documents not verified".tr,
                             online ? "Online".tr : "Offline".tr,
                             if (rejectedBy.contains(driver.id)) "Rejected this order before".tr,
                             if ((driver.phoneNumber ?? '').isNotEmpty) driver.phoneNumber!,
@@ -827,14 +831,16 @@ class OwnerOrderListScreen extends StatelessWidget {
                             subtitle: notes.join(' · '),
                             trailing: isCurrent
                                 ? DsBadge(label: "Assigned".tr, tone: DsTone.brand, small: true)
-                                : DsButton.primary(
-                                    label: "Assign".tr,
-                                    size: DsButtonSize.sm,
-                                    onPressed: () async {
-                                      Get.back();
-                                      await controller.assignParcelOrderToDriver(order, driver);
-                                    },
-                                  ),
+                                : verified
+                                    ? DsButton.primary(
+                                        label: "Assign".tr,
+                                        size: DsButtonSize.sm,
+                                        onPressed: () async {
+                                          Get.back();
+                                          await controller.assignParcelOrderToDriver(order, driver);
+                                        },
+                                      )
+                                    : DsBadge(label: "Not verified".tr, tone: DsTone.warning, small: true),
                           );
                         },
                       ),

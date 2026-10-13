@@ -624,4 +624,8 @@ const Map<String, String> lnAr = {
   "Order Rejected": "رُفض الطلب",
   "Quote Requested": "طُلب عرض سعر",
   "This parcel can no longer be picked up.": "لم يعد بالإمكان استلام هذا الطرد.",
+  // Owner assign sheet: unverified company drivers cannot be assigned.
+  "Documents not verified": "المستندات غير موثقة",
+  "Not verified": "غير موثق",
+  "This driver's documents are not verified yet. Verify the driver before assigning parcels.": "لم يتم التحقق من مستندات هذا السائق بعد. تحقق من السائق قبل إسناد الطرود إليه.",
 };

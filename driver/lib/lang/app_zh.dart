@@ -624,4 +624,8 @@ const Map<String, String> zhCH = {
   "Order Rejected": "订单已拒绝",
   "Quote Requested": "已请求报价",
   "This parcel can no longer be picked up.": "此包裹已无法取件。",
+  // Owner assign sheet: unverified company drivers cannot be assigned.
+  "Documents not verified": "证件未验证",
+  "Not verified": "未验证",
+  "This driver's documents are not verified yet. Verify the driver before assigning parcels.": "该司机的证件尚未验证。请先验证司机，再分配包裹。",
 };

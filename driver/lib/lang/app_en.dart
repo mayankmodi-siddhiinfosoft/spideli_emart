@@ -628,4 +628,8 @@ const Map<String, String> enUS = {
   "Order Rejected": "Order Rejected",
   "Quote Requested": "Quote Requested",
   "This parcel can no longer be picked up.": "This parcel can no longer be picked up.",
+  // Owner assign sheet: unverified company drivers cannot be assigned.
+  "Documents not verified": "Documents not verified",
+  "Not verified": "Not verified",
+  "This driver's documents are not verified yet. Verify the driver before assigning parcels.": "This driver's documents are not verified yet. Verify the driver before assigning parcels.",
 };

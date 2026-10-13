@@ -624,4 +624,8 @@ const Map<String, String> hiIN = {
   "Order Rejected": "ऑर्डर अस्वीकृत",
   "Quote Requested": "कोटेशन का अनुरोध किया गया",
   "This parcel can no longer be picked up.": "यह पार्सल अब पिकअप नहीं किया जा सकता।",
+  // Owner assign sheet: unverified company drivers cannot be assigned.
+  "Documents not verified": "दस्तावेज़ सत्यापित नहीं",
+  "Not verified": "सत्यापित नहीं",
+  "This driver's documents are not verified yet. Verify the driver before assigning parcels.": "इस ड्राइवर के दस्तावेज़ अभी सत्यापित नहीं हुए हैं। पार्सल सौंपने से पहले ड्राइवर को सत्यापित करें।",
 };

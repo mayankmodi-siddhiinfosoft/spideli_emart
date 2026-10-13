@@ -624,4 +624,8 @@ const Map<String, String> ruRU = {
   "Order Rejected": "Заказ отклонён",
   "Quote Requested": "Запрошена цена",
   "This parcel can no longer be picked up.": "Эту посылку больше нельзя забрать.",
+  // Owner assign sheet: unverified company drivers cannot be assigned.
+  "Documents not verified": "Документы не проверены",
+  "Not verified": "Не проверен",
+  "This driver's documents are not verified yet. Verify the driver before assigning parcels.": "Документы этого водителя ещё не проверены. Проверьте водителя, прежде чем назначать посылки.",
 };

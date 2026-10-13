@@ -624,4 +624,8 @@ const Map<String, String> ptPO = {
   "Order Rejected": "Pedido recusado",
   "Quote Requested": "Orçamento solicitado",
   "This parcel can no longer be picked up.": "Esta encomenda não pode mais ser coletada.",
+  // Owner assign sheet: unverified company drivers cannot be assigned.
+  "Documents not verified": "Documentos não verificados",
+  "Not verified": "Não verificado",
+  "This driver's documents are not verified yet. Verify the driver before assigning parcels.": "Os documentos deste motorista ainda não foram verificados. Verifique o motorista antes de atribuir encomendas.",
 };

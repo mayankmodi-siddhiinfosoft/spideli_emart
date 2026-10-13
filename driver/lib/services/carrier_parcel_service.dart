@@ -42,6 +42,9 @@ abstract final class CarrierParcelService {
         .where((d) => (d.id ?? '').isNotEmpty && CarrierParcelRules.isAssignableDriver(ownerId: d.ownerId, companyId: ownerUid, isOwner: d.isOwner, role: d.role, active: d.active))
         .toList();
     list.sort((a, b) {
+      // Verified drivers first (an unverified one is listed, not assignable).
+      final int verified = (CarrierParcelRules.canTakeAssignment(b) ? 1 : 0) - (CarrierParcelRules.canTakeAssignment(a) ? 1 : 0);
+      if (verified != 0) return verified;
       final int online = (b.isActive == true ? 1 : 0) - (a.isActive == true ? 1 : 0);
       if (online != 0) return online;
       return a.fullName().toLowerCase().compareTo(b.fullName().toLowerCase());
@@ -73,6 +76,14 @@ abstract final class CarrierParcelService {
         final Map<String, dynamic>? data = snap.exists ? snap.data() : null;
         final CarrierAssignCheck check = CarrierParcelRules.assignCheck(data, ownerUid: ownerUid, ownerCarrierId: ownerCarrierId, driverId: driverId);
         if (check != CarrierAssignCheck.ok) return (check: check, replaced: null, tracking: null);
+        // The driver's LIVE record (the owner's list may be old): an
+        // unverified driver could not accept the offer, so it is refused here.
+        final DocumentSnapshot<Map<String, dynamic>> driverSnap = await tx.get(_user(driverId));
+        final Map<String, dynamic>? driverData = driverSnap.exists ? driverSnap.data() : null;
+        if (driverData == null) return (check: CarrierAssignCheck.gone, replaced: null, tracking: null);
+        if (!CarrierParcelRules.canTakeAssignment(UserModel.fromJson(driverData))) {
+          return (check: CarrierAssignCheck.driverNotVerified, replaced: null, tracking: null);
+        }
         tx.update(_order(orderId), CarrierParcelRules.assignFields(driverId: driverId, ownerUid: ownerUid));
         tx.update(_user(driverId), {
           'orderRequestData': FieldValue.arrayUnion([orderId]),

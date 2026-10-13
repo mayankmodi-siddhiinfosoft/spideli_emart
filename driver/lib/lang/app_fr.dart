@@ -624,4 +624,8 @@ const Map<String, String> trFR = {
   "Order Rejected": "Commande refusée",
   "Quote Requested": "Devis demandé",
   "This parcel can no longer be picked up.": "Ce colis ne peut plus être récupéré.",
+  // Owner assign sheet: unverified company drivers cannot be assigned.
+  "Documents not verified": "Documents non vérifiés",
+  "Not verified": "Non vérifié",
+  "This driver's documents are not verified yet. Verify the driver before assigning parcels.": "Les documents de ce chauffeur ne sont pas encore vérifiés. Vérifiez le chauffeur avant de lui attribuer des colis.",
 };

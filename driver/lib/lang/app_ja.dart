@@ -624,4 +624,8 @@ const Map<String, String> jaJP = {
   "Order Rejected": "注文拒否",
   "Quote Requested": "見積もり依頼中",
   "This parcel can no longer be picked up.": "この荷物はもう集荷できません。",
+  // Owner assign sheet: unverified company drivers cannot be assigned.
+  "Documents not verified": "書類未確認",
+  "Not verified": "未確認",
+  "This driver's documents are not verified yet. Verify the driver before assigning parcels.": "このドライバーの書類はまだ確認されていません。荷物を割り当てる前にドライバーを確認してください。",
 };

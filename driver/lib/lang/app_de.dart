@@ -624,4 +624,8 @@ const Map<String, String> deGR = {
   "Order Rejected": "Bestellung abgelehnt",
   "Quote Requested": "Angebot angefragt",
   "This parcel can no longer be picked up.": "Dieses Paket kann nicht mehr abgeholt werden.",
+  // Owner assign sheet: unverified company drivers cannot be assigned.
+  "Documents not verified": "Dokumente nicht geprüft",
+  "Not verified": "Nicht geprüft",
+  "This driver's documents are not verified yet. Verify the driver before assigning parcels.": "Die Dokumente dieses Fahrers sind noch nicht geprüft. Prüfen Sie den Fahrer, bevor Sie Pakete zuweisen.",
 };

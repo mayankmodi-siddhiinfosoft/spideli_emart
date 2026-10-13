@@ -24,6 +24,8 @@
 library;
 
 import 'package:cloud_firestore/cloud_firestore.dart' show FieldValue;
+import 'package:driver/models/user_model.dart';
+import 'package:driver/utils/document_verification.dart';
 
 /// Why the owner may (not) assign a carrier parcel now.
 enum CarrierAssignCheck {
@@ -47,6 +49,11 @@ enum CarrierAssignCheck {
 
   /// Already offered to that same driver and waiting for their answer.
   sameDriver,
+
+  /// The chosen driver's documents are not verified yet: they could not
+  /// accept the offer (the documents gate of every offer), so it would only
+  /// time out and come back to the owner.
+  driverNotVerified,
 }
 
 abstract final class CarrierParcelRules {
@@ -228,6 +235,11 @@ abstract final class CarrierParcelRules {
         'rejectedByDrivers': FieldValue.arrayUnion([uid]),
         ...?reasonFields,
       };
+
+  /// The company driver may be given a parcel: their documents are verified
+  /// (or verification does not apply to them) - exactly the documents gate a
+  /// driver meets when accepting an offer ([DocumentVerification.isPending]).
+  static bool canTakeAssignment(UserModel? driver) => driver != null && !DocumentVerification.isPending(driver);
 
   /// The owner's drivers that may be offered a parcel: driver accounts of
   /// this company (not the company itself), not disabled by the admin.
