@@ -717,4 +717,6 @@ const Map<String, String> hiIN = {
   "Please enter the prices for @region.": "कृपया @region के लिए कीमतें दर्ज करें।",
   "Carrier settings are for parcel delivery companies only.": "कैरियर सेटिंग्स केवल पार्सल डिलीवरी कंपनियों के लिए हैं।",
   "Prices for @region": "@region के लिए कीमतें",
+  "Distance price (per km)": "दूरी का मूल्य (प्रति किमी)",
+  "Weight price (per kg)": "वज़न का मूल्य (प्रति किग्रा)",
 };

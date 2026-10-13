@@ -717,4 +717,6 @@ const Map<String, String> deGR = {
   "Please enter the prices for @region.": "Bitte geben Sie die Preise für @region ein.",
   "Carrier settings are for parcel delivery companies only.": "Die Spediteur-Einstellungen gibt es nur für Paketlieferunternehmen.",
   "Prices for @region": "Preise für @region",
+  "Distance price (per km)": "Preis nach Strecke (pro km)",
+  "Weight price (per kg)": "Preis nach Gewicht (pro kg)",
 };

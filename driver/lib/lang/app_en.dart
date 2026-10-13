@@ -721,4 +721,6 @@ const Map<String, String> enUS = {
   "Please enter the prices for @region.": "Please enter the prices for @region.",
   "Carrier settings are for parcel delivery companies only.": "Carrier settings are for parcel delivery companies only.",
   "Prices for @region": "Prices for @region",
+  "Distance price (per km)": "Distance price (per km)",
+  "Weight price (per kg)": "Weight price (per kg)",
 };

@@ -179,8 +179,8 @@ class CarrierSettingsScreen extends StatelessWidget {
                                 icon: Icons.payments_outlined,
                                 children: [
                                   _numberField(controller, 'baseCharge', 'Base Charge'.tr, 'e.g. 500'),
-                                  _numberField(controller, 'perKmCharge', 'Charge per km'.tr, 'e.g. 75'),
-                                  _numberField(controller, 'perKgCharge', 'Charge per kg'.tr, 'e.g. 200'),
+                                  _numberField(controller, 'perKmCharge', 'Distance price (per km)'.tr, 'e.g. 75'),
+                                  _numberField(controller, 'perKgCharge', 'Weight price (per kg)'.tr, 'e.g. 200'),
                                   _numberField(controller, 'minimumCharge', 'Minimum Charge'.tr, 'e.g. 1000', last: true),
                                 ],
                               )
@@ -196,8 +196,8 @@ class CarrierSettingsScreen extends StatelessWidget {
                                       child: Text(regionLabels[regionId] ?? regionId, style: context.dsText.titleSm),
                                     ),
                                     _regionField(controller, errors, regionId, 'baseCharge', 'Base Charge'.tr, 'e.g. 500'),
-                                    _regionField(controller, errors, regionId, 'perKmCharge', 'Charge per km'.tr, 'e.g. 75'),
-                                    _regionField(controller, errors, regionId, 'perKgCharge', 'Charge per kg'.tr, 'e.g. 200'),
+                                    _regionField(controller, errors, regionId, 'perKmCharge', 'Distance price (per km)'.tr, 'e.g. 75'),
+                                    _regionField(controller, errors, regionId, 'perKgCharge', 'Weight price (per kg)'.tr, 'e.g. 200'),
                                     _regionField(controller, errors, regionId, 'minimumCharge', 'Minimum Charge'.tr, 'e.g. 1000'),
                                     _regionField(controller, errors, regionId, 'volumetricDivisor', 'Volumetric Divisor'.tr, controller.regionHint(regionId, 'volumetricDivisor')),
                                     _regionField(controller, errors, regionId, 'homePickupCharge', 'Home Pickup Charge'.tr, controller.regionHint(regionId, 'homePickupCharge')),

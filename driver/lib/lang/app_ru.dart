@@ -717,4 +717,6 @@ const Map<String, String> ruRU = {
   "Please enter the prices for @region.": "Укажите цены для @region.",
   "Carrier settings are for parcel delivery companies only.": "Настройки перевозчика доступны только компаниям по доставке посылок.",
   "Prices for @region": "Цены для @region",
+  "Distance price (per km)": "Цена за расстояние (за км)",
+  "Weight price (per kg)": "Цена за вес (за кг)",
 };

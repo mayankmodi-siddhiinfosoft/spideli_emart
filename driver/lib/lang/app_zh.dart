@@ -717,4 +717,6 @@ const Map<String, String> zhCH = {
   "Please enter the prices for @region.": "请填写 @region 的价格。",
   "Carrier settings are for parcel delivery companies only.": "承运商设置仅适用于包裹配送公司。",
   "Prices for @region": "@region 的价格",
+  "Distance price (per km)": "距离价格（每公里）",
+  "Weight price (per kg)": "重量价格（每公斤）",
 };

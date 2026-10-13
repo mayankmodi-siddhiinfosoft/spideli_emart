@@ -717,4 +717,6 @@ const Map<String, String> lnAr = {
   "Please enter the prices for @region.": "يرجى إدخال الأسعار لـ @region.",
   "Carrier settings are for parcel delivery companies only.": "إعدادات شركة الشحن متاحة لشركات توصيل الطرود فقط.",
   "Prices for @region": "الأسعار في @region",
+  "Distance price (per km)": "سعر المسافة (لكل كم)",
+  "Weight price (per kg)": "سعر الوزن (لكل كغ)",
 };

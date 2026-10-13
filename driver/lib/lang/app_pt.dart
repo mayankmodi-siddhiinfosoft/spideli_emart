@@ -717,4 +717,6 @@ const Map<String, String> ptPO = {
   "Please enter the prices for @region.": "Introduza os preços para @region.",
   "Carrier settings are for parcel delivery companies only.": "As definições da transportadora são apenas para empresas de entrega de encomendas.",
   "Prices for @region": "Preços para @region",
+  "Distance price (per km)": "Preço por distância (por km)",
+  "Weight price (per kg)": "Preço por peso (por kg)",
 };

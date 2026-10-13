@@ -717,4 +717,6 @@ const Map<String, String> jaJP = {
   "Please enter the prices for @region.": "@region の料金を入力してください。",
   "Carrier settings are for parcel delivery companies only.": "運送会社の設定は荷物配達会社のみが利用できます。",
   "Prices for @region": "@region の料金",
+  "Distance price (per km)": "距離料金（1 km あたり）",
+  "Weight price (per kg)": "重量料金（1 kg あたり）",
 };

@@ -717,4 +717,6 @@ const Map<String, String> trFR = {
   "Please enter the prices for @region.": "Veuillez saisir les prix pour @region.",
   "Carrier settings are for parcel delivery companies only.": "Les paramètres du transporteur sont réservés aux sociétés de livraison de colis.",
   "Prices for @region": "Prix pour @region",
+  "Distance price (per km)": "Prix selon la distance (par km)",
+  "Weight price (per kg)": "Prix selon le poids (par kg)",
 };
