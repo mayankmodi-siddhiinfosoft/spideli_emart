@@ -917,3 +917,148 @@ Reasons the app maps (`FinanceErrors`): `reauth_required`, `card_limit_reached`,
 | `card_expiring` | user | `{last4}`, `{expiry}` |
 | `card_renewed` | user | `{last4}` |
 | `card_terminated` (security) | user | `{last4}`, `{amount}` (balance returned) |
+
+---
+
+## 15. Transfers and bill payments (brief sections 11 and 13)
+
+App code: `customer/lib/screen_ui/finance/transfer_screens.dart`, `customer/lib/screen_ui/finance/bill_screens.dart`, `customer/lib/service/finance_transfer_service.dart`, receipts in `customer/lib/utils/finance_receipt_pdf.dart`, rules in `customer/lib/utils/finance_transfer_rules.dart` (tested in `customer/test/finance_transfer_rules_test.dart`). Entry: Spideli Finance > Services > **Send money** and **Pay bills**.
+
+**One flow for both: create, confirm, then the state machine.**
+1. **Create:** the app sends the recipient (or bill account) and the amount. The server validates them and computes the **binding fee**, then stores the request as `awaiting_confirmation` with `expiresAt` (about 15 min). No money moves at this step.
+2. **Confirm:** the app shows the server's figures (verified recipient name, amount, fee, total) for the user to confirm. Above `security.reauthAbove` the user re-authenticates first (section 14.4: the server checks `auth_time`). The user then picks how to pay, and the app calls the confirm function with an `idempotencyKey`.
+3. **State machine:** `awaiting_confirmation` → `pending` (waiting for the payment, section 8.4) → `processing` (sent to the provider or biller) → `completed`. It can also end as `failed` (with `reason`), `cancelled` (by the user before `processing`), `expired` (not confirmed in time), or `reversed` (refunded after a provider failure).
+
+**Not atomic:** a Firestore transaction **cannot** make a provider operation atomic. Use:
+- the explicit states above;
+- the providers' **verified** callbacks;
+- daily reconciliation;
+- **compensating actions**: when the payout fails after the user paid, refund automatically and set `reversed`.
+
+### 15.1 `platform_settings/transfers` (admin config)
+
+```jsonc
+{
+  "currencies": ["XAF"],
+  "sourceMethods": ["wallet", "mobile_money", "wave"],     // what pays a transfer
+  "security": { "reauthAbove": { "XAF": 50000 } },        // re-authentication from this amount (missing currency = always)
+  "channels": {                                           // a channel is offered only with enabled: true
+    "internal":     { "enabled": true, "feePercent": 0, "min": { "XAF": 100 }, "max": { "XAF": 1000000 }, "delay": "Instant" },
+    "mobile_money": { "enabled": true, "operators": ["Orange Money", "MTN Mobile Money"], "feePercent": 1, "feeFixed": { "XAF": 0 }, "feeMax": { "XAF": 5000 },
+                      "min": { "XAF": 500 }, "max": { "XAF": 500000 }, "delay": "A few minutes" },
+    "wave":         { "enabled": false },
+    "bank":         { "enabled": false, "banks": [ { "code": "10005", "name": "Afriland First Bank" } ], "feePercent": 0.5, "feeFixed": { "XAF": 500 }, "delay": "1-2 business days" }
+  }
+}
+```
+
+**Fee:** `round(amount × feePercent / 100) + feeFixed`, capped at `feeMax`. The app shows it only as an **estimate**; the binding fee is the server's (step 1). A `mobile_money` channel without operators, or a `bank` channel without banks, is not offered. Required: "Transfers are not available yet" when there is no valid currency, no source method, or no usable channel.
+
+### 15.2 `money_transfers/{transferId}`
+
+```jsonc
+{
+  "senderId": "<uid>", "senderName": "...", "recipientId": "<uid, internal only>",
+  "participantIds": ["<senderId>", "<recipientId if internal>"],    // the app lists where participantIds contains the user
+  "channel": "internal | mobile_money | wave | bank",
+  "recipient": { "email" | "phone" | "operator" + "number" | "bankCode" + "bankName" + "accountMasked" + "holderName" },
+  "recipientName": "...", "recipientVerified": true,               // the name the server / provider verified
+  "currency": "XAF", "amount": 10000, "fee": 150, "total": 10150, "receiveAmount": 10000,
+  "note": "...", "status": "...", "reason": "...", "reference": "SPT-...", "providerReference": "...",
+  "expiresAt": "<ts>", "createdAt": "<ts>", "completedAt": "<ts>"
+}
+```
+
+- **Never store a full bank account number in this readable document**: keep `accountMasked` (e.g. `•••• 6789`) and hold the full number server-side.
+- An internal recipient sees the transfer (via `participantIds`), its `senderName`, `receiveAmount` and the note. It never sees the sender's fee or payment method.
+
+**`transfer_beneficiaries/{id}`**: `{ userId, channel, displayName, detail (masked), recipient (as sent by the app, for re-use), lastUsedAt }`. Saved by the server when `saveBeneficiary` is true.
+
+### 15.3 Transfer callables
+
+| Function | Request | Server checks |
+|---|---|---|
+| `transferCreate` | `{ channel, amount, currency, recipient, note?, saveBeneficiary }` -> `{ transferId }` | KYC-verified; channel enabled; min / max / daily limits (`daily_limit_exceeded`); **recipient validation**: an existing active Spideli user for `internal` (`recipient_not_found`), never the sender (`self_transfer`), and a name lookup at the operator / bank where available (`recipient_invalid`); compute the fee; `awaiting_confirmation` |
+| `transferConfirm` | `{ transferId, payment, idempotencyKey }` -> payment reply (section 8.4) | the sender; `awaiting_confirmation` and before `expiresAt` (`request_expired`); `auth_time` when ≥ `reauthAbove`; balance check for `wallet`; then `pending` → `processing` |
+| `transferCancel` | `{ transferId }` | the sender; `awaiting_confirmation` / `pending` only |
+| `transferDeleteBeneficiary` | `{ beneficiaryId }` | the owner |
+
+**Internal transfers:** debit the sender and credit the recipient **in one Firestore transaction on the ledger** (both accounts, section 4.2), so they are atomic. External channels follow the state machine above.
+
+### 15.4 Bills: `platform_settings/bills` and `utility_billers`
+
+```jsonc
+// platform_settings/bills
+{ "currencies": ["XAF"], "categories": ["electricity", "water", "tv", "internet", "phone"],
+  "paymentMethods": ["wallet", "mobile_money", "wave"], "security": { "reauthAbove": { "XAF": 100000 } } }
+```
+
+**`utility_billers/{billerId}`** (the app lists `published == true` per `category`):
+- `{ name, category, country, currency, order, accountLabel ("Contract number"), accountHint, accountPattern (a regex; the app anchors it), amountType, lookup, partialPayment, packages, min, max, feePercent, feeFixed, feeMax }`;
+- `amountType`:
+  - `due`: the amount owed comes from a **lookup**; paid in full unless `partialPayment`;
+  - `open`: any amount within `min`..`max`, e.g. prepaid electricity;
+  - `packages`: one of `packages: [{ code, name, amount }]`, e.g. TV bouquets.
+- `lookup: true` makes the app check the account before showing the amount.
+
+**`utility_payment_requests/{requestId}`**:
+- `{ userId, billerId, billerName, category, account, customerName, packageCode, packageName, currency, amount, fee, total, status, reason, reference, billerReference, token, tokenLabel, units, expiresAt, createdAt, completedAt }`;
+- the same states as transfers;
+- `token` is the prepaid code the biller returns (e.g. a 20-digit electricity token): the app shows it large with a copy button, and on the receipt.
+
+**`utility_payment_transactions/{id}`** (server-only, not read by the app): every attempt with the biller or aggregator, raw responses, retries.
+
+**`utility_saved_accounts/{id}`**: `{ userId, billerId, billerName, category, account, nickname, lastUsedAt }`, saved when `saveAccount` is true.
+
+| Function | Request | Server checks |
+|---|---|---|
+| `billLookup` | `{ billerId, account }` -> `{ lookupId, customerName, amountDue, dueDate }` | KYC-verified; account format; ask the biller (`account_not_found`, `biller_unavailable`) |
+| `billCreatePayment` | `{ billerId, account, amount, packageCode?, lookupId?, saveAccount }` -> `{ requestId }` | the amount rule of the biller (due / open / packages); a fresh `lookupId` for `due`; compute the fee; `awaiting_confirmation` |
+| `billConfirmPayment` | `{ requestId, payment, idempotencyKey }` -> payment reply | owner; before `expiresAt`; `auth_time` when ≥ `reauthAbove`; pay the biller **only after the user's payment is confirmed**; on a biller failure, **refund** (`reversed`) |
+| `billCancelPayment` | `{ requestId }` | owner; `awaiting_confirmation` / `pending` |
+| `billDeleteSavedAccount` | `{ savedAccountId }` | owner |
+
+App queries (with indexes):
+
+```
+money_transfers          where participantIds array-contains <uid> orderBy createdAt desc limit 50 -> (participantIds CONTAINS, createdAt DESC)
+transfer_beneficiaries   where userId == <uid> orderBy lastUsedAt desc limit 20                    -> (userId ASC, lastUsedAt DESC)
+utility_billers          where published == true and category == X limit 100                        -> equality only
+utility_saved_accounts   where userId == <uid> orderBy lastUsedAt desc limit 20                    -> (userId ASC, lastUsedAt DESC)
+utility_payment_requests where userId == <uid> orderBy createdAt desc limit 50                     -> (userId ASC, createdAt DESC)
+money_transfers/{id}, utility_payment_requests/{id}, utility_billers/{id}: single documents
+```
+
+Rules:
+- `money_transfers`: readable when `request.auth.uid in resource.data.participantIds`;
+- beneficiaries, saved accounts, bill payments: owner only;
+- published billers and both configs: signed-in users;
+- `utility_payment_transactions`: staff only;
+- **no client writes**.
+
+Reasons the app maps (`FinanceErrors`): `recipient_not_found`, `recipient_invalid`, `self_transfer`, `daily_limit_exceeded`, `request_expired`, `biller_unavailable`, `account_not_found`, `provider_unavailable`, `reauth_required`, `insufficient_funds`, `amount_out_of_range`.
+
+**Receipts:** the app builds the PDF receipt from the **server's** document (reference, dates, parties, amounts, fee, token). Also email it, or keep a server-rendered copy, if receipts must be legally binding.
+
+### 15.5 Jobs and notifications (SERVER)
+
+**Jobs:**
+- expire unconfirmed requests;
+- poll or receive provider and biller callbacks (verify signatures);
+- reconcile daily;
+- refund failures (`reversed`);
+- post every movement to the ledger;
+- update `finance_summaries/{uid}.payments.last30Days` (`transfers`, `billPayments`).
+
+**Templates** (`dynamic_notification`, `source: "finance"`):
+
+| Template `type` | To | Placeholders |
+|---|---|---|
+| `transfer_sent` | sender | `{amount}`, `{recipientName}` |
+| `transfer_received` | internal recipient | `{amount}`, `{senderName}` |
+| `transfer_failed` | sender | `{amount}`, `{recipientName}`, `{reason}` |
+| `transfer_reversed` | sender | `{amount}`, `{recipientName}` |
+| `bill_paid` | user | `{amount}`, `{billerName}`, `{account}` |
+| `bill_token` | user | `{billerName}`, `{token}` |
+| `bill_failed` | user | `{amount}`, `{billerName}`, `{reason}` |
+| `bill_reversed` | user | `{amount}`, `{billerName}` |

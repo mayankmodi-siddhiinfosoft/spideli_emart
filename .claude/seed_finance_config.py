@@ -1,8 +1,9 @@
 # Creates the admin-level Spideli Finance configuration in the live Firestore
 # (project spideli-870b0), as listed in .claude/FINANCE-APP-CONTRACT.md:
-#   - platform_settings/kyc, /savings, /tontines, /lending, /investments, /insurance, /cards
-#                                       (sections 2.1, 8.1, 9.1, 11.1, 12.1, 13.1, 14.1)
-#   - dynamic_notification templates    (sections 6, 10, 11.5, 12.4, 13.4, 14.5)
+#   - platform_settings/kyc, /savings, /tontines, /lending, /investments, /insurance, /cards,
+#     /transfers, /bills                (sections 2.1, 8.1, 9.1, 11.1, 12.1, 13.1, 14.1, 15.1, 15.4)
+#   - dynamic_notification templates    (sections 6, 10, 11.5, 12.4, 13.4, 14.5, 15.5)
+# Utility BILLERS are not seeded: each needs a live integration (section 15.4).
 # platform_settings/cards is created WITHOUT terms / termsVersion, so virtual
 # cards stay "not available yet" until an issuer is contracted and the admin
 # adds its cardholder agreement, fees and capabilities.
@@ -109,7 +110,45 @@ CARDS = {
     # 'terms' and 'termsVersion': the issuer's cardholder agreement, added by the admin.
 }
 
-SETTINGS = {'kyc': KYC, 'savings': SAVINGS, 'tontines': TONTINES, 'lending': LENDING, 'investments': INVESTMENTS, 'insurance': INSURANCE, 'cards': CARDS}
+TRANSFERS = {
+    'currencies': ['XAF'],
+    'sourceMethods': ['wallet', 'mobile_money', 'wave'],
+    'security': {'reauthAbove': {'XAF': 50000}},
+    'channels': {
+        'internal': {'enabled': True, 'feePercent': 0, 'min': {'XAF': 100}, 'max': {'XAF': 1000000}, 'delay': 'Instant'},
+        'mobile_money': {
+            'enabled': True,
+            'operators': ['Orange Money', 'MTN Mobile Money'],
+            'feePercent': 1,
+            'feeMax': {'XAF': 5000},
+            'min': {'XAF': 500},
+            'max': {'XAF': 500000},
+            'delay': 'A few minutes',
+        },
+        'wave': {'enabled': False},
+        # Bank transfers: add the banks [{code, name}] and enable once a payout partner is live.
+        'bank': {'enabled': False, 'banks': []},
+    },
+}
+
+BILLS = {
+    'currencies': ['XAF'],
+    'categories': ['electricity', 'water', 'tv', 'internet', 'phone'],
+    'paymentMethods': ['wallet', 'mobile_money', 'wave'],
+    'security': {'reauthAbove': {'XAF': 100000}},
+}
+
+SETTINGS = {
+    'kyc': KYC,
+    'savings': SAVINGS,
+    'tontines': TONTINES,
+    'lending': LENDING,
+    'investments': INVESTMENTS,
+    'insurance': INSURANCE,
+    'cards': CARDS,
+    'transfers': TRANSFERS,
+    'bills': BILLS,
+}
 
 TEMPLATES = [
     ('kyc_submitted', 'Verification received', 'We received your documents. Our team will review them shortly.'),
@@ -185,6 +224,14 @@ TEMPLATES = [
     ('card_expiring', 'Card expiring soon', 'Your card ending in {last4} expires on {expiry}. Renew it to keep paying.'),
     ('card_renewed', 'Card renewed', 'Your new virtual card ending in {last4} is ready.'),
     ('card_terminated', 'Card deleted', 'Your card ending in {last4} was deleted. {amount} was returned to your wallet.'),
+    ('transfer_sent', 'Money sent', 'You sent {amount} to {recipientName}.'),
+    ('transfer_received', 'Money received', 'You received {amount} from {senderName}.'),
+    ('transfer_failed', 'Transfer failed', 'Your transfer of {amount} to {recipientName} failed: {reason}'),
+    ('transfer_reversed', 'Transfer refunded', 'Your transfer of {amount} to {recipientName} could not be delivered and was refunded.'),
+    ('bill_paid', 'Bill paid', 'You paid {amount} to {billerName} for account {account}.'),
+    ('bill_token', 'Your code', 'Your {billerName} code: {token}'),
+    ('bill_failed', 'Bill payment failed', 'Your payment of {amount} to {billerName} failed: {reason}'),
+    ('bill_reversed', 'Bill payment refunded', 'Your payment of {amount} to {billerName} could not be completed and was refunded.'),
 ]
 # The admin panel groups templates by service_type; account-level customer
 # templates already use this group.

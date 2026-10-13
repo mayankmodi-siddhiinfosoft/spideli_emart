@@ -1,3 +1,4 @@
+import 'package:customer/screen_ui/finance/bill_screens.dart';
 import 'package:customer/screen_ui/finance/card_screens.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/insurance_screens.dart';
@@ -5,6 +6,7 @@ import 'package:customer/screen_ui/finance/investment_screens.dart';
 import 'package:customer/screen_ui/finance/kyc_screen.dart';
 import 'package:customer/screen_ui/finance/lending_screens.dart';
 import 'package:customer/screen_ui/finance/savings_screens.dart';
+import 'package:customer/screen_ui/finance/transfer_screens.dart';
 import 'package:customer/screen_ui/finance/tontine_screens.dart';
 import 'package:customer/screen_ui/finance/transactions_screen.dart';
 import 'package:customer/service/finance_service.dart';
@@ -117,6 +119,22 @@ class FinanceHomeScreen extends StatelessWidget {
                 subtitle: "Pay online and abroad with a virtual Visa card.".tr,
                 showChevron: true,
                 onTap: () => Get.to(() => const CardsScreen()),
+              ),
+              DsListTile(
+                leadingIcon: Icons.send_rounded,
+                leadingTone: DsTone.brand,
+                title: "Send money".tr,
+                subtitle: "To a Spideli user, a Mobile Money or Wave number, or a bank account.".tr,
+                showChevron: true,
+                onTap: () => Get.to(() => const TransfersScreen()),
+              ),
+              DsListTile(
+                leadingIcon: Icons.receipt_outlined,
+                leadingTone: DsTone.brand,
+                title: "Pay bills".tr,
+                subtitle: "Electricity, water, TV, internet and more.".tr,
+                showChevron: true,
+                onTap: () => Get.to(() => const BillsScreen()),
               ),
             ],
           ),
