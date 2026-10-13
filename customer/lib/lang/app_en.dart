@@ -1065,4 +1065,6 @@ const Map<String, String> enUS = {
   // Parcel weight typed in "Parcel details" (the band dropdown was removed).
   "Please enter the parcel weight": "Please enter the parcel weight",
   "No price is set for this weight. Please contact support.": "No price is set for this weight. Please contact support.",
+  "Price band": "Price band",
+  "Enter the parcel weight in kg. It sets the price.": "Enter the parcel weight in kg. It sets the price.",
 };

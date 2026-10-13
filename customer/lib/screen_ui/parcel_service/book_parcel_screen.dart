@@ -234,12 +234,27 @@ class BookParcelScreen extends StatelessWidget {
       title: "Parcel details".tr,
       icon: Icons.straighten_rounded,
       children: [
+        // The ONE weight of the parcel: it picks the price band (same city) and
+        // feeds every carrier's per-kg price. The band it falls into is shown
+        // under it as the customer types.
         DsTextField(
           hint: "Weight in kg".tr,
           controller: controller.weightKgController.value,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           inputFormatters: numeric,
           prefixIcon: Icons.scale_outlined,
+          bottomSpacing: DsSpace.xs,
+        ),
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: controller.weightKgController.value,
+          builder: (context, _, __) {
+            final String? band = controller.isCityScope ? controller.selectedWeight?.title : null;
+            final String text = band != null && band.trim().isNotEmpty ? "${'Price band'.tr}: ${band.trim()}" : "Enter the parcel weight in kg. It sets the price.".tr;
+            return Padding(
+              padding: const EdgeInsets.only(left: DsSpace.xs, bottom: DsSpace.lg),
+              child: Text(text, style: context.dsText.caption.withColor(context.dsColors.textMuted)),
+            );
+          },
         ),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,

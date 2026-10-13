@@ -1062,4 +1062,6 @@ const Map<String, String> arAR = {
   // Parcel weight typed in "Parcel details" (the band dropdown was removed).
   "Please enter the parcel weight": "يرجى إدخال وزن الطرد",
   "No price is set for this weight. Please contact support.": "لم يتم تحديد سعر لهذا الوزن. يرجى التواصل مع الدعم.",
+  "Price band": "فئة السعر",
+  "Enter the parcel weight in kg. It sets the price.": "أدخل وزن الطرد بالكيلوغرام. يحدد الوزن السعر.",
 };
