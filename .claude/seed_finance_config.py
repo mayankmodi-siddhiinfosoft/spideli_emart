@@ -1,7 +1,7 @@
 # Creates the admin-level Spideli Finance configuration in the live Firestore
 # (project spideli-870b0), as listed in .claude/FINANCE-APP-CONTRACT.md:
-#   - platform_settings/kyc, /savings, /tontines   (sections 2.1, 8.1, 9.1)
-#   - dynamic_notification templates               (sections 6 and 10)
+#   - platform_settings/kyc, /savings, /tontines, /lending  (sections 2.1, 8.1, 9.1, 11.1)
+#   - dynamic_notification templates                        (sections 6, 10, 11.5)
 # CREATE-ONLY: a document or template type that already exists is skipped,
 # never overwritten. DRY RUN by default; writes only with --apply.
 #
@@ -57,7 +57,21 @@ TONTINES = {
     'minContribution': {'XAF': 1000},
 }
 
-SETTINGS = {'kyc': KYC, 'savings': SAVINGS, 'tontines': TONTINES}
+LENDING = {
+    'currencies': ['XAF'],
+    'minAmount': {'XAF': 10000},
+    'maxAmount': {'XAF': 1000000},
+    'durationsMonths': [3, 6, 12],
+    'repaymentFrequencies': ['weekly', 'monthly'],
+    'purposes': ['business', 'education', 'healthcare', 'real_estate', 'other'],
+    'interest': {'method': 'declining', 'annualPercent': 12},
+    'feePercent': 2,
+    'latePenaltyPercent': 5,
+    'voting': {'quorumPercent': 50, 'approvalPercent': 60, 'durationHours': 48},
+    'paymentMethods': ['wallet', 'mobile_money', 'wave'],
+}
+
+SETTINGS = {'kyc': KYC, 'savings': SAVINGS, 'tontines': TONTINES, 'lending': LENDING}
 
 TEMPLATES = [
     ('kyc_submitted', 'Verification received', 'We received your documents. Our team will review them shortly.'),
@@ -79,6 +93,19 @@ TEMPLATES = [
     ('tontine_payout_pending_approval', 'Payout to approve', 'The payout of {amount} to {beneficiaryName} in "{tontineName}" is waiting for your approval.'),
     ('tontine_payout_paid', 'Tontine payout', '{amount} was paid out from "{tontineName}".'),
     ('tontine_dispute_raised', 'New dispute', 'A dispute was raised in "{tontineName}": {subject}'),
+    ('loan_submitted', 'Loan request received', 'Your loan request of {amount} was received. We will review it shortly.'),
+    ('loan_vote_requested', 'Vote on a loan request', '{borrowerName} asks {groupName} for a loan of {amount}. Vote before {votingEndsAt}.'),
+    ('loan_approved', 'Loan approved', 'Your loan request of {amount} was approved by your group.'),
+    ('loan_rejected', 'Loan not approved', 'Your loan request of {amount} was not approved: {reason}'),
+    ('loan_funding_open', 'Loan open for funding', '{borrowerName} in {groupName} needs {amount}. You can lend part of it.'),
+    ('loan_funded', 'Loan fully funded', 'Your loan of {amount} is fully funded. Please accept the agreement.'),
+    ('loan_agreement_ready', 'Agreement to accept', 'Your loan agreement for {amount} is ready. Read and accept it to receive the money.'),
+    ('loan_disbursed', 'Loan paid out', 'The loan of {amount} was paid out.'),
+    ('loan_repayment_due', 'Repayment reminder', 'Your loan repayment of {amount} is due on {dueDate}.'),
+    ('loan_repayment_received', 'Repayment received', 'Your repayment of {amount} was received.'),
+    ('loan_repayment_overdue', 'Repayment overdue', 'Your loan repayment of {amount} is overdue.'),
+    ('loan_lender_repayment', 'Repayment received', 'You received {amount} from {borrowerName}\'s loan repayment.'),
+    ('loan_repaid', 'Loan repaid', 'The loan of {amount} is fully repaid.'),
 ]
 # The admin panel groups templates by service_type; account-level customer
 # templates already use this group.

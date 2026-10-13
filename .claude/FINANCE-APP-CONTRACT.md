@@ -395,3 +395,141 @@ Rules:
 | `tontine_dispute_raised` | admins | `{tontineName}`, `{subject}` |
 
 `.claude/seed_finance_config.py` creates the two config documents and these templates (create-only, dry run by default).
+
+---
+
+## 11. Member-to-member lending (brief section 7)
+
+App code: `customer/lib/screen_ui/finance/lending_screens.dart`, `customer/lib/service/finance_lending_service.dart`, rules in `customer/lib/utils/finance_lending_rules.dart` (tested in `customer/test/finance_lending_rules_test.dart`). Entry: Spideli Finance > Services > **Loans** (Borrow / Group requests / Lent), and the overview's loans card.
+
+**Model:** a member borrows from the members of a **group** they belong to (a tontine, `groupId`). The group's active members (except the borrower) vote and may fund. Subject to the applicable lending law: enable it per country only with legal sign-off.
+
+### 11.1 `platform_settings/lending` (admin config)
+
+```jsonc
+{
+  "currencies": ["XAF"],
+  "minAmount": { "XAF": 10000 },          // minor units
+  "maxAmount": { "XAF": 1000000 },
+  "durationsMonths": [3, 6, 12],
+  "repaymentFrequencies": ["weekly", "monthly"],
+  "purposes": ["business", "education", "healthcare", "real_estate", "other"],
+  "interest": { "method": "declining", "annualPercent": 12 },   // "flat" | "declining"
+  "feePercent": 2,
+  "latePenaltyPercent": 5,
+  "voting": { "quorumPercent": 50, "approvalPercent": 60, "durationHours": 48 },
+  "paymentMethods": ["wallet", "mobile_money", "wave"]
+}
+```
+
+Required: "Loans are not available yet" when it is missing or invalid (no currency, duration, frequency or payment method; an unknown interest method; quorum or approval outside 1-100; or `durationHours` < 1).
+
+- The app shows an **estimated** schedule from these terms before applying (flat, or declining-balance annuity). Amounts are whole minor units, rounding goes to the last installment, and the first due date is one period after today.
+- It is labelled an estimate: the **binding** schedule is the agreement's.
+
+### 11.2 Loan states (`loan_applications.status`)
+
+`submitted` → `under_review` (eligibility, KYC, credit assessment) → `voting` → `funding` → `agreement_pending` → `disbursing` → `active` (or `overdue`) → `repaid`.
+
+The loan can also end as `rejected` (with `reason`), `cancelled`, or `defaulted`.
+
+### 11.3 Collections (SERVER writes all of them)
+
+**`loan_applications/{id}`**
+- `id`, `borrowerId`, `groupId`, `groupName`, `status`, `currency`, `amount`;
+- `fundedAmount`, `outstandingAmount`, `durationMonths`, `repaymentFrequency`, `purpose`, `description`, `reason`;
+- `eligibleVoterIds[]` (the group's active members minus the borrower, fixed when voting opens), `lenderIds[]` (members who funded);
+- `votes: { yes, no }` (counts only), `votingEndsAt`, `documents: [{ name, storagePath }]`, `createdAt`.
+
+**`loan_votes/{loanId}_{voterId}`**: `{ loanId, voterId, approve: bool, comment, at }`. One per voter (the id makes duplicates impossible). The app reads only the caller's own vote.
+
+**`credit_assessments/{loanId}`**: `{ loanId, borrowerId, score, band, factors: [{ label, impact: "positive" | "negative", detail }], assessedAt }`.
+- **Explain the material factors** in plain language.
+- Readable by the borrower and authorised reviewers only, never by the voters.
+
+**`loan_fundings/{id}`**: `{ loanId, lenderId, amount, currency, status: pending | succeeded | failed | refunded, reference, createdAt }`.
+
+**`loan_agreements/{loanId}`**:
+- `{ loanId, version, principal, currency, interestMethod, annualInterestPercent, fee, totalRepayable, latePenaltyPercent, terms, installments: [...], createdAt, acceptedAt }`;
+- a NEW `version` whenever the terms change.
+
+**`loan_schedules/{loanId}`**: `{ installments: [{ number, dueDate, amount, principal, interest, penalty, amountDue, status }] }`.
+- Installment `status` is one of `upcoming`, `due`, `paid`, `partially_paid`, `overdue`.
+
+**`loan_disbursements/{id}`**: `{ loanId, amount, fee, status, reference, paidAt }`.
+
+**`loan_repayments/{id}`**: `{ loanId, borrowerId, amount, currency, status: pending | processing | succeeded | failed, reference, createdAt }`.
+
+App queries (with indexes):
+
+```
+loan_applications where borrowerId == <uid>                 orderBy createdAt desc limit 50 -> (borrowerId ASC, createdAt DESC)
+loan_applications where eligibleVoterIds array-contains <uid> orderBy createdAt desc limit 50 -> (eligibleVoterIds CONTAINS, createdAt DESC)
+loan_applications where lenderIds array-contains <uid>       orderBy createdAt desc limit 50 -> (lenderIds CONTAINS, createdAt DESC)
+loan_repayments where loanId == X orderBy createdAt desc                                      -> (loanId ASC, createdAt DESC)
+loan_fundings where loanId == X and lenderId == <uid>                                         -> equality only
+loan_votes/{loanId}_{uid}, loan_agreements/{loanId}, loan_schedules/{loanId}, credit_assessments/{loanId}: single documents
+```
+
+Rules:
+- A loan is readable by its borrower, its eligible voters and its lenders.
+- Agreement, schedule and repayments: the borrower and the lenders.
+- Credit assessment: the borrower (and reviewers) only.
+- A vote: its voter.
+- A funding: its lender (and the borrower, if you choose).
+- **No client writes.**
+- Storage `loan_documents/{uid}/{loanId}/{file}`: the borrower creates (images, size cap, no overwrite). Reviewers and voters read through signed links.
+
+### 11.4 Callables
+
+| Function | Request | Server checks |
+|---|---|---|
+| `loanApply` | `{ amount, currency, purpose, durationMonths, repaymentFrequency, groupId, description? }` -> `{ loanId }` | KYC-verified; an ACTIVE member of `groupId`; limits from config; no other open request beyond your policy |
+| `loanRegisterDocument` | `{ loanId, storagePath, name }` | the borrower; the path is theirs; type and size |
+| `loanCancel` | `{ loanId }` | the borrower; only `submitted` / `under_review` / `voting` |
+| `loanVote` | `{ loanId, approve, comment? }` | an eligible voter, never the borrower; `voting` and before `votingEndsAt`; **once** (`loan_votes/{loanId}_{uid}` must not exist) |
+| `loanFund` | `{ loanId, amount, payment, idempotencyKey }` | an eligible member, not the borrower; `funding`; never beyond the remaining amount (a transaction on `fundedAmount`); payment as section 8.4 |
+| `loanAcceptAgreement` | `{ loanId, agreementVersion }` | the borrower; `agreement_pending`; refuse an outdated `version`; record the acceptance (time, version, device) as the electronic agreement |
+| `loanRepay` | `{ loanId, amount, payment, idempotencyKey }` | the borrower; `active` / `overdue`; never beyond `outstandingAmount`; allocate to the oldest installment (penalty, interest, then principal) |
+
+**After voting:**
+- quorum = `ceil(eligible × quorumPercent / 100)` votes cast;
+- approval = `yes / cast ≥ approvalPercent`;
+- not reached by `votingEndsAt` → `rejected` with a reason.
+
+The app shows the live tally from `votes` and these rules.
+
+**Anti-duplication:**
+- one vote per voter (document id);
+- one disbursement per loan (idempotent on `loanId`);
+- every funding and repayment is idempotent on its `idempotencyKey`, and confirmed only by the provider (section 8.4).
+
+**Defaults:** an `overdue` installment applies `latePenaltyPercent` per your disclosed terms. `defaulted` is set only after a documented review, never automatically from one failed payment. Disputes and restrictions follow the tontine rules (section 9.3).
+
+### 11.5 Jobs and notifications (SERVER)
+
+**Jobs:**
+- close voting at `votingEndsAt`;
+- installment reminders before `dueDate`;
+- mark installments `overdue` and apply penalties;
+- distribute received repayments to the lenders, pro rata to their funding;
+- reconcile payments;
+- keep `finance_summaries/{uid}.loans` up to date.
+
+**Templates** (`dynamic_notification`, `source: "finance"`):
+
+| Template `type` | To | Placeholders |
+|---|---|---|
+| `loan_submitted` | borrower | `{amount}` |
+| `loan_vote_requested` | eligible voters | `{borrowerName}`, `{amount}`, `{groupName}`, `{votingEndsAt}` |
+| `loan_approved` | borrower | `{amount}` |
+| `loan_rejected` | borrower | `{amount}`, `{reason}` |
+| `loan_funding_open` | eligible voters | `{borrowerName}`, `{amount}`, `{groupName}` |
+| `loan_funded` | borrower | `{amount}` |
+| `loan_agreement_ready` | borrower | `{amount}` |
+| `loan_disbursed` | borrower and lenders | `{amount}` |
+| `loan_repayment_due` | borrower | `{amount}`, `{dueDate}` |
+| `loan_repayment_received` | borrower | `{amount}` |
+| `loan_repayment_overdue` | borrower | `{amount}` |
+| `loan_lender_repayment` | each lender | `{amount}`, `{borrowerName}` |
+| `loan_repaid` | borrower and lenders | `{amount}` |

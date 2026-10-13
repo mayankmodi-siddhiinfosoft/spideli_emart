@@ -1,5 +1,6 @@
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/kyc_screen.dart';
+import 'package:customer/screen_ui/finance/lending_screens.dart';
 import 'package:customer/screen_ui/finance/savings_screens.dart';
 import 'package:customer/screen_ui/finance/tontine_screens.dart';
 import 'package:customer/screen_ui/finance/transactions_screen.dart';
@@ -81,6 +82,14 @@ class FinanceHomeScreen extends StatelessWidget {
                 subtitle: "Save as a group and receive the pot in turn.".tr,
                 showChevron: true,
                 onTap: () => Get.to(() => const TontineListScreen()),
+              ),
+              DsListTile(
+                leadingIcon: Icons.handshake_outlined,
+                leadingTone: DsTone.brand,
+                title: "Loans".tr,
+                subtitle: "Borrow from, and lend to, the members of your groups.".tr,
+                showChevron: true,
+                onTap: () => Get.to(() => const LoansScreen()),
               ),
             ],
           ),
@@ -263,6 +272,7 @@ class _Overview extends StatelessWidget {
             _ModuleCard(
               icon: Icons.handshake_outlined,
               title: "Loans".tr,
+              onTap: () => Get.to(() => const LoansScreen()),
               rows: s.loans == null
                   ? null
                   : [
