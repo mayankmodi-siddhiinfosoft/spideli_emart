@@ -655,7 +655,6 @@ class _NavChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = DsColors.of(context);
     final double lo = points.map((p) => p.nav).reduce(math.min);
     final double hi = points.map((p) => p.nav).reduce(math.max);
     return Semantics(
@@ -669,7 +668,7 @@ class _NavChart extends StatelessWidget {
               _caption(context, '${"Low".tr} ${FinanceMoney.format(lo, currency)}'),
             ]),
             const DsGap(DsSpace.xs),
-            SizedBox(height: 120, child: CustomPaint(painter: _LinePainter(points.map((p) => p.nav).toList(), c.brand, c.border))),
+            FinanceLineChart(values: points.map((p) => p.nav).toList()),
             const DsGap(DsSpace.xs),
             Row(children: [
               Expanded(child: _caption(context, _date(points.first.date))),
@@ -680,43 +679,6 @@ class _NavChart extends StatelessWidget {
       ),
     );
   }
-}
-
-class _LinePainter extends CustomPainter {
-  final List<double> values;
-  final Color line;
-  final Color grid;
-
-  _LinePainter(this.values, this.line, this.grid);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double lo = values.reduce(math.min);
-    final double hi = values.reduce(math.max);
-    final double span = hi - lo == 0 ? 1 : hi - lo;
-    final gridPaint = Paint()
-      ..color = grid
-      ..strokeWidth = 1;
-    for (final y in [0.0, size.height / 2, size.height]) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
-    }
-    final path = Path();
-    for (int i = 0; i < values.length; i++) {
-      final double x = values.length == 1 ? 0 : i * size.width / (values.length - 1);
-      final double y = size.height - (values[i] - lo) / span * (size.height - 4) - 2;
-      i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
-    }
-    canvas.drawPath(
-        path,
-        Paint()
-          ..color = line
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2
-          ..strokeJoin = StrokeJoin.round);
-  }
-
-  @override
-  bool shouldRepaint(_LinePainter old) => old.values != values || old.line != line;
 }
 
 // ---------------------------------------------------------------- subscribe

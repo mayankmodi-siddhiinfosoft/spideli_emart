@@ -1,8 +1,12 @@
 # Creates the admin-level Spideli Finance configuration in the live Firestore
 # (project spideli-870b0), as listed in .claude/FINANCE-APP-CONTRACT.md:
 #   - platform_settings/kyc, /savings, /tontines, /lending, /investments, /insurance, /cards,
-#     /transfers, /bills, /financing    (sections 2.1, 8.1, 9.1, 11.1, 12.1, 13.1, 14.1, 15.1, 15.4, 16.1)
-#   - dynamic_notification templates    (sections 6, 10, 11.5, 12.4, 13.4, 14.5, 15.5, 16.4)
+#     /transfers, /bills, /financing, /intelligence
+#                                       (sections 2.1, 8.1, 9.1, 11.1, 12.1, 13.1, 14.1, 15.1, 15.4, 16.1, 17.1)
+#   - dynamic_notification templates    (sections 6, 10, 11.5, 12.4, 13.4, 14.5, 15.5, 16.4, 17.3)
+# The AI coach is created DISABLED (coach.enabled: false): enable it once the
+# coach function is deployed and the consent text is approved. Indicators,
+# rates and opportunities are not seeded: they come from approved sources.
 #   - financial_resources: three starter guides, UNPUBLISHED (published: false)
 #     for the admin to review, adapt and publish (section 16.2)
 # Utility BILLERS are not seeded: each needs a live integration (section 15.4).
@@ -167,6 +171,34 @@ SETTINGS = {
         'allowedContentTypes': ['application/pdf', 'image/jpeg', 'image/png'],
         'maxFileBytes': 20 * 1024 * 1024,
     },
+    'intelligence': {
+        'indicators': {'enabled': True, 'countries': ['CM', 'GA', 'GN', 'CI', 'SN', 'RW']},
+        'exchangeRates': {'enabled': True, 'base': 'XAF', 'quotes': ['EUR', 'USD', 'XOF', 'GNF', 'RWF', 'CNY']},
+        'matching': {
+            'enabled': True,
+            'currencies': ['XAF'],
+            'sectors': ['agriculture', 'commerce', 'manufacturing', 'services', 'technology', 'health', 'education', 'energy', 'construction', 'transport', 'tourism', 'other'],
+            'types': ['equity', 'loan', 'revenue_share', 'fund'],
+            'countries': ['CM', 'GA', 'GN', 'CI', 'SN', 'RW'],
+            'weights': {'sector': 2, 'country': 1, 'type': 1, 'ticket': 1, 'horizon': 1},
+            'minScore': 60,
+            'eligibility': 'Only verified Spideli users can express interest. The project owner and the rules of each country may set further conditions.',
+        },
+        'coach': {
+            'enabled': False,
+            'consentVersion': 1,
+            'consentText': (
+                'The Spideli financial coach is an AI assistant. When you send a message, your question is sent to the AI service '
+                'provider approved by Spideli to prepare an answer. If you allow it, your Spideli Finance totals (balances, savings, '
+                'loans) are sent too - never your identity documents or the details of your transactions. Your conversations are '
+                'kept so you can read them again; you can delete them at any time and stop using the coach in its settings. Answers '
+                'are general information, not personalised financial, legal or tax advice, and may contain errors. The coach never '
+                'moves money or decides for you.'
+            ),
+            'topics': ['general', 'budget', 'savings', 'investing', 'loans', 'insurance', 'project_financing'],
+            'maxMessageLength': 1000,
+        },
+    },
 }
 
 # Starter guides, created UNPUBLISHED: the admin reviews, adapts and publishes them.
@@ -309,6 +341,8 @@ TEMPLATES = [
     ('financing_rejected', 'Financing not approved', 'Your application for {projectName} was not approved: {reason}'),
     ('financing_funded', 'Financing paid', '{amount} was paid for {projectName}.'),
     ('financing_closed', 'Application closed', 'Your financing application for {projectName} is closed.'),
+    ('intelligence_new_match', 'New opportunity for you', '{title} matches your investor preferences ({score}%).'),
+    ('intelligence_interest_received', 'An investor is interested', '{investorName} is interested in {title}.'),
 ]
 # The admin panel groups templates by service_type; account-level customer
 # templates already use this group.

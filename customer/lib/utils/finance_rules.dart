@@ -199,6 +199,10 @@ abstract final class FinanceErrors {
     'financing_documents_missing': 'Please add every required document before submitting.',
     'financing_not_editable': 'This application can no longer be changed.',
     'business_kyc_required': 'A business verification is needed to apply for financing.',
+    'coach_consent_required': 'Please accept the coach terms first.',
+    'coach_limit_reached': 'You have reached today\'s limit of questions. Please come back tomorrow.',
+    'coach_unavailable': 'The coach is not available right now. Please try again later.',
+    'opportunity_closed': 'This opportunity is closed.',
     'sign_in_required': 'Please sign in again.',
     'unauthenticated': 'Please sign in again.',
   };

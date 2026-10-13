@@ -1,8 +1,10 @@
 import 'package:customer/screen_ui/finance/bill_screens.dart';
 import 'package:customer/screen_ui/finance/card_screens.dart';
+import 'package:customer/screen_ui/finance/coach_screens.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/financing_screens.dart';
 import 'package:customer/screen_ui/finance/insurance_screens.dart';
+import 'package:customer/screen_ui/finance/intelligence_screens.dart';
 import 'package:customer/screen_ui/finance/investment_screens.dart';
 import 'package:customer/screen_ui/finance/kyc_screen.dart';
 import 'package:customer/screen_ui/finance/lending_screens.dart';
@@ -144,6 +146,22 @@ class FinanceHomeScreen extends StatelessWidget {
                 subtitle: "Apply for financing for your company or project and follow the review.".tr,
                 showChevron: true,
                 onTap: () => Get.to(() => const FinancingScreen()),
+              ),
+              DsListTile(
+                leadingIcon: Icons.insights_outlined,
+                leadingTone: DsTone.brand,
+                title: "Economic intelligence".tr,
+                subtitle: "Indicators, exchange rates and investment opportunities.".tr,
+                showChevron: true,
+                onTap: () => Get.to(() => const IntelligenceScreen()),
+              ),
+              DsListTile(
+                leadingIcon: Icons.support_agent_rounded,
+                leadingTone: DsTone.brand,
+                title: "Financial coach".tr,
+                subtitle: "Ask about budgeting, saving, borrowing and investing.".tr,
+                showChevron: true,
+                onTap: () => Get.to(() => const CoachScreen()),
               ),
             ],
           ),

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:customer/screen_ui/finance/kyc_screen.dart';
 import 'package:customer/screen_ui/subscriptions/saved_payment_methods_screen.dart';
 import 'package:customer/service/finance_group_service.dart';
@@ -213,3 +215,55 @@ abstract final class FinancePaySheet {
     }
   }
 }
+
+/// A simple line of [values] over time (unit prices, indicators, rates).
+class FinanceLineChart extends StatelessWidget {
+  final List<double> values;
+  final double height;
+
+  const FinanceLineChart({super.key, required this.values, this.height = 120});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DsColors.of(context);
+    return SizedBox(height: height, child: CustomPaint(painter: _LinePainter(values, c.brand, c.border)));
+  }
+}
+
+class _LinePainter extends CustomPainter {
+  final List<double> values;
+  final Color line;
+  final Color grid;
+
+  _LinePainter(this.values, this.line, this.grid);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double lo = values.reduce(math.min);
+    final double hi = values.reduce(math.max);
+    final double span = hi - lo == 0 ? 1 : hi - lo;
+    final gridPaint = Paint()
+      ..color = grid
+      ..strokeWidth = 1;
+    for (final y in [0.0, size.height / 2, size.height]) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+    final path = Path();
+    for (int i = 0; i < values.length; i++) {
+      final double x = values.length == 1 ? 0 : i * size.width / (values.length - 1);
+      final double y = size.height - (values[i] - lo) / span * (size.height - 4) - 2;
+      i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
+    }
+    canvas.drawPath(
+        path,
+        Paint()
+          ..color = line
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..strokeJoin = StrokeJoin.round);
+  }
+
+  @override
+  bool shouldRepaint(_LinePainter old) => old.values != values || old.line != line;
+}
+

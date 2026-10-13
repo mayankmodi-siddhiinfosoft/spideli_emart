@@ -1,8 +1,8 @@
-# Spideli Finance: what the customer app expects from the server (KYC + dashboard)
+# Spideli Finance: what the customer app expects from the server
 
 **For:** the backend team (Cloud Functions, Firestore / Storage rules, admin panel).
 **Date:** 13 Oct 2026.
-**Scope:** the **app-level** part of the "Spideli Digital Finance Platform Using Firebase" brief, sections 3 (KYC) and 10 (dashboard), built in the **customer app** (`customer/`). The app is done; everything below marked **SERVER** is the backend's and does not exist in this repository.
+**Scope:** the **app-level** part of the "Spideli Digital Finance Platform Using Firebase" brief, built in the **customer app** (`customer/`): KYC and dashboard (sections 1-7), savings and tontines (8-10), lending (11), investments (12), insurance (13), virtual cards (14), transfers and bills (15), project financing (16), economic intelligence and the AI coach (17). The app is done; everything below marked **SERVER** is the backend's and does not exist in this repository.
 
 **Rule of the whole contract:** the app **never** decides a status, a balance or a total. It reads what the server stored, and asks the server, through callable functions, to change anything. Every collection below is **read-only for the app** except the KYC file upload in Storage (section 3).
 
@@ -1158,3 +1158,139 @@ Templates (`dynamic_notification`, `source: "finance"`):
 | `financing_rejected` | owner | `{projectName}`, `{reason}` |
 | `financing_funded` | owner | `{projectName}`, `{amount}` |
 | `financing_closed` | owner | `{projectName}` |
+
+---
+
+## 17. Economic intelligence and the AI financial coach (brief section 17)
+
+App code:
+- `customer/lib/screen_ui/finance/intelligence_screens.dart` (Indicators / Exchange rates / Opportunities);
+- `customer/lib/screen_ui/finance/coach_screens.dart`;
+- `customer/lib/service/finance_intel_service.dart`;
+- rules in `customer/lib/utils/finance_intel_rules.dart` (tested in `customer/test/finance_intel_rules_test.dart`).
+
+Entry: Spideli Finance > Services > **Economic intelligence** and **Financial coach**.
+
+### 17.1 `platform_settings/intelligence` (admin config)
+
+```jsonc
+{
+  "indicators":    { "enabled": true, "countries": ["CM", "GA", "GN", "CI", "SN", "RW"] },            // ISO alpha-2, display order
+  "exchangeRates": { "enabled": true, "base": "XAF", "quotes": ["EUR", "USD", "XOF", "GNF", "RWF", "CNY"] },
+  "matching": {
+    "enabled": true,
+    "currencies": ["XAF"],
+    "sectors": ["agriculture", "commerce", "..."], "types": ["equity", "loan", "revenue_share", "fund"], "countries": ["CM", "..."],
+    "weights": { "sector": 2, "country": 1, "type": 1, "ticket": 1, "horizon": 1 },             // relative, >= 0
+    "minScore": 60,                                                                            // suggest from this score (0-100)
+    "eligibility": "Only verified Spideli users can express interest..."                      // shown as written
+  },
+  "coach": {
+    "enabled": false,                      // turn on once the coach function is deployed AND the consent text is approved
+    "consentVersion": 1,                   // raise it whenever consentText changes: users accept again
+    "consentText": "...",
+    "topics": ["general", "budget", "savings", "investing", "loans", "insurance", "project_financing"],
+    "maxMessageLength": 1000
+  }
+}
+```
+
+**Each part is offered only when `enabled` and valid:**
+- indicators: at least one country;
+- exchange rates: a base and at least one other currency;
+- coach: `consentVersion` ≥ 1 and a `consentText`.
+
+The screen says "not available yet" when no part is.
+
+### 17.2 Indicators and exchange rates (SERVER, from approved sources only)
+
+Fill these from **approved, licensed sources** (central banks such as BEAC / BCEAO / BCRG / BNR, national statistics institutes, IMF / World Bank APIs, a licensed FX feed). **Never** estimate or generate a figure.
+
+**`economic_indicators/{id}`** (the latest value):
+- `{ published, country, code (inflation | policy_rate | gdp_growth | fx_reserves | public_debt | ...), name, value, previousValue, unit ("%", "billion", "months of imports"), currency, period ("2026-08", "2026-Q2"), periodEnd, source, sourceUrl (https), updatedAt, order }`;
+- **The app hides any record missing `value`, `name`, `source`, `period` or `updatedAt`** (the brief: record the source, currency, reporting period and update time of every indicator).
+
+**`economic_indicator_history/{id}`**: `{ indicatorId, period, periodEnd, value }`, one per period (the chart shows the last 40).
+
+**`exchange_rate_snapshots/{id}`**: `{ from, to, pair: "<from>_<to>", rate (1 from = rate to), source, kind: official | indicative, observedAt }`.
+- The app reads the pairs **into the base** (`to == base`) and converts through it, labelled **indicative**.
+- The rate of a real operation is always the one the server shows at confirmation (section 15).
+
+### 17.3 Investment opportunities and matching
+
+**`investment_opportunities/{id}`**: `{ published, status: open | closed, title, summary, sector, country, type, currency, minTicket, targetAmount, raisedAmount, horizonMonths, riskLevel (1-7), targetReturnPercent (shown as "target, not guaranteed"), ownerName, ownerId (server only), projectId, closingDate, documents }`.
+- Publish only after review.
+- Fundraising from the public is regulated: check the rules of each country (crowdfunding, financial market authority) before opening an opportunity to non-professional investors.
+
+**`investor_profiles/{uid}`**: `{ currency, sectors[], countries[], types[], minTicket, maxTicket, maxRisk (1-7), maxHorizonMonths (0 = no limit), updatedAt }`, written by `intelligenceSaveInvestorProfile`.
+
+**Matching (the app and the server use the same rules, `MatchRules`):**
+- **eligible**: the opportunity is open and before `closingDate`; same currency; `minTicket ≤ maxTicket`; `riskLevel ≤ maxRisk`;
+- **score**: 0-100, the weighted share of the preferences met: sector, country and type (an empty preference counts as met), `ticket` (`minTicket` within the investor's range) and `horizon`;
+- the app shows eligible opportunities with `score ≥ minScore` as "Suggested for you", with the reasons.
+
+**`investor_matches/{id}`** (server): `{ userId, opportunityId, score, reasons, status: new | interested | dismissed, notifiedAt }`. Compute it when an opportunity or a profile changes, and notify new matches (`intelligence_new_match`).
+
+| Function | Request | Server checks |
+|---|---|---|
+| `intelligenceSaveInvestorProfile` | `{ currency, sectors, countries, types, minTicket, maxTicket, maxRisk, maxHorizonMonths }` | signed in; values from the config; `minTicket ≤ maxTicket` |
+| `intelligenceRespondOpportunity` | `{ opportunityId, interested, message? }` | KYC-verified for `interested`; opportunity open (`opportunity_closed`); record the interest; **share the investor's name and email with the owner only on `interested: true`** (the app tells the user so); notify the owner (`intelligence_interest_received`). **No money moves**: any investment follows a separate, regulated flow |
+
+Rules:
+- published opportunities, indicators, history, rates, and the config: any signed-in user;
+- `investor_profiles/{uid}` and `investor_matches`: owner only;
+- **no client writes**.
+
+### 17.4 The AI financial coach (SERVER)
+
+**Where it runs:** a Cloud Function calls an **approved AI provider**, for example Anthropic's Claude API (`claude-opus-5-5`, or `claude-sonnet-5-5` for lower cost). The API key is in **Secret Manager**, never in the apps or in Firestore. Enforce App Check and authentication on every call.
+
+**Consent:**
+- `coach_consents/{uid}` holds `{ version, acceptedAt, shareSummary, withdrawn, withdrawnAt }`, written only by the functions below;
+- the app asks again whenever `coach.consentVersion` rises.
+
+**Data minimisation (send the AI only what is needed):**
+- the user's message and the recent turns of the same conversation;
+- the topic;
+- **only if `shareSummary`**: the aggregate figures of `finance_summaries/{uid}` (totals, no account numbers, no names);
+- for questions about the economy: the **published** indicators and rates from Firestore, **with their source and period**, so the coach cites them instead of inventing figures.
+
+**Never send:** identity documents, KYC data, card data, full transaction histories, other people's data, phone numbers, emails.
+
+**Guardrails (system prompt and server checks):**
+- general education and guidance only, not personalised investment, legal or tax advice; say so when relevant;
+- **never guarantee or predict returns**, never invent economic data: use only the figures provided, with their source, and say when a figure is not available;
+- **never execute or promise to execute an operation.** The only output beyond text is `suggestedActions: [{ target, label }]`, where `target` is one of `savings, tontines, loans, investments, simulator, insurance, cards, transfers, bills, financing, kyc, indicators`. The app shows them as buttons that **only open that screen**; the user then goes through its own confirmation (and re-authentication). The app drops any other target;
+- refuse requests for passwords, PINs or card numbers, and warn the user if they paste one;
+- answer in the user's language;
+- moderation of inputs and outputs;
+- a daily message limit per user (`coach_limit_reached`).
+
+**Collections:**
+- `financial_coach_sessions/{sessionId}`: `{ userId, topic, title (short, generated), messageCount, createdAt, updatedAt }`;
+- `financial_coach_sessions/{sessionId}/messages/{id}`: `{ role: user | assistant, text, status (failed when no answer), suggestedActions, createdAt }`.
+
+Both are owner-read only; **no client writes**. The function writes the user's message, then the answer.
+
+| Function | Request | Server checks |
+|---|---|---|
+| `coachAcceptConsent` | `{ version, shareSummary }` | signed in; `version` == the current `consentVersion` |
+| `coachUpdateConsent` | `{ shareSummary }` | a valid consent |
+| `coachWithdrawConsent` | `{ deleteHistory }` | set `withdrawn`; with `deleteHistory`, delete every session and message |
+| `coachSendMessage` | `{ sessionId?, topic, text }` -> `{ sessionId, messageId }` | a valid consent (`coach_consent_required`); `text` ≤ `maxMessageLength`; the daily limit; the owner of `sessionId`; call the AI (`coach_unavailable` on failure: store the answer with `status: "failed"`); answer within the callable timeout (60 s) |
+| `coachDeleteSession` | `{ sessionId }` | the owner; delete the messages too |
+| `coachFeedback` | `{ sessionId, messageId, helpful }` | the owner; store it for quality review (no message content in analytics) |
+
+Indexes: `financial_coach_sessions (userId ASC, updatedAt DESC)`; messages are read with `orderBy createdAt` inside a session (single-field).
+
+**Retention:**
+- keep conversations only as long as useful (e.g. 12 months), then delete;
+- tell the user in the consent text;
+- logs must not contain message contents.
+
+**Templates** (`dynamic_notification`, `source: "finance"`):
+
+| Template `type` | To | Placeholders |
+|---|---|---|
+| `intelligence_new_match` | investor | `{title}`, `{score}` |
+| `intelligence_interest_received` | opportunity owner | `{investorName}`, `{title}` |
