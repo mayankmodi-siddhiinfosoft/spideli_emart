@@ -719,4 +719,5 @@ const Map<String, String> ptPO = {
   "Prices for @region": "Preços para @region",
   "Distance price (per km)": "Preço por distância (por km)",
   "Weight price (per kg)": "Preço por peso (por kg)",
+  "Assigned by the administrator": "Atribuído pelo administrador",
 };

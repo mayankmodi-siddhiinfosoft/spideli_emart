@@ -723,4 +723,5 @@ const Map<String, String> enUS = {
   "Prices for @region": "Prices for @region",
   "Distance price (per km)": "Distance price (per km)",
   "Weight price (per kg)": "Weight price (per kg)",
+  "Assigned by the administrator": "Assigned by the administrator",
 };

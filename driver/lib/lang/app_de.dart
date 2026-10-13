@@ -719,4 +719,5 @@ const Map<String, String> deGR = {
   "Prices for @region": "Preise für @region",
   "Distance price (per km)": "Preis nach Strecke (pro km)",
   "Weight price (per kg)": "Preis nach Gewicht (pro kg)",
+  "Assigned by the administrator": "Vom Administrator vergeben",
 };

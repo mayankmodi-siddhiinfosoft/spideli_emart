@@ -719,4 +719,5 @@ const Map<String, String> hiIN = {
   "Prices for @region": "@region के लिए कीमतें",
   "Distance price (per km)": "दूरी का मूल्य (प्रति किमी)",
   "Weight price (per kg)": "वज़न का मूल्य (प्रति किग्रा)",
+  "Assigned by the administrator": "व्यवस्थापक द्वारा निर्धारित",
 };

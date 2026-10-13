@@ -719,4 +719,5 @@ const Map<String, String> zhCH = {
   "Prices for @region": "@region 的价格",
   "Distance price (per km)": "距离价格（每公里）",
   "Weight price (per kg)": "重量价格（每公斤）",
+  "Assigned by the administrator": "由管理员分配",
 };
