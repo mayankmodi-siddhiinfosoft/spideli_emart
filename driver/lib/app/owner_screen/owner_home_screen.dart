@@ -290,17 +290,24 @@ class _DriverRow extends StatelessWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            DsBadge(
-              label: isVerified ? "Verified".tr : "Unverified".tr,
-              tone: isVerified ? DsTone.success : DsTone.warning,
-              small: true,
-            ),
-            const SizedBox(width: 4),
-            DsBadge(
-              label: isActive ? "Online".tr : "Offline".tr,
-              tone: isActive ? DsTone.success : DsTone.neutral,
-              icon: isActive ? Icons.circle : Icons.circle_outlined,
-              small: true,
+            // Stacked: side by side they overflowed a phone-width row.
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                DsBadge(
+                  label: isVerified ? "Verified".tr : "Unverified".tr,
+                  tone: isVerified ? DsTone.success : DsTone.warning,
+                  small: true,
+                ),
+                const SizedBox(height: 4),
+                DsBadge(
+                  label: isActive ? "Online".tr : "Offline".tr,
+                  tone: isActive ? DsTone.success : DsTone.neutral,
+                  icon: isActive ? Icons.circle : Icons.circle_outlined,
+                  small: true,
+                ),
+              ],
             ),
             PopupMenuButton<String>(
               padding: EdgeInsets.zero,
