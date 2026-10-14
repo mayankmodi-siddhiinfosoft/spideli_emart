@@ -1,5 +1,7 @@
+import 'package:customer/constant/constant.dart';
 import 'package:customer/screen_ui/finance/bill_screens.dart';
 import 'package:customer/screen_ui/finance/fin_ds.dart';
+import 'package:customer/screen_ui/finance/fin_kit.dart';
 import 'package:customer/screen_ui/finance/finance_actions_screen.dart';
 import 'package:customer/screen_ui/finance/finance_chat_screens.dart';
 import 'package:customer/screen_ui/finance/finance_dashboard_screen.dart';
@@ -50,6 +52,7 @@ class FinanceHomeScreen extends StatelessWidget {
         builder: (context, sumSnap) {
           final s = sumSnap.data;
           return FinBody(children: [
+            FinGreeting(firstName: Constant.userModel?.firstName),
             const FinanceRestrictionNotice(),
             const _VerificationNotice(),
             _BalanceHero(summary: s),
@@ -129,7 +132,8 @@ class _BalanceHero extends StatelessWidget {
           if (s?.savings != null) FinHeroStat("Saved so far".tr, m(s!.savings!['savedAmount'])),
           if (s?.loans != null) FinHeroStat("Still to repay".tr, m(s!.loans!['borrowedOutstanding'])),
         ];
-        return FinHero(
+        final hero = FinHero(
+          privacy: true,
           label: "Available balance".tr,
           amount: failed ? '—' : (!snap.hasData ? '…' : FinanceMoney.format(preferred == null ? 0 : ((preferred['balance'] as num?) ?? 0), cur)),
           caption: failed
@@ -142,7 +146,9 @@ class _BalanceHero extends StatelessWidget {
                           ? "Spideli Finance wallet".tr
                           : '${"Also".tr}: ${others.map((w) => FinanceMoney.format((w['balance'] as num?) ?? 0, w['currency']?.toString() ?? '')).join(' · ')}',
           stats: stats,
-          footer: FutureBuilder<WalletConfig?>(
+        );
+        // The actions sit under the card, as round buttons on the page.
+        final actions = FutureBuilder<WalletConfig?>(
             future: _walletConfig,
             builder: (context, cfg) {
               final w = cfg.data;
@@ -157,13 +163,13 @@ class _BalanceHero extends StatelessWidget {
                 FinAction(Icons.savings_outlined, "Save".tr, () => Get.to(() => const SavingsListScreen())),
                 FinAction(Icons.trending_up_rounded, "Invest".tr, () => Get.to(() => const InvestmentsScreen())),
               ];
-              return FinActions(onHero: true, actions: [
+              return FinActions(actions: [
                 if (failed) FinAction(Icons.refresh_rounded, "Retry".tr, FinanceService.retry),
                 ...actions.take(4),
               ]);
             },
-          ),
-        );
+          );
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [hero, const DsGap(DsSpace.lg), actions]);
       },
     );
   }
@@ -201,6 +207,7 @@ class _Upcoming extends StatelessWidget {
         (
           d(s.loans?['nextRepaymentDate']),
           FinListTile(
+            leading: FinDateBadge(d(s.loans?['nextRepaymentDate'])!),
             icon: Icons.handshake_outlined,
             iconTone: DsTone.brand,
             title: "Loan repayment".tr,
@@ -214,6 +221,7 @@ class _Upcoming extends StatelessWidget {
         (
           d(s.tontines?['nextContributionDate']),
           FinListTile(
+            leading: FinDateBadge(d(s.tontines?['nextContributionDate'])!),
             icon: Icons.groups_2_outlined,
             iconTone: DsTone.brand,
             title: "Tontine contribution".tr,
@@ -227,6 +235,7 @@ class _Upcoming extends StatelessWidget {
         (
           d(s.insurance?['nextRenewalDate']),
           FinListTile(
+            leading: FinDateBadge(d(s.insurance?['nextRenewalDate'])!),
             icon: Icons.health_and_safety_outlined,
             iconTone: DsTone.brand,
             title: "Insurance renewal".tr,
@@ -240,13 +249,15 @@ class _Upcoming extends StatelessWidget {
     return FinSection(title: "Coming up".tr, divided: true, children: [for (final i in items.take(4)) i.$2]);
   }
 
+  /// The date is on the badge: the line says how far it is.
   static String _when(DateTime date, DateTime now) {
     final int days = DateTime(date.year, date.month, date.day).difference(DateTime(now.year, now.month, now.day)).inDays;
-    final String day = ltr(DateFormat('dd MMM yyyy').format(date));
-    if (days < 0) return '$day · ${"Past due".tr}';
-    if (days == 0) return '$day · ${"Today".tr}';
-    if (days == 1) return '$day · ${"Tomorrow".tr}';
-    return '$day · ${"In".tr} $days ${"days".tr}';
+    final String weekday = DateFormat('EEEE').format(date);
+    if (days < 0) return "Past due".tr;
+    if (days == 0) return "Today".tr;
+    if (days == 1) return "Tomorrow".tr;
+    if (days < 7) return '$weekday · ${"In".tr} $days ${"days".tr}';
+    return '${"In".tr} $days ${"days".tr}';
   }
 }
 
@@ -272,10 +283,15 @@ class _ThisMonth extends StatelessWidget {
       onAction: () => FinanceDashboardController.showTab(FinanceTab.insights, orOpen: () => const FinanceDashboardScreen(initialTab: FinanceTab.insights)),
       surface: false,
       children: [
-        FinMetrics(items: [
-          FinMetric("Money in".tr, m(last.moneyIn), sub: prev == null ? null : '${month(prev.month)}: ${m(prev.moneyIn)}'),
-          FinMetric("Money out".tr, m(last.moneyOut), sub: prev == null ? null : '${month(prev.month)}: ${m(prev.moneyOut)}'),
-        ]),
+        FinInOut(
+          moneyIn: last.moneyIn,
+          moneyOut: last.moneyOut,
+          previousIn: prev?.moneyIn,
+          previousOut: prev?.moneyOut,
+          previousLabel: prev == null ? null : month(prev.month),
+          format: (v) => m(v.round()),
+          signed: (v) => FinanceMoney.signed(v, s.currency),
+        ),
       ],
     );
   }
@@ -302,70 +318,68 @@ class FinanceProducts extends StatelessWidget {
     final int lent = FinanceSummary.intOf(s.loans?['lentOutstanding']);
     final int policies = FinanceSummary.intOf(s.insurance?['activePolicies']);
     final int claims = FinanceSummary.intOf(s.insurance?['openClaims']);
-    final rows = <Widget>[
+    final bool overdue = FinanceSummary.intOf(s.loans?['overdueCount']) > 0;
+    final double? ret = s.investmentReturnPercent;
+    final tiles = <FinProductTile>[
       if (s.savings != null)
-        FinListTile(
+        FinProductTile(
           icon: Icons.savings_outlined,
-          iconTone: DsTone.brand,
+          accent: FinAccent.save,
           title: "Collective savings".tr,
-          subtitle: '${FinanceSummary.intOf(s.savings!['activeGoals'])} ${"active".tr} · ${((s.savingsProgress ?? 0) * 100).round()}% ${"of the target".tr} ${m(s.savings!['targetAmount'])}',
-          amount: m(s.savings!['savedAmount']),
-          chevron: true,
+          value: m(s.savings!['savedAmount']),
+          progress: s.savingsProgress,
+          meta: '${((s.savingsProgress ?? 0) * 100).round()}% ${"of the target".tr} · ${FinanceSummary.intOf(s.savings!['activeGoals'])} ${"active".tr}',
           onTap: () => Get.to(() => const SavingsListScreen()),
         ),
       if (s.investments != null)
-        FinListTile(
+        FinProductTile(
           icon: Icons.trending_up_rounded,
-          iconTone: DsTone.brand,
+          accent: FinAccent.save,
           title: "Investment".tr,
-          subtitle: [
-            '${"Gains and losses".tr} ${FinanceMoney.signed(s.totalGains, s.currency)}',
-            if (s.investmentReturnPercent != null) '${"Return".tr} ${ltr('${s.investmentReturnPercent! >= 0 ? '+' : '−'}${s.investmentReturnPercent!.abs().toStringAsFixed(1)} %')}',
-            '${"invested".tr} ${m(s.investments!['investedCapital'])}',
+          value: m(s.investments!['currentValuation']),
+          meta: [
+            if (ret != null) '${"Return".tr} ${ltr('${ret >= 0 ? '+' : '−'}${ret.abs().toStringAsFixed(1)} %')}',
+            FinanceMoney.signed(s.totalGains, s.currency),
           ].join(' · '),
-          amount: m(s.investments!['currentValuation']),
-          chevron: true,
           onTap: () => Get.to(() => const InvestmentsScreen()),
         ),
       if (s.loans != null)
-        FinListTile(
+        FinProductTile(
           icon: Icons.handshake_outlined,
-          iconTone: FinanceSummary.intOf(s.loans!['overdueCount']) > 0 ? DsTone.danger : DsTone.brand,
+          accent: FinAccent.borrow,
           title: "Loan".tr,
-          // The amount is what the customer still owes; what they lent is
-          // added only when there is some.
-          subtitle: lent > 0 ? '${"Still to repay".tr} · ${"Lent, outstanding".tr} ${m(lent)}' : "Still to repay".tr,
-          amount: m(s.loans!['borrowedOutstanding']),
-          chevron: true,
+          value: m(s.loans!['borrowedOutstanding']),
+          alert: overdue,
+          // What the customer still owes; what they lent only when there is some.
+          meta: overdue ? "Repayment overdue".tr : (lent > 0 ? '${"Lent, outstanding".tr} ${m(lent)}' : "Still to repay".tr),
           onTap: () => Get.to(() => const LoansScreen()),
         ),
       if (s.tontines != null)
-        FinListTile(
+        FinProductTile(
           icon: Icons.groups_2_outlined,
-          iconTone: DsTone.brand,
+          accent: FinAccent.save,
           title: "Tontine".tr,
-          subtitle: '${FinanceSummary.intOf(s.tontines!['active'])} ${"active".tr}',
-          amount: s.tontines!['nextContributionAmount'] == null ? null : m(s.tontines!['nextContributionAmount']),
-          chevron: true,
+          value: s.tontines!['nextContributionAmount'] == null ? FinanceUi.count(FinanceSummary.intOf(s.tontines!['active']), "active", "active") : m(s.tontines!['nextContributionAmount']),
+          meta: '${FinanceSummary.intOf(s.tontines!['active'])} ${"active".tr}${s.tontines!['nextContributionAmount'] == null ? '' : ' · ${"next contribution".tr}'}',
           onTap: () => Get.to(() => const TontineListScreen()),
         ),
       if (s.insurance != null)
-        FinListTile(
+        FinProductTile(
           icon: Icons.health_and_safety_outlined,
-          iconTone: DsTone.brand,
+          accent: FinAccent.borrow,
           title: "Online insurance".tr,
-          subtitle: '$policies ${(policies == 1 ? "active policy" : "active policies").tr} · $claims ${(claims == 1 ? "open claim" : "open claims").tr}',
-          chevron: true,
+          value: '$policies ${(policies == 1 ? "policy" : "policies").tr}',
+          meta: '$claims ${(claims == 1 ? "open claim" : "open claims").tr}',
           onTap: () => Get.to(() => const InsuranceScreen()),
         ),
     ];
-    if (rows.isEmpty) return const SizedBox.shrink();
+    if (tiles.isEmpty) return const SizedBox.shrink();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      FinSection(title: "Your money".tr, divided: true, padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg), children: rows),
+      FinSection(title: "Your money".tr, surface: false, children: [FinTileGrid(tiles: tiles)]),
       if (s.updatedAt != null)
         Padding(
           padding: const EdgeInsets.only(top: DsSpace.sm, left: DsSpace.xxs),
-          child: Text('${"Totals recorded by Spideli Finance".tr} · ${"Updated".tr} ${ltr(DateFormat('dd MMM, HH:mm').format(s.updatedAt!))}',
+          child: Text('${"From your Spideli Finance records".tr} · ${"Updated".tr} ${ltr(DateFormat('dd MMM, HH:mm').format(s.updatedAt!))}',
               style: DsTypography.caption.copyWith(color: c.textSecondary)),
         ),
     ]);
@@ -385,43 +399,70 @@ class FinanceCashFlow extends StatelessWidget {
 
   const FinanceCashFlow({super.key, required this.summary});
 
-  static String _kind(String key) => const {
-        'deposits': 'Deposits',
-        'withdrawals': 'Withdrawals',
-        'transfers': 'Transfers',
-        'cardPayments': 'Card payments',
-        'billPayments': 'Bill payments',
-      }[key] ??
-      key;
+  static (IconData, String) _kind(String key) => switch (key) {
+        'deposits' => (Icons.add_card_rounded, 'Deposits'),
+        'withdrawals' => (Icons.account_balance_outlined, 'Withdrawals'),
+        'transfers' => (Icons.north_east_rounded, 'Transfers'),
+        'cardPayments' => (Icons.credit_card_outlined, 'Card payments'),
+        'billPayments' => (Icons.receipt_outlined, 'Bill payments'),
+        _ => (Icons.swap_horiz_rounded, key),
+      };
 
   @override
   Widget build(BuildContext context) {
     final s = summary;
     final c = DsColors.of(context);
-    return FinSection(
-      title: "Cash flow".tr,
-      footnote: "Money in and out of your Spideli Finance accounts, as recorded. Tap a month to read it.".tr,
-      children: [
-        const DsGap(DsSpace.sm),
-        FinBarChart(
-          labels: [for (final f in s.monthly) DateFormat('MMM yyyy').format(DateTime.parse('${f.month}-01'))],
-          a: [for (final f in s.monthly) f.moneyIn.toDouble()],
-          b: [for (final f in s.monthly) f.moneyOut.toDouble()],
-          aLabel: "Money in".tr,
-          bLabel: "Money out".tr,
-          aColor: c.success,
-          bColor: FinColors.brand(context),
-          format: (v) => FinanceMoney.format(v, s.currency),
+    String m(num v) => FinanceMoney.format(v, s.currency);
+    final last = s.monthly.isEmpty ? null : s.monthly.last;
+    final prev = s.monthly.length > 1 ? s.monthly[s.monthly.length - 2] : null;
+    String month(String key) => ltr(DateFormat('MMM yyyy').format(DateTime.parse('$key-01')));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (last != null)
+        FinSection(
+          title: last.month == DateFormat('yyyy-MM').format(DateTime.now()) ? "This month".tr : month(last.month),
+          top: 0,
+          surface: false,
+          children: [
+            FinInOut(
+              moneyIn: last.moneyIn,
+              moneyOut: last.moneyOut,
+              previousIn: prev?.moneyIn,
+              previousOut: prev?.moneyOut,
+              previousLabel: prev == null ? null : month(prev.month),
+              format: m,
+              signed: (v) => FinanceMoney.signed(v, s.currency),
+            ),
+          ],
         ),
-        if (s.last30Days.isNotEmpty) ...[
-          const DsGap(DsSpace.md),
-          Divider(height: 1, color: c.divider),
-          const DsGap(DsSpace.xs),
-          Text("Last 30 days".tr, style: DsTypography.labelSm.copyWith(color: c.textSecondary)),
-          for (final e in s.last30Days.entries) FinRow(_kind(e.key).tr, FinanceMoney.format(e.value, s.currency)),
+      FinSection(
+        title: "Cash flow".tr,
+        top: last == null ? 0 : FinSpace.section,
+        footnote: "Money in and out of your Spideli Finance accounts, as recorded. Tap a month to read it.".tr,
+        children: [
+          const DsGap(DsSpace.sm),
+          FinBarChart(
+            labels: [for (final f in s.monthly) DateFormat('MMM yyyy').format(DateTime.parse('${f.month}-01'))],
+            a: [for (final f in s.monthly) f.moneyIn.toDouble()],
+            b: [for (final f in s.monthly) f.moneyOut.toDouble()],
+            aLabel: "Money in".tr,
+            bLabel: "Money out".tr,
+            aColor: c.success,
+            bColor: FinColors.brand(context),
+            format: (v) => m(v),
+          ),
         ],
-      ],
-    );
+      ),
+      if (s.last30Days.isNotEmpty)
+        FinSection(
+          title: "Last 30 days".tr,
+          children: [
+            FinBreakdown(
+              items: [for (final e in s.last30Days.entries) (_kind(e.key).$1, _kind(e.key).$2.tr, e.value)],
+              format: m,
+            ),
+          ],
+        ),
+    ]);
   }
 }
 

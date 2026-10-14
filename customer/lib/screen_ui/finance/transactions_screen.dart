@@ -106,7 +106,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                   final first = preferredWallet(wallets, summary.data?.currency);
                   final others = wallets.where((w) => w != first).toList();
                   final String? shown = first?['currency']?.toString();
-                  return FinHero(
+                  final hero = FinHero(
+                    privacy: true,
                     label: "Available balance".tr,
                     amount: failed
                         ? '—'
@@ -118,7 +119,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                         : others.isNotEmpty
                             ? '${"Also".tr}: ${others.map((w) => FinanceMoney.format((w['balance'] as num?) ?? 0, w['currency']?.toString() ?? '')).join(' · ')}'
                             : (first == null && snap.hasData ? "Your wallet opens with your first deposit.".tr : "Spideli Finance wallet".tr),
-                    footer: FinActions(onHero: true, actions: [
+                  );
+                  // The actions under the card, as round buttons on the page.
+                  final actions = FinActions(actions: [
                       if (failed) FinAction(Icons.refresh_rounded, "Retry".tr, FinanceService.retry),
                       if (cfg?.deposit.enabled == true) FinAction(Icons.add_rounded, "Add money".tr, () => Get.to(() => WalletAddMoneyScreen(currency: shown))),
                       if (cfg?.withdraw.enabled == true) FinAction(Icons.south_rounded, "Withdraw".tr, () => Get.to(() => WalletWithdrawScreen(currency: shown))),
@@ -126,8 +129,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       if (cfg?.convert.enabled == true) FinAction(Icons.currency_exchange_rounded, "Convert".tr, () => Get.to(() => WalletConvertScreen(from: shown))),
                       FinAction(Icons.receipt_outlined, "Pay bills".tr, () => Get.to(() => const BillsScreen())),
                       FinAction(Icons.picture_as_pdf_outlined, "Statement".tr, () => shareFinanceStatement(context)),
-                    ]),
-                  );
+                    ]);
+                  return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [hero, const DsGap(DsSpace.lg), actions]);
                 },
               ),
             ),
@@ -389,7 +392,16 @@ class _TransactionListState extends State<TransactionList> {
     final bool reversed = t['status'] == 'reversed';
     final String description = (t['description'] ?? '').toString();
     final d = FinanceGroupService.toDate(t['createdAt']);
+    final c = DsColors.of(context);
+    final bool income = signed > 0;
     return FinListTile(
+      // A round avatar: an arrow in for money received, out for money spent.
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: income ? c.tone(DsTone.success).soft : FinColors.soft(context)),
+        child: Icon(income ? Icons.south_west_rounded : Icons.north_east_rounded, size: 20, color: income ? c.successStrong : FinColors.brand(context)),
+      ),
       icon: signed >= 0 ? Icons.south_west_rounded : Icons.north_east_rounded,
       iconTone: signed >= 0 ? DsTone.success : DsTone.neutral,
       title: description.isNotEmpty ? description : LedgerView.typeLabel(t['type']?.toString()).tr,

@@ -36,7 +36,28 @@ abstract final class FinColors {
 
   /// Page background: a cool neutral that lets white surfaces read as content.
   static Color page(BuildContext context) => DsColors.of(context).isDark ? DsColors.of(context).background : const Color(0xFFF4F6F9);
+
+  /// Brass: the premium touch, used sparingly (verified, active, highlights).
+  /// Readable on white (4.6:1) and on the dark page.
+  static Color brass(BuildContext context) => DsColors.of(context).isDark ? const Color(0xFFE3C17A) : const Color(0xFF8A6A2F);
+  static Color brassSoft(BuildContext context) => DsColors.of(context).isDark ? const Color(0xFF3A3222) : const Color(0xFFF6EEDD);
+
+  /// The colour of a family of services, (main, soft): icons on their soft
+  /// tint keep at least 4.5:1.
+  static (Color, Color) accent(BuildContext context, FinAccent a) {
+    final bool dark = DsColors.of(context).isDark;
+    return switch (a) {
+      FinAccent.pay => dark ? (const Color(0xFF8DB4FF), const Color(0xFF1C2A45)) : (const Color(0xFF1D4ED8), const Color(0xFFE6EDFD)),
+      FinAccent.save => dark ? (const Color(0xFF5EEAD4), const Color(0xFF11302C)) : (const Color(0xFF0F766E), const Color(0xFFDFF3F0)),
+      FinAccent.borrow => dark ? (const Color(0xFFF2C14E), const Color(0xFF33291A)) : (const Color(0xFF8A5A00), const Color(0xFFFBF0D9)),
+      FinAccent.help => dark ? (const Color(0xFFC4B5FD), const Color(0xFF2A2142)) : (const Color(0xFF6D28D9), const Color(0xFFEFE8FD)),
+      FinAccent.ink => dark ? (const Color(0xFF8DB4FF), const Color(0xFF1C2A45)) : (navy, const Color(0xFFE8EEF6)),
+    };
+  }
 }
+
+/// The families of services, each with its colour ([FinColors.accent]).
+enum FinAccent { pay, save, borrow, help, ink }
 
 abstract final class FinSpace {
   /// Horizontal page gutter.
@@ -48,6 +69,9 @@ abstract final class FinSpace {
   /// Surface corner radius: restrained, not pill-shaped.
   static const double radius = 12;
   static const BorderRadius br = BorderRadius.all(Radius.circular(radius));
+
+  /// The ink cards (balance, profile): rounder than the content surfaces.
+  static const BorderRadius brHero = BorderRadius.all(Radius.circular(22));
   static const EdgeInsets pagePadding = EdgeInsets.fromLTRB(page, DsSpace.lg, page, DsSpace.huge);
 }
 
@@ -172,8 +196,11 @@ class FinBody extends StatelessWidget {
 
 // ------------------------------------------------------------------- hero
 
-/// The one focal point of a screen: a flat navy panel with what the amount
-/// is, the amount, an optional supporting line and actions.
+/// The one focal point of a screen: an ink-navy card with a fine engraved
+/// pattern (guilloche, like a banknote), what the amount is, the amount with
+/// its currency set smaller, an optional supporting line, key figures in an
+/// inset panel and actions. With [privacy] an eye hides the figures (shared
+/// by every card: [FinPrivacy]).
 class FinHero extends StatelessWidget {
   final String label;
   final String amount;
@@ -182,115 +209,244 @@ class FinHero extends StatelessWidget {
   final Widget? footer;
   final List<FinHeroStat> stats;
 
-  const FinHero({super.key, required this.label, required this.amount, this.caption, this.trailing, this.footer, this.stats = const []});
+  /// Shows the eye that hides the amounts.
+  final bool privacy;
+
+  const FinHero({super.key, required this.label, required this.amount, this.caption, this.trailing, this.footer, this.stats = const [], this.privacy = false});
 
   @override
   Widget build(BuildContext context) {
+    if (!privacy) return _card(context, false);
+    return ValueListenableBuilder<bool>(valueListenable: FinPrivacy.hidden, builder: (context, hidden, _) => _card(context, hidden));
+  }
+
+  Widget _card(BuildContext context, bool hidden) {
     const onHero = Colors.white;
     final muted = Colors.white.withValues(alpha: 0.72);
-    final Color line = Colors.white.withValues(alpha: 0.12);
+    final Color line = Colors.white.withValues(alpha: 0.14);
+    String shown(String v) => hidden ? FinPrivacy.mask(v) : v;
     // Read once by a screen reader: the label, the amount, the caption and
     // the figures; the actions below stay separate buttons.
-    final String spoken = ['$label: $amount', ?caption, for (final s in stats) '${s.label}: ${s.value}'].join('. ');
-    Widget statValue(FinHeroStat s) => Text(s.value, style: DsTypography.bodyStrong.copyWith(color: s.color ?? onHero).tabular);
-    return Container(
-      decoration: BoxDecoration(color: FinColors.hero(context), borderRadius: const BorderRadius.all(Radius.circular(16))),
-      padding: const EdgeInsets.fromLTRB(DsSpace.xl, DsSpace.xl, DsSpace.xl, DsSpace.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Semantics(
-            container: true,
-            label: spoken,
-            child: ExcludeSemantics(
+    final String spoken = hidden
+        ? '$label: ${"Hidden".tr}'
+        : ['$label: $amount', ?caption, for (final s in stats) '${s.label}: ${s.value}'].join('. ');
+    Widget statValue(FinHeroStat s) => Text(shown(s.value), style: DsTypography.bodyStrong.copyWith(color: s.color ?? onHero).tabular);
+    return ClipRRect(
+      borderRadius: FinSpace.brHero,
+      child: Container(
+        color: FinColors.hero(context),
+        child: Stack(
+          children: [
+            const Positioned.fill(child: FinPattern()),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(DsSpace.xl, DsSpace.xl, DsSpace.xl, DsSpace.lg),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(
                     children: [
                       Expanded(
-                        child: Text(label, style: DsTypography.labelSm.copyWith(color: muted)),
+                        child: Semantics(
+                          container: true,
+                          label: spoken,
+                          child: ExcludeSemantics(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(label, style: DsTypography.labelSm.copyWith(color: muted)),
+                                const DsGap(DsSpace.xs),
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: FinAmountText(shown(amount), style: FinText.heroAmount(onHero)),
+                                ),
+                                if (caption != null) ...[const DsGap(DsSpace.xxs), Text(shown(caption!), style: DsTypography.bodySm.copyWith(color: muted))],
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                      ?trailing,
+                      if (privacy || trailing != null)
+                        Column(mainAxisSize: MainAxisSize.min, children: [
+                          if (privacy)
+                            IconButton(
+                              onPressed: FinPrivacy.toggle,
+                              tooltip: (hidden ? "Show amounts" : "Hide amounts").tr,
+                              icon: Icon(hidden ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: muted, size: 22),
+                            ),
+                          ?trailing,
+                        ]),
                     ],
                   ),
-                  const DsGap(DsSpace.xs),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: AlignmentDirectional.centerStart,
-                    child: Text(amount, style: FinText.heroAmount(onHero)),
-                  ),
-                  if (caption != null) ...[const DsGap(DsSpace.xxs), Text(caption!, style: DsTypography.bodySm.copyWith(color: muted))],
                   if (stats.isNotEmpty) ...[
                     const DsGap(DsSpace.lg),
-                    Container(height: 1, color: line),
-                    const DsGap(DsSpace.md),
-                    LayoutBuilder(
-                      builder: (context, box) {
-                        // Side by side while each figure keeps ~110dp (scaled
-                        // with the text); else one figure per line.
-                        final bool rows = box.maxWidth / stats.length < 110 * MediaQuery.textScalerOf(context).scale(1);
-                        if (rows) {
-                          return Column(
-                            children: [
-                              for (final (i, s) in stats.indexed)
-                                Padding(
-                                  padding: EdgeInsets.only(top: i == 0 ? 0 : DsSpace.xs),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(s.label, style: DsTypography.caption.copyWith(color: muted)),
+                    ExcludeSemantics(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.md),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.07),
+                          borderRadius: FinSpace.br,
+                          border: Border.all(color: line),
+                        ),
+                        child: LayoutBuilder(
+                          builder: (context, box) {
+                            // Side by side while each figure keeps ~84dp
+                            // (scaled with the text); else one per line.
+                            final bool rows = box.maxWidth / stats.length < 84 * MediaQuery.textScalerOf(context).scale(1);
+                            if (rows) {
+                              return Column(
+                                children: [
+                                  for (final (i, s) in stats.indexed)
+                                    Padding(
+                                      padding: EdgeInsets.only(top: i == 0 ? 0 : DsSpace.xs),
+                                      child: Row(
+                                        children: [
+                                          Expanded(child: Text(s.label, style: DsTypography.caption.copyWith(color: muted))),
+                                          const DsGap(DsSpace.sm),
+                                          Flexible(
+                                            child: Align(
+                                              alignment: AlignmentDirectional.centerEnd,
+                                              child: FittedBox(fit: BoxFit.scaleDown, alignment: AlignmentDirectional.centerEnd, child: statValue(s)),
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                      const DsGap(DsSpace.sm),
-                                      Flexible(
-                                        child: FittedBox(fit: BoxFit.scaleDown, alignment: AlignmentDirectional.centerEnd, child: statValue(s)),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                            ],
-                          );
-                        }
-                        return Row(
-                          children: [
-                            for (final (i, s) in stats.indexed) ...[
-                              if (i > 0)
-                                Container(
-                                  width: 1,
-                                  height: 32,
-                                  color: line,
-                                  margin: const EdgeInsets.symmetric(horizontal: DsSpace.md),
-                                ),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      s.label,
-                                      style: DsTypography.caption.copyWith(color: muted),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                    const DsGap(DsSpace.xxs),
-                                    FittedBox(fit: BoxFit.scaleDown, alignment: AlignmentDirectional.centerStart, child: statValue(s)),
+                                ],
+                              );
+                            }
+                            return IntrinsicHeight(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  for (final (i, s) in stats.indexed) ...[
+                                    if (i > 0) Container(width: 1, color: line, margin: const EdgeInsets.symmetric(horizontal: DsSpace.md)),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Text(s.label, style: DsTypography.caption.copyWith(color: muted), maxLines: 2, overflow: TextOverflow.ellipsis),
+                                          const DsGap(DsSpace.xxs),
+                                          FittedBox(fit: BoxFit.scaleDown, alignment: AlignmentDirectional.centerStart, child: statValue(s)),
+                                        ],
+                                      ),
+                                    ),
                                   ],
-                                ),
+                                ],
                               ),
-                            ],
-                          ],
-                        );
-                      },
+                            );
+                          },
+                        ),
+                      ),
                     ),
                   ],
+                  if (footer != null) ...[const DsGap(DsSpace.lg), footer!],
                 ],
               ),
             ),
-          ),
-          if (footer != null) ...[const DsGap(DsSpace.lg), footer!],
-        ],
+          ],
+        ),
       ),
     );
   }
+}
+
+/// Hides the amounts of the cards that offer it (an eye on the card), for
+/// the time the app is open.
+abstract final class FinPrivacy {
+  static final ValueNotifier<bool> hidden = ValueNotifier<bool>(false);
+
+  static void toggle() => hidden.value = !hidden.value;
+
+  /// "245 000 XAF" -> "•••••• XAF": the currency stays, the figures go.
+  static String mask(String value) {
+    final String plain = value.replaceAll(RegExp('[\u2066-\u2069]'), '');
+    final m = RegExp(r'^(.*?)\s([A-Z]{3})$').firstMatch(plain.trim());
+    return m == null ? '••••••' : ltr('•••••• ${m.group(2)}');
+  }
+}
+
+/// An amount with its currency code set smaller and lighter: "245 000"
+/// then "XAF". Any other text is shown as it is.
+class FinAmountText extends StatelessWidget {
+  final String text;
+  final TextStyle style;
+
+  const FinAmountText(this.text, {super.key, required this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    final String plain = text.replaceAll(RegExp('[\u2066-\u2069]'), '');
+    final m = RegExp(r'^(.*\S)\s([A-Z]{3})$').firstMatch(plain);
+    if (m == null) return Text(text, style: style.tabular, maxLines: 1);
+    final double size = style.fontSize ?? 32;
+    return Text.rich(
+      TextSpan(children: [
+        TextSpan(text: m.group(1), style: style.tabular),
+        TextSpan(
+          text: ' ${m.group(2)}',
+          style: style.copyWith(fontSize: size * 0.5, fontWeight: FontWeight.w600, color: style.color?.withValues(alpha: 0.72), letterSpacing: 0.6),
+        ),
+      ]),
+      // The digits keep their order in right-to-left text.
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    );
+  }
+}
+
+/// The engraved line pattern of the ink cards (a guilloche: overlapping
+/// waves, very faint), drawn once and kept in its own layer.
+class FinPattern extends StatelessWidget {
+  final double opacity;
+
+  const FinPattern({super.key, this.opacity = 0.07});
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(child: RepaintBoundary(child: CustomPaint(painter: _GuillochePainter(Colors.white.withValues(alpha: opacity)))));
+}
+
+class _GuillochePainter extends CustomPainter {
+  final Color color;
+
+  _GuillochePainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    // Waves across the right part of the card, each a little shifted: the
+    // interference gives the engraved look of banknotes.
+    final double left = size.width * 0.35;
+    final double w = size.width - left;
+    final double cy = size.height * 0.42;
+    final double amp = size.height * 0.22;
+    for (int i = 0; i < 16; i++) {
+      final path = Path();
+      for (int x = 0; x <= w.ceil(); x += 4) {
+        final double t = x / w;
+        final double y = cy + amp * math.sin(t * math.pi * 2.2 + i * 0.38) * (0.55 + 0.45 * math.cos(t * math.pi * 1.3 + i * 0.12)) + (i - 8) * 3.2;
+        if (x == 0) {
+          path.moveTo(left + x, y);
+        } else {
+          path.lineTo(left + x, y);
+        }
+      }
+      canvas.drawPath(path, paint);
+    }
+    // A faint rosette in the corner.
+    final Offset c = Offset(size.width * 0.92, size.height * 0.08);
+    for (int r = 18; r <= 90; r += 9) {
+      canvas.drawCircle(c, r.toDouble(), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GuillochePainter old) => old.color != color;
 }
 
 class FinHeroStat {
@@ -532,8 +688,12 @@ class FinListTile extends StatelessWidget {
   final VoidCallback? onTap;
   final bool chevron;
 
+  /// Replaces the icon square (a date badge, an avatar).
+  final Widget? leading;
+
   const FinListTile({
     super.key,
+    this.leading,
     required this.icon,
     this.iconTone = DsTone.neutral,
     required this.title,
@@ -582,12 +742,13 @@ class FinListTile extends StatelessWidget {
               final bool stacked = hasFigures && box.maxWidth < _sideBySideWidth * MediaQuery.textScalerOf(context).scale(1);
               return Row(
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(color: c.tone(iconTone).soft, borderRadius: DsRadius.brSm),
-                    child: Icon(icon, size: 20, color: iconTone == DsTone.neutral ? c.textSecondary : c.tone(iconTone).strong),
-                  ),
+                  leading ??
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(color: c.tone(iconTone).soft, borderRadius: DsRadius.brSm),
+                        child: Icon(icon, size: 20, color: iconTone == DsTone.neutral ? c.textSecondary : c.tone(iconTone).strong),
+                      ),
                   const DsGap(DsSpace.md),
                   Expanded(
                     child: Column(
@@ -801,7 +962,15 @@ class FinActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
     final fg = onHero ? Colors.white : FinColors.brand(context);
-    final bg = onHero ? Colors.white.withValues(alpha: 0.12) : FinColors.soft(context);
+    // Round buttons: translucent on the ink card, raised white on the page.
+    final BoxDecoration circle = onHero
+        ? BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.12), border: Border.all(color: Colors.white.withValues(alpha: 0.18)))
+        : BoxDecoration(
+            shape: BoxShape.circle,
+            color: c.isDark ? c.surfaceRaised : c.surface,
+            border: Border.all(color: c.border),
+            boxShadow: c.isDark ? null : [BoxShadow(color: FinColors.navy.withValues(alpha: 0.08), blurRadius: 12, offset: const Offset(0, 4))],
+          );
     final text = onHero ? Colors.white : c.textPrimary;
     return LayoutBuilder(builder: (context, box) {
       // Four per row while each keeps 72 dp (scaled with the text), else
@@ -826,16 +995,16 @@ class FinActions extends StatelessWidget {
                 child: ExcludeSemantics(
                   child: InkWell(
                     onTap: a.onTap,
-                    borderRadius: DsRadius.brMd,
+                    customBorder: const StadiumBorder(),
                     child: Opacity(
                       opacity: a.onTap == null ? 0.45 : 1,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
                         child: Column(children: [
                           Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(color: bg, borderRadius: DsRadius.brMd),
+                            width: 52,
+                            height: 52,
+                            decoration: circle,
                             child: Icon(a.icon, color: fg, size: 22),
                           ),
                           const DsGap(DsSpace.xs),

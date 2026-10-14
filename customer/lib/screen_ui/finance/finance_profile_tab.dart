@@ -33,6 +33,7 @@ import 'package:customer/service/inbox_unread_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:customer/widget/live_unread_badge.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -275,47 +276,125 @@ class _ProfileHeaderState extends State<_ProfileHeader> {
     if (mounted) setState(() {});
   }
 
+  /// Whether the user turned on two-step verification (an SMS second factor).
+  late final Future<bool> _twoStep = () async {
+    try {
+      final u = FirebaseAuth.instance.currentUser;
+      return u != null && (await u.multiFactor.getEnrolledFactors()).isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }();
+
   @override
   Widget build(BuildContext context) {
-    final c = DsColors.of(context);
     final user = Constant.userModel;
     final String name = (user?.fullName() ?? '').trim();
     final String contact = [
       (user?.email ?? '').trim(),
       [(user?.countryCode ?? '').trim(), (user?.phoneNumber ?? '').trim()].where((p) => p.isNotEmpty).join(' '),
     ].where((p) => p.isNotEmpty).join(' · ');
+    final bool verified = widget.status == 'verified';
+    final Color muted = Colors.white.withValues(alpha: 0.72);
+    final Color ring = verified ? FinColors.brass(context) : Colors.white.withValues(alpha: 0.35);
+    // An ink identity card: photo with a ring (brass once verified), name,
+    // contact, the verification badge, then three facts.
+    Widget fact(String label, Widget value) => Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: DsTypography.caption.copyWith(color: muted), maxLines: 1, overflow: TextOverflow.ellipsis),
+            const DsGap(DsSpace.xxs),
+            DefaultTextStyle.merge(style: DsTypography.bodyStrong.copyWith(color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis, child: value),
+          ]),
+        );
     return Semantics(
       button: user != null,
-      child: FinSurface(
-        padding: const EdgeInsets.all(DsSpace.lg),
-        onTap: user == null ? null : _edit,
-        child: Row(
-          children: [
-            DsAvatar(imageUrl: user?.profilePictureURL, name: name.isEmpty ? null : name, size: 56),
-            const DsGap(DsSpace.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(name.isEmpty ? "Spideli Finance".tr : name, style: DsTypography.title.copyWith(color: c.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  if (contact.isNotEmpty) ...[
-                    const DsGap(DsSpace.xxs),
-                    Text(contact, style: DsTypography.caption.copyWith(color: c.textSecondary), maxLines: 2, overflow: TextOverflow.ellipsis),
-                  ],
-                  if (widget.status != null && widget.statusLabel != null) ...[
-                    const DsGap(DsSpace.sm),
-                    FinStatusChip(status: widget.status!, label: widget.statusLabel!),
-                  ] else if (widget.loading) ...[
-                    const DsGap(DsSpace.sm),
-                    DsShimmer(child: DsSkeleton.line(width: 96, height: 20)),
-                  ],
-                ],
+      child: ClipRRect(
+        borderRadius: FinSpace.brHero,
+        child: Material(
+          color: FinColors.hero(context),
+          child: InkWell(
+            onTap: user == null ? null : _edit,
+            child: Stack(children: [
+              const Positioned.fill(child: FinPattern()),
+              Padding(
+                padding: const EdgeInsets.all(DsSpace.xl),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  Row(children: [
+                    Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: ring, width: 2)),
+                      child: DsAvatar(imageUrl: user?.profilePictureURL, name: name.isEmpty ? null : name, size: 60),
+                    ),
+                    const DsGap(DsSpace.md),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(name.isEmpty ? "Spideli Finance".tr : name, style: DsTypography.headline.copyWith(color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        if (contact.isNotEmpty) ...[
+                          const DsGap(DsSpace.xxs),
+                          Text(contact, style: DsTypography.caption.copyWith(color: muted), maxLines: 2, overflow: TextOverflow.ellipsis),
+                        ],
+                        const DsGap(DsSpace.sm),
+                        if (widget.status != null && widget.statusLabel != null)
+                          _Badge(verified: verified, label: widget.statusLabel!)
+                        else if (widget.loading)
+                          DsShimmer(child: DsSkeleton.line(width: 96, height: 20)),
+                      ]),
+                    ),
+                    if (user != null) Icon(Icons.chevron_right_rounded, color: muted),
+                  ]),
+                  const DsGap(DsSpace.lg),
+                  Container(height: 1, color: Colors.white.withValues(alpha: 0.14)),
+                  const DsGap(DsSpace.md),
+                  Row(children: [
+                    fact("Identity".tr, Text(widget.statusLabel ?? '—')),
+                    fact(
+                      "Wallets".tr,
+                      StreamBuilder<List<Map<String, dynamic>>>(
+                        stream: FinanceService.myAccounts(),
+                        builder: (context, a) {
+                          final list = activeWallets(a.data ?? const []).map((w) => w['currency']?.toString() ?? '').where((c) => c.isNotEmpty).toList();
+                          return Text(list.isEmpty ? '—' : list.join(' · '));
+                        },
+                      ),
+                    ),
+                    fact(
+                      "Two-step".tr,
+                      FutureBuilder<bool>(future: _twoStep, builder: (context, on) => Text(!on.hasData ? '…' : (on.data! ? "On".tr : "Off".tr))),
+                    ),
+                  ]),
+                ]),
               ),
-            ),
-            if (user != null) ...[const DsGap(DsSpace.xs), Icon(Icons.chevron_right_rounded, color: c.textMuted)],
-          ],
+            ]),
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// The verification badge of the identity card: brass with a seal once
+/// verified, otherwise a quiet outline with the status.
+class _Badge extends StatelessWidget {
+  final bool verified;
+  final String label;
+
+  const _Badge({required this.verified, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final Color fg = verified ? const Color(0xFF2A1E05) : Colors.white;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: DsSpace.sm, vertical: DsSpace.xxs),
+      decoration: BoxDecoration(
+        color: verified ? const Color(0xFFE3C17A) : Colors.white.withValues(alpha: 0.12),
+        borderRadius: DsRadius.brPill,
+        border: verified ? null : Border.all(color: Colors.white.withValues(alpha: 0.3)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(verified ? Icons.verified_rounded : Icons.shield_outlined, size: 14, color: fg),
+        const DsGap(DsSpace.xxs),
+        Text(label, style: DsTypography.caption.copyWith(color: fg, fontWeight: FontWeight.w700)),
+      ]),
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:customer/screen_ui/finance/bill_screens.dart';
 import 'package:customer/screen_ui/finance/card_screens.dart';
 import 'package:customer/screen_ui/finance/coach_screens.dart';
 import 'package:customer/screen_ui/finance/fin_ds.dart';
+import 'package:customer/screen_ui/finance/fin_kit.dart';
 import 'package:customer/screen_ui/finance/finance_home_screen.dart';
 import 'package:customer/screen_ui/finance/finance_profile_tab.dart';
 import 'package:customer/screen_ui/finance/insurance_screens.dart';
@@ -169,17 +170,19 @@ class _FinanceNavBar extends StatelessWidget {
 class FinanceServicesTab extends StatelessWidget {
   const FinanceServicesTab({super.key});
 
-  static final List<(String, List<(IconData, String, String, Widget Function())>)> _groups = [
+  static final List<(String, FinAccent, List<(IconData, String, String, Widget Function())>)> _groups = [
     (
       "Pay and send",
+      FinAccent.pay,
       [
         (Icons.north_east_rounded, "Money transfer", "To a Spideli user, Mobile Money, Wave or a bank", () => const TransfersScreen()),
-        (Icons.receipt_outlined, "Payment", "Electricity, water, TV, internet and phone credit", () => const BillsScreen()),
+        (Icons.receipt_outlined, "Payment", "Electricity, water, TV, internet, taxes and more", () => const BillsScreen()),
         (Icons.credit_card_outlined, "Virtual card", "Create cards for online payments and manage them", () => const CardsScreen()),
       ]
     ),
     (
       "Save and invest",
+      FinAccent.save,
       [
         (Icons.savings_outlined, "Collective savings", "Save towards a goal, alone or with others", () => const SavingsListScreen()),
         (Icons.groups_2_outlined, "Tontine", "Save in a group and take turns receiving the pot", () => const TontineListScreen()),
@@ -188,6 +191,7 @@ class FinanceServicesTab extends StatelessWidget {
     ),
     (
       "Borrow and protect",
+      FinAccent.borrow,
       [
         (Icons.handshake_outlined, "Loan", "Borrow from your groups, with your credit score", () => const LoansScreen()),
         (Icons.health_and_safety_outlined, "Online insurance", "Buy cover and follow your claims", () => const InsuranceScreen()),
@@ -195,6 +199,7 @@ class FinanceServicesTab extends StatelessWidget {
     ),
     (
       "Get help",
+      FinAccent.help,
       [
         (Icons.auto_awesome_outlined, "AI assistant", "Your financial coach and simulators", () => const AiAssistantScreen()),
       ]
@@ -207,14 +212,14 @@ class FinanceServicesTab extends StatelessWidget {
       title: "Services".tr,
       showBack: false,
       body: FinBody(children: [
-        for (final (name, items) in _groups)
-          FinSection(
+        Text("What would you like to do?".tr, style: DsTypography.headline.copyWith(color: DsColors.of(context).textPrimary)),
+        const DsGap(DsSpace.xxs),
+        Text("Every Spideli Finance service, by what it helps you do.".tr, style: DsTypography.body.copyWith(color: DsColors.of(context).textSecondary)),
+        for (final (name, accent, items) in _groups)
+          FinServiceGroup(
             title: name.tr,
-            divided: true,
-            children: [
-              for (final (icon, title, subtitle, page) in items)
-                FinListTile(icon: icon, iconTone: DsTone.brand, title: title.tr, subtitle: subtitle.tr, chevron: true, onTap: () => Get.to(page)),
-            ],
+            accent: accent,
+            services: [for (final (icon, title, subtitle, page) in items) FinService(icon, title.tr, subtitle.tr, () => Get.to(page))],
           ),
       ]),
     );
@@ -250,34 +255,14 @@ class FinanceInsightsTab extends StatelessWidget {
               FinState.empty(Icons.insights_outlined, "Your cash flow appears here once you use Spideli Finance services.".tr)
             else
               FinanceCashFlow(summary: s),
-            FinSection(
+            FinServiceGroup(
               title: "Plan and understand".tr,
-              divided: true,
-              children: [
-                FinListTile(
-                  icon: Icons.auto_awesome_outlined,
-                  iconTone: DsTone.brand,
-                  title: "AI assistant".tr,
-                  subtitle: "Ask the coach, try the simulators".tr,
-                  chevron: true,
-                  onTap: () => Get.to(() => const AiAssistantScreen()),
-                ),
-                FinListTile(
-                  icon: Icons.query_stats_rounded,
-                  iconTone: DsTone.brand,
-                  title: "Markets".tr,
-                  subtitle: "Indicators, exchange rates, stocks, bonds, IPOs and news".tr,
-                  chevron: true,
-                  onTap: () => Get.to(() => const IntelligenceScreen(view: IntelligenceView.markets)),
-                ),
-                FinListTile(
-                  icon: Icons.picture_as_pdf_outlined,
-                  iconTone: DsTone.brand,
-                  title: "Account statement".tr,
-                  subtitle: "PDF of your transactions for a period".tr,
-                  chevron: true,
-                  onTap: () => shareFinanceStatement(context),
-                ),
+              accent: FinAccent.help,
+              services: [
+                FinService(Icons.auto_awesome_outlined, "AI assistant".tr, "Ask the coach, try the simulators".tr, () => Get.to(() => const AiAssistantScreen())),
+                FinService(Icons.query_stats_rounded, "Markets".tr, "Indicators, exchange rates, stocks, bonds, IPOs and news".tr,
+                    () => Get.to(() => const IntelligenceScreen(view: IntelligenceView.markets))),
+                FinService(Icons.picture_as_pdf_outlined, "Account statement".tr, "PDF of your transactions for a period".tr, () => shareFinanceStatement(context)),
               ],
             ),
           ]);
