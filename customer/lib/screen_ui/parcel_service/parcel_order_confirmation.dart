@@ -1,5 +1,7 @@
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/models/coupon_model.dart';
+import 'package:customer/models/currency_model.dart';
+import 'package:customer/utils/parcel_bill.dart';
 import 'package:customer/screen_ui/parcel_service/parcel_coupon_screen.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/address_format.dart';
@@ -184,65 +186,9 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
                           children: [
                             ParcelCardTitle("Order Summary".tr, icon: Icons.receipt_long_rounded),
 
-                            // Subtotal
-                            ParcelSummaryRow(
-                              label: "Subtotal".tr,
-                              value: Constant.amountShow(amount: controller.subTotal.value.toString(), currency: controller.parcelCurrency),
-                            ),
-
-                            // Discount
-                            ParcelSummaryRow(
-                              label: "Discount".tr,
-                              value: "-${Constant.amountShow(amount: controller.discount.value.toString(), currency: controller.parcelCurrency)}",
-                              tone: DsTone.danger,
-                            ),
-                            // Fixed intercity / intercountry tax: outside VAT and coupons.
-                            if (controller.scopeTax > 0)
-                              ParcelSummaryRow(
-                                label: "Fixed tax".tr,
-                                value: Constant.amountShow(amount: controller.scopeTax.toString(), currency: controller.parcelCurrency),
-                              ),
-                            // Door / pickup-point charges (priceBreakdown.pickupCharge / deliveryCharge).
-                            if (controller.pickupCharge > 0)
-                              ParcelSummaryRow(
-                                label: ParcelLabels.pickupChargeLabel(controller.parcelOrder.value.pickupMethod),
-                                value: Constant.amountShow(amount: controller.pickupCharge.toString(), currency: controller.parcelCurrency),
-                              ),
-                            if (controller.deliveryCharge > 0)
-                              ParcelSummaryRow(
-                                label: ParcelLabels.deliveryChargeLabel(controller.parcelOrder.value.deliveryMethod),
-                                value: Constant.amountShow(amount: controller.deliveryCharge.toString(), currency: controller.parcelCurrency),
-                              ),
-                            if (controller.smsCharge > 0)
-                              ParcelSummaryRow(
-                                label: "Receiver SMS".tr,
-                                value: Constant.amountShow(amount: controller.smsCharge.toString(), currency: controller.parcelCurrency),
-                              ),
-                            // The fee in the total (enabled and > 0): the line and the total agree.
-                            if (controller.platformFee > 0)
-                              ParcelSummaryRow(
-                                label: "Platform fee".tr,
-                                value: Constant.amountShow(amount: controller.platformFee.toString(), currency: controller.parcelCurrency),
-                              ),
-
-                            // Tax List
-                            ParcelSummaryRow(
-                              label: "Tax amount".tr,
-                              value: Constant.amountShow(amount: (controller.taxAmount.value).toString(), currency: controller.parcelCurrency),
-                              underline: true,
-                              onTap: () {
-                                showBillBifurcationDialog(context, controller);
-                              },
-                            ),
-
-                            const DsDivider(spacing: DsSpace.md),
-
-                            // Total
-                            ParcelSummaryRow(
-                              label: "Order Total".tr,
-                              value: Constant.amountShow(amount: controller.totalAmount.value.toString(), currency: controller.parcelCurrency),
-                              emphasis: true,
-                            ),
+                            // The bill as the website lists it: platform
+                            // charge, collection and delivery, each tax.
+                            ParcelBillRows(lines: controller.billLines, currency: controller.parcelCurrency),
                           ],
                         ),
                       ),
@@ -493,39 +439,6 @@ class ParcelOrderConfirmationScreen extends StatelessWidget {
     );
   }
 
-  void showBillBifurcationDialog(BuildContext context, ParcelOrderConfirmationController controller) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return DsDialog(
-          title: "Tax Details".tr,
-          icon: Icons.percent_rounded,
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ParcelSummaryRow(
-                label: "Tax on Order Total".tr,
-                value: Constant.amountShow(amount: controller.orderTaxAmount.value.toString(), currency: controller.parcelCurrency),
-              ),
-              const DsDivider(spacing: DsSpace.md),
-              ParcelSummaryRow(
-                label: "Tax on Platform Fee".tr,
-                value: Constant.amountShow(amount: controller.platformTaxAmount.value.toString(), currency: controller.parcelCurrency),
-              ),
-              const DsDivider(spacing: DsSpace.md),
-              ParcelSummaryRow(
-                label: "Total Tax Amount".tr,
-                value: Constant.amountShow(amount: controller.taxAmount.value.toString(), currency: controller.parcelCurrency),
-                emphasis: true,
-              ),
-            ],
-          ),
-          primaryLabel: "Close".tr,
-          onPrimary: () => Navigator.pop(context),
-        );
-      },
-    );
-  }
 }
 
 /// Sender → receiver rail used by the confirmation and the order details.
@@ -660,6 +573,38 @@ class ParcelSummaryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     if (emphasis) return OrderTotalRow(label: label, value: value, divider: false);
     return OrderMoneyRow(label: label, value: value, tone: tone, underline: underline, onTap: onTap);
+  }
+}
+
+/// The rows of a parcel bill ([ParcelBill.lines]), as the website lists them.
+class ParcelBillRows extends StatelessWidget {
+  final List<ParcelBillLine> lines;
+  final CurrencyModel? currency;
+
+  const ParcelBillRows({super.key, required this.lines, required this.currency});
+
+  @override
+  Widget build(BuildContext context) {
+    String money(double v) => Constant.amountShow(amount: v.toString(), currency: currency);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final ParcelBillLine line in lines) ...[
+          if (line.kind == ParcelBillKind.total) const DsDivider(spacing: DsSpace.md),
+          ParcelSummaryRow(
+            label: line.prefix == null ? line.label.tr : '${line.prefix} ${line.label.tr}',
+            value: switch (line.kind) {
+              ParcelBillKind.discount => '-${money(line.amount)}',
+              ParcelBillKind.charge => '+${money(line.amount)}',
+              ParcelBillKind.free => 'Free'.tr,
+              _ => money(line.amount),
+            },
+            tone: line.kind == ParcelBillKind.discount ? DsTone.danger : null,
+            emphasis: line.kind == ParcelBillKind.total,
+          ),
+        ],
+      ],
+    );
   }
 }
 

@@ -76,3 +76,23 @@ class PlatformFeeCharge {
     return sum;
   }
 }
+
+/// The order taxes (scope `order`) a checkout charges, as the website does:
+/// only while the global tax setting applies taxes per order
+/// (`settings/globalSettings.taxScope == "order"`). Each tax is already one
+/// of the section's, for the customer's country, and enabled
+/// (`FireStoreUtils.getTaxList`); a disabled one is dropped here too.
+class OrderTaxCharge {
+  OrderTaxCharge._();
+
+  /// `globalSettings.taxScope` value that charges the order taxes.
+  static const String orderScope = 'order';
+
+  /// The taxes charged for [taxScope] and the section's [orderTaxes] (a copy;
+  /// empty when the global setting does not apply order taxes).
+  static List<TaxModel> of({required String? taxScope, required List<TaxModel>? orderTaxes}) =>
+      taxScope == orderScope ? (orderTaxes ?? const <TaxModel>[]).where((t) => t.enable == true).toList() : <TaxModel>[];
+
+  /// For the current section and global setting.
+  static List<TaxModel> current() => of(taxScope: Constant.taxScope, orderTaxes: Constant.orderProductTaxList);
+}

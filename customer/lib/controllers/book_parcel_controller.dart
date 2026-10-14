@@ -581,7 +581,9 @@ class BookParcelController extends GetxController {
       receiverLatLong: receiverLocation.value,
       senderLatLong: senderLocation.value,
       sectionId: Constant.sectionConstantModel?.id ?? '',
-      taxSetting: Constant.orderProductTaxList,
+      // Only while the section has them and the global setting applies
+      // taxes per order (as the website charges them).
+      taxSetting: OrderTaxCharge.current(),
       // As charged: nothing while the admin has the fee disabled.
       platformFee: PlatformFeeCharge.current().feeField,
       platformTax: PlatformFeeCharge.current().taxes,
@@ -591,6 +593,7 @@ class BookParcelController extends GetxController {
     // `receiver` map: the national number and the dialling code apart, so the
     // SMS trigger and an edit screen never have to parse "(+237) 6...".
     order
+      ..taxScope = Constant.taxScope
       ..receiverName = receiverNameController.value.text.trim()
       ..receiverPhone = ParcelReceiverSms.nationalNumber(receiverMobileController.value.text, countryCode: receiverCountryCodeController.value.text)
       ..receiverCountryCode = ParcelReceiverSms.dialCode(receiverCountryCodeController.value.text);

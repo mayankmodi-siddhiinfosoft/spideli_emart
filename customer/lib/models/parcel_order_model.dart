@@ -54,6 +54,10 @@ class ParcelOrderModel with CancellationFields {
   List<TaxModel>? taxSetting;
   List<TaxModel>? platformTax;
 
+  /// `settings/globalSettings.taxScope` when the order was placed ("order"
+  /// = the order taxes in [taxSetting] were charged), as the website writes it.
+  String? taxScope;
+
   // ---- Parcel / mail shipping (PARCEL-CONTRACT). All additive: absent = the
   // legacy same-city parcel. Written by the customer app at creation only;
   // `parcelStatus`, `trackingEvents`, `manualPrice` and `deliveryProof` are
@@ -271,6 +275,7 @@ class ParcelOrderModel with CancellationFields {
     sourcePoint = json['sourcePoint'] != null ? G.fromJson(json['sourcePoint']) : null;
     destinationPoint = json['destinationPoint'] != null ? G.fromJson(json['destinationPoint']) : null;
     platformFee = json['platformFee'];
+    taxScope = json['taxScope']?.toString();
     if (json['taxSetting'] != null) {
       taxSetting = <TaxModel>[];
       json['taxSetting'].forEach((v) {
@@ -432,6 +437,7 @@ class ParcelOrderModel with CancellationFields {
     data['receiverZoneId'] = receiverZoneId;
     data['receiverNote'] = receiverNote;
     data['platformFee'] = platformFee;
+    if (taxScope != null) data['taxScope'] = taxScope;
     if (taxSetting != null) {
       data['taxSetting'] = taxSetting!.map((v) => v.toJson()).toList();
     }

@@ -298,103 +298,10 @@ class ParcelOrderDetails extends StatelessWidget {
                         children: [
                           ParcelCardTitle("Order Summary".tr, icon: Icons.receipt_long_rounded),
 
-                          // Subtotal
-                          ParcelSummaryRow(
-                            label: "Subtotal".tr,
-                            value: Constant.amountShow(
-                              amount: controller.subTotal.value.toString(),
-                              currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
-                            ),
-                          ),
-
-                          // Discount
-                          ParcelSummaryRow(
-                            label: "Discount".tr,
-                            value: "-${Constant.amountShow(amount: controller.discount.value.toString(), currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)))}",
-                            tone: DsTone.danger,
-                          ),
-
-                          // Fixed intercity / intercountry tax (outside VAT and coupons).
-                          if (controller.parcelOrder.value.scopeTaxAmount > 0)
-                            ParcelSummaryRow(
-                              label: "Fixed tax".tr,
-                              value: Constant.amountShow(
-                                amount: controller.parcelOrder.value.scopeTaxAmount.toString(),
-                                currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
-                              ),
-                            ),
-
-                          // Door / pickup-point charges (priceBreakdown.pickupCharge / deliveryCharge).
-                          if (controller.parcelOrder.value.pickupChargeAmount > 0)
-                            ParcelSummaryRow(
-                              label: ParcelLabels.pickupChargeLabel(controller.parcelOrder.value.pickupMethod),
-                              value: Constant.amountShow(
-                                amount: controller.parcelOrder.value.pickupChargeAmount.toString(),
-                                currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
-                              ),
-                            ),
-                          if (controller.parcelOrder.value.deliveryChargeAmount > 0)
-                            ParcelSummaryRow(
-                              label: ParcelLabels.deliveryChargeLabel(controller.parcelOrder.value.deliveryMethod),
-                              value: Constant.amountShow(
-                                amount: controller.parcelOrder.value.deliveryChargeAmount.toString(),
-                                currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
-                              ),
-                            ),
-                          // An order written with only the total of the two.
-                          if (controller.parcelOrder.value.optionsAmount > 0 && controller.parcelOrder.value.pickupChargeAmount + controller.parcelOrder.value.deliveryChargeAmount <= 0)
-                            ParcelSummaryRow(
-                              label: "Options".tr,
-                              value: Constant.amountShow(
-                                amount: controller.parcelOrder.value.optionsAmount.toString(),
-                                currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
-                              ),
-                            ),
-
-                          // Receiver SMS (point 54): its fee, outside VAT and
-                          // coupons - or "Free" when the sender's region
-                          // charges nothing for it.
-                          if (controller.parcelOrder.value.sendReceiverSms == true)
-                            ParcelSummaryRow(
-                              label: "Receiver SMS".tr,
-                              value: controller.parcelOrder.value.smsChargeAmount > 0
-                                  ? Constant.amountShow(
-                                      amount: controller.parcelOrder.value.smsChargeAmount.toString(),
-                                      currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
-                                    )
-                                  : "Free".tr,
-                            ),
-
-                          // Tax List
-                          if (controller.platformFee.value > 0.0)
-                            ParcelSummaryRow(
-                              label: "Platform fee".tr,
-                              value: Constant.amountShow(
-                                amount: controller.platformFee.value.toString(),
-                                currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
-                              ),
-                            ),
-                          ParcelSummaryRow(
-                            label: "Tax amount".tr,
-                            value: Constant.amountShow(
-                              amount: (controller.taxAmount.value).toString(),
-                              currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
-                            ),
-                            underline: true,
-                            onTap: () {
-                              showBillBifurcationDialog(context, controller);
-                            },
-                          ),
-                          const DsDivider(spacing: DsSpace.md),
-
-                          // Total
-                          ParcelSummaryRow(
-                            label: "Order Total".tr,
-                            value: Constant.amountShow(
-                              amount: controller.totalAmount.value.toString(),
-                              currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
-                            ),
-                            emphasis: true,
+                          // The bill as the website lists a placed order.
+                          ParcelBillRows(
+                            lines: controller.billLines,
+                            currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
                           ),
                         ],
                       ),
@@ -487,48 +394,6 @@ class ParcelOrderDetails extends StatelessWidget {
     );
   }
 
-  void showBillBifurcationDialog(BuildContext context, ParcelOrderDetailsController controller) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return DsDialog(
-          title: "Tax Details".tr,
-          icon: Icons.percent_rounded,
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ParcelSummaryRow(
-                label: "Tax on Order Total".tr,
-                value: Constant.amountShow(
-                  amount: controller.orderTaxAmount.value.toString(),
-                  currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
-                ),
-              ),
-              const DsDivider(spacing: DsSpace.md),
-              ParcelSummaryRow(
-                label: "Tax on Platform Fee".tr,
-                value: Constant.amountShow(
-                  amount: controller.platformTaxAmount.value.toString(),
-                  currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
-                ),
-              ),
-              const DsDivider(spacing: DsSpace.md),
-              ParcelSummaryRow(
-                label: "Total Tax Amount".tr,
-                value: Constant.amountShow(
-                  amount: controller.taxAmount.value.toString(),
-                  currency: RegionService.currencyForRecord(RegionService.regionOf(regionId: controller.parcelOrder.value.regionId, zoneId: controller.parcelOrder.value.senderZoneId)),
-                ),
-                emphasis: true,
-              ),
-            ],
-          ),
-          primaryLabel: "Close".tr,
-          onPrimary: () => Navigator.pop(context),
-        );
-      },
-    );
-  }
 }
 
 /// Small icon + info line for the schedule / order dates.

@@ -57,6 +57,17 @@
         "priceBreakdown": {"carrierPrice": 1000, "commission": 100, "options": 500, "pickupCharge": 500, "deliveryCharge": 0, "total": 1789}
       },
       "total": 1789, "platformTax": 10, "platformShare": 210
+    },
+    {
+      "name": "website order of 14 Oct 2026 (MK Carrier Company): what the website charged",
+      "order": {
+        "id": "f7", "subTotal": "726.5", "discount": "0.00", "taxScope": "order",
+        "taxSetting": [{"title": "CGST", "type": "fix", "tax": "8", "enable": true, "scope": "order"}, {"title": "GST", "type": "percentage", "tax": "18", "enable": true, "scope": "order"}],
+        "platformFee": "20", "platformTax": [{"title": "IGST", "type": "fix", "tax": "10", "enable": true, "scope": "platform"}, {"title": "tax", "type": "percentage", "tax": "5", "enable": true, "scope": "platform"}],
+        "priceBreakdown": {"carrierPrice": 726.5, "commission": "0", "options": "100", "pickupCharge": "50", "deliveryCharge": "50", "total": 996.27},
+        "sendReceiverSms": false, "smsCharge": "0"
+      },
+      "total": 996.27, "platformTax": 11, "platformShare": 31
     }
   ]
 }

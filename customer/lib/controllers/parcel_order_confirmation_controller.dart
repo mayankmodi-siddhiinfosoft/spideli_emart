@@ -10,6 +10,7 @@ import 'dart:io';
 import 'dart:math' as maths;
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/models/coupon_model.dart';
+import 'package:customer/models/tax_model.dart';
 import 'package:customer/models/wallet_transaction_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_paypal/flutter_paypal.dart';
@@ -53,6 +54,7 @@ import '../service/fire_store_utils.dart';
 import '../service/parcel_shipping_service.dart';
 import '../service/parcel_receiver_sms.dart';
 import '../utils/parcel_pricing.dart';
+import '../utils/parcel_bill.dart';
 import '../utils/platform_fee_charge.dart';
 import '../utils/wallet_checkout.dart';
 import '../themes/app_them_data.dart';
@@ -200,6 +202,32 @@ class ParcelOrderConfirmationController extends GetxController {
     update();
   }
 
+  /// The order taxes charged: the section's, only while the global setting
+  /// applies taxes per order ([OrderTaxCharge]).
+  List<TaxModel> get orderTaxes => OrderTaxCharge.current();
+
+  /// The bill as the website lists it ([ParcelBill]), from [calculatePrice]'s amounts.
+  List<ParcelBillLine> get billLines {
+    final double fee = platformFee;
+    return ParcelBill.lines(
+      subTotal: subTotal.value,
+      discount: discount.value,
+      platformFee: fee,
+      options: optionsCharge,
+      scopeTax: scopeTax,
+      receiverSms: smsCharge > 0,
+      smsCharge: smsCharge,
+      orderTaxed: orderTaxes.isNotEmpty,
+      orderTax: orderTaxAmount.value,
+      platformTaxes: [
+        if (fee > 0)
+          for (final TaxModel tax in Constant.platformTaxList ?? const <TaxModel>[])
+            if (tax.enable == true) (tax.title ?? '', Constant.calculateTax(amount: fee.toString(), taxModel: tax)),
+      ],
+      total: totalAmount.value,
+    );
+  }
+
   void calculatePrice() {
     subTotal.value = 0;
     discount.value = 0;
@@ -221,7 +249,7 @@ class ParcelOrderConfirmationController extends GetxController {
       discount: discount.value,
       commission: isQuotePayment ? 0 : parcelOrder.value.extraCommission,
     );
-    for (var taxElement in Constant.orderProductTaxList ?? []) {
+    for (final taxElement in orderTaxes) {
       orderTaxAmount.value += Constant.calculateTax(amount: taxable.toString(), taxModel: taxElement);
     }
 
@@ -314,6 +342,9 @@ class ParcelOrderConfirmationController extends GetxController {
       // The platform fee and its taxes as charged (none when the fee is off).
       parcelOrder.value.platformFee = platformFee.toString();
       parcelOrder.value.platformTax = PlatformFeeCharge.current().taxes;
+      // The order taxes as charged above, and the global setting they follow.
+      parcelOrder.value.taxSetting = orderTaxes;
+      parcelOrder.value.taxScope = Constant.taxScope;
       parcelOrder.value.discountType = selectedCouponModel.value.discountType.toString();
       parcelOrder.value.discountLabel = selectedCouponModel.value.code.toString();
       // Commission already added to the price (commissionAsExtra): record that

@@ -112,6 +112,20 @@ class ParcelOrderModel {
     return d == null || !d.isFinite || d < 0 ? 0.0 : d;
   }
 
+  /// `priceBreakdown.pickupCharge`: collection from the sender's home, or
+  /// drop-off at a pickup point. 0 when absent, not a number or negative.
+  double get pickupChargeAmount => _breakdownAmount('pickupCharge');
+
+  /// `priceBreakdown.deliveryCharge`: delivery to the receiver's door, or
+  /// collection at a pickup point. 0 when absent, not a number or negative.
+  double get deliveryChargeAmount => _breakdownAmount('deliveryCharge');
+
+  double _breakdownAmount(String key) {
+    final dynamic v = priceBreakdown?[key];
+    final double? d = v is num ? v.toDouble() : double.tryParse(v?.toString().trim() ?? '');
+    return d == null || !d.isFinite || d < 0 ? 0.0 : d;
+  }
+
   /// `priceBreakdown.total`: what the customer's checkout charged (written
   /// by the customer app when the order is placed or a quote is paid, the
   /// receiver-SMS fee included). Null when absent or not a number. Read-only

@@ -1028,6 +1028,8 @@ const Map<String, String> arAR = {
   "Standard same-city delivery": "توصيل عادي داخل المدينة",
   "Tax Details": "تفاصيل الضريبة",
   "Tax amount": "مبلغ الضريبة",
+  "Platform Charge": "رسوم المنصة",
+  "Collection and delivery": "الاستلام والتوصيل",
   "Tax on Order Total": "الضريبة على إجمالي الطلب",
   "Tax on Platform Fee": "الضريبة على رسوم المنصة",
   "Taxes": "الضرائب",

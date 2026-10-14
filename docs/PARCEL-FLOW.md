@@ -417,6 +417,9 @@ quote.total = carrierPrice + options + fixedTax + commission
 ```
 subTotal        = carrierPrice (+ commission when charged as extra)        → parcel_orders.subTotal (string)
 discount        = coupon on subTotal
+taxSetting      = the section's enabled order taxes (tax: sectionId, country, scope "order", enable),
+                  ONLY while settings/globalSettings.taxScope == "order" (else none) → parcel_orders.taxSetting,
+                  and taxScope → parcel_orders.taxScope (as the website writes it)       (OrderTaxCharge)
 orderTax        = Σ taxSetting on (subTotal − discount − commission charged as extra), never below 0
                   (ParcelPricing.taxableAmount; no tax is charged on that commission)
 platformFee     = section platform fee, ONLY while platformFee.enable is true
@@ -425,6 +428,8 @@ TOTAL           = subTotal − discount + orderTax + platformFee + platformTax
                   + fixedTax (parcelScopeTax) + options + smsCharge (when ticked)
                 → priceBreakdown.total  (what wallet / gateway / cash charges)
 ```
+
+**The bill as listed** (customer checkout and order screen, `ParcelBill.lines`, the website's order; the driver app's order details follow the admin panel's order): Subtotal · Discount · Platform Charge · Collection and delivery (driver: collection from the sender's home / delivery to the receiver's door, or the pickup-point equivalents) · Fixed tax · Receiver SMS · Tax on Order Total · "{title} Tax on Platform Fee" per platform tax · Total Tax Amount · Order Total (driver: then the admin commission). A line that does not apply is left out; "Tax on Order Total" is listed whenever order taxes were charged.
 
 VAT, coupons, commission and the driver's credit never apply to `fixedTax`, `options` or `smsCharge`. VAT never applies to the commission charged as an extra (`priceBreakdown.commission`): every reader that recomputes the order taxes (customer `ParcelAmounts`, driver `ParcelAmounts`, `_updateWalletAmount`, the driver's order details, wallet rows and the company owner's earnings) takes it out of the taxed amount the same way.
 

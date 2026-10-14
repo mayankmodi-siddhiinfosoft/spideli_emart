@@ -14,6 +14,8 @@ import '../service/fire_store_utils.dart';
 import '../service/parcel_cancellation.dart';
 import '../service/parcel_shipping_service.dart';
 import '../utils/booking_status_tabs.dart';
+import '../models/tax_model.dart';
+import '../utils/parcel_bill.dart';
 import '../utils/parcel_receipt_pdf.dart' show ParcelAmounts;
 
 class ParcelOrderDetailsController extends GetxController {
@@ -62,6 +64,30 @@ class ParcelOrderDetailsController extends GetxController {
 
   /// The platform fee in [totalAmount] (0 when none was charged).
   RxDouble platformFee = 0.0.obs;
+
+  /// The bill as the website lists a placed order ([ParcelBill]), from what
+  /// the order recorded ([ParcelAmounts]).
+  List<ParcelBillLine> get billLines {
+    final ParcelOrderModel o = parcelOrder.value;
+    final ParcelAmounts a = ParcelAmounts.of(o);
+    return ParcelBill.lines(
+      subTotal: a.subTotal,
+      discount: a.discount,
+      platformFee: a.platformFee,
+      options: a.options,
+      scopeTax: a.scopeTax,
+      receiverSms: o.sendReceiverSms == true,
+      smsCharge: a.smsCharge,
+      orderTaxed: (o.taxSetting ?? const <TaxModel>[]).any((t) => t.enable == true),
+      orderTax: a.orderTax,
+      platformTaxes: [
+        if (a.platformTax > 0)
+          for (final TaxModel tax in o.platformTax ?? const <TaxModel>[])
+            if (tax.enable == true) (tax.title ?? '', Constant.calculateTax(amount: a.platformFee.toString(), taxModel: tax)),
+      ],
+      total: a.total,
+    );
+  }
 
   Future<void> fetchDriverDetails() async {
     // Only a driver who accepted the parcel: at "Driver Pending" the dispatch

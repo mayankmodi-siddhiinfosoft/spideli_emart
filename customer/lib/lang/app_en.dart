@@ -1031,6 +1031,8 @@ const Map<String, String> enUS = {
   "Standard same-city delivery": "Standard same-city delivery",
   "Tax Details": "Tax Details",
   "Tax amount": "Tax amount",
+  "Platform Charge": "Platform Charge",
+  "Collection and delivery": "Collection and delivery",
   "Tax on Order Total": "Tax on Order Total",
   "Tax on Platform Fee": "Tax on Platform Fee",
   "Taxes": "Taxes",

@@ -6,6 +6,7 @@ import '../models/parcel_category.dart';
 import '../models/parcel_order_model.dart';
 import '../utils/fire_store_utils.dart';
 import '../utils/parcel_amounts.dart';
+import '../utils/region_service.dart';
 
 class ParcelOrderDetailsController extends GetxController {
   Rx<ParcelOrderModel> parcelOrder = ParcelOrderModel().obs;
@@ -40,9 +41,19 @@ class ParcelOrderDetailsController extends GetxController {
   /// Door / pickup-point charges (priceBreakdown.options), in the total.
   RxDouble options = 0.0.obs;
 
-  /// What each order tax applies to ([ParcelAmounts.taxableAmount]): the
-  /// commission added as an extra is never taxed.
-  RxDouble taxableAmount = 0.0.obs;
+  /// [amount] in the order's currency.
+  String money(num amount) => Constant.amountShow(currency: RegionService.currencyForRecord(parcelOrder.value.regionId), amount: amount.toString());
+
+  /// Order taxes were charged (one enabled tax recorded): "Tax on Order
+  /// Total" is listed, as on the admin panel's order.
+  bool get orderTaxed => (parcelOrder.value.taxSetting ?? const []).any((tax) => tax.enable == true);
+
+  /// The collection and delivery charges and their labels, as the admin
+  /// panel lists them.
+  double get pickupCharge => parcelOrder.value.pickupChargeAmount;
+  double get deliveryCharge => parcelOrder.value.deliveryChargeAmount;
+  String get pickupChargeLabel => parcelOrder.value.pickupMethod == 'pickup_point' ? "Drop-off at a pickup point".tr : "Collection from sender's home".tr;
+  String get deliveryChargeLabel => parcelOrder.value.deliveryMethod == 'pickup_point' ? "Collection at a pickup point".tr : "Delivery to receiver's door".tr;
 
   /// The bill exactly as the customer was charged ([ParcelAmounts]), so the
   /// "Order Total" — the cash a driver collects — reconciles with the lines
@@ -52,8 +63,6 @@ class ParcelOrderDetailsController extends GetxController {
     subTotal.value = amounts.subTotal;
     discount.value = amounts.discount;
     taxAmount.value = amounts.orderTax;
-    taxableAmount.value = ParcelAmounts.taxableAmount(
-        subTotal: amounts.subTotal, discount: amounts.discount, commission: parcelOrder.value.extraCommission);
     platformFee.value = amounts.platformFee;
     platformTaxAmount.value = amounts.platformTax;
     scopeTax.value = amounts.scopeTax;
