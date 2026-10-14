@@ -533,6 +533,8 @@ const Map<String, String> ptPO = {
   "Delivered": "Entregue",
   "Cancelled": "Cancelado",
   "Waiting for driver assignment": "Aguardando atribuição de motorista",
+  "Offered to a driver outside your company": "Oferecido a um motorista de fora da sua empresa",
+  "Assigned to a driver outside your company": "Atribuído a um motorista de fora da sua empresa",
   "Waiting for @name to accept": "Aguardando @name aceitar",
   "Driver: @name": "Motorista: @name",
   "Reassign": "Reatribuir",

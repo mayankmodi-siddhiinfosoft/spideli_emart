@@ -533,6 +533,8 @@ const Map<String, String> hiIN = {
   "Delivered": "डिलीवर हुआ",
   "Cancelled": "रद्द",
   "Waiting for driver assignment": "ड्राइवर सौंपे जाने की प्रतीक्षा",
+  "Offered to a driver outside your company": "आपकी कंपनी के बाहर के ड्राइवर को ऑफ़र किया गया",
+  "Assigned to a driver outside your company": "आपकी कंपनी के बाहर के ड्राइवर को सौंपा गया",
   "Waiting for @name to accept": "@name के स्वीकार करने की प्रतीक्षा",
   "Driver: @name": "ड्राइवर: @name",
   "Reassign": "फिर से सौंपें",

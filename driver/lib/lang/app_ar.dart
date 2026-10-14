@@ -533,6 +533,8 @@ const Map<String, String> lnAr = {
   "Delivered": "تم التوصيل",
   "Cancelled": "ملغى",
   "Waiting for driver assignment": "بانتظار تعيين سائق",
+  "Offered to a driver outside your company": "عُرض على سائق من خارج شركتك",
+  "Assigned to a driver outside your company": "مُسند إلى سائق من خارج شركتك",
   "Waiting for @name to accept": "بانتظار قبول @name",
   "Driver: @name": "السائق: @name",
   "Reassign": "إعادة التعيين",

@@ -533,6 +533,8 @@ const Map<String, String> deGR = {
   "Delivered": "Zugestellt",
   "Cancelled": "Storniert",
   "Waiting for driver assignment": "Wartet auf Fahrerzuweisung",
+  "Offered to a driver outside your company": "Einem Fahrer außerhalb Ihres Unternehmens angeboten",
+  "Assigned to a driver outside your company": "Einem Fahrer außerhalb Ihres Unternehmens zugewiesen",
   "Waiting for @name to accept": "Wartet auf Annahme durch @name",
   "Driver: @name": "Fahrer: @name",
   "Reassign": "Neu zuweisen",

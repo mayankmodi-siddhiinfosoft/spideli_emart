@@ -533,6 +533,8 @@ const Map<String, String> trFR = {
   "Delivered": "Livrée",
   "Cancelled": "Annulée",
   "Waiting for driver assignment": "En attente d'attribution d'un chauffeur",
+  "Offered to a driver outside your company": "Proposé à un chauffeur extérieur à votre entreprise",
+  "Assigned to a driver outside your company": "Attribué à un chauffeur extérieur à votre entreprise",
   "Waiting for @name to accept": "En attente de l'acceptation de @name",
   "Driver: @name": "Chauffeur : @name",
   "Reassign": "Réattribuer",

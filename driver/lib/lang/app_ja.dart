@@ -533,6 +533,8 @@ const Map<String, String> jaJP = {
   "Delivered": "配達済み",
   "Cancelled": "キャンセル済み",
   "Waiting for driver assignment": "ドライバーの割り当て待ち",
+  "Offered to a driver outside your company": "自社以外のドライバーに提示されています",
+  "Assigned to a driver outside your company": "自社以外のドライバーに割り当てられています",
   "Waiting for @name to accept": "@name の承諾待ち",
   "Driver: @name": "ドライバー: @name",
   "Reassign": "再割り当て",

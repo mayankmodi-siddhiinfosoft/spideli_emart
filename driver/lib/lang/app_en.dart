@@ -562,6 +562,8 @@ const Map<String, String> enUS = {
   "Delivered": "Delivered",
   "Cancelled": "Cancelled",
   "Waiting for driver assignment": "Waiting for driver assignment",
+  "Offered to a driver outside your company": "Offered to a driver outside your company",
+  "Assigned to a driver outside your company": "Assigned to a driver outside your company",
   "Waiting for @name to accept": "Waiting for @name to accept",
   "Driver: @name": "Driver: @name",
   "Reassign": "Reassign",

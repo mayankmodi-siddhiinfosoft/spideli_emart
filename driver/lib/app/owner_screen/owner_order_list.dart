@@ -690,9 +690,13 @@ class OwnerOrderListScreen extends StatelessWidget {
     final bool hasDriver = (order.driverId ?? '').isNotEmpty;
     final bool waitingForDriver = CarrierParcelRules.awaitsDriver(status: order.status, driverId: order.driverId);
     final String name = (driver?.fullName() ?? '').trim();
+    // A driver who is not one of the company's (the public dispatch offered
+    // the parcel to them): say so rather than "Waiting for  to accept".
     final String label = !hasDriver
         ? "Waiting for driver assignment".tr
-        : (waitingForDriver ? "Waiting for @name to accept" : "Driver: @name").trParams({'name': name});
+        : name.isEmpty
+            ? (waitingForDriver ? "Offered to a driver outside your company" : "Assigned to a driver outside your company").tr
+            : (waitingForDriver ? "Waiting for @name to accept" : "Driver: @name").trParams({'name': name});
     final bool canAssign = controller.canAssign(order);
     if (!canAssign && !hasDriver) return const SizedBox.shrink();
     return Row(

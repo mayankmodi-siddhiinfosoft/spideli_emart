@@ -533,6 +533,8 @@ const Map<String, String> ruRU = {
   "Delivered": "Доставлен",
   "Cancelled": "Отменён",
   "Waiting for driver assignment": "Ожидает назначения водителя",
+  "Offered to a driver outside your company": "Предложено водителю не из вашей компании",
+  "Assigned to a driver outside your company": "Назначено водителю не из вашей компании",
   "Waiting for @name to accept": "Ожидает принятия: @name",
   "Driver: @name": "Водитель: @name",
   "Reassign": "Переназначить",

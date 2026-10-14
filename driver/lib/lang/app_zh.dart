@@ -533,6 +533,8 @@ const Map<String, String> zhCH = {
   "Delivered": "已送达",
   "Cancelled": "已取消",
   "Waiting for driver assignment": "等待分配司机",
+  "Offered to a driver outside your company": "已派给贵公司以外的司机",
+  "Assigned to a driver outside your company": "已分配给贵公司以外的司机",
   "Waiting for @name to accept": "等待 @name 接单",
   "Driver: @name": "司机：@name",
   "Reassign": "重新分配",
