@@ -39,7 +39,7 @@
 | **Customer** (sender) | Customer app | customer account | Books the parcel, picks **Spideli drivers** or a **delivery company**, pays, tracks it, may cancel before hand-over, and gives the receiver code to the receiver. |
 | **Normal Spideli driver** (platform driver) | Driver app | `role: "driver"`, no `ownerId`, `isOwner` not true | Gets platform parcels: offers from the `parcelDispatch` Cloud Function, or picks them from the open **parcel search**. Picks up, delivers with the receiver code and is paid to their own wallet. |
 | **Company owner** (fleet owner) | Driver app (owner dashboard) | `isOwner: true`, `driverType: "company"` (older: `isCompany: true`), `carrierId` = its `delivery_carriers` document | Gets every parcel booked with its company, assigns it to one of its drivers, reassigns returned parcels, edits its carrier prices, and manages driver cash and reports. Never delivers. |
-| **Company driver** | Driver app | `role: "driver"`, `ownerId` = the company owner's uid, `isOwner: false` | Sees a company parcel **only** when the owner assigns it. Accepts or rejects within the countdown, then picks up and delivers like any driver. Earnings go to the **company's** wallet, and cash collected goes to the company cash ledger. |
+| **Company driver** | Driver app | `role: "driver"`, `ownerId` = the company owner's uid, `isOwner: false` | Sees a company parcel **only** when the owner assigns it. Accepts or rejects it **whenever they choose (no countdown, no timeout)**, then picks up and delivers it when ready, like any driver. Earnings go to the **company's** wallet, and cash collected goes to the company cash ledger. |
 
 > A company driver is still a driver. Platform (non-carrier) parcels are not hidden from them, so they can also take Spideli parcels from the parcel search or from a Cloud Function offer, if the function offers to them. The earnings for those parcels also go to the company wallet.
 
@@ -52,7 +52,7 @@
 3. **Spideli option:** the order is written `Order Placed` with `sendToDriver: true`. The **`parcelDispatch` Cloud Function [SERVER]** offers it to nearby platform drivers one at a time (`Driver Pending`). A reject or timeout writes `Driver Rejected`, and the function offers it to the next driver.
 4. **Company option:** the order is written `Order Placed`, **unassigned** (`sendToDriver: false`, `driverId: null`), with `carrierId` and `carrierOwnerId`.
    - The **company owner** gets a push and assigns a driver (`Driver Pending`, `assignedBy` = owner).
-   - The driver accepts, or rejects / times out. A reject or timeout returns the parcel to the **owner** (`Order Placed`), never to the public dispatch.
+   - The driver accepts or rejects it whenever they choose: **no countdown and no timeout** (the parcel waits on the driver's parcel home). A reject returns the parcel to the **owner** (`Order Placed`), never to the public dispatch.
 5. Pickup gives `In Transit` / `Collected`. Intermediate scans follow. Delivery needs the **receiver code** (`pickupCode`), and completion gives `Order Completed`, the wallet credit and the commission.
 
 ### 1.3 Flow (a): Spideli-driver parcel
@@ -113,11 +113,11 @@ sequenceDiagram
     C-->>O: push carrier_parcel_order ({customerName}, {trackingNumber}) on driver_jobs
     Note over DB: parcelDispatch [SERVER] MUST skip (carrierId / carrierOwnerId set)
     O->>DB: TRANSACTION: "Driver Pending", driverId=driverID=CD, assignedBy=O,<br/>assignedAt=dispatchedAt=server time, users/CD.orderRequestData += id
-    O-->>CD: push carrier_parcel_assigned (offer data → popup with countdown)
+    O-->>CD: push carrier_parcel_assigned (opens the parcel home: Accept / Reject card, no countdown)
     alt accept
         CD->>DB: "Driver Accepted", driver snapshot
         CD-->>C: push parcel_accepted
-    else reject / timeout
+    else reject (whenever the driver chooses; never a timeout)
         CD->>DB: "Order Placed", sendToDriver false, driverId/driverID null, rejectedByDrivers += CD
         CD-->>O: push carrier_parcel_returned ({driverName}, {trackingNumber})
         O->>DB: assigns again (same driver allowed; marked "Rejected this order before")
@@ -139,9 +139,9 @@ Customer ──(Order Placed, unassigned, carrierId, carrierOwnerId)──► pa
                                          │  Orders > Parcel > "Pending" tab > Assign Driver
                                          ▼
                      Driver Pending (driverId = CD, assignedBy = owner)
-                     └── push carrier_parcel_assigned ──► Company DRIVER (popup + countdown)
+                     └── push carrier_parcel_assigned ──► Company DRIVER (card, no countdown)
                                          │
-              ┌──────── Accept ──────────┴──────── Reject / Timeout ───────┐
+              ┌──────── Accept ──────────┴──────────── Reject ─────────────┐
               ▼                                                            ▼
       Driver Accepted                                     Order Placed (back to OWNER)
       (parcel_accepted → customer)                        push carrier_parcel_returned
@@ -163,7 +163,7 @@ stateDiagram-v2
     DriverPending --> DriverAccepted: driver accepts
     DriverPending --> DriverRejected: Spideli reject / timeout
     DriverRejected --> DriverPending: parcelDispatch next driver [SERVER]
-    DriverPending --> OrderPlaced: company reject / timeout (back to owner)
+    DriverPending --> OrderPlaced: company reject (back to owner; no timeout)
     DriverPending --> DriverPending: owner reassigns (before answer)
     DriverAccepted --> InTransit: Pickup Parcel
     InTransit --> OrderCompleted: driver's final step
@@ -323,7 +323,7 @@ Email: `email_templates` type **`new_parcel_book`** is sent to the customer afte
 | 4 | Do not dispatch `Quote Requested`. | unpaid |
 | 5 | Write `dispatchedAt` (server time) on every `Driver Pending`. A re-offer means a new `dispatchedAt` and a new push. | the app's countdown start |
 | 6 | Check the status in a transaction before writing `Driver Pending`. | do not overwrite a cancel |
-| 7 | Server-side timeout: treat an offer older than `driverOrderAcceptRejectDuration` as rejected. | the app times out only while it is running |
+| 7 | Server-side timeout: treat an offer older than `driverOrderAcceptRejectDuration` as rejected - **platform parcels only: never a carrier parcel its owner assigned** (`assignedBy` = `carrierOwnerId`), which waits for the company driver with no countdown. | the app times out only while it is running |
 | 8 | Auto-cancel (`orderAutoCancelDuration`) with the reason fields (`cancelledBy: "admin"`/`"system"`, `cancelReason`, `cancelReasonCode`, `cancelAction`, `cancelledAt`). **Decide whether carrier parcels are excluded.** | customer sees why |
 | 9 | Push text from `dynamic_notification` templates. | no fixed text |
 
@@ -778,7 +778,7 @@ Each card shows one of: *"Waiting for driver assignment"*, *"Waiting for <name> 
 
 ### 5.5 Returned parcels
 
-When the driver rejects or lets the timer run out, the parcel goes back to `Order Placed` with nobody named ([section 6.3](#63-reject-or-timeout-back-to-the-owner)):
+When the driver rejects it (there is no timer), the parcel goes back to `Order Placed` with nobody named ([section 6.3](#63-reject-or-timeout-back-to-the-owner)):
 
 - **Push to the owner:** **`carrier_parcel_returned`** (data `{type: "carrier_parcel_order", orderId}`, `driver_jobs`).
 - **Text:** *"Parcel {trackingNumber} not taken"* / *"{driverName} did not take parcel {trackingNumber}. Open Orders to assign another driver."*
@@ -854,7 +854,7 @@ delivery_carriers/{carrierId}.update({
 ### 6.2 The offer
 
 - **Delivery:** the `carrier_parcel_assigned` push and/or the Firestore listener (`status == "Driver Pending" && driverId == me`, `orderRequestData`).
-- **Popup:** the same as for a Spideli driver, including the countdown (`dispatchedAt` = `assignedAt` = server time).
+- **No popup and no countdown** (`CarrierParcelRules.isOwnerAssignment` → `DispatchOrderRules.isTimedOffer` false): an Accept / Reject card on the driver's parcel home that stays until the driver answers; the push opens the parcel home. Accepted, the parcel is picked up and delivered whenever the driver is ready - no time limit either.
 - **Accept gate:** the **company's** `wallet_amount` must be at least `ownerMinimumDepositToRideAccept`.
 
 **Accept** (transaction): exactly as in [section 4.3](#43-accept-reject-and-timeout-writes-each-one-a-transaction-on-the-live-order): `Driver Accepted`, `driverId` / `driverID` / `driver` snapshot (the snapshot carries `ownerId`), and `receiverPickupDateTime`. Then `inProgressOrderID` arrayUnion and `orderRequestData` arrayRemove, and the customer gets **`parcel_accepted`**.
@@ -1214,7 +1214,7 @@ A paid quote writes `{source: "manual", carrierPrice: manualPrice, extraKgCharge
 | Company parcel placed (or quote paid) | `carrier_parcel_order` | company owner (`users/{carrierOwnerId}.fcmToken`) | `driver_jobs` / `driver_jobs_rt_<key>` | `{type: "carrier_parcel_order", orderId, trackingNumber}` | `{customerName}`, `{trackingNumber}` | customer app |
 | Spideli offer | (function's own) | chosen driver | `spideli` / `driver_jobs_rt_<key>` | `{type: "parcel", orderId, id, click_action, status: "Driver Pending"}` | n/a | **[SERVER]** `parcelDispatch` |
 | Owner assigns | `carrier_parcel_assigned` | company driver (live token) | `driver_jobs` (+ ringtone) | `{type: "parcel", orderId, id, click_action: "FLUTTER_NOTIFICATION_CLICK", status: "Driver Pending"}` | `{companyName}`, `{trackingNumber}`, `{driverName}` | driver app (owner) |
-| Company driver rejects / times out | `carrier_parcel_returned` | company owner | `driver_jobs` (+ ringtone) | `{type: "carrier_parcel_order", orderId}` | `{driverName}`, `{trackingNumber}`, `{companyName}` | driver app (driver) |
+| Company driver rejects | `carrier_parcel_returned` | company owner | `driver_jobs` (+ ringtone) | `{type: "carrier_parcel_order", orderId}` | `{driverName}`, `{trackingNumber}`, `{companyName}` | driver app (driver) |
 | Driver accepts | `parcel_accepted` | customer (`users/{authorID}.fcmToken`, else `author.fcmToken`) + Notification Center record | `high_importance_channel` | `{type: "parcel_order", orderId, notificationId}` | none | driver app |
 | `Collected` | `parcel_picked_up` | customer + record | `high_importance_channel` | `{type: "parcel_order", orderId, parcelStatus}` | none | driver app |
 | `Collected` | `carrier_parcel_picked_up` | owner (`carrierOwnerId`, else driver's `ownerId`; not self) | `driver_notifications_channel` | `{type: "carrier_parcel_status", orderId}` | **none** | driver app |

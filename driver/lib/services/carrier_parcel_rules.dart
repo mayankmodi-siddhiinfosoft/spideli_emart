@@ -8,10 +8,12 @@
 ///  1. the company OWNER sees it in its Orders list (waiting for assignment)
 ///     and assigns one of its own drivers ([assignCheck], [assignFields]):
 ///     `Driver Pending` naming that driver, `assignedBy` = the owner;
-///  2. that driver answers with the normal offer flow (accept / reject /
-///     timeout, `.claude/DRIVER-DISPATCH-CONTRACT.md` D2 / D3);
-///  3. a reject or a timeout hands the parcel back to the OWNER, never to the
-///     public dispatch ([returnToOwnerFields]): `Order Placed`, nobody named,
+///  2. that driver answers it WITHOUT a countdown ([isOwnerAssignment]): no
+///     incoming-offer dialog and no timeout - the parcel waits on the
+///     driver's parcel home (Accept / Reject) until the driver answers, and
+///     is then picked up and delivered whenever the driver is ready;
+///  3. a reject hands the parcel back to the OWNER, never to the public
+///     dispatch ([returnToOwnerFields]): `Order Placed`, nobody named,
 ///     `sendToDriver: false`, the driver in `rejectedByDrivers`.
 ///
 /// No other driver ever sees, is offered or may accept a carrier parcel: the
@@ -148,6 +150,12 @@ abstract final class CarrierParcelRules {
     final String owner = ownerOf(order);
     return owner.isEmpty || by == owner;
   }
+
+  /// The company owner assigned this carrier parcel to [uid]: the driver
+  /// accepts it whenever they choose - no countdown, never timed out
+  /// (`DispatchOrderRules.isTimedOffer`). A platform parcel, or a carrier
+  /// parcel the owner did not assign ([isForeignOffer]), is not one.
+  static bool isOwnerAssignment(Map<String, dynamic>? order, String uid) => isCarrierBound(order) && ownerAssignedTo(order, uid);
 
   /// [uid] may see this parcel (search lists, offers, cards): every parcel
   /// without a carrier; a carrier parcel only once its owner assigned it to

@@ -229,7 +229,7 @@ answered). Refused: `Quote Requested` (not paid), `Driver Accepted` /
 | `parcel_orders/{id}` | `status: "Driver Pending"`, `driverId` = `driverID` = the driver, `assignedBy` = owner uid, `assignedAt` = `dispatchedAt` = server time, `sendToDriver: false`, `rejectedByDrivers` arrayRemove the driver, `driver` deleted |
 | `users/{driver}` | `orderRequestData` arrayUnion the order id (same transaction) |
 | `users/{replaced driver}` | `orderRequestData` arrayRemove (after, best effort) |
-| push to the driver | template **`carrier_parcel_assigned`**, channel `driver_jobs`, data `{type: "parcel", orderId, id, click_action: "FLUTTER_NOTIFICATION_CLICK", status: "Driver Pending"}` (the parcel-offer data: the incoming-order dialog with its countdown) |
+| push to the driver | template **`carrier_parcel_assigned`**, channel `driver_jobs`, data `{type: "parcel", orderId, id, click_action: "FLUTTER_NOTIFICATION_CLICK", status: "Driver Pending"}` (the parcel-offer data: opens the parcel home, where the parcel waits as an Accept / Reject card with no countdown) |
 
 The driver then answers with the normal offer flow (D2 / D3 of
 `DRIVER-DISPATCH-CONTRACT.md`): accept writes `Driver Accepted` as for any

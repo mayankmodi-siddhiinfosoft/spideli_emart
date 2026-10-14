@@ -115,9 +115,25 @@ void main() {
       expect(DispatchOrderRules.acceptCheck(DispatchKind.parcel, parcel('Driver Accepted', driverId: me, assignedBy: owner), me), AcceptCheck.held);
     });
 
-    test('the owner\'s offer is a timed offer once it is in orderRequestData', () {
+    test('the owner\'s assignment has no countdown: accepted whenever the driver chooses', () {
       final Map<String, dynamic> assigned = parcel('Driver Pending', driverId: me, assignedBy: owner);
-      expect(DispatchOrderRules.isTimedOffer(assigned, uid: me, orderId: 'p1', requests: const ['p1']), isTrue);
+      expect(CarrierParcelRules.isOwnerAssignment(assigned, me), isTrue);
+      // Even in orderRequestData and announced by a push: never timed out.
+      expect(DispatchOrderRules.isTimedOffer(assigned, uid: me, orderId: 'p1', requests: const ['p1'], pushSeen: true), isFalse);
+      // Still pending for this driver, so it stays on the parcel home's cards.
+      expect(DispatchOrderRules.isPendingFor(assigned, me), isTrue);
+    });
+
+    test('a platform parcel offer keeps its countdown', () {
+      final Map<String, dynamic> platform = parcel('Driver Pending', driverId: me, carrierId: null, carrierOwnerId: null);
+      expect(CarrierParcelRules.isOwnerAssignment(platform, me), isFalse);
+      expect(DispatchOrderRules.isTimedOffer(platform, uid: me, orderId: 'p1', requests: const ['p1']), isTrue);
+    });
+
+    test('a carrier parcel the owner did not assign is not an owner assignment', () {
+      expect(CarrierParcelRules.isOwnerAssignment(parcel('Driver Pending', driverId: me), me), isFalse);
+      expect(CarrierParcelRules.isOwnerAssignment(parcel('Driver Pending', driverId: me, assignedBy: 'someone-else'), me), isFalse);
+      expect(CarrierParcelRules.isOwnerAssignment(parcel('Driver Pending', driverId: other, assignedBy: owner), me), isFalse);
     });
   });
 

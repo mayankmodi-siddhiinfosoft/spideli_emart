@@ -53,8 +53,9 @@ panel) is answered on the module's home card, with no countdown.
 **company owner** in the driver app: `Driver Pending` + `driverId` /
 `driverID` + `assignedBy` (owner) + `dispatchedAt`, and the id in the
 driver's `orderRequestData`, then a `carrier_parcel_assigned` push with the
-parcel-offer data. The driver answers it like any offer (sections 3 to 5);
-a reject or timeout returns it to the owner (section 5.7). No other driver
+parcel-offer data. The driver answers it with NO countdown and no timeout:
+an Accept / Reject card on the parcel home until they answer (section 5.7);
+a reject returns it to the owner. No other driver
 sees, is offered or may accept it. `parcelDispatch` must skip these parcels
 (section 8, item 5). Full flow: `.claude/COMPANY-CARRIER-LINK.md` section 5.
 
@@ -228,7 +229,8 @@ arrayRemove id. The function re-offers it like any rejected order.
 | | Rule |
 |---|---|
 | Accept | only when the order names this driver **and** `assignedBy` is the company owner (`== carrierOwnerId` when set); never from the open search or a legacy request (`DispatchOrderRules.acceptCheck` + `CarrierParcelRules.ownerAssignedTo`) |
-| Reject / timeout | `status: "Order Placed"` (not `Driver Rejected`), `sendToDriver: false`, `driverId: null`, `driverID: null`, `rejectedByDrivers` arrayUnion `<me>` (+ the reason on a manual reject); `orderRequestData` arrayRemove; the owner gets template `carrier_parcel_returned` (`CarrierParcelRules.returnToOwnerFields`) |
+| No countdown | the owner's assignment is never a timed offer (`CarrierParcelRules.isOwnerAssignment` → `DispatchOrderRules.isTimedOffer` false): no incoming-offer dialog, no timeout; an Accept / Reject card on the parcel home until the driver answers, then pickup and delivery whenever the driver is ready |
+| Reject | `status: "Order Placed"` (not `Driver Rejected`), `sendToDriver: false`, `driverId: null`, `driverID: null`, `rejectedByDrivers` arrayUnion `<me>` (+ the reason on a manual reject); `orderRequestData` arrayRemove; the owner gets template `carrier_parcel_returned` (`CarrierParcelRules.returnToOwnerFields`) |
 | An offer the owner did not make (`Driver Pending` naming this driver, no / another `assignedBy`) | never shown; answered at once with the timeout write above, so it returns to the owner (`CarrierParcelRules.isForeignOffer`, `IncomingOfferService`) |
 | Parcel search | never lists a carrier parcel (independent and company drivers alike) |
 

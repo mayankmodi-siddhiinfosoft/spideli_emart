@@ -303,8 +303,9 @@ class OwnerOrderListController extends GetxController {
       );
 
   /// Assigns (or reassigns, before the driver answered) [order] to
-  /// [driver]: the driver gets the normal offer with its countdown
-  /// ([CarrierParcelService.assign]).
+  /// [driver]: the driver gets it on their parcel home with no countdown,
+  /// to accept whenever they choose ([CarrierParcelService.assign],
+  /// [CarrierParcelRules.isOwnerAssignment]).
   Future<bool> assignParcelOrderToDriver(ParcelOrderModel order, UserModel driver) async {
     final String? orderId = order.id;
     if (orderId == null || orderId.isEmpty || (driver.id ?? '').isEmpty) return false;

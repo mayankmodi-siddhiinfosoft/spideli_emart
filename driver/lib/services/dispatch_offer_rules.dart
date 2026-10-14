@@ -423,6 +423,10 @@ abstract final class DispatchOrderRules {
   /// for the customer's answer ([awaitsCustomer]) is not timed either: it
   /// cannot be accepted until the customer answers, so its countdown would
   /// only reject it on the driver's behalf.
+  ///
+  /// A company parcel its owner assigned to this driver
+  /// ([CarrierParcelRules.isOwnerAssignment]) is not timed: it stays on the
+  /// parcel home's cards until the driver accepts or rejects it.
   static bool isTimedOffer(
     Map<String, dynamic>? order, {
     required String uid,
@@ -433,6 +437,9 @@ abstract final class DispatchOrderRules {
     bool handAssigned = false,
   }) {
     if (!isPendingFor(order, uid) || rejectedBy(order!, uid)) return false;
+    // A company parcel its owner assigned to this driver has no countdown:
+    // accepted whenever the driver chooses, never timed out.
+    if (CarrierParcelRules.isOwnerAssignment(order, uid)) return false;
     bool holds(Iterable<dynamic> ids) => ids.any((id) => id.toString() == orderId);
     if (holds(inProgress) || handAssigned || awaitsCustomer(order, uid)) return false;
     return holds(requests) || pushSeen;
