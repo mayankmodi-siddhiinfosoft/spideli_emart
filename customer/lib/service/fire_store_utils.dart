@@ -2213,12 +2213,17 @@ class FireStoreUtils {
     }
   }
 
-  static Future<List<ParcelCategory>> getParcelServiceCategory() async {
+  /// The published parcel categories of [sectionId] (default: the selected
+  /// service). Empty when there is no section to read them for - an order
+  /// opened from the Notification Center before any service is selected.
+  static Future<List<ParcelCategory>> getParcelServiceCategory({String? sectionId}) async {
     List<ParcelCategory> parcelCategoryList = [];
+    final String section = (sectionId ?? Constant.sectionConstantModel?.id ?? '').trim();
+    if (section.isEmpty) return parcelCategoryList;
     await fireStore
         .collection(CollectionName.parcelCategory)
         .where('publish', isEqualTo: true)
-        .where('sectionId', isEqualTo: Constant.sectionConstantModel!.id)
+        .where('sectionId', isEqualTo: section)
         .orderBy('set_order', descending: false)
         .get()
         .then((value) {

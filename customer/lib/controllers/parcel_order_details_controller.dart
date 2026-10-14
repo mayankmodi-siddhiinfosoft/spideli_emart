@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/models/rating_model.dart';
 import 'package:customer/models/wallet_transaction_model.dart';
@@ -189,11 +191,19 @@ class ParcelOrderDetailsController extends GetxController {
     Get.back(result: true);
   }
 
-  void loadParcelCategories() async {
+  /// The order's own section's categories (the order can be opened from the
+  /// Notification Center with no service selected). The screen never stays
+  /// on its shimmer: a failed read leaves the list empty.
+  Future<void> loadParcelCategories() async {
     isLoading.value = true;
-    final categories = await FireStoreUtils.getParcelServiceCategory();
-    parcelCategory.value = categories;
-    isLoading.value = false;
+    try {
+      final String? sectionId = (parcelOrder.value.sectionId ?? '').trim().isEmpty ? null : parcelOrder.value.sectionId;
+      parcelCategory.value = await FireStoreUtils.getParcelServiceCategory(sectionId: sectionId);
+    } catch (e) {
+      log('parcel details: categories not loaded (${e.runtimeType})');
+    } finally {
+      isLoading.value = false;
+    }
   }
 
   /// Fields [ParcelOrderModel.toJson] does not write back but a quote

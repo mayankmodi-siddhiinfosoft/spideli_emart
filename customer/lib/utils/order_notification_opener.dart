@@ -1,10 +1,12 @@
 import 'dart:developer';
 
 import 'package:customer/constant/collection_name.dart';
+import 'package:customer/constant/constant.dart';
 import 'package:customer/models/cab_order_model.dart';
 import 'package:customer/models/dine_in_booking_model.dart';
 import 'package:customer/models/parcel_order_model.dart';
 import 'package:customer/models/rental_order_model.dart';
+import 'package:customer/models/section_model.dart';
 import 'package:customer/screen_ui/cab_service_screens/cab_order_details.dart';
 import 'package:customer/screen_ui/multi_vendor_service/dine_in_booking/dine_in_booking_details.dart';
 import 'package:customer/screen_ui/parcel_service/parcel_order_details.dart';
@@ -45,6 +47,32 @@ abstract final class OrderNotificationOpener {
     }
   }
 
+  /// Runs [open] with the order's own service (`sectionId`) active, then
+  /// puts the previous one back. A details screen reads the active service
+  /// (its parcel categories, its tax and fee settings); opened from the
+  /// Notification Center on the service list there is none, and the screen
+  /// stayed on its loading shimmer. Without a readable section it opens as
+  /// it is.
+  static Future<void> _withSectionOf(Map<String, dynamic> order, Future<dynamic>? Function() open) async {
+    final SectionModel? previous = Constant.sectionConstantModel;
+    final String sectionId = order['sectionId']?.toString().trim() ?? '';
+    SectionModel? section;
+    if (sectionId.isNotEmpty && previous?.id != sectionId) {
+      try {
+        final snap = await FireStoreUtils.fireStore.collection(CollectionName.sections).doc(sectionId).get().timeout(_timeout);
+        if (snap.data() != null) section = SectionModel.fromJson(snap.data()!);
+      } catch (e) {
+        log('notifications: section lookup failed (${e.runtimeType})');
+      }
+    }
+    if (section != null) Constant.sectionConstantModel = section;
+    try {
+      await open();
+    } finally {
+      if (section != null) Constant.sectionConstantModel = previous;
+    }
+  }
+
   static Future<void> open(String orderId) async {
     final String id = orderId.trim();
     final String? uid = FirebaseAuth.instance.currentUser?.uid;
@@ -65,20 +93,21 @@ abstract final class OrderNotificationOpener {
       }
       if (data == null || !isOwn(data, uid)) return;
 
-      switch (data['collection_name']) {
+      final Map<String, dynamic> order = data;
+      switch (order['collection_name']) {
         case CollectionName.vendorOrders:
           // Brings the order's section along (store vs restaurant details).
           await DeliveryCodePush.open(id);
         case CollectionName.providerOrders:
           await OnDemandBookingOpener.open(id);
         case CollectionName.rides:
-          await Get.to(() => const CabOrderDetails(), arguments: {'cabOrderModel': CabOrderModel.fromJson(data)});
+          await _withSectionOf(order, () => Get.to(() => const CabOrderDetails(), arguments: {'cabOrderModel': CabOrderModel.fromJson(order)}));
         case CollectionName.parcelOrders:
-          await Get.to(() => const ParcelOrderDetails(), arguments: ParcelOrderModel.fromJson(data));
+          await _withSectionOf(order, () => Get.to(() => const ParcelOrderDetails(), arguments: ParcelOrderModel.fromJson(order)));
         case CollectionName.rentalOrders:
-          await Get.to(() => const RentalOrderDetailsScreen(), arguments: RentalOrderModel.fromJson(data));
+          await _withSectionOf(order, () => Get.to(() => const RentalOrderDetailsScreen(), arguments: RentalOrderModel.fromJson(order)));
         case CollectionName.bookedTable:
-          await Get.to(() => const DineInBookingDetails(), arguments: {'bookingModel': DineInBookingModel.fromJson(data)});
+          await _withSectionOf(order, () => Get.to(() => const DineInBookingDetails(), arguments: {'bookingModel': DineInBookingModel.fromJson(order)}));
       }
     } catch (e) {
       log('notifications: open order failed (${e.runtimeType})');
