@@ -13,6 +13,7 @@ import 'package:driver/themes/app_them_data.dart';
 import 'package:driver/themes/ds/ds.dart';
 import 'package:driver/themes/theme_controller.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/parcel_amounts.dart';
 import 'package:driver/widget/my_separator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -466,10 +467,15 @@ class WalletScreen extends StatelessWidget {
               double totalAmount = 0.0;
               double totalTax = 0.0;
               double subTotal = double.parse(orderModel.subTotal ?? '0.0') - double.parse(orderModel.discount ?? '0.0');
+              // The order taxes, not on the commission added as an extra.
+              final double taxable = ParcelAmounts.taxableAmount(
+                  subTotal: double.parse(orderModel.subTotal ?? '0.0'),
+                  discount: double.parse(orderModel.discount ?? '0.0'),
+                  commission: orderModel.extraCommission);
 
               if (orderModel.taxSetting != null) {
                 for (var element in orderModel.taxSetting!) {
-                  totalTax = totalTax + Constant.calculateTax(amount: subTotal.toString(), taxModel: element);
+                  totalTax = totalTax + Constant.calculateTax(amount: taxable.toString(), taxModel: element);
                 }
               }
               totalAmount = subTotal + totalTax;

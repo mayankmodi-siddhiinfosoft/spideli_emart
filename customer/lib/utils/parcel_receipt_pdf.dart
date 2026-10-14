@@ -12,6 +12,7 @@ import 'package:customer/service/parcel_shipping_service.dart';
 import 'package:customer/themes/app_them_data.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/order_receipt_pdf.dart' show Code128, OrderReceiptPdf;
+import 'package:customer/utils/parcel_pricing.dart' show ParcelPricing;
 import 'package:customer/utils/region_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -43,7 +44,8 @@ class ParcelAmounts {
   final double discount;
   final double platformFee;
 
-  /// Taxes on subTotal - discount.
+  /// Taxes on subTotal - discount, less the commission added as an extra
+  /// ([ParcelPricing.taxableAmount]).
   final double orderTax;
 
   /// Taxes on the platform fee (only when there is one).
@@ -84,9 +86,10 @@ class ParcelAmounts {
     final double sub = _number(o.subTotal);
     final double disc = _number(o.discount);
     final double fee = _number(o.platformFee);
+    final double taxable = ParcelPricing.taxableAmount(subTotal: sub, discount: disc, commission: o.extraCommission);
     double orderTax = 0;
     for (final t in o.taxSetting ?? []) {
-      orderTax += Constant.calculateTax(amount: (sub - disc).toString(), taxModel: t);
+      orderTax += Constant.calculateTax(amount: taxable.toString(), taxModel: t);
     }
     double platformTax = 0;
     if (fee > 0) {

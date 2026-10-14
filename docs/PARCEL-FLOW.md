@@ -391,7 +391,10 @@ carrierPrice  = distance × band.delivery_charge
 ```
 card          = regionPricing[Rc] else flat fields
 carrierPrice  = max(minimumCharge, baseCharge + perKmCharge × km + perKgCharge × chargeableKg)   (2 decimals)
-commission    = only if settings/ParcelPricing.commissionAsExtra && section commission enabled
+commission    = only if settings/ParcelPricing.commissionAsExtra && section commission enabled:
+                sections/{id}.adminCommision.commissionType decides -
+                Percent → amount % of carrierPrice ONLY (the delivery company's base price;
+                never options, fixedTax, SMS or taxes); Fixed → amount      (ParcelPricing.withExtraCommission)
 ```
 
 **Step 3: options and fixed tax**
@@ -414,7 +417,8 @@ quote.total = carrierPrice + options + fixedTax + commission
 ```
 subTotal        = carrierPrice (+ commission when charged as extra)        → parcel_orders.subTotal (string)
 discount        = coupon on subTotal
-orderTax        = Σ taxSetting on (subTotal − discount)
+orderTax        = Σ taxSetting on (subTotal − discount − commission charged as extra), never below 0
+                  (ParcelPricing.taxableAmount; no tax is charged on that commission)
 platformFee     = section platform fee, ONLY while platformFee.enable is true
 platformTax     = Σ platformTax on platformFee (only when platformFee > 0)
 TOTAL           = subTotal − discount + orderTax + platformFee + platformTax
@@ -422,7 +426,7 @@ TOTAL           = subTotal − discount + orderTax + platformFee + platformTax
                 → priceBreakdown.total  (what wallet / gateway / cash charges)
 ```
 
-VAT, coupons, commission and the driver's credit never apply to `fixedTax`, `options` or `smsCharge`.
+VAT, coupons, commission and the driver's credit never apply to `fixedTax`, `options` or `smsCharge`. VAT never applies to the commission charged as an extra (`priceBreakdown.commission`): every reader that recomputes the order taxes (customer `ParcelAmounts`, driver `ParcelAmounts`, `_updateWalletAmount`, the driver's order details, wallet rows and the company owner's earnings) takes it out of the taxed amount the same way.
 
 **Worked example A: company parcel, Other city** (currency of region Yaounde-Cameroun, XAF):
 

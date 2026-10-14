@@ -386,4 +386,59 @@ void main() {
       expect(old.destinationPickupPointId, isNull);
     });
   });
+
+  group('commission added as an extra (settings/ParcelPricing.commissionAsExtra)', () {
+    const ParcelQuote quote = ParcelQuote(carrierPrice: 1000, fixedTax: 5000, pickupCharge: 500, deliveryCharge: 1000, source: ParcelPriceSource.rateCard);
+
+    test('a percentage is taken on the delivery company\'s base price only', () {
+      final ParcelQuote q = ParcelPricing.withExtraCommission(quote, type: 'Percentage', value: 10);
+      expect(q.commission, 100);
+      expect(q.subTotal, 1100);
+      expect(q.total, 1000 + 100 + 1500 + 5000);
+      expect(ParcelPricing.withExtraCommission(quote, type: 'percent', value: 12.5).commission, 125);
+    });
+
+    test('the section\'s type decides: a fixed commission is its value', () {
+      expect(ParcelPricing.withExtraCommission(quote, type: 'Fixed', value: 150).commission, 150);
+      expect(ParcelPricing.withExtraCommission(quote, type: 'Percentage', value: 0).commission, 0);
+      expect(ParcelPricing.withExtraCommission(quote, type: 'Percentage', value: null).commission, 0);
+    });
+
+    test('the order taxes never apply to the commission', () {
+      expect(ParcelPricing.taxableAmount(subTotal: 1100, discount: 0, commission: 100), 1000);
+      expect(ParcelPricing.taxableAmount(subTotal: 1100, discount: 110, commission: 100), 890);
+      expect(ParcelPricing.taxableAmount(subTotal: 1000, discount: 50), 950);
+      expect(ParcelPricing.taxableAmount(subTotal: 100, discount: 100, commission: 50), 0);
+      expect(ParcelPricing.taxableAmount(subTotal: 1000, discount: 0, commission: -5), 1000);
+
+      final ParcelAmounts a = ParcelAmounts.of(ParcelOrderModel.fromJson({
+        'id': 'c1',
+        'subTotal': '1100',
+        'discount': '0',
+        'taxSetting': [
+          {'title': 'VAT', 'type': 'percentage', 'tax': '10', 'enable': true},
+        ],
+        'priceBreakdown': {'carrierPrice': 1000, 'commission': 100},
+      }));
+      expect(a.orderTax, 100);
+      expect(a.total, 1200);
+      // Without a commission the whole subTotal is taxed, as before.
+      final ParcelAmounts b = ParcelAmounts.of(ParcelOrderModel.fromJson({
+        'id': 'c2',
+        'subTotal': '1100',
+        'discount': '0',
+        'taxSetting': [
+          {'title': 'VAT', 'type': 'percentage', 'tax': '10', 'enable': true},
+        ],
+        'priceBreakdown': {'carrierPrice': 1100, 'commission': 0},
+      }));
+      expect(b.orderTax, 110);
+    });
+
+    test('extraCommission reads priceBreakdown.commission tolerantly', () {
+      expect(ParcelOrderModel.fromJson({'priceBreakdown': {'commission': '75.5'}}).extraCommission, 75.5);
+      expect(ParcelOrderModel.fromJson({'priceBreakdown': {'commission': 'x'}}).extraCommission, 0);
+      expect(ParcelOrderModel.fromJson({}).extraCommission, 0);
+    });
+  });
 }

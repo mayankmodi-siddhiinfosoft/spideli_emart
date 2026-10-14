@@ -718,5 +718,22 @@ class ParcelPricing {
     return value;
   }
 
+  /// [quote] with the parcel section's commission (`sections/{id}.adminCommision`,
+  /// its [type] and [value]) added as an extra (`settings/ParcelPricing.commissionAsExtra`):
+  /// a percentage is taken on the delivery company's base price
+  /// ([ParcelQuote.carrierPrice]) only - never on the options, the fixed tax,
+  /// the SMS fee or a tax.
+  static ParcelQuote withExtraCommission(ParcelQuote quote, {required String? type, required double? value}) =>
+      quote.copyWith(commission: commissionOn(amount: quote.carrierPrice, type: type, value: value));
+
+  /// The amount the order taxes (`taxSetting`) apply to: subTotal - coupon,
+  /// less the commission added as an extra ([commission],
+  /// `priceBreakdown.commission`) - no tax is charged on that commission.
+  /// Never below 0.
+  static double taxableAmount({required double subTotal, required double discount, double commission = 0}) {
+    final double base = subTotal - discount - (commission.isFinite && commission > 0 ? commission : 0);
+    return base.isFinite && base > 0 ? base : 0;
+  }
+
   static double round2(double v) => (v * 100).roundToDouble() / 100;
 }

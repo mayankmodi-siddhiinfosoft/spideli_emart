@@ -110,4 +110,27 @@ void main() {
     expect(a.total, 0);
     expect(a.platformShareOfCash, 0);
   });
+
+  test('the order taxes never apply to the commission added as an extra', () {
+    expect(ParcelAmounts.taxableAmount(subTotal: 1100, discount: 0, commission: 100), 1000);
+    expect(ParcelAmounts.taxableAmount(subTotal: 1100, discount: 110, commission: 100), 890);
+    expect(ParcelAmounts.taxableAmount(subTotal: 1000, discount: 50), 950);
+    expect(ParcelAmounts.taxableAmount(subTotal: 100, discount: 100, commission: 50), 0);
+
+    final ParcelOrderModel order = ParcelOrderModel.fromJson({
+      'id': 'p9',
+      'subTotal': '1100',
+      'discount': '0',
+      'taxSetting': [tax('VAT', 'percentage', '10')],
+      'priceBreakdown': {'carrierPrice': 1000, 'commission': '100'},
+    });
+    expect(order.extraCommission, 100);
+    final ParcelAmounts a = ParcelAmounts.of(order);
+    expect(a.orderTax, 100);
+    expect(a.total, 1200);
+    // Paid online, the courier is credited the price, the tax on the base
+    // price only, and is then debited the commission (a fixed 100).
+    expect(a.onlineCredit, 1200);
+    expect(a.courierNet(100), 1100);
+  });
 }

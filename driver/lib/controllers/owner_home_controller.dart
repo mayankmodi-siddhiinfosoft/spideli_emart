@@ -7,6 +7,7 @@ import 'package:driver/models/rental_order_model.dart';
 import 'package:driver/models/user_model.dart';
 import 'package:driver/services/driver_document_status_service.dart';
 import 'package:driver/utils/fire_store_utils.dart';
+import 'package:driver/utils/parcel_amounts.dart';
 import 'package:get/get.dart';
 
 import '../constant/constant.dart';
@@ -89,7 +90,8 @@ class OwnerHomeController extends GetxController {
       double subTotal = double.tryParse(order.subTotal?.toString() ?? "0") ?? 0;
       double discount = double.tryParse(order.discount?.toString() ?? "0") ?? 0;
 
-      double taxTotal = _calculateTax(order.taxSetting, subTotal, discount);
+      // The order taxes, not on the commission added as an extra.
+      double taxTotal = _calculateTax(order.taxSetting, ParcelAmounts.taxableAmount(subTotal: subTotal, discount: discount, commission: order.extraCommission), 0);
       double driverEarned = (subTotal - discount + taxTotal).clamp(0, double.infinity);
 
       earnings += driverEarned;

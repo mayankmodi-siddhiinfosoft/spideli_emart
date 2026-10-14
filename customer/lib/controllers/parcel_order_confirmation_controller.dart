@@ -214,8 +214,15 @@ class ParcelOrderConfirmationController extends GetxController {
     }
 
     /// ---------------- ORDER TAX ----------------
+    // Not on the commission added as an extra (commissionAsExtra): a quote
+    // being paid has none (its breakdown is rewritten with commission 0).
+    final double taxable = ParcelPricing.taxableAmount(
+      subTotal: subTotal.value,
+      discount: discount.value,
+      commission: isQuotePayment ? 0 : parcelOrder.value.extraCommission,
+    );
     for (var taxElement in Constant.orderProductTaxList ?? []) {
-      orderTaxAmount.value += Constant.calculateTax(amount: (subTotal.value - discount.value).toString(), taxModel: taxElement);
+      orderTaxAmount.value += Constant.calculateTax(amount: taxable.toString(), taxModel: taxElement);
     }
 
     /// ---------------- PLATFORM TAX ----------------
@@ -312,8 +319,7 @@ class ParcelOrderConfirmationController extends GetxController {
       // Commission already added to the price (commissionAsExtra): record that
       // exact amount as a fixed commission, so the driver is debited it once
       // and it is not charged again as a % of the larger subTotal.
-      final dynamic extra = quotePayment ? null : parcelOrder.value.priceBreakdown?['commission'];
-      final double extraCommission = extra is num ? extra.toDouble() : (double.tryParse(extra?.toString() ?? '') ?? 0);
+      final double extraCommission = quotePayment ? 0 : parcelOrder.value.extraCommission;
       if (extraCommission > 0) {
         parcelOrder.value.adminCommission = extraCommission.toString();
         parcelOrder.value.adminCommissionType = 'Fixed';

@@ -37,6 +37,26 @@
         "priceBreakdown": {"options": 0, "total": 2000}
       },
       "total": 2000, "platformTax": 0, "platformShare": 0
+    },
+    {
+      "name": "commission added as an extra (10% of the company's 1000): no tax on it",
+      "order": {
+        "id": "f5", "subTotal": "1100", "discount": "0",
+        "taxSetting": [{"title": "VAT", "type": "percentage", "tax": "10", "enable": true}, {"title": "Stamp", "type": "fix", "tax": "25", "enable": true}],
+        "platformFee": "0", "platformTax": [],
+        "priceBreakdown": {"carrierPrice": 1000, "commission": 100, "options": 0, "total": 1225}
+      },
+      "total": 1225, "platformTax": 0, "platformShare": 0
+    },
+    {
+      "name": "commission as an extra with a coupon, options and a platform fee",
+      "order": {
+        "id": "f6", "subTotal": "1100", "discount": "110",
+        "taxSetting": [{"title": "VAT", "type": "percentage", "tax": "10", "enable": true}],
+        "platformFee": "200", "platformTax": [{"title": "VAT", "type": "percentage", "tax": "5", "enable": true}],
+        "priceBreakdown": {"carrierPrice": 1000, "commission": 100, "options": 500, "pickupCharge": 500, "deliveryCharge": 0, "total": 1789}
+      },
+      "total": 1789, "platformTax": 10, "platformShare": 210
     }
   ]
 }

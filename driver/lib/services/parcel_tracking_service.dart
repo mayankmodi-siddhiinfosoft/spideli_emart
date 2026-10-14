@@ -521,8 +521,10 @@ class ParcelTrackingService {
     subTotal = double.tryParse(orderModel.subTotal ?? '') ?? 0.0;
     discount = double.tryParse(orderModel.discount ?? '') ?? 0.0;
 
+    // Not on the commission added as an extra: the customer paid no tax on it.
+    final double taxable = ParcelAmounts.taxableAmount(subTotal: subTotal, discount: discount, commission: orderModel.extraCommission);
     for (var element in orderModel.taxSetting ?? []) {
-      totalTax = totalTax + Constant.calculateTax(amount: (subTotal - discount).toString(), taxModel: element);
+      totalTax = totalTax + Constant.calculateTax(amount: taxable.toString(), taxModel: element);
     }
 
     if ((orderModel.adminCommission ?? '').isNotEmpty) {

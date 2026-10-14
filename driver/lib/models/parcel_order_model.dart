@@ -102,6 +102,16 @@ class ParcelOrderModel {
     return d == null || !d.isFinite || d < 0 ? 0.0 : d;
   }
 
+  /// `priceBreakdown.commission`: the parcel section's commission the customer
+  /// app added to the delivery company's price (`settings/ParcelPricing.
+  /// commissionAsExtra`), inside [subTotal] but never taxed. 0 when it was not
+  /// charged as an extra, absent, not a number or negative.
+  double get extraCommission {
+    final dynamic c = priceBreakdown?['commission'];
+    final double? d = c is num ? c.toDouble() : double.tryParse(c?.toString().trim() ?? '');
+    return d == null || !d.isFinite || d < 0 ? 0.0 : d;
+  }
+
   /// `priceBreakdown.total`: what the customer's checkout charged (written
   /// by the customer app when the order is placed or a quote is paid, the
   /// receiver-SMS fee included). Null when absent or not a number. Read-only

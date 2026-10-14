@@ -9,7 +9,8 @@ import 'package:driver/models/tax_model.dart';
 ///   subTotal - discount + order taxes + platform fee + its taxes
 ///   + fixed (intercity / intercountry) tax + receiver-SMS fee (point 54)
 ///
-/// The order taxes apply to subTotal - discount; the platform taxes to the
+/// The order taxes apply to subTotal - discount, less the commission the
+/// customer app added as an extra ([taxableAmount]); the platform taxes to the
 /// platform fee, and only when there is one. The fixed tax and the SMS fee are
 /// outside VAT and coupons. Read tolerantly: a field a panel left out, or one
 /// stored as text, counts as 0 instead of throwing while a card is built.
@@ -47,9 +48,10 @@ class ParcelAmounts {
     final double sub = _number(order.subTotal);
     final double disc = _number(order.discount);
     final double fee = _number(order.platformFee);
+    final double taxable = taxableAmount(subTotal: sub, discount: disc, commission: order.extraCommission);
     double orderTax = 0;
     for (final TaxModel tax in order.taxSetting ?? const <TaxModel>[]) {
-      orderTax += Constant.getTaxValue(amount: (sub - disc).toString(), taxModel: tax);
+      orderTax += Constant.getTaxValue(amount: taxable.toString(), taxModel: tax);
     }
     double platformTax = 0;
     if (fee > 0) {
@@ -70,6 +72,15 @@ class ParcelAmounts {
       smsCharge: order.smsChargeAmount.isFinite && order.smsChargeAmount > 0 ? order.smsChargeAmount : 0,
     );
     return platformTaxCharged(lines, order.chargedTotal) ? lines : lines.withoutPlatformTax();
+  }
+
+  /// The amount the order taxes apply to (customer `ParcelPricing.taxableAmount`):
+  /// subTotal - coupon, less the commission added to the delivery company's
+  /// price as an extra (`priceBreakdown.commission`, commissionAsExtra) - no
+  /// tax is charged on that commission. Never below 0.
+  static double taxableAmount({required double subTotal, required double discount, double commission = 0}) {
+    final double base = subTotal - discount - (commission.isFinite && commission > 0 ? commission : 0);
+    return base.isFinite && base > 0 ? base : 0;
   }
 
   /// Whether the customer was charged the platform fee's taxes of [lines]:

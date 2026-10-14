@@ -150,6 +150,11 @@ class ParcelOrderModel with CancellationFields {
   /// `priceBreakdown.deliveryCharge` (home delivery / collection at a point).
   double get deliveryChargeAmount => _amount(priceBreakdown?['deliveryCharge']);
 
+  /// `priceBreakdown.commission`: the parcel section's commission added to the
+  /// delivery company's price (`settings/ParcelPricing.commissionAsExtra`),
+  /// inside [subTotal] but never taxed. 0 when it was not charged as an extra.
+  double get extraCommission => _amount(priceBreakdown?['commission']);
+
   /// Receiver-SMS fee added to the payable total (0 when not opted in).
   double get smsChargeAmount => sendReceiverSms == true ? (smsCharge ?? 0).toDouble() : 0;
 

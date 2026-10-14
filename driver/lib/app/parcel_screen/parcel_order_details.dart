@@ -269,7 +269,7 @@ class ParcelOrderDetails extends StatelessWidget {
                                   value: Constant.amountShow(
                                     currency: RegionService.currencyForRecord(controller.parcelOrder.value.regionId),
                                     amount: Constant.getTaxValue(
-                                      amount: (controller.subTotal.value - controller.discount.value).toString(),
+                                      amount: controller.taxableAmount.value.toString(),
                                       taxModel: tax,
                                     ).toString(),
                                   ),
