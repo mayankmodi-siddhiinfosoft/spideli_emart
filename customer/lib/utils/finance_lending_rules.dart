@@ -1,15 +1,23 @@
-/// Spideli Finance: member-to-member lending, the pure rules the screens use
-/// (.claude/FINANCE-APP-CONTRACT.md section 11). Unit tested in
-/// test/finance_lending_rules_test.dart.
+/// Spideli Finance: member-to-member lending, the pure rules and the write
+/// plans the screens use (.claude/FINANCE-DIRECT-FIRESTORE.md section 3.8,
+/// .claude/FINANCE-APP-CONTRACT.md section 11). Unit tested in
+/// test/finance_lending_rules_test.dart and test/finance_loan_direct_test.dart.
 ///
-/// The SERVER decides eligibility, credit, votes, funding, the agreed
-/// schedule, repayments, penalties and defaults. The schedule computed here
-/// is an ESTIMATE shown before applying; the binding schedule is the one in
-/// the loan agreement the server issues.
+/// The customer app writes every member step directly to Firestore (checked
+/// by the security rules); money moves only as ledger postings
+/// ([FinanceLedger]). The ADMIN reviews the request (`under_review`), writes
+/// the credit assessment, opens the vote (`voting` with `votingEndsAt`) or
+/// rejects it, applies penalties, decides defaults and restrictions.
+///
+/// The schedule estimated before applying is labelled an estimate; the
+/// binding amounts are the agreement's (written by the last funder from
+/// `platform_settings/lending`), the binding dates are set at the pay-out.
 library;
 
 import 'dart:math' as math;
 
+import 'package:cloud_firestore/cloud_firestore.dart' show FieldValue, Timestamp;
+import 'package:customer/service/finance_ledger.dart';
 import 'package:customer/utils/finance_group_rules.dart';
 
 int _int(dynamic v) => v is num ? v.round() : int.tryParse('${v ?? ''}') ?? 0;
@@ -38,6 +46,10 @@ class LendingConfig {
   final int votingHours;
   final List<String> paymentMethods;
 
+  /// The admin's agreement text (`agreementTerms`, optional), copied into
+  /// each loan agreement.
+  final String agreementTerms;
+
   const LendingConfig({
     required this.currencies,
     required this.minAmount,
@@ -53,6 +65,7 @@ class LendingConfig {
     required this.approvalPercent,
     required this.votingHours,
     required this.paymentMethods,
+    this.agreementTerms = '',
   });
 
   static Map<String, int> _amounts(dynamic v) => v is Map ? {for (final e in v.entries) e.key.toString(): _int(e.value)} : const {};
@@ -86,6 +99,7 @@ class LendingConfig {
       approvalPercent: approval,
       votingHours: _int(voting['durationHours']),
       paymentMethods: methods,
+      agreementTerms: raw['agreementTerms']?.toString().trim() ?? '',
     );
   }
 
@@ -144,10 +158,7 @@ abstract final class LoanCalculator {
   }) {
     final int n = periods(months, frequency);
     final double r = annualPercent / 100 / periodsPerYear(frequency);
-    final dates = <DateTime>[firstDue];
-    while (dates.length < n) {
-      dates.add(Frequency.next(dates.last, frequency));
-    }
+    final dates = dueDates(firstDue, frequency, n);
     final List<Installment> out = [];
     if (method == 'flat') {
       final int totalInterest = (principal * r * n).round();
@@ -171,9 +182,18 @@ abstract final class LoanCalculator {
     }
     return LoanEstimate(out, (principal * feePercent / 100).round());
   }
+
+  /// [n] due dates from [first], one period apart.
+  static List<DateTime> dueDates(DateTime first, String frequency, int n) {
+    final dates = <DateTime>[first];
+    while (dates.length < n) {
+      dates.add(Frequency.next(dates.last, frequency));
+    }
+    return dates;
+  }
 }
 
-/// A loan application as the server stores it (`loan_applications/{id}`).
+/// A loan application (`loan_applications/{id}`).
 class Loan {
   final String id;
   final String borrowerId;
@@ -184,6 +204,10 @@ class Loan {
   final int amount;
   final int fundedAmount;
   final int outstandingAmount;
+
+  /// What the borrower has repaid so far (the lenders' shares are worked
+  /// out from it).
+  final int repaidAmount;
   final int durationMonths;
   final String frequency;
   final String purpose;
@@ -205,6 +229,7 @@ class Loan {
     required this.amount,
     required this.fundedAmount,
     required this.outstandingAmount,
+    this.repaidAmount = 0,
     required this.durationMonths,
     required this.frequency,
     required this.purpose,
@@ -229,6 +254,7 @@ class Loan {
       amount: _int(m['amount']),
       fundedAmount: _int(m['fundedAmount']),
       outstandingAmount: _int(m['outstandingAmount']),
+      repaidAmount: _int(m['repaidAmount']),
       durationMonths: _int(m['durationMonths']),
       frequency: m['repaymentFrequency']?.toString() ?? Frequency.monthly,
       purpose: m['purpose']?.toString() ?? 'other',
@@ -246,7 +272,10 @@ class Loan {
   double get fundingProgress => amount <= 0 ? 0 : (fundedAmount / amount).clamp(0, 1).toDouble();
 }
 
-/// The vote as the server will count it (shown while voting is open).
+/// The vote as it is counted when it closes (and shown while it is open),
+/// in whole numbers as the security rules count it: quorum when
+/// `cast × 100 ≥ eligible × quorumPercent`, approved when
+/// `yes × 100 ≥ cast × approvalPercent`.
 class VoteTally {
   final int eligible;
   final int yes;
@@ -258,12 +287,15 @@ class VoteTally {
 
   int get cast => yes + no;
   int get needed => (eligible * quorumPercent / 100).ceil();
-  bool get quorumReached => eligible > 0 && cast >= needed;
+  bool get quorumReached => eligible > 0 && cast * 100 >= eligible * quorumPercent;
   double get approvalShare => cast == 0 ? 0 : yes / cast;
-  bool get wouldApprove => quorumReached && approvalShare * 100 >= approvalPercent;
+  bool get wouldApprove => quorumReached && yes * 100 >= cast * approvalPercent;
+
+  /// Every eligible member has voted: the vote can close before its end.
+  bool get everyoneVoted => eligible > 0 && cast >= eligible;
 }
 
-/// What the app offers (the server re-checks every one).
+/// What the app offers (the security rules check every one again).
 abstract final class LoanActions {
   static bool canVote(Loan l, String uid, {required bool alreadyVoted, required DateTime now}) =>
       l.status == 'voting' &&
@@ -280,6 +312,22 @@ abstract final class LoanActions {
 
   /// The borrower may withdraw the request until money is committed.
   static bool canCancel(Loan l, String uid) => uid == l.borrowerId && const ['submitted', 'under_review', 'voting'].contains(l.status);
+
+  /// The voting period is over (a vote without an end date closes when
+  /// every eligible member has voted).
+  static bool votingEnded(Loan l, DateTime now) => l.votingEndsAt != null && !now.isBefore(l.votingEndsAt!);
+
+  /// Any participant (the borrower or an eligible voter) may close the vote
+  /// once it ended or everyone voted: funding or rejected per [VoteTally].
+  static bool canCloseVote(Loan l, String uid, {required DateTime now}) {
+    if (l.status != 'voting' || uid.isEmpty) return false;
+    if (uid != l.borrowerId && !l.eligibleVoterIds.contains(uid)) return false;
+    final bool all = l.eligibleVoterIds.isNotEmpty && l.votesYes + l.votesNo >= l.eligibleVoterIds.length;
+    return votingEnded(l, now) || all;
+  }
+
+  /// A lender with a share of the repayments still to collect.
+  static bool canCollect(Loan l, String uid, int available) => uid.isNotEmpty && uid != l.borrowerId && l.lenderIds.contains(uid) && available > 0;
 
   static String statusLabel(String? s) => const {
         'submitted': 'Submitted',
@@ -310,10 +358,566 @@ abstract final class LoanActions {
       (s ?? '-');
 }
 
-/// The next unpaid installment of a server schedule (`loan_schedules/{loanId}.installments`).
+/// The next unpaid installment of the schedule (`loan_schedules/{loanId}.installments`).
 Map<String, dynamic>? nextInstallment(List<Map<String, dynamic>> installments) {
   for (final i in installments) {
     if (i['status'] != 'paid') return i;
   }
   return null;
+}
+
+/// What is left to pay on an installment: its amount due (with any
+/// penalty the admin added) less what was already paid on it.
+int installmentRemaining(Map<String, dynamic> i) {
+  final int due = i['amountDue'] != null ? _int(i['amountDue']) : _int(i['amount']) + _int(i['penalty']);
+  return math.max(0, due - _int(i['paidAmount']));
+}
+
+// --------------------------------------------------------------- lenders
+
+/// A lender's share of the repayments: each of their fundings
+/// (`loan_fundings/{loanId}_{uid}_{n}`) entitles them to
+/// `floor(repaid × lent / amount) − collected`, collected by the lender
+/// into their wallet (`loan_lender_payout`).
+abstract final class LenderShare {
+  /// What one funding of [lent] can collect now. Integer arithmetic on big
+  /// numbers, rounded down: the loan account never pays out more than it
+  /// received.
+  static int due({required int repaid, required int lent, required int loanAmount, required int collected}) {
+    if (loanAmount <= 0 || lent <= 0 || repaid <= 0) return 0;
+    final int share = (BigInt.from(repaid) * BigInt.from(lent) ~/ BigInt.from(loanAmount)).toInt();
+    return math.max(0, share - math.max(0, collected));
+  }
+
+  static bool _counts(Map<String, dynamic> f) => (f['status'] ?? 'succeeded') == 'succeeded';
+
+  /// (funding id, amount) of each funding with something to collect.
+  static List<(String, int)> collectable(Loan l, List<Map<String, dynamic>> fundings) => [
+        for (final f in fundings)
+          if (_counts(f) && (f['id'] ?? '').toString().isNotEmpty)
+            if (due(repaid: l.repaidAmount, lent: _int(f['amount']), loanAmount: l.amount, collected: _int(f['collected'])) case final int d when d > 0) (f['id'].toString(), d),
+      ];
+
+  static int available(Loan l, List<Map<String, dynamic>> fundings) => collectable(l, fundings).fold(0, (s, c) => s + c.$2);
+
+  static int lent(List<Map<String, dynamic>> fundings) => fundings.where(_counts).fold(0, (s, f) => s + _int(f['amount']));
+
+  static int collected(List<Map<String, dynamic>> fundings) => fundings.where(_counts).fold(0, (s, f) => s + _int(f['collected']));
+}
+
+// ---------------------------------------------------------------- checks
+
+/// Why a step cannot be written, as a `FinanceException` reason (null when
+/// it can). Mirrors the security rules so the user hears why.
+abstract final class LoanChecks {
+  static String? apply({
+    required LendingConfig config,
+    required String uid,
+    required List<String> memberIds,
+    required int amount,
+    required String currency,
+    required int durationMonths,
+    required String frequency,
+    required bool restricted,
+  }) {
+    if (restricted) return 'finance_restricted';
+    if (uid.isEmpty || !memberIds.contains(uid)) return 'permission_denied';
+    if (LoanPlans.voters(memberIds, uid).isEmpty) return 'loan_no_voters';
+    if (!config.currencies.contains(currency) || !config.durationsMonths.contains(durationMonths) || !config.repaymentFrequencies.contains(frequency)) {
+      return 'state_changed';
+    }
+    final int? max = config.maxFor(currency);
+    if (amount < config.minFor(currency) || (max != null && amount > max)) return 'amount_out_of_range';
+    return null;
+  }
+
+  static String? vote(Loan l, String uid, {required DateTime now, required bool restricted}) {
+    if (restricted) return 'finance_restricted';
+    return LoanActions.canVote(l, uid, alreadyVoted: false, now: now) ? null : 'state_changed';
+  }
+
+  static String? closeVote(Loan l, String uid, {required DateTime now}) => LoanActions.canCloseVote(l, uid, now: now) ? null : 'state_changed';
+
+  /// [walletBalance] is null for a gateway payment.
+  static String? fund(Loan l, String uid, int amount, {required bool restricted, int? walletBalance}) {
+    if (restricted) return 'finance_restricted';
+    if (!LoanActions.canFund(l, uid)) return 'state_changed';
+    if (amount <= 0 || amount > l.fundingRemaining) return 'amount_out_of_range';
+    if (walletBalance != null && walletBalance < amount) return 'insufficient_funds';
+    return null;
+  }
+
+  static String? accept(Loan l, String uid, Map<String, dynamic>? agreement, int version, {required bool restricted, required int loanBalance}) {
+    if (restricted) return 'finance_restricted';
+    if (!LoanActions.canAcceptAgreement(l, uid) || agreement == null || agreement['acceptedAt'] != null) return 'state_changed';
+    if (_int(agreement['version']) != version) return 'agreement_outdated';
+    if (l.fundedAmount <= 0 || l.fundedAmount < l.amount || loanBalance < l.fundedAmount) return 'state_changed';
+    return null;
+  }
+
+  /// [walletBalance] is null for a gateway payment.
+  static String? repay(Loan l, String uid, int amount, {int? walletBalance}) {
+    if (!LoanActions.canRepay(l, uid)) return 'state_changed';
+    if (amount <= 0 || amount > l.outstandingAmount) return 'amount_out_of_range';
+    if (walletBalance != null && walletBalance < amount) return 'insufficient_funds';
+    return null;
+  }
+
+  static String? cancel(Loan l, String uid) => LoanActions.canCancel(l, uid) ? null : 'state_changed';
+}
+
+// ----------------------------------------------------------------- plans
+
+/// The writes of each member step, as data (pure; applied in one batch or
+/// transaction by FinanceLendingService). Ids are deterministic so a retry
+/// can never write twice: `loan_votes/{loanId}_{uid}`,
+/// `loan_fundings/{loanId}_{uid}_{n}`, `loan_repayments/{loanId}_{requestKey}`,
+/// `loan_disbursements/{loanId}`, `loan_agreements/{loanId}`,
+/// `loan_schedules/{loanId}`; the loan's money sits in `loan_{loanId}`.
+abstract final class LoanPlans {
+  static Object get _now => FieldValue.serverTimestamp();
+
+  static String _loan(String id) => 'loan_applications/$id';
+
+  /// Who votes on (and may fund) a request: the group's members but the borrower.
+  static List<String> voters(List<String> memberIds, String borrowerId) => [
+        for (final m in memberIds.toSet())
+          if (m.isNotEmpty && m != borrowerId) m,
+      ];
+
+  static String voteId(String loanId, String uid) => '${loanId}_$uid';
+
+  static String fundingId(String loanId, String uid, int n) => '${loanId}_${uid}_$n';
+
+  static String repaymentId(String loanId, String requestKey) => '${loanId}_$requestKey';
+
+  /// A new request in [groupId] (a tontine the borrower belongs to).
+  static List<FinanceWrite> apply({
+    required String loanId,
+    required String uid,
+    required String groupId,
+    required String groupName,
+    required List<String> memberIds,
+    required int amount,
+    required String currency,
+    required String purpose,
+    required int durationMonths,
+    required String repaymentFrequency,
+    required String description,
+  }) =>
+      [
+        FinanceWrite(_loan(loanId), 'create', {
+          'id': loanId,
+          'borrowerId': uid,
+          'groupId': groupId,
+          'groupName': groupName,
+          'status': 'submitted',
+          'currency': currency,
+          'amount': amount,
+          'fundedAmount': 0,
+          'outstandingAmount': 0,
+          'repaidAmount': 0,
+          'durationMonths': durationMonths,
+          'repaymentFrequency': repaymentFrequency,
+          'purpose': purpose,
+          'description': description,
+          'eligibleVoterIds': voters(memberIds, uid),
+          'lenderIds': <String>[],
+          'votes': {'yes': 0, 'no': 0},
+          'documents': <Map<String, dynamic>>[],
+          'createdAt': _now,
+          'updatedAt': _now,
+        }),
+      ];
+
+  /// A supporting document already uploaded to [storagePath]
+  /// (`loan_documents/{uid}/{loanId}/…`).
+  static List<FinanceWrite> addDocument(String loanId, {required String name, required String storagePath}) => [
+        FinanceWrite(_loan(loanId), 'update', {
+          'documents': FieldValue.arrayUnion([
+            {'name': name, 'storagePath': storagePath},
+          ]),
+          'updatedAt': _now,
+        }),
+      ];
+
+  /// One vote (create-only) and its count.
+  static List<FinanceWrite> vote(Loan l, String uid, {required bool approve, String comment = ''}) => [
+        FinanceWrite('loan_votes/${voteId(l.id, uid)}', 'create', {
+          'loanId': l.id,
+          'voterId': uid,
+          'approve': approve,
+          'comment': comment,
+          'at': _now,
+        }),
+        FinanceWrite(_loan(l.id), 'update', {
+          approve ? 'votes.yes' : 'votes.no': FieldValue.increment(1),
+          'updatedAt': _now,
+        }),
+      ];
+
+  /// Closes the vote: `funding` with the quorum and the approval, else
+  /// `rejected` (`reason: "vote"`).
+  static ({String status, List<FinanceWrite> writes}) closeVote(Loan l, {required int quorumPercent, required int approvalPercent}) {
+    final tally = VoteTally(eligible: l.eligibleVoterIds.length, yes: l.votesYes, no: l.votesNo, quorumPercent: quorumPercent, approvalPercent: approvalPercent);
+    final String status = tally.wouldApprove ? 'funding' : 'rejected';
+    return (
+      status: status,
+      writes: [
+        FinanceWrite(_loan(l.id), 'update', {
+          'status': status,
+          if (status == 'rejected') 'reason': 'vote',
+          'votingClosedAt': _now,
+          'updatedAt': _now,
+        }),
+      ],
+    );
+  }
+
+  /// The agreement the last funder issues (version 1): the terms of
+  /// `platform_settings/lending` and the installments of [LoanCalculator]
+  /// (amounts only: the dates are set at the pay-out).
+  static Map<String, dynamic> agreement(Loan l, LendingConfig cfg, DateTime now) {
+    final e = LoanCalculator.estimate(
+      principal: l.amount,
+      months: l.durationMonths,
+      frequency: l.frequency,
+      method: cfg.interestMethod,
+      annualPercent: cfg.annualInterestPercent,
+      feePercent: cfg.feePercent,
+      firstDue: Frequency.next(now, l.frequency),
+    );
+    // The fee is taken from the pay-out: never all of it.
+    final int fee = math.min(e.fee, math.max(0, l.amount - 1));
+    return {
+      'loanId': l.id,
+      'borrowerId': l.borrowerId,
+      'version': 1,
+      'principal': l.amount,
+      'currency': l.currency,
+      'interestMethod': cfg.interestMethod,
+      'annualInterestPercent': cfg.annualInterestPercent,
+      'fee': fee,
+      'totalRepayable': e.totalRepaid,
+      'latePenaltyPercent': cfg.latePenaltyPercent,
+      'durationMonths': l.durationMonths,
+      'repaymentFrequency': l.frequency,
+      'terms': cfg.agreementTerms,
+      'installments': [
+        for (final i in e.installments) {'number': i.number, 'amount': i.total, 'principal': i.principal, 'interest': i.interest},
+      ],
+      'createdAt': _now,
+      'acceptedAt': null,
+    };
+  }
+
+  /// A lender funds [amount]: posting `wallet | platform → loan_{loanId}`
+  /// (`loan_funding`), `loan_fundings/{loanId}_{uid}_{n}`, `fundedAmount`
+  /// and `lenderIds`. The last funder also sets `agreement_pending` and
+  /// creates the agreement ([agreement], required then).
+  static FinancePosting fund({
+    required Loan loan,
+    required String uid,
+    required int amount,
+    required int n,
+    required String requestKey,
+    required FinanceFunding funding,
+    required String walletId,
+    required bool loanAccountExists,
+    Map<String, dynamic>? agreement,
+    String? txId,
+    String? reference,
+  }) {
+    final String id = fundingId(loan.id, uid, n);
+    final String account = FinanceLedger.loanAccountId(loan.id);
+    final bool last = loan.fundedAmount + amount >= loan.amount;
+    assert(!last || agreement != null, 'the last funder issues the agreement');
+    final posting = FinanceLedger.plan(
+      type: 'loan_funding',
+      currency: loan.currency,
+      from: funding.isWallet ? walletId : FinanceLedger.platformId(loan.currency),
+      to: account,
+      amount: amount,
+      newAccounts: loanAccountExists ? const {} : {account: FinanceLedger.poolFields('loan', loan.id, loan.currency)},
+      userIds: [uid],
+      sourceKind: 'loan_fundings',
+      sourceId: id,
+      createdBy: uid,
+      funding: funding,
+      description: 'Loan funding',
+      txId: txId,
+      reference: reference,
+    );
+    return FinancePosting(posting.txId, posting.reference, [
+      ...posting.writes,
+      FinanceWrite('loan_fundings/$id', 'create', {
+        'id': id,
+        'loanId': loan.id,
+        'lenderId': uid,
+        'borrowerId': loan.borrowerId,
+        'amount': amount,
+        'currency': loan.currency,
+        'status': 'succeeded',
+        'funding': funding.isWallet ? 'wallet' : 'gateway',
+        'reference': posting.reference,
+        'txId': posting.txId,
+        'requestKey': requestKey,
+        'collected': 0,
+        'createdAt': _now,
+      }),
+      FinanceWrite(_loan(loan.id), 'update', {
+        'fundedAmount': loan.fundedAmount + amount,
+        'lenderIds': FieldValue.arrayUnion([uid]),
+        if (last) 'status': 'agreement_pending',
+        if (last) 'fundedAt': _now,
+        'updatedAt': _now,
+      }),
+      if (last && agreement != null) FinanceWrite('loan_agreements/${loan.id}', 'create', agreement),
+    ]);
+  }
+
+  /// The binding schedule from the agreement's installments, the first due
+  /// one period after [disbursedAt].
+  static List<Map<String, dynamic>> schedule(Map<String, dynamic> agreement, String frequency, DateTime disbursedAt) {
+    var list = agreement['installments'] is List ? (agreement['installments'] as List).whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList() : <Map<String, dynamic>>[];
+    if (list.isEmpty) {
+      final String method = agreement['interestMethod']?.toString() == 'flat' ? 'flat' : 'declining';
+      final e = LoanCalculator.estimate(
+        principal: _int(agreement['principal']),
+        months: _int(agreement['durationMonths']),
+        frequency: frequency,
+        method: method,
+        annualPercent: _num(agreement['annualInterestPercent']),
+        firstDue: Frequency.next(disbursedAt, frequency),
+      );
+      list = [for (final i in e.installments) {'number': i.number, 'amount': i.total, 'principal': i.principal, 'interest': i.interest}];
+    }
+    final dates = LoanCalculator.dueDates(Frequency.next(disbursedAt, frequency), frequency, list.length);
+    return [
+      for (final (k, i) in list.indexed)
+        {
+          'number': i['number'] is num ? _int(i['number']) : k + 1,
+          'dueDate': Timestamp.fromDate(dates[k]),
+          'amount': _int(i['amount']),
+          'principal': _int(i['principal']),
+          'interest': _int(i['interest']),
+          'penalty': 0,
+          'amountDue': _int(i['amount']),
+          'paidAmount': 0,
+          'status': 'upcoming',
+        },
+    ];
+  }
+
+  /// The borrower accepts the agreement [agreement]: `acceptedAt` and the
+  /// version, the pay-out (posting `loan_{loanId} → borrower wallet`,
+  /// `loan_disbursement`: the whole funded amount leaves the loan account,
+  /// the fee going to the platform), `loan_disbursements/{loanId}`, the
+  /// loan `active` with `outstandingAmount = totalRepayable`, and
+  /// `loan_schedules/{loanId}`.
+  static FinancePosting accept({
+    required Loan loan,
+    required Map<String, dynamic> agreement,
+    required String uid,
+    required String walletId,
+    required bool walletExists,
+    required DateTime now,
+    String? txId,
+    String? reference,
+  }) {
+    final int funded = loan.fundedAmount;
+    final int fee = math.min(math.max(0, _int(agreement['fee'])), math.max(0, funded - 1));
+    final int version = _int(agreement['version']);
+    final posting = FinanceLedger.plan(
+      type: 'loan_disbursement',
+      currency: loan.currency,
+      from: FinanceLedger.loanAccountId(loan.id),
+      to: walletId,
+      amount: funded - fee,
+      fee: fee,
+      newAccounts: walletExists ? const {} : {walletId: FinanceLedger.walletFields(uid, loan.currency)},
+      userIds: [uid],
+      sourceKind: 'loan_disbursements',
+      sourceId: loan.id,
+      createdBy: uid,
+      description: 'Loan pay-out',
+      txId: txId,
+      reference: reference,
+    );
+    return FinancePosting(posting.txId, posting.reference, [
+      ...posting.writes,
+      FinanceWrite('loan_disbursements/${loan.id}', 'create', {
+        'id': loan.id,
+        'loanId': loan.id,
+        'borrowerId': uid,
+        'amount': funded - fee,
+        'fee': fee,
+        'currency': loan.currency,
+        'status': 'succeeded',
+        'reference': posting.reference,
+        'txId': posting.txId,
+        'paidAt': _now,
+      }),
+      FinanceWrite('loan_agreements/${loan.id}', 'update', {'acceptedAt': _now}),
+      FinanceWrite(_loan(loan.id), 'update', {
+        'status': 'active',
+        'acceptedAt': _now,
+        'agreementVersion': version,
+        'disbursedAt': _now,
+        'outstandingAmount': _int(agreement['totalRepayable']),
+        'repaidAmount': 0,
+        'updatedAt': _now,
+      }),
+      FinanceWrite('loan_schedules/${loan.id}', 'create', {
+        'loanId': loan.id,
+        'borrowerId': uid,
+        'currency': loan.currency,
+        'installments': schedule(agreement, loan.frequency, now),
+        'createdAt': _now,
+        'updatedAt': _now,
+      }),
+    ]);
+  }
+
+  /// [amount] allocated to the oldest installments first; a settled loan
+  /// ([settled]: nothing outstanding any more) has every installment paid.
+  static List<Map<String, dynamic>> allocate(List<Map<String, dynamic>> installments, int amount, {bool settled = false}) {
+    int left = amount;
+    final out = <Map<String, dynamic>>[];
+    for (final i in installments) {
+      final m = Map<String, dynamic>.from(i);
+      if (m['status'] != 'paid') {
+        final int pay = math.min(left, installmentRemaining(m));
+        left -= pay;
+        if (pay > 0) m['paidAmount'] = _int(m['paidAmount']) + pay;
+        if (settled || installmentRemaining(m) <= 0) {
+          m['status'] = 'paid';
+        } else if (pay > 0) {
+          m['status'] = 'partially_paid';
+        }
+      }
+      out.add(m);
+    }
+    return out;
+  }
+
+  /// The borrower repays [amount]: posting `wallet | platform → loan_{loanId}`
+  /// (`loan_repayment`), `loan_repayments/{loanId}_{requestKey}`,
+  /// `outstandingAmount` − amount (0: `repaid`), `repaidAmount` + amount,
+  /// and the installments paid in order ([installments]: the schedule).
+  static FinancePosting repay({
+    required Loan loan,
+    required String uid,
+    required int amount,
+    required String requestKey,
+    required FinanceFunding funding,
+    required String walletId,
+    List<Map<String, dynamic>>? installments,
+    String? txId,
+    String? reference,
+  }) {
+    final String id = repaymentId(loan.id, requestKey);
+    final int outstanding = math.max(0, loan.outstandingAmount - amount);
+    final posting = FinanceLedger.plan(
+      type: 'loan_repayment',
+      currency: loan.currency,
+      from: funding.isWallet ? walletId : FinanceLedger.platformId(loan.currency),
+      to: FinanceLedger.loanAccountId(loan.id),
+      amount: amount,
+      userIds: [uid],
+      sourceKind: 'loan_repayments',
+      sourceId: id,
+      createdBy: uid,
+      funding: funding,
+      description: 'Loan repayment',
+      txId: txId,
+      reference: reference,
+    );
+    return FinancePosting(posting.txId, posting.reference, [
+      ...posting.writes,
+      FinanceWrite('loan_repayments/$id', 'create', {
+        'id': id,
+        'loanId': loan.id,
+        'borrowerId': uid,
+        'amount': amount,
+        'currency': loan.currency,
+        'status': 'succeeded',
+        'funding': funding.isWallet ? 'wallet' : 'gateway',
+        'reference': posting.reference,
+        'txId': posting.txId,
+        'requestKey': requestKey,
+        'createdAt': _now,
+      }),
+      FinanceWrite(_loan(loan.id), 'update', {
+        'outstandingAmount': outstanding,
+        'repaidAmount': loan.repaidAmount + amount,
+        if (outstanding == 0) 'status': 'repaid',
+        if (outstanding == 0) 'repaidAt': _now,
+        'updatedAt': _now,
+      }),
+      if (installments != null && installments.isNotEmpty)
+        FinanceWrite('loan_schedules/${loan.id}', 'update', {
+          'installments': allocate(installments, amount, settled: outstanding == 0),
+          'updatedAt': _now,
+        }),
+    ]);
+  }
+
+  /// A lender collects [amount] of their share on the funding [funding]
+  /// (a `loan_fundings` document with its `id`): posting
+  /// `loan_{loanId} → lender wallet` (`loan_lender_payout`) and `collected`.
+  static FinancePosting collect({
+    required Loan loan,
+    required Map<String, dynamic> funding,
+    required String uid,
+    required int amount,
+    required String walletId,
+    required bool walletExists,
+    String? txId,
+    String? reference,
+  }) {
+    final String id = funding['id'].toString();
+    final posting = FinanceLedger.plan(
+      type: 'loan_lender_payout',
+      currency: loan.currency,
+      from: FinanceLedger.loanAccountId(loan.id),
+      to: walletId,
+      amount: amount,
+      newAccounts: walletExists ? const {} : {walletId: FinanceLedger.walletFields(uid, loan.currency)},
+      userIds: [uid],
+      sourceKind: 'loan_fundings',
+      sourceId: id,
+      createdBy: uid,
+      description: 'Loan repayment share',
+      txId: txId,
+      reference: reference,
+    );
+    return FinancePosting(posting.txId, posting.reference, [
+      ...posting.writes,
+      FinanceWrite('loan_fundings/$id', 'update', {
+        'collected': _int(funding['collected']) + amount,
+        'updatedAt': _now,
+      }),
+    ]);
+  }
+
+  /// The borrower withdraws the request (no money is committed yet).
+  static List<FinanceWrite> cancel(Loan l) => [
+        FinanceWrite(_loan(l.id), 'update', {'status': 'cancelled', 'cancelledAt': _now, 'updatedAt': _now}),
+      ];
+}
+
+/// The message (translation key) of a loan step's refusal; other reasons
+/// fall back to the shared finance messages.
+abstract final class LoanErrors {
+  static const Map<String, String> messages = {
+    'permission_denied': 'You are not allowed to do this.',
+    'finance_restricted': 'Your access to loans is restricted. Contact support.',
+    'state_changed': 'This action is no longer possible. Please refresh.',
+    'loan_no_voters': 'Your group has no other member to vote on your request.',
+    'agreement_outdated': 'The agreement changed. Please read the new version.',
+    'nothing_to_collect': 'There is nothing to collect yet.',
+  };
+
+  static String? message(String? reason) => messages[reason];
 }

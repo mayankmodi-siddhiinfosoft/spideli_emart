@@ -401,6 +401,9 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
   static final List<String> _countries = (TaxCountry.isoEnglishNames.values.map((names) => names.first).toSet().toList()..sort());
 
   late final Map<String, dynamic> _p = widget.project ?? const {};
+
+  /// The project's id, chosen once for a new one: a retry saves the same project.
+  late final String _id = widget.project?['id']?.toString() ?? FinanceFinancingService.newProjectId();
   late final _name = TextEditingController(text: _p['name']?.toString() ?? '');
   late final _city = TextEditingController(text: _p['city']?.toString() ?? '');
   late final _description = TextEditingController(text: _p['description']?.toString() ?? '');
@@ -456,24 +459,28 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
   Future<void> _save() async {
     if (_missing().isNotEmpty) return;
     final int? year = _year.year;
-    String? id;
-    final ok = await FinanceUi.run(() async {
-      id = await FinanceFinancingService.saveProject(widget.project?['id']?.toString(), {
-        'name': _name.text.trim(),
-        'sector': _sector,
-        'stage': ?_stage,
-        'country': _country ?? '',
-        'city': _city.text.trim(),
-        'description': _description.text.trim(),
-        'employees': ?int.tryParse(_employees.text.trim()),
-        'foundedYear': ?year,
-        if (_website.text.trim().isNotEmpty) 'website': _website.text.trim(),
-      });
-    }, success: "Project saved");
-    if (!ok || id == null) return;
+    final ok = await FinanceUi.run(
+      () => FinanceFinancingService.saveProject(
+        _id,
+        {
+          'name': _name.text.trim(),
+          'sector': _sector,
+          'stage': ?_stage,
+          'country': _country ?? '',
+          'city': _city.text.trim(),
+          'description': _description.text.trim(),
+          'employees': ?int.tryParse(_employees.text.trim()),
+          'foundedYear': ?year,
+          if (_website.text.trim().isNotEmpty) 'website': _website.text.trim(),
+        },
+        isNew: widget.project == null,
+      ),
+      success: "Project saved",
+    );
+    if (!ok) return;
     if (widget.thenApply) {
       Get.off(() => ApplicationFormScreen(config: widget.config, projects: [
-            {'id': id, 'name': _name.text.trim()},
+            {'id': _id, 'name': _name.text.trim()},
           ]));
     } else {
       Get.back();
@@ -605,6 +612,9 @@ class ApplicationFormScreen extends StatefulWidget {
 
 class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
   late final Map<String, dynamic> _a = widget.application ?? const {};
+
+  /// The id of a new application, chosen once: a retry writes the same draft.
+  late final String _newId = FinanceFinancingService.newApplicationId();
   late String? _project = _a['projectId']?.toString() ?? (widget.projects.isEmpty ? null : widget.projects.first['id'].toString());
   late String _type = widget.config.financingTypes.contains(_a['financingType']) ? _a['financingType'].toString() : widget.config.financingTypes.first;
   late String _currency = widget.config.currencies.contains(_a['currency']) ? _a['currency'].toString() : widget.config.currencies.first;
@@ -658,17 +668,13 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
       'useOfFunds': _use.text.trim(),
     };
     final String? existing = widget.application?['id']?.toString();
-    String? id = existing;
-    final ok = await FinanceUi.run(() async {
-      if (existing == null) {
-        id = await FinanceFinancingService.createApplication(fields);
-      } else {
-        await FinanceFinancingService.updateApplication(existing, fields);
-      }
-    }, success: "Application saved");
-    if (!ok || id == null) return;
+    final ok = await FinanceUi.run(
+      () => existing == null ? FinanceFinancingService.createApplication(_newId, fields) : FinanceFinancingService.updateApplication(existing, fields),
+      success: "Application saved",
+    );
+    if (!ok) return;
     if (existing == null) {
-      Get.off(() => ApplicationScreen(applicationId: id!, config: cfg));
+      Get.off(() => ApplicationScreen(applicationId: _newId, config: cfg));
     } else {
       Get.back();
     }
@@ -1048,7 +1054,7 @@ class _ApplicationScreenState extends State<ApplicationScreen> {
                 expand: true,
                 onPressed: verified && _declared && docsReady && FinancingStatus.canSubmit(status, missing)
                     ? () async {
-                        if (await FinanceUi.run(() => FinanceFinancingService.submit(widget.applicationId, _message.text.trim()), success: "Application submitted")) {
+                        if (await FinanceUi.run(() => FinanceFinancingService.submit(widget.applicationId, _message.text.trim(), cfg), success: "Application submitted")) {
                           setState(() {
                             _declared = false;
                             _message.clear();

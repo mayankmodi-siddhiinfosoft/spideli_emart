@@ -8,6 +8,10 @@ class SavedPaymentMethod {
   static const String typeMobileMoney = "mobile_money";
   static const String typeWave = "wave";
 
+  /// A bank account to RECEIVE money (Spideli Finance withdrawals and
+  /// payouts): [number] is the account number or IBAN, never a phone.
+  static const String typeBank = "bank";
+
   /// Mobile Money operators offered in the form ("Other" = free text).
   static const List<String> operators = ["Orange Money", "MTN Mobile Money", "Moov Money", "Airtel Money", "Other"];
 
@@ -22,7 +26,23 @@ class SavedPaymentMethod {
   /// offered in that region (null = every region).
   String? regionId;
 
-  SavedPaymentMethod({required this.id, required this.type, this.operator, required this.number, this.label, this.isDefault = false, this.regionId});
+  /// Bank accounts only.
+  String? bankName;
+  String? bankCode;
+  String? holderName;
+
+  SavedPaymentMethod({
+    required this.id,
+    required this.type,
+    this.operator,
+    required this.number,
+    this.label,
+    this.isDefault = false,
+    this.regionId,
+    this.bankName,
+    this.bankCode,
+    this.holderName,
+  });
 
   factory SavedPaymentMethod.fromJson(Map<String, dynamic> json) => SavedPaymentMethod(
     id: json['id']?.toString() ?? '',
@@ -32,6 +52,9 @@ class SavedPaymentMethod {
     label: json['label']?.toString(),
     isDefault: json['isDefault'] == true,
     regionId: (json['regionId'] == null || json['regionId'].toString().isEmpty) ? null : json['regionId'].toString(),
+    bankName: json['bankName']?.toString(),
+    bankCode: json['bankCode']?.toString(),
+    holderName: json['holderName']?.toString(),
   );
 
   Map<String, dynamic> toJson() {
@@ -39,15 +62,40 @@ class SavedPaymentMethod {
     if (type == typeMobileMoney && (operator ?? '').isNotEmpty) data['operator'] = operator;
     if ((label ?? '').isNotEmpty) data['label'] = label;
     if (regionId != null) data['regionId'] = regionId;
+    if (type == typeBank) {
+      data['bankName'] = bankName ?? '';
+      if ((bankCode ?? '').isNotEmpty) data['bankCode'] = bankCode;
+      data['holderName'] = holderName ?? '';
+    }
     return data;
   }
 
-  String get title => type == typeWave ? "Wave" : (operator ?? "Mobile Money");
+  bool get isBank => type == typeBank;
+
+  String get title => type == typeWave ? "Wave" : (isBank ? ((bankName ?? '').isNotEmpty ? bankName! : "Bank account") : (operator ?? "Mobile Money"));
+
+  /// The number as shown: a bank account only by its end ("•••• 6789").
+  String get masked => isBank ? (number.length <= 4 ? number : '•••• ${number.substring(number.length - 4)}') : number;
+
+  /// Where a payout goes, as Spideli Finance records it (`destination`).
+  Map<String, dynamic> get destination => switch (type) {
+    typeBank => {
+      'method': typeBank,
+      'bankName': bankName ?? '',
+      if ((bankCode ?? '').isNotEmpty) 'bankCode': bankCode,
+      'holderName': holderName ?? '',
+      'accountNumber': number,
+      'accountMasked': masked,
+    },
+    typeWave => {'method': typeWave, 'number': number},
+    _ => {'method': typeMobileMoney, if ((operator ?? '').isNotEmpty) 'operator': operator, 'number': number},
+  };
 
   bool usableIn(String? region) => regionId == null || region == null || regionId == region;
 }
 
-/// Saved Mobile Money numbers and Wave accounts (spec 3.4 / 7.8).
+/// Saved Mobile Money numbers and Wave accounts (spec 3.4 / 7.8), and bank
+/// accounts that receive Spideli Finance payouts.
 ///
 /// Cards are deliberately NOT stored: card data must never be kept by the
 /// app; tokenisation is the gateway's job and needs a server-side
@@ -71,8 +119,12 @@ class SavedPaymentMethods {
   }
 
   static Future<void> _save(List<SavedPaymentMethod> list) async {
-    // Exactly one default when anything is saved.
-    if (list.isNotEmpty && !list.any((m) => m.isDefault)) list.first.isDefault = true;
+    // Exactly one default phone when one is saved (a bank account is never the default).
+    for (final m in list.where((m) => m.isBank)) {
+      m.isDefault = false;
+    }
+    final phones = list.where((m) => !m.isBank).toList();
+    if (phones.isNotEmpty && !phones.any((m) => m.isDefault)) phones.first.isDefault = true;
     final data = list.map((e) => e.toJson()).toList();
     await FireStoreUtils.fireStore.collection(CollectionName.users).doc(FireStoreUtils.getCurrentUid()).update({'savedPaymentMethods': data});
     Constant.userModel?.savedPaymentMethods = data;
@@ -80,6 +132,7 @@ class SavedPaymentMethods {
 
   static Future<void> add(SavedPaymentMethod method) async {
     final list = await load();
+    if (method.isBank) method.isDefault = false;
     if (method.isDefault) {
       for (final m in list) {
         m.isDefault = false;
@@ -113,7 +166,7 @@ class SavedPaymentMethods {
   /// money, Razorpay contact): the default saved method usable in
   /// [regionId], else the first usable one, else [fallback].
   static String? checkoutPhone({String? regionId, String? fallback}) {
-    final list = usable(regionId: regionId);
+    final list = usable(regionId: regionId).where((m) => !m.isBank).toList();
     if (list.isEmpty) return fallback;
     final m = list.firstWhere((e) => e.isDefault, orElse: () => list.first);
     return m.number;

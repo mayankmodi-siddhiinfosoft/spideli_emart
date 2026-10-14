@@ -251,18 +251,17 @@ class _CardCreateScreenState extends State<CardCreateScreen> {
     final int fee = cfg.feeFor(cfg.issuanceFee, _currency);
     final String label = _label.text.trim();
     bool sent = false;
-    // One key per card asked for (currency, terms, name) and payment
-    // method, reused on a retry until the server accepts it.
-    Future<Map<String, dynamic>> submit(Map<String, dynamic>? payment) async {
-      final String intent = FinanceRequestKeys.intentOf('card.create', '$_currency:${cfg.termsVersion}:$label', fee, payment ?? const {});
-      final r = await FinanceCardService.create(
-        label: label,
-        currency: _currency,
-        termsVersion: cfg.termsVersion,
-        payment: payment,
-        requestKey: FinanceRequestKeys.of(intent),
+    // One request per card asked for (currency, terms, name), whatever pays
+    // the fee: a retry reuses its id until it is written, so it can never
+    // ask for (or pay for) a second card.
+    Future<Map<String, dynamic>> submit(FinanceFunding funding) async {
+      final r = await FinanceRequestKeys.send(
+        'card.create',
+        '$_currency:${cfg.termsVersion}:$label',
+        fee,
+        const {},
+        (key) => FinanceCardService.create(label: label, currency: _currency, termsVersion: cfg.termsVersion, funding: funding, requestKey: key),
       );
-      FinanceRequestKeys.done(intent);
       sent = true;
       return r;
     }
@@ -270,7 +269,7 @@ class _CardCreateScreenState extends State<CardCreateScreen> {
     if (fee > 0) {
       await FinancePaySheet.show(context, title: "Card creation fee".tr, amount: fee, currency: _currency, methods: cfg.fundingMethods, submit: submit);
     } else {
-      await FinanceUi.run(() => submit(null), success: "Your card is being created.");
+      await FinanceUi.run(() => submit(const FinanceFunding.wallet()), success: "Your card is being created.");
     }
     if (sent && mounted) Get.back();
   }
@@ -359,6 +358,7 @@ class _CardCreateScreenState extends State<CardCreateScreen> {
               can(true, "Set your own spending limits"),
               can(cfg.secureDetails != SecureDetailsMode.none, "See the full card number and security code"),
               can(cfg.canWithdraw, "Move the card balance back to your wallet"),
+              can(cfg.canTransfer, "Send money to another Spideli card"),
               can(cfg.canRenew, "Renew the card before it expires"),
             ],
           ),
@@ -448,6 +448,38 @@ Future<int?> _askTopUp({required String currency, required int min, int? max}) {
   );
 }
 
+/// Asks who receives a card-to-card transfer (the e-mail or phone number of
+/// their Spideli account) and how much, up to the card balance [max].
+Future<(String, int)?> _askTransfer({required String currency, required int max}) {
+  final contact = TextEditingController();
+  final amount = TextEditingController();
+  return finSheet<(String, int)>(
+    title: "Send to another card".tr,
+    child: StatefulBuilder(
+      builder: (context, setState) {
+        final int? value = FinanceAmount.parse(amount.text, currency);
+        final bool ok = CardRecipient.query(contact.text) != null && value != null && FinanceAmount.problem(amount.text, currency, max: max) == null;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DsTextField(
+              label: "Recipient's e-mail or phone number".tr,
+              helper: "The money goes to their Spideli card in the same currency.".tr,
+              controller: contact,
+              requiredMark: true,
+              keyboardType: TextInputType.emailAddress,
+              onChanged: (_) => setState(() {}),
+            ),
+            FinAmountField(label: "Amount".tr, controller: amount, currency: currency, max: max, onChanged: (_) => setState(() {})),
+            DsButton.primary(label: "Continue".tr, expand: true, onPressed: ok ? () => Get.back(result: (contact.text.trim(), value)) : null),
+          ],
+        );
+      },
+    ),
+  );
+}
+
 class _CardBody extends StatelessWidget {
   final VirtualCard card;
   final CardConfig config;
@@ -473,42 +505,76 @@ class _CardBody extends StatelessWidget {
       );
       if (!ok || !context.mounted) return;
     }
+    // One request per top-up of this card and amount, whatever pays it: a
+    // retry reuses its id until it is written, so it never loads twice.
     await FinancePaySheet.show(
       context,
       title: "Top up the card".tr,
       amount: q.total,
       currency: c.currency,
       methods: config.fundingMethods,
-      submit: (p) => _once('card.fund', amount, p, (key) => FinanceCardService.fund(c.id, amount, p, key)),
+      submit: (FinanceFunding funding) => FinanceRequestKeys.send('card.fund', c.id, amount, const {}, (key) => FinanceCardService.fund(c.id, amount, funding, key)),
     );
   }
 
-  /// Runs a money request of this card with ONE idempotency key per
-  /// [action], amount and payment method, reused on a retry until the
-  /// server accepts it.
-  Future<Map<String, dynamic>> _once(String action, int amount, Map<String, dynamic>? payment, Future<Map<String, dynamic>> Function(String key) send) async {
-    final String intent = FinanceRequestKeys.intentOf(action, card.id, amount, payment ?? const {});
-    final reply = await send(FinanceRequestKeys.of(intent));
-    FinanceRequestKeys.done(intent);
-    return reply;
-  }
-
+  /// The card balance back to the wallet: asked here, done by the issuer.
   Future<void> _withdraw(BuildContext context) async {
     final c = card;
     final amount = await askAmount(context, title: "Move to my wallet".tr, currency: c.currency, max: c.balance);
-    if (amount == null || !context.mounted || !await FinanceReauth.confirm() || !context.mounted) return;
-    await FinancePaySheet.show(
-      context,
+    if (amount == null || !context.mounted) return;
+    final ok = await finConfirm(
       title: "Move to my wallet".tr,
-      amount: amount,
-      currency: c.currency,
-      methods: config.fundingMethods,
-      payout: true,
-      submit: (d) => _once('card.withdraw', amount, d, (key) => FinanceCardService.withdraw(c.id, amount, d, key)),
+      message: "The money is sent once your request is processed. You can follow it here.".tr,
+      lines: [
+        ("Amount".tr, FinanceMoney.format(amount, c.currency)),
+        ("Receive the money on".tr, "Spideli Finance wallet".tr),
+      ],
+      confirmLabel: "Confirm".tr,
+    );
+    if (!ok || !await FinanceReauth.confirm()) return;
+    await FinanceUi.run(
+      () => FinanceRequestKeys.send('card.withdraw', c.id, amount, const {}, (key) => FinanceCardService.withdraw(c.id, amount, key)),
+      success: "Withdrawal requested",
+    );
+  }
+
+  /// Card to card: part of the balance to another Spideli user's card,
+  /// found by the e-mail or phone number of their account.
+  Future<void> _transfer(BuildContext context) async {
+    final c = card;
+    final asked = await _askTransfer(currency: c.currency, max: c.balance);
+    if (asked == null || !context.mounted) return;
+    final (String contact, int amount) = asked;
+    ({String id, String name})? to;
+    if (!await FinanceUi.run(() async => to = await FinanceCardService.findRecipient(contact)) || to == null) return;
+    final recipient = to!;
+    final ok = await finConfirm(
+      title: "Send to another card".tr,
+      message: "Spideli moves the money to the recipient's card. This page updates when it is done.".tr,
+      lines: [
+        ("Recipient".tr, recipient.name.isEmpty ? contact : '${recipient.name} · $contact'),
+        ("From the card".tr, ltr(c.masked)),
+        ("Amount".tr, FinanceMoney.format(amount, c.currency)),
+      ],
+      confirmLabel: "Send".tr,
+    );
+    if (!ok || !await FinanceReauth.confirm()) return;
+    await FinanceUi.run(
+      () => FinanceRequestKeys.send(
+        'card.transfer',
+        '${c.id}:${recipient.id}',
+        amount,
+        const {},
+        (key) => FinanceCardService.transfer(c.id, amount, recipientId: recipient.id, recipientName: recipient.name, contact: contact, requestKey: key),
+      ),
+      success: "Transfer requested",
     );
   }
 
   Future<void> _details(BuildContext context) async {
+    // The full number needs the issuer's secure page (or a certified relay),
+    // which is not connected yet: say so rather than fail.
+    if (!FinanceCardService.detailsAvailable) return ShowToastDialog.showToast("Showing the full card details is not available yet.".tr);
     if (!await FinanceReauth.confirm()) return;
     if (config.secureDetails == SecureDetailsMode.hosted) {
       ShowToastDialog.showLoader("Please wait...".tr);
@@ -541,7 +607,8 @@ class _CardBody extends StatelessWidget {
         amount: fee,
         currency: c.currency,
         methods: config.fundingMethods,
-        submit: (p) => _once('card.renew', fee, p, (key) => FinanceCardService.renew(c.id, p, key)),
+        // Idempotent on the card: a renewal already asked for is not paid again.
+        submit: (FinanceFunding funding) => FinanceCardService.renew(c.id, funding),
       );
       return;
     }
@@ -554,7 +621,7 @@ class _CardBody extends StatelessWidget {
       cancelLabel: "Not now".tr,
     );
     if (!ok) return;
-    await FinanceUi.run(() => _once('card.renew', 0, null, (key) => FinanceCardService.renew(c.id, null, key)), success: "Renewal requested");
+    await FinanceUi.run(() => FinanceCardService.renew(c.id, const FinanceFunding.wallet()), success: "Renewal requested");
   }
 
   Future<void> _terminate() async {
@@ -581,7 +648,8 @@ class _CardBody extends StatelessWidget {
         CardActions.canFreeze(c) ||
         CardActions.canUnfreeze(c) ||
         CardActions.canSetLimits(c) ||
-        CardActions.canWithdraw(c, cfg);
+        CardActions.canWithdraw(c, cfg) ||
+        CardActions.canTransfer(c, cfg);
     return FinBody(
       children: [
         CardFace(card: c),
@@ -624,6 +692,7 @@ class _CardBody extends StatelessWidget {
                       }),
                     if (CardActions.canSetLimits(c)) FinAction(Icons.tune_rounded, "Limits".tr, () => Get.to(() => CardLimitsScreen(card: c, config: cfg))),
                     if (CardActions.canWithdraw(c, cfg)) FinAction(Icons.south_west_rounded, "To wallet".tr, verified ? () => _withdraw(context) : null),
+                    if (CardActions.canTransfer(c, cfg)) FinAction(Icons.swap_horiz_rounded, "To a card".tr, verified ? () => _transfer(context) : null),
                   ]),
                 ),
               ],
@@ -631,6 +700,10 @@ class _CardBody extends StatelessWidget {
           ),
         ),
         if (c.status == 'requested') FinNotice("The issuer is creating your card. This page updates when it is ready.".tr, tone: DsTone.info),
+        if (c.status == 'termination_requested')
+          FinNotice("Your card is being deleted. Any balance left on it is returned to your wallet.".tr, tone: DsTone.info),
+        if (c.renewalRequested && c.replacedBy.isEmpty)
+          FinNotice("Renewal requested. Your new card appears in your cards when the issuer has made it.".tr, tone: DsTone.info),
         if (c.status == 'frozen' && c.frozenBy != 'user') FinNotice("This card was frozen for your security. Contact support to unfreeze it.".tr, tone: DsTone.warning),
         if (c.reason.isNotEmpty) FinNotice(c.reason, title: "Reason".tr, tone: FinStatus.tone(c.status)),
         if (renew)
@@ -695,10 +768,17 @@ class _CardActivityState extends State<_CardActivity> {
               children: [
                 for (final r in pending)
                   FinListTile(
-                    icon: r['type'] == 'withdraw' ? Icons.south_west_rounded : Icons.north_east_rounded,
+                    icon: switch (r['type']) {
+                      'withdraw' => Icons.south_west_rounded,
+                      'transfer' => Icons.swap_horiz_rounded,
+                      _ => Icons.north_east_rounded,
+                    },
                     iconTone: DsTone.info,
-                    title: (r['type'] == 'withdraw' ? "Withdrawal" : "Top-up").tr,
-                    subtitle: FinanceUi.date(r['createdAt']),
+                    title: CardLabels.request(r['type']?.toString()).tr,
+                    subtitle: [
+                      FinanceUi.date(r['createdAt']),
+                      if (r['recipient'] is Map && '${(r['recipient'] as Map)['name'] ?? ''}'.isNotEmpty) '${(r['recipient'] as Map)['name']}',
+                    ].join(' · '),
                     amount: FinanceMoney.format(FinanceSummary.intOf(r['amount']), c.currency),
                     status: r['status']?.toString(),
                     statusLabel: (r['status'] == 'processing' ? "Processing" : "Pending").tr,

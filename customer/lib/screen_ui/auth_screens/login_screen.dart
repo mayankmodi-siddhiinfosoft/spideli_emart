@@ -2,6 +2,7 @@ import 'package:customer/screen_ui/auth_screens/sign_up_screen.dart';
 import 'package:customer/screen_ui/auth_screens/widgets/auth_shell.dart';
 import 'package:customer/screen_ui/location_enable_screens/location_permission_screen.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/social_sign_in.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -119,6 +120,8 @@ class LoginScreen extends StatelessWidget {
                     : const SizedBox(),
               ],
             ),
+            // Only when the admin turned LinkedIn on (settings/authProviders).
+            LinkedInSignInButton(onPressed: controller.loginWithLinkedIn),
           ],
         );
       },

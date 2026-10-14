@@ -3,8 +3,7 @@ import 'package:customer/screen_ui/finance/finance_security.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/finance_widgets.dart';
 import 'package:customer/screen_ui/finance/transfer_screens.dart';
-import 'package:customer/service/finance_group_service.dart';
-import 'package:customer/service/finance_service.dart';
+import 'package:customer/service/finance_payment_service.dart';
 import 'package:customer/service/finance_transfer_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
@@ -22,6 +21,8 @@ IconData _icon(String? category) => switch (category) {
       'phone' => Icons.phone_iphone_rounded,
       'gas' => Icons.local_fire_department_outlined,
       'education' => Icons.school_outlined,
+      'taxes' => Icons.account_balance_outlined,
+      'products' => Icons.shopping_bag_outlined,
       _ => Icons.receipt_outlined,
     };
 
@@ -34,6 +35,8 @@ String? _about(String? category) => switch (category) {
       'phone' => "Airtime and data bundles",
       'gas' => "Gas bills",
       'education' => "School and university fees",
+      'taxes' => "Tax payments",
+      'products' => "Pay for products and services",
       _ => null,
     };
 
@@ -99,7 +102,7 @@ class _SavedAccounts extends StatelessWidget {
       confirmLabel: "Remove".tr,
       destructive: true,
     );
-    if (ok) await FinanceUi.run(() => FinanceTransferService.deleteSavedAccount(a['id'].toString()));
+    if (ok) await financeDirectRun(() => FinanceTransferService.deleteSavedAccount(a['id'].toString()));
   }
 
   @override
@@ -280,7 +283,8 @@ class _BillerListScreenState extends State<BillerListScreen> {
   return (numeric: numeric, length: length);
 }
 
-/// Account, (lookup), amount or package; the server then prices the payment for confirmation.
+/// Account, then the amount (typed from the bill: the biller cannot be
+/// asked without a partner connection) or a package; then the confirmation.
 class BillPayScreen extends StatefulWidget {
   final String billerId;
   final BillsConfig config;
@@ -296,16 +300,8 @@ class _BillPayScreenState extends State<BillPayScreen> {
   late final _account = TextEditingController(text: widget.account ?? '');
   final _amount = TextEditingController();
   late Stream<Biller?> _stream = FinanceTransferService.biller(widget.billerId);
-  Map<String, dynamic>? _lookup;
   String? _package;
   bool _save = true;
-
-  /// The biller's answer when the account check failed, shown on the field.
-  String? _lookupError;
-  bool _checking = false;
-
-  /// A saved account is checked once, as soon as its biller is known.
-  bool _autoChecked = false;
 
   @override
   void initState() {
@@ -320,51 +316,22 @@ class _BillPayScreenState extends State<BillPayScreen> {
     super.dispose();
   }
 
-  int? _amountOf(Biller b) {
-    if (b.amountType == 'packages') return b.packages.where((p) => p.code == _package).firstOrNull?.amount;
-    if (b.amountType == 'due' && !b.partialPayment) return _due;
-    return FinanceAmount.parse(_amount.text, b.currency);
-  }
+  BillPackage? _packageOf(Biller b) => b.packages.where((p) => p.code == _package).firstOrNull;
 
-  int? get _due => _lookup == null ? null : FinanceSummary.intOf(_lookup!['amountDue']);
+  int? _amountOf(Biller b) => b.amountType == 'packages' ? _packageOf(b)?.amount : FinanceAmount.parse(_amount.text, b.currency);
 
-  Future<void> _check(Biller b) async {
-    setState(() {
-      _checking = true;
-      _lookupError = null;
-    });
-    try {
-      final r = await FinanceTransferService.lookup(b.id, _account.text.trim());
-      if (!mounted) return;
-      setState(() {
-        _lookup = r;
-        if (b.partialPayment && _due != null && _due! > 0) _amount.text = FinanceAmount.input(_due, b.currency);
-      });
-    } on FinanceException catch (e) {
-      if (mounted) setState(() => _lookupError = FinanceErrors.messageKey(e.reason).tr);
-    } catch (_) {
-      if (mounted) setState(() => _lookupError = FinanceErrors.messageKey(null).tr);
-    } finally {
-      if (mounted) setState(() => _checking = false);
-    }
-  }
-
-  Future<void> _continue(Biller b) async {
+  void _continue(Biller b) {
     final int? amount = _amountOf(b);
-    final problem = b.amountProblem(amount, due: _due);
+    final problem = BillPlans.amountProblem(b, amount);
     if (problem != null) return ShowToastDialog.showToast(problem.tr);
-    String? id;
-    final ok = await FinanceUi.run(() async {
-      id = await FinanceTransferService.createPayment(
-        billerId: b.id,
-        account: _account.text.trim(),
-        amount: amount!,
-        packageCode: b.amountType == 'packages' ? _package : null,
-        lookupId: _lookup?['lookupId']?.toString(),
-        save: _save,
-      );
-    });
-    if (ok && id != null) Get.off(() => BillPaymentScreen(requestId: id!, config: widget.config));
+    final draft = BillDraft(
+      biller: b,
+      account: _account.text.trim(),
+      amount: amount!,
+      package: b.amountType == 'packages' ? _packageOf(b) : null,
+      saveAccount: _save,
+    );
+    Get.to(() => BillConfirmScreen(config: widget.config, draft: draft));
   }
 
   @override
@@ -386,59 +353,27 @@ class _BillPayScreenState extends State<BillPayScreen> {
             ]),
           );
         }
-        // A saved account: check it with the biller straight away.
-        if (!_autoChecked && widget.account != null && b.lookup && b.accountValid(_account.text)) {
-          _autoChecked = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? _check(b) : null);
-        }
         final c = DsColors.of(context);
         final format = _accountFormat(b);
         final String typed = _account.text.trim();
         final bool accountOk = b.accountValid(_account.text);
-        final bool needsLookup = b.lookup && _lookup == null;
         final int? amount = _amountOf(b);
-        final String? problem = needsLookup || amount == null ? null : b.amountProblem(amount, due: _due);
+        final String? problem = amount == null ? null : BillPlans.amountProblem(b, amount);
         final int fee = amount == null ? 0 : b.fee.feeFor(amount, b.currency);
         final bool packages = b.amountType == 'packages';
-        final bool fixedDue = b.amountType == 'due' && !b.partialPayment;
-        final bool openAmount = !packages && !fixedDue;
         final bool longPackages = packages && b.packages.length > 8;
-        // The typed amount's bounds: the biller's for an open amount, what
-        // is due for a bill that can be paid in part.
-        final int? amountMin = b.amountType == 'open' ? b.min : null;
-        final int? amountMax = b.amountType == 'open' ? b.max : ((_due ?? 0) > 0 ? _due : null);
-        // A bill with nothing due, or paid in full (nothing to type): say
-        // why it cannot be paid instead of a silently disabled Continue.
-        final String? dueProblem = b.amountType != 'due' || needsLookup
+        final String? accountError = typed.isEmpty || accountOk
             ? null
-            : (_due ?? 0) <= 0
-                ? 'Nothing to pay on this account.'
-                : (fixedDue ? problem : null);
-        final String? accountError = typed.isEmpty
-            ? null
-            : !accountOk
-                ? [
-                    "This number is not in the expected format.".tr,
-                    if (format.length != null) '${"Expected".tr}: ${format.length}.',
-                  ].join(' ')
-                : _lookupError;
+            : [
+                "This number is not in the expected format.".tr,
+                if (format.length != null) '${"Expected".tr}: ${format.length}.',
+              ].join(' ');
         final String accountLabel = b.accountLabel.isEmpty ? "Account or contract number".tr : b.accountLabel;
         final helperParts = [if (b.accountHint.isNotEmpty) b.accountHint, ?format.length];
-        final l = _lookup;
-        final lookupRows = <Widget>[
-          if (l != null && (l['customerName'] ?? '').toString().isNotEmpty)
-            FinRow(
-              "Customer".tr,
-              l['customerName'].toString(),
-              trailing: Icon(Icons.verified_rounded, size: 18, color: c.successStrong, semanticLabel: "Verified".tr),
-            ),
-          if (l != null && l['amountDue'] != null) FinRow("Amount due".tr, FinanceMoney.format(_due ?? 0, b.currency), strong: true),
-          if (l != null && l['dueDate'] != null) FinRow("Due date".tr, FinanceUi.day(l['dueDate'])),
-        ];
         final missing = <String>[
           if (!accountOk) accountLabel,
-          if (!needsLookup && packages && amount == null) "Package".tr,
-          if (!needsLookup && openAmount && (amount == null || problem != null)) "Amount".tr,
+          if (packages && amount == null) "Package".tr,
+          if (!packages && (amount == null || problem != null)) "Amount".tr,
         ];
         return FinScaffold(
           title: b.name,
@@ -449,20 +384,12 @@ class _BillPayScreenState extends State<BillPayScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   FinMissing(missing),
-                  needsLookup
-                      ? DsButton.primary(
-                          label: "Check the account".tr,
-                          size: DsButtonSize.lg,
-                          expand: true,
-                          loading: _checking,
-                          onPressed: verified && accountOk && !_checking ? () => _check(b) : null,
-                        )
-                      : DsButton.primary(
-                          label: "Continue".tr,
-                          size: DsButtonSize.lg,
-                          expand: true,
-                          onPressed: verified && accountOk && amount != null && problem == null ? () => _continue(b) : null,
-                        ),
+                  DsButton.primary(
+                    label: "Continue".tr,
+                    size: DsButtonSize.lg,
+                    expand: true,
+                    onPressed: verified && accountOk && amount != null && problem == null ? () => _continue(b) : null,
+                  ),
                 ],
               ),
             ),
@@ -481,10 +408,7 @@ class _BillPayScreenState extends State<BillPayScreen> {
                     keyboardType: format.numeric ? TextInputType.number : TextInputType.text,
                     helper: accountError == null && helperParts.isNotEmpty ? helperParts.join(' · ') : null,
                     errorText: accountError,
-                    onChanged: (_) => setState(() {
-                      _lookup = null;
-                      _lookupError = null;
-                    }),
+                    onChanged: (_) => setState(() {}),
                   ),
                   CheckboxListTile(
                     contentPadding: EdgeInsets.zero,
@@ -495,65 +419,61 @@ class _BillPayScreenState extends State<BillPayScreen> {
                   ),
                 ],
               ),
-              if (lookupRows.isNotEmpty) FinSection(title: "Bill details".tr, divided: true, children: lookupRows),
-              if (!needsLookup) ...[
+              FinSection(
+                title: (packages ? "Package" : "Amount").tr,
+                padding: !packages || longPackages ? paymentFormPadding : null,
+                children: [
+                  if (longPackages)
+                    // A long list: a searchable picker instead of radio rows.
+                    FinPickerField<String>(
+                      label: "Package".tr,
+                      value: _package,
+                      requiredMark: true,
+                      searchHint: "Search for a package".tr,
+                      options: [for (final p in b.packages) (p.code, '${p.name} · ${FinanceMoney.format(p.amount, b.currency)}')],
+                      onChanged: (v) => setState(() => _package = v),
+                    )
+                  else if (packages)
+                    RadioGroup<String>(
+                      groupValue: _package,
+                      onChanged: (v) => setState(() => _package = v),
+                      child: Column(children: [
+                        for (final p in b.packages)
+                          RadioListTile<String>(
+                            contentPadding: EdgeInsets.zero,
+                            value: p.code,
+                            title: Text(p.name, style: DsTypography.body.copyWith(color: c.textPrimary)),
+                            secondary: Text(FinanceMoney.format(p.amount, b.currency), style: DsTypography.bodyStrong.copyWith(color: c.textPrimary).tabular),
+                          ),
+                      ]),
+                    )
+                  else
+                    FinAmountField(
+                      label: "Amount".tr,
+                      controller: _amount,
+                      currency: b.currency,
+                      min: b.min,
+                      max: b.max,
+                      // The field explains the format and the bounds; any
+                      // other rule of the biller is said here.
+                      errorText: FinanceAmount.problem(_amount.text, b.currency, min: b.min, max: b.max) == null ? problem?.tr : null,
+                      onChanged: (_) => setState(() {}),
+                    ),
+                ],
+              ),
+              // Without a connection to the biller, the amount comes from the bill itself.
+              if (b.amountType == 'due' || b.lookup)
+                FinNotice("Enter the amount shown on your bill. Spideli Finance pays the biller this amount for this account.".tr),
+              if (amount != null && problem == null)
                 FinSection(
-                  title: (packages ? "Package" : "Amount").tr,
-                  padding: openAmount || longPackages ? paymentFormPadding : null,
+                  title: "Summary".tr,
                   children: [
-                    if (longPackages)
-                      // A long list: a searchable picker instead of radio rows.
-                      FinPickerField<String>(
-                        label: "Package".tr,
-                        value: _package,
-                        requiredMark: true,
-                        searchHint: "Search for a package".tr,
-                        options: [for (final p in b.packages) (p.code, '${p.name} · ${FinanceMoney.format(p.amount, b.currency)}')],
-                        onChanged: (v) => setState(() => _package = v),
-                      )
-                    else if (packages)
-                      RadioGroup<String>(
-                        groupValue: _package,
-                        onChanged: (v) => setState(() => _package = v),
-                        child: Column(children: [
-                          for (final p in b.packages)
-                            RadioListTile<String>(
-                              contentPadding: EdgeInsets.zero,
-                              value: p.code,
-                              title: Text(p.name, style: DsTypography.body.copyWith(color: c.textPrimary)),
-                              secondary: Text(FinanceMoney.format(p.amount, b.currency), style: DsTypography.bodyStrong.copyWith(color: c.textPrimary).tabular),
-                            ),
-                        ]),
-                      )
-                    else if (fixedDue)
-                      FinRow("Amount".tr, FinanceMoney.format(_due ?? 0, b.currency))
-                    else
-                      FinAmountField(
-                        label: "Amount".tr,
-                        controller: _amount,
-                        currency: b.currency,
-                        min: amountMin,
-                        max: amountMax,
-                        // The field explains the format and the bounds; any
-                        // other rule of the biller is said here.
-                        errorText: FinanceAmount.problem(_amount.text, b.currency, min: amountMin, max: amountMax) == null ? problem?.tr : null,
-                        onChanged: (_) => setState(() {}),
-                      ),
+                    FinRow("Amount".tr, FinanceMoney.format(amount, b.currency)),
+                    FinRow("Fee".tr, fee == 0 ? "Free".tr : FinanceMoney.format(fee, b.currency)),
+                    Divider(height: DsSpace.lg, color: c.divider),
+                    FinRow("Total".tr, FinanceMoney.format(amount + fee, b.currency), strong: true),
                   ],
                 ),
-                if (dueProblem != null)
-                  FinNotice(dueProblem.tr, tone: (_due ?? 0) <= 0 ? DsTone.info : DsTone.warning),
-                if (amount != null && problem == null)
-                  FinSection(
-                    title: "Estimate".tr,
-                    children: [
-                      FinRow("Amount".tr, FinanceMoney.format(amount, b.currency)),
-                      FinRow("Estimated fee".tr, fee == 0 ? "Free".tr : FinanceMoney.format(fee, b.currency)),
-                      Divider(height: DsSpace.lg, color: c.divider),
-                      FinRow("Estimated total".tr, FinanceMoney.format(amount + fee, b.currency), strong: true),
-                    ],
-                  ),
-              ],
             ],
           ),
         );
@@ -562,9 +482,75 @@ class _BillPayScreenState extends State<BillPayScreen> {
   }
 }
 
+/// The bill payment to confirm: biller, account, amount, fee and total;
+/// then the identity check above the threshold, and the payment.
+class BillConfirmScreen extends StatelessWidget {
+  final BillsConfig config;
+  final BillDraft draft;
+
+  const BillConfirmScreen({super.key, required this.config, required this.draft});
+
+  Future<void> _confirm(BuildContext context) async {
+    final d = draft;
+    final String cur = d.biller.currency;
+    // Before anything is charged: a restricted account is told now.
+    if (!await financeDirectRun(() => FinancePaymentService.requireAllowed('payments'))) return;
+    if (config.needsReauth(d.total, cur) && !await FinanceReauth.confirm()) return;
+    if (!context.mounted) return;
+    String? requestId;
+    await FinancePaySheet.show(
+      context,
+      title: d.biller.name,
+      amount: d.total,
+      currency: cur,
+      methods: config.paymentMethods,
+      submit: (payment) async {
+        final reply = await FinanceTransferService.payBill(config, d, payment.funding);
+        requestId = reply['requestId']?.toString();
+        return reply;
+      },
+    );
+    if (requestId != null) Get.off(() => BillPaymentScreen(requestId: requestId!, config: config));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = draft;
+    final b = d.biller;
+    String m(int v) => FinanceMoney.format(v, b.currency);
+    return FinScaffold(
+      title: "Bill payment".tr,
+      body: FinBody(children: [
+        FinHeader(
+          overline: BillLabels.category(b.category).tr,
+          title: m(d.total),
+          subtitle: '${b.name} · ${ltr(d.account)}',
+          icon: _icon(b.category),
+        ),
+        PaymentConfirmCard(
+          lines: [
+            ("Biller".tr, b.name),
+            ("Account".tr, ltr(d.account)),
+            if (d.package != null) ("Package".tr, d.package!.name),
+            ("Amount".tr, m(d.amount)),
+            ("Fee".tr, d.fee == 0 ? "Free".tr : m(d.fee)),
+          ],
+          total: d.total,
+          currency: b.currency,
+          expiresAt: null,
+          confirmLabel: "Confirm and pay".tr,
+          onConfirm: () => _confirm(context),
+          onCancel: () async => Get.back(),
+        ),
+        FinNotice("Check the account number: Spideli Finance pays the biller for this account. You can follow the payment here.".tr),
+      ]),
+    );
+  }
+}
+
 // ------------------------------------------------------------------ payment
 
-/// One bill payment: confirmation, status, the biller's token and receipt.
+/// One bill payment: status, the biller's token and receipt.
 class BillPaymentScreen extends StatefulWidget {
   final String requestId;
   final BillsConfig config;
@@ -578,7 +564,6 @@ class BillPaymentScreen extends StatefulWidget {
 class _BillPaymentScreenState extends State<BillPaymentScreen> {
   late Stream<Map<String, dynamic>?> _stream = FinanceTransferService.billPayment(widget.requestId);
 
-  BillsConfig get config => widget.config;
   String get requestId => widget.requestId;
 
   @override
@@ -597,14 +582,6 @@ class _BillPaymentScreenState extends State<BillPaymentScreen> {
         );
       },
     );
-  }
-
-  /// "Start again" after an expiry: the biller's form with the account
-  /// filled in (null when the payment does not name its biller).
-  VoidCallback? _restart(Map<String, dynamic> p) {
-    final String billerId = (p['billerId'] ?? '').toString();
-    if (billerId.isEmpty) return null;
-    return () => Get.off(() => BillPayScreen(billerId: billerId, config: config, account: p['account']?.toString()));
   }
 
   Widget _body(BuildContext context, Map<String, dynamic> p) {
@@ -629,7 +606,6 @@ class _BillPaymentScreenState extends State<BillPaymentScreen> {
     final String billerReference = (p['billerReference'] ?? '').toString();
     final String tokenLabel = (p['tokenLabel'] ?? '').toString();
     final track = paymentTrack(status);
-    final restart = _restart(p);
     return FinBody(
       children: [
         FinHeader(
@@ -641,90 +617,37 @@ class _BillPaymentScreenState extends State<BillPaymentScreen> {
           icon: _icon(category),
           below: reason.isEmpty ? null : DsInlineAlert(tone: FinStatus.tone(status), title: "Reason".tr, message: reason),
         ),
-        if (PaymentFlow.canConfirm(status, null, DateTime.now()))
-          PaymentConfirmCard(
-            lines: details,
-            total: total,
-            currency: cur,
-            expiresAt: FinanceGroupService.toDate(p['expiresAt']),
-            confirmLabel: "Confirm and pay".tr,
-            onRestart: restart,
-            onConfirm: () async {
-              if (config.needsReauth(total, cur) && !await FinanceReauth.confirm()) return;
-              if (!context.mounted) return;
-              await FinancePaySheet.show(
-                context,
-                title: p['billerName']?.toString() ?? "Bill payment".tr,
-                amount: total,
-                currency: cur,
-                methods: config.paymentMethods,
-                // One key per payment request and method, reused on a retry
-                // until the server accepts it.
-                submit: (pay) async {
-                  final String intent = FinanceRequestKeys.intentOf('bill.confirm', requestId, total, pay);
-                  final reply = await FinanceTransferService.confirmBill(requestId, pay, FinanceRequestKeys.of(intent));
-                  FinanceRequestKeys.done(intent);
-                  return reply;
-                },
-              );
-            },
-            onCancel: () async {
-              if (await FinanceUi.run(() => FinanceTransferService.cancelBill(requestId), success: "Payment cancelled")) Get.back();
-            },
-          )
-        else ...[
-          if (status == 'completed' && token.isNotEmpty)
-            _TokenCard(label: tokenLabel.isEmpty ? "Your code".tr : tokenLabel, token: token, units: (p['units'] ?? '').toString()),
-          if (track != null) FinSection(title: "Status".tr, padding: const EdgeInsets.all(DsSpace.lg), children: [track]),
-          if (status == 'pending')
-            FinNotice("Approve the payment on your phone if you are asked to. This page updates when the payment is confirmed.".tr),
-          if (status == 'expired' && restart != null)
-            FinNotice("This request expired. Start again to get an up-to-date price.".tr, tone: DsTone.warning, actionLabel: "Start again".tr, onAction: restart),
-          FinSection(
-            title: "Details".tr,
-            divided: true,
-            children: [
-              for (final (l, v) in details) FinRow(l, v),
-              FinRow(paymentTotalLabel(status), m(total), strong: true),
-              FinRow("Date".tr, FinanceUi.date(p['createdAt'])),
-              if (p['completedAt'] != null) FinRow("Completed on".tr, FinanceUi.date(p['completedAt'])),
-              if (reference.isNotEmpty) FinRow("Reference".tr, ltrRef(reference)),
-              if (billerReference.isNotEmpty) FinRow("Biller reference".tr, ltrRef(billerReference)),
+        if (status == 'completed' && token.isNotEmpty)
+          _TokenCard(label: tokenLabel.isEmpty ? "Your code".tr : tokenLabel, token: token, units: (p['units'] ?? '').toString()),
+        if (track != null) FinSection(title: "Status".tr, padding: const EdgeInsets.all(DsSpace.lg), children: [track]),
+        if (status == 'processing') FinNotice("Your payment was received. Spideli Finance is paying the biller; this page updates when it is done.".tr),
+        FinSection(
+          title: "Details".tr,
+          divided: true,
+          children: [
+            for (final (l, v) in details) FinRow(l, v),
+            FinRow(paymentTotalLabel(status), m(total), strong: true),
+            FinRow("Date".tr, FinanceUi.date(p['createdAt'])),
+            if (p['completedAt'] != null) FinRow("Completed on".tr, FinanceUi.date(p['completedAt'])),
+            if (reference.isNotEmpty) FinRow("Reference".tr, ltrRef(reference)),
+            if (billerReference.isNotEmpty) FinRow("Biller reference".tr, ltrRef(billerReference)),
+          ],
+        ),
+        if (status == 'completed' || status == 'reversed') ...[
+          const DsGap(FinSpace.section),
+          PaymentReceiptButton(
+            title: "Bill payment receipt".tr,
+            reference: p['reference']?.toString() ?? p['id'].toString(),
+            highlight: token.isEmpty ? null : token,
+            lines: [
+              ("Reference".tr, p['reference']?.toString() ?? p['id'].toString()),
+              ("Status".tr, PaymentFlow.label(status).tr),
+              ("Date".tr, FinanceUi.date(p['completedAt'] ?? p['createdAt'])),
+              ...details,
+              ("Total paid".tr, m(total)),
+              if ((p['billerReference'] ?? '').toString().isNotEmpty) ("Biller reference".tr, p['billerReference'].toString()),
             ],
           ),
-          if (PaymentFlow.canCancel(status)) ...[
-            const DsGap(DsSpace.lg),
-            DsButton.ghost(
-              label: "Cancel this payment".tr,
-              icon: Icons.close_rounded,
-              expand: true,
-              onPressed: () async {
-                final ok = await finConfirm(
-                  title: "Cancel this payment?".tr,
-                  lines: [("Biller".tr, p['billerName']?.toString() ?? '-'), ("Total".tr, m(total))],
-                  confirmLabel: "Cancel this payment".tr,
-                  destructive: true,
-                );
-                if (ok) await FinanceUi.run(() => FinanceTransferService.cancelBill(requestId), success: "Payment cancelled");
-              },
-            ),
-          ],
-          if (status == 'completed' || status == 'reversed') ...[
-            const DsGap(FinSpace.section),
-            PaymentReceiptButton(
-              title: "Bill payment receipt".tr,
-              reference: p['reference']?.toString() ?? p['id'].toString(),
-              highlight: token.isEmpty ? null : token,
-              lines: [
-                ("Reference".tr, p['reference']?.toString() ?? p['id'].toString()),
-                ("Status".tr, PaymentFlow.label(status).tr),
-                ("Date".tr, FinanceUi.date(p['completedAt'] ?? p['createdAt'])),
-                ...details,
-                ("Total paid".tr, m(total)),
-                if ((p['billerReference'] ?? '').toString().isNotEmpty) ("Biller reference".tr, p['billerReference'].toString()),
-              ],
-            ),
-          ],
         ],
       ],
     );

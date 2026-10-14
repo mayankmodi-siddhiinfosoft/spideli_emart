@@ -11,6 +11,7 @@ import '../screen_ui/auth_screens/login_screen.dart';
 import '../screen_ui/auth_screens/sign_up_screen.dart';
 import '../screen_ui/service_home_screen/service_list_screen.dart';
 import '../service/fire_store_utils.dart';
+import '../utils/mfa_challenge.dart';
 import '../utils/push_token.dart';
 import '../utils/push_token_sync.dart';
 
@@ -73,7 +74,12 @@ class OtpVerifyController extends GetxController {
       // below / after sign-up; never awaited here, iOS may still be waiting
       // for its APNs token).
       final String fcmToken = PushToken.device ?? '';
-      final result = await _auth.signInWithCredential(credential);
+      final result = await MfaChallenge.signIn(() => _auth.signInWithCredential(credential));
+      // Two-step verification code not given: not signed in, stay on this screen.
+      if (result == null) {
+        ShowToastDialog.closeLoader();
+        return;
+      }
 
       if (result.additionalUserInfo?.isNewUser == true) {
         final userModel = UserModel(id: result.user!.uid, countryCode: countryCode.value, countryISOCode: countryISOCode.value, phoneNumber: phoneNumber.value, fcmToken: fcmToken, active: true);

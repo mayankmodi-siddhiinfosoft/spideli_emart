@@ -1,15 +1,21 @@
-/// Spideli Finance: economic intelligence, investor matching and the AI
-/// financial coach, the pure rules the screens use
-/// (.claude/FINANCE-APP-CONTRACT.md section 17). Unit tested in
-/// test/finance_intel_rules_test.dart.
+/// Spideli Finance: economic intelligence, markets, investor matching and
+/// the AI financial coach, the pure rules and write plans the screens use
+/// (.claude/FINANCE-APP-CONTRACT.md section 17,
+/// .claude/FINANCE-DIRECT-FIRESTORE.md section 3.11). Unit tested in
+/// test/finance_intel_rules_test.dart and test/finance_markets_test.dart.
 ///
-/// Indicators and exchange rates come only from approved sources through
-/// the server; the app never shows a figure without its source, period and
-/// update time. The AI coach runs on the server; it informs and explains,
-/// and never moves money.
+/// Indicators, exchange rates and market data (securities, prices, IPOs,
+/// collections, news) are published by the ADMIN from approved, licensed
+/// sources; the app never shows a figure without its source and update
+/// time. The customer writes only their own investor profile, watchlist and
+/// responses to opportunities. The AI coach runs on a server; it informs and
+/// explains, and never moves money.
 library;
 
 import 'dart:math' as math;
+
+import 'package:cloud_firestore/cloud_firestore.dart' show FieldValue;
+import 'package:customer/service/finance_ledger.dart' show FinanceWrite;
 
 int _int(dynamic v) => v is num ? v.round() : int.tryParse('${v ?? ''}') ?? 0;
 
@@ -64,6 +70,29 @@ class CoachConfig {
   const CoachConfig({required this.consentVersion, required this.consentText, required this.topics, required this.maxMessageLength});
 }
 
+/// The market parts of `platform_settings/intelligence.markets`
+/// (`{enabled, stocks, bonds, ipos, collections, news}`): each one offered
+/// only when `true` (the admin publishes its data from a licensed feed).
+class MarketsConfig {
+  final bool stocks;
+  final bool bonds;
+  final bool ipos;
+  final bool collections;
+  final bool news;
+
+  const MarketsConfig({this.stocks = false, this.bonds = false, this.ipos = false, this.collections = false, this.news = false});
+
+  bool get any => stocks || bonds || ipos || collections || news;
+
+  /// Null when `enabled` is not true or no part is on.
+  static MarketsConfig? parse(dynamic raw) {
+    final m = _map(raw);
+    if (m['enabled'] != true) return null;
+    final c = MarketsConfig(stocks: m['stocks'] == true, bonds: m['bonds'] == true, ipos: m['ipos'] == true, collections: m['collections'] == true, news: m['news'] == true);
+    return c.any ? c : null;
+  }
+}
+
 /// `platform_settings/intelligence` (admin). Each part is offered only when
 /// enabled and valid; null when nothing is.
 class IntelligenceConfig {
@@ -71,8 +100,9 @@ class IntelligenceConfig {
   final FxConfig? fx;
   final MatchingConfig? matching;
   final CoachConfig? coach;
+  final MarketsConfig? markets;
 
-  const IntelligenceConfig({this.indicators, this.fx, this.matching, this.coach});
+  const IntelligenceConfig({this.indicators, this.fx, this.matching, this.coach, this.markets});
 
   static const List<String> matchKeys = ['sector', 'country', 'type', 'ticket', 'horizon'];
 
@@ -120,8 +150,9 @@ class IntelligenceConfig {
         maxMessageLength: max <= 0 ? 1000 : math.min(max, 4000),
       );
     }
-    if (indicators == null && fxc == null && matching == null && coach == null) return null;
-    return IntelligenceConfig(indicators: indicators, fx: fxc, matching: matching, coach: coach);
+    final markets = MarketsConfig.parse(raw['markets']);
+    if (indicators == null && fxc == null && matching == null && coach == null && markets == null) return null;
+    return IntelligenceConfig(indicators: indicators, fx: fxc, matching: matching, coach: coach, markets: markets);
   }
 }
 
@@ -382,6 +413,388 @@ abstract final class MatchRules {
     }
     return MatchResult(total == 0 ? 0 : (got * 100 / total).round(), [for (final k in IntelligenceConfig.matchKeys) if (met[k]!) k]);
   }
+}
+
+/// The customer's own writes of the matching part (pure).
+abstract final class IntelPlans {
+  /// Why the profile cannot be saved, as a `FinanceException` reason.
+  static String? profileProblem(MatchingConfig cfg, {required String currency, required int minTicket, required int maxTicket}) {
+    if (!cfg.currencies.contains(currency)) return 'state_changed';
+    if (minTicket < 0 || maxTicket <= 0 || minTicket > maxTicket) return 'amount_out_of_range';
+    return null;
+  }
+
+  /// `investor_profiles/{uid}` (the owner's document, replaced as a whole):
+  /// only the values the admin offers.
+  static List<FinanceWrite> investorProfile(
+    String uid,
+    MatchingConfig cfg, {
+    required String currency,
+    required List<String> sectors,
+    required List<String> countries,
+    required List<String> types,
+    required int minTicket,
+    required int maxTicket,
+    required int maxRisk,
+    required int maxHorizonMonths,
+  }) =>
+      [
+        FinanceWrite('investor_profiles/$uid', 'merge', {
+          'currency': currency,
+          'sectors': [for (final x in sectors.toSet()) if (cfg.sectors.contains(x)) x],
+          'countries': [for (final x in countries.toSet()) if (cfg.countries.contains(x)) x],
+          'types': [for (final x in types.toSet()) if (cfg.types.contains(x)) x],
+          'minTicket': minTicket,
+          'maxTicket': maxTicket,
+          'maxRisk': maxRisk.clamp(1, 7),
+          'maxHorizonMonths': math.max(0, maxHorizonMonths),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }),
+      ];
+
+  /// The longest message sent with a response.
+  static const int maxMessage = 500;
+
+  /// `opportunity_interests/{opportunityId}_{uid}`: the user's response. Their
+  /// name and email are shared with the owner only when [interested] (and
+  /// removed when they say "not for me" afterwards). No money moves.
+  static List<FinanceWrite> respond({
+    required String opportunityId,
+    required String uid,
+    required bool interested,
+    String message = '',
+    String name = '',
+    String email = '',
+  }) {
+    final String text = message.trim();
+    return [
+      FinanceWrite('opportunity_interests/${opportunityId}_$uid', 'merge', {
+        'opportunityId': opportunityId,
+        'userId': uid,
+        'interested': interested,
+        'message': text.length > maxMessage ? text.substring(0, maxMessage) : text,
+        'name': interested ? name.trim() : FieldValue.delete(),
+        'email': interested ? email.trim() : FieldValue.delete(),
+        'createdAt': FieldValue.serverTimestamp(),
+      }),
+    ];
+  }
+}
+
+// ------------------------------------------------------------------ markets
+
+/// The direction of a change: `up`, `down`, `flat`, or null without one.
+String? _direction(double? change) {
+  if (change == null) return null;
+  if (change.abs() < 1e-9) return 'flat';
+  return change > 0 ? 'up' : 'down';
+}
+
+String _https(dynamic v) => '${v ?? ''}'.startsWith('https://') ? v.toString() : '';
+
+/// `market_securities/{id}`, published by the admin from a licensed feed:
+/// a stock, an ETF, a bond, or a market index (prices in major units of
+/// [currency]; an index is in points). Shown only with a source, an update
+/// time and a price (a bond: a price or a yield).
+class MarketSecurity {
+  static const List<String> types = ['stock', 'etf', 'bond', 'index'];
+
+  final String id;
+  final String type;
+  final String symbol;
+  final String name;
+  final String exchange;
+  final String country;
+  final String currency;
+  final String sector;
+  final double? price;
+  final double? change;
+  final double? changePercent;
+  final double? open;
+  final double? high;
+  final double? low;
+  final double? volume;
+  final double? couponPercent;
+  final double? yieldPercent;
+  final DateTime? maturityDate;
+  final String source;
+  final DateTime? updatedAt;
+
+  /// The feed delays the prices (e.g. 15 minutes): said next to them.
+  final bool delayed;
+
+  const MarketSecurity({
+    required this.id,
+    required this.type,
+    required this.symbol,
+    required this.name,
+    required this.exchange,
+    required this.country,
+    required this.currency,
+    required this.sector,
+    required this.price,
+    required this.change,
+    required this.changePercent,
+    required this.open,
+    required this.high,
+    required this.low,
+    required this.volume,
+    required this.couponPercent,
+    required this.yieldPercent,
+    required this.maturityDate,
+    required this.source,
+    required this.updatedAt,
+    required this.delayed,
+  });
+
+  /// Null when it is not published or incomplete.
+  static MarketSecurity? fromMap(Map<String, dynamic> m, DateTime? Function(dynamic) toDate) {
+    final String type = m['type']?.toString() ?? '';
+    final s = MarketSecurity(
+      id: m['id']?.toString() ?? '',
+      type: type,
+      symbol: m['symbol']?.toString().trim() ?? '',
+      name: m['name']?.toString().trim() ?? '',
+      exchange: m['exchange']?.toString().trim() ?? '',
+      country: m['country']?.toString().trim() ?? '',
+      currency: m['currency']?.toString().trim() ?? '',
+      sector: m['sector']?.toString().trim() ?? '',
+      price: _num(m['price']),
+      change: _num(m['change']),
+      changePercent: _num(m['changePercent']),
+      open: _num(m['open']),
+      high: _num(m['high']),
+      low: _num(m['low']),
+      volume: _num(m['volume']),
+      couponPercent: _num(m['couponPercent']),
+      yieldPercent: _num(m['yieldPercent']),
+      maturityDate: toDate(m['maturityDate']),
+      source: m['source']?.toString().trim() ?? '',
+      updatedAt: toDate(m['updatedAt']),
+      delayed: m['delayed'] == true,
+    );
+    if (m['published'] != true || !types.contains(type) || s.id.isEmpty || (s.name.isEmpty && s.symbol.isEmpty)) return null;
+    if (s.source.isEmpty || s.updatedAt == null) return null;
+    if (s.price == null && !(type == 'bond' && s.yieldPercent != null)) return null;
+    return s;
+  }
+
+  bool get isBond => type == 'bond';
+  bool get isIndex => type == 'index';
+
+  /// The name, else the symbol.
+  String get title => name.isNotEmpty ? name : symbol;
+
+  /// `up`, `down`, `flat`, or null without a change.
+  String? get direction => _direction(changePercent ?? change);
+
+  /// Updated by the feed within [freshFor] and not delayed: "live".
+  bool isLive(DateTime now, {Duration freshFor = const Duration(minutes: 15)}) => !delayed && updatedAt != null && now.difference(updatedAt!) <= freshFor;
+
+  /// "1 234.5 XAF" ("1 234.5" for an index).
+  String get priceDisplay => price == null ? '-' : '${formatNumber(price!)}${isIndex || currency.isEmpty ? '' : ' $currency'}';
+
+  /// "+1.25 %" (null without a change).
+  String? get changeDisplay {
+    final double? p = changePercent;
+    if (p != null) return '${p > 0 ? '+' : ''}${formatNumber(p)} %';
+    final double? c = change;
+    return c == null ? null : '${c > 0 ? '+' : ''}${formatNumber(c)}';
+  }
+
+  /// Sorted by name for a list.
+  static int byName(MarketSecurity a, MarketSecurity b) => a.title.toLowerCase().compareTo(b.title.toLowerCase());
+}
+
+/// `market_price_history/{id}`: `{securityId, date, close}`; the closes of
+/// [rows] with a date and a value, oldest first.
+List<(DateTime, double)> closingPrices(List<Map<String, dynamic>> rows, DateTime? Function(dynamic) toDate) {
+  final out = <(DateTime, double)>[
+    for (final r in rows)
+      if (toDate(r['date']) != null && _num(r['close']) != null) (toDate(r['date'])!, _num(r['close'])!),
+  ]..sort((a, b) => a.$1.compareTo(b.$1));
+  return out;
+}
+
+/// `ipo_listings/{id}`, published by the admin: an initial public offering
+/// to follow (Spideli does not take subscriptions: that needs a broker).
+class IpoListing {
+  static const List<String> statuses = ['upcoming', 'open', 'closed', 'listed', 'withdrawn'];
+
+  final String id;
+  final String company;
+  final String symbol;
+  final String exchange;
+  final String country;
+  final String sector;
+  final String currency;
+  final double? priceLow;
+  final double? priceHigh;
+  final double? offerPrice;
+  final DateTime? openDate;
+  final DateTime? closeDate;
+  final DateTime? listingDate;
+  final String status;
+
+  /// The prospectus (https only).
+  final String prospectusUrl;
+  final String source;
+  final DateTime? updatedAt;
+
+  const IpoListing({
+    required this.id,
+    required this.company,
+    required this.symbol,
+    required this.exchange,
+    required this.country,
+    required this.sector,
+    required this.currency,
+    required this.priceLow,
+    required this.priceHigh,
+    required this.offerPrice,
+    required this.openDate,
+    required this.closeDate,
+    required this.listingDate,
+    required this.status,
+    required this.prospectusUrl,
+    required this.source,
+    required this.updatedAt,
+  });
+
+  /// Null when it is not published or incomplete (company, a known status,
+  /// a source and an update time).
+  static IpoListing? fromMap(Map<String, dynamic> m, DateTime? Function(dynamic) toDate) {
+    final i = IpoListing(
+      id: m['id']?.toString() ?? '',
+      company: m['company']?.toString().trim() ?? '',
+      symbol: m['symbol']?.toString().trim() ?? '',
+      exchange: m['exchange']?.toString().trim() ?? '',
+      country: m['country']?.toString().trim() ?? '',
+      sector: m['sector']?.toString().trim() ?? '',
+      currency: m['currency']?.toString().trim() ?? '',
+      priceLow: _num(m['priceLow']),
+      priceHigh: _num(m['priceHigh']),
+      offerPrice: _num(m['offerPrice']),
+      openDate: toDate(m['openDate']),
+      closeDate: toDate(m['closeDate']),
+      listingDate: toDate(m['listingDate']),
+      status: m['status']?.toString() ?? '',
+      prospectusUrl: _https(m['prospectusUrl']),
+      source: m['source']?.toString().trim() ?? '',
+      updatedAt: toDate(m['updatedAt']),
+    );
+    if (m['published'] != true || i.id.isEmpty || i.company.isEmpty || !statuses.contains(i.status) || i.source.isEmpty || i.updatedAt == null) return null;
+    return i;
+  }
+
+  /// The offer price, else the range ("1 000 - 1 200 XAF"), else null.
+  String? get priceDisplay {
+    final String cur = currency.isEmpty ? '' : ' $currency';
+    if (offerPrice != null) return '${formatNumber(offerPrice!)}$cur';
+    if (priceLow != null && priceHigh != null) return '${formatNumber(priceLow!)} - ${formatNumber(priceHigh!)}$cur';
+    final double? one = priceLow ?? priceHigh;
+    return one == null ? null : '${formatNumber(one)}$cur';
+  }
+
+  /// The order of the IPO list: open, upcoming, then the others.
+  int get rank => switch (status) { 'open' => 0, 'upcoming' => 1, 'listed' => 2, 'closed' => 3, _ => 4 };
+
+  /// Open first, then upcoming (soonest first), then the most recent others.
+  static int compare(IpoListing a, IpoListing b) {
+    if (a.rank != b.rank) return a.rank.compareTo(b.rank);
+    final DateTime far = DateTime(9999);
+    if (a.rank <= 1) return (a.closeDate ?? a.openDate ?? far).compareTo(b.closeDate ?? b.openDate ?? far);
+    return (b.listingDate ?? b.closeDate ?? DateTime(0)).compareTo(a.listingDate ?? a.closeDate ?? DateTime(0));
+  }
+}
+
+/// `stock_collections/{id}`, published by the admin: a themed list of
+/// securities (for information, not a recommendation).
+class StockCollection {
+  final String id;
+  final String title;
+  final String summary;
+  final String theme;
+  final List<String> securityIds;
+
+  /// 1 (low) to 7 (high), or null when not given.
+  final int? riskLevel;
+  final int order;
+
+  const StockCollection({required this.id, required this.title, required this.summary, required this.theme, required this.securityIds, required this.riskLevel, required this.order});
+
+  static StockCollection? fromMap(Map<String, dynamic> m) {
+    final ids = _strings(m['securityIds']);
+    final c = StockCollection(
+      id: m['id']?.toString() ?? '',
+      title: m['title']?.toString().trim() ?? '',
+      summary: m['summary']?.toString().trim() ?? '',
+      theme: m['theme']?.toString().trim() ?? '',
+      securityIds: ids.toSet().toList(),
+      riskLevel: m['riskLevel'] is num ? _int(m['riskLevel']).clamp(1, 7) : null,
+      order: m['order'] is num ? _int(m['order']) : 1 << 30,
+    );
+    if (m['published'] != true || c.id.isEmpty || c.title.isEmpty || ids.isEmpty) return null;
+    return c;
+  }
+
+  /// The collection's securities that are published, in its order.
+  List<MarketSecurity> of(List<MarketSecurity> all) {
+    final byId = {for (final s in all) s.id: s};
+    return [for (final id in securityIds) ?byId[id]];
+  }
+}
+
+/// `finance_news/{id}`, published by the admin: a news item or an analysis
+/// (`category`), with its source; the full text is at [url] (https).
+class FinanceNews {
+  final String id;
+  final String title;
+  final String summary;
+  final String source;
+  final String url;
+  final String category;
+  final String country;
+  final DateTime? publishedAt;
+
+  const FinanceNews({required this.id, required this.title, required this.summary, required this.source, required this.url, required this.category, required this.country, required this.publishedAt});
+
+  static FinanceNews? fromMap(Map<String, dynamic> m, DateTime? Function(dynamic) toDate) {
+    final n = FinanceNews(
+      id: m['id']?.toString() ?? '',
+      title: m['title']?.toString().trim() ?? '',
+      summary: m['summary']?.toString().trim() ?? '',
+      source: m['source']?.toString().trim() ?? '',
+      url: _https(m['url']),
+      category: (m['category']?.toString().trim() ?? '').isEmpty ? 'news' : m['category'].toString().trim(),
+      country: m['country']?.toString().trim() ?? '',
+      publishedAt: toDate(m['publishedAt']),
+    );
+    if (m['published'] != true || n.id.isEmpty || n.title.isEmpty || n.source.isEmpty || n.publishedAt == null) return null;
+    return n;
+  }
+}
+
+/// The user's watchlist (`investor_watchlists/{uid}`: `{securityIds, updatedAt}`).
+abstract final class MarketPlans {
+  static const int watchlistMax = 50;
+
+  /// The ids of [raw] (a watchlist document), at most [watchlistMax].
+  static List<String> watchlist(Map<String, dynamic>? raw) => _strings(raw?['securityIds']).toSet().take(watchlistMax).toList();
+
+  /// Why [id] cannot be added: the list is full.
+  static String? watchProblem(List<String> current, String id, bool watch) => watch && !current.contains(id) && current.length >= watchlistMax ? 'watchlist_full' : null;
+
+  /// [current] with [id] added ([watch]) or removed.
+  static List<String> toggled(List<String> current, String id, bool watch) => watch ? [...current.where((x) => x != id), id] : [...current.where((x) => x != id)];
+
+  /// The owner's whole watchlist document.
+  static List<FinanceWrite> save(String uid, List<String> ids) => [
+        FinanceWrite('investor_watchlists/$uid', 'merge', {
+          'securityIds': ids.toSet().take(watchlistMax).toList(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }),
+      ];
 }
 
 // -------------------------------------------------------------------- coach

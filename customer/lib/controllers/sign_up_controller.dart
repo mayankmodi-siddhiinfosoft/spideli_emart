@@ -15,6 +15,7 @@ import '../service/fire_store_utils.dart';
 import '../themes/show_toast_dialog.dart';
 import '../utils/push_token.dart';
 import '../utils/push_token_sync.dart';
+import '../utils/social_sign_in.dart';
 
 class SignUpController extends GetxController {
   Rx<TextEditingController> firstNameEditingController = TextEditingController().obs;
@@ -55,12 +56,29 @@ class SignUpController extends GetxController {
         phoneNUmberEditingController.value.text = userModel.value.phoneNumber.toString();
         countryCodeEditingController.value.text = userModel.value.countryCode.toString();
         countryISOCodeEditingController.value.text = userModel.value.countryISOCode.toString();
-      } else if (type.value == "google" || type.value == "apple") {
+      } else if (type.value == "google" || type.value == "apple" || type.value == "linkedin") {
         emailEditingController.value.text = userModel.value.email ?? "";
         firstNameEditingController.value.text = userModel.value.firstName ?? "";
         lastNameEditingController.value.text = userModel.value.lastName ?? "";
       }
     }
+  }
+
+  /// LinkedIn from this screen (shown only when settings/authProviders turns
+  /// it on): a new account completes this form, like one coming from Google;
+  /// an existing customer is signed in.
+  Future<void> signUpWithLinkedIn(String providerId) async {
+    final UserCredential? value = await SocialSignIn.signInWithLinkedIn(providerId);
+    if (value == null) return;
+    if (!await SocialSignIn.isNewCustomer(value)) {
+      await SocialSignIn.openExistingCustomer(value.user!.uid);
+      return;
+    }
+    userModel.value = SocialSignIn.newProfile(value, 'linkedin');
+    type.value = "linkedin";
+    emailEditingController.value.text = userModel.value.email ?? "";
+    firstNameEditingController.value.text = userModel.value.firstName ?? "";
+    lastNameEditingController.value.text = userModel.value.lastName ?? "";
   }
 
   Future<void> signUpWithEmailAndPassword() async {
@@ -79,7 +97,7 @@ class SignUpController extends GetxController {
 
   Future<void> signUp() async {
     ShowToastDialog.showLoader("Please wait".tr);
-    if (type.value == "google" || type.value == "apple" || type.value == "mobileNumber") {
+    if (type.value == "google" || type.value == "apple" || type.value == "linkedin" || type.value == "mobileNumber") {
       userModel.value.firstName = firstNameEditingController.value.text.toString();
       userModel.value.lastName = lastNameEditingController.value.text.toString();
       userModel.value.email = emailEditingController.value.text.toString().toLowerCase();

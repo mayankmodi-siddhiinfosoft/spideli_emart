@@ -1,14 +1,19 @@
 /// Spideli Finance: money transfers and bill payments, the pure rules the
-/// screens use (.claude/FINANCE-APP-CONTRACT.md section 15). Unit tested in
-/// test/finance_transfer_rules_test.dart.
+/// screens use (.claude/FINANCE-APP-CONTRACT.md section 15) and the writes
+/// the app makes itself (.claude/FINANCE-DIRECT-FIRESTORE.md sections 3.3 /
+/// 3.4: no server; the security rules check each batch). Unit tested in
+/// test/finance_transfer_rules_test.dart and test/finance_transfer_direct_test.dart.
 ///
-/// The SERVER validates recipients and balances, computes the binding fee
-/// (shown for confirmation before any money moves), runs the payment state
-/// machine with the providers and issues receipts. The fee computed here is
-/// only the estimate shown while typing.
+/// The app finds the recipient, computes the fee from the admin's settings,
+/// and writes the request with its ledger posting in one batch: an internal
+/// transfer is completed at once; an external one (Mobile Money, Wave, bank)
+/// and a bill are `processing` until the admin pays them out.
 library;
 
 import 'dart:math' as math;
+
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
+import 'package:customer/service/finance_ledger.dart';
 
 int _int(dynamic v) => v is num ? v.round() : int.tryParse('${v ?? ''}') ?? 0;
 
@@ -339,7 +344,359 @@ abstract final class BillLabels {
         'phone': 'Phone credit',
         'gas': 'Gas',
         'education': 'School fees',
+        'taxes': 'Taxes',
+        'products': 'Products',
         'other': 'Other',
       }[c] ??
       (c ?? '-');
+}
+
+// ------------------------------------------------------- direct writes
+
+/// A Spideli user found as a transfer's recipient.
+class TransferRecipient {
+  final String uid;
+  final String name;
+  final String fcmToken;
+
+  const TransferRecipient(this.uid, this.name, this.fcmToken);
+}
+
+/// Finding the recipient of an internal transfer in `users` (by email or
+/// phone: `countryCode` + `phoneNumber`, the number stored without it).
+abstract final class RecipientMatch {
+  static String _digits(String v) => v.replaceAll(RegExp(r'\D'), '');
+
+  /// The `phoneNumber` values a typed [phone] may be stored as: the number
+  /// as typed (digits, with and without +) and, when it starts with a
+  /// country code, without its first 1, 2 or 3 digits. At most 10 (a
+  /// Firestore `in` filter).
+  static List<String> phoneCandidates(String phone) {
+    final String d = _digits(phone);
+    if (d.isEmpty) return const [];
+    final out = <String>{d, '+$d', if (d.startsWith('0')) d.substring(1)};
+    for (int n = 1; n <= 3; n++) {
+      if (d.length - n >= 6) out.add(d.substring(n));
+    }
+    return out.take(10).toList();
+  }
+
+  /// The users (id, data) that match [phone]: with a country code, the
+  /// whole number must match `countryCode + phoneNumber`; without one, the
+  /// stored number, preferring the sender's [countryCode].
+  static List<(String, Map<String, dynamic>)> phoneMatches(List<(String, Map<String, dynamic>)> users, String phone, {String? countryCode}) {
+    final String typed = _digits(phone);
+    final bool international = phone.trim().startsWith('+') || phone.trim().startsWith('00');
+    final String full = phone.trim().startsWith('00') ? typed.substring(2) : typed;
+    String whole(Map<String, dynamic> u) => _digits('${u['countryCode'] ?? ''}${u['phoneNumber'] ?? ''}');
+    String local(Map<String, dynamic> u) => _digits('${u['phoneNumber'] ?? ''}').replaceFirst(RegExp(r'^0+'), '');
+    final matches = users.where((u) {
+      if (international) return whole(u.$2) == full;
+      return whole(u.$2) == typed || local(u.$2) == typed.replaceFirst(RegExp(r'^0+'), '');
+    }).toList();
+    if (matches.length <= 1 || international) return matches;
+    final mine = _digits(countryCode ?? '');
+    final same = matches.where((u) => mine.isNotEmpty && _digits('${u.$2['countryCode'] ?? ''}') == mine).toList();
+    return same.isEmpty ? matches : same;
+  }
+
+  /// The recipient among [found] (users matching the email or phone), or a
+  /// refusal: `recipient_not_found` (none, inactive, not a customer),
+  /// `recipient_ambiguous` (several), `self_transfer`.
+  static ({TransferRecipient? recipient, String? reason}) pick(List<(String, Map<String, dynamic>)> found, String senderUid) {
+    final usable = found.where((u) => u.$2['active'] != false && (u.$2['role'] == null || u.$2['role'] == 'customer' || u.$2['role'] == 'user')).toList();
+    final ids = usable.map((u) => u.$1).toSet();
+    if (ids.isEmpty) return (recipient: null, reason: 'recipient_not_found');
+    if (ids.length > 1) return (recipient: null, reason: 'recipient_ambiguous');
+    final u = usable.first;
+    if (u.$1 == senderUid) return (recipient: null, reason: 'self_transfer');
+    final String name = '${u.$2['firstName'] ?? ''} ${u.$2['lastName'] ?? ''}'.trim();
+    return (recipient: TransferRecipient(u.$1, name.isEmpty ? '-' : name, u.$2['fcmToken']?.toString() ?? ''), reason: null);
+  }
+}
+
+/// A transfer as the user confirms it: the app's own figures.
+class TransferDraft {
+  final String channel;
+  final String currency;
+  final int amount;
+  final int fee;
+
+  /// The recipient as stored (`email` | `phone` | `operator` + `number` |
+  /// `number` | `bankCode` + `bankName` + `holderName` + `accountNumber` + `accountMasked`).
+  final Map<String, dynamic> recipient;
+  final String recipientName;
+
+  /// Internal transfers: the Spideli user who receives it.
+  final String? recipientId;
+  final String recipientToken;
+  final String note;
+  final bool saveBeneficiary;
+
+  const TransferDraft({
+    required this.channel,
+    required this.currency,
+    required this.amount,
+    required this.fee,
+    required this.recipient,
+    required this.recipientName,
+    this.recipientId,
+    this.recipientToken = '',
+    this.note = '',
+    this.saveBeneficiary = false,
+  });
+
+  int get total => amount + fee;
+  bool get internal => channel == TransferChannel.internal;
+
+  /// What identifies the recipient within the channel (the request key, the beneficiary).
+  String get recipientKey => switch (channel) {
+        TransferChannel.internal => recipientId ?? '',
+        TransferChannel.bank => '${recipient['bankCode'] ?? recipient['bankName'] ?? ''}:${recipient['accountNumber'] ?? ''}',
+        _ => '${recipient['operator'] ?? ''}:${recipient['number'] ?? ''}',
+      };
+
+  /// The detail shown under the recipient's name (a bank account only by its end).
+  String get detail => switch (channel) {
+        TransferChannel.internal => '${recipient['email'] ?? recipient['phone'] ?? ''}',
+        TransferChannel.mobileMoney => '${recipient['operator'] ?? ''} · ${recipient['number'] ?? ''}',
+        TransferChannel.wave => '${recipient['number'] ?? ''}',
+        TransferChannel.bank => '${recipient['bankName'] ?? ''} · ${recipient['accountMasked'] ?? ''}',
+        _ => '',
+      };
+}
+
+abstract final class TransferPlans {
+  /// The transfer document of [d], before its status fields.
+  static Map<String, dynamic> _transfer(String id, TransferDraft d, {required String senderId, required String senderName, required FinanceFunding funding}) => {
+        'id': id,
+        'senderId': senderId,
+        'senderName': senderName,
+        if (d.internal) 'recipientId': d.recipientId,
+        'participantIds': [senderId, if (d.internal && d.recipientId != null) d.recipientId],
+        'channel': d.channel,
+        'recipient': d.recipient,
+        'recipientName': d.recipientName,
+        'recipientVerified': d.internal,
+        'currency': d.currency,
+        'amount': d.amount,
+        'fee': d.fee,
+        'total': d.total,
+        'receiveAmount': d.amount,
+        if (d.note.isNotEmpty) 'note': d.note,
+        'funding': funding.toMap(),
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+
+  /// An internal transfer: `money_transfers` (completed) and the posting
+  /// sender wallet -> recipient wallet (+ fee line to the platform). The
+  /// recipient's wallet is created when [recipientWallet] does not exist.
+  /// Paid by a gateway, the payment was deposited into the sender's wallet
+  /// first; [funding] records how it was paid.
+  static List<FinanceWrite> internal({
+    required String id,
+    required TransferDraft d,
+    required String senderId,
+    required String senderName,
+    required FinanceFunding funding,
+    required String senderWalletId,
+    required ({String id, bool exists}) recipientWallet,
+    required String txId,
+    String? reference,
+  }) {
+    assert(d.internal && d.recipientId != null);
+    final posting = FinanceLedger.plan(
+      type: 'transfer',
+      currency: d.currency,
+      from: senderWalletId,
+      to: recipientWallet.id,
+      amount: d.amount,
+      fee: d.fee,
+      newAccounts: recipientWallet.exists ? const {} : {recipientWallet.id: FinanceLedger.walletFields(d.recipientId!, d.currency)},
+      userIds: [senderId, d.recipientId!],
+      sourceKind: 'money_transfers',
+      sourceId: id,
+      createdBy: senderId,
+      description: '$senderName -> ${d.recipientName}',
+      txId: txId,
+      reference: reference,
+    );
+    return [
+      FinanceWrite('money_transfers/$id', 'create', {
+        ..._transfer(id, d, senderId: senderId, senderName: senderName, funding: funding),
+        'status': 'completed',
+        'reference': posting.reference,
+        'txId': posting.txId,
+        'completedAt': FieldValue.serverTimestamp(),
+      }),
+      ...posting.writes,
+    ];
+  }
+
+  /// An external transfer (Mobile Money, Wave, bank): `money_transfers`
+  /// (processing, for the admin to pay out) and the posting wallet ->
+  /// platform of the total, fee included (`transfer_out`).
+  static List<FinanceWrite> external({
+    required String id,
+    required TransferDraft d,
+    required String senderId,
+    required String senderName,
+    required FinanceFunding funding,
+    required String senderWalletId,
+    required String txId,
+    String? reference,
+  }) {
+    assert(!d.internal);
+    final posting = FinanceLedger.plan(
+      type: 'transfer_out',
+      currency: d.currency,
+      from: senderWalletId,
+      to: FinanceLedger.platformId(d.currency),
+      amount: d.total,
+      userIds: [senderId],
+      sourceKind: 'money_transfers',
+      sourceId: id,
+      createdBy: senderId,
+      description: '${TransferChannel.label(d.channel)} · ${d.recipientName}',
+      txId: txId,
+      reference: reference,
+    );
+    return [
+      FinanceWrite('money_transfers/$id', 'create', {
+        ..._transfer(id, d, senderId: senderId, senderName: senderName, funding: funding),
+        'status': 'processing',
+        'reference': posting.reference,
+        'txId': posting.txId,
+      }),
+      ...posting.writes,
+    ];
+  }
+
+  /// The sender may ask to cancel an external transfer still `processing`
+  /// that the admin has not taken yet (the admin then reverses it).
+  static bool canRequestCancel(Map<String, dynamic> t, String uid) =>
+      t['senderId'] == uid &&
+      t['channel'] != TransferChannel.internal &&
+      t['status'] == 'processing' &&
+      t['adminLockedAt'] == null &&
+      t['cancelRequested'] != true;
+
+  static Map<String, dynamic> cancelRequest() => {'cancelRequested': true, 'cancelRequestedAt': FieldValue.serverTimestamp()};
+
+  /// A deterministic beneficiary id: one per user, channel and recipient.
+  static String beneficiaryId(String uid, String channel, String recipientKey) =>
+      'ben_${uid}_${channel}_${recipientKey.toLowerCase().replaceAll(RegExp(r'[^a-z0-9@._+-]'), '_')}';
+
+  static Map<String, dynamic> beneficiary(String uid, TransferDraft d) => {
+        'userId': uid,
+        'channel': d.channel,
+        'displayName': d.recipientName,
+        'detail': d.channel == TransferChannel.bank ? '${d.recipient['bankName'] ?? ''} · ${d.recipient['accountMasked'] ?? ''}' : d.detail,
+        'recipient': d.recipient,
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastUsedAt': FieldValue.serverTimestamp(),
+      };
+}
+
+/// A bill payment as the user confirms it.
+class BillDraft {
+  final Biller biller;
+  final String account;
+  final int amount;
+  final BillPackage? package;
+  final bool saveAccount;
+
+  const BillDraft({required this.biller, required this.account, required this.amount, this.package, this.saveAccount = false});
+
+  int get fee => biller.fee.feeFor(amount, biller.currency);
+  int get total => amount + fee;
+}
+
+abstract final class BillPlans {
+  /// Without the biller lookup (it needs a partner API), the user types the
+  /// amount of the bill: a `due` biller then takes any amount from its
+  /// minimum up to its maximum, like an `open` one; packages stay packages.
+  /// Translation key of the problem with [amount], or null.
+  static String? amountProblem(Biller b, int? amount) {
+    if (amount == null || amount <= 0) return 'Enter a valid amount.';
+    if (b.amountType == 'packages') return b.packages.any((p) => p.amount == amount) ? null : 'Choose a package.';
+    if (amount < b.min) return 'The amount is below the minimum.';
+    if (b.max != null && amount > b.max!) return 'The amount is above the maximum.';
+    return null;
+  }
+
+  /// `utility_payment_requests` (processing, for the admin to pay the
+  /// biller) and the posting wallet -> platform of the total, fee included
+  /// (`bill_payment`). Paid by a gateway, the payment was deposited into
+  /// the wallet first; [funding] records how it was paid.
+  static List<FinanceWrite> payment({
+    required String id,
+    required String uid,
+    required BillDraft d,
+    required FinanceFunding funding,
+    required String walletId,
+    required String txId,
+    String? reference,
+  }) {
+    final b = d.biller;
+    final posting = FinanceLedger.plan(
+      type: 'bill_payment',
+      currency: b.currency,
+      from: walletId,
+      to: FinanceLedger.platformId(b.currency),
+      amount: d.total,
+      userIds: [uid],
+      sourceKind: 'utility_payment_requests',
+      sourceId: id,
+      createdBy: uid,
+      description: '${b.name} · ${d.account}',
+      txId: txId,
+      reference: reference,
+    );
+    return [
+      FinanceWrite('utility_payment_requests/$id', 'create', {
+        'id': id,
+        'userId': uid,
+        'billerId': b.id,
+        'billerName': b.name,
+        'category': b.category,
+        'account': d.account,
+        if (d.package != null) 'packageCode': d.package!.code,
+        if (d.package != null) 'packageName': d.package!.name,
+        'currency': b.currency,
+        'amount': d.amount,
+        'fee': d.fee,
+        'total': d.total,
+        'status': 'processing',
+        'reference': posting.reference,
+        'txId': posting.txId,
+        'funding': funding.toMap(),
+        'createdAt': FieldValue.serverTimestamp(),
+      }),
+      ...posting.writes,
+    ];
+  }
+
+  /// A deterministic saved-account id: one per user, biller and account.
+  static String savedAccountId(String uid, String billerId, String account) =>
+      'acc_${uid}_${billerId}_${account.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9@._+-]'), '_')}';
+
+  static Map<String, dynamic> savedAccount(String uid, BillDraft d) => {
+        'userId': uid,
+        'billerId': d.biller.id,
+        'billerName': d.biller.name,
+        'category': d.biller.category,
+        'account': d.account,
+        'nickname': '',
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastUsedAt': FieldValue.serverTimestamp(),
+      };
+}
+
+/// Where a transfer or bill payment written by the app is: paid, then
+/// processing (external: until the admin pays out), then completed.
+abstract final class DirectFlow {
+  static const List<String> steps = ['paid', 'processing', 'completed'];
+
+  static String label(String s) => const {'paid': 'Paid', 'processing': 'Processing', 'completed': 'Completed'}[s] ?? s;
 }

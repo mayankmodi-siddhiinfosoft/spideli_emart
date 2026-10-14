@@ -2,14 +2,16 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/screen_ui/subscriptions/subscription_ui.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
+import 'package:customer/utils/finance_transfer_rules.dart' show RecipientCheck;
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/utils/saved_payment_methods.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 /// Profile > Payment methods (spec 3.4 / 7.8): saved Mobile Money numbers
-/// and Wave accounts; set a default, delete. Only methods usable in the
-/// current region are listed. Cards are not saved (see [SavedPaymentMethods]).
+/// and Wave accounts; set a default, delete. Bank accounts are saved too, to
+/// receive Spideli Finance payouts (never a default phone). Only methods
+/// usable in the current region are listed. Cards are not saved (see [SavedPaymentMethods]).
 ///
 /// Archetype **H — settings list**: method cards with a default badge and an
 /// overflow menu, an "Add" FAB and a DS sheet for the form.
@@ -81,7 +83,7 @@ class _SavedPaymentMethodsScreenState extends State<SavedPaymentMethodsScreen> {
               DsEmptyState(
                 icon: Icons.account_balance_wallet_outlined,
                 title: "Payment methods".tr,
-                message: "No saved Mobile Money number or Wave account.".tr,
+                message: "No saved Mobile Money number, Wave account or bank account.".tr,
                 actionLabel: "Add".tr,
                 onAction: _add,
               ),
@@ -90,7 +92,11 @@ class _SavedPaymentMethodsScreenState extends State<SavedPaymentMethodsScreen> {
                 context,
                 Row(
                   children: [
-                    DsIconWell(icon: m.type == SavedPaymentMethod.typeWave ? Icons.waves_rounded : Icons.smartphone_rounded, tone: DsTone.brand, size: 44),
+                    DsIconWell(
+                      icon: m.isBank ? Icons.account_balance_outlined : (m.type == SavedPaymentMethod.typeWave ? Icons.waves_rounded : Icons.smartphone_rounded),
+                      tone: DsTone.brand,
+                      size: 44,
+                    ),
                     const DsGap(DsSpace.md),
                     Expanded(
                       child: Column(
@@ -103,7 +109,7 @@ class _SavedPaymentMethodsScreenState extends State<SavedPaymentMethodsScreen> {
                             ],
                           ),
                           const DsGap(DsSpace.xxs),
-                          Text("${m.title} · ${m.number}", style: t.bodySm.tabular),
+                          Text(m.isBank ? "${m.title} · ${m.holderName ?? ''} · ${m.masked}" : "${m.title} · ${m.number}", style: t.bodySm.tabular),
                         ],
                       ),
                     ),
@@ -115,7 +121,7 @@ class _SavedPaymentMethodsScreenState extends State<SavedPaymentMethodsScreen> {
                         if (v == 'delete') _run(() => SavedPaymentMethods.remove(m.id));
                       },
                       itemBuilder: (_) => [
-                        if (!m.isDefault) PopupMenuItem(value: 'default', child: Text("Set as default".tr, style: t.body)),
+                        if (!m.isDefault && !m.isBank) PopupMenuItem(value: 'default', child: Text("Set as default".tr, style: t.body)),
                         PopupMenuItem(value: 'delete', child: Text("Delete".tr, style: t.body.withColor(c.dangerStrong))),
                       ],
                     ),
@@ -150,16 +156,44 @@ class _AddMethodSheetState extends State<_AddMethodSheet> {
   String _operator = SavedPaymentMethod.operators.first;
   final _number = TextEditingController();
   final _label = TextEditingController();
+  final _bankName = TextEditingController();
+  final _bankCode = TextEditingController();
+  final _holder = TextEditingController();
+  final _account = TextEditingController();
   bool _default = true;
+
+  static const List<String> _types = [SavedPaymentMethod.typeMobileMoney, SavedPaymentMethod.typeWave, SavedPaymentMethod.typeBank];
 
   @override
   void dispose() {
-    _number.dispose();
-    _label.dispose();
+    for (final c in [_number, _label, _bankName, _bankCode, _holder, _account]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
+  void _saveBank() {
+    final account = _account.text.replaceAll(RegExp(r'\s'), '').toUpperCase();
+    if (_bankName.text.trim().length < 2) return ShowToastDialog.showToast("Enter the bank's name.".tr);
+    if (!RecipientCheck.holderName(_holder.text)) return ShowToastDialog.showToast("Enter the account holder's full name.".tr);
+    if (!RecipientCheck.bankAccount(account)) return ShowToastDialog.showToast("This account number is not valid.".tr);
+    Get.back(
+      result: SavedPaymentMethod(
+        id: Constant.getUuid(),
+        type: SavedPaymentMethod.typeBank,
+        number: account,
+        label: _label.text.trim(),
+        isDefault: false,
+        regionId: RegionService.customerRegionId,
+        bankName: _bankName.text.trim(),
+        bankCode: _bankCode.text.trim(),
+        holderName: _holder.text.trim(),
+      ),
+    );
+  }
+
   void _save() {
+    if (_type == SavedPaymentMethod.typeBank) return _saveBank();
     final number = _number.text.replaceAll(' ', '').trim();
     if (!RegExp(r'^\+?[0-9]{6,15}$').hasMatch(number)) {
       ShowToastDialog.showToast("Please enter a valid phone number".tr);
@@ -192,34 +226,44 @@ class _AddMethodSheetState extends State<_AddMethodSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           DsSegmentedTabs(
-            segments: [DsSegment("Mobile Money".tr), const DsSegment("Wave")],
-            index: _type == SavedPaymentMethod.typeMobileMoney ? 0 : 1,
-            onChanged: (i) => setState(() => _type = i == 0 ? SavedPaymentMethod.typeMobileMoney : SavedPaymentMethod.typeWave),
+            segments: [DsSegment("Mobile Money".tr), const DsSegment("Wave"), DsSegment("Bank account".tr)],
+            index: _types.indexOf(_type),
+            onChanged: (i) => setState(() => _type = _types[i]),
           ),
           const DsGap(DsSpace.xl),
-          if (_type == SavedPaymentMethod.typeMobileMoney)
-            DsDropdown<String>(
-              label: "Operator".tr,
-              value: _operator,
-              items: SavedPaymentMethod.operators.map((o) => DropdownMenuItem(value: o, child: Text(o.tr, style: t.body))).toList(),
-              onChanged: (v) => setState(() => _operator = v ?? _operator),
+          if (_type == SavedPaymentMethod.typeBank) ...[
+            DsTextField(label: "Bank".tr, controller: _bankName, prefixIcon: Icons.account_balance_outlined, requiredMark: true, textCapitalization: TextCapitalization.words),
+            DsTextField(label: "Bank code (optional)".tr, controller: _bankCode, prefixIcon: Icons.tag_rounded),
+            DsTextField(label: "Account holder".tr, controller: _holder, prefixIcon: Icons.person_outline_rounded, requiredMark: true, textCapitalization: TextCapitalization.words),
+            DsTextField(
+              label: "Account number or IBAN".tr,
+              controller: _account,
+              prefixIcon: Icons.numbers_rounded,
+              requiredMark: true,
+              textCapitalization: TextCapitalization.characters,
+              helper: "6 to 34 letters or digits, or an IBAN".tr,
             ),
-          DsTextField(
-            label: "Phone number (with country code)".tr,
-            controller: _number,
-            keyboardType: TextInputType.phone,
-            prefixIcon: Icons.smartphone_rounded,
-            requiredMark: true,
-          ),
-          DsTextField(label: "Label (optional)".tr, controller: _label, prefixIcon: Icons.label_outline_rounded),
-          CheckboxListTile(
-            contentPadding: EdgeInsets.zero,
-            value: _default,
-            activeColor: c.brand,
-            controlAffinity: ListTileControlAffinity.leading,
-            onChanged: (v) => setState(() => _default = v ?? false),
-            title: Text("Use as default".tr, style: t.bodyStrong),
-          ),
+            DsTextField(label: "Label (optional)".tr, controller: _label, prefixIcon: Icons.label_outline_rounded),
+            DsInlineAlert(tone: DsTone.info, icon: Icons.shield_outlined, message: "A bank account is used only to receive money from Spideli Finance.".tr),
+          ] else ...[
+            if (_type == SavedPaymentMethod.typeMobileMoney)
+              DsDropdown<String>(
+                label: "Operator".tr,
+                value: _operator,
+                items: SavedPaymentMethod.operators.map((o) => DropdownMenuItem(value: o, child: Text(o.tr, style: t.body))).toList(),
+                onChanged: (v) => setState(() => _operator = v ?? _operator),
+              ),
+            DsTextField(label: "Phone number (with country code)".tr, controller: _number, keyboardType: TextInputType.phone, prefixIcon: Icons.smartphone_rounded, requiredMark: true),
+            DsTextField(label: "Label (optional)".tr, controller: _label, prefixIcon: Icons.label_outline_rounded),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _default,
+              activeColor: c.brand,
+              controlAffinity: ListTileControlAffinity.leading,
+              onChanged: (v) => setState(() => _default = v ?? false),
+              title: Text("Use as default".tr, style: t.bodyStrong),
+            ),
+          ],
         ],
       ),
     );

@@ -1,7 +1,9 @@
 import 'package:customer/screen_ui/finance/bill_screens.dart';
 import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/finance_actions_screen.dart';
+import 'package:customer/screen_ui/finance/finance_chat_screens.dart';
 import 'package:customer/screen_ui/finance/finance_dashboard_screen.dart';
+import 'package:customer/screen_ui/finance/finance_restriction.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/insurance_screens.dart';
 import 'package:customer/screen_ui/finance/investment_screens.dart';
@@ -11,9 +13,12 @@ import 'package:customer/screen_ui/finance/savings_screens.dart';
 import 'package:customer/screen_ui/finance/tontine_screens.dart';
 import 'package:customer/screen_ui/finance/transactions_screen.dart';
 import 'package:customer/screen_ui/finance/transfer_screens.dart';
+import 'package:customer/screen_ui/finance/wallet_screens.dart';
 import 'package:customer/service/finance_service.dart';
+import 'package:customer/service/finance_wallet_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/finance_rules.dart';
+import 'package:customer/utils/finance_wallet_rules.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
@@ -25,7 +30,8 @@ import 'package:intl/intl.dart';
 /// (.claude/FINANCE-APP-CONTRACT.md):
 ///  - verification: users/{uid} `kycStatus` / `kycLevel`;
 ///  - balance: financial_accounts (the wallet);
-///  - products, obligations and cash flow: finance_summaries/{uid};
+///  - products, obligations and cash flow: the user's own records, totalled
+///    on the device (FinanceSummaryService);
 ///  - activity and statements: ledger_transactions.
 /// The app never adds amounts up into a balance or a total of its own.
 class FinanceHomeScreen extends StatelessWidget {
@@ -36,6 +42,7 @@ class FinanceHomeScreen extends StatelessWidget {
     return FinScaffold(
       title: "Spideli Finance".tr,
       actions: [
+        const FinanceChatsButton(),
         DsIconButton(icon: Icons.picture_as_pdf_outlined, semanticLabel: "Download statement".tr, onPressed: () => shareFinanceStatement(context)),
       ],
       body: StreamBuilder<FinanceSummary?>(
@@ -43,6 +50,7 @@ class FinanceHomeScreen extends StatelessWidget {
         builder: (context, sumSnap) {
           final s = sumSnap.data;
           return FinBody(children: [
+            const FinanceRestrictionNotice(),
             const _VerificationNotice(),
             _BalanceHero(summary: s),
             const FinanceActionsSection(),
@@ -99,6 +107,9 @@ class _BalanceHero extends StatelessWidget {
 
   const _BalanceHero({required this.summary});
 
+  /// The wallet settings, read once (which money actions to offer).
+  static final Future<WalletConfig?> _walletConfig = FinanceWalletService.config().catchError((Object _) => null);
+
   @override
   Widget build(BuildContext context) {
     final s = summary;
@@ -131,13 +142,27 @@ class _BalanceHero extends StatelessWidget {
                           ? "Spideli Finance wallet".tr
                           : '${"Also".tr}: ${others.map((w) => FinanceMoney.format((w['balance'] as num?) ?? 0, w['currency']?.toString() ?? '')).join(' · ')}',
           stats: stats,
-          footer: FinActions(onHero: true, actions: [
-            if (failed) FinAction(Icons.refresh_rounded, "Retry".tr, FinanceService.retry),
-            FinAction(Icons.north_east_rounded, "Send".tr, () => Get.to(() => const TransfersScreen())),
-            FinAction(Icons.receipt_outlined, "Pay bills".tr, () => Get.to(() => const BillsScreen())),
-            FinAction(Icons.savings_outlined, "Save".tr, () => Get.to(() => const SavingsListScreen())),
-            FinAction(Icons.trending_up_rounded, "Invest".tr, () => Get.to(() => const InvestmentsScreen())),
-          ]),
+          footer: FutureBuilder<WalletConfig?>(
+            future: _walletConfig,
+            builder: (context, cfg) {
+              final w = cfg.data;
+              final String main = preferred?['currency']?.toString() ?? cur;
+              // Four actions: adding and withdrawing money when the wallet
+              // settings offer them, then saving and investing.
+              final actions = <FinAction>[
+                if (w?.deposit.enabled == true) FinAction(Icons.add_card_rounded, "Add money".tr, () => Get.to(() => WalletAddMoneyScreen(currency: main))),
+                FinAction(Icons.north_east_rounded, "Send".tr, () => Get.to(() => const TransfersScreen())),
+                FinAction(Icons.receipt_outlined, "Pay bills".tr, () => Get.to(() => const BillsScreen())),
+                if (w?.withdraw.enabled == true) FinAction(Icons.account_balance_outlined, "Withdraw".tr, () => Get.to(() => WalletWithdrawScreen(currency: main))),
+                FinAction(Icons.savings_outlined, "Save".tr, () => Get.to(() => const SavingsListScreen())),
+                FinAction(Icons.trending_up_rounded, "Invest".tr, () => Get.to(() => const InvestmentsScreen())),
+              ];
+              return FinActions(onHero: true, actions: [
+                if (failed) FinAction(Icons.refresh_rounded, "Retry".tr, FinanceService.retry),
+                ...actions.take(4),
+              ]);
+            },
+          ),
         );
       },
     );
@@ -293,7 +318,11 @@ class FinanceProducts extends StatelessWidget {
           icon: Icons.trending_up_rounded,
           iconTone: DsTone.brand,
           title: "Investment".tr,
-          subtitle: '${"Gains and losses".tr} ${FinanceMoney.signed(s.totalGains, s.currency)} · ${"invested".tr} ${m(s.investments!['investedCapital'])}',
+          subtitle: [
+            '${"Gains and losses".tr} ${FinanceMoney.signed(s.totalGains, s.currency)}',
+            if (s.investmentReturnPercent != null) '${"Return".tr} ${ltr('${s.investmentReturnPercent! >= 0 ? '+' : '−'}${s.investmentReturnPercent!.abs().toStringAsFixed(1)} %')}',
+            '${"invested".tr} ${m(s.investments!['investedCapital'])}',
+          ].join(' · '),
           amount: m(s.investments!['currentValuation']),
           chevron: true,
           onTap: () => Get.to(() => const InvestmentsScreen()),

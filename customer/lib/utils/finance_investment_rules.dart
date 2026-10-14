@@ -1,15 +1,20 @@
 /// Spideli Finance: investments, the pure rules the screens use
-/// (.claude/FINANCE-APP-CONTRACT.md section 12). Unit tested in
-/// test/finance_investment_rules_test.dart.
+/// (.claude/FINANCE-APP-CONTRACT.md section 12) and the writes of each order
+/// (.claude/FINANCE-DIRECT-FIRESTORE.md section 3.9). Unit tested in
+/// test/finance_investment_rules_test.dart and
+/// test/finance_investment_direct_test.dart.
 ///
-/// The SERVER decides eligibility, unit prices (NAV), units allocated,
-/// valuations, gains, fees charged and settlements. The fee and unit figures
-/// computed here are ESTIMATES at the last published unit price; the return
-/// simulator is an illustration, never a promise.
+/// SPIDELI (the admin) decides unit prices (NAV), units allocated,
+/// valuations, gains, fees charged and settlements: the app writes orders.
+/// The fee and unit figures computed here are ESTIMATES at the last
+/// published unit price; the return simulator is an illustration, never a
+/// promise.
 library;
 
 import 'dart:math' as math;
 
+import 'package:cloud_firestore/cloud_firestore.dart' show FieldValue;
+import 'package:customer/service/finance_ledger.dart';
 import 'package:customer/utils/finance_rules.dart' show ltr;
 
 int _int(dynamic v) => v is num ? v.round() : int.tryParse('${v ?? ''}') ?? 0;
@@ -245,7 +250,8 @@ abstract final class InvestmentLabels {
 
 /// Subscription and redemption statuses (`investment_subscriptions` / `investment_redemptions`).
 abstract final class InvestmentOrders {
-  static const List<String> subscriptionSteps = ['pending_payment', 'paid', 'processing', 'completed'];
+  /// The payment is made with the order (wallet), so a subscription starts `paid`.
+  static const List<String> subscriptionSteps = ['paid', 'processing', 'completed'];
   static const List<String> redemptionSteps = ['submitted', 'processing', 'settling', 'settled'];
 
   static String label(String? s) => const {
@@ -431,4 +437,89 @@ abstract final class ReturnSimulator {
     }
     return out;
   }
+}
+
+/// The writes of each investment order (.claude/FINANCE-DIRECT-FIRESTORE.md
+/// section 3.9), as data. Spideli executes them at the fund's next unit price.
+abstract final class InvestmentWrites {
+  static Object get _now => FieldValue.serverTimestamp();
+
+  /// A subscription, `investment_subscriptions/{id}` `paid`: the user
+  /// accepted the fund's terms [Fund.termsVersion] and the risks and signed
+  /// with [signatureName]; [posting] (`investment_subscription`) moved
+  /// [amount] to the platform. [fee] is the estimate at the last price. The
+  /// admin executes it at the next unit price (`processing -> completed` with
+  /// `units`, `navPerUnit`, `netAmount`, `tradeDate`, the holding and
+  /// `investment_transactions`), or `rejected` with `reason` and a reversal.
+  static List<FinanceWrite> subscribe({
+    required String id,
+    required String uid,
+    required Fund fund,
+    required int amount,
+    required int fee,
+    required String signatureName,
+    required FinancePosting posting,
+    required Map<String, dynamic> paidWith,
+  }) =>
+      [
+        FinanceWrite('investment_subscriptions/$id', 'create', {
+          'id': id,
+          'userId': uid,
+          'fundId': fund.id,
+          'fundName': fund.name,
+          'assetClass': fund.assetClass,
+          'currency': fund.currency,
+          'amount': amount,
+          'fee': fee,
+          'termsVersion': fund.termsVersion,
+          'signatureName': signatureName,
+          'riskAcknowledged': true,
+          'acceptedAt': _now,
+          'status': 'paid',
+          'txId': posting.txId,
+          'reference': posting.reference,
+          'payment': paidWith,
+          'createdAt': _now,
+          'updatedAt': _now,
+        }),
+        ...posting.writes,
+      ];
+
+  /// A redemption, `investment_redemptions/{id}` `submitted`: [amount] of
+  /// value, or the whole redeemable position when [full] (`amount` null).
+  /// No money moves yet: the admin executes it at the next unit price
+  /// (`processing -> settling -> settled`) and posts `platform -> wallet` (or
+  /// pays [destination] out), or `rejected` with `reason`.
+  static List<FinanceWrite> redeem({
+    required String id,
+    required String uid,
+    required String fundId,
+    required String fundName,
+    required String currency,
+    required bool full,
+    int? amount,
+    required Map<String, dynamic> destination,
+    required String reference,
+  }) =>
+      [
+        FinanceWrite('investment_redemptions/$id', 'create', {
+          'id': id,
+          'userId': uid,
+          'fundId': fundId,
+          'fundName': fundName,
+          'currency': currency,
+          'full': full,
+          'amount': full ? null : amount,
+          'destination': destination,
+          'status': 'submitted',
+          'reference': reference,
+          'createdAt': _now,
+          'updatedAt': _now,
+        }),
+      ];
+
+  /// `submitted -> cancelled`, before the admin starts processing it.
+  static List<FinanceWrite> cancelRedemption(String id) => [
+        FinanceWrite('investment_redemptions/$id', 'update', {'status': 'cancelled', 'cancelledAt': _now, 'updatedAt': _now}),
+      ];
 }

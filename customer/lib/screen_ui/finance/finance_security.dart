@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
+import 'package:customer/utils/mfa_challenge.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,22 +14,28 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 /// Re-authentication before sensitive finance actions (showing card
-/// details, deleting a card, withdrawals, limits). The user confirms their
-/// identity with the method they signed in with; the server then checks the
-/// ID token's `auth_time` (.claude/FINANCE-APP-CONTRACT.md section 14.4).
+/// details, deleting a card, withdrawals, limits, two-step verification).
+/// The user confirms their identity with the method they signed in with
+/// (and the SMS code of two-step verification when it is on); the rules then
+/// check the ID token's `auth_time` (.claude/FINANCE-DIRECT-FIRESTORE.md
+/// section 2.4).
 abstract final class FinanceReauth {
   /// The window the server accepts; the app asks again a little earlier.
   static const Duration fresh = Duration(minutes: 4);
 
   /// True when the user signed in recently or confirmed their identity now.
-  static Future<bool> confirm() async {
+  /// [force]: ask even after a recent sign-in (Firebase answered
+  /// `requires-recent-login`).
+  static Future<bool> confirm({bool force = false}) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
-    try {
-      final DateTime? authTime = (await user.getIdTokenResult()).authTime;
-      if (authTime != null && DateTime.now().difference(authTime) < fresh) return true;
-    } catch (_) {
-      // Unknown: ask.
+    if (!force) {
+      try {
+        final DateTime? authTime = (await user.getIdTokenResult()).authTime;
+        if (authTime != null && DateTime.now().difference(authTime) < fresh) return true;
+      } catch (_) {
+        // Unknown: ask.
+      }
     }
     final providers = user.providerData.map((p) => p.providerId).toSet();
     try {
@@ -41,6 +48,9 @@ abstract final class FinanceReauth {
         ok = await _google(user);
       } else if (providers.contains('apple.com')) {
         ok = await _apple(user);
+      } else if (providers.any((p) => p.startsWith('oidc.'))) {
+        // LinkedIn (an OpenID Connect provider of Firebase).
+        ok = await _provider(user, providers.firstWhere((p) => p.startsWith('oidc.')));
       } else {
         ShowToastDialog.showToast("Sign in again to continue.".tr);
         return false;
@@ -66,13 +76,26 @@ abstract final class FinanceReauth {
         _ => 'Could not confirm your identity.',
       };
 
-  static Future<void> _reauth(User user, AuthCredential credential) async {
+  /// The SMS code sheet of two-step verification, in the finance identity.
+  static Future<bool?> _financeSheet(Widget child, String title) => finSheet<bool>(title: title, child: child);
+
+  /// Re-authenticates with [credential]; with two-step verification on, the
+  /// SMS code is asked too. False when the user closed that step.
+  static Future<bool> _reauth(User user, AuthCredential credential) async {
     ShowToastDialog.showLoader("Please wait...".tr);
     try {
-      await user.reauthenticateWithCredential(credential);
+      return await MfaChallenge.signIn(() => user.reauthenticateWithCredential(credential), sheet: _financeSheet) != null;
     } finally {
       ShowToastDialog.closeLoader();
     }
+  }
+
+  /// Re-authenticates with the provider's own page (LinkedIn), second step included.
+  static Future<bool> _provider(User user, String providerId) async {
+    final OAuthProvider provider = OAuthProvider(providerId)
+      ..addScope('openid')
+      ..addScope('email');
+    return await MfaChallenge.signIn(() => user.reauthenticateWithProvider(provider), sheet: _financeSheet) != null;
   }
 
   static Future<bool> _password(User user) async {
@@ -91,8 +114,7 @@ abstract final class FinanceReauth {
       ),
     );
     if (password == null || password.isEmpty) return false;
-    await _reauth(user, EmailAuthProvider.credential(email: user.email!, password: password));
-    return true;
+    return _reauth(user, EmailAuthProvider.credential(email: user.email!, password: password));
   }
 
   static Future<String?> _askCode(String phone) {
@@ -126,9 +148,9 @@ abstract final class FinanceReauth {
       verificationCompleted: (credential) async {
         // Android read the SMS itself.
         try {
-          await user.reauthenticateWithCredential(credential);
+          final bool ok = await MfaChallenge.signIn(() => user.reauthenticateWithCredential(credential), sheet: _financeSheet) != null;
           if (asking) Get.back();
-          finish(true);
+          finish(ok);
         } catch (_) {
           // The user can still type the code.
         }
@@ -145,8 +167,7 @@ abstract final class FinanceReauth {
         if (done.isCompleted) return;
         if (code == null || code.isEmpty) return finish(false);
         try {
-          await _reauth(user, PhoneAuthProvider.credential(verificationId: verificationId, smsCode: code));
-          finish(true);
+          finish(await _reauth(user, PhoneAuthProvider.credential(verificationId: verificationId, smsCode: code)));
         } catch (e) {
           if (!done.isCompleted) done.completeError(e);
         }
@@ -164,15 +185,13 @@ abstract final class FinanceReauth {
       // Already initialised.
     }
     final account = await g.authenticate();
-    await _reauth(user, GoogleAuthProvider.credential(idToken: account.authentication.idToken));
-    return true;
+    return _reauth(user, GoogleAuthProvider.credential(idToken: account.authentication.idToken));
   }
 
   static Future<bool> _apple(User user) async {
     final rawNonce = generateNonce();
     final apple = await SignInWithApple.getAppleIDCredential(scopes: const [], nonce: sha256.convert(utf8.encode(rawNonce)).toString());
-    await _reauth(user, OAuthProvider('apple.com').credential(idToken: apple.identityToken, rawNonce: rawNonce, accessToken: apple.authorizationCode));
-    return true;
+    return _reauth(user, OAuthProvider('apple.com').credential(idToken: apple.identityToken, rawNonce: rawNonce, accessToken: apple.authorizationCode));
   }
 }
 

@@ -645,9 +645,20 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
   Future<void> _submit() async {
     // The button is enabled only once every question is answered.
     if (_unanswered.isNotEmpty) return;
+    final p = widget.product;
+    // One quote request per set of answers, kept across retries (a lost
+    // answer after it was written must not ask the insurer twice).
+    final String answers = (_answers.entries.toList()..sort((a, b) => a.key.compareTo(b.key))).map((e) => '${e.key}=${e.value}').join(',');
+    final String target = '${p.id}:$_frequency:${_start.year}-${_start.month}-${_start.day}:$answers';
     String? id;
     final ok = await FinanceUi.run(() async {
-      id = await FinanceInsuranceService.requestQuote(productId: widget.product.id, answers: _answers, frequency: _frequency, coverStart: _start);
+      id = await FinanceRequestKeys.send(
+        'insurance.quote',
+        target,
+        0,
+        const {},
+        (key) => FinanceInsuranceService.requestQuote(product: p, answers: Map.of(_answers), frequency: _frequency, coverStart: _start, requestKey: key),
+      );
     }, success: "Quote requested");
     if (ok && id != null) Get.off(() => QuoteScreen(quoteId: id!, config: widget.config));
   }
@@ -783,20 +794,14 @@ class _QuoteScreenState extends State<QuoteScreen> {
       amount: amount,
       currency: cur,
       methods: widget.config.paymentMethods,
-      submit: (payment) async {
-        // One key per intended acceptance, kept across retries (a timeout
-        // after the server took it must not charge twice).
-        final intent = FinanceRequestKeys.intentOf('insuranceAcceptQuote', widget.quoteId, amount, payment);
-        final reply = await FinanceInsuranceService.acceptQuote(
-          quoteId: widget.quoteId,
-          termsVersion: FinanceSummary.intOf(q['termsVersion']),
-          signatureName: _signature.text.trim(),
-          payment: payment,
-          requestKey: FinanceRequestKeys.of(intent),
-        );
-        FinanceRequestKeys.done(intent);
-        return reply;
-      },
+      // Idempotent on the quote: one policy per quote, a retry after a lost
+      // answer finds it accepted and charges nothing more.
+      submit: (FinanceFunding funding) => FinanceInsuranceService.acceptQuote(
+        quoteId: widget.quoteId,
+        termsVersion: FinanceSummary.intOf(q['termsVersion']),
+        signatureName: _signature.text.trim(),
+        funding: funding,
+      ),
     );
   }
 
@@ -1007,26 +1012,30 @@ class PolicyScreen extends StatelessWidget {
     if (ok == true) await FinanceUi.run(() => FinanceInsuranceService.requestCancellation(policyId, reason.text.trim()), success: "Cancellation requested");
   }
 
-  // One key per intended payment, kept across retries until the server
-  // takes it (a timeout after it did must not charge twice).
+  // Idempotent on the policy (and on the premium below): a retry after a
+  // lost answer finds it paid and charges nothing more.
   Future<void> _renew(BuildContext context, int renewalPremium, String cur) async {
-    await FinancePaySheet.show(context, title: "Renewal".tr, amount: renewalPremium, currency: cur, methods: config.paymentMethods, submit: (pay) async {
-      final intent = FinanceRequestKeys.intentOf('insuranceRenew', policyId, renewalPremium, pay);
-      final reply = await FinanceInsuranceService.renew(policyId, pay, FinanceRequestKeys.of(intent));
-      FinanceRequestKeys.done(intent);
-      return reply;
-    });
+    await FinancePaySheet.show(
+      context,
+      title: "Renewal".tr,
+      amount: renewalPremium,
+      currency: cur,
+      methods: config.paymentMethods,
+      submit: (FinanceFunding funding) => FinanceInsuranceService.renew(policyId, funding),
+    );
   }
 
   Future<void> _payPremium(BuildContext context, Map<String, dynamic> pr, String cur) async {
     final int amount = FinanceSummary.intOf(pr['amount']);
     final String premiumId = pr['id'].toString();
-    await FinancePaySheet.show(context, title: "Premium".tr, amount: amount, currency: cur, methods: config.paymentMethods, submit: (pay) async {
-      final intent = FinanceRequestKeys.intentOf('insurancePayPremium', '$policyId/$premiumId', amount, pay);
-      final reply = await FinanceInsuranceService.payPremium(policyId, premiumId, pay, FinanceRequestKeys.of(intent));
-      FinanceRequestKeys.done(intent);
-      return reply;
-    });
+    await FinancePaySheet.show(
+      context,
+      title: "Premium".tr,
+      amount: amount,
+      currency: cur,
+      methods: config.paymentMethods,
+      submit: (FinanceFunding funding) => FinanceInsuranceService.payPremium(policyId, premiumId, cur, funding),
+    );
   }
 
   @override
@@ -1065,7 +1074,8 @@ class PolicyScreen extends StatelessWidget {
     final String partner = (p['partnerName'] ?? '').toString();
     final String number = (p['policyNumber'] ?? '').toString();
     final bool hasPremium = p['installmentAmount'] != null || p['premium'] != null;
-    final bool canRenew = PolicyActions.canRenew(status, renewalPremium);
+    final bool renewalPaid = p['renewalRequestedAt'] != null && status == 'renewal_due';
+    final bool canRenew = PolicyActions.canRenew(status, renewalPremium, requested: p['renewalRequestedAt'] != null);
     final bool canAutoRenew = PolicyActions.canSetAutoRenew(status);
     return FinBody(
       children: [
@@ -1080,6 +1090,8 @@ class PolicyScreen extends StatelessWidget {
         if ((p['reason'] ?? '').toString().isNotEmpty) FinNotice(p['reason'].toString(), title: "Reason".tr, tone: FinStatus.tone(status)),
         if (status == 'pending_activation') FinNotice("We are waiting for the insurer to confirm your policy. You are covered only once it is active.".tr, tone: DsTone.info),
         if (status == 'lapsed') FinNotice("A premium was not paid: you are not covered. Pay it to restore your cover if the insurer allows it.".tr, tone: DsTone.danger),
+        if (status == 'cancellation_requested') FinNotice("Your cancellation request was sent to the insurer. This page updates when it is done.".tr, tone: DsTone.info),
+        if (renewalPaid) FinNotice("Renewal paid. The insurer renews your policy; this page updates when it is done.".tr, tone: DsTone.info),
         if (hasPremium || p['nextPremiumDue'] != null) ...[
           const DsGap(DsSpace.md),
           FinMetrics(items: [
@@ -1309,14 +1321,24 @@ class _ClaimFormScreenState extends State<ClaimFormScreen> {
   Future<void> _submit() async {
     final int? amount = FinanceAmount.parse(_amount.text, _currency);
     if (_incident == null || _description.text.trim().length < _descriptionMin || amount == null) return;
+    final DateTime day = _incident!;
+    // One claim per policy, incident day and amount, kept across retries (a
+    // lost answer after it was written must not declare it twice).
     String? id;
     final ok = await FinanceUi.run(() async {
-      id = await FinanceInsuranceService.submitClaim(
-        policyId: widget.policy['id'].toString(),
-        incidentDate: _incident!,
-        description: _description.text.trim(),
-        amountClaimed: amount,
-        files: _files,
+      id = await FinanceRequestKeys.send(
+        'insurance.claim',
+        '${widget.policy['id']}:${day.year}-${day.month}-${day.day}',
+        amount,
+        const {},
+        (key) => FinanceInsuranceService.submitClaim(
+          policy: widget.policy,
+          incidentDate: day,
+          description: _description.text.trim(),
+          amountClaimed: amount,
+          files: List.of(_files),
+          requestKey: key,
+        ),
       );
     }, success: "Claim sent");
     if (ok && id != null) Get.off(() => ClaimScreen(claimId: id!, config: widget.config));
@@ -1421,7 +1443,16 @@ class _ClaimScreenState extends State<ClaimScreen> {
 
   Future<void> _respond() async {
     if (_message.text.trim().isEmpty && _files.isEmpty) return ShowToastDialog.showToast("Add a message or a photo.".tr);
-    final ok = await FinanceUi.run(() => FinanceInsuranceService.respondToClaim(widget.claimId, _message.text.trim(), List.of(_files)), success: "Information sent");
+    final ok = await FinanceUi.run(
+      () => FinanceRequestKeys.send(
+        'insurance.claimRespond',
+        widget.claimId,
+        0,
+        const {},
+        (key) => FinanceInsuranceService.respondToClaim(widget.claimId, _message.text.trim(), List.of(_files), key),
+      ),
+      success: "Information sent",
+    );
     if (ok) {
       setState(() {
         _message.clear();

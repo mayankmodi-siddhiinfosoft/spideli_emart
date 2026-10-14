@@ -1,0 +1,9 @@
+{
+  "name": "spideli-finance-rules-test",
+  "private": true,
+  "type": "module",
+  "description": "Emulator tests of the Spideli Finance Firestore rules (firestore.rules.draft). No dependencies: Node's node:test + the emulator REST API.",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 test/"
+  }
+}

@@ -2,9 +2,12 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/my_profile_controller.dart';
 import 'package:customer/screen_ui/change_password_screen/change_password_screen.dart';
 import 'package:customer/screen_ui/finance/fin_ds.dart';
+import 'package:customer/screen_ui/finance/finance_chat_screens.dart';
 import 'package:customer/screen_ui/finance/finance_dashboard_screen.dart';
 import 'package:customer/screen_ui/finance/finance_home_screen.dart';
+import 'package:customer/screen_ui/finance/finance_restriction.dart';
 import 'package:customer/screen_ui/finance/kyc_screen.dart';
+import 'package:customer/screen_ui/finance/security_screens.dart';
 import 'package:customer/screen_ui/finance/transactions_screen.dart';
 import 'package:customer/screen_ui/help_support_screen/help_support_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/cashback_screen/cashback_offers_list.dart';
@@ -65,6 +68,8 @@ class FinanceProfileTab extends StatelessWidget {
             final String? chip = known ? (shown == KycStatus.approved ? 'verified' : shown) : null;
             final String? chipLabel = known ? KycStatus.label(verified ? KycStatus.approved : status).tr : null;
             return FinBody(children: [
+              // The admin's restriction (blacklist), first: nothing when there is none.
+              FinanceRestrictionNotice.of(snap.data),
               _ProfileHeader(status: chip, statusLabel: chipLabel, loading: !known && !snap.hasError),
 
               // ── Spideli Finance ─────────────────────────────────────────
@@ -98,7 +103,13 @@ class FinanceProfileTab extends StatelessWidget {
                       );
                     },
                   ),
+                  _row(Icons.forum_outlined, "Messages", subtitle: "Your tontine groups and members of your groups", () => Get.to(() => const FinanceChatsScreen())),
                   _row(Icons.picture_as_pdf_outlined, "Account statement", subtitle: "PDF of your transactions for a period", () => shareFinanceStatement(context)),
+                  if (signedIn) ...[
+                    _row(Icons.shield_outlined, "Security", subtitle: "Two-step verification with a code sent by SMS", () => Get.to(() => const FinanceSecurityScreen())),
+                    _row(Icons.notifications_active_outlined, "Notifications", subtitle: "What Spideli Finance sends you by push, SMS and email",
+                        () => Get.to(() => const FinanceNotificationsScreen())),
+                  ],
                 ],
               ),
 
@@ -110,7 +121,7 @@ class FinanceProfileTab extends StatelessWidget {
                   children: [
                     _row(Icons.person_outline_rounded, "Profile Information", subtitle: "Name, email and phone number", () => Get.to(const EditProfileScreen())),
                     _row(Icons.business_center_outlined, "Business account", subtitle: "Business prices once your company is verified", () => Get.to(() => const BusinessAccountScreen())),
-                    _row(Icons.payments_outlined, "Payment methods", subtitle: "Your saved Mobile Money and Wave numbers", () => Get.to(() => const SavedPaymentMethodsScreen())),
+                    _row(Icons.payments_outlined, "Payment methods", subtitle: "Mobile Money, Wave and bank accounts", () => Get.to(() => const SavedPaymentMethodsScreen())),
                     if (Constant.userModel?.provider == 'email') _row(Icons.lock_outline_rounded, "Change Password", () => Get.to(const ChangePasswordScreen())),
                   ],
                 ),

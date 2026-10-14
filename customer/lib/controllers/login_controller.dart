@@ -14,7 +14,9 @@ import '../screen_ui/service_home_screen/service_list_screen.dart';
 import '../service/fire_store_utils.dart';
 import '../themes/show_toast_dialog.dart';
 import '../utils/login_validation.dart';
+import '../utils/mfa_challenge.dart';
 import '../utils/push_token_sync.dart';
+import '../utils/social_sign_in.dart';
 import 'package:crypto/crypto.dart';
 
 class LoginController extends GetxController {
@@ -64,7 +66,10 @@ class LoginController extends GetxController {
       isLoading.value = true;
       ShowToastDialog.showLoader("Logging in...".tr);
 
-      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
+      // With two-step verification the SMS code is asked here; null = the
+      // user closed that step (nobody is signed in, nothing to say).
+      final credential = await MfaChallenge.signIn(() => FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password));
+      if (credential == null) return;
       signedIn = true;
 
       final userModel = await FireStoreUtils.getUserProfile(credential.user!.uid);
@@ -255,6 +260,19 @@ class LoginController extends GetxController {
     });
   }
 
+  /// LinkedIn (an OpenID Connect provider in Firebase, shown only when
+  /// settings/authProviders turns it on): the Google flow - a new account
+  /// completes its profile on the sign-up screen, an existing one goes in.
+  Future<void> loginWithLinkedIn(String providerId) async {
+    final UserCredential? value = await SocialSignIn.signInWithLinkedIn(providerId);
+    if (value == null) return;
+    if (await SocialSignIn.isNewCustomer(value)) {
+      Get.off(const SignUpScreen(), arguments: {"userModel": SocialSignIn.newProfile(value, 'linkedin'), "type": "linkedin"});
+    } else {
+      await SocialSignIn.openExistingCustomer(value.user!.uid);
+    }
+  }
+
   Future<UserCredential?> signInWithGoogle() async {
     try {
       final GoogleSignIn googleSignIn = GoogleSignIn.instance;
@@ -267,7 +285,8 @@ class LoginController extends GetxController {
       final GoogleSignInAuthentication googleAuth = googleUser.authentication;
 
       final credential = GoogleAuthProvider.credential(idToken: googleAuth.idToken);
-      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      // Null when the two-step verification code was not given (like a closed Google sheet).
+      final userCredential = await MfaChallenge.signIn(() => FirebaseAuth.instance.signInWithCredential(credential));
 
       return userCredential;
     } catch (e) {
@@ -291,7 +310,9 @@ class LoginController extends GetxController {
 
       final oauthCredential = OAuthProvider("apple.com").credential(idToken: appleCredential.identityToken, rawNonce: rawNonce, accessToken: appleCredential.authorizationCode);
 
-      UserCredential userCredential = await FirebaseAuth.instance.signInWithCredential(oauthCredential);
+      // Null when the two-step verification code was not given (like a closed Apple sheet).
+      final UserCredential? userCredential = await MfaChallenge.signIn(() => FirebaseAuth.instance.signInWithCredential(oauthCredential));
+      if (userCredential == null) return null;
       return {"appleCredential": appleCredential, "userCredential": userCredential};
     } catch (e) {
       debugPrint(e.toString());

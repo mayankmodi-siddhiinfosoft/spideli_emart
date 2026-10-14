@@ -1,13 +1,21 @@
-/// Spideli Finance: project financing, the pure rules the screens use
-/// (.claude/FINANCE-APP-CONTRACT.md section 16). Unit tested in
-/// test/finance_financing_rules_test.dart.
+/// Spideli Finance: project financing, the pure rules and write plans the
+/// screens use (.claude/FINANCE-DIRECT-FIRESTORE.md section 3.11,
+/// .claude/FINANCE-APP-CONTRACT.md section 16). Unit tested in
+/// test/finance_financing_rules_test.dart and
+/// test/finance_financing_direct_test.dart.
 ///
-/// The SERVER (and the reviewers of the financing institutions) decide every
-/// status: review, information requests, approval, funding and closure.
-/// The app only mirrors the checks so it can say what is missing.
+/// The owner writes projects, applications (draft, edits while `draft` /
+/// `additional_info_required`, submission with the declaration, withdrawal)
+/// and documents directly to Firestore, checked by the security rules. The
+/// ADMIN (and the reviewers of the financing institutions, through the
+/// admin panel) decide every other status: review, information requests,
+/// document notes, approval, funding and closure, with `financing_reviews`.
 library;
 
 import 'dart:math' as math;
+
+import 'package:cloud_firestore/cloud_firestore.dart' show FieldValue;
+import 'package:customer/service/finance_ledger.dart' show FinanceWrite;
 
 int _int(dynamic v) => v is num ? v.round() : int.tryParse('${v ?? ''}') ?? 0;
 
@@ -227,4 +235,149 @@ abstract final class FinancingLabels {
         'regulation': 'Regulations',
       }[t] ??
       (t ?? '-');
+}
+
+/// Why an owner's step cannot be written, as a `FinanceException` reason
+/// (null when it can).
+abstract final class FinancingChecks {
+  static String? edit(String? status) => FinancingStatus.editable(status) ? null : 'financing_not_editable';
+
+  static String? submit(String? status, List<String> missing) {
+    if (!FinancingStatus.editable(status)) return 'financing_not_editable';
+    if (missing.isNotEmpty) return 'financing_documents_missing';
+    return null;
+  }
+
+  static String? withdraw(String? status) => FinancingStatus.canWithdraw(status) ? null : 'financing_not_editable';
+}
+
+/// The owner's writes, as data (pure; committed in one batch by
+/// FinanceFinancingService). Ids are chosen by the app before the first
+/// attempt, so a retry writes the same document.
+abstract final class FinancingPlans {
+  static Object get _now => FieldValue.serverTimestamp();
+
+  /// Optional project fields: not stored when empty (removed on an edit).
+  static const List<String> optionalProjectFields = ['stage', 'employees', 'foundedYear', 'website'];
+
+  static bool _blank(dynamic v) => v == null || (v is String && v.trim().isEmpty);
+
+  /// A new project ([isNew]) or the owner's edit of it: `name`, `sector`,
+  /// `country`, `city`, `description`, and the optional fields.
+  static List<FinanceWrite> saveProject({required String projectId, required String uid, required bool isNew, required Map<String, dynamic> fields}) {
+    final base = {
+      'name': fields['name'],
+      'sector': fields['sector'],
+      'country': fields['country'] ?? '',
+      'city': fields['city'] ?? '',
+      'description': fields['description'],
+    };
+    if (isNew) {
+      return [
+        FinanceWrite('financing_projects/$projectId', 'create', {
+          'id': projectId,
+          'ownerId': uid,
+          ...base,
+          for (final k in optionalProjectFields)
+            if (!_blank(fields[k])) k: fields[k],
+          'createdAt': _now,
+          'updatedAt': _now,
+        }),
+      ];
+    }
+    return [
+      FinanceWrite('financing_projects/$projectId', 'update', {
+        ...base,
+        for (final k in optionalProjectFields) k: _blank(fields[k]) ? FieldValue.delete() : fields[k],
+        'updatedAt': _now,
+      }),
+    ];
+  }
+
+  /// The application fields the owner edits.
+  static Map<String, dynamic> _application(Map<String, dynamic> f, {required bool isNew}) => {
+        'financingType': f['financingType'],
+        'amount': f['amount'],
+        'currency': f['currency'],
+        if (f['durationMonths'] != null) 'durationMonths': f['durationMonths'] else if (!isNew) 'durationMonths': FieldValue.delete(),
+        'useOfFunds': f['useOfFunds'],
+      };
+
+  /// A draft application for the owner's project [projectId].
+  static List<FinanceWrite> createApplication({
+    required String applicationId,
+    required String uid,
+    required String projectId,
+    required String projectName,
+    required Map<String, dynamic> fields,
+  }) =>
+      [
+        FinanceWrite('financing_applications/$applicationId', 'create', {
+          'id': applicationId,
+          'ownerId': uid,
+          'projectId': projectId,
+          'projectName': projectName,
+          ..._application(fields, isNew: true),
+          'status': 'draft',
+          'reviewerIds': <String>[],
+          'createdAt': _now,
+          'updatedAt': _now,
+        }),
+      ];
+
+  /// The owner's edit while `draft` / `additional_info_required` (the
+  /// project of an application never changes).
+  static List<FinanceWrite> updateApplication(String applicationId, Map<String, dynamic> fields) => [
+        FinanceWrite('financing_applications/$applicationId', 'update', {..._application(fields, isNew: false), 'updatedAt': _now}),
+      ];
+
+  /// Submits (or sends back after a request for information) with the
+  /// owner's declaration; [message] is their note to the reviewers. The
+  /// reviewers' previous request (`reason`) is answered.
+  static List<FinanceWrite> submit(String applicationId, {String message = ''}) => [
+        FinanceWrite('financing_applications/$applicationId', 'update', {
+          'status': 'submitted',
+          'declarationAccepted': true,
+          'declarationAcceptedAt': _now,
+          'submittedAt': _now,
+          'ownerMessage': message,
+          'reason': null,
+          'updatedAt': _now,
+        }),
+      ];
+
+  static List<FinanceWrite> withdraw(String applicationId) => [
+        FinanceWrite('financing_applications/$applicationId', 'update', {'status': 'withdrawn', 'withdrawnAt': _now, 'updatedAt': _now}),
+      ];
+
+  /// A document already uploaded to [storagePath]
+  /// (`financing_documents/{uid}/{applicationId}/…`).
+  static List<FinanceWrite> addDocument({
+    required String documentId,
+    required String uid,
+    required String applicationId,
+    required String type,
+    required String name,
+    required String storagePath,
+    required String contentType,
+    required int size,
+  }) =>
+      [
+        FinanceWrite('financing_documents/$documentId', 'create', {
+          'id': documentId,
+          'ownerId': uid,
+          'applicationId': applicationId,
+          'type': type,
+          'name': name,
+          'storagePath': storagePath,
+          'contentType': contentType,
+          'size': size,
+          'status': 'received',
+          'note': '',
+          'uploadedAt': _now,
+        }),
+      ];
+
+  /// Removes a document of an editable application (op `delete`).
+  static List<FinanceWrite> removeDocument(String documentId) => [FinanceWrite('financing_documents/$documentId', 'delete', const {})];
 }

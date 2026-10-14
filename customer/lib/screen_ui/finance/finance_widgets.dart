@@ -1,18 +1,24 @@
+import 'dart:developer' show log;
 import 'dart:math' as math;
 
 import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/kyc_screen.dart';
 import 'package:customer/screen_ui/subscriptions/saved_payment_methods_screen.dart';
-import 'package:customer/service/finance_group_service.dart';
+import 'package:customer/service/finance_ledger.dart';
+import 'package:customer/service/finance_payment_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
-import 'package:customer/utils/finance_group_rules.dart';
+import 'package:customer/utils/finance_payment_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:customer/utils/saved_payment_methods.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:get/get.dart';
+
+// The pay sheet's types, for the modules that call it.
+export 'package:customer/service/finance_ledger.dart' show FinanceFunding;
+export 'package:customer/utils/finance_payment_rules.dart' show FinancePayment, FinanceDestination;
 
 /// Typed amounts -> integer minor units with the currency's decimals only.
 abstract final class FinanceAmount {
@@ -404,11 +410,25 @@ Future<int?> askAmount(BuildContext context, {required String title, required St
   );
 }
 
-/// The payment step of a contribution: method (from the admin's
-/// `paymentMethods`), a confirmation summary, then the server's request.
-/// [submit] receives the chosen payment and returns the server's reply
-/// (`status`, `instructions`, `reference`). With [payout] the user chooses
-/// where to RECEIVE [amount] (withdrawals, redemptions) instead.
+/// The payment step of a Spideli Finance operation
+/// (.claude/FINANCE-DIRECT-FIRESTORE.md section 2.3).
+///
+/// Paying: the user picks the Spideli Finance wallet (when [methods] has
+/// `wallet`; its balance is shown and too low a balance is refused) or one
+/// of the app's payment gateways enabled for their region that serves
+/// [methods] and [currency] ([FinanceGateways]). A gateway's checkout runs
+/// for [amount] first; only once it succeeded is [submit] called, with
+/// [FinancePayment] = `FinanceFunding.gateway(method, reference)` (the
+/// wallet: `FinanceFunding.wallet()`). [submit] writes the operation (one
+/// batch) and returns its reply (`status`, `reference`, `instructions`).
+///
+/// With [payout] the user chooses where to RECEIVE [amount] instead: the
+/// wallet, a saved Mobile Money number, Wave account or bank account
+/// (`FinancePayment.destination`).
+///
+/// "Try again" after a failed [submit] sends the SAME payment again: a
+/// gateway is never charged twice; the module's deterministic request id
+/// keeps a retried batch from posting twice.
 abstract final class FinancePaySheet {
   static Future<void> show(
     BuildContext context, {
@@ -416,20 +436,89 @@ abstract final class FinancePaySheet {
     required int amount,
     required String currency,
     required List<String> methods,
-    required Future<Map<String, dynamic>> Function(Map<String, dynamic> payment) submit,
+    required Future<Map<String, dynamic>> Function(FinancePayment payment) submit,
     bool payout = false,
   }) async {
     // One payment step at a time: a second tap while it opens does nothing.
     if (_busy) return;
     _busy = true;
+    FinanceCheckout? checkout;
     try {
-      await _show(context, title: title, amount: amount, currency: currency, methods: methods, submit: submit, payout: payout);
+      // What the sheet offers, read together.
+      ShowToastDialog.showLoader("Please wait...".tr);
+      final Future<List<SavedPaymentMethod>> savedF =
+          payout ? SavedPaymentMethods.load().catchError((_) => <SavedPaymentMethod>[]) : Future.value(const <SavedPaymentMethod>[]);
+      final Future<int?> balanceF = !payout && methods.contains('wallet') ? _balance(currency) : Future<int?>.value();
+      final Future<FinanceCheckout?> checkoutF = !payout && FinanceGateways.wantsGateways(methods) ? FinanceCheckout.open() : Future<FinanceCheckout?>.value();
+      final saved = await savedF;
+      final int? balance = await balanceF;
+      checkout = await checkoutF;
+      ShowToastDialog.closeLoader();
+      if (!context.mounted) return;
+      final options = payout ? _payoutOptions(methods, saved) : _payOptions(methods, amount, currency, balance, checkout);
+      await _show(context, title: title, amount: amount, currency: currency, methods: methods, options: options, checkout: checkout, submit: submit, payout: payout);
     } finally {
+      ShowToastDialog.closeLoader();
+      checkout?.close();
       _busy = false;
     }
   }
 
   static bool _busy = false;
+
+  /// The wallet balance in [currency] (0 without a wallet), or null when it cannot be read.
+  static Future<int?> _balance(String currency) async {
+    try {
+      final w = await FinanceLedger.wallet(FinanceService.uid, currency);
+      return w.exists ? w.balance : 0;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static List<_PayOption> _payOptions(List<String> methods, int amount, String currency, int? balance, FinanceCheckout? checkout) => [
+        if (methods.contains('wallet'))
+          _PayOption(
+            title: "Spideli Finance wallet".tr,
+            detail: balance == null ? null : '${"Balance".tr}: ${FinanceMoney.format(balance, currency)}',
+            icon: Icons.account_balance_wallet_outlined,
+            // The posting re-checks the balance; the sheet says it before.
+            unavailable: balance != null && balance < amount ? "Insufficient balance.".tr : null,
+            payment: FinancePayment.of(const FinanceFunding.wallet()),
+          ),
+        for (final g in FinanceGateways.offered(methods, checkout?.enabled ?? const {}, currency))
+          _PayOption(
+            title: g.label,
+            detail: _familyLabel(g, methods),
+            icon: g.families.contains('card') && !g.families.contains('mobile_money')
+                ? Icons.credit_card_rounded
+                : (g.key == FinanceGateways.paypal ? Icons.account_balance_outlined : Icons.phone_iphone_rounded),
+            unavailable: FinanceGateways.units(g.key, amount, currency) == null ? "This amount cannot be paid with this method.".tr : null,
+            gateway: g.key,
+          ),
+      ];
+
+  /// What a gateway is used for here: "Mobile Money", "Card", "Mobile Money or card"...
+  static String _familyLabel(FinanceGateway g, List<String> methods) {
+    final bool mm = g.families.contains('mobile_money') && methods.contains('mobile_money') || g.families.contains('wave') && methods.contains('wave');
+    final bool card = g.families.contains('card') && methods.contains('card');
+    if (g.key == FinanceGateways.paypal) return "PayPal account".tr;
+    if (mm && card) return "Mobile Money or card".tr;
+    return (mm ? "Mobile Money" : "Bank card").tr;
+  }
+
+  static List<_PayOption> _payoutOptions(List<String> methods, List<SavedPaymentMethod> saved) => [
+        if (methods.contains('wallet'))
+          _PayOption(title: "Spideli Finance wallet".tr, icon: Icons.account_balance_wallet_outlined, payment: FinancePayment.payout(FinanceDestination.wallet())),
+        for (final m in saved)
+          if (methods.contains(m.type))
+            _PayOption(
+              title: (m.label ?? '').isNotEmpty ? m.label! : m.title.tr,
+              detail: m.isBank ? '${m.bankName ?? ''} · ${ltr(m.masked)}' : ltr(m.number),
+              icon: m.isBank ? Icons.account_balance_outlined : (m.type == SavedPaymentMethod.typeWave ? Icons.waves_rounded : Icons.phone_iphone_rounded),
+              payment: FinancePayment.payout(m.destination),
+            ),
+      ];
 
   static Future<void> _show(
     BuildContext context, {
@@ -437,22 +526,14 @@ abstract final class FinancePaySheet {
     required int amount,
     required String currency,
     required List<String> methods,
-    required Future<Map<String, dynamic>> Function(Map<String, dynamic> payment) submit,
+    required List<_PayOption> options,
+    required FinanceCheckout? checkout,
+    required Future<Map<String, dynamic>> Function(FinancePayment payment) submit,
     required bool payout,
   }) async {
-    ShowToastDialog.showLoader("Please wait...".tr);
-    final saved = await SavedPaymentMethods.load().catchError((_) => <SavedPaymentMethod>[]);
-    ShowToastDialog.closeLoader();
-    // The options: the wallet, then each saved number of an allowed type.
-    // (title, number, icon, the payment sent to the server)
-    final options = <(String, String?, IconData, Map<String, dynamic>)>[
-      if (methods.contains('wallet')) (GroupLabels.method('wallet').tr, null, Icons.account_balance_wallet_outlined, FinanceGroupService.paymentOf('wallet')),
-      for (final m in saved)
-        if (methods.contains(m.type))
-          (m.title.tr, m.number, Icons.phone_iphone_rounded, FinanceGroupService.paymentOf(m.type, operator: m.operator, number: m.number)),
-    ];
-    if (!context.mounted) return;
-    int? selected = options.isEmpty ? null : 0;
+    int? selected = options.indexWhere((o) => o.unavailable == null);
+    if (selected < 0) selected = null;
+    final bool manage = payout && methods.any((m) => m != 'wallet');
     final confirmed = await finSheet<bool>(
       title: title,
       child: _finAccent(
@@ -486,7 +567,13 @@ abstract final class FinancePaySheet {
                 ),
                 const DsGap(DsSpace.sm),
                 if (options.isEmpty)
-                  DsInlineAlert(tone: DsTone.warning, message: "Add a Mobile Money number to pay.".tr)
+                  DsInlineAlert(
+                    tone: DsTone.warning,
+                    message: (payout
+                            ? "Add a Mobile Money number, a Wave account or a bank account to receive the money."
+                            : "No payment method is available for this currency right now.")
+                        .tr,
+                  )
                 else
                   FinSurface(
                     padding: EdgeInsets.zero,
@@ -496,23 +583,24 @@ abstract final class FinancePaySheet {
                         for (int i = 0; i < options.length; i++) ...[
                           if (i > 0) Divider(height: 1, thickness: 1, color: c.divider),
                           _MethodRow(
-                            title: options[i].$1,
-                            number: options[i].$2,
-                            icon: options[i].$3,
+                            title: options[i].title,
+                            number: options[i].detail,
+                            icon: options[i].icon,
+                            note: options[i].unavailable,
                             selected: selected == i,
                             first: i == 0,
                             last: i == options.length - 1,
-                            onTap: () => setState(() => selected = i),
+                            onTap: options[i].unavailable != null ? null : () => setState(() => selected = i),
                           ),
                         ],
                       ],
                     ),
                   ),
-                if (methods.any((m) => m != 'wallet'))
+                if (manage)
                   Align(
                     alignment: AlignmentDirectional.centerStart,
                     child: DsButton.ghost(
-                      label: "Manage payment numbers".tr,
+                      label: "Manage payment methods".tr,
                       icon: Icons.add_rounded,
                       size: DsButtonSize.sm,
                       onPressed: () {
@@ -539,32 +627,51 @@ abstract final class FinancePaySheet {
         ),
       ),
     );
-    if (confirmed != true || selected == null) return;
-    // The request; after a failure the user may try again with the same
-    // payment (the caller's request key keeps a retry from paying twice).
+    if (confirmed != true || selected == null || !context.mounted) return;
+    final option = options[selected!];
+    // The gateway takes the money first; a failed or cancelled checkout
+    // charged nothing, so trying again runs it again.
+    FinancePayment? payment = option.payment;
+    while (payment == null) {
+      try {
+        if (!context.mounted || checkout == null) throw const FinanceException('gateway_unavailable');
+        payment = FinancePayment.of(await checkout.pay(context, gateway: option.gateway!, amount: amount, currency: currency));
+      } catch (e) {
+        if (!await _failed(_message(e), payout: false)) return;
+      }
+    }
+    // Then the operation; a retry sends the same payment (never a new charge).
     while (true) {
       ShowToastDialog.showLoader("Please wait...".tr);
       try {
-        final reply = await submit(options[selected!].$4);
+        final reply = await submit(payment);
         ShowToastDialog.closeLoader();
         await _result(reply, amount: amount, currency: currency, payout: payout);
         return;
       } catch (e) {
         ShowToastDialog.closeLoader();
-        final String message = FinanceErrors.messageKey(e is FinanceException ? e.reason : null).tr;
-        if (!await _failed(message, payout: payout)) return;
+        final bool charged = !payout && !payment.isWallet;
+        if (charged) log('finance: ${payment.method} payment ${payment.reference} not recorded yet: $e');
+        if (!await _failed(_message(e), payout: payout, charged: charged ? payment : null, amount: amount, currency: currency)) return;
       }
     }
   }
 
-  /// The server's answer: received, started (approve on the phone) or sent.
+  /// The translated message of a failure, with the gateway's own words when it gave some.
+  static String _message(Object e) {
+    if (e is! FinanceException) return FinancePayErrors.messageKey(null).tr;
+    final String own = (e.details['message'] ?? '').toString().trim();
+    final String message = FinancePayErrors.messageKey(e.reason).tr;
+    return own.isEmpty ? message : '$message ($own)';
+  }
+
+  /// The answer: received, sent for processing, started (approve on the phone) or a payout requested.
   static Future<void> _result(Map<String, dynamic> reply, {required int amount, required String currency, required bool payout}) async {
-    final String status = reply['status']?.toString() ?? '';
     final String instructions = reply['instructions']?.toString() ?? '';
-    // Success is shown only when the server says the money arrived.
-    final bool received = !payout && status == 'succeeded';
+    final bool received = !payout && FinancePayReply.succeeded(reply);
+    final bool processing = !payout && FinancePayReply.processing(reply);
     await finSheet(
-      title: (payout ? "Request sent" : (status == 'succeeded' ? "Payment received" : "Payment started")).tr,
+      title: (payout ? "Request sent" : (received || processing ? "Payment received" : "Payment started")).tr,
       child: _finAccent(
         Builder(
           builder: (context) {
@@ -575,8 +682,8 @@ abstract final class FinancePaySheet {
               children: [
                 Row(children: [
                   DsIconWell(
-                    icon: received ? Icons.check_circle_rounded : (payout ? Icons.schedule_send_rounded : Icons.hourglass_top_rounded),
-                    tone: received ? DsTone.success : DsTone.info,
+                    icon: received || processing ? Icons.check_circle_rounded : (payout ? Icons.schedule_send_rounded : Icons.hourglass_top_rounded),
+                    tone: received || processing ? DsTone.success : DsTone.info,
                     size: 44,
                   ),
                   const DsGap(DsSpace.md),
@@ -594,9 +701,11 @@ abstract final class FinancePaySheet {
                       ? instructions
                       : (payout
                               ? "The money is sent once your request is processed. You can follow it here."
-                              : status == 'succeeded'
-                              ? "Your payment was received."
-                              : "Approve the payment on your phone if you are asked to. This page updates when the payment is confirmed.")
+                              : received
+                                  ? "Your payment was received."
+                                  : processing
+                                      ? "Your payment was received. Spideli Finance now completes your request; you can follow it here."
+                                      : "Approve the payment on your phone if you are asked to. This page updates when the payment is confirmed.")
                           .tr,
                   style: DsTypography.body.copyWith(color: c.textPrimary),
                 ),
@@ -615,62 +724,110 @@ abstract final class FinancePaySheet {
     );
   }
 
-  /// The request did not go through: why, and whether to try again.
-  static Future<bool> _failed(String message, {required bool payout}) async {
-    final bool? again = await finSheet<bool>(
-      title: (payout ? "Request not sent" : "Payment not completed").tr,
-      child: _finAccent(
-        Builder(
-          builder: (context) {
-            final c = DsColors.of(context);
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(children: [
-                  const DsIconWell(icon: Icons.error_outline_rounded, tone: DsTone.danger, size: 44),
-                  const DsGap(DsSpace.md),
-                  Expanded(child: Text(message, style: DsTypography.body.copyWith(color: c.textPrimary))),
-                ]),
-                const DsGap(DsSpace.lg),
-                DsButton.primary(label: "Try again".tr, icon: Icons.refresh_rounded, expand: true, onPressed: () => Get.back(result: true)),
-                const DsGap(DsSpace.sm),
-                DsButton.ghost(label: "Close".tr, expand: true, onPressed: () => Get.back(result: false)),
-              ],
-            );
-          },
+  /// It did not go through: why, and whether to try again. [charged]: a
+  /// gateway already took the money, the operation is not recorded yet -
+  /// say so, and confirm before leaving without it.
+  static Future<bool> _failed(String message, {required bool payout, FinancePayment? charged, int amount = 0, String currency = ''}) async {
+    while (true) {
+      final bool? again = await finSheet<bool>(
+        title: (payout ? "Request not sent" : (charged != null ? "Payment not recorded yet" : "Payment not completed")).tr,
+        isDismissible: charged == null,
+        enableDrag: charged == null,
+        child: _finAccent(
+          Builder(
+            builder: (context) {
+              final c = DsColors.of(context);
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(children: [
+                    const DsIconWell(icon: Icons.error_outline_rounded, tone: DsTone.danger, size: 44),
+                    const DsGap(DsSpace.md),
+                    Expanded(child: Text(message, style: DsTypography.body.copyWith(color: c.textPrimary))),
+                  ]),
+                  if (charged != null) ...[
+                    const DsGap(DsSpace.md),
+                    DsInlineAlert(
+                      tone: DsTone.warning,
+                      message: "Your payment was received but the operation is not recorded yet. Try again to finish it: you will not be charged again.".tr,
+                    ),
+                    const DsGap(DsSpace.sm),
+                    FinRow(FinanceGateways.label(charged.method), FinanceMoney.format(amount, currency)),
+                    FinRow("Payment reference".tr, ltrRef(charged.reference)),
+                  ],
+                  const DsGap(DsSpace.lg),
+                  DsButton.primary(label: "Try again".tr, icon: Icons.refresh_rounded, expand: true, onPressed: () => Get.back(result: true)),
+                  const DsGap(DsSpace.sm),
+                  DsButton.ghost(label: "Close".tr, expand: true, onPressed: () => Get.back(result: false)),
+                ],
+              );
+            },
+          ),
         ),
-      ),
-    );
-    return again == true;
+      );
+      if (again == true) return true;
+      if (charged == null) return false;
+      // Leaving a taken payment unrecorded: only on purpose, with its reference.
+      final bool leave = await finConfirm(
+        title: "Leave without finishing?".tr,
+        message: "Keep this reference: contact support with it to have the payment recorded or refunded.".tr,
+        lines: [("Payment reference".tr, ltrRef(charged.reference)), (FinanceGateways.label(charged.method), FinanceMoney.format(amount, currency))],
+        confirmLabel: "Leave".tr,
+        cancelLabel: "Try again".tr,
+        destructive: true,
+      );
+      if (leave) return false;
+      return true;
+    }
   }
 }
 
-/// One payment method of the pay sheet: a clear, full-width selectable row.
+/// One choice of the pay sheet.
+class _PayOption {
+  final String title;
+  final String? detail;
+  final IconData icon;
+
+  /// Why it cannot be chosen (too low a balance...), or null.
+  final String? unavailable;
+
+  /// The wallet or a payout destination; null for a gateway (charged on confirm).
+  final FinancePayment? payment;
+  final String? gateway;
+
+  const _PayOption({required this.title, this.detail, required this.icon, this.unavailable, this.payment, this.gateway});
+}
+
+/// One payment method of the pay sheet: a clear, full-width selectable row
+/// ([onTap] null: shown with [note], not selectable).
 class _MethodRow extends StatelessWidget {
   final String title;
   final String? number;
   final IconData icon;
+  final String? note;
   final bool selected;
   final bool first;
   final bool last;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
-  const _MethodRow({required this.title, required this.number, required this.icon, required this.selected, required this.first, required this.last, required this.onTap});
+  const _MethodRow({required this.title, required this.number, required this.icon, this.note, required this.selected, required this.first, required this.last, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
     final Color brand = FinColors.brand(context);
+    final bool enabled = onTap != null;
     final radius = BorderRadius.vertical(
       top: first ? const Radius.circular(FinSpace.radius - 1) : Radius.zero,
       bottom: last ? const Radius.circular(FinSpace.radius - 1) : Radius.zero,
     );
     return Semantics(
       selected: selected,
+      enabled: enabled,
       inMutuallyExclusiveGroup: true,
       button: true,
-      label: number == null ? title : '$title, $number',
+      label: [title, if (number != null && number!.isNotEmpty) number!, ?note].join(', '),
       onTap: onTap,
       child: ExcludeSemantics(
         child: Material(
@@ -683,23 +840,27 @@ class _MethodRow extends StatelessWidget {
               constraints: const BoxConstraints(minHeight: 56),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
-                child: Row(children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(color: selected ? c.surface : c.surfaceAlt, borderRadius: DsRadius.brSm),
-                    child: Icon(icon, size: 20, color: selected ? brand : c.textSecondary),
-                  ),
-                  const DsGap(DsSpace.md),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(title, style: DsTypography.bodyStrong.copyWith(color: c.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      if (number != null && number!.isNotEmpty) Text(ltr(number!), style: DsTypography.caption.copyWith(color: c.textSecondary).tabular),
-                    ]),
-                  ),
-                  const DsGap(DsSpace.sm),
-                  Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: selected ? brand : c.textMuted, size: 22),
-                ]),
+                child: Opacity(
+                  opacity: enabled ? 1 : 0.55,
+                  child: Row(children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(color: selected ? c.surface : c.surfaceAlt, borderRadius: DsRadius.brSm),
+                      child: Icon(icon, size: 20, color: selected ? brand : c.textSecondary),
+                    ),
+                    const DsGap(DsSpace.md),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(title, style: DsTypography.bodyStrong.copyWith(color: c.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        if (number != null && number!.isNotEmpty) Text(number!, style: DsTypography.caption.copyWith(color: c.textSecondary).tabular),
+                        if (note != null) Text(note!, style: DsTypography.caption.copyWith(color: c.danger)),
+                      ]),
+                    ),
+                    const DsGap(DsSpace.sm),
+                    Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: selected ? brand : c.textMuted, size: 22),
+                  ]),
+                ),
               ),
             ),
           ),

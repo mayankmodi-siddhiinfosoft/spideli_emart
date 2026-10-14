@@ -5,11 +5,14 @@ import 'package:customer/screen_ui/finance/bill_screens.dart';
 import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/transfer_screens.dart';
+import 'package:customer/screen_ui/finance/wallet_screens.dart';
 import 'package:customer/service/finance_group_service.dart';
 import 'package:customer/service/finance_service.dart';
+import 'package:customer/service/finance_wallet_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/finance_rules.dart';
+import 'package:customer/utils/finance_wallet_rules.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -24,10 +27,12 @@ List<Map<String, dynamic>> activeWallets(List<Map<String, dynamic>> accounts) =>
 Map<String, dynamic>? preferredWallet(List<Map<String, dynamic>> wallets, String? currency) =>
     wallets.where((w) => w['currency'] == currency).firstOrNull ?? wallets.firstOrNull;
 
-/// Spideli Finance > Wallet: the available balance, wallet actions and the
-/// searchable, filterable history of ledger transactions (server-side
-/// filters, indexed; the search looks through the latest pages and can go
-/// further back on request).
+/// Spideli Finance > Wallet: the available balance, wallet actions (add
+/// money, withdraw, convert when the admin offers them in
+/// `platform_settings/wallet`, send, pay bills, statement), the operations
+/// in progress and the searchable, filterable history of ledger
+/// transactions (server-side filters, indexed; the search looks through the
+/// latest pages and can go further back on request).
 class TransactionsScreen extends StatefulWidget {
   /// Shown as the Finance dashboard's Wallet tab (no back arrow).
   final bool asTab;
@@ -39,8 +44,11 @@ class TransactionsScreen extends StatefulWidget {
 }
 
 class _TransactionsScreenState extends State<TransactionsScreen> {
-  static const List<String?> _types = [null, 'deposit', 'withdrawal', 'transfer', 'manual_adjustment', 'reversal'];
+  static const List<String?> _types = [null, 'deposit', 'withdrawal', 'transfer', 'transfer_out', 'bill_payment', 'conversion', 'manual_adjustment', 'reversal'];
   final _search = TextEditingController();
+
+  /// What the admin offers for the wallet (null: none of its own actions yet).
+  late final Future<WalletConfig?> _walletConfig = FinanceWalletService.config().catchError((_) => null);
   Timer? _debounce;
 
   /// The search applied to the list, a moment after the typing stops.
@@ -87,35 +95,44 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         children: [
           StreamBuilder<FinanceSummary?>(
             stream: FinanceService.summary(),
-            builder: (context, summary) => StreamBuilder<List<Map<String, dynamic>>>(
-              stream: FinanceService.myAccounts(),
-              builder: (context, snap) {
-                final bool failed = snap.hasError;
-                final wallets = activeWallets(snap.data ?? const []);
-                final first = preferredWallet(wallets, summary.data?.currency);
-                final others = wallets.where((w) => w != first).toList();
-                return FinHero(
-                  label: "Available balance".tr,
-                  amount: failed
-                      ? '—'
-                      : first == null
-                          ? (snap.hasData ? FinanceMoney.format(0, summary.data?.currency ?? 'XAF') : '…')
-                          : FinanceMoney.format((first['balance'] as num?) ?? 0, first['currency']?.toString() ?? ''),
-                  caption: failed
-                      ? "Could not load your balances.".tr
-                      : others.isNotEmpty
-                          ? '${"Also".tr}: ${others.map((w) => FinanceMoney.format((w['balance'] as num?) ?? 0, w['currency']?.toString() ?? '')).join(' · ')}'
-                          : (first == null && snap.hasData ? "Your wallet opens with your first deposit.".tr : "Spideli Finance wallet".tr),
-                  footer: FinActions(onHero: true, actions: [
-                    if (failed) FinAction(Icons.refresh_rounded, "Retry".tr, FinanceService.retry),
-                    FinAction(Icons.north_east_rounded, "Send".tr, () => Get.to(() => const TransfersScreen())),
-                    FinAction(Icons.receipt_outlined, "Pay bills".tr, () => Get.to(() => const BillsScreen())),
-                    FinAction(Icons.picture_as_pdf_outlined, "Statement".tr, () => shareFinanceStatement(context)),
-                  ]),
-                );
-              },
+            builder: (context, summary) => FutureBuilder<WalletConfig?>(
+              future: _walletConfig,
+              builder: (context, cfgSnap) => StreamBuilder<List<Map<String, dynamic>>>(
+                stream: FinanceService.myAccounts(),
+                builder: (context, snap) {
+                  final cfg = cfgSnap.data;
+                  final bool failed = snap.hasError;
+                  final wallets = activeWallets(snap.data ?? const []);
+                  final first = preferredWallet(wallets, summary.data?.currency);
+                  final others = wallets.where((w) => w != first).toList();
+                  final String? shown = first?['currency']?.toString();
+                  return FinHero(
+                    label: "Available balance".tr,
+                    amount: failed
+                        ? '—'
+                        : first == null
+                            ? (snap.hasData ? FinanceMoney.format(0, summary.data?.currency ?? 'XAF') : '…')
+                            : FinanceMoney.format((first['balance'] as num?) ?? 0, first['currency']?.toString() ?? ''),
+                    caption: failed
+                        ? "Could not load your balances.".tr
+                        : others.isNotEmpty
+                            ? '${"Also".tr}: ${others.map((w) => FinanceMoney.format((w['balance'] as num?) ?? 0, w['currency']?.toString() ?? '')).join(' · ')}'
+                            : (first == null && snap.hasData ? "Your wallet opens with your first deposit.".tr : "Spideli Finance wallet".tr),
+                    footer: FinActions(onHero: true, actions: [
+                      if (failed) FinAction(Icons.refresh_rounded, "Retry".tr, FinanceService.retry),
+                      if (cfg?.deposit.enabled == true) FinAction(Icons.add_rounded, "Add money".tr, () => Get.to(() => WalletAddMoneyScreen(currency: shown))),
+                      if (cfg?.withdraw.enabled == true) FinAction(Icons.south_rounded, "Withdraw".tr, () => Get.to(() => WalletWithdrawScreen(currency: shown))),
+                      FinAction(Icons.north_east_rounded, "Send".tr, () => Get.to(() => const TransfersScreen())),
+                      if (cfg?.convert.enabled == true) FinAction(Icons.currency_exchange_rounded, "Convert".tr, () => Get.to(() => WalletConvertScreen(from: shown))),
+                      FinAction(Icons.receipt_outlined, "Pay bills".tr, () => Get.to(() => const BillsScreen())),
+                      FinAction(Icons.picture_as_pdf_outlined, "Statement".tr, () => shareFinanceStatement(context)),
+                    ]),
+                  );
+                },
+              ),
             ),
           ),
+          const WalletInProgress(),
           const DsGap(FinSpace.section),
           TextField(
             controller: _search,

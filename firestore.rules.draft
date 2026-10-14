@@ -5,7 +5,10 @@ rules_version = '2';
 // (updated 7 Oct 2026: Cloud Function driver dispatch guards on the four
 // order collections, parcel SMS fields, parcel_sms_outbox closed, carrier
 // regionPricing - .claude/DRIVER-DISPATCH-CONTRACT.md,
-// .claude/PARCEL-SMS-CONTRACT.md, .claude/COMPANY-CARRIER-LINK.md)
+// .claude/PARCEL-SMS-CONTRACT.md, .claude/COMPANY-CARRIER-LINK.md;
+// 14 Oct 2026: the SPIDELI FINANCE block - every finance collection, the
+// ledger core and the users' finance fields - .claude/FINANCE-DIRECT-FIRESTORE.md,
+// tested on the emulator by finance/rules-test, see its README)
 //
 // NOT DEPLOYED, and deliberately not referenced by any firebase.json (a
 // `firebase deploy` from this repo can never replace the live rules).
@@ -473,24 +476,54 @@ service cloud.firestore {
       );
     }
 
+    // ----- Spideli Finance fields on the account (FINANCE-DIRECT-FIRESTORE.md
+    // 3.1 and 3.12) -----
+    // financeRestriction (the blacklist), kycLevel and kycStatus are written
+    // by the admin only (PHP panel / an admin client); no account sets them on
+    // itself or on anyone else, at sign-up either. financeNotificationPrefs
+    // ({push, sms, email: {payments, groups, loans, investments, insurance,
+    // news: bool}}) is the account's own choice: only the account writes it.
+    function financeServerKeys() { return ['financeRestriction', 'kycLevel', 'kycStatus']; }
+
+    function financePrefsChannelOk(c) {
+      return c is map && c.keys().hasOnly(['payments', 'groups', 'loans', 'investments', 'insurance', 'news'])
+        && c.get('payments', true) is bool && c.get('groups', true) is bool && c.get('loans', true) is bool
+        && c.get('investments', true) is bool && c.get('insurance', true) is bool && c.get('news', true) is bool;
+    }
+
+    function financePrefsOk(p) {
+      return p == null || (p is map && p.keys().hasOnly(['push', 'sms', 'email'])
+        && financePrefsChannelOk(p.get('push', {})) && financePrefsChannelOk(p.get('sms', {})) && financePrefsChannelOk(p.get('email', {})));
+    }
+
+    // [keys]: the keys a write changes (update) or sets (create); [self]: the
+    // account writes its own document.
+    function financeUserKeysOk(keys, self) {
+      return !keys.hasAny(financeServerKeys())
+        && (!keys.hasAny(['financeNotificationPrefs']) || (self && financePrefsOk(request.resource.data.get('financeNotificationPrefs', null))));
+    }
+
     match /users/{userId} {
       // TODO: any signed-in user reads any profile (phone, email, bank details,
       // FCM token). The apps need other users' names, photos, location and
       // tokens; narrowing this needs a public-profile split.
+      // Spideli Finance relies on it too: recipient lookup by email / phone
+      // (where email in [...], where phoneNumber in [...]), the name and push
+      // token of group members, and the caller's own financeRestriction.
       allow read: if signedIn();
 
       allow create: if signedIn() && (
-        (userId == uid() && signupFieldsOk() && newWalletZero())
+        (userId == uid() && signupFieldsOk() && newWalletZero() && financeUserKeysOk(request.resource.data.keys(), true))
         || isAdmin()
-        || staffCreateOk(userId));
+        || (staffCreateOk(userId) && financeUserKeysOk(request.resource.data.keys(), false)));
 
       // The self branch comes first so a driver's location tick costs no extra
       // document read; isAdmin() comes before the cross-user checks so a long
       // refusal there can never use up the expression budget an admin needs.
       allow update: if signedIn() && (
-        (userId == uid() && selfUpdateOk())
+        (userId == uid() && selfUpdateOk() && financeUserKeysOk(changedKeys(), true))
         || isAdmin()
-        || (userId != uid() && otherUpdateOk()));
+        || (userId != uid() && otherUpdateOk() && financeUserKeysOk(changedKeys(), false)));
 
       // Account deletion (all apps), a fleet owner removing its driver.
       allow delete: if signedIn() && (userId == uid() || fleetOwnerOf(resource.data) || isAdmin());
@@ -1096,6 +1129,1862 @@ service cloud.firestore {
     match /chat_provider/{document=**} { allow read, write: if signedIn(); }
     match /chat_worker/{document=**} { allow read, write: if signedIn(); }
     match /chat_admin/{document=**} { allow read, write: if signedIn(); }
+
+    // =========================================================================
+    // =========================================================================
+    // SPIDELI FINANCE (14 Oct 2026) - .claude/FINANCE-DIRECT-FIRESTORE.md
+    // =========================================================================
+    // =========================================================================
+    // No Cloud Function exists: the customer app writes the finance
+    // collections DIRECTLY, in batches / transactions, and these rules are the
+    // only server-side check. The PHP admin panel uses the Admin SDK (rules do
+    // not apply); an admin signed in to a client passes through the admin
+    // wildcard at the end of this file. Field reference:
+    // .claude/FINANCE-APP-CONTRACT.md; writers: customer/lib/service/finance_*.
+    //
+    // MONEY MODEL (design section 2). Balances live in financial_accounts
+    // (integer minor units). Every balance change is a posting
+    // ledger_transactions/{txId} of 2 lines (debit -> credit) or 3 (plus a
+    // fee credited to platform_{CUR}), written in ONE batch with:
+    //   - every account of its lines, each updated with lastTxId == txId and a
+    //     balance change equal to its line (or created by its first credit);
+    //   - the request document that explains it (source {kind, id}), which
+    //     names the posting (txId / feeTxId / renewalTxId / txIds) and checks
+    //     its own business rules (amounts, fees, members, statuses, limits);
+    //   - for a gateway-funded posting, payment_receipts/{method}_{reference}
+    //     (create-only: one gateway payment funds one posting).
+    // Proof chain: account write  -> posting created by THIS request (its
+    // createdAt == request.time, which no older posting can have: no replay)
+    // -> the posting names every account (lastTxId) and its request -> the
+    // request checks the business rule. Counters (savedAmount,
+    // collectedAmount, fundedAmount, outstandingAmount, repaidAmount, votes)
+    // change only by the posting's / vote's exact delta, in the same batch.
+    //
+    // LIMITS. Firestore allows 10 distinct documents read (get / getAfter /
+    // exists) per write and 20 per batch; reads of the same document are
+    // cached across the whole batch (checked on the emulator, see
+    // finance/rules-test). Each helper below reads documents the batch
+    // already touches (the posting, its accounts, the request, users/{uid}),
+    // so the heaviest batches (tontine contribution that completes a cycle,
+    // paid by a gateway; conversion) stay at about 10-12 distinct documents.
+    // The emulator also stops a write at 1000 evaluated expressions (per
+    // write, not per batch); every batch of the test suite passes under it.
+    // This block is ~110 KB of the file; Firestore's limit is 256 KB.
+    //
+    // NOT PROVABLE BY RULES (left to the admin's reconciliation, see
+    // finance/rules-test/README.md): a gateway payment's reality (device
+    // reported; receipts are verified:false until the PHP panel checks the
+    // provider), daily / monthly limits, "one open request" uniqueness, list
+    // contents (loan schedules, payout order fairness), counts across
+    // documents (maxCardsPerUser, tontine active + invited <= membersLimit).
+    // =========================================================================
+
+    // ---- Finance: small helpers ---------------------------------------------
+
+    function fPath(coll, id) { return /databases/$(database)/documents/$(coll)/$(id); }
+    function fGet(coll, id) { return get(fPath(coll, id)).data; }
+    function fAfter(coll, id) { return getAfter(fPath(coll, id)).data; }
+    function fSetting(id) { return fGet('platform_settings', id); }
+
+    function fIdOk(v) { return v is string && v.matches('^[A-Za-z0-9_-]{1,200}$'); }
+    function fCurOk(v) { return v is string && v.matches('^[A-Z]{3}$'); }
+    // Amounts are integer minor units, at most 10^12 (no overflow in products).
+    function fPos(v) { return v is int && v > 0 && v <= 1000000000000; }
+    function fNonNeg(v) { return v is int && v >= 0 && v <= 1000000000000; }
+    function fStr(v, min, max) { return v is string && v.size() >= min && v.size() <= max; }
+    function fOptStr(m, k, max) { return m.get(k, null) == null || fStr(m[k], 0, max); }
+    // A time field written with FieldValue.serverTimestamp() by this request
+    // (or absent).
+    function fStamp(m, k) { return m.get(k, request.time) == request.time; }
+    function fChanged() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function fDate(v) { return v == null || v is timestamp || v is string; }
+
+    // A per-currency setting ({XAF: 1000}) or a plain number.
+    function fPerCur(v, cur, dflt) { return v is map ? v.get(cur, dflt) : (v is number ? v : dflt); }
+    function fMinOk(cfg, cur, amount) { return !(fPerCur(cfg.get('min', null), cur, null) is number) || amount >= fPerCur(cfg.get('min', null), cur, 0); }
+    function fMaxOk(cfg, cur, amount) { return !(fPerCur(cfg.get('max', null), cur, null) is number) || amount <= fPerCur(cfg.get('max', null), cur, 0); }
+
+    // The fee of a fee rule {feePercent, feeFixed{CUR}, feeMax{CUR}}, as the
+    // app computes it (FeeRule.feeFor: round(amount x % / 100) + fixed,
+    // capped by a max > 0).
+    function fFee(cfg, cur, amount) {
+      let raw = math.round(float(amount) * cfg.get('feePercent', 0) / 100) + fPerCur(cfg.get('feeFixed', null), cur, 0);
+      let cap = fPerCur(cfg.get('feeMax', null), cur, 0);
+      return cap is number && cap > 0 && raw > cap ? cap : raw;
+    }
+
+    // Re-authenticated in the last 5 minutes (design 2.4): the ID token's
+    // auth_time (seconds) after request.time - 5 min.
+    function fFresh() { return request.auth.token.get('auth_time', 0) * 1000 > request.time.toMillis() - 300000; }
+
+    // Re-authentication from security.reauthAbove{CUR} of a settings document
+    // (a currency without a threshold > 0: always).
+    function fReauthOk(cfg, cur, amount) {
+      let above = cfg.get('security', {}).get('reauthAbove', {});
+      return fFresh() || (above is map && above.get(cur, null) is number && above.get(cur, 0) > 0 && amount < above.get(cur, 0));
+    }
+
+    // users/{uid}.financeRestriction (the admin's blacklist): restricted for
+    // [scope] when it lists the scope or 'all', or lists no scope at all.
+    // Scopes the rules check - what the app blocks (FinanceRestriction.blocks):
+    // 'loans' (apply, vote, fund, accept a loan), 'tontines' (create, join),
+    // 'savings' (create a goal, join one), 'transfers' (send money),
+    // 'payments' (pay a bill), 'wallet' (add money, withdraw, convert).
+    // Contributions, repayments, savings withdrawals and the gateway deposit
+    // that pays another request (purpose) are never blocked here.
+    function fRestricted(scope) {
+      let r = hasProfile() ? myProfile().get('financeRestriction', null) : null;
+      return r is map && string(r.get('status', '')).trim().lower() == 'restricted'
+        && (!(r.get('scopes', null) is list) || r.get('scopes', []).size() == 0 || r.get('scopes', []).hasAny(['all', scope]));
+    }
+
+    // ---- Finance: the ledger -------------------------------------------------
+
+    function fTxIdOk(id) { return id is string && id.matches('^tx_[0-9]{10,16}_[A-Za-z0-9_]{4,40}$'); }
+    function fTx(id) { return fAfter('ledger_transactions', id); }
+    // The posting [id] was created by THIS request: its createdAt equals
+    // request.time (checked at its creation), which only the batch that
+    // creates it can see. Never an older posting replayed.
+    function fTxNow(id) { return fTxIdOk(id) && fTx(id).createdAt == request.time; }
+
+    // Types a client may post (reversal, manual_adjustment, fee: admin only).
+    function fClientTxTypes() {
+      return ['deposit', 'withdrawal', 'transfer', 'transfer_out', 'bill_payment', 'card_funding', 'card_fee',
+              'savings_contribution', 'savings_withdrawal', 'tontine_contribution', 'tontine_payout',
+              'loan_funding', 'loan_disbursement', 'loan_repayment', 'loan_lender_payout',
+              'investment_subscription', 'insurance_premium', 'conversion'];
+    }
+
+    // Postings paid by the user (from their wallet, or a gateway payment):
+    // what each type credits, and the request collection that explains it.
+    function fCreditKind() {
+      return {'deposit': 'wallet', 'withdrawal': 'platform', 'conversion': 'platform', 'transfer': 'wallet',
+              'transfer_out': 'platform', 'bill_payment': 'platform', 'card_funding': 'platform', 'card_fee': 'platform',
+              'savings_contribution': 'savings_goal', 'tontine_contribution': 'tontine_pot', 'loan_funding': 'loan',
+              'loan_repayment': 'loan', 'investment_subscription': 'platform', 'insurance_premium': 'platform'};
+    }
+    function fRecordOf() {
+      return {'deposit': 'wallet_operations', 'withdrawal': 'wallet_operations', 'conversion': 'wallet_operations',
+              'transfer': 'money_transfers', 'transfer_out': 'money_transfers', 'bill_payment': 'utility_payment_requests',
+              'card_funding': 'card_funding_requests', 'card_fee': 'virtual_cards', 'savings_contribution': 'savings_contributions',
+              'tontine_contribution': 'tontine_contributions', 'loan_funding': 'loan_fundings', 'loan_repayment': 'loan_repayments',
+              'investment_subscription': 'investment_subscriptions', 'insurance_premium': 'insurance_premiums'};
+    }
+    // A gateway payment may fund these directly (platform -> credit): the
+    // deposit into the payer's wallet, and the group payments the app posts
+    // straight into their pool. Anything else paid by a gateway is a deposit
+    // first, then a wallet payment (FinancePay.gatewayDeposit).
+    function fGatewayTypes() { return ['deposit', 'savings_contribution', 'tontine_contribution', 'loan_funding', 'loan_repayment']; }
+
+    function fLineOk(l, dir) {
+      return l is map && l.keys().hasOnly(['accountId', 'direction', 'amount']) && l.keys().hasAll(['accountId', 'direction', 'amount'])
+        && fIdOk(l.accountId) && l.direction == dir && fPos(l.amount);
+    }
+
+    // 2 or 3 lines: lines[0] the only debit; a third line is the platform's
+    // fee; debits == credits; every account once.
+    function fLinesOk(ls, cur) {
+      return ls is list && (ls.size() == 2 || ls.size() == 3)
+        && fLineOk(ls[0], 'debit') && fLineOk(ls[1], 'credit') && ls[0].accountId != ls[1].accountId
+        && (ls.size() == 2
+            ? ls[0].amount == ls[1].amount
+            : (fLineOk(ls[2], 'credit') && ls[2].accountId == 'platform_' + cur
+               && ls[2].accountId != ls[0].accountId && ls[2].accountId != ls[1].accountId
+               && ls[0].amount == ls[1].amount + ls[2].amount));
+    }
+
+    function fIdsOf(ls) { return ls.size() == 2 ? [ls[0].accountId, ls[1].accountId] : [ls[0].accountId, ls[1].accountId, ls[2].accountId]; }
+
+    function fGatewayOk(g) {
+      return g is map && g.keys().hasOnly(['method', 'reference']) && g.keys().hasAll(['method', 'reference'])
+        && g.method is string && g.method.matches('^[a-z0-9_]{2,40}$') && fStr(g.reference, 1, 200);
+    }
+    // payment_receipts id of a gateway payment (FinanceFunding.receiptId).
+    function fReceiptId(method, reference) { return method + '_' + reference.replace('/', '_'); }
+
+    function fTxShapeOk(t, txId) {
+      return fTxIdOk(txId)
+        && t.keys().hasOnly(['id', 'type', 'status', 'reference', 'currency', 'lines', 'userIds', 'accountIds', 'source', 'funding', 'gateway', 'description', 'createdBy', 'createdAt'])
+        && t.keys().hasAll(['id', 'type', 'status', 'reference', 'currency', 'lines', 'userIds', 'accountIds', 'source', 'funding', 'createdBy', 'createdAt'])
+        && t.id == txId && t.status == 'posted' && t.type in fClientTxTypes()
+        && fStr(t.reference, 1, 40) && fCurOk(t.currency)
+        && t.createdBy == uid() && t.createdAt == request.time
+        && fOptStr(t, 'description', 500)
+        && t.source is map && t.source.keys().hasOnly(['kind', 'id']) && t.source.kind is string && t.source.kind.matches('^[a-z_]{1,40}$') && fIdOk(t.source.id)
+        && (t.funding == 'wallet' ? !('gateway' in t) : (t.funding == 'gateway' && fGatewayOk(t.gateway)))
+        && t.userIds is list && t.userIds.size() >= 1 && t.userIds.size() <= 3
+        && fLinesOk(t.lines, t.currency)
+        && t.accountIds == fIdsOf(t.lines);
+    }
+
+    function fAcct(id) { return fAfter('financial_accounts', id); }
+
+    function fTxCreateOk(txId) {
+      let t = request.resource.data;
+      return fTxShapeOk(t, txId) && fTxPostedOk(t, txId, fAcct(t.lines[0].accountId), fAcct(t.lines[1].accountId));
+    }
+
+    // Every account of the lines was written by this batch with this posting
+    // (the account rules check each balance change); the users are the
+    // wallet owners (plus the caller); the debit is allowed (design 2.1).
+    function fTxPostedOk(t, txId, a0, a1) {
+      return a0.get('lastTxId', '') == txId && a1.get('lastTxId', '') == txId
+        && (t.lines.size() == 2 || fAcct(t.lines[2].accountId).get('lastTxId', '') == txId)
+        && fTxUsersOk(t, a0, a1)
+        && fTxDebitOk(t, txId, a0, a1);
+    }
+
+    function fOwners(a0, a1) {
+      return (a0.get('kind', '') == 'wallet' ? [a0.userId] : []).concat(a1.get('kind', '') == 'wallet' ? [a1.userId] : []);
+    }
+    function fTxUsersOk(t, a0, a1) {
+      return t.userIds.toSet().hasAll(fOwners(a0, a1)) && t.userIds.toSet().hasOnly(fOwners(a0, a1).concat([uid()]));
+    }
+
+    // Who may debit what (design table 2.1).
+    function fTxDebitOk(t, txId, a0, a1) {
+      return a0.get('kind', '') == 'wallet' ? fWalletDebitOk(t, txId, a0, a1)
+        : a0.get('kind', '') == 'platform' ? fPlatformDebitOk(t, txId, a1)
+        : a0.get('kind', '') == 'savings_goal' ? fGoalDebitOk(t, txId, a0, a1)
+        : a0.get('kind', '') == 'tontine_pot' ? fPotDebitOk(t, txId, a0, a1)
+        : a0.get('kind', '') == 'loan' ? fLoanDebitOk(t, txId, a0, a1)
+        : false;
+    }
+
+    // The request document named by source carries this posting.
+    function fRecordOk(t, txId) {
+      let r = fAfter(t.source.kind, t.source.id);
+      return (t.source.kind == fRecordOf().get(t.type, '') && (r.get('txId', '') == txId || (t.type == 'conversion' && txId in r.get('txIds', []))))
+        || (t.type == 'card_fee' && t.source.kind == 'virtual_cards' && (r.get('feeTxId', '') == txId || r.get('renewalTxId', '') == txId))
+        || (t.type == 'insurance_premium' && t.source.kind == 'insurance_policies' && r.get('renewalTxId', '') == txId);
+    }
+
+    // The user's own wallet pays one of their requests.
+    function fWalletDebitOk(t, txId, a0, a1) {
+      return a0.get('userId', '') == uid() && t.funding == 'wallet' && t.type != 'deposit'
+        && fCreditKind().get(t.type, '-') == a1.get('kind', '')
+        && fRecordOk(t, txId);
+    }
+
+    // platform_{CUR} is debited by a client only for money a gateway has
+    // just received (with its receipt, created in this batch), or for the
+    // second leg of a conversion (checked by its wallet_operations record).
+    function fPlatformDebitOk(t, txId, a1) {
+      return (t.funding == 'gateway' && t.type in fGatewayTypes() && fCreditKind().get(t.type, '-') == a1.get('kind', '')
+              && fRecordOk(t, txId)
+              && fAfter('payment_receipts', fReceiptId(t.gateway.method, t.gateway.reference)).get('txId', '') == txId)
+        || (t.funding == 'wallet' && t.type == 'conversion' && a1.get('kind', '') == 'wallet' && a1.get('userId', '') == uid()
+              && t.source.kind == 'wallet_operations'
+              && fAfter('wallet_operations', t.source.id).get('userId', '') == uid()
+              && txId in fAfter('wallet_operations', t.source.id).get('txIds', [])
+              && fAfter('wallet_operations', t.source.id).get('txId', '') != txId);
+    }
+
+    // A savings goal account: its owner, for a SOLO goal, to their own
+    // wallet (a withdrawal, or the whole balance when cancelling). The goal's
+    // savedAmount moves in the same batch (lastTxId == this posting; the
+    // goal rule checks the delta).
+    function fGoalDebitOk(t, txId, a0, a1) {
+      let g = fGet('savings_goals', a0.refId);
+      return t.type == 'savings_withdrawal' && t.funding == 'wallet' && t.lines.size() == 2
+        && a1.get('kind', '') == 'wallet' && a1.get('userId', '') == uid()
+        && g.ownerId == uid() && g.memberIds.toSet() == [uid()].toSet() && g.status == 'active'
+        && fAfter('savings_goals', a0.refId).get('lastTxId', '') == txId
+        && ((t.source.kind == 'savings_withdrawals' && fAfter('savings_withdrawals', t.source.id).get('txId', '') == txId)
+            || (t.source.kind == 'savings_goals' && t.source.id == a0.refId && fAfter('savings_goals', a0.refId).status == 'cancelled'));
+    }
+
+    // A tontine pot: an admin of the tontine (never the beneficiary)
+    // approving the current cycle's payout, to the beneficiary's wallet.
+    function fPotDebitOk(t, txId, a0, a1) {
+      let tn = fGet('tontines', a0.refId);
+      let p = fGet('tontine_payouts', t.source.id);
+      return t.type == 'tontine_payout' && t.funding == 'wallet' && t.lines.size() == 2 && a1.get('kind', '') == 'wallet'
+        && t.source.kind == 'tontine_payouts'
+        && uid() in tn.adminIds && tn.status == 'active'
+        && p.tontineId == a0.refId && p.status == 'pending_approval' && p.cycleNumber == tn.currentCycle
+        && p.beneficiaryUserId == a1.get('userId', '') && p.beneficiaryUserId != uid()
+        && t.lines[0].amount == p.amount
+        && fAfter('tontine_payouts', t.source.id).status == 'paid' && fAfter('tontine_payouts', t.source.id).get('txId', '') == txId;
+    }
+
+    // A loan account: the borrower's disbursement (the whole funded amount,
+    // when accepting the agreement), or a lender collecting their share.
+    function fLoanDebitOk(t, txId, a0, a1) {
+      let l = fGet('loan_applications', a0.refId);
+      return t.funding == 'wallet' && a1.get('kind', '') == 'wallet' && a1.get('userId', '') == uid()
+        && ((t.type == 'loan_disbursement' && t.source.kind == 'loan_disbursements' && t.source.id == a0.refId
+              && l.borrowerId == uid() && l.status == 'agreement_pending' && t.lines[0].amount == l.fundedAmount
+              && fAfter('loan_applications', a0.refId).status == 'active'
+              && fAfter('loan_disbursements', a0.refId).get('txId', '') == txId
+              && !fRestricted('loans'))
+          || (t.type == 'loan_lender_payout' && t.lines.size() == 2 && t.source.kind == 'loan_fundings'
+              && uid() in l.lenderIds && l.status in ['active', 'overdue', 'repaid', 'defaulted']
+              && fLenderShareOk(t, l, a0.refId)));
+    }
+
+    // Each funding collects at most floor(repaid x lent / amount) - collected
+    // (LenderShare.due): `collected` grows by exactly this posting.
+    function fLenderShareOk(t, l, loanId) {
+      let f0 = fGet('loan_fundings', t.source.id);
+      let f1 = fAfter('loan_fundings', t.source.id);
+      return f0.lenderId == uid() && f0.loanId == loanId && f0.get('status', 'succeeded') == 'succeeded'
+        && f1.get('collected', 0) - f0.get('collected', 0) == t.lines[0].amount
+        && f1.get('collected', 0) <= l.get('repaidAmount', 0) * f0.amount / l.amount;
+    }
+
+    match /ledger_transactions/{txId} {
+      allow read: if signedIn() && uid() in resource.data.userIds;
+      allow create: if signedIn() && fTxCreateOk(txId);
+      // No client update or delete: a posting is reversed by the admin.
+    }
+
+    // ---- Finance: accounts ---------------------------------------------------
+    // Fields: id, kind, userId (wallet) | refId (pool), currency, balance,
+    // normalSide 'credit', status, lastTxId, memberIds (savings goal),
+    // createdAt, updatedAt. platform_{CUR} accounts are created by the admin.
+
+    function fPoolPrefix(kind) { return {'savings_goal': 'goal_', 'tontine_pot': 'tontine_', 'loan': 'loan_'}[kind]; }
+
+    function fAccountReadOk(a) {
+      return a.get('userId', '') == uid() || uid() in a.get('memberIds', [])
+        || (a.get('kind', '') == 'savings_goal' && uid() in fGet('savings_goals', a.refId).memberIds)
+        || (a.get('kind', '') == 'tontine_pot' && uid() in fGet('tontines', a.refId).memberIds)
+        || (a.get('kind', '') == 'loan' && fLoanParty(fGet('loan_applications', a.refId)));
+    }
+
+    // Created with its first credit (a wallet: by anyone paying its owner,
+    // id wallet_{userId}_{CUR}; a pool: by its first funding), or a pool
+    // opened empty with its goal / tontine / loan.
+    function fAccountCreateOk(id) {
+      let a = request.resource.data;
+      return a.keys().hasOnly(['id', 'kind', 'userId', 'refId', 'currency', 'memberIds', 'balance', 'normalSide', 'status', 'lastTxId', 'createdAt', 'updatedAt'])
+        && a.keys().hasAll(['id', 'kind', 'currency', 'balance', 'normalSide', 'status'])
+        && a.id == id && fCurOk(a.currency) && a.normalSide == 'credit' && a.status == 'active' && a.balance is int
+        && fStamp(a, 'createdAt') && fStamp(a, 'updatedAt')
+        && ((a.kind == 'wallet' && !a.keys().hasAny(['refId', 'memberIds']) && fIdOk(a.userId)
+              && id == 'wallet_' + a.userId + '_' + a.currency && fFirstCreditOk(id, a))
+          || (a.kind in ['savings_goal', 'tontine_pot', 'loan'] && !('userId' in a) && fIdOk(a.refId)
+              && id == fPoolPrefix(a.kind) + a.refId
+              && (!('memberIds' in a) || (a.kind == 'savings_goal' && a.memberIds == fAfter('savings_goals', a.refId).memberIds))
+              && (fFirstCreditOk(id, a) || fPoolOpenOk(a))));
+    }
+
+    function fFirstCreditOk(id, a) {
+      return fTxNow(a.get('lastTxId', '')) && fTx(a.lastTxId).currency == a.currency
+        && fTx(a.lastTxId).lines[1].accountId == id && a.balance == fTx(a.lastTxId).lines[1].amount;
+    }
+
+    function fPoolOpenOk(a) {
+      return a.balance == 0 && a.get('lastTxId', null) in [null, '']
+        && (a.kind == 'savings_goal' ? fAfter('savings_goals', a.refId).ownerId == uid()
+           : a.kind == 'tontine_pot' ? uid() in fAfter('tontines', a.refId).adminIds
+           : fAfter('loan_applications', a.refId).borrowerId == uid());
+    }
+
+    // Only balance / lastTxId / updatedAt, by exactly this account's line of
+    // the posting lastTxId created by this request; an active account; never
+    // below zero (the platform account excepted). Or the members list of a
+    // goal account kept equal to its goal's.
+    function fAccountUpdateOk(id) {
+      let o = resource.data;
+      let n = request.resource.data;
+      let ch = fChanged();
+      return (ch.hasOnly(['balance', 'lastTxId', 'updatedAt']) && ch.hasAll(['balance', 'lastTxId']) && fPostingDeltaOk(id, o, n, ch))
+        || (ch.hasOnly(['memberIds', 'updatedAt']) && o.get('kind', '') == 'savings_goal' && n.memberIds == fGet('savings_goals', o.refId).memberIds);
+    }
+
+    function fPostingDeltaOk(id, o, n, ch) {
+      return fTxNow(n.lastTxId) && o.get('status', '') == 'active' && fTx(n.lastTxId).currency == o.currency
+        && n.balance is int && (o.get('kind', '') == 'platform' || n.balance >= 0)
+        && (!('updatedAt' in ch) || n.updatedAt == request.time)
+        && n.balance - o.balance == fLineDelta(fTx(n.lastTxId).lines, id);
+    }
+
+    // The account's signed amount in [ls] (0.5: not in the posting, never
+    // equal to an integer difference).
+    function fLineDelta(ls, id) {
+      return ls[0].accountId == id ? -ls[0].amount
+        : ls[1].accountId == id ? ls[1].amount
+        : ls.size() == 3 && ls[2].accountId == id ? ls[2].amount : 0.5;
+    }
+
+    match /financial_accounts/{accountId} {
+      // A missing account reads as missing (the app checks whether a wallet
+      // exists before crediting it; an existing one of someone else is
+      // refused, which the app reads as "exists").
+      allow get: if signedIn() && (resource == null || fAccountReadOk(resource.data));
+      allow list: if signedIn() && (resource.data.userId == uid() || uid() in resource.data.memberIds);
+      allow create: if signedIn() && fAccountCreateOk(accountId);
+      allow update: if signedIn() && fAccountUpdateOk(accountId);
+    }
+
+    // ---- Finance: gateway receipts -------------------------------------------
+    // payment_receipts/{method}_{reference}: create-only, so a gateway
+    // payment funds one posting only (txId, created in the same batch).
+    // verified stays false until the admin checks the provider.
+
+    function fReceiptCreateOk(id) {
+      let r = request.resource.data;
+      return r.keys().hasOnly(['method', 'reference', 'txId', 'amount', 'currency', 'userId', 'verified', 'createdAt'])
+        && r.userId == uid() && r.verified == false && r.createdAt == request.time
+        && fGatewayOk({'method': r.method, 'reference': r.reference}) && id == fReceiptId(r.method, r.reference)
+        && fPos(r.amount) && fCurOk(r.currency)
+        && fTxNow(r.get('txId', '')) && fTx(r.txId).funding == 'gateway'
+        && fTx(r.txId).gateway == {'method': r.method, 'reference': r.reference}
+        && fTx(r.txId).currency == r.currency && r.amount >= fTx(r.txId).lines[0].amount;
+    }
+
+    match /payment_receipts/{receiptId} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && fReceiptCreateOk(receiptId);
+    }
+
+    // ---- Finance: wallet operations (design 3.2) ---------------------------
+    // wallet_operations/{id}: deposit (gateway -> wallet, completed; id =
+    // the receipt id when it pays a request, FinancePay.gatewayDeposit),
+    // withdrawal (wallet -> platform, pending for the admin's payout),
+    // conversion (two postings in one batch at an admin-published rate).
+
+    function fStampCh(ch, n, k) { return !(k in ch) || n[k] == request.time; }
+
+    function fOpCreateOk(opId) {
+      let d = request.resource.data;
+      return d.get('id', opId) == opId && d.userId == uid() && fCurOk(d.currency) && fPos(d.amount)
+        && d.createdAt == request.time && fOptStr(d, 'reference', 40)
+        && (d.type == 'deposit' ? fDepositOk(opId, d)
+           : d.type == 'withdrawal' ? fWithdrawOk(opId, d)
+           : d.type == 'conversion' ? fConversionOk(opId, d) : false);
+    }
+
+    function fDepositOk(opId, d) {
+      let t = fTx(d.txId);
+      return d.keys().hasOnly(['id', 'userId', 'type', 'status', 'currency', 'amount', 'fee', 'total', 'accountId', 'gateway', 'txId', 'reference', 'purpose', 'createdAt', 'completedAt'])
+        && d.status == 'completed' && fStamp(d, 'completedAt') && d.get('fee', 0) == 0 && d.get('total', d.amount) == d.amount
+        && fGatewayOk(d.gateway)
+        && fTxNow(d.txId) && t.type == 'deposit' && t.funding == 'gateway' && t.gateway == d.gateway
+        && t.source == {'kind': 'wallet_operations', 'id': opId} && t.currency == d.currency
+        && t.lines[1].amount == d.amount && t.userIds == [uid()] && d.get('accountId', t.lines[1].accountId) == t.lines[1].accountId
+        // A plain deposit follows platform_settings/wallet.deposit; a gateway
+        // payment of a request (purpose) lands in the wallet whatever it is.
+        && (('purpose' in d) ? (d.purpose is map && d.purpose.keys().hasOnly(['kind', 'id'])) : (fDepositSettingsOk(d) && !fRestricted('wallet')));
+    }
+
+    function fDepositSettingsOk(d) {
+      let c = fSetting('wallet').get('deposit', {});
+      return c.get('enabled', false) == true && fMinOk(c, d.currency, d.amount) && fMaxOk(c, d.currency, d.amount);
+    }
+
+    // amount + fee leaves the wallet (one credit line: the platform keeps
+    // the fee); the destination receives amount.
+    function fWithdrawOk(opId, d) {
+      let t = fTx(d.txId);
+      let w = fSetting('wallet');
+      let c = w.get('withdraw', {});
+      return d.keys().hasOnly(['id', 'userId', 'type', 'status', 'currency', 'amount', 'fee', 'total', 'accountId', 'destination', 'txId', 'reference', 'createdAt'])
+        && d.status == 'pending' && fNonNeg(d.fee) && d.get('total', d.amount + d.fee) == d.amount + d.fee
+        && d.destination is map && d.destination.size() <= 12 && d.destination.get('method', '') in c.get('methods', [])
+        && c.get('enabled', false) == true && fMinOk(c, d.currency, d.amount) && fMaxOk(c, d.currency, d.amount)
+        && d.fee >= fFee(c, d.currency, d.amount)
+        && fReauthOk(w, d.currency, d.amount) && !fRestricted('wallet')
+        && fTxNow(d.txId) && t.type == 'withdrawal' && t.source == {'kind': 'wallet_operations', 'id': opId}
+        && t.currency == d.currency && t.lines.size() == 2 && t.lines[0].amount == d.amount + d.fee;
+    }
+
+    // ISO 4217 minor-unit exponents, as FinanceMoney.exponent in the app.
+    function fExp(cur) { return cur in ['XAF', 'XOF', 'GNF', 'RWF'] ? 0 : 2; }
+
+    // The rate is the exchange_rate_snapshots document rateSnapshotId (the
+    // pair or its inverse), published by the admin and recent enough
+    // (convert.maxRateAgeHours, default 48). What arrives is at most
+    // (amount - fee) x rate in the target currency's minor units.
+    function fConversionOk(opId, d) {
+      let c = fSetting('wallet').get('convert', {});
+      let s = fGet('exchange_rate_snapshots', d.rateSnapshotId);
+      let age = c.get('maxRateAgeHours', 48) is int && c.get('maxRateAgeHours', 48) > 0 ? c.get('maxRateAgeHours', 48) : 48;
+      return d.keys().hasOnly(['id', 'userId', 'type', 'status', 'currency', 'amount', 'fee', 'total', 'accountId', 'toCurrency', 'toAccountId', 'rate', 'rateSource', 'rateObservedAt', 'rateSnapshotId', 'receiveAmount', 'txId', 'txIds', 'reference', 'createdAt', 'completedAt'])
+        && d.status == 'completed' && fCurOk(d.toCurrency) && d.toCurrency != d.currency && fPos(d.receiveAmount) && fNonNeg(d.fee) && d.fee < d.amount
+        && c.get('enabled', false) == true && d.currency in c.get('currencies', []) && d.toCurrency in c.get('currencies', [])
+        && fIdOk(d.rateSnapshotId) && s.rate is number && s.rate > 0
+        && ((s.from == d.currency && s.to == d.toCurrency) || (s.from == d.toCurrency && s.to == d.currency))
+        && s.observedAt > request.time - duration.value(age, 'h')
+        && d.fee >= math.round(float(d.amount) * c.get('feePercent', 0) / 100)
+        && float(d.receiveAmount) <= float(d.amount - d.fee) * (s.from == d.currency ? s.rate : 1.0 / s.rate) * math.pow(10, fExp(d.toCurrency) - fExp(d.currency)) + 0.000001
+        && d.txIds is list && d.txIds.size() == 2 && d.txIds[0] == d.txId && !fRestricted('wallet')
+        && fConversionLegsOk(opId, d, fTx(d.txIds[0]), fTx(d.txIds[1]));
+    }
+
+    function fConversionLegsOk(opId, d, t1, t2) {
+      return fTxNow(d.txIds[0]) && fTxNow(d.txIds[1])
+        && t1.type == 'conversion' && t1.source == {'kind': 'wallet_operations', 'id': opId} && t1.currency == d.currency
+        && t1.lines.size() == 2 && t1.lines[0].amount == d.amount && t1.lines[1].accountId == 'platform_' + d.currency
+        && t2.type == 'conversion' && t2.source == {'kind': 'wallet_operations', 'id': opId} && t2.currency == d.toCurrency
+        && t2.lines.size() == 2 && t2.lines[0].accountId == 'platform_' + d.toCurrency && t2.lines[1].amount == d.receiveAmount
+        && t2.userIds == [uid()];
+    }
+
+    match /wallet_operations/{opId} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && fOpCreateOk(opId);
+    }
+
+    // ---- Finance: transfers and bills (design 3.3, 3.4) ---------------------
+
+    function fTransferCreateOk(id) {
+      let d = request.resource.data;
+      let cfg = fSetting('transfers');
+      let ch = cfg.get('channels', {}).get(d.channel, {});
+      return d.keys().hasOnly(['id', 'senderId', 'senderName', 'recipientId', 'participantIds', 'channel', 'recipient', 'recipientName', 'recipientVerified', 'currency', 'amount', 'fee', 'total', 'receiveAmount', 'note', 'funding', 'createdAt', 'status', 'reference', 'txId', 'completedAt'])
+        && d.get('id', id) == id && d.senderId == uid() && fOptStr(d, 'senderName', 200) && fOptStr(d, 'recipientName', 200) && fOptStr(d, 'note', 500)
+        && d.recipient is map && d.recipient.size() <= 12
+        && fCurOk(d.currency) && d.currency in cfg.get('currencies', [])
+        && fPos(d.amount) && fNonNeg(d.fee) && d.total == d.amount + d.fee && d.receiveAmount == d.amount
+        && fStr(d.reference, 1, 40) && d.createdAt == request.time
+        && ch is map && ch.get('enabled', false) == true && fMinOk(ch, d.currency, d.amount) && fMaxOk(ch, d.currency, d.amount)
+        && d.fee >= fFee(ch, d.currency, d.amount)
+        && fReauthOk(cfg, d.currency, d.amount)
+        // How it was paid (a gateway payment was deposited into the wallet first).
+        && d.funding is map && (d.funding == {'method': 'wallet'} ? 'wallet' in cfg.get('sourceMethods', []) : fGatewayOk(d.funding))
+        && !fRestricted('transfers')
+        && (d.channel == 'internal' ? fInternalTransferOk(id, d) : fExternalTransferOk(id, d));
+    }
+
+    // Internal: completed at once; the posting sender wallet -> recipient
+    // wallet, plus the fee line to the platform.
+    function fInternalTransferOk(id, d) {
+      let t = fTx(d.txId);
+      return d.status == 'completed' && d.completedAt == request.time && d.recipientVerified == true
+        && fIdOk(d.recipientId) && d.recipientId != uid() && d.participantIds == [uid(), d.recipientId]
+        && fTxNow(d.txId) && t.type == 'transfer' && t.funding == 'wallet' && t.source == {'kind': 'money_transfers', 'id': id} && t.currency == d.currency
+        && t.lines[1].amount == d.amount && fAcct(t.lines[1].accountId).get('userId', '') == d.recipientId
+        && t.lines[0].amount == d.total && (d.fee == 0 ? t.lines.size() == 2 : (t.lines.size() == 3 && t.lines[2].amount == d.fee));
+    }
+
+    // External (Mobile Money, Wave, bank): processing for the admin's
+    // payout; the posting wallet -> platform of the total (fee included).
+    function fExternalTransferOk(id, d) {
+      return d.channel in ['mobile_money', 'wave', 'bank'] && d.status == 'processing'
+        && !d.keys().hasAny(['recipientId', 'completedAt']) && d.participantIds == [uid()]
+        && fTxNow(d.get('txId', '')) && fTx(d.txId).type == 'transfer_out' && fTx(d.txId).source == {'kind': 'money_transfers', 'id': id}
+        && fTx(d.txId).currency == d.currency && fTx(d.txId).lines.size() == 2 && fTx(d.txId).lines[0].amount == d.total;
+    }
+
+    // The sender asks the admin to cancel an external transfer it has not
+    // taken yet (the admin cancels and reverses it).
+    function fTransferCancelOk() {
+      let o = resource.data;
+      return o.senderId == uid() && o.channel != 'internal' && o.status == 'processing'
+        && o.get('adminLockedAt', null) == null && o.get('cancelRequested', false) != true
+        && fChanged().hasOnly(['cancelRequested', 'cancelRequestedAt']) && request.resource.data.cancelRequested == true
+        && fStamp(request.resource.data, 'cancelRequestedAt');
+    }
+
+    match /money_transfers/{transferId} {
+      allow get: if signedIn() && (resource == null || uid() in resource.data.participantIds);
+      allow list: if signedIn() && uid() in resource.data.participantIds;
+      allow create: if signedIn() && fTransferCreateOk(transferId);
+      allow update: if signedIn() && fTransferCancelOk();
+    }
+
+    // The user's address book (design: created and deleted by the owner).
+    match /transfer_beneficiaries/{id} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && id.matches('^ben_' + uid() + '_.{1,300}$')
+        && request.resource.data.keys().hasOnly(['userId', 'channel', 'displayName', 'detail', 'recipient', 'createdAt', 'lastUsedAt'])
+        && request.resource.data.userId == uid() && request.resource.data.recipient is map && request.resource.data.recipient.size() <= 12
+        && fOptStr(request.resource.data, 'displayName', 200) && fOptStr(request.resource.data, 'detail', 200);
+      allow update: if signedIn() && resource.data.userId == uid() && fChanged().hasOnly(['lastUsedAt', 'displayName'])
+        && fOptStr(request.resource.data, 'displayName', 200);
+      allow delete: if signedIn() && resource.data.userId == uid();
+    }
+
+    function fBillCreateOk(id) {
+      let d = request.resource.data;
+      let b = fGet('utility_billers', d.billerId);
+      return d.keys().hasOnly(['id', 'userId', 'billerId', 'billerName', 'category', 'account', 'customerName', 'packageCode', 'packageName', 'currency', 'amount', 'fee', 'total', 'status', 'reference', 'txId', 'funding', 'createdAt'])
+        && d.get('id', id) == id && d.userId == uid() && d.status == 'processing' && d.createdAt == request.time
+        && fStr(d.account, 1, 64) && fStr(d.reference, 1, 40) && fIdOk(d.billerId)
+        && b.get('published', false) == true && d.currency == b.currency
+        && fPos(d.amount) && fNonNeg(d.fee) && d.total == d.amount + d.fee
+        && fMinOk(b, d.currency, d.amount) && fMaxOk(b, d.currency, d.amount) && d.fee >= fFee(b, d.currency, d.amount)
+        && fReauthOk(fSetting('bills'), d.currency, d.total)
+        && d.funding is map && (d.funding == {'method': 'wallet'} || fGatewayOk(d.funding))
+        && !fRestricted('payments')
+        && fTxNow(d.get('txId', '')) && fTx(d.txId).type == 'bill_payment' && fTx(d.txId).source == {'kind': 'utility_payment_requests', 'id': id}
+        && fTx(d.txId).currency == d.currency && fTx(d.txId).lines.size() == 2 && fTx(d.txId).lines[0].amount == d.total;
+    }
+
+    match /utility_payment_requests/{requestId} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && fBillCreateOk(requestId);
+    }
+
+    match /utility_saved_accounts/{id} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && id.matches('^acc_' + uid() + '_.{1,300}$')
+        && request.resource.data.keys().hasOnly(['userId', 'billerId', 'billerName', 'category', 'account', 'nickname', 'createdAt', 'lastUsedAt'])
+        && request.resource.data.userId == uid() && fStr(request.resource.data.account, 1, 64) && fOptStr(request.resource.data, 'nickname', 60);
+      allow update: if signedIn() && resource.data.userId == uid() && fChanged().hasOnly(['lastUsedAt', 'nickname'])
+        && fOptStr(request.resource.data, 'nickname', 60);
+      allow delete: if signedIn() && resource.data.userId == uid();
+    }
+
+    // ---- Finance: virtual cards (design 3.5) -------------------------------
+    // The issuer's part (issuing, loading, limits, details) is the admin's;
+    // the user requests. No card number / CVV is ever in Firestore.
+
+    function fFeeTxOk(txId, type, kind, id, cur, amount) {
+      return fTxNow(txId) && fTx(txId).type == type && fTx(txId).source == {'kind': kind, 'id': id}
+        && fTx(txId).currency == cur && fTx(txId).lines[0].amount == amount;
+    }
+
+    function fCardCreateOk(id) {
+      let d = request.resource.data;
+      let cfg = fSetting('cards');
+      let fee = fPerCur(cfg.get('issuanceFee', null), d.currency, 0);
+      return d.keys().hasOnly(['id', 'userId', 'label', 'currency', 'network', 'status', 'balance', 'termsVersion', 'acceptedAt', 'issuanceFee', 'feeTxId', 'payment', 'reference', 'createdAt', 'updatedAt'])
+        && d.get('id', id) == id && d.userId == uid() && d.status == 'requested' && d.get('balance', 0) == 0
+        && fOptStr(d, 'label', 40) && fOptStr(d, 'network', 20) && fOptStr(d, 'reference', 40)
+        && d.currency in cfg.get('currencies', []) && cfg.get('termsVersion', null) is number && d.termsVersion == cfg.termsVersion
+        && d.acceptedAt == request.time && d.createdAt == request.time && fStamp(d, 'updatedAt')
+        && d.get('issuanceFee', 0) == fee
+        && (fee == 0 || fFeeTxOk(d.get('feeTxId', ''), 'card_fee', 'virtual_cards', id, d.currency, fee));
+    }
+
+    function fCardUpdateOk(id) {
+      let o = resource.data;
+      let n = request.resource.data;
+      let ch = fChanged();
+      return o.userId == uid() && fStampCh(ch, n, 'updatedAt') && (
+        // freeze: instant, no re-authentication
+        (ch.hasOnly(['status', 'frozenBy', 'frozenAt', 'updatedAt']) && o.status == 'active' && n.status == 'frozen' && n.frozenBy == 'user' && fStampCh(ch, n, 'frozenAt'))
+        // unfreeze (re-auth): only a freeze the user made (never the admin's / issuer's)
+        || (ch.hasOnly(['status', 'frozenBy', 'unfrozenAt', 'updatedAt']) && o.status == 'frozen' && o.get('frozenBy', '') == 'user'
+            && n.status == 'active' && n.get('frozenBy', null) == null && fStampCh(ch, n, 'unfrozenAt') && fFresh())
+        // termination request (re-auth)
+        || (ch.hasOnly(['status', 'statusBefore', 'terminationRequestedAt', 'updatedAt']) && n.status == 'termination_requested'
+            && (o.status in ['active', 'expired'] || (o.status == 'frozen' && o.get('frozenBy', '') == 'user'))
+            && n.get('statusBefore', o.status) == o.status && fStampCh(ch, n, 'terminationRequestedAt') && fFresh())
+        || (ch.hasOnly(['label', 'updatedAt']) && fStr(n.label, 0, 40))
+        || fCardRenewOk(id, o, n, ch));
+    }
+
+    // A renewal request, once, with the renewal fee's posting when there is one.
+    function fCardRenewOk(id, o, n, ch) {
+      let cfg = fSetting('cards');
+      let fee = fPerCur(cfg.get('renewalFee', null), o.currency, 0);
+      return ch.hasOnly(['renewalRequestedAt', 'renewalFee', 'renewalTxId', 'renewalReference', 'renewalPayment', 'updatedAt'])
+        && o.get('renewalRequestedAt', null) == null && n.renewalRequestedAt == request.time
+        && cfg.get('capabilities', {}).get('renew', false) == true && o.status in ['active', 'expired']
+        && n.get('renewalFee', 0) == fee
+        && (fee == 0 || fFeeTxOk(n.get('renewalTxId', ''), 'card_fee', 'virtual_cards', id, o.currency, fee));
+    }
+
+    function fCardRequestOk(id) {
+      let d = request.resource.data;
+      let c = fGet('virtual_cards', d.cardId);
+      return d.keys().hasOnly(['id', 'userId', 'cardId', 'type', 'amount', 'fee', 'total', 'currency', 'status', 'txId', 'reference', 'payment', 'destination', 'recipientId', 'recipient', 'createdAt', 'updatedAt'])
+        && d.get('id', id) == id && d.userId == uid() && fIdOk(d.cardId) && c.userId == uid() && c.status == 'active' && d.currency == c.currency
+        && fPos(d.amount) && fNonNeg(d.fee) && d.status == 'pending' && d.createdAt == request.time && fStamp(d, 'updatedAt') && fOptStr(d, 'reference', 40)
+        && (d.type == 'fund' ? fCardFundOk(id, d)
+           // card balance out (re-auth): to the wallet, or another user's card
+           : (d.type in ['withdraw', 'transfer'] && d.fee == 0 && !('txId' in d) && fFresh() && d.amount <= c.get('balance', 0)
+              && (d.type == 'withdraw'
+                  ? (fSetting('cards').get('capabilities', {}).get('withdraw', false) == true && d.destination is map)
+                  : (fIdOk(d.recipientId) && d.recipientId != uid() && d.recipient is map && d.recipient.size() <= 6))));
+    }
+
+    // A top-up: amount + fee posted to the platform (card_funding).
+    function fCardFundOk(id, d) {
+      let cfg = fSetting('cards');
+      let mn = fPerCur(cfg.get('minFunding', null), d.currency, null);
+      let mx = fPerCur(cfg.get('maxFunding', null), d.currency, null);
+      return d.get('total', d.amount + d.fee) == d.amount + d.fee
+        && (!(mn is number) || d.amount >= mn) && (!(mx is number) || d.amount <= mx)
+        && d.fee >= math.round(float(d.amount) * cfg.get('fundingFeePercent', 0) / 100)
+        && fFeeTxOk(d.get('txId', ''), 'card_funding', 'card_funding_requests', id, d.currency, d.amount + d.fee);
+    }
+
+    function fLimitOk(v, cap) { return v == null || (fPos(v) && (!(cap is number) || v <= cap)); }
+    function fLimitOrder(a, b) { return a == null || b == null || a <= b; }
+
+    // The user's limits (re-auth), within the programme's ceilings and in
+    // order (per transaction <= daily <= monthly; null = the issuer's max);
+    // pending until the admin applies them.
+    function fCardLimitsOk(cardId) {
+      let d = request.resource.data;
+      let c = fGet('virtual_cards', cardId);
+      let lim = fSetting('cards').get('limits', {});
+      return fFresh() && d.keys().hasOnly(['userId', 'cardId', 'perTransaction', 'daily', 'monthly', 'allowOnline', 'allowInternational', 'status', 'updatedAt', 'appliedAt', 'reason'])
+        && d.userId == uid() && d.cardId == cardId && c.userId == uid() && c.status in ['active', 'frozen']
+        && d.status == 'pending' && d.updatedAt == request.time
+        && fLimitOk(d.get('perTransaction', null), fPerCur(lim.get('maxPerTransaction', null), c.currency, null))
+        && fLimitOk(d.get('daily', null), fPerCur(lim.get('maxDaily', null), c.currency, null))
+        && fLimitOk(d.get('monthly', null), fPerCur(lim.get('maxMonthly', null), c.currency, null))
+        && fLimitOrder(d.get('perTransaction', null), d.get('daily', null)) && fLimitOrder(d.get('daily', null), d.get('monthly', null))
+        && fLimitOrder(d.get('perTransaction', null), d.get('monthly', null))
+        && (d.get('allowOnline', null) == null || d.allowOnline is bool) && (d.get('allowInternational', null) == null || d.allowInternational is bool);
+    }
+
+    match /virtual_cards/{cardId} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && fCardCreateOk(cardId);
+      allow update: if signedIn() && fCardUpdateOk(cardId);
+    }
+
+    match /card_funding_requests/{requestId} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && fCardRequestOk(requestId);
+    }
+
+    match /card_limit_settings/{cardId} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow create: if signedIn() && fCardLimitsOk(cardId);
+      allow update: if signedIn() && resource.data.userId == uid() && fCardLimitsOk(cardId);
+    }
+
+    match /card_transactions/{id} {
+      allow read: if signedIn() && resource.data.userId == uid();
+    }
+    // virtual_cards_private: issuer references, admin only (no client rule).
+
+    // ---- Finance: savings goals (design 3.6) -------------------------------
+
+    function fScheduleOk(s, cfg) {
+      return s == null || (s is map && s.keys().hasOnly(['frequency', 'amount']) && s.frequency in cfg.get('frequencies', []) && fPos(s.amount));
+    }
+
+    function fGoalCreateOk(id) {
+      let d = request.resource.data;
+      let cfg = fSetting('savings');
+      return d.keys().hasOnly(['id', 'ownerId', 'memberIds', 'invitedIds', 'name', 'purpose', 'description', 'currency', 'targetAmount', 'savedAmount', 'deadline', 'schedule', 'status', 'accountId', 'createdAt', 'updatedAt'])
+        && d.get('id', id) == id && d.ownerId == uid() && d.memberIds == [uid()]
+        && d.get('invitedIds', []) is list && !(uid() in d.get('invitedIds', []))
+        && (d.get('invitedIds', []).size() == 0 || cfg.get('groupGoals', false) == true)
+        && 1 + d.get('invitedIds', []).size() <= cfg.get('maxMembers', 10)
+        && fStr(d.name, 1, 80) && d.purpose in cfg.get('purposes', []) && fOptStr(d, 'description', 1000)
+        && d.currency in cfg.get('currencies', []) && fPos(d.targetAmount) && d.savedAmount == 0
+        && d.status == 'active' && d.get('accountId', 'goal_' + id) == 'goal_' + id
+        && d.createdAt == request.time && fStamp(d, 'updatedAt') && fDate(d.get('deadline', null))
+        && fScheduleOk(d.get('schedule', null), cfg)
+        && fAcct('goal_' + id).get('refId', '') == id
+        && !fRestricted('savings');
+    }
+
+    function fGoalInviteOk(o, n) {
+      let cfg = fSetting('savings');
+      return n.invitedIds is list && n.invitedIds.toSet().hasAll(o.get('invitedIds', [])) && n.invitedIds.size() == n.invitedIds.toSet().size()
+        && !n.invitedIds.toSet().hasAny(o.memberIds) && cfg.get('groupGoals', false) == true
+        && o.memberIds.size() + n.invitedIds.size() <= cfg.get('maxMembers', 10);
+    }
+
+    // The invitee leaves invitedIds, and joins memberIds when accepting (an
+    // active goal with room).
+    function fGoalRespondOk(o, n) {
+      return uid() in o.get('invitedIds', []) && !(uid() in n.invitedIds)
+        && n.invitedIds.toSet() == o.invitedIds.toSet().difference([uid()].toSet())
+        && (n.memberIds == o.memberIds
+            || (n.memberIds == o.memberIds.concat([uid()]) && o.status == 'active' && o.memberIds.size() < fSetting('savings').get('maxMembers', 10)
+                && !fRestricted('savings')));
+    }
+
+    // savedAmount moves only with a posting of this request on the goal's
+    // account (lastTxId): + a member's contribution, - the solo owner's
+    // withdrawal / the whole balance when cancelling.
+    function fGoalCounterOk(id, o, n) {
+      let t = fTx(n.lastTxId);
+      return fTxNow(n.lastTxId) && o.status == 'active' && uid() in o.memberIds
+        && ((t.type == 'savings_contribution' && t.lines[1].accountId == 'goal_' + id
+              && n.savedAmount == o.savedAmount + t.lines[1].amount && n.status == o.status)
+          || (t.type == 'savings_withdrawal' && t.lines[0].accountId == 'goal_' + id && o.ownerId == uid()
+              && n.savedAmount == o.savedAmount - t.lines[0].amount && n.savedAmount >= 0
+              && (n.status == o.status
+                  || (n.status == 'cancelled' && n.savedAmount == 0 && t.source == {'kind': 'savings_goals', 'id': id}))));
+    }
+
+    function fGoalUpdateOk(id) {
+      let o = resource.data;
+      let n = request.resource.data;
+      let ch = fChanged();
+      return fStampCh(ch, n, 'updatedAt') && (
+        // the owner's edits
+        (ch.hasOnly(['name', 'description', 'deadline', 'schedule', 'updatedAt']) && o.ownerId == uid() && o.status == 'active'
+          && fStr(n.name, 1, 80) && fOptStr(n, 'description', 1000) && fDate(n.get('deadline', null)) && fScheduleOk(n.get('schedule', null), fSetting('savings')))
+        // the owner invites (arrayUnion)
+        || (ch.hasOnly(['invitedIds', 'updatedAt']) && o.ownerId == uid() && o.status == 'active' && fGoalInviteOk(o, n))
+        // the invitee answers
+        || (ch.hasOnly(['invitedIds', 'memberIds', 'updatedAt']) && fGoalRespondOk(o, n))
+        // savedAmount with its posting
+        || (ch.hasOnly(['savedAmount', 'lastTxId', 'status', 'cancelledAt', 'updatedAt']) && ch.hasAll(['savedAmount', 'lastTxId'])
+            && fStampCh(ch, n, 'cancelledAt') && fGoalCounterOk(id, o, n))
+        // the owner cancels an empty solo goal
+        || (ch.hasOnly(['status', 'cancelledAt', 'updatedAt']) && o.ownerId == uid() && o.status == 'active' && n.status == 'cancelled'
+            && o.memberIds.toSet() == [uid()].toSet() && o.savedAmount == 0 && fStampCh(ch, n, 'cancelledAt'))
+        // the owner asks the admin to close a group goal
+        || (ch.hasOnly(['status', 'cancellationRequestedBy', 'cancellationRequestedAt', 'updatedAt']) && o.ownerId == uid() && o.status == 'active'
+            && n.status == 'cancellation_requested' && o.memberIds.size() > 1 && n.cancellationRequestedBy == uid() && fStampCh(ch, n, 'cancellationRequestedAt')));
+    }
+
+    function fContributionOk(id) {
+      let d = request.resource.data;
+      let g = fGet('savings_goals', d.goalId);
+      let t = fTx(d.txId);
+      return d.keys().hasOnly(['id', 'goalId', 'userId', 'amount', 'currency', 'status', 'reference', 'txId', 'funding', 'gateway', 'createdAt'])
+        && d.get('id', id) == id && d.userId == uid() && fIdOk(d.goalId) && uid() in g.memberIds && g.status == 'active' && d.currency == g.currency
+        && fPos(d.amount) && d.status == 'succeeded' && fStr(d.reference, 1, 40) && d.createdAt == request.time
+        && fTxNow(d.txId) && t.type == 'savings_contribution' && t.source == {'kind': 'savings_contributions', 'id': id}
+        && t.lines[1].accountId == 'goal_' + d.goalId && t.lines[1].amount == d.amount && d.get('funding', t.funding) == t.funding
+        && fAfter('savings_goals', d.goalId).get('lastTxId', '') == d.txId;
+    }
+
+    // A solo goal's owner withdraws at once (completed, early only when the
+    // configuration allows it); a group goal's member asks (requested, no
+    // money moves: the admin decides by the group's rules).
+    function fWithdrawalOk(id) {
+      let d = request.resource.data;
+      let g = fGet('savings_goals', d.goalId);
+      return d.keys().hasOnly(['id', 'goalId', 'userId', 'amount', 'currency', 'destination', 'reason', 'status', 'reference', 'txId', 'createdAt', 'completedAt'])
+        && d.get('id', id) == id && d.userId == uid() && fIdOk(d.goalId) && uid() in g.memberIds && g.status == 'active' && d.currency == g.currency
+        && fPos(d.amount) && d.amount <= g.savedAmount && d.createdAt == request.time && fOptStr(d, 'reason', 500)
+        && ((d.status == 'requested' && !d.keys().hasAny(['txId', 'completedAt']) && g.memberIds.size() > 1)
+          || (d.status == 'completed' && g.ownerId == uid() && g.memberIds.size() == 1 && fSoloWithdrawalOk(id, d, g)));
+    }
+
+    function fSoloWithdrawalOk(id, d, g) {
+      let t = fTx(d.txId);
+      return (g.savedAmount >= g.targetAmount || fSetting('savings').get('earlyWithdrawal', {}).get('allowed', false) == true)
+        && d.completedAt == request.time
+        && fTxNow(d.txId) && t.type == 'savings_withdrawal' && t.source == {'kind': 'savings_withdrawals', 'id': id}
+        && t.lines[0].accountId == 'goal_' + d.goalId && t.lines[0].amount == d.amount
+        && fAfter('savings_goals', d.goalId).get('lastTxId', '') == d.txId;
+    }
+
+    function fGoalMember(goalId) { return uid() in fGet('savings_goals', goalId).memberIds; }
+
+    match /savings_goals/{goalId} {
+      allow get: if signedIn() && (resource == null || uid() in resource.data.memberIds || uid() in resource.data.get('invitedIds', []));
+      allow list: if signedIn() && (uid() in resource.data.memberIds || uid() in resource.data.invitedIds);
+      allow create: if signedIn() && fGoalCreateOk(goalId);
+      allow update: if signedIn() && fGoalUpdateOk(goalId);
+    }
+
+    match /savings_contributions/{id} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid() || fGoalMember(resource.data.goalId));
+      allow list: if signedIn() && (resource.data.userId == uid() || fGoalMember(resource.data.goalId));
+      allow create: if signedIn() && fContributionOk(id);
+    }
+
+    match /savings_withdrawals/{id} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid() || fGoalMember(resource.data.goalId));
+      allow list: if signedIn() && (resource.data.userId == uid() || fGoalMember(resource.data.goalId));
+      allow create: if signedIn() && fWithdrawalOk(id);
+    }
+
+    // ---- Finance: tontines (design 3.7) ------------------------------------
+    // Ids: tontine_members/{tid}_{uid}, tontine_cycles/{tid}_{n},
+    // tontine_contributions/{cycleId}_{uid} (once per cycle and member),
+    // tontine_payouts/{cycleId}. Members, amount and order are fixed at the
+    // start (invitations and joining only while forming).
+
+    function fTontineMember(tid) { return uid() in fGet('tontines', tid).memberIds; }
+
+    function fTontineCreateOk(id) {
+      let d = request.resource.data;
+      let cfg = fSetting('tontines');
+      return d.keys().hasOnly(['id', 'name', 'description', 'rules', 'currency', 'contributionAmount', 'frequency', 'membersLimit', 'payoutOrderMethod', 'startDate', 'status', 'adminIds', 'memberIds', 'currentCycle', 'potAccountId', 'createdBy', 'createdAt', 'updatedAt'])
+        && d.get('id', id) == id && d.createdBy == uid() && d.adminIds == [uid()] && d.memberIds == [uid()]
+        && d.status == 'forming' && d.get('currentCycle', 0) == 0 && d.get('potAccountId', 'tontine_' + id) == 'tontine_' + id
+        && fStr(d.name, 1, 80) && fOptStr(d, 'description', 1000) && fOptStr(d, 'rules', 5000)
+        && d.currency in cfg.get('currencies', []) && d.frequency in cfg.get('frequencies', []) && d.payoutOrderMethod in cfg.get('payoutOrderMethods', [])
+        && fPos(d.contributionAmount) && d.contributionAmount >= fPerCur(cfg.get('minContribution', null), d.currency, 1)
+        && d.membersLimit is int && d.membersLimit >= cfg.get('minMembers', 2) && d.membersLimit <= cfg.get('maxMembers', 30)
+        && fDate(d.get('startDate', null)) && d.createdAt == request.time && fStamp(d, 'updatedAt')
+        && !fRestricted('tontines')
+        && fAfter('tontine_members', id + '_' + uid()).get('role', '') == 'admin'
+        && fAcct('tontine_' + id).get('refId', '') == id;
+    }
+
+    function fTontineUpdateOk(id) {
+      let o = resource.data;
+      let n = request.resource.data;
+      let ch = fChanged();
+      return fStampCh(ch, n, 'updatedAt') && (
+        // an invitee joins (own member document invited -> active, same batch)
+        (ch.hasOnly(['memberIds', 'updatedAt']) && o.status == 'forming' && !(uid() in o.memberIds)
+          && n.memberIds == o.memberIds.concat([uid()]) && o.memberIds.size() < o.membersLimit
+          && fGet('tontine_members', id + '_' + uid()).status == 'invited' && fAfter('tontine_members', id + '_' + uid()).status == 'active'
+          && !fRestricted('tontines'))
+        // an admin starts it: active, cycle 1, one cycle per member (created in this batch)
+        || (ch.hasOnly(['status', 'currentCycle', 'nextDueAt', 'startDate', 'startedAt', 'updatedAt']) && uid() in o.adminIds
+          && o.status == 'forming' && n.status == 'active' && n.currentCycle == 1 && fStampCh(ch, n, 'startedAt')
+          && o.memberIds.size() >= fSetting('tontines').get('minMembers', 2)
+          && fAfter('tontine_cycles', id + '_1').status == 'collecting'
+          && fAfter('tontine_cycles', id + '_' + string(o.memberIds.size())).number == o.memberIds.size())
+        // an admin moves on after paying the current cycle (same batch)
+        || (ch.hasOnly(['currentCycle', 'nextDueAt', 'status', 'completedAt', 'updatedAt']) && uid() in o.adminIds && o.status == 'active'
+          && fGet('tontine_cycles', id + '_' + string(o.currentCycle)).status == 'payout_pending'
+          && fAfter('tontine_cycles', id + '_' + string(o.currentCycle)).status == 'paid'
+          && (o.currentCycle < o.memberIds.size()
+              ? (n.currentCycle == o.currentCycle + 1 && n.status == 'active'
+                 && fAfter('tontine_cycles', id + '_' + string(o.currentCycle + 1)).status == 'collecting')
+              : (n.status == 'completed' && n.currentCycle == o.currentCycle && fStampCh(ch, n, 'completedAt')))));
+    }
+
+    // The creator's own admin membership, with the new tontine.
+    function fMemberSelfAdminOk(d) {
+      let t = fAfter('tontines', d.tontineId);
+      return d.keys().hasOnly(['id', 'tontineId', 'tontineName', 'userId', 'displayName', 'email', 'role', 'status', 'payoutPosition', 'joinedAt', 'createdAt'])
+        && d.userId == uid() && d.role == 'admin' && d.status == 'active' && d.payoutPosition == 1
+        && t.createdBy == uid() && t.createdAt == request.time;
+    }
+
+    // An admin invites while the tontine forms and has room; the invitation
+    // carries the tontine's terms (the invitee cannot read the tontine).
+    function fInviteOk(d) {
+      let t = fGet('tontines', d.tontineId);
+      return d.keys().hasOnly(['id', 'tontineId', 'tontineName', 'userId', 'displayName', 'email', 'role', 'status', 'invitedBy', 'invitedByName', 'contributionAmount', 'currency', 'frequency', 'membersLimit', 'startDate', 'rules', 'payoutOrderMethod', 'invitedAt', 'createdAt', 'respondedAt', 'joinedAt'])
+        && d.role == 'member' && d.status == 'invited' && d.invitedBy == uid() && fIdOk(d.userId) && d.userId != uid()
+        && uid() in t.adminIds && t.status == 'forming' && !(d.userId in t.memberIds) && t.memberIds.size() < t.membersLimit
+        && d.contributionAmount == t.contributionAmount && d.currency == t.currency && d.frequency == t.frequency && d.membersLimit == t.membersLimit
+        && d.get('rules', '') == t.get('rules', '') && d.get('payoutOrderMethod', t.payoutOrderMethod) == t.payoutOrderMethod
+        && d.get('startDate', null) == t.get('startDate', null) && fStamp(d, 'invitedAt') && fOptStr(d, 'invitedByName', 200);
+    }
+
+    function fMemberCreateOk(memberId) {
+      let d = request.resource.data;
+      return fIdOk(d.tontineId) && memberId == d.tontineId + '_' + d.userId && d.get('id', memberId) == memberId
+        && fOptStr(d, 'displayName', 200) && fOptStr(d, 'email', 200) && fOptStr(d, 'tontineName', 200) && fStamp(d, 'createdAt')
+        && (fMemberSelfAdminOk(d) || fInviteOk(d));
+    }
+
+    function fMemberUpdateOk(memberId) {
+      let o = resource.data;
+      let n = request.resource.data;
+      let ch = fChanged();
+      return (!ch.hasAny(['id', 'tontineId', 'userId', 'role']))
+        && (
+        // the invitee answers its own invitation
+        (o.userId == uid() && o.status == 'invited' && ch.hasOnly(['status', 'respondedAt', 'joinedAt'])
+          && fStampCh(ch, n, 'respondedAt') && fStampCh(ch, n, 'joinedAt')
+          && (n.status == 'declined' || (n.status == 'active' && uid() in fAfter('tontines', o.tontineId).memberIds && !fRestricted('tontines'))))
+        // an admin invites again after a decline
+        || (o.status == 'declined' && fInviteOk(n))
+        // an admin sets the payout order: fixed while forming, or drawn at the start
+        || (ch.hasOnly(['payoutPosition', 'updatedAt']) && o.status == 'active' && fPayoutPositionOk(o, n)));
+    }
+
+    function fPayoutPositionOk(o, n) {
+      let t = fGet('tontines', o.tontineId);
+      return uid() in t.adminIds && t.status == 'forming'
+        && (t.payoutOrderMethod == 'fixed' || fAfter('tontines', o.tontineId).status == 'active')
+        && n.payoutPosition is int && n.payoutPosition >= 1 && n.payoutPosition <= t.membersLimit;
+    }
+
+    // Created by an admin in the batch that starts the tontine.
+    function fCycleCreateOk(cycleId) {
+      let d = request.resource.data;
+      let t = fGet('tontines', d.tontineId);
+      return d.keys().hasOnly(['id', 'tontineId', 'number', 'dueDate', 'beneficiaryUserId', 'expectedAmount', 'collectedAmount', 'currency', 'status', 'createdAt'])
+        && fIdOk(d.tontineId) && d.number is int && cycleId == d.tontineId + '_' + string(d.number) && d.get('id', cycleId) == cycleId
+        && uid() in t.adminIds && t.status == 'forming' && fAfter('tontines', d.tontineId).status == 'active'
+        && d.number >= 1 && d.number <= t.memberIds.size() && d.beneficiaryUserId in t.memberIds
+        && d.expectedAmount == t.contributionAmount * t.memberIds.size() && d.collectedAmount == 0
+        && d.get('currency', t.currency) == t.currency && d.status == (d.number == 1 ? 'collecting' : 'upcoming')
+        && fDate(d.get('dueDate', null)) && fStamp(d, 'createdAt');
+    }
+
+    function fCycleUpdateOk(cycleId) {
+      let o = resource.data;
+      let n = request.resource.data;
+      let ch = fChanged();
+      return fStampCh(ch, n, 'updatedAt') && (
+        // a member's contribution (its posting and contribution document)
+        (ch.hasOnly(['collectedAmount', 'status', 'lastTxId', 'updatedAt']) && ch.hasAll(['collectedAmount', 'lastTxId']) && fCycleCollectOk(cycleId, o, n))
+        // paid with its payout (approved in this batch)
+        || (ch.hasOnly(['status', 'paidAt', 'updatedAt']) && o.status == 'payout_pending' && n.status == 'paid' && fStampCh(ch, n, 'paidAt')
+            && fGet('tontine_payouts', cycleId).status == 'pending_approval' && fAfter('tontine_payouts', cycleId).status == 'paid')
+        // the next cycle opens when the previous one is paid in this batch
+        || (ch.hasOnly(['status', 'updatedAt']) && o.status == 'upcoming' && n.status == 'collecting' && o.number > 1
+            && fGet('tontine_cycles', o.tontineId + '_' + string(o.number - 1)).status == 'payout_pending'
+            && fAfter('tontine_cycles', o.tontineId + '_' + string(o.number - 1)).status == 'paid'));
+    }
+
+    function fCycleCollectOk(cycleId, o, n) {
+      let t = fTx(n.lastTxId);
+      return fTxNow(n.lastTxId) && o.status == 'collecting' && t.type == 'tontine_contribution'
+        && t.lines[1].accountId == 'tontine_' + o.tontineId && t.source == {'kind': 'tontine_contributions', 'id': cycleId + '_' + uid()}
+        && n.collectedAmount == o.collectedAmount + t.lines[1].amount && n.collectedAmount <= o.expectedAmount
+        && n.status == (n.collectedAmount >= o.expectedAmount ? 'payout_pending' : 'collecting');
+    }
+
+    // Once per cycle and member (the id), the tontine's amount, while the
+    // cycle collects; collectedAmount grows by it in the same batch.
+    function fTontineContributionOk(id) {
+      let d = request.resource.data;
+      let tn = fGet('tontines', d.tontineId);
+      let c = fGet('tontine_cycles', d.cycleId);
+      let t = fTx(d.txId);
+      return d.keys().hasOnly(['id', 'tontineId', 'cycleId', 'cycleNumber', 'userId', 'amount', 'currency', 'status', 'reference', 'txId', 'funding', 'gateway', 'paidAt', 'createdAt'])
+        && fIdOk(d.cycleId) && id == d.cycleId + '_' + uid() && d.get('id', id) == id && d.userId == uid()
+        && uid() in tn.memberIds && tn.status == 'active' && c.tontineId == d.tontineId && c.status == 'collecting' && d.cycleNumber == c.number
+        && d.amount == tn.contributionAmount && d.currency == tn.currency && d.status == 'paid' && fStr(d.reference, 1, 40)
+        && d.createdAt == request.time && fStamp(d, 'paidAt')
+        && fTxNow(d.txId) && t.type == 'tontine_contribution' && t.source == {'kind': 'tontine_contributions', 'id': id}
+        && t.lines[1].accountId == 'tontine_' + d.tontineId && t.lines[1].amount == d.amount && d.get('funding', t.funding) == t.funding
+        && fAfter('tontine_cycles', d.cycleId).get('lastTxId', '') == d.txId;
+    }
+
+    // The contribution that completes the pot opens its payout.
+    function fPayoutCreateOk(id) {
+      let d = request.resource.data;
+      let c = fGet('tontine_cycles', id);
+      return d.keys().hasOnly(['id', 'tontineId', 'cycleId', 'cycleNumber', 'beneficiaryUserId', 'amount', 'currency', 'status', 'createdAt'])
+        && d.get('id', id) == id && d.cycleId == id && d.tontineId == c.tontineId && d.cycleNumber == c.number
+        && d.beneficiaryUserId == c.beneficiaryUserId && d.amount == c.expectedAmount && d.get('currency', c.get('currency', '')) == c.get('currency', '')
+        && d.status == 'pending_approval' && d.createdAt == request.time
+        && c.status == 'collecting' && fAfter('tontine_cycles', id).status == 'payout_pending';
+    }
+
+    // Approved (paid) with its posting tontine_{tid} -> beneficiary wallet;
+    // the posting's rule checks the approver.
+    function fPayoutPaidOk(id) {
+      let o = resource.data;
+      let n = request.resource.data;
+      return o.status == 'pending_approval' && n.status == 'paid'
+        && fChanged().hasOnly(['status', 'txId', 'reference', 'approvedBy', 'approvedAt', 'paidAt', 'updatedAt'])
+        && n.approvedBy == uid() && fStamp(n, 'paidAt') && fStamp(n, 'approvedAt')
+        && fTxNow(n.txId) && fTx(n.txId).type == 'tontine_payout' && fTx(n.txId).source == {'kind': 'tontine_payouts', 'id': id};
+    }
+
+    function fDisputeOk(id) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['id', 'tontineId', 'raisedBy', 'againstUserId', 'subject', 'description', 'status', 'createdAt'])
+        && d.get('id', id) == id && d.raisedBy == uid() && fIdOk(d.tontineId) && fTontineMember(d.tontineId)
+        && fStr(d.subject, 1, 200) && fStr(d.description, 1, 5000) && d.status == 'open' && d.createdAt == request.time
+        && (d.get('againstUserId', null) == null || fIdOk(d.againstUserId));
+    }
+
+    match /tontines/{tontineId} {
+      allow get: if signedIn() && (resource == null || uid() in resource.data.memberIds);
+      allow list: if signedIn() && uid() in resource.data.memberIds;
+      allow create: if signedIn() && fTontineCreateOk(tontineId);
+      allow update: if signedIn() && fTontineUpdateOk(tontineId);
+    }
+
+    // Active members read the tontine's records; an invited user reads only
+    // its own member document.
+    match /tontine_members/{memberId} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid() || fTontineMember(resource.data.tontineId));
+      allow list: if signedIn() && (resource.data.userId == uid() || fTontineMember(resource.data.tontineId));
+      allow create: if signedIn() && fMemberCreateOk(memberId);
+      allow update: if signedIn() && fMemberUpdateOk(memberId);
+    }
+
+    match /tontine_cycles/{cycleId} {
+      allow get: if signedIn() && (resource == null || fTontineMember(resource.data.tontineId));
+      allow list: if signedIn() && fTontineMember(resource.data.tontineId);
+      allow create: if signedIn() && fCycleCreateOk(cycleId);
+      allow update: if signedIn() && fCycleUpdateOk(cycleId);
+    }
+
+    match /tontine_contributions/{id} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid() || fTontineMember(resource.data.tontineId));
+      allow list: if signedIn() && (resource.data.userId == uid() || fTontineMember(resource.data.tontineId));
+      allow create: if signedIn() && fTontineContributionOk(id);
+    }
+
+    match /tontine_payouts/{payoutId} {
+      allow get: if signedIn() && (resource == null || fTontineMember(resource.data.tontineId));
+      allow list: if signedIn() && fTontineMember(resource.data.tontineId);
+      allow create: if signedIn() && fPayoutCreateOk(payoutId);
+      allow update: if signedIn() && fPayoutPaidOk(payoutId);
+    }
+
+    match /tontine_disputes/{id} {
+      allow get: if signedIn() && (resource == null || resource.data.raisedBy == uid() || fTontineMember(resource.data.tontineId));
+      allow list: if signedIn() && (resource.data.raisedBy == uid() || fTontineMember(resource.data.tontineId));
+      allow create: if signedIn() && fDisputeOk(id);
+    }
+
+    // ---- Finance: member loans (design 3.8) --------------------------------
+    // A member borrows from the members of a tontine (groupId); the others
+    // vote (loan_votes/{loanId}_{uid}, once), fund (loan_fundings/
+    // {loanId}_{uid}_{n}) into loan_{loanId}, and collect their share of the
+    // repayments. The admin reviews (under_review, credit_assessments,
+    // voting + votingEndsAt), and handles penalties and defaults.
+
+    function fLoanParty(l) { return uid() == l.borrowerId || uid() in l.get('lenderIds', []) || uid() in l.get('eligibleVoterIds', []); }
+    function fLoanBorrowerOrLender(loanId) {
+      let l = fGet('loan_applications', loanId);
+      return uid() == l.borrowerId || uid() in l.get('lenderIds', []);
+    }
+    // The loan account's posting of this request (fundings, the pay-out and
+    // repayments name the loan account; the loan carries no lastTxId).
+    function fLoanTx(loanId) { return fTx(fAcct('loan_' + loanId).get('lastTxId', '')); }
+    function fLoanTxNow(loanId) { return fTxNow(fAcct('loan_' + loanId).get('lastTxId', '')); }
+
+    function fLoanApplyOk(id) {
+      let d = request.resource.data;
+      let g = fGet('tontines', d.groupId);
+      let cfg = fSetting('lending');
+      return d.keys().hasOnly(['id', 'borrowerId', 'borrowerName', 'groupId', 'groupName', 'status', 'currency', 'amount', 'fundedAmount', 'outstandingAmount', 'repaidAmount', 'durationMonths', 'repaymentFrequency', 'purpose', 'description', 'eligibleVoterIds', 'lenderIds', 'votes', 'documents', 'createdAt', 'updatedAt'])
+        && d.get('id', id) == id && d.borrowerId == uid() && d.status == 'submitted' && fIdOk(d.groupId) && fOptStr(d, 'groupName', 200)
+        && uid() in g.memberIds
+        && d.eligibleVoterIds is list && d.eligibleVoterIds.size() > 0 && d.eligibleVoterIds.size() == g.memberIds.size() - 1
+        && d.eligibleVoterIds.toSet() == g.memberIds.toSet().difference([uid()].toSet())
+        && d.currency in cfg.get('currencies', []) && fPos(d.amount)
+        && d.amount >= fPerCur(cfg.get('minAmount', null), d.currency, 1) && d.amount <= fPerCur(cfg.get('maxAmount', null), d.currency, 1000000000000)
+        && d.durationMonths in cfg.get('durationsMonths', []) && d.repaymentFrequency in cfg.get('repaymentFrequencies', [])
+        && (cfg.get('purposes', []).size() == 0 || d.purpose in cfg.get('purposes', []))
+        && d.votes == {'yes': 0, 'no': 0} && d.fundedAmount == 0 && d.outstandingAmount == 0 && d.get('repaidAmount', 0) == 0
+        && d.lenderIds == [] && d.get('documents', []) == [] && fOptStr(d, 'description', 2000)
+        && d.createdAt == request.time && fStamp(d, 'updatedAt')
+        && !fRestricted('loans');
+    }
+
+    function fLoanUpdateOk(id) {
+      let o = resource.data;
+      let n = request.resource.data;
+      let ch = fChanged();
+      return fStampCh(ch, n, 'updatedAt') && (
+        // the borrower adds a supporting document (Storage first)
+        (ch.hasOnly(['documents', 'updatedAt']) && o.borrowerId == uid() && o.status in ['submitted', 'under_review', 'voting']
+          && n.documents is list && n.documents.size() == o.get('documents', []).size() + 1 && n.documents.size() <= 20)
+        // the borrower cancels before any money is committed
+        || (ch.hasOnly(['status', 'cancelledAt', 'updatedAt']) && o.borrowerId == uid() && o.status in ['submitted', 'under_review', 'voting']
+          && n.status == 'cancelled' && fStampCh(ch, n, 'cancelledAt'))
+        // a vote counted (+1 with the voter's own new vote)
+        || (ch.hasOnly(['votes', 'updatedAt']) && fVoteCountOk(id, o, n))
+        // a participant closes the vote (ended, or everyone voted)
+        || (ch.hasOnly(['status', 'reason', 'votingClosedAt', 'updatedAt']) && fCloseVoteOk(o, n, ch))
+        // a lender's funding (its posting and loan_fundings document)
+        || (ch.hasOnly(['fundedAmount', 'lenderIds', 'status', 'fundedAt', 'updatedAt']) && ch.hasAll(['fundedAmount']) && fLoanFundedOk(id, o, n, ch))
+        // the borrower accepts the agreement; the pay-out in the same batch
+        || (ch.hasOnly(['status', 'acceptedAt', 'agreementVersion', 'disbursedAt', 'outstandingAmount', 'repaidAmount', 'updatedAt']) && fLoanAcceptOk(id, o, n))
+        // a repayment
+        || (ch.hasOnly(['outstandingAmount', 'repaidAmount', 'status', 'repaidAt', 'updatedAt']) && ch.hasAll(['outstandingAmount']) && fLoanRepaidOk(id, o, n, ch)));
+    }
+
+    function fVoteCountOk(loanId, o, n) {
+      let v = fAfter('loan_votes', loanId + '_' + uid());
+      return o.status == 'voting' && uid() in o.eligibleVoterIds && v.at == request.time
+        && n.votes.keys().hasOnly(['yes', 'no'])
+        && n.votes.yes == o.votes.yes + (v.approve ? 1 : 0) && n.votes.no == o.votes.no + (v.approve ? 0 : 1);
+    }
+
+    // funding when the quorum and the approval are reached (VoteTally),
+    // else rejected with reason 'vote'.
+    function fCloseVoteOk(o, n, ch) {
+      let v = fSetting('lending').get('voting', {});
+      let cast = o.votes.yes + o.votes.no;
+      let el = o.eligibleVoterIds.size();
+      let pass = el > 0 && cast * 100 >= el * v.get('quorumPercent', 101) && o.votes.yes * 100 >= cast * v.get('approvalPercent', 101);
+      return o.status == 'voting' && (uid() == o.borrowerId || uid() in o.eligibleVoterIds)
+        && ((o.get('votingEndsAt', null) is timestamp && request.time >= o.votingEndsAt) || (el > 0 && cast >= el))
+        && n.status == (pass ? 'funding' : 'rejected') && (pass ? !('reason' in ch) : n.reason == 'vote')
+        && fStampCh(ch, n, 'votingClosedAt');
+    }
+
+    function fLoanFundedOk(id, o, n, ch) {
+      let t = fLoanTx(id);
+      return o.status == 'funding' && fLoanTxNow(id) && t.type == 'loan_funding' && t.lines[1].accountId == 'loan_' + id
+        && t.source.kind == 'loan_fundings' && fAfter('loan_fundings', t.source.id).lenderId == uid()
+        && n.fundedAmount == o.fundedAmount + t.lines[1].amount && n.fundedAmount <= o.amount
+        && ((uid() in o.lenderIds && n.lenderIds == o.lenderIds) || (!(uid() in o.lenderIds) && n.lenderIds == o.lenderIds.concat([uid()])))
+        && (n.fundedAmount == o.amount
+            ? (n.status == 'agreement_pending' && fStampCh(ch, n, 'fundedAt') && fAfter('loan_agreements', id).version == 1)
+            : (n.status == 'funding' && !('fundedAt' in ch)));
+    }
+
+    function fLoanAcceptOk(id, o, n) {
+      let ag = fGet('loan_agreements', id);
+      return o.borrowerId == uid() && o.status == 'agreement_pending' && n.status == 'active'
+        && n.acceptedAt == request.time && fStamp(n, 'disbursedAt')
+        && n.agreementVersion == ag.version && ag.get('acceptedAt', null) == null
+        && n.outstandingAmount == ag.totalRepayable && n.get('repaidAmount', 0) == 0
+        && fLoanTxNow(id) && fLoanTx(id).type == 'loan_disbursement'
+        && !fRestricted('loans');
+    }
+
+    function fLoanRepaidOk(id, o, n, ch) {
+      let t = fLoanTx(id);
+      return o.borrowerId == uid() && o.status in ['active', 'overdue']
+        && fLoanTxNow(id) && t.type == 'loan_repayment' && t.lines[1].accountId == 'loan_' + id
+        && t.source.kind == 'loan_repayments' && fAfter('loan_repayments', t.source.id).loanId == id
+        && n.outstandingAmount == o.outstandingAmount - t.lines[1].amount && n.outstandingAmount >= 0
+        && n.get('repaidAmount', 0) == o.get('repaidAmount', 0) + t.lines[1].amount
+        && (n.outstandingAmount == 0 ? (n.status == 'repaid' && fStampCh(ch, n, 'repaidAt')) : (n.status == o.status && !('repaidAt' in ch)));
+    }
+
+    // One vote per voter (the id), while voting and before votingEndsAt,
+    // counted in the same batch.
+    function fVoteOk(voteId) {
+      let d = request.resource.data;
+      let l = fGet('loan_applications', d.loanId);
+      let la = fAfter('loan_applications', d.loanId);
+      return d.keys().hasOnly(['loanId', 'voterId', 'approve', 'comment', 'at'])
+        && fIdOk(d.loanId) && voteId == d.loanId + '_' + uid() && d.voterId == uid() && d.approve is bool && fOptStr(d, 'comment', 500) && d.at == request.time
+        && uid() in l.eligibleVoterIds && uid() != l.borrowerId && l.status == 'voting'
+        && (l.get('votingEndsAt', null) == null || request.time < l.votingEndsAt)
+        && la.votes.yes == l.votes.yes + (d.approve ? 1 : 0) && la.votes.no == l.votes.no + (d.approve ? 0 : 1)
+        && !fRestricted('loans');
+    }
+
+    // An eligible member (never the borrower) funds what is left, while funding.
+    function fFundingOk(id) {
+      let d = request.resource.data;
+      let l = fGet('loan_applications', d.loanId);
+      let t = fTx(d.txId);
+      return d.keys().hasOnly(['id', 'loanId', 'lenderId', 'borrowerId', 'amount', 'currency', 'status', 'funding', 'reference', 'txId', 'requestKey', 'collected', 'createdAt'])
+        && fIdOk(d.loanId) && id.matches('^' + d.loanId + '_' + uid() + '_[0-9]{1,4}$') && d.get('id', id) == id && d.lenderId == uid()
+        && d.get('borrowerId', l.borrowerId) == l.borrowerId
+        && uid() in l.eligibleVoterIds && l.borrowerId != uid() && l.status == 'funding'
+        && fPos(d.amount) && l.fundedAmount + d.amount <= l.amount && d.currency == l.currency
+        && d.status == 'succeeded' && d.get('collected', 0) == 0 && d.createdAt == request.time && fStr(d.reference, 1, 40)
+        && fAfter('loan_applications', d.loanId).fundedAmount == l.fundedAmount + d.amount
+        && fTxNow(d.txId) && t.type == 'loan_funding' && t.source == {'kind': 'loan_fundings', 'id': id}
+        && t.lines[1].accountId == 'loan_' + d.loanId && t.lines[1].amount == d.amount && d.get('funding', t.funding) == t.funding
+        && !fRestricted('loans');
+    }
+
+    // The agreement the last funder issues (version 1), on the lending
+    // configuration's terms. Its schedule cannot be recomputed by rules: the
+    // total is bounded by flat interest over the duration (+ rounding), and
+    // the borrower accepts it explicitly.
+    function fAgreementOk(loanId) {
+      let d = request.resource.data;
+      let l = fGet('loan_applications', loanId);
+      let cfg = fSetting('lending');
+      return d.keys().hasOnly(['loanId', 'borrowerId', 'version', 'principal', 'currency', 'interestMethod', 'annualInterestPercent', 'fee', 'totalRepayable', 'latePenaltyPercent', 'durationMonths', 'repaymentFrequency', 'terms', 'installments', 'createdAt', 'acceptedAt'])
+        && d.loanId == loanId && d.version == 1 && d.get('borrowerId', l.borrowerId) == l.borrowerId
+        && l.status == 'funding' && fAfter('loan_applications', loanId).status == 'agreement_pending' && uid() in l.eligibleVoterIds
+        && d.principal == l.amount && d.currency == l.currency
+        && d.get('durationMonths', l.durationMonths) == l.durationMonths && d.get('repaymentFrequency', l.repaymentFrequency) == l.repaymentFrequency
+        && d.interestMethod == cfg.get('interest', {}).get('method', '') && d.annualInterestPercent == cfg.get('interest', {}).get('annualPercent', -1)
+        && d.get('latePenaltyPercent', 0) == cfg.get('latePenaltyPercent', 0)
+        && fNonNeg(d.fee) && d.fee <= math.round(float(l.amount) * cfg.get('feePercent', 0) / 100) && d.fee < l.amount
+        && d.installments is list && d.installments.size() >= 1 && d.installments.size() <= 600
+        && fPos(d.totalRepayable) && d.totalRepayable >= d.principal
+        && d.totalRepayable <= d.principal + math.ceil(float(d.principal) * d.annualInterestPercent * (l.durationMonths + 1) / 1200) + d.installments.size()
+        && d.get('acceptedAt', null) == null && fStamp(d, 'createdAt') && fOptStr(d, 'terms', 20000);
+    }
+
+    function fDisbursementOk(loanId) {
+      let d = request.resource.data;
+      let l = fGet('loan_applications', loanId);
+      let t = fTx(d.txId);
+      return d.keys().hasOnly(['id', 'loanId', 'borrowerId', 'amount', 'fee', 'currency', 'status', 'reference', 'txId', 'paidAt'])
+        && d.get('id', loanId) == loanId && d.loanId == loanId && d.borrowerId == uid() && l.borrowerId == uid() && d.currency == l.currency
+        && d.status == 'succeeded' && fStamp(d, 'paidAt')
+        && fTxNow(d.txId) && t.type == 'loan_disbursement' && t.source == {'kind': 'loan_disbursements', 'id': loanId}
+        && d.amount == t.lines[1].amount && d.fee == (t.lines.size() == 3 ? t.lines[2].amount : 0);
+    }
+
+    function fRepaymentOk(id) {
+      let d = request.resource.data;
+      let l = fGet('loan_applications', d.loanId);
+      let t = fTx(d.txId);
+      return d.keys().hasOnly(['id', 'loanId', 'borrowerId', 'amount', 'currency', 'status', 'funding', 'reference', 'txId', 'requestKey', 'createdAt'])
+        && fIdOk(d.loanId) && d.get('id', id) == id && d.borrowerId == uid() && l.borrowerId == uid() && l.status in ['active', 'overdue']
+        && fPos(d.amount) && d.amount <= l.outstandingAmount && d.currency == l.currency && d.status == 'succeeded'
+        && fStr(d.reference, 1, 40) && d.createdAt == request.time
+        && fAfter('loan_applications', d.loanId).outstandingAmount == l.outstandingAmount - d.amount
+        && fTxNow(d.txId) && t.type == 'loan_repayment' && t.source == {'kind': 'loan_repayments', 'id': id}
+        && t.lines[1].accountId == 'loan_' + d.loanId && t.lines[1].amount == d.amount && d.get('funding', t.funding) == t.funding;
+    }
+
+    match /loan_applications/{loanId} {
+      allow get: if signedIn() && (resource == null || fLoanParty(resource.data));
+      allow list: if signedIn() && (resource.data.borrowerId == uid() || uid() in resource.data.eligibleVoterIds || uid() in resource.data.lenderIds);
+      allow create: if signedIn() && fLoanApplyOk(loanId);
+      allow update: if signedIn() && fLoanUpdateOk(loanId);
+    }
+
+    // A vote: its voter only.
+    match /loan_votes/{voteId} {
+      allow get: if signedIn() && (resource == null || resource.data.voterId == uid());
+      allow list: if signedIn() && resource.data.voterId == uid();
+      allow create: if signedIn() && fVoteOk(voteId);
+    }
+
+    // The borrower only (never the voters).
+    match /credit_assessments/{loanId} {
+      allow get: if signedIn() && (resource == null || resource.data.borrowerId == uid());
+      allow list: if signedIn() && resource.data.borrowerId == uid();
+    }
+
+    match /loan_fundings/{fundingId} {
+      allow get: if signedIn() && (resource == null || resource.data.lenderId == uid() || resource.data.get('borrowerId', '') == uid());
+      allow list: if signedIn() && (resource.data.lenderId == uid() || resource.data.borrowerId == uid());
+      allow create: if signedIn() && fFundingOk(fundingId);
+      // The lender's `collected` only grows (the posting's rule bounds it by
+      // the lender's share of the repayments).
+      allow update: if signedIn() && resource.data.lenderId == uid() && fChanged().hasOnly(['collected', 'updatedAt'])
+        && request.resource.data.collected is int && request.resource.data.collected > resource.data.get('collected', 0)
+        && fStampCh(fChanged(), request.resource.data, 'updatedAt');
+    }
+
+    match /loan_agreements/{loanId} {
+      allow get: if signedIn() && (resource == null || fLoanBorrowerOrLender(loanId));
+      allow create: if signedIn() && fAgreementOk(loanId);
+      // The borrower's acceptance, in the pay-out batch.
+      allow update: if signedIn() && fChanged().hasOnly(['acceptedAt']) && resource.data.get('acceptedAt', null) == null
+        && request.resource.data.acceptedAt == request.time && fGet('loan_applications', loanId).borrowerId == uid()
+        && fAfter('loan_applications', loanId).status == 'active';
+    }
+
+    match /loan_schedules/{loanId} {
+      allow get: if signedIn() && (resource == null || fLoanBorrowerOrLender(loanId));
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['loanId', 'borrowerId', 'currency', 'installments', 'createdAt', 'updatedAt'])
+        && request.resource.data.get('loanId', loanId) == loanId && request.resource.data.installments is list && request.resource.data.installments.size() <= 600
+        && fGet('loan_applications', loanId).borrowerId == uid() && fGet('loan_applications', loanId).status == 'agreement_pending'
+        && fAfter('loan_applications', loanId).status == 'active';
+      // Installments marked paid by the borrower's repayment of this batch.
+      allow update: if signedIn() && fChanged().hasOnly(['installments', 'updatedAt']) && request.resource.data.installments is list
+        && request.resource.data.installments.size() == resource.data.installments.size()
+        && fGet('loan_applications', loanId).borrowerId == uid()
+        && fAfter('loan_applications', loanId).outstandingAmount < fGet('loan_applications', loanId).outstandingAmount;
+    }
+
+    match /loan_disbursements/{loanId} {
+      allow get: if signedIn() && (resource == null || fLoanBorrowerOrLender(loanId));
+      allow create: if signedIn() && fDisbursementOk(loanId);
+    }
+
+    match /loan_repayments/{id} {
+      allow get: if signedIn() && (resource == null || fLoanBorrowerOrLender(resource.data.loanId));
+      allow list: if signedIn() && fLoanBorrowerOrLender(resource.data.loanId);
+      allow create: if signedIn() && fRepaymentOk(id);
+    }
+
+    // ---- Finance: investments (design 3.9) ---------------------------------
+
+    function fNum(v) { return v is number ? v : 0; }
+
+    function fSubscriptionOk(id) {
+      let d = request.resource.data;
+      let f = fGet('investment_funds', d.fundId);
+      let t = fTx(d.txId);
+      let holder = exists(fPath('investment_holdings', uid() + '_' + d.fundId)) && fGet('investment_holdings', uid() + '_' + d.fundId).get('units', 0) > 0;
+      return d.keys().hasOnly(['id', 'userId', 'fundId', 'fundName', 'assetClass', 'currency', 'amount', 'fee', 'termsVersion', 'signatureName', 'riskAcknowledged', 'acceptedAt', 'status', 'txId', 'reference', 'payment', 'createdAt', 'updatedAt'])
+        && d.get('id', id) == id && d.userId == uid() && fIdOk(d.fundId) && f.get('published', false) == true && f.get('status', '') == 'open'
+        && d.currency == f.currency && d.termsVersion == f.termsVersion && d.riskAcknowledged == true && fStr(d.signatureName, 2, 120)
+        && d.acceptedAt == request.time && d.createdAt == request.time && fStamp(d, 'updatedAt') && d.status == 'paid'
+        && fPos(d.amount) && fNonNeg(d.get('fee', 0))
+        && d.amount >= (holder ? fNum(f.get('minAdditional', f.get('minInvestment', 0))) : fNum(f.get('minInvestment', 0)))
+        && fTxNow(d.txId) && t.type == 'investment_subscription' && t.source == {'kind': 'investment_subscriptions', 'id': id}
+        && t.currency == d.currency && t.lines[0].amount == d.amount;
+    }
+
+    function fRedemptionOk(id) {
+      let d = request.resource.data;
+      let f = fGet('investment_funds', d.fundId);
+      let h = fGet('investment_holdings', uid() + '_' + d.fundId);
+      return d.keys().hasOnly(['id', 'userId', 'fundId', 'fundName', 'currency', 'full', 'amount', 'destination', 'status', 'reference', 'createdAt', 'updatedAt'])
+        && d.get('id', id) == id && d.userId == uid() && fIdOk(d.fundId) && h.userId == uid() && h.get('units', 0) > 0
+        && f.get('status', '') != 'suspended' && f.get('redemption', {}).get('allowed', false) == true && d.currency == f.currency
+        && d.status == 'submitted' && d.createdAt == request.time && fStamp(d, 'updatedAt') && d.destination is map && d.destination.size() <= 12
+        && ((d.full == true && d.get('amount', null) == null)
+            || (d.full == false && f.get('redemption', {}).get('partial', false) == true && fPos(d.amount) && d.amount <= h.get('redeemableValue', 0)));
+    }
+
+    match /investment_subscriptions/{id} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && fSubscriptionOk(id);
+    }
+
+    match /investment_redemptions/{id} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && fRedemptionOk(id);
+      // The holder cancels while it is still submitted.
+      allow update: if signedIn() && resource.data.userId == uid() && resource.data.status == 'submitted'
+        && request.resource.data.status == 'cancelled' && fChanged().hasOnly(['status', 'cancelledAt', 'updatedAt'])
+        && fStamp(request.resource.data, 'cancelledAt');
+    }
+
+    match /investment_holdings/{id} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+    }
+    match /investment_transactions/{id} { allow read: if signedIn() && resource.data.userId == uid(); }
+    match /investment_reports/{id} { allow read: if signedIn() && resource.data.userId == uid(); }
+
+    // ---- Finance: insurance (design 3.10) ----------------------------------
+    // Ids: insurance_policies/{quoteId}, the first premium
+    // insurance_premiums/{policyId}_1. A policy is never active, and a claim
+    // never approved / paid, by a client: the admin does it with the insurer.
+
+    function fQuoteRequestOk(id) {
+      let d = request.resource.data;
+      let p = fGet('insurance_products', d.productId);
+      return d.keys().hasOnly(['id', 'userId', 'productId', 'productName', 'partnerName', 'category', 'currency', 'answers', 'frequency', 'coverStart', 'termMonths', 'status', 'createdAt', 'updatedAt'])
+        && d.get('id', id) == id && d.userId == uid() && fIdOk(d.productId) && p.get('published', false) == true && p.get('status', 'open') == 'open'
+        && d.status == 'requested' && d.createdAt == request.time && fStamp(d, 'updatedAt') && d.currency == p.currency
+        && d.answers is map && d.answers.size() <= 50 && fStr(d.frequency, 1, 20) && fDate(d.coverStart)
+        && fOptStr(d, 'productName', 200) && fOptStr(d, 'partnerName', 200) && fOptStr(d, 'category', 60);
+    }
+
+    // The quote accepted before validUntil: its policy {quoteId} and its
+    // first premium {quoteId}_1 (paid by a posting of this batch) with it.
+    function fQuoteAcceptOk(quoteId, o, n) {
+      let pr = fAfter('insurance_premiums', quoteId + '_1');
+      return o.status == 'quoted' && n.status == 'accepted' && request.time < o.validUntil
+        && n.acceptedAt == request.time && fStr(n.signatureName, 2, 120) && n.policyId == quoteId
+        && fAfter('insurance_policies', quoteId).quoteId == quoteId
+        && pr.createdAt == request.time && pr.status == 'paid' && pr.amount == o.get('installmentAmount', o.premium) && fTxNow(pr.txId);
+    }
+
+    function fQuoteUpdateOk(id) {
+      let o = resource.data;
+      let n = request.resource.data;
+      let ch = fChanged();
+      return o.userId == uid() && fStampCh(ch, n, 'updatedAt') && (
+        (ch.hasOnly(['status', 'declinedAt', 'updatedAt']) && o.status == 'quoted' && n.status == 'declined' && fStampCh(ch, n, 'declinedAt'))
+        || (ch.hasOnly(['status', 'acceptedAt', 'signatureName', 'policyId', 'updatedAt']) && fQuoteAcceptOk(id, o, n)));
+    }
+
+    function fPolicyCreateOk(policyId) {
+      let d = request.resource.data;
+      let q = fGet('insurance_quotes', policyId);
+      return d.keys().hasOnly(['id', 'userId', 'quoteId', 'productId', 'productName', 'partnerName', 'category', 'currency', 'premium', 'frequency', 'installmentAmount', 'deductible', 'coverages', 'coverStart', 'coverEnd', 'termsVersion', 'signatureName', 'acceptedAt', 'autoRenew', 'status', 'createdAt', 'updatedAt'])
+        && d.get('id', policyId) == policyId && d.quoteId == policyId && d.userId == uid() && q.userId == uid()
+        && q.status == 'quoted' && fAfter('insurance_quotes', policyId).status == 'accepted'
+        && d.status == 'pending_activation' && d.get('autoRenew', false) == false && d.createdAt == request.time && fStamp(d, 'acceptedAt')
+        && d.productId == q.productId && d.currency == q.currency && d.get('premium', null) == q.get('premium', null)
+        && d.get('installmentAmount', null) == q.get('installmentAmount', null) && d.get('frequency', null) == q.get('frequency', null)
+        && d.get('termsVersion', null) == q.get('termsVersion', null) && d.get('deductible', null) == q.get('deductible', null)
+        && d.get('coverStart', null) == q.get('coverStart', null) && d.get('coverEnd', null) == q.get('coverEnd', null)
+        && d.get('coverages', null) == q.get('coverages', null);
+    }
+
+    function fPremiumCreateOk(id) {
+      let d = request.resource.data;
+      let p = fAfter('insurance_policies', d.policyId);
+      let t = fTx(d.txId);
+      return d.keys().hasOnly(['id', 'userId', 'policyId', 'amount', 'currency', 'dueDate', 'status', 'paidAt', 'txId', 'reference', 'payment', 'createdAt', 'updatedAt'])
+        && fIdOk(d.policyId) && id == d.policyId + '_1' && d.get('id', id) == id && d.userId == uid() && p.userId == uid()
+        && p.status == 'pending_activation' && p.createdAt == request.time
+        && d.status == 'paid' && d.amount == p.get('installmentAmount', p.premium) && d.currency == p.currency
+        && d.paidAt == request.time && d.createdAt == request.time
+        && fTxNow(d.txId) && t.type == 'insurance_premium' && t.source == {'kind': 'insurance_premiums', 'id': id}
+        && t.currency == d.currency && t.lines[0].amount == d.amount;
+    }
+
+    function fPremiumPayOk(id) {
+      let o = resource.data;
+      let n = request.resource.data;
+      return o.userId == uid() && o.status in ['due', 'overdue', 'failed'] && n.status == 'paid'
+        && fChanged().hasOnly(['status', 'paidAt', 'txId', 'reference', 'payment', 'updatedAt']) && n.paidAt == request.time
+        && fTxNow(n.txId) && fTx(n.txId).type == 'insurance_premium' && fTx(n.txId).source == {'kind': 'insurance_premiums', 'id': id}
+        && fTx(n.txId).currency == o.currency && fTx(n.txId).lines[0].amount == o.amount;
+    }
+
+    function fPolicyUpdateOk(id) {
+      let o = resource.data;
+      let n = request.resource.data;
+      let ch = fChanged();
+      return o.userId == uid() && fStampCh(ch, n, 'updatedAt') && (
+        (ch.hasOnly(['autoRenew', 'updatedAt']) && o.status in ['active', 'renewal_due'] && n.autoRenew is bool)
+        || (ch.hasOnly(['status', 'statusBefore', 'cancellationReason', 'cancellationRequestedAt', 'updatedAt']) && o.status in ['active', 'renewal_due']
+            && n.status == 'cancellation_requested' && n.get('statusBefore', o.status) == o.status && fOptStr(n, 'cancellationReason', 500)
+            && fStampCh(ch, n, 'cancellationRequestedAt'))
+        // renewal paid (once per renewal: the admin clears renewalRequestedAt when it renews)
+        || (ch.hasOnly(['renewalRequestedAt', 'renewalPaidAmount', 'renewalTxId', 'renewalReference', 'renewalPayment', 'updatedAt'])
+            && o.status == 'renewal_due' && fPos(o.get('renewalPremium', 0)) && o.get('renewalRequestedAt', null) == null
+            && n.renewalRequestedAt == request.time && n.get('renewalPaidAmount', o.renewalPremium) == o.renewalPremium
+            && fFeeTxOk(n.get('renewalTxId', ''), 'insurance_premium', 'insurance_policies', id, o.currency, o.renewalPremium)));
+    }
+
+    function fClaimCreateOk(id) {
+      let d = request.resource.data;
+      let p = fGet('insurance_policies', d.policyId);
+      return d.keys().hasOnly(['id', 'userId', 'policyId', 'policyNumber', 'productName', 'currency', 'incidentDate', 'description', 'amountClaimed', 'documents', 'status', 'createdAt', 'updatedAt'])
+        && d.get('id', id) == id && d.userId == uid() && fIdOk(d.policyId) && p.userId == uid() && p.status in ['active', 'renewal_due']
+        && d.status == 'submitted' && d.createdAt == request.time && fStamp(d, 'updatedAt') && d.currency == p.currency
+        && fStr(d.description, 1, 5000) && fPos(d.amountClaimed) && fDate(d.incidentDate)
+        && d.get('documents', []) is list && d.get('documents', []).size() <= 20
+        && fOptStr(d, 'policyNumber', 100) && fOptStr(d, 'productName', 200);
+    }
+
+    function fClaimUpdateOk(id) {
+      let o = resource.data;
+      let n = request.resource.data;
+      let ch = fChanged();
+      return o.userId == uid() && fStampCh(ch, n, 'updatedAt') && (
+        // the answer to the insurer's question (with its event)
+        (ch.hasOnly(['status', 'documents', 'respondedAt', 'updatedAt']) && o.status == 'info_requested' && n.status == 'under_review'
+          && n.get('documents', []) is list && n.get('documents', []).size() <= 40 && n.respondedAt == request.time)
+        || (ch.hasOnly(['status', 'withdrawnAt', 'updatedAt']) && o.status in ['submitted', 'under_review', 'info_requested']
+          && n.status == 'withdrawn' && fStampCh(ch, n, 'withdrawnAt')));
+    }
+
+    match /insurance_quotes/{quoteId} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && fQuoteRequestOk(quoteId);
+      allow update: if signedIn() && fQuoteUpdateOk(quoteId);
+    }
+
+    match /insurance_policies/{policyId} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && fPolicyCreateOk(policyId);
+      allow update: if signedIn() && fPolicyUpdateOk(policyId);
+    }
+
+    match /insurance_premiums/{premiumId} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && fPremiumCreateOk(premiumId);
+      allow update: if signedIn() && fPremiumPayOk(premiumId);
+    }
+
+    match /insurance_claims/{claimId} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && fClaimCreateOk(claimId);
+      allow update: if signedIn() && fClaimUpdateOk(claimId);
+
+      // The exchange with the insurer: the owner reads it and adds its
+      // answers (with the claim's response, same batch); the rest is the admin's.
+      match /events/{eventId} {
+        allow read: if signedIn() && fGet('insurance_claims', claimId).userId == uid();
+        allow create: if signedIn() && fGet('insurance_claims', claimId).userId == uid()
+          && request.resource.data.keys().hasOnly(['id', 'type', 'userId', 'authorId', 'message', 'documents', 'createdAt'])
+          && request.resource.data.type == 'customer_response' && request.resource.data.userId == uid()
+          && request.resource.data.get('authorId', uid()) == uid() && fStr(request.resource.data.message, 0, 2000)
+          && request.resource.data.get('documents', []) is list && request.resource.data.get('documents', []).size() <= 20
+          && request.resource.data.createdAt == request.time
+          && fAfter('insurance_claims', claimId).get('respondedAt', null) == request.time;
+      }
+    }
+    // insurance_partners (api settings): admin only (no client rule).
+
+    // ---- Finance: project financing (design 3.11) --------------------------
+
+    function fFinancingAmountOk(d, cfg) {
+      return d.currency in cfg.get('currencies', []) && fPos(d.amount)
+        && d.amount >= fPerCur(cfg.get('minAmount', null), d.currency, 1) && d.amount <= fPerCur(cfg.get('maxAmount', null), d.currency, 1000000000000)
+        && d.financingType in cfg.get('financingTypes', []) && fStr(d.useOfFunds, 1, 5000)
+        && (d.get('durationMonths', null) == null || d.durationMonths in cfg.get('durationsMonths', []));
+    }
+
+    function fProjectOk(d, cfg) {
+      return fStr(d.name, 1, 200) && d.sector in cfg.get('sectors', []) && fOptStr(d, 'country', 60) && fOptStr(d, 'city', 100)
+        && fStr(d.description, 1, 5000) && (d.get('stage', null) == null || d.stage in cfg.get('stages', []))
+        && (d.get('employees', null) == null || fNonNeg(d.employees)) && (d.get('foundedYear', null) == null || d.foundedYear is int)
+        && fOptStr(d, 'website', 300);
+    }
+
+    function fFinancingEditable(s) { return s in ['draft', 'additional_info_required']; }
+
+    match /financing_projects/{projectId} {
+      allow get: if signedIn() && (resource == null || resource.data.ownerId == uid());
+      allow list: if signedIn() && resource.data.ownerId == uid();
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['id', 'ownerId', 'name', 'sector', 'country', 'city', 'description', 'stage', 'employees', 'foundedYear', 'website', 'createdAt', 'updatedAt'])
+        && request.resource.data.get('id', projectId) == projectId && request.resource.data.ownerId == uid()
+        && request.resource.data.createdAt == request.time && fProjectOk(request.resource.data, fSetting('financing'));
+      allow update: if signedIn() && resource.data.ownerId == uid()
+        && fChanged().hasOnly(['name', 'sector', 'country', 'city', 'description', 'stage', 'employees', 'foundedYear', 'website', 'updatedAt'])
+        && fStampCh(fChanged(), request.resource.data, 'updatedAt') && fProjectOk(request.resource.data, fSetting('financing'));
+    }
+
+    function fFinancingAppUpdateOk() {
+      let o = resource.data;
+      let n = request.resource.data;
+      let ch = fChanged();
+      return o.ownerId == uid() && fStampCh(ch, n, 'updatedAt') && (
+        (ch.hasOnly(['financingType', 'amount', 'currency', 'durationMonths', 'useOfFunds', 'updatedAt']) && fFinancingEditable(o.status)
+          && fFinancingAmountOk(n, fSetting('financing')))
+        || (ch.hasOnly(['status', 'declarationAccepted', 'declarationAcceptedAt', 'submittedAt', 'ownerMessage', 'reason', 'updatedAt'])
+          && fFinancingEditable(o.status) && n.status == 'submitted' && n.declarationAccepted == true
+          && n.submittedAt == request.time && fStampCh(ch, n, 'declarationAcceptedAt') && n.get('reason', null) == null && fOptStr(n, 'ownerMessage', 2000))
+        || (ch.hasOnly(['status', 'withdrawnAt', 'updatedAt']) && o.status in ['draft', 'submitted', 'under_review', 'additional_info_required']
+          && n.status == 'withdrawn' && fStampCh(ch, n, 'withdrawnAt')));
+    }
+
+    match /financing_applications/{applicationId} {
+      allow get: if signedIn() && (resource == null || resource.data.ownerId == uid() || uid() in resource.data.get('reviewerIds', []));
+      allow list: if signedIn() && (resource.data.ownerId == uid() || uid() in resource.data.reviewerIds);
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['id', 'ownerId', 'projectId', 'projectName', 'financingType', 'amount', 'currency', 'durationMonths', 'useOfFunds', 'status', 'reviewerIds', 'createdAt', 'updatedAt'])
+        && request.resource.data.get('id', applicationId) == applicationId && request.resource.data.ownerId == uid()
+        && request.resource.data.status == 'draft' && request.resource.data.get('reviewerIds', []) == []
+        && request.resource.data.createdAt == request.time && fOptStr(request.resource.data, 'projectName', 200)
+        && fIdOk(request.resource.data.projectId) && fGet('financing_projects', request.resource.data.projectId).ownerId == uid()
+        && fFinancingAmountOk(request.resource.data, fSetting('financing'));
+      allow update: if signedIn() && fFinancingAppUpdateOk();
+    }
+
+    function fFinancingDocOk(id) {
+      let d = request.resource.data;
+      let a = fGet('financing_applications', d.applicationId);
+      let cfg = fSetting('financing');
+      return d.keys().hasOnly(['id', 'ownerId', 'applicationId', 'type', 'name', 'storagePath', 'contentType', 'size', 'status', 'note', 'uploadedAt'])
+        && d.get('id', id) == id && d.ownerId == uid() && fIdOk(d.applicationId) && a.ownerId == uid() && fFinancingEditable(a.status)
+        && d.type in cfg.get('documentTypes', []) && fStr(d.name, 1, 200) && d.status == 'received' && d.get('note', '') == ''
+        && d.storagePath is string && d.storagePath.matches('^financing_documents/' + uid() + '/' + d.applicationId + '/[^/]{1,200}$')
+        && d.contentType in cfg.get('allowedContentTypes', []) && fPos(d.size) && d.size <= fNum(cfg.get('maxFileBytes', 0))
+        && d.uploadedAt == request.time;
+    }
+
+    match /financing_documents/{documentId} {
+      allow get: if signedIn() && (resource == null || resource.data.ownerId == uid());
+      allow list: if signedIn() && resource.data.ownerId == uid();
+      allow create: if signedIn() && fFinancingDocOk(documentId);
+      // EXCEPTION to "no client deletes": the owner removes a document it
+      // uploaded, not yet reviewed, from an application it can still edit
+      // (FinancingPlans.removeDocument). No money record is involved.
+      allow delete: if signedIn() && resource.data.ownerId == uid() && resource.data.status == 'received'
+        && fFinancingEditable(fGet('financing_applications', resource.data.applicationId).status);
+    }
+
+    // The history: the admin writes it. Keep internal notes / reviewer ids
+    // out of these documents (the owner reads them whole).
+    match /financing_reviews/{id} {
+      allow read: if signedIn() && resource.data.ownerId == uid();
+    }
+
+    // ---- Finance: intelligence and markets (design 3.11) -------------------
+
+    match /investor_profiles/{userId} {
+      allow get: if signedIn() && userId == uid();
+      allow create, update: if signedIn() && userId == uid()
+        && request.resource.data.keys().hasOnly(['currency', 'sectors', 'countries', 'types', 'minTicket', 'maxTicket', 'maxRisk', 'maxHorizonMonths', 'updatedAt'])
+        && fCurOk(request.resource.data.currency)
+        && request.resource.data.sectors is list && request.resource.data.sectors.size() <= 50
+        && request.resource.data.countries is list && request.resource.data.countries.size() <= 100
+        && request.resource.data.types is list && request.resource.data.types.size() <= 20
+        && fNonNeg(request.resource.data.minTicket) && fPos(request.resource.data.maxTicket) && request.resource.data.minTicket <= request.resource.data.maxTicket
+        && request.resource.data.maxRisk is int && request.resource.data.maxRisk >= 1 && request.resource.data.maxRisk <= 7
+        && fNonNeg(request.resource.data.maxHorizonMonths) && request.resource.data.updatedAt == request.time;
+    }
+
+    match /investor_watchlists/{userId} {
+      allow get: if signedIn() && userId == uid();
+      allow create, update: if signedIn() && userId == uid()
+        && request.resource.data.keys().hasOnly(['securityIds', 'updatedAt'])
+        && request.resource.data.securityIds is list && request.resource.data.securityIds.size() <= 50
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    // The user's response to an opportunity (no money moves); name and
+    // email only when interested.
+    function fInterestOk(id) {
+      let d = request.resource.data;
+      let opp = fGet('investment_opportunities', d.opportunityId);
+      return d.keys().hasOnly(['opportunityId', 'userId', 'interested', 'message', 'name', 'email', 'createdAt', 'updatedAt'])
+        && fIdOk(d.opportunityId) && id == d.opportunityId + '_' + uid() && d.userId == uid() && d.interested is bool
+        && fOptStr(d, 'message', 500) && fStamp(d, 'createdAt') && fStamp(d, 'updatedAt')
+        && (d.interested ? (fOptStr(d, 'name', 200) && fOptStr(d, 'email', 200)) : !d.keys().hasAny(['name', 'email']))
+        && opp.get('published', false) == true && opp.get('status', '') == 'open';
+    }
+
+    match /opportunity_interests/{id} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && fInterestOk(id);
+      allow update: if signedIn() && resource.data.userId == uid() && fInterestOk(id);
+    }
+
+    match /investor_matches/{id} { allow read: if signedIn() && resource.data.userId == uid(); }
+
+    // AI coach: off until a server holds the AI key; owner reads only.
+    match /coach_consents/{userId} { allow get: if signedIn() && userId == uid(); }
+    match /financial_coach_sessions/{sessionId} {
+      allow read: if signedIn() && resource.data.userId == uid();
+      match /messages/{messageId} {
+        allow read: if signedIn() && fGet('financial_coach_sessions', sessionId).userId == uid();
+      }
+    }
+
+    // ---- Finance: identity verification (design 3.1) -----------------------
+    // The customer drafts, uploads, submits and re-opens after a rejection.
+    // under_review / additional_info_required / approved / rejected, the
+    // documents' decisions and users.kycLevel / kycStatus are the admin's.
+
+    // The app's fields only (KycWrites.personalFields / businessFields), text
+    // of at most 200 characters.
+    function fKycPersonalOk(p) {
+      return p is map && p.keys().hasOnly(['fullName', 'dateOfBirth', 'nationality', 'idNumber', 'address', 'city', 'country'])
+        && fOptStr(p, 'fullName', 200) && fOptStr(p, 'dateOfBirth', 200) && fOptStr(p, 'nationality', 200) && fOptStr(p, 'idNumber', 200)
+        && fOptStr(p, 'address', 200) && fOptStr(p, 'city', 200) && fOptStr(p, 'country', 200);
+    }
+    function fKycBusinessOk(b) {
+      return b is map && b.keys().hasOnly(['companyName', 'registrationNumber', 'taxNumber', 'registeredAddress', 'country'])
+        && fOptStr(b, 'companyName', 200) && fOptStr(b, 'registrationNumber', 200) && fOptStr(b, 'taxNumber', 200)
+        && fOptStr(b, 'registeredAddress', 200) && fOptStr(b, 'country', 200);
+    }
+    function fKycDetailsOk(d) {
+      return (d.get('personal', null) == null || fKycPersonalOk(d.personal))
+        && (d.get('business', null) == null || fKycBusinessOk(d.business));
+    }
+
+    function fKycCreateOk(id) {
+      let d = request.resource.data;
+      let lv = fSetting('kyc').get('levels', {}).get(d.level, null);
+      return d.keys().hasOnly(['id', 'userId', 'level', 'accountType', 'status', 'revision', 'personal', 'business', 'reason', 'createdAt', 'updatedAt'])
+        && d.get('id', id) == id && d.userId == uid() && d.status == 'draft' && d.revision == 1 && d.get('reason', null) == null
+        && lv is map && d.accountType in lv.get('accountTypes', []) && d.createdAt == request.time && fStamp(d, 'updatedAt')
+        && fKycDetailsOk(d);
+    }
+
+    function fKycUpdateOk() {
+      let o = resource.data;
+      let n = request.resource.data;
+      let ch = fChanged();
+      return o.userId == uid() && fStampCh(ch, n, 'updatedAt') && (
+        (ch.hasOnly(['personal', 'business', 'updatedAt']) && o.status in ['draft', 'additional_info_required'] && fKycDetailsOk(n))
+        || (ch.hasOnly(['status', 'submittedAt', 'updatedAt']) && o.status in ['draft', 'additional_info_required']
+            && n.status == 'submitted' && n.submittedAt == request.time)
+        || (ch.hasOnly(['status', 'revision', 'reason', 'updatedAt']) && o.status == 'rejected'
+            && n.status == 'draft' && n.revision == o.revision + 1 && n.get('reason', null) == null));
+    }
+
+    function fKycDocCreateOk(id) {
+      let d = request.resource.data;
+      let a = fGet('kyc_applications', d.applicationId);
+      let s = fSetting('kyc');
+      return d.keys().hasOnly(['id', 'applicationId', 'userId', 'type', 'side', 'status', 'storagePath', 'contentType', 'size', 'revision', 'createdAt'])
+        && d.get('id', id) == id && d.userId == uid() && fIdOk(d.applicationId) && a.userId == uid() && a.status in ['draft', 'additional_info_required']
+        && d.type in s.get('documentTypes', {}) && d.side in s.documentTypes[d.type].get('sides', [])
+        && d.status == 'uploaded' && d.createdAt == request.time
+        && d.storagePath is string && d.storagePath.matches('^kyc/' + uid() + '/' + d.applicationId + '/[^/]{1,200}$')
+        && (d.get('contentType', null) == null || d.contentType in s.get('allowedContentTypes', []))
+        && (d.get('size', null) == null || (fPos(d.size) && d.size <= fNum(s.get('maxFileBytes', 0))));
+    }
+
+    match /kyc_applications/{applicationId} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && fKycCreateOk(applicationId);
+      allow update: if signedIn() && fKycUpdateOk();
+    }
+
+    match /kyc_documents/{documentId} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && fKycDocCreateOk(documentId);
+      // An earlier upload of the same type and side, replaced by a new one.
+      allow update: if signedIn() && resource.data.userId == uid() && resource.data.status != 'superseded'
+        && request.resource.data.status == 'superseded' && fChanged().hasOnly(['status', 'supersededBy', 'updatedAt'])
+        && fGet('kyc_applications', resource.data.applicationId).status in ['draft', 'additional_info_required'];
+    }
+
+    // The history entries of the customer's own steps (submit, reopen), in
+    // the batch of the step.
+    match /kyc_reviews/{reviewId} {
+      allow get: if signedIn() && (resource == null || resource.data.userId == uid());
+      allow list: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['id', 'applicationId', 'userId', 'action', 'reason', 'at'])
+        && request.resource.data.get('id', reviewId) == reviewId && request.resource.data.userId == uid()
+        && request.resource.data.at == request.time && request.resource.data.get('reason', null) == null
+        && fIdOk(request.resource.data.applicationId)
+        && fGet('kyc_applications', request.resource.data.applicationId).userId == uid()
+        && ((request.resource.data.action == 'submit'
+             && fGet('kyc_applications', request.resource.data.applicationId).status in ['draft', 'additional_info_required']
+             && fAfter('kyc_applications', request.resource.data.applicationId).status == 'submitted')
+          || (request.resource.data.action == 'reopen'
+             && fGet('kyc_applications', request.resource.data.applicationId).status == 'rejected'
+             && fAfter('kyc_applications', request.resource.data.applicationId).status == 'draft'));
+    }
+
+    // ---- Finance: chat (design 3.11) ---------------------------------------
+    // finance_chats/{chatId}: direct dm_{uidA}_{uidB} (sorted; memberIds) or
+    // a tontine's group tontine_{tid} (its active members). Text messages,
+    // never edited or deleted.
+
+    function fChatMemberOf(chatId, c) {
+      return c.get('type', '') == 'tontine'
+        ? (chatId == 'tontine_' + c.tontineId && uid() in fGet('tontines', c.tontineId).memberIds)
+        : (uid() in c.get('memberIds', []));
+    }
+
+    function fLastMessageOk(m) {
+      return m is map && m.keys().hasOnly(['text', 'senderId', 'at']) && fStr(m.text, 1, 1000) && m.senderId == uid() && m.at == request.time;
+    }
+
+    function fChatCreateOk(chatId) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['id', 'type', 'memberIds', 'tontineId', 'lastMessage', 'updatedAt', 'lastReadAt'])
+        && d.get('id', chatId) == chatId && fLastMessageOk(d.lastMessage) && d.updatedAt == request.time
+        && d.get('lastReadAt', {}) is map && d.get('lastReadAt', {}).keys().hasOnly([uid()])
+        && ((d.type == 'direct' && !('tontineId' in d) && d.memberIds is list && d.memberIds.size() == 2 && uid() in d.memberIds
+              && d.memberIds[0] < d.memberIds[1] && chatId == 'dm_' + d.memberIds[0] + '_' + d.memberIds[1])
+          || (d.type == 'tontine' && !('memberIds' in d) && fIdOk(d.tontineId) && chatId == 'tontine_' + d.tontineId
+              && uid() in fGet('tontines', d.tontineId).memberIds));
+    }
+
+    // A member: the last message (its own, now), the time, its own read time.
+    function fChatUpdateOk(chatId) {
+      let o = resource.data;
+      let n = request.resource.data;
+      let ch = fChanged();
+      return fChatMemberOf(chatId, o) && ch.hasOnly(['lastMessage', 'updatedAt', 'lastReadAt'])
+        && (!('lastMessage' in ch) || fLastMessageOk(n.lastMessage))
+        && fStampCh(ch, n, 'updatedAt')
+        && (!('lastReadAt' in ch) || (n.lastReadAt is map && n.lastReadAt.diff(o.get('lastReadAt', {})).affectedKeys().hasOnly([uid()])
+                                      && n.lastReadAt[uid()] == request.time));
+    }
+
+    match /finance_chats/{chatId} {
+      allow get: if signedIn() && (resource == null || fChatMemberOf(chatId, resource.data));
+      allow list: if signedIn() && uid() in resource.data.memberIds;
+      allow create: if signedIn() && fChatCreateOk(chatId);
+      allow update: if signedIn() && fChatUpdateOk(chatId);
+
+      match /messages/{messageId} {
+        allow read: if signedIn() && fChatMemberOf(chatId, fGet('finance_chats', chatId));
+        allow create: if signedIn() && fChatMemberOf(chatId, fAfter('finance_chats', chatId))
+          && request.resource.data.keys().hasOnly(['id', 'senderId', 'senderName', 'text', 'createdAt'])
+          && request.resource.data.get('id', messageId) == messageId && request.resource.data.senderId == uid()
+          && fStr(request.resource.data.text, 1, 1000) && fOptStr(request.resource.data, 'senderName', 200)
+          && request.resource.data.createdAt == request.time;
+      }
+    }
+
+    // ---- Finance: own records the admin writes -----------------------------
+
+    match /finance_summaries/{userId} { allow get: if signedIn() && userId == uid(); }
+    match /ledger_entries/{id} { allow read: if signedIn() && resource.data.userId == uid(); }
+
+    // ---- Finance: configuration and catalogs (admin writes) ----------------
+    // Signed-in read. A catalog with a `published` flag shows published
+    // documents only: its list queries must filter where('published', ==, true)
+    // (a rule on a defaulted field would let an unfiltered query through).
+
+    match /platform_settings/{id} { allow read: if signedIn(); }
+
+    match /investment_funds/{id} { allow read: if signedIn() && resource.data.published == true; }
+    match /insurance_products/{id} { allow read: if signedIn() && resource.data.published == true; }
+    match /utility_billers/{id} { allow read: if signedIn() && resource.data.published == true; }
+    match /financial_resources/{id} { allow read: if signedIn() && resource.data.published == true; }
+    match /economic_indicators/{id} { allow read: if signedIn() && resource.data.published == true; }
+    match /investment_opportunities/{id} { allow read: if signedIn() && resource.data.published == true; }
+    match /market_securities/{id} { allow read: if signedIn() && resource.data.published == true; }
+    match /ipo_listings/{id} { allow read: if signedIn() && resource.data.published == true; }
+    match /stock_collections/{id} { allow read: if signedIn() && resource.data.published == true; }
+    match /finance_news/{id} { allow read: if signedIn() && resource.data.published == true; }
+
+    match /investment_valuations/{id} { allow read: if signedIn(); }
+    match /economic_indicator_history/{id} { allow read: if signedIn(); }
+    match /exchange_rate_snapshots/{id} { allow read: if signedIn(); }
+    match /market_price_history/{id} { allow read: if signedIn(); }
+
+    // insurance_partners, virtual_cards_private, utility_payment_transactions:
+    // admin only (no client rule; the admin wildcard below).
+
+    // =========================================================================
+    // END OF SPIDELI FINANCE
+    // =========================================================================
 
     // =========================================================================
     // Admin: everything, including panel-only collections not listed above.

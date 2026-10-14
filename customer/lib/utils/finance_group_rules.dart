@@ -1,13 +1,23 @@
 /// Spideli Finance: savings goals and tontines, the pure rules the screens
-/// use (.claude/FINANCE-APP-CONTRACT.md sections 8-9). Unit tested in
-/// test/finance_group_rules_test.dart.
-///
-/// The SERVER owns every amount, status and payout; these rules only read
-/// what it stored, project from it, and mirror its checks so the app can
-/// explain what is possible before asking.
+/// use (.claude/FINANCE-APP-CONTRACT.md sections 8-9) and the writes the app
+/// makes itself (.claude/FINANCE-DIRECT-FIRESTORE.md 3.6, 3.7): every write
+/// is planned here as data ([SavingsWrites], [TontineWrites]) and checked by
+/// the security rules; money moves only as ledger postings
+/// ([FinanceLedger.plan]). The admin panel does the steps that need a person
+/// (group withdrawals and cancellations, disputes, restrictions). Unit tested
+/// in test/finance_group_rules_test.dart, test/finance_savings_direct_test.dart
+/// and test/finance_tontine_direct_test.dart.
 library;
 
+import 'dart:math';
+
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
+import 'package:customer/service/finance_ledger.dart';
+import 'package:customer/utils/finance_security_rules.dart';
+
 int _int(dynamic v) => v is num ? v.round() : int.tryParse('${v ?? ''}') ?? 0;
+
+DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
 
 List<String> _strings(dynamic v) => v is List ? v.map((e) => e.toString()).where((e) => e.isNotEmpty).toList() : const [];
 
@@ -191,7 +201,15 @@ class SavingsGoal {
   }
 
   bool get isGroup => memberIds.length > 1 || invitedIds.isNotEmpty;
+
+  /// The owner alone holds money in it (pending invitations do not count):
+  /// the owner withdraws and cancels directly. A group goal's withdrawals
+  /// and cancellation are decided by the admin.
+  bool get isSolo => memberIds.length <= 1;
   bool get isActive => status == 'active';
+
+  /// The goal's ledger account (`financial_accounts/goal_{id}`).
+  String get accountId => FinanceLedger.goalAccountId(id);
   int get remaining => targetAmount - savedAmount > 0 ? targetAmount - savedAmount : 0;
   double get progress => targetAmount <= 0 ? 0 : (savedAmount / targetAmount).clamp(0, 1).toDouble();
 }
@@ -295,7 +313,10 @@ class Tontine {
 
   bool isAdmin(String uid) => adminIds.contains(uid);
 
-  /// What each beneficiary receives per cycle (before any fee the server applies).
+  /// The pot's ledger account (`financial_accounts/tontine_{id}`).
+  String get potAccountId => FinanceLedger.tontineAccountId(id);
+
+  /// What each beneficiary receives per cycle.
   int get potPerCycle => contributionAmount * memberIds.length;
 
   bool get isForming => status == 'forming';
@@ -321,10 +342,11 @@ class Tontine {
       (s ?? '-');
 }
 
-/// Admin actions the app offers (the server re-checks every one).
+/// Admin actions the app offers (the security rules re-check every one).
 abstract final class TontineActions {
-  static bool canInvite(Tontine t, String uid, int activeAndInvited) =>
-      t.isAdmin(uid) && (t.isForming || t.isActive) && activeAndInvited < t.membersLimit;
+  /// Inviting: an admin, while the tontine is forming (the members, amount
+  /// and order are fixed once it starts), below its size.
+  static bool canInvite(Tontine t, String uid, int activeAndInvited) => t.isAdmin(uid) && t.isForming && activeAndInvited < t.membersLimit;
 
   /// Start: an admin, while forming, with enough members and a complete payout order.
   static String? startBlocker(Tontine t, String uid, TontineConfig cfg, List<String> payoutOrder) {
@@ -455,4 +477,739 @@ abstract final class GroupLabels {
     final s = (id ?? '').replaceAll('_', ' ').trim();
     return s.isEmpty ? '-' : s[0].toUpperCase() + s.substring(1);
   }
+}
+
+/// One month of a savings goal: added, withdrawn, and saved at its end.
+class SavingsMonth {
+  final DateTime month;
+  final int added;
+  final int withdrawn;
+  final int savedAtEnd;
+
+  const SavingsMonth(this.month, this.added, this.withdrawn, this.savedAtEnd);
+}
+
+/// The goal's progress over time (the chart of the goal screen).
+abstract final class SavingsProgress {
+  /// Month by month, from the first movement in [added] / [withdrawn] (at
+  /// most the last [months]) to [now]: what was added and withdrawn, and
+  /// what was saved at the end of each month. The balance is anchored on
+  /// [savedAmount] (the goal's balance now) and walked back, so it stays
+  /// right when the oldest movements are not loaded. Empty without any
+  /// movement.
+  static List<SavingsMonth> monthly(List<DatedAmount> added, List<DatedAmount> withdrawn, int savedAmount, DateTime now, {int months = 12}) {
+    if (added.isEmpty && withdrawn.isEmpty) return const [];
+    int key(DateTime d) => d.year * 12 + d.month - 1;
+    final int last = key(now);
+    final int first = [...added, ...withdrawn].map((x) => key(x.at)).reduce(min);
+    final int start = max(first, last - months + 1);
+    final Map<int, int> inBy = {};
+    final Map<int, int> outBy = {};
+    for (final x in added) {
+      final k = key(x.at);
+      if (k <= last) inBy[k] = (inBy[k] ?? 0) + x.amount;
+    }
+    for (final x in withdrawn) {
+      final k = key(x.at);
+      if (k <= last) outBy[k] = (outBy[k] ?? 0) + x.amount;
+    }
+    final out = <SavingsMonth>[];
+    int balance = savedAmount;
+    for (int k = last; k >= start; k--) {
+      out.add(SavingsMonth(DateTime(k ~/ 12, k % 12 + 1), inBy[k] ?? 0, outBy[k] ?? 0, balance < 0 ? 0 : balance));
+      balance = balance - (inBy[k] ?? 0) + (outBy[k] ?? 0);
+    }
+    return out.reversed.toList();
+  }
+}
+
+/// What the app writes for savings goals (.claude/FINANCE-DIRECT-FIRESTORE.md
+/// 3.6). Each plan is the whole batch; each blocker is the `FinanceErrors`
+/// key of why the user cannot do it now (null when they can).
+abstract final class SavingsWrites {
+  static Timestamp _ts(DateTime d) => Timestamp.fromDate(_day(d));
+
+  // ── Checks ────────────────────────────────────────────────────────────
+
+  static String? inviteBlocker(SavingsGoal g, SavingsConfig cfg, String uid, String inviteeUid) {
+    if (g.ownerId != uid) return 'permission_denied';
+    if (!g.isActive) return 'invalid_state';
+    if (!cfg.groupGoals) return 'invalid_state';
+    if (inviteeUid == uid) return 'invite_self';
+    if (g.memberIds.contains(inviteeUid) || g.invitedIds.contains(inviteeUid)) return 'already_member';
+    if (g.memberIds.length + g.invitedIds.length >= cfg.maxMembers) return 'group_full';
+    return null;
+  }
+
+  static String? respondBlocker(SavingsGoal g, SavingsConfig? cfg, String uid, bool accept) {
+    if (!g.invitedIds.contains(uid)) return 'invalid_state';
+    if (accept && !g.isActive) return 'invalid_state';
+    if (accept && cfg != null && g.memberIds.length >= cfg.maxMembers) return 'group_full';
+    return null;
+  }
+
+  static String? contributeBlocker(SavingsGoal g, String uid, int amount) {
+    if (!g.memberIds.contains(uid)) return 'permission_denied';
+    if (!g.isActive) return 'invalid_state';
+    if (amount <= 0) return 'amount_out_of_range';
+    return null;
+  }
+
+  /// A solo goal's owner withdraws directly; a group goal's member asks.
+  /// Early (before the target) only when the configuration allows it.
+  static String? withdrawBlocker(SavingsGoal g, SavingsConfig? cfg, String uid, int amount) {
+    if (!g.memberIds.contains(uid)) return 'permission_denied';
+    if (g.isSolo && g.ownerId != uid) return 'permission_denied';
+    if (!g.isActive) return 'invalid_state';
+    if (amount <= 0) return 'amount_out_of_range';
+    if (amount > g.savedAmount) return 'insufficient_funds';
+    if (g.remaining > 0 && cfg?.earlyWithdrawal != true) return 'withdrawal_not_allowed';
+    return null;
+  }
+
+  static String? cancelBlocker(SavingsGoal g, String uid) {
+    if (g.ownerId != uid) return 'permission_denied';
+    if (!g.isActive) return 'invalid_state';
+    return null;
+  }
+
+  // ── Plans ─────────────────────────────────────────────────────────────
+
+  /// The goal (`active`, nothing saved; the creator is owner and only
+  /// member; [invitedIds] are the accounts found by email) and its empty
+  /// ledger account `goal_{goalId}`.
+  static List<FinanceWrite> create({
+    required String goalId,
+    required String uid,
+    required String name,
+    required String purpose,
+    required String description,
+    required int targetAmount,
+    required String currency,
+    DateTime? deadline,
+    String? frequency,
+    int? scheduleAmount,
+    List<String> invitedIds = const [],
+  }) {
+    final String account = FinanceLedger.goalAccountId(goalId);
+    return [
+      FinanceWrite('savings_goals/$goalId', 'create', {
+        'id': goalId,
+        'ownerId': uid,
+        'memberIds': [uid],
+        'invitedIds': invitedIds.where((i) => i != uid).toSet().toList(),
+        'name': name,
+        'purpose': purpose,
+        'description': description,
+        'currency': currency,
+        'targetAmount': targetAmount,
+        'savedAmount': 0,
+        if (deadline != null) 'deadline': _ts(deadline),
+        if (frequency != null && (scheduleAmount ?? 0) > 0) 'schedule': {'frequency': frequency, 'amount': scheduleAmount},
+        'status': 'active',
+        'accountId': account,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+      FinanceWrite('financial_accounts/$account', 'create', {
+        ...FinanceLedger.poolFields('savings_goal', goalId, currency, memberIds: [uid]),
+        'id': account,
+        'balance': 0,
+        'normalSide': 'credit',
+        'status': 'active',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+    ];
+  }
+
+  /// The owner's changes: name, description, deadline, schedule (cleared with [clearSchedule]).
+  static List<FinanceWrite> update(String goalId, {String? name, String? description, DateTime? deadline, String? frequency, int? scheduleAmount, bool clearSchedule = false}) => [
+        FinanceWrite('savings_goals/$goalId', 'update', {
+          'name': ?name,
+          'description': ?description,
+          if (deadline != null) 'deadline': _ts(deadline),
+          if (clearSchedule) 'schedule': FieldValue.delete(),
+          if (!clearSchedule && frequency != null && (scheduleAmount ?? 0) > 0) 'schedule': {'frequency': frequency, 'amount': scheduleAmount},
+          'updatedAt': FieldValue.serverTimestamp(),
+        }),
+      ];
+
+  static List<FinanceWrite> invite(String goalId, String inviteeUid) => [
+        FinanceWrite('savings_goals/$goalId', 'update', {
+          'invitedIds': FieldValue.arrayUnion([inviteeUid]),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }),
+      ];
+
+  /// The invitee leaves `invitedIds`, and joins `memberIds` on [accept].
+  static List<FinanceWrite> respond(String goalId, String uid, bool accept) => [
+        FinanceWrite('savings_goals/$goalId', 'update', {
+          'invitedIds': FieldValue.arrayRemove([uid]),
+          if (accept) 'memberIds': FieldValue.arrayUnion([uid]),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }),
+      ];
+
+  /// A member's contribution: `savings_contributions/{contributionId}`
+  /// (`succeeded`, create-only: a retry finds it), the posting
+  /// `wallet or platform (gateway) -> goal_{id}` (`savings_contribution`),
+  /// and `savedAmount` += amount (with `lastTxId`, the posting that moved it).
+  static FinancePosting contribute({
+    required SavingsGoal goal,
+    required String contributionId,
+    required String uid,
+    required int amount,
+    required String walletId,
+    required FinanceFunding funding,
+    String? txId,
+    String? reference,
+  }) {
+    final p = FinanceLedger.plan(
+      type: 'savings_contribution',
+      currency: goal.currency,
+      from: funding.isWallet ? walletId : FinanceLedger.platformId(goal.currency),
+      to: goal.accountId,
+      amount: amount,
+      userIds: [uid],
+      sourceKind: 'savings_contributions',
+      sourceId: contributionId,
+      createdBy: uid,
+      funding: funding,
+      description: goal.name,
+      txId: txId,
+      reference: reference,
+    );
+    return FinancePosting(p.txId, p.reference, [
+      FinanceWrite('savings_contributions/$contributionId', 'create', {
+        'id': contributionId,
+        'goalId': goal.id,
+        'userId': uid,
+        'amount': amount,
+        'currency': goal.currency,
+        'status': 'succeeded',
+        'reference': p.reference,
+        'txId': p.txId,
+        'funding': funding.isWallet ? 'wallet' : 'gateway',
+        if (!funding.isWallet) 'gateway': funding.toMap(),
+        'createdAt': FieldValue.serverTimestamp(),
+      }),
+      ...p.writes,
+      FinanceWrite('savings_goals/${goal.id}', 'update', {
+        'savedAmount': FieldValue.increment(amount),
+        'lastTxId': p.txId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+    ]);
+  }
+
+  /// A withdrawal of [amount]. Solo goal: `completed` at once, with the
+  /// posting `goal_{id} -> the owner's wallet` (`savings_withdrawal`; the
+  /// wallet is created when [walletExists] is false) and `savedAmount` -=
+  /// amount. Group goal: `requested`, no money moves: the admin decides by
+  /// the group's rules and posts it (`completed`) or refuses (`rejected`).
+  static FinancePosting withdraw({
+    required SavingsGoal goal,
+    required String withdrawalId,
+    required String uid,
+    required int amount,
+    required String walletId,
+    required bool walletExists,
+    String reason = '',
+    String? txId,
+    String? reference,
+  }) {
+    final record = <String, dynamic>{
+      'id': withdrawalId,
+      'goalId': goal.id,
+      'userId': uid,
+      'amount': amount,
+      'currency': goal.currency,
+      'destination': {'method': 'wallet', 'accountId': walletId},
+      if (reason.trim().isNotEmpty) 'reason': reason.trim(),
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+    if (!goal.isSolo) {
+      return FinancePosting('', '', [
+        FinanceWrite('savings_withdrawals/$withdrawalId', 'create', {...record, 'status': 'requested'}),
+      ]);
+    }
+    final p = FinanceLedger.plan(
+      type: 'savings_withdrawal',
+      currency: goal.currency,
+      from: goal.accountId,
+      to: walletId,
+      amount: amount,
+      newAccounts: walletExists ? const {} : {walletId: FinanceLedger.walletFields(uid, goal.currency)},
+      userIds: [uid],
+      sourceKind: 'savings_withdrawals',
+      sourceId: withdrawalId,
+      createdBy: uid,
+      description: goal.name,
+      txId: txId,
+      reference: reference,
+    );
+    return FinancePosting(p.txId, p.reference, [
+      FinanceWrite('savings_withdrawals/$withdrawalId', 'create', {
+        ...record,
+        'status': 'completed',
+        'reference': p.reference,
+        'txId': p.txId,
+        'completedAt': FieldValue.serverTimestamp(),
+      }),
+      ...p.writes,
+      FinanceWrite('savings_goals/${goal.id}', 'update', {
+        'savedAmount': FieldValue.increment(-amount),
+        'lastTxId': p.txId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+    ]);
+  }
+
+  /// The owner cancels. Solo goal: the whole balance ([goal.savedAmount])
+  /// goes back to the owner's wallet (`savings_withdrawal`, source the goal)
+  /// and the goal is `cancelled`. Group goal: `cancellation_requested`; the
+  /// admin returns the funds and closes it.
+  static FinancePosting cancel({required SavingsGoal goal, required String uid, required String walletId, required bool walletExists, String? txId, String? reference}) {
+    if (!goal.isSolo) {
+      return FinancePosting('', '', [
+        FinanceWrite('savings_goals/${goal.id}', 'update', {
+          'status': 'cancellation_requested',
+          'cancellationRequestedBy': uid,
+          'cancellationRequestedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }),
+      ]);
+    }
+    final int balance = goal.savedAmount;
+    if (balance <= 0) {
+      return FinancePosting('', '', [
+        FinanceWrite('savings_goals/${goal.id}', 'update', {
+          'status': 'cancelled',
+          'cancelledAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }),
+      ]);
+    }
+    final p = FinanceLedger.plan(
+      type: 'savings_withdrawal',
+      currency: goal.currency,
+      from: goal.accountId,
+      to: walletId,
+      amount: balance,
+      newAccounts: walletExists ? const {} : {walletId: FinanceLedger.walletFields(uid, goal.currency)},
+      userIds: [uid],
+      sourceKind: 'savings_goals',
+      sourceId: goal.id,
+      createdBy: uid,
+      description: goal.name,
+      txId: txId,
+      reference: reference,
+    );
+    return FinancePosting(p.txId, p.reference, [
+      ...p.writes,
+      FinanceWrite('savings_goals/${goal.id}', 'update', {
+        'status': 'cancelled',
+        'savedAmount': FieldValue.increment(-balance),
+        'lastTxId': p.txId,
+        'cancelledAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+    ]);
+  }
+}
+
+/// What the app writes for tontines (.claude/FINANCE-DIRECT-FIRESTORE.md
+/// 3.7). Ids are deterministic where a document must exist once: member
+/// `{tontineId}_{uid}`, cycle `{tontineId}_{n}`, contribution
+/// `{cycleId}_{uid}`, payout `{cycleId}`.
+abstract final class TontineWrites {
+  static String memberId(String tontineId, String uid) => '${tontineId}_$uid';
+  static String cycleId(String tontineId, int number) => '${tontineId}_$number';
+  static String contributionId(String cycleId, String uid) => '${cycleId}_$uid';
+  static String payoutId(String cycleId) => cycleId;
+
+  static Timestamp _ts(DateTime d) => Timestamp.fromDate(_day(d));
+
+  // ── Checks ────────────────────────────────────────────────────────────
+
+  /// Joining or creating: refused while the user is restricted for tontines.
+  static String? restrictionBlocker(Map<String, dynamic>? user) => FinanceRestriction.blocks(user, FinanceRestriction.tontines) ? 'finance_restricted' : null;
+
+  /// [members]: the tontine's member documents.
+  static String? inviteBlocker(Tontine t, String uid, String inviteeUid, List<Map<String, dynamic>> members) {
+    if (!t.isAdmin(uid)) return 'permission_denied';
+    if (!t.isForming) return 'invalid_state';
+    if (inviteeUid == uid) return 'invite_self';
+    final existing = members.where((m) => m['userId'] == inviteeUid).firstOrNull;
+    final String status = existing?['status']?.toString() ?? '';
+    if (status == 'active' || status == 'invited') return 'already_member';
+    if (status == 'restricted' || status == 'removed') return 'permission_denied';
+    final int taken = members.where((m) => m['status'] == 'active' || m['status'] == 'invited').length;
+    if (taken >= t.membersLimit) return 'group_full';
+    return null;
+  }
+
+  /// Paying [cycle] (the cycle document): an active member of an active
+  /// tontine, while the cycle collects.
+  static String? contributeBlocker(Tontine t, Map<String, dynamic> cycle, String uid) {
+    if (!t.memberIds.contains(uid)) return 'permission_denied';
+    if (!t.isActive || cycle['status'] != 'collecting' || cycle['tontineId'] != t.id) return 'invalid_state';
+    return null;
+  }
+
+  /// Who may approve [payout]: an admin, while it awaits approval, never
+  /// the beneficiary for their own payout (another admin approves it; when
+  /// they are the only admin, Spideli does: `payout_self_approval`).
+  static String? approveBlocker(Tontine t, Map<String, dynamic> payout, String uid) {
+    if (!t.isAdmin(uid)) return 'permission_denied';
+    if (payout['status'] != 'pending_approval' || payout['tontineId'] != t.id) return 'invalid_state';
+    if (payout['beneficiaryUserId'] == uid) return 'payout_self_approval';
+    return null;
+  }
+
+  /// Whether the beneficiary of [payout] is the tontine's only admin (the
+  /// payout then waits for Spideli's approval).
+  static bool waitsForSpideli(Tontine t, Map<String, dynamic> payout) => t.adminIds.length <= 1 && t.adminIds.contains(payout['beneficiaryUserId']);
+
+  // ── Plans ─────────────────────────────────────────────────────────────
+
+  /// The tontine (`forming`; the creator is its admin and first member),
+  /// the creator's member document (admin, active, position 1) and the
+  /// empty pot account `tontine_{tontineId}`.
+  static List<FinanceWrite> create({
+    required String tontineId,
+    required String uid,
+    required String displayName,
+    required String email,
+    required String name,
+    required String description,
+    required String rules,
+    required int contributionAmount,
+    required String currency,
+    required String frequency,
+    required int membersLimit,
+    required String payoutOrderMethod,
+    required DateTime startDate,
+  }) {
+    final String pot = FinanceLedger.tontineAccountId(tontineId);
+    return [
+      FinanceWrite('tontines/$tontineId', 'create', {
+        'id': tontineId,
+        'name': name,
+        'description': description,
+        'rules': rules,
+        'currency': currency,
+        'contributionAmount': contributionAmount,
+        'frequency': frequency,
+        'membersLimit': membersLimit,
+        'payoutOrderMethod': payoutOrderMethod,
+        'startDate': _ts(startDate),
+        'status': 'forming',
+        'adminIds': [uid],
+        'memberIds': [uid],
+        'currentCycle': 0,
+        'potAccountId': pot,
+        'createdBy': uid,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+      FinanceWrite('tontine_members/${memberId(tontineId, uid)}', 'create', {
+        'id': memberId(tontineId, uid),
+        'tontineId': tontineId,
+        'tontineName': name,
+        'userId': uid,
+        'displayName': displayName,
+        'email': email,
+        'role': 'admin',
+        'status': 'active',
+        'payoutPosition': 1,
+        'joinedAt': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      }),
+      FinanceWrite('financial_accounts/$pot', 'create', {
+        ...FinanceLedger.poolFields('tontine_pot', tontineId, currency),
+        'id': pot,
+        'balance': 0,
+        'normalSide': 'credit',
+        'status': 'active',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+    ];
+  }
+
+  /// The invitee's member document, `invited`, carrying the terms so the
+  /// invitee can read them before joining (they cannot read the tontine).
+  /// [again]: the document exists (a declined invitation): it is updated.
+  static List<FinanceWrite> invite({
+    required Tontine t,
+    required String inviterUid,
+    required String inviterName,
+    required String inviteeUid,
+    required String inviteeName,
+    required String inviteeEmail,
+    bool again = false,
+  }) =>
+      [
+        FinanceWrite('tontine_members/${memberId(t.id, inviteeUid)}', again ? 'update' : 'create', {
+          'id': memberId(t.id, inviteeUid),
+          'tontineId': t.id,
+          'tontineName': t.name,
+          'userId': inviteeUid,
+          'displayName': inviteeName,
+          'email': inviteeEmail,
+          'role': 'member',
+          'status': 'invited',
+          'invitedBy': inviterUid,
+          'invitedByName': inviterName,
+          'contributionAmount': t.contributionAmount,
+          'currency': t.currency,
+          'frequency': t.frequency,
+          'membersLimit': t.membersLimit,
+          if (t.startDate != null) 'startDate': _ts(t.startDate!),
+          'rules': t.rules,
+          'payoutOrderMethod': t.payoutOrderMethod,
+          'invitedAt': FieldValue.serverTimestamp(),
+          if (!again) 'createdAt': FieldValue.serverTimestamp(),
+        }),
+      ];
+
+  /// The invitee's answer: own member document `active` (and `memberIds`
+  /// += self) or `declined`.
+  static List<FinanceWrite> respond(String tontineId, String uid, bool accept) => [
+        FinanceWrite('tontine_members/${memberId(tontineId, uid)}', 'update', {
+          'status': accept ? 'active' : 'declined',
+          'respondedAt': FieldValue.serverTimestamp(),
+          if (accept) 'joinedAt': FieldValue.serverTimestamp(),
+        }),
+        if (accept)
+          FinanceWrite('tontines/$tontineId', 'update', {
+            'memberIds': FieldValue.arrayUnion([uid]),
+            'updatedAt': FieldValue.serverTimestamp(),
+          }),
+      ];
+
+  /// The payout order (fixed): each active member's `payoutPosition`.
+  static List<FinanceWrite> payoutOrder(String tontineId, List<String> order) => [
+        for (final (i, uid) in order.indexed)
+          FinanceWrite('tontine_members/${memberId(tontineId, uid)}', 'update', {
+            'payoutPosition': i + 1,
+          }),
+      ];
+
+  /// A random payout order (drawn on the device when a `random` tontine starts).
+  static List<String> draw(List<String> memberIds, [Random? random]) => [...memberIds]..shuffle(random ?? Random.secure());
+
+  /// The first due date: the agreed start date, or today when it has passed.
+  static DateTime firstDue(Tontine t, DateTime now) {
+    final DateTime today = _day(now);
+    final DateTime? start = t.startDate == null ? null : _day(t.startDate!);
+    return start == null || start.isBefore(today) ? today : start;
+  }
+
+  /// Start: `active`, cycle 1, and one cycle per member in [order] (the
+  /// beneficiaries, first to last): `{tontineId}_{n}` with its due date,
+  /// beneficiary, expected pot (`contributionAmount` × members) and nothing
+  /// collected; the first `collecting`, the others `upcoming`. [drawn]: the
+  /// order was drawn on the device and is saved on the member documents.
+  static List<FinanceWrite> start({required Tontine t, required List<String> order, required DateTime now, bool drawn = false}) {
+    final DateTime first = firstDue(t, now);
+    final bool moved = t.startDate == null || !_day(t.startDate!).isAtSameMomentAs(first);
+    final dates = <DateTime>[first];
+    while (dates.length < order.length) {
+      dates.add(Frequency.next(dates.last, t.frequency));
+    }
+    final int expected = t.contributionAmount * order.length;
+    return [
+      if (drawn) ...payoutOrder(t.id, order),
+      FinanceWrite('tontines/${t.id}', 'update', {
+        'status': 'active',
+        'currentCycle': 1,
+        'nextDueAt': _ts(first),
+        if (moved) 'startDate': _ts(first),
+        'startedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+      for (final (i, uid) in order.indexed)
+        FinanceWrite('tontine_cycles/${cycleId(t.id, i + 1)}', 'create', {
+          'id': cycleId(t.id, i + 1),
+          'tontineId': t.id,
+          'number': i + 1,
+          'dueDate': _ts(dates[i]),
+          'beneficiaryUserId': uid,
+          'expectedAmount': expected,
+          'collectedAmount': 0,
+          'currency': t.currency,
+          'status': i == 0 ? 'collecting' : 'upcoming',
+          'createdAt': FieldValue.serverTimestamp(),
+        }),
+    ];
+  }
+
+  /// A member's contribution to the collecting [cycle]: the contribution
+  /// `{cycleId}_{uid}` (`paid`, create-only: once per cycle and member), the
+  /// posting `wallet or platform (gateway) -> tontine_{id}`
+  /// (`tontine_contribution`) and `collectedAmount` += amount. The
+  /// contribution that completes the pot also sets the cycle
+  /// `payout_pending` and creates its payout `{cycleId}` (`pending_approval`).
+  static FinancePosting contribute({
+    required Tontine t,
+    required Map<String, dynamic> cycle,
+    required String uid,
+    required String walletId,
+    required FinanceFunding funding,
+    String? txId,
+    String? reference,
+  }) {
+    final String cid = cycle['id'].toString();
+    final int number = _int(cycle['number']);
+    final int amount = t.contributionAmount;
+    final int expected = _int(cycle['expectedAmount']);
+    final bool completes = expected > 0 && _int(cycle['collectedAmount']) + amount >= expected;
+    final String id = contributionId(cid, uid);
+    final p = FinanceLedger.plan(
+      type: 'tontine_contribution',
+      currency: t.currency,
+      from: funding.isWallet ? walletId : FinanceLedger.platformId(t.currency),
+      to: t.potAccountId,
+      amount: amount,
+      userIds: [uid],
+      sourceKind: 'tontine_contributions',
+      sourceId: id,
+      createdBy: uid,
+      funding: funding,
+      description: t.name,
+      txId: txId,
+      reference: reference,
+    );
+    return FinancePosting(p.txId, p.reference, [
+      FinanceWrite('tontine_contributions/$id', 'create', {
+        'id': id,
+        'tontineId': t.id,
+        'cycleId': cid,
+        'cycleNumber': number,
+        'userId': uid,
+        'amount': amount,
+        'currency': t.currency,
+        'status': 'paid',
+        'reference': p.reference,
+        'txId': p.txId,
+        'funding': funding.isWallet ? 'wallet' : 'gateway',
+        if (!funding.isWallet) 'gateway': funding.toMap(),
+        'paidAt': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      }),
+      ...p.writes,
+      FinanceWrite('tontine_cycles/$cid', 'update', {
+        'collectedAmount': FieldValue.increment(amount),
+        if (completes) 'status': 'payout_pending',
+        'lastTxId': p.txId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+      if (completes)
+        FinanceWrite('tontine_payouts/${payoutId(cid)}', 'create', {
+          'id': payoutId(cid),
+          'tontineId': t.id,
+          'cycleId': cid,
+          'cycleNumber': number,
+          'beneficiaryUserId': cycle['beneficiaryUserId'],
+          'amount': expected,
+          'currency': t.currency,
+          'status': 'pending_approval',
+          'createdAt': FieldValue.serverTimestamp(),
+        }),
+    ]);
+  }
+
+  /// An admin approves [payout]: the posting `tontine_{id} -> the
+  /// beneficiary's wallet` (`tontine_payout`; the wallet is created when
+  /// [walletExists] is false), the payout `paid`, its cycle `paid`, and the
+  /// next cycle `collecting` with `currentCycle` + 1 — or, after the last
+  /// cycle, the tontine `completed`.
+  static FinancePosting approvePayout({
+    required Tontine t,
+    required Map<String, dynamic> payout,
+    required Map<String, dynamic>? nextCycle,
+    required String approverUid,
+    required String walletId,
+    required bool walletExists,
+    String? txId,
+    String? reference,
+  }) {
+    final String pid = payout['id'].toString();
+    final String cid = (payout['cycleId'] ?? pid).toString();
+    final String beneficiary = payout['beneficiaryUserId'].toString();
+    final int number = _int(payout['cycleNumber']);
+    final p = FinanceLedger.plan(
+      type: 'tontine_payout',
+      currency: t.currency,
+      from: t.potAccountId,
+      to: walletId,
+      amount: _int(payout['amount']),
+      newAccounts: walletExists ? const {} : {walletId: FinanceLedger.walletFields(beneficiary, t.currency)},
+      userIds: [beneficiary],
+      sourceKind: 'tontine_payouts',
+      sourceId: pid,
+      createdBy: approverUid,
+      description: t.name,
+      txId: txId,
+      reference: reference,
+    );
+    return FinancePosting(p.txId, p.reference, [
+      ...p.writes,
+      FinanceWrite('tontine_payouts/$pid', 'update', {
+        'status': 'paid',
+        'txId': p.txId,
+        'reference': p.reference,
+        'approvedBy': approverUid,
+        'approvedAt': FieldValue.serverTimestamp(),
+        'paidAt': FieldValue.serverTimestamp(),
+      }),
+      FinanceWrite('tontine_cycles/$cid', 'update', {
+        'status': 'paid',
+        'paidAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+      if (nextCycle != null) ...[
+        FinanceWrite('tontine_cycles/${nextCycle['id']}', 'update', {
+          'status': 'collecting',
+          'updatedAt': FieldValue.serverTimestamp(),
+        }),
+        FinanceWrite('tontines/${t.id}', 'update', {
+          'currentCycle': number + 1,
+          if (nextCycle['dueDate'] != null) 'nextDueAt': nextCycle['dueDate'],
+          'updatedAt': FieldValue.serverTimestamp(),
+        }),
+      ] else
+        FinanceWrite('tontines/${t.id}', 'update', {
+          'status': 'completed',
+          'nextDueAt': FieldValue.delete(),
+          'completedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }),
+    ]);
+  }
+
+  /// A dispute raised by an active member (`open`), for the admins.
+  static List<FinanceWrite> dispute({
+    required String disputeId,
+    required String tontineId,
+    required String uid,
+    required String subject,
+    required String description,
+    String? againstUserId,
+  }) =>
+      [
+        FinanceWrite('tontine_disputes/$disputeId', 'create', {
+          'id': disputeId,
+          'tontineId': tontineId,
+          'raisedBy': uid,
+          if (againstUserId != null && againstUserId.isNotEmpty) 'againstUserId': againstUserId,
+          'subject': subject,
+          'description': description,
+          'status': 'open',
+          'createdAt': FieldValue.serverTimestamp(),
+        }),
+      ];
 }

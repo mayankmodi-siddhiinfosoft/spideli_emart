@@ -6,11 +6,12 @@ import 'package:customer/screen_ui/finance/finance_security.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/finance_widgets.dart';
 import 'package:customer/screen_ui/finance/transactions_screen.dart' show activeWallets;
-import 'package:customer/service/finance_group_service.dart';
+import 'package:customer/service/finance_payment_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/service/finance_transfer_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
+import 'package:customer/utils/finance_payment_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:customer/utils/finance_transfer_rules.dart';
 import 'package:flutter/material.dart';
@@ -32,28 +33,43 @@ const EdgeInsets paymentFormPadding = EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg
 Color paymentAmountColor(BuildContext context, String? status, num signed) =>
     PaymentFlow.ended(status) ? DsColors.of(context).textMuted : finAmountColor(context, signed);
 
-/// "Total paid" only once the money moved (completed, refunded after);
-/// "Total" while it is to confirm, waiting, or when it never moved.
-String paymentTotalLabel(String status) => (status == 'completed' || status == 'reversed' ? "Total paid" : "Total").tr;
+/// "Total paid" once the money moved (paid, processing, completed,
+/// refunded after); "Total" when it never moved.
+String paymentTotalLabel(String status) => (const ['processing', 'completed', 'reversed'].contains(status) ? "Total paid" : "Total").tr;
 
-/// Where a transfer or bill payment is in [PaymentFlow.steps]. An ended
-/// payment (failed, cancelled, expired, refunded) shows how it ended; a
-/// refund follows a completed payment, the other ends stop after the
-/// request. Null for a status outside the flow.
+/// Where a transfer or bill payment is in [DirectFlow.steps]: paid, then
+/// processing (until Spideli pays it out), then completed. An ended
+/// payment (failed, cancelled, refunded) shows how it ended after the
+/// payment. Null for a status outside the flow.
 FinTrack? paymentTrack(String status) {
-  const steps = PaymentFlow.steps;
-  final labels = [for (final s in steps) PaymentFlow.label(s).tr];
-  if (PaymentFlow.ended(status)) {
-    return FinTrack(steps: labels, current: status == 'reversed' ? steps.length - 1 : 0, ended: true, endedLabel: PaymentFlow.label(status).tr);
-  }
+  const steps = DirectFlow.steps;
+  final labels = [for (final s in steps) DirectFlow.label(s).tr];
+  if (PaymentFlow.ended(status)) return FinTrack(steps: labels, current: 1, ended: true, endedLabel: PaymentFlow.label(status).tr);
   final int at = steps.indexOf(status);
   return at < 0 ? null : FinTrack(steps: labels, current: at);
 }
 
-/// The confirmation step: the server's verified figures, then identity
-/// check (above the threshold) and the payment method. The request's
-/// expiry is re-checked when it comes, so Confirm never stays active on an
-/// expired price; [onRestart] then leads back to the form.
+/// Runs [action] behind the loader; a refusal becomes its translated
+/// message (the reasons the app raises itself included, [FinancePayErrors]).
+Future<bool> financeDirectRun(Future<void> Function() action, {String? success}) async {
+  ShowToastDialog.showLoader("Please wait...".tr);
+  try {
+    await action();
+    ShowToastDialog.closeLoader();
+    if (success != null) ShowToastDialog.showToast(success.tr);
+    return true;
+  } catch (e) {
+    ShowToastDialog.closeLoader();
+    ShowToastDialog.showToast(FinancePayErrors.messageKey(e is FinanceException ? e.reason : null).tr);
+    return false;
+  }
+}
+
+/// The confirmation step: the figures the app computed from the admin's
+/// settings, then the identity check (above the threshold) and the payment
+/// method. With [expiresAt] the price is re-checked when it comes, so
+/// Confirm never stays active on an expired price; [onRestart] then leads
+/// back to the form.
 class PaymentConfirmCard extends StatefulWidget {
   final List<(String, String)> lines;
   final int total;
@@ -276,7 +292,7 @@ class _Beneficiaries extends StatelessWidget {
       confirmLabel: "Remove".tr,
       destructive: true,
     );
-    if (ok) await FinanceUi.run(() => FinanceTransferService.deleteBeneficiary(b['id'].toString()));
+    if (ok) await financeDirectRun(() => FinanceTransferService.deleteBeneficiary(b['id'].toString()));
   }
 
   @override
@@ -531,24 +547,49 @@ class _TransferFormScreenState extends State<TransferFormScreen> {
     ];
   }
 
+  /// The recipient as stored on the transfer: a bank account with its
+  /// bank's name and its masked end for display.
+  Map<String, dynamic> _stored(Map<String, dynamic> r) {
+    if (widget.channel != TransferChannel.bank) return r;
+    final String account = r['accountNumber'].toString();
+    return {...r, 'bankName': _ch.banks.firstWhere((b) => b.code == r['bankCode']).name, 'accountMasked': FinanceDestination.mask(account)};
+  }
+
+  /// The name shown for an external recipient: the typed name, else the number.
+  String _externalName(Map<String, dynamic> r) {
+    final String typed = _name.text.trim();
+    if (typed.isNotEmpty) return typed;
+    return (r['holderName'] ?? r['number'] ?? '-').toString();
+  }
+
   Future<void> _continue() async {
     final recipient = _recipient;
     final int? amount = FinanceAmount.parse(_amount.text, _currency);
     if (recipient == null) return ShowToastDialog.showToast("Check the recipient details.".tr);
     if (amount == null || _amountProblem() != null) return ShowToastDialog.showToast("Check the amount.".tr);
     if (_toSelf) return ShowToastDialog.showToast("You cannot send money to yourself.".tr);
-    String? id;
-    final ok = await FinanceUi.run(() async {
-      id = await FinanceTransferService.create(
-        channel: widget.channel,
-        amount: amount,
-        currency: _currency,
-        recipient: recipient,
-        note: _note.text.trim(),
-        saveBeneficiary: _save,
-      );
-    });
-    if (ok && id != null) Get.off(() => TransferScreen(transferId: id!, config: widget.config));
+    TransferRecipient? found;
+    // An internal transfer goes to an existing Spideli account: find it and
+    // show its name before anything is paid.
+    if (widget.channel == TransferChannel.internal) {
+      final ok = await financeDirectRun(() async {
+        found = await FinanceTransferService.findRecipient(email: recipient['email']?.toString(), phone: recipient['phone']?.toString());
+      });
+      if (!ok || found == null) return;
+    }
+    final draft = TransferDraft(
+      channel: widget.channel,
+      currency: _currency,
+      amount: amount,
+      fee: _ch.fee.feeFor(amount, _currency),
+      recipient: _stored(recipient),
+      recipientName: found?.name ?? _externalName(recipient),
+      recipientId: found?.uid,
+      recipientToken: found?.fcmToken ?? '',
+      note: _note.text.trim(),
+      saveBeneficiary: _save,
+    );
+    if (mounted) Get.to(() => TransferConfirmScreen(config: widget.config, draft: draft));
   }
 
   /// The amount with its limits and, when the wallet can pay the transfer
@@ -626,7 +667,9 @@ class _TransferFormScreenState extends State<TransferFormScreen> {
             title: "Recipient".tr,
             top: 0,
             padding: paymentFormPadding,
-            footnote: internal ? "We check that this person has a Spideli account and show you their name before you confirm.".tr : null,
+            footnote: internal
+                ? "We check that this person has a Spideli account and show you their name before you confirm.".tr
+                : "Check the number: money sent to the wrong account may not be recoverable.".tr,
             children: [
               if (internal) ...[
                 DsSegmentedTabs(
@@ -701,14 +744,14 @@ class _TransferFormScreenState extends State<TransferFormScreen> {
           ),
           if (amountOk)
             FinSection(
-              title: "Estimate".tr,
-              footnote: "You see the exact fee and the recipient's name before you confirm.".tr,
+              title: "Summary".tr,
+              footnote: "You check everything, and the recipient's name, before you pay.".tr,
               children: [
                 FinRow("Amount".tr, FinanceMoney.format(amount, _currency)),
-                FinRow("Estimated fee".tr, fee == 0 ? "Free".tr : FinanceMoney.format(fee, _currency)),
+                FinRow("Fee".tr, fee == 0 ? "Free".tr : FinanceMoney.format(fee, _currency)),
                 if (ch.delay.isNotEmpty) FinRow("Delivery".tr, ch.delay),
                 Divider(height: DsSpace.lg, color: c.divider),
-                FinRow("Estimated total".tr, FinanceMoney.format(amount + fee, _currency), strong: true),
+                FinRow("Total".tr, FinanceMoney.format(amount + fee, _currency), strong: true),
               ],
             ),
         ],
@@ -717,9 +760,91 @@ class _TransferFormScreenState extends State<TransferFormScreen> {
   }
 }
 
+// ------------------------------------------------------------------ confirm
+
+/// The transfer to confirm, with the app's own figures: the recipient (a
+/// Spideli user's name as found in their account), the amount, the fee and
+/// the total; then the identity check above the threshold, and the payment.
+class TransferConfirmScreen extends StatefulWidget {
+  final TransferConfig config;
+  final TransferDraft draft;
+
+  const TransferConfirmScreen({super.key, required this.config, required this.draft});
+
+  @override
+  State<TransferConfirmScreen> createState() => _TransferConfirmScreenState();
+}
+
+class _TransferConfirmScreenState extends State<TransferConfirmScreen> {
+  TransferDraft get d => widget.draft;
+
+  List<(String, String)> get _lines => [
+        ("To".tr, d.recipientName),
+        if (d.detail.trim().isNotEmpty) ("Recipient details".tr, ltr(d.detail)),
+        ("Channel".tr, TransferChannel.label(d.channel).tr),
+        ("Amount".tr, FinanceMoney.format(d.amount, d.currency)),
+        ("Fee".tr, d.fee == 0 ? "Free".tr : FinanceMoney.format(d.fee, d.currency)),
+        if ((widget.config.channels[d.channel]?.delay ?? '').isNotEmpty) ("Delivery".tr, widget.config.channels[d.channel]!.delay),
+        if (d.note.isNotEmpty) ("Note".tr, d.note),
+      ];
+
+  Future<void> _confirm() async {
+    // Before anything is charged: a restricted account is told now.
+    if (!await financeDirectRun(() => FinancePaymentService.requireAllowed('transfers'))) return;
+    if (widget.config.needsReauth(d.amount, d.currency) && !await FinanceReauth.confirm()) return;
+    if (!mounted) return;
+    String? transferId;
+    await FinancePaySheet.show(
+      context,
+      title: "${"Send to".tr} ${d.recipientName}",
+      amount: d.total,
+      currency: d.currency,
+      methods: widget.config.sourceMethods,
+      submit: (payment) async {
+        final reply = await FinanceTransferService.send(widget.config, d, payment.funding);
+        transferId = reply['transferId']?.toString();
+        return reply;
+      },
+    );
+    if (transferId != null && mounted) Get.off(() => TransferScreen(transferId: transferId!, config: widget.config));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FinScaffold(
+      title: "Transfer".tr,
+      body: FinBody(children: [
+        FinHeader(
+          overline: TransferChannel.label(d.channel).tr,
+          title: FinanceMoney.format(d.total, d.currency),
+          subtitle: '${"To".tr} ${d.recipientName}',
+          icon: Icons.north_east_rounded,
+          below: d.internal
+              ? Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: DsBadge(label: "Spideli account found".tr, tone: DsTone.success, icon: Icons.verified_rounded, small: true),
+                )
+              : null,
+        ),
+        PaymentConfirmCard(
+          lines: _lines,
+          total: d.total,
+          currency: d.currency,
+          expiresAt: null,
+          confirmLabel: "Confirm and send".tr,
+          onConfirm: _confirm,
+          onCancel: () async => Get.back(),
+        ),
+        if (!d.internal) FinNotice("The money leaves your wallet now. Spideli Finance then sends it to the recipient; you can follow it here.".tr),
+      ]),
+    );
+  }
+}
+
 // ----------------------------------------------------------------- transfer
 
-/// One transfer: confirmation (sender), status and receipt.
+/// One transfer: status, details and receipt; the sender of an external
+/// transfer may ask to cancel it while Spideli has not taken it yet.
 class TransferScreen extends StatefulWidget {
   final String transferId;
   final TransferConfig config;
@@ -744,7 +869,6 @@ class TransferScreen extends StatefulWidget {
 class _TransferScreenState extends State<TransferScreen> {
   late Stream<Map<String, dynamic>?> _stream = FinanceTransferService.transfer(widget.transferId);
 
-  TransferConfig get config => widget.config;
   String get transferId => widget.transferId;
 
   @override
@@ -765,20 +889,6 @@ class _TransferScreenState extends State<TransferScreen> {
     );
   }
 
-  /// "Start again" after an expiry: the form of the same channel with the
-  /// recipient and the amount filled in (null when the channel is closed).
-  VoidCallback? _restart(Map<String, dynamic> t) {
-    final String channel = t['channel']?.toString() ?? '';
-    if (!config.channels.containsKey(channel)) return null;
-    return () => Get.off(() => TransferFormScreen(
-          config: config,
-          channel: channel,
-          beneficiary: t['recipient'] is Map ? {'recipient': t['recipient']} : null,
-          amount: FinanceSummary.intOf(t['amount']),
-          currency: t['currency']?.toString(),
-        ));
-  }
-
   Widget _body(BuildContext context, Map<String, dynamic> t) {
     final String status = t['status']?.toString() ?? '';
     final String cur = t['currency']?.toString() ?? '';
@@ -789,7 +899,7 @@ class _TransferScreenState extends State<TransferScreen> {
     final String counterpart = out ? (t['recipientName']?.toString() ?? '-') : (t['senderName']?.toString() ?? '-');
     final details = <(String, String)>[
       ((out ? "To" : "From").tr, counterpart),
-      if (out && TransferScreen.recipientDetail(t).trim().isNotEmpty) ("Recipient details".tr, TransferScreen.recipientDetail(t)),
+      if (out && TransferScreen.recipientDetail(t).trim().isNotEmpty) ("Recipient details".tr, ltr(TransferScreen.recipientDetail(t))),
       ("Channel".tr, TransferChannel.label(t['channel']?.toString() ?? '').tr),
       ("Amount".tr, m(out ? t['amount'] : (t['receiveAmount'] ?? t['amount']))),
       if (out) ("Fee".tr, FinanceSummary.intOf(t['fee']) == 0 ? "Free".tr : m(t['fee'])),
@@ -801,7 +911,7 @@ class _TransferScreenState extends State<TransferScreen> {
     final String reference = (t['reference'] ?? '').toString();
     final bool verified = out && t['recipientVerified'] == true;
     final track = paymentTrack(status);
-    final restart = out ? _restart(t) : null;
+    final bool cancelAsked = t['cancelRequested'] == true && status == 'processing';
     return FinBody(
       children: [
         FinHeader(
@@ -824,86 +934,58 @@ class _TransferScreenState extends State<TransferScreen> {
                   if (reason.isNotEmpty) DsInlineAlert(tone: FinStatus.tone(status), title: "Reason".tr, message: reason),
                 ]),
         ),
-        if (out && PaymentFlow.canConfirm(status, null, DateTime.now()))
-          PaymentConfirmCard(
-            lines: details,
-            total: total,
-            currency: cur,
-            expiresAt: FinanceGroupService.toDate(t['expiresAt']),
-            confirmLabel: "Confirm and send".tr,
-            onRestart: restart,
-            onConfirm: () async {
-              if (config.needsReauth(amount, cur) && !await FinanceReauth.confirm()) return;
-              if (!context.mounted) return;
-              await FinancePaySheet.show(
-                context,
-                title: "${"Send to".tr} $counterpart",
-                amount: total,
-                currency: cur,
-                methods: config.sourceMethods,
-                // One key per transfer and payment method, reused on a
-                // retry until the server accepts it.
-                submit: (p) async {
-                  final String intent = FinanceRequestKeys.intentOf('transfer.confirm', transferId, total, p);
-                  final reply = await FinanceTransferService.confirm(transferId, p, FinanceRequestKeys.of(intent));
-                  FinanceRequestKeys.done(intent);
-                  return reply;
-                },
+        if (track != null) FinSection(title: "Status".tr, padding: const EdgeInsets.all(DsSpace.lg), children: [track]),
+        if (out && status == 'processing')
+          FinNotice(
+            (cancelAsked
+                    ? "You asked to cancel this transfer. Spideli Finance refunds it if it was not sent yet."
+                    : "Your payment was received. Spideli Finance is sending the money; this page updates when it is done.")
+                .tr,
+            tone: cancelAsked ? DsTone.warning : DsTone.info,
+          ),
+        FinSection(
+          title: "Details".tr,
+          divided: true,
+          children: [
+            for (final (l, v) in details) FinRow(l, v),
+            if (out) FinRow(paymentTotalLabel(status), m(total), strong: true),
+            FinRow("Date".tr, FinanceUi.date(t['createdAt'])),
+            if (t['completedAt'] != null) FinRow("Completed on".tr, FinanceUi.date(t['completedAt'])),
+            if (reference.isNotEmpty) FinRow("Reference".tr, ltrRef(reference)),
+          ],
+        ),
+        if (TransferPlans.canRequestCancel(t, FinanceService.uid)) ...[
+          const DsGap(DsSpace.lg),
+          DsButton.ghost(
+            label: "Cancel this transfer".tr,
+            icon: Icons.close_rounded,
+            expand: true,
+            onPressed: () async {
+              final ok = await finConfirm(
+                title: "Cancel this transfer?".tr,
+                message: "Spideli Finance cancels it and refunds your wallet if the money was not sent yet.".tr,
+                lines: [("To".tr, counterpart), ("Total".tr, m(total))],
+                confirmLabel: "Cancel this transfer".tr,
+                destructive: true,
               );
+              if (ok) await financeDirectRun(() => FinanceTransferService.requestCancel(transferId), success: "Cancellation requested");
             },
-            onCancel: () async {
-              if (await FinanceUi.run(() => FinanceTransferService.cancel(transferId), success: "Transfer cancelled")) Get.back();
-            },
-          )
-        else ...[
-          if (track != null) FinSection(title: "Status".tr, padding: const EdgeInsets.all(DsSpace.lg), children: [track]),
-          if (out && status == 'pending')
-            FinNotice("Approve the payment on your phone if you are asked to. This page updates when the payment is confirmed.".tr),
-          if (status == 'expired' && restart != null)
-            FinNotice("This request expired. Start again to get an up-to-date price.".tr, tone: DsTone.warning, actionLabel: "Start again".tr, onAction: restart),
-          FinSection(
-            title: "Details".tr,
-            divided: true,
-            children: [
-              for (final (l, v) in details) FinRow(l, v),
-              if (out) FinRow(paymentTotalLabel(status), m(total), strong: true),
-              FinRow("Date".tr, FinanceUi.date(t['createdAt'])),
-              if (t['completedAt'] != null) FinRow("Completed on".tr, FinanceUi.date(t['completedAt'])),
-              if (reference.isNotEmpty) FinRow("Reference".tr, ltrRef(reference)),
+          ),
+        ],
+        if (status == 'completed' || status == 'reversed') ...[
+          const DsGap(FinSpace.section),
+          PaymentReceiptButton(
+            title: "Transfer receipt".tr,
+            reference: t['reference']?.toString() ?? t['id'].toString(),
+            lines: [
+              ("Reference".tr, t['reference']?.toString() ?? t['id'].toString()),
+              ("Status".tr, PaymentFlow.label(status).tr),
+              ("Date".tr, FinanceUi.date(t['completedAt'] ?? t['createdAt'])),
+              ((out ? "From" : "To").tr, out ? (t['senderName']?.toString() ?? '') : (t['recipientName']?.toString() ?? '')),
+              ...details,
+              if (out) ("Total paid".tr, m(total)),
             ],
           ),
-          if (out && PaymentFlow.canCancel(status)) ...[
-            const DsGap(DsSpace.lg),
-            DsButton.ghost(
-              label: "Cancel this transfer".tr,
-              icon: Icons.close_rounded,
-              expand: true,
-              onPressed: () async {
-                final ok = await finConfirm(
-                  title: "Cancel this transfer?".tr,
-                  lines: [("To".tr, counterpart), ("Total".tr, m(total))],
-                  confirmLabel: "Cancel this transfer".tr,
-                  destructive: true,
-                );
-                if (ok) await FinanceUi.run(() => FinanceTransferService.cancel(transferId), success: "Transfer cancelled");
-              },
-            ),
-          ],
-          if (status == 'completed' || status == 'reversed') ...[
-            const DsGap(FinSpace.section),
-            PaymentReceiptButton(
-              title: "Transfer receipt".tr,
-              reference: t['reference']?.toString() ?? t['id'].toString(),
-              lines: [
-                ("Reference".tr, t['reference']?.toString() ?? t['id'].toString()),
-                ("Status".tr, PaymentFlow.label(status).tr),
-                ("Date".tr, FinanceUi.date(t['completedAt'] ?? t['createdAt'])),
-                ((out ? "From" : "To").tr, out ? (t['senderName']?.toString() ?? '') : (t['recipientName']?.toString() ?? '')),
-                ...details,
-                if (out) ("Total paid".tr, m(total)),
-              ],
-            ),
-          ],
         ],
       ],
     );

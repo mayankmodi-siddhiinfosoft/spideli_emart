@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:customer/constant/constant.dart';
+import 'package:customer/service/finance_ledger.dart';
+import 'package:customer/service/finance_summary_service.dart';
+import 'package:customer/utils/finance_kyc_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:customer/utils/finance_statement_pdf.dart';
 import 'package:customer/utils/shared_latest.dart';
@@ -59,16 +63,58 @@ abstract final class FinanceService {
     return KycSettings.parse(snap.data());
   }
 
-  /// The user's verification state mirrored on users/{uid} by the server.
-  static Stream<Map<String, dynamic>> myProfile() =>
-      _shared(_profiles, () => _db.collection('users').doc(_uid).snapshots().map((s) => s.data() ?? <String, dynamic>{}));
+  /// The user's profile (users/{uid}) with `kycStatus` set to the status of
+  /// the latest verification application (.claude/FINANCE-DIRECT-FIRESTORE.md
+  /// 3.1: `users.kycStatus` is the admin's mirror; `kycLevel`, which says the
+  /// user is verified, stays the admin's). When the applications cannot be
+  /// read, the mirrored value is kept.
+  static Stream<Map<String, dynamic>> myProfile() => _shared(
+        _profiles,
+        () => _withKycStatus(_db.collection('users').doc(_uid).snapshots().map((s) => s.data() ?? <String, dynamic>{}), myApplications()),
+      );
+
+  static Stream<Map<String, dynamic>> _withKycStatus(Stream<Map<String, dynamic>> profile, Stream<List<Map<String, dynamic>>> applications) {
+    late final StreamController<Map<String, dynamic>> out;
+    StreamSubscription<Map<String, dynamic>>? users;
+    StreamSubscription<List<Map<String, dynamic>>>? apps;
+    Map<String, dynamic>? user;
+    List<Map<String, dynamic>>? latest;
+    bool appsFailed = false;
+    void emit() {
+      final u = user;
+      if (u == null || (latest == null && !appsFailed)) return;
+      out.add(appsFailed ? u : {...u, 'kycStatus': KycWrites.latestStatus(latest!)});
+    }
+
+    out = StreamController<Map<String, dynamic>>(
+      onListen: () {
+        users = profile.listen((v) {
+          user = v;
+          emit();
+        }, onError: out.addError);
+        apps = applications.listen((v) {
+          latest = v;
+          appsFailed = false;
+          emit();
+        }, onError: (Object _) {
+          appsFailed = true;
+          emit();
+        });
+      },
+      onCancel: () async {
+        await users?.cancel();
+        await apps?.cancel();
+      },
+    );
+    return out.stream;
+  }
 
   /// The user's applications, newest first (sorted here: one equality filter, no extra index).
   static Stream<List<Map<String, dynamic>>> myApplications() => _db
       .collection('kyc_applications')
       .where('userId', isEqualTo: _uid)
       .snapshots()
-      .map((s) => s.docs.map((d) => d.data()).toList()
+      .map((s) => s.docs.map((d) => {...d.data(), 'id': d.id}).toList()
         ..sort((a, b) => _millis(b['createdAt']).compareTo(_millis(a['createdAt']))));
 
   /// An application's documents. Filtered on userId too: the rules only let
@@ -78,7 +124,7 @@ abstract final class FinanceService {
       .where('applicationId', isEqualTo: applicationId)
       .where('userId', isEqualTo: _uid)
       .snapshots()
-      .map((s) => s.docs.map((d) => d.data()).toList());
+      .map((s) => s.docs.map((d) => {...d.data(), 'id': d.id}).toList()..sort((a, b) => _millis(a['createdAt']).compareTo(_millis(b['createdAt']))));
 
   /// The review history, oldest first.
   static Stream<List<Map<String, dynamic>>> history(String applicationId) => _db
@@ -88,36 +134,140 @@ abstract final class FinanceService {
       .snapshots()
       .map((s) => s.docs.map((d) => d.data()).toList()..sort((a, b) => _millis(a['at']).compareTo(_millis(b['at']))));
 
-  static Future<String> createApplication({required String level, required String accountType}) async {
-    final r = await _call('kycCreateApplication', {'level': level, 'accountType': accountType});
-    return r['applicationId'].toString();
-  }
+  // The writes below are the user's own (FINANCE-DIRECT-FIRESTORE.md 3.1),
+  // planned by KycWrites and checked by the security rules; the reviewer's
+  // decisions are the admin panel's.
 
-  static Future<void> updateApplication(String applicationId, {Map<String, String>? personal, Map<String, String>? business}) =>
-      _call('kycUpdateApplication', {
-        'applicationId': applicationId,
-        if (personal != null) 'personal': personal,
-        if (business != null) 'business': business,
+  /// Starts an application (`draft`) of [level]. One open application at a
+  /// time: a retry after a lost answer finds the one it created.
+  static Future<String> createApplication({required String level, required String accountType}) => _kycWrite(() async {
+        final String uid = _signedIn();
+        final settings = await kycSettings();
+        if (settings == null) throw const FinanceException('kyc_not_configured');
+        final apps = await _db.collection('kyc_applications').where('userId', isEqualTo: uid).get();
+        final same = apps.docs.where((d) => d.data()['level'] == level && d.data()['accountType'] == accountType && KycStatus.isOpen(d.data()['status']?.toString()));
+        if (same.isNotEmpty) return same.first.id;
+        final String? blocker = KycWrites.createBlocker([for (final d in apps.docs) d.data()], settings, level, accountType);
+        if (blocker != null) throw FinanceException(blocker);
+        final String id = _db.collection('kyc_applications').doc().id;
+        await _kycCommit(KycWrites.create(applicationId: id, uid: uid, level: level, accountType: accountType));
+        return id;
       });
 
-  /// Uploads [file] to kyc/{uid}/{applicationId}/ (the only path the rules
-  /// allow; never overwritten) and registers it. The server re-checks the
-  /// file's type and size.
-  static Future<void> uploadDocument({required String applicationId, required String type, required String side, required File file}) async {
-    final String path = 'kyc/$_uid/$applicationId/$type-$side-${DateTime.now().millisecondsSinceEpoch}.jpg';
-    await FirebaseStorage.instance.ref(path).putFile(file, SettableMetadata(contentType: 'image/jpeg'));
-    await _call('kycRegisterDocument', {'applicationId': applicationId, 'type': type, 'side': side, 'storagePath': path});
+  /// Saves the details form while the application is editable.
+  static Future<void> updateApplication(String applicationId, {Map<String, String>? personal, Map<String, String>? business}) => _kycWrite(() async {
+        final app = await _kycApplication(applicationId);
+        if (!KycStatus.ownerMayEdit(app['status']?.toString())) throw const FinanceException('kyc_not_editable');
+        await _kycCommit(KycWrites.updateDetails(applicationId: applicationId, personal: personal, business: business));
+      });
+
+  /// Uploads [file] to `kyc/{uid}/{applicationId}/` (the only path the
+  /// Storage rules allow; never overwritten), then records it
+  /// (`kyc_documents`, `uploaded`) and supersedes the earlier uploads of the
+  /// same type and side, in one batch.
+  static Future<void> uploadDocument({required String applicationId, required String type, required String side, required File file}) => _kycWrite(() async {
+        final String uid = _signedIn();
+        final app = await _kycApplication(applicationId);
+        if (!KycStatus.ownerMayEdit(app['status']?.toString())) throw const FinanceException('kyc_not_editable');
+        final settings = await kycSettings();
+        if (settings == null) throw const FinanceException('kyc_not_configured');
+        if (!(settings.documentSides[type] ?? const <String>[]).contains(side)) throw const FinanceException('kyc_invalid_transition');
+        const String contentType = 'image/jpeg';
+        if (!settings.allowedContentTypes.contains(contentType)) throw const FinanceException('kyc_file_type');
+        final int size = await file.length();
+        if (size > settings.maxFileBytes) throw const FinanceException('kyc_file_size');
+        final int millis = DateTime.now().millisecondsSinceEpoch;
+        final String path = KycWrites.storagePath(uid, applicationId, type, side, millis);
+        try {
+          await FirebaseStorage.instance.ref(path).putFile(file, SettableMetadata(contentType: contentType));
+        } on FirebaseException catch (e) {
+          throw FinanceException(e.code == 'unauthorized' ? 'permission_denied' : 'kyc_file_missing');
+        }
+        final existing = await _db.collection('kyc_documents').where('applicationId', isEqualTo: applicationId).where('userId', isEqualTo: uid).get();
+        final String id = KycWrites.documentId(applicationId, type, side, millis);
+        await _kycCommit(KycWrites.registerDocument(
+          documentId: id,
+          applicationId: applicationId,
+          uid: uid,
+          type: type,
+          side: side,
+          storagePath: path,
+          contentType: contentType,
+          size: size,
+          revision: (app['revision'] as num?)?.toInt() ?? 1,
+          supersede: KycWrites.toSupersede([for (final d in existing.docs) {...d.data(), 'id': d.id}], type, side, except: id),
+        ));
+      });
+
+  /// Sends the application for review once the details and every required
+  /// document are there (checked again here from what is stored).
+  static Future<void> submit(String applicationId) => _kycWrite(() async {
+        final String uid = _signedIn();
+        final app = await _kycApplication(applicationId);
+        // Already sent (a retry after a lost answer).
+        if (app['status'] == KycStatus.submitted) return;
+        final settings = await kycSettings();
+        if (settings == null) throw const FinanceException('kyc_not_configured');
+        final docs = await _db.collection('kyc_documents').where('applicationId', isEqualTo: applicationId).where('userId', isEqualTo: uid).get();
+        final refs = [for (final d in docs.docs) KycDocumentRef('${d.data()['type']}', '${d.data()['side']}', '${d.data()['status']}')];
+        final String? blocker = KycWrites.submitBlocker(app, settings, refs);
+        if (blocker != null) throw FinanceException(blocker);
+        await _kycCommit(KycWrites.submit(
+          applicationId: applicationId,
+          uid: uid,
+          reviewId: _db.collection('kyc_reviews').doc().id,
+          revision: (app['revision'] as num?)?.toInt() ?? 1,
+        ));
+      });
+
+  /// Starts a `rejected` application again as its next revision (`draft`).
+  static Future<void> reopen(String applicationId) => _kycWrite(() async {
+        final String uid = _signedIn();
+        final app = await _kycApplication(applicationId);
+        // Already started again (a retry after a lost answer).
+        if (app['status'] == KycStatus.draft) return;
+        if (app['status'] != KycStatus.rejected) throw const FinanceException('kyc_invalid_transition');
+        final others = await _db.collection('kyc_applications').where('userId', isEqualTo: uid).get();
+        if (others.docs.any((d) => d.id != applicationId && KycStatus.isOpen(d.data()['status']?.toString()))) throw const FinanceException('kyc_application_open');
+        await _kycCommit(KycWrites.reopen(
+          applicationId: applicationId,
+          uid: uid,
+          reviewId: _db.collection('kyc_reviews').doc().id,
+          revision: (app['revision'] as num?)?.toInt() ?? 1,
+        ));
+      });
+
+  static String _signedIn() => _uid.isEmpty ? throw const FinanceException('sign_in_required') : _uid;
+
+  /// One of the user's own applications, as stored now.
+  static Future<Map<String, dynamic>> _kycApplication(String applicationId) async {
+    final snap = await _db.collection('kyc_applications').doc(applicationId).get();
+    final data = snap.data();
+    if (data == null || data['userId'] != _uid) throw const FinanceException('kyc_invalid_transition');
+    return {...data, 'id': snap.id};
   }
 
-  static Future<void> submit(String applicationId) => _call('kycSubmit', {'applicationId': applicationId});
+  static Future<void> _kycCommit(List<FinanceWrite> writes) async {
+    final batch = _db.batch();
+    FinanceLedger.apply(batch, writes, db: _db);
+    await batch.commit();
+  }
 
-  static Future<void> reopen(String applicationId) => _call('kycReopen', {'applicationId': applicationId});
+  /// A write the security rules refuse becomes `permission_denied`.
+  static Future<T> _kycWrite<T>(Future<T> Function() action) async {
+    try {
+      return await action();
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') throw const FinanceException('permission_denied');
+      rethrow;
+    }
+  }
 
   // ── Ledger ────────────────────────────────────────────────────────────
 
   /// The user's accounts (wallets per currency, ...).
   static Stream<List<Map<String, dynamic>>> myAccounts() => _shared(
-      _accounts, () => _db.collection('financial_accounts').where('userId', isEqualTo: _uid).snapshots().map((s) => s.docs.map((d) => d.data()).toList()));
+      _accounts, () => _db.collection('financial_accounts').where('userId', isEqualTo: _uid).snapshots().map((s) => s.docs.map((d) => {...d.data(), 'id': d.id}).toList()));
 
   /// One page of the user's transactions, newest first; [type] and the date
   /// range are applied by Firestore (indexed).
@@ -139,31 +289,25 @@ abstract final class FinanceService {
 
   // ── Dashboard ─────────────────────────────────────────────────────────
 
-  /// `finance_summaries/{uid}`: the totals the server maintains for the
-  /// dashboard; null until the server has written one.
-  static Stream<FinanceSummary?> summary() => _shared(
-      _summaries,
-      () => _db
-          .collection('finance_summaries')
-          .doc(_uid)
-          .snapshots()
-          .map((s) => FinanceSummary.parse(s.data(), toDate: (v) => v is Timestamp ? v.toDate() : null)));
+  /// The dashboard totals, worked out on the device from the user's own
+  /// records (FinanceSummaryService); null while the user has none.
+  static Stream<FinanceSummary?> summary() => FinanceSummaryService.stream();
 
   // The dashboard's live records (profile, wallets, summary) are read on many
   // screens and tabs at once: one shared subscription per signed-in user,
   // the latest value handed to each new reader (SharedLatest).
   static final Map<String, SharedLatest<Map<String, dynamic>>> _profiles = {};
   static final Map<String, SharedLatest<List<Map<String, dynamic>>>> _accounts = {};
-  static final Map<String, SharedLatest<FinanceSummary?>> _summaries = {};
 
   static Stream<T> _shared<T>(Map<String, SharedLatest<T>> cache, Stream<T> Function() open) => cache.putIfAbsent(_uid, () => SharedLatest<T>(open)).stream;
 
   /// Reads the profile, the accounts and the summary again after one of them
   /// failed (the Retry of the dashboard).
   static void retry() {
-    for (final cache in <Map<String, SharedLatest<dynamic>>>[_profiles, _accounts, _summaries]) {
+    for (final cache in <Map<String, SharedLatest<dynamic>>>[_profiles, _accounts]) {
       cache[_uid]?.retry();
     }
+    FinanceSummaryService.retry();
   }
 
   /// The most transactions one statement holds (the period is narrowed beyond).

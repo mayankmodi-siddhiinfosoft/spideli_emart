@@ -25,8 +25,9 @@ abstract final class FinanceUi {
 
   static Widget kycBadge(String? status) => DsBadge(label: KycStatus.label(status).tr, tone: tone(KycStatus.tone(status)));
 
-  /// A Firestore timestamp as a DateTime, or null.
-  static DateTime? toDate(dynamic value) => value is Timestamp ? value.toDate() : null;
+  /// A Firestore timestamp (or a DateTime: totals worked out on the device)
+  /// as a DateTime, or null.
+  static DateTime? toDate(dynamic value) => value is Timestamp ? value.toDate() : (value is DateTime ? value : null);
 
   /// Date and time: "05 Oct 2026, 14:30", from a Timestamp or a DateTime.
   static String date(dynamic value) {

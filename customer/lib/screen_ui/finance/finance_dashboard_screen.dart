@@ -266,7 +266,7 @@ class FinanceInsightsTab extends StatelessWidget {
                   icon: Icons.query_stats_rounded,
                   iconTone: DsTone.brand,
                   title: "Markets".tr,
-                  subtitle: "Economic indicators and exchange rates".tr,
+                  subtitle: "Indicators, exchange rates, stocks, bonds, IPOs and news".tr,
                   chevron: true,
                   onTap: () => Get.to(() => const IntelligenceScreen(view: IntelligenceView.markets)),
                 ),

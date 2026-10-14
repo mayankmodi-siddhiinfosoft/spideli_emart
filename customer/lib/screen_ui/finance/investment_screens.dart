@@ -132,8 +132,9 @@ class InvestmentsScreen extends StatefulWidget {
 class _InvestmentsScreenState extends State<InvestmentsScreen> {
   int _tab = 0;
 
-  /// finance_summaries/{uid}.investments, for the hero and the allocation.
-  late Stream<Map<String, dynamic>?> _portfolio = FinanceInvestmentService.portfolio();
+  /// The investment totals and allocation of the summary the app computes
+  /// from the user's holdings, for the hero and the allocation.
+  late Stream<FinanceSummary?> _portfolio = FinanceInvestmentService.portfolio();
 
   @override
   Widget build(BuildContext context) {
@@ -156,7 +157,7 @@ class _InvestmentsScreenState extends State<InvestmentsScreen> {
           // when investments are off (or their settings could not be read).
           body: waiting != null || cfg == null
               ? FinBody(children: [?waiting, if (!st.loading) const _FundingAndMarkets()])
-              : StreamBuilder<Map<String, dynamic>?>(
+              : StreamBuilder<FinanceSummary?>(
                   stream: _portfolio,
                   builder: (context, portfolio) => FinBody(
                     children: [
@@ -224,10 +225,10 @@ class _FundingAndMarkets extends StatelessWidget {
 
 // ---------------------------------------------------------------- portfolio
 
-/// The focal point: the portfolio value and the server's totals. Shown once
-/// the user has a portfolio (finance_summaries/{uid}.investments).
+/// The focal point: the portfolio value and its totals, worked out from the
+/// user's holdings. Shown once the user has a portfolio.
 class _PortfolioHero extends StatelessWidget {
-  final AsyncSnapshot<Map<String, dynamic>?> snap;
+  final AsyncSnapshot<FinanceSummary?> snap;
   final VoidCallback onRetry;
 
   const _PortfolioHero({required this.snap, required this.onRetry});
@@ -241,19 +242,19 @@ class _PortfolioHero extends StatelessWidget {
         child: DsErrorState(message: "Could not load your portfolio value.".tr, compact: true, onRetry: onRetry),
       );
     }
-    final p = snap.data;
-    final String cur = p?['currency']?.toString() ?? '';
+    final Map<String, int>? p = snap.data?.investments;
+    final String cur = snap.data?.currency ?? '';
     if (p == null || cur.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: FinSpace.section),
       child: FinHero(
         label: "Portfolio value".tr,
-        amount: FinanceMoney.format(FinanceSummary.intOf(p['currentValuation']), cur),
+        amount: FinanceMoney.format(p['currentValuation'] ?? 0, cur),
         caption: "At the latest unit prices. Unrealized gains become final only when you redeem.".tr,
         stats: [
-          FinHeroStat("Invested".tr, FinanceMoney.format(FinanceSummary.intOf(p['investedCapital']), cur)),
-          FinHeroStat("Unrealized".tr, FinanceMoney.signed(FinanceSummary.intOf(p['unrealizedGains']), cur)),
-          FinHeroStat("Realized".tr, FinanceMoney.signed(FinanceSummary.intOf(p['realizedGains']), cur)),
+          FinHeroStat("Invested".tr, FinanceMoney.format(p['investedCapital'] ?? 0, cur)),
+          FinHeroStat("Unrealized".tr, FinanceMoney.signed(p['unrealizedGains'] ?? 0, cur)),
+          FinHeroStat("Realized".tr, FinanceMoney.signed(p['realizedGains'] ?? 0, cur)),
         ],
       ),
     );
@@ -264,7 +265,7 @@ class _Portfolio extends StatefulWidget {
   final InvestmentConfig config;
 
   /// The portfolio summary, read once by the screen for the hero and here.
-  final Map<String, dynamic>? portfolio;
+  final FinanceSummary? portfolio;
   final VoidCallback onBrowse;
 
   const _Portfolio({required this.config, required this.portfolio, required this.onBrowse});
@@ -279,8 +280,8 @@ class _PortfolioState extends State<_Portfolio> {
   @override
   Widget build(BuildContext context) {
     final p = widget.portfolio;
-    final String cur = p?['currency']?.toString() ?? '';
-    final shares = p == null || cur.isEmpty ? const <AllocationShare>[] : Allocation.shares(p['allocation'] is Map ? Map<String, dynamic>.from(p['allocation'] as Map) : null);
+    final String cur = p?.currency ?? '';
+    final shares = p == null || cur.isEmpty ? const <AllocationShare>[] : Allocation.shares(p.allocation);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1068,20 +1069,23 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
       amount: amount,
       currency: f.currency,
       methods: widget.config.paymentMethods,
-      submit: (payment) async {
-        // One key per intended investment, kept across retries (a timeout
-        // after the server took it must not invest twice).
-        final intent = FinanceRequestKeys.intentOf('investmentSubscribe', f.id, amount, payment);
-        final reply = await FinanceInvestmentService.subscribe(
-          fundId: f.id,
-          amount: amount,
-          currency: f.currency,
-          termsVersion: f.termsVersion,
-          signatureName: _signature.text.trim(),
-          payment: payment,
-          requestKey: FinanceRequestKeys.of(intent),
+      submit: (FinanceFunding funding) async {
+        // One order per intended investment, whatever pays it, kept across
+        // retries (a lost answer after it was written must not invest twice).
+        final reply = await FinanceRequestKeys.send(
+          'investmentSubscribe',
+          f.id,
+          amount,
+          const {},
+          (key) => FinanceInvestmentService.subscribe(
+            fund: f,
+            amount: amount,
+            termsVersion: f.termsVersion,
+            signatureName: _signature.text.trim(),
+            funding: funding,
+            requestKey: key,
+          ),
         );
-        FinanceRequestKeys.done(intent);
         sent = true;
         return reply;
       },
@@ -1169,7 +1173,8 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
               ],
             ),
             FinNotice(
-              "Units are bought at the unit price of the processing date, after your payment is confirmed. The final number of units can differ from this estimate.".tr,
+              "Spideli buys your units at the fund's next unit price after your payment. The final number of units can differ from this estimate.".tr,
+              title: "Units allocated by Spideli".tr,
             ),
           ],
           FinSection(
@@ -1315,7 +1320,8 @@ class HoldingScreen extends StatelessWidget {
   }
 }
 
-/// Redeeming part or all of a holding: what, the estimate, then where to receive it.
+/// Redeeming part or all of a holding: what, the estimate, then where to
+/// receive it (Spideli executes it at the next unit price).
 Future<void> _redeem(BuildContext context, Holding h, Fund f, InvestmentConfig config) async {
   bool full = !f.partialRedemption;
   int? amount;
@@ -1375,13 +1381,18 @@ Future<void> _redeem(BuildContext context, Holding h, Fund f, InvestmentConfig c
     currency: h.currency,
     methods: config.paymentMethods,
     payout: true,
-    submit: (destination) async {
-      // One key per intended redemption, kept across retries. A full
+    // Where the user chose to receive it (the wallet or a saved number).
+    submit: (FinancePayment payment) {
+      final Map<String, dynamic> destination = payment.destination ?? FinanceDestination.wallet();
+      // One order per intended redemption, kept across retries. A full
       // redemption is one operation whatever its value at the time.
-      final intent = FinanceRequestKeys.intentOf(full ? 'investmentRedeemAll' : 'investmentRedeem', h.fundId, full ? 0 : gross, destination);
-      final reply = await FinanceInvestmentService.redeem(fundId: h.fundId, full: full, amount: amount, destination: destination, requestKey: FinanceRequestKeys.of(intent));
-      FinanceRequestKeys.done(intent);
-      return reply;
+      return FinanceRequestKeys.send(
+        full ? 'investmentRedeemAll' : 'investmentRedeem',
+        h.fundId,
+        full ? 0 : gross,
+        const {},
+        (key) => FinanceInvestmentService.redeem(holding: h, fund: f, full: full, amount: amount, destination: Map<String, dynamic>.of(destination), requestKey: key),
+      );
     },
   );
 }
@@ -1585,6 +1596,10 @@ class InvestmentOrderScreen extends StatelessWidget {
               : null,
         ),
         if ((o['reason'] ?? '').toString().isNotEmpty) FinNotice(o['reason'].toString(), title: "Reason".tr, tone: FinStatus.tone(status)),
+        if (!redemption && (status == 'paid' || status == 'processing'))
+          FinNotice("Spideli allocates your units at the fund's next unit price. This page updates when it is done.".tr, title: "Units allocated by Spideli".tr, tone: DsTone.info),
+        if (redemption && (status == 'submitted' || status == 'processing'))
+          FinNotice("Spideli sells your units at the fund's next unit price, then pays you. This page updates at each step.".tr, tone: DsTone.info),
         FinSection(
           title: "Details".tr,
           divided: true,

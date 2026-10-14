@@ -20,10 +20,12 @@ import 'package:intl/intl.dart' show DateFormat;
 /// spacing (as the transfer and bill forms).
 const EdgeInsets _formPadding = EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, 0);
 
-/// Spideli Finance > Identity verification (KYC). The server
-/// (finance/functions kyc) owns every status: this screen shows the user's
-/// application live and sends what the user enters. Requirements come from
-/// `platform_settings/kyc`.
+/// Spideli Finance > Identity verification (KYC). The user's own steps
+/// (start, details, documents, submit, start again) are written to Firestore
+/// directly (FinanceService, .claude/FINANCE-DIRECT-FIRESTORE.md 3.1) and
+/// checked by the security rules; the review and its decisions are the admin
+/// panel's. The status shown is that of the latest application, live.
+/// Requirements come from `platform_settings/kyc`.
 class KycScreen extends StatefulWidget {
   const KycScreen({super.key});
 
@@ -267,8 +269,8 @@ class _ApplicationView extends StatefulWidget {
 class _ApplicationViewState extends State<_ApplicationView> {
   late Stream<List<Map<String, dynamic>>> _docs = FinanceService.documents(_id);
 
-  /// The form on screen. A new revision from the server (after a review)
-  /// gets a new form, filled with what the server now holds.
+  /// The form on screen. A new revision (after a review) gets a new form,
+  /// filled with what is now stored.
   GlobalKey<_DetailsFormState> _form = GlobalKey();
 
   String get _id => widget.app['id'].toString();
@@ -346,8 +348,8 @@ class _ApplicationViewState extends State<_ApplicationView> {
   }
 }
 
-/// Personal (and business) details. The values are sent to the server, which
-/// keeps only the fields it knows.
+/// Personal (and business) details. Only the known fields are stored
+/// (KycWrites.clean).
 class _DetailsForm extends StatefulWidget {
   final Map<String, dynamic> app;
 
@@ -384,8 +386,8 @@ class _DetailsFormState extends State<_DetailsForm> with AutomaticKeepAliveClien
   @override
   bool get wantKeepAlive => true;
 
-  /// The required fields still empty in [app] as the server holds it (before
-  /// the form is on screen), translated.
+  /// The required fields still empty in [app] as stored (before the form is
+  /// on screen), translated.
   static List<String> missingIn(Map<String, dynamic> app) {
     String of(String group, String f) => (((app[group] as Map?) ?? const {})[f] ?? '').toString().trim();
     return [

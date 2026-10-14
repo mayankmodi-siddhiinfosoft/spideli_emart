@@ -3,6 +3,7 @@ import 'package:customer/screen_ui/auth_screens/widgets/auth_shell.dart';
 import 'package:customer/screen_ui/location_enable_screens/location_permission_screen.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
+import 'package:customer/utils/social_sign_in.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,7 +25,7 @@ class SignUpScreen extends StatelessWidget {
         final t = context.dsText;
         final l = context.dsLayout;
         final type = controller.type.value;
-        final isSocial = type == "google" || type == "apple";
+        final isSocial = type == "google" || type == "apple" || type == "linkedin";
         final isMobile = type == "mobileNumber";
         final hidePasswords = isSocial || isMobile;
         final passwordHidden = controller.passwordVisible.value;
@@ -181,7 +182,7 @@ class SignUpScreen extends StatelessWidget {
               size: DsButtonSize.lg,
               expand: true,
               onPressed: () {
-                if (controller.type.value == "google" || controller.type.value == "apple" || controller.type.value == "mobileNumber") {
+                if (controller.type.value == "google" || controller.type.value == "apple" || controller.type.value == "linkedin" || controller.type.value == "mobileNumber") {
                   if (controller.firstNameEditingController.value.text.trim().isEmpty) {
                     ShowToastDialog.showToast("Please enter first name".tr);
                   } else if (controller.lastNameEditingController.value.text.trim().isEmpty) {
@@ -222,6 +223,8 @@ class SignUpScreen extends StatelessWidget {
               icon: Icon(Icons.smartphone_rounded, size: 20, color: c.textPrimary),
               onPressed: () => Get.to(() => const MobileLoginScreen()),
             ),
+            // Only when the admin turned LinkedIn on, and not once signed in.
+            if (!isSocial && !isMobile) LinkedInSignInButton(onPressed: controller.signUpWithLinkedIn),
           ],
         );
       },

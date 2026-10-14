@@ -1,14 +1,19 @@
 /// Spideli Finance: online insurance, the pure rules the screens use
-/// (.claude/FINANCE-APP-CONTRACT.md section 13). Unit tested in
-/// test/finance_insurance_rules_test.dart.
+/// (.claude/FINANCE-APP-CONTRACT.md section 13) and the writes of each step
+/// (.claude/FINANCE-DIRECT-FIRESTORE.md section 3.10). Unit tested in
+/// test/finance_insurance_rules_test.dart and
+/// test/finance_insurance_direct_test.dart.
 ///
-/// The INSURER (through the server's verified integration) decides quotes,
-/// premiums, activation, renewals, cancellations and claim decisions. The
-/// premium computed here is a SIMULATION from the product's published rating;
-/// the binding premium is the insurer's quote.
+/// The INSURER (through the Spideli admin) decides quotes, premiums,
+/// activation, renewals, cancellations and claim decisions: the app writes
+/// requests. The premium computed here is a SIMULATION from the product's
+/// published rating; the binding premium is the insurer's quote.
 library;
 
 import 'dart:math' as math;
+
+import 'package:cloud_firestore/cloud_firestore.dart' show FieldValue, Timestamp;
+import 'package:customer/service/finance_ledger.dart';
 
 int _int(dynamic v) => v is num ? v.round() : int.tryParse('${v ?? ''}') ?? 0;
 
@@ -357,11 +362,231 @@ abstract final class PolicyActions {
 
   static bool canSetAutoRenew(String? s) => covered(s);
 
-  static bool canRenew(String? s, int renewalPremium) => s == 'renewal_due' && renewalPremium > 0;
+  /// Not again once the renewal is paid ([requested]: `renewalRequestedAt`).
+  static bool canRenew(String? s, int renewalPremium, {bool requested = false}) => s == 'renewal_due' && renewalPremium > 0 && !requested;
 
   static bool premiumPayable(String? s) => s == 'due' || s == 'overdue' || s == 'failed';
 
   static bool canRespondToClaim(String? s) => s == 'info_requested';
 
   static bool canWithdrawClaim(String? s) => s == 'submitted' || s == 'under_review' || s == 'info_requested';
+}
+
+/// The writes of each insurance step (.claude/FINANCE-DIRECT-FIRESTORE.md
+/// section 3.10), as data. Payments carry their posting to the platform
+/// (`insurance_premium`) in the same batch.
+abstract final class InsuranceWrites {
+  static Object get _now => FieldValue.serverTimestamp();
+
+  /// Midnight of [d] (a day without its time), as a Firestore timestamp.
+  static Timestamp day(DateTime d) => Timestamp.fromDate(DateTime(d.year, d.month, d.day));
+
+  /// A quote request, `insurance_quotes/{id}` `requested`. The admin prices
+  /// it with the insurer (`quoted`: `premium`, `installmentAmount`,
+  /// `validUntil`, `terms`, `termsVersion`, `coverEnd`, cover, documents) or
+  /// sets `rejected` with `reason`.
+  static List<FinanceWrite> requestQuote({
+    required String id,
+    required String uid,
+    required InsuranceProduct product,
+    required Map<String, dynamic> answers,
+    required String frequency,
+    required DateTime coverStart,
+  }) =>
+      [
+        FinanceWrite('insurance_quotes/$id', 'create', {
+          'id': id,
+          'userId': uid,
+          'productId': product.id,
+          'productName': product.name,
+          'partnerName': product.partnerName,
+          'category': product.category,
+          'currency': product.currency,
+          'answers': answers,
+          'frequency': frequency,
+          'coverStart': day(coverStart),
+          'termMonths': product.termMonths,
+          'status': 'requested',
+          'createdAt': _now,
+          'updatedAt': _now,
+        }),
+      ];
+
+  /// `quoted -> declined` by the user.
+  static List<FinanceWrite> declineQuote(String quoteId) => [
+        FinanceWrite('insurance_quotes/$quoteId', 'update', {'status': 'declined', 'declinedAt': _now, 'updatedAt': _now}),
+      ];
+
+  /// The policy of an accepted quote has the quote's id (one per quote).
+  static String policyIdOf(String quoteId) => quoteId;
+
+  /// The first premium of a policy.
+  static String firstPremiumIdOf(String policyId) => '${policyId}_1';
+
+  /// Accepting quote [quoteId] ([quote]: its fields) under its terms, signed
+  /// with [signatureName], with the first premium paid by [posting]: the
+  /// quote `accepted`, the policy `pending_activation` and the premium
+  /// `paid`, in one batch. The admin activates the policy with the insurer
+  /// (`active`, `policyNumber`, documents), or `rejected` and a reversal.
+  static List<FinanceWrite> acceptQuote({
+    required String quoteId,
+    required Map<String, dynamic> quote,
+    required String uid,
+    required String signatureName,
+    required FinancePosting posting,
+    required Map<String, dynamic> paidWith,
+  }) {
+    final String policyId = policyIdOf(quoteId);
+    final String premiumId = firstPremiumIdOf(policyId);
+    const copied = [
+      'productId', 'productName', 'partnerName', 'category', 'currency', 'premium', 'frequency', 'installmentAmount', //
+      'deductible', 'coverages', 'coverStart', 'coverEnd', 'termsVersion',
+    ];
+    final int amount = (quote['installmentAmount'] ?? quote['premium']) is num ? ((quote['installmentAmount'] ?? quote['premium']) as num).round() : 0;
+    return [
+      FinanceWrite('insurance_quotes/$quoteId', 'update', {
+        'status': 'accepted',
+        'acceptedAt': _now,
+        'signatureName': signatureName,
+        'policyId': policyId,
+        'updatedAt': _now,
+      }),
+      FinanceWrite('insurance_policies/$policyId', 'create', {
+        'id': policyId,
+        'userId': uid,
+        'quoteId': quoteId,
+        for (final k in copied)
+          if (quote[k] != null) k: quote[k],
+        'signatureName': signatureName,
+        'acceptedAt': _now,
+        'autoRenew': false,
+        'status': 'pending_activation',
+        'createdAt': _now,
+        'updatedAt': _now,
+      }),
+      FinanceWrite('insurance_premiums/$premiumId', 'create', {
+        'id': premiumId,
+        'userId': uid,
+        'policyId': policyId,
+        'amount': amount,
+        'currency': quote['currency'],
+        'dueDate': _now,
+        'status': 'paid',
+        'paidAt': _now,
+        'txId': posting.txId,
+        'reference': posting.reference,
+        'payment': paidWith,
+        'createdAt': _now,
+        'updatedAt': _now,
+      }),
+      ...posting.writes,
+    ];
+  }
+
+  /// A premium `due | overdue | failed -> paid`, by [posting].
+  static List<FinanceWrite> payPremium({required String premiumId, required FinancePosting posting, required Map<String, dynamic> paidWith}) => [
+        FinanceWrite('insurance_premiums/$premiumId', 'update', {
+          'status': 'paid',
+          'paidAt': _now,
+          'txId': posting.txId,
+          'reference': posting.reference,
+          'payment': paidWith,
+          'updatedAt': _now,
+        }),
+        ...posting.writes,
+      ];
+
+  /// The renewal of a `renewal_due` policy, [amount] (its `renewalPremium`)
+  /// paid by [posting]: `renewalRequestedAt`. The admin renews it with the
+  /// insurer (`active`, new `coverEnd`), or refunds it.
+  static List<FinanceWrite> renew({required String policyId, required int amount, required FinancePosting posting, required Map<String, dynamic> paidWith}) => [
+        FinanceWrite('insurance_policies/$policyId', 'update', {
+          'renewalRequestedAt': _now,
+          'renewalPaidAmount': amount,
+          'renewalTxId': posting.txId,
+          'renewalReference': posting.reference,
+          'renewalPayment': paidWith,
+          'updatedAt': _now,
+        }),
+        ...posting.writes,
+      ];
+
+  static List<FinanceWrite> setAutoRenew(String policyId, bool autoRenew) => [
+        FinanceWrite('insurance_policies/$policyId', 'update', {'autoRenew': autoRenew, 'updatedAt': _now}),
+      ];
+
+  /// `active | renewal_due -> cancellation_requested`; the admin cancels it
+  /// with the insurer (`cancelled`, any refund) or restores [status].
+  static List<FinanceWrite> requestCancellation({required String policyId, required String status, required String reason}) => [
+        FinanceWrite('insurance_policies/$policyId', 'update', {
+          'status': 'cancellation_requested',
+          'statusBefore': status,
+          if (reason.isNotEmpty) 'cancellationReason': reason,
+          'cancellationRequestedAt': _now,
+          'updatedAt': _now,
+        }),
+      ];
+
+  /// A claim, `insurance_claims/{id}` `submitted`, its photos already in
+  /// Storage (`insurance_claims/{uid}/{id}/...`, [documents]). The admin
+  /// decides with the insurer (`under_review`, `info_requested` with the
+  /// question in `reason`, `approved`, `paid` with a posting, `rejected`).
+  static List<FinanceWrite> createClaim({
+    required String id,
+    required String uid,
+    required Map<String, dynamic> policy,
+    required DateTime incidentDate,
+    required String description,
+    required int amountClaimed,
+    required List<Map<String, dynamic>> documents,
+  }) =>
+      [
+        FinanceWrite('insurance_claims/$id', 'create', {
+          'id': id,
+          'userId': uid,
+          'policyId': policy['id'],
+          'policyNumber': policy['policyNumber'] ?? '',
+          'productName': policy['productName'] ?? '',
+          'currency': policy['currency'],
+          'incidentDate': day(incidentDate),
+          'description': description,
+          'amountClaimed': amountClaimed,
+          'documents': documents,
+          'status': 'submitted',
+          'createdAt': _now,
+          'updatedAt': _now,
+        }),
+      ];
+
+  /// The answer to the insurer's question: the claim back `under_review`
+  /// with the new photos, and the message in `insurance_claims/{id}/events`.
+  static List<FinanceWrite> respondToClaim({
+    required String claimId,
+    required String eventId,
+    required String uid,
+    required String message,
+    required List<Map<String, dynamic>> documents,
+  }) =>
+      [
+        FinanceWrite('insurance_claims/$claimId', 'update', {
+          'status': 'under_review',
+          if (documents.isNotEmpty) 'documents': FieldValue.arrayUnion(documents),
+          'respondedAt': _now,
+          'updatedAt': _now,
+        }),
+        FinanceWrite('insurance_claims/$claimId/events/$eventId', 'create', {
+          'id': eventId,
+          'type': 'customer_response',
+          'userId': uid,
+          'authorId': uid,
+          'message': message,
+          'documents': documents,
+          'createdAt': _now,
+        }),
+      ];
+
+  /// `submitted | under_review | info_requested -> withdrawn`.
+  static List<FinanceWrite> withdrawClaim(String claimId) => [
+        FinanceWrite('insurance_claims/$claimId', 'update', {'status': 'withdrawn', 'withdrawnAt': _now, 'updatedAt': _now}),
+      ];
 }

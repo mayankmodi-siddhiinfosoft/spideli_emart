@@ -191,6 +191,29 @@ abstract final class FinanceErrors {
     'kyc_file_missing': 'The upload did not finish. Please try again.',
     'kyc_invalid_transition': 'This action is no longer possible. Please refresh.',
     'insufficient_funds': 'Insufficient balance.',
+    // A write the security rules refused (not allowed, or no longer possible).
+    'permission_denied': 'This action is not allowed, or is no longer possible. Refresh and try again.',
+    'finance_restricted': 'Your Spideli Finance account is restricted for this service. Contact support.',
+    'state_changed': 'This changed in the meantime. Check the latest details and try again.',
+    'loan_no_voters': 'Your group has no other member to vote on your request.',
+    'agreement_outdated': 'The agreement changed. Please read the new version.',
+    'nothing_to_collect': 'There is nothing to collect yet.',
+    'watchlist_full': 'Your watchlist is full. Remove a security first.',
+    'invalid_state': 'This action is no longer possible. Please refresh.',
+    'invite_self': 'You cannot invite yourself.',
+    'already_member': 'This person is already a member or invited.',
+    'group_full': 'The group is full: nobody else can be invited.',
+    'withdrawal_not_allowed': 'This goal does not allow withdrawals before its target is reached.',
+    'payout_self_approval': 'You cannot approve your own payout: another administrator, or Spideli, approves it.',
+    'invitation_closed': 'This invitation is no longer open: the tontine is full or has started.',
+    'message_invalid': 'Write a message of 1 to 1000 characters.',
+    'payment_not_completed': 'The payment was not completed.',
+    'gateway_unavailable': 'This payment method cannot be used right now. Choose another one.',
+    'network': 'Could not reach Spideli Finance. Check your connection and try again.',
+    'service_unavailable': 'This service is not available right now.',
+    'rate_unavailable': 'No exchange rate is available for these currencies right now.',
+    'recipient_ambiguous': 'Several accounts use this number. Enter it with the country code.',
+    'not_cancellable': 'This transfer can no longer be cancelled.',
     'fund_closed': 'This fund does not accept new investments at the moment.',
     'terms_outdated': 'The fund terms changed. Please read and accept the new version.',
     'below_minimum': 'The amount is below the minimum.',
@@ -247,21 +270,32 @@ abstract final class LedgerView {
   }
 
   /// Translation key of a ledger transaction type.
-  static String typeLabel(String? type) {
-    switch (type) {
-      case 'deposit':
-        return 'Deposit';
-      case 'withdrawal':
-        return 'Withdrawal';
-      case 'transfer':
-        return 'Transfer';
-      case 'manual_adjustment':
-        return 'Adjustment';
-      case 'reversal':
-        return 'Reversal';
-    }
-    return 'Transaction';
-  }
+  static String typeLabel(String? type) => switch (type) {
+        'deposit' => 'Deposit',
+        'withdrawal' => 'Withdrawal',
+        'transfer' || 'transfer_out' => 'Transfer',
+        'manual_adjustment' => 'Adjustment',
+        'reversal' => 'Reversal',
+        'bill_payment' => 'Bill payment',
+        'card_funding' => 'Card top-up',
+        'card_fee' => 'Card fee',
+        'card_withdrawal' => 'Card withdrawal',
+        'savings_contribution' => 'Savings contribution',
+        'savings_withdrawal' => 'Savings withdrawal',
+        'tontine_contribution' => 'Tontine contribution',
+        'tontine_payout' => 'Tontine payout',
+        'loan_funding' => 'Loan funding',
+        'loan_disbursement' => 'Loan disbursement',
+        'loan_repayment' => 'Loan repayment',
+        'loan_lender_payout' => 'Loan repayment received',
+        'investment_subscription' => 'Investment',
+        'investment_redemption' => 'Investment redemption',
+        'insurance_premium' => 'Insurance premium',
+        'insurance_claim_payout' => 'Insurance claim payment',
+        'conversion' => 'Currency conversion',
+        'fee' => 'Fee',
+        _ => 'Transaction',
+      };
 }
 
 /// `finance_summaries/{uid}`: the dashboard totals, maintained by the SERVER
@@ -279,6 +313,9 @@ class FinanceSummary {
   final Map<String, int> last30Days;
   final List<MonthlyFlow> monthly;
 
+  /// The current value per asset class (minor units), for the allocation.
+  final Map<String, int> allocation;
+
   const FinanceSummary({
     required this.currency,
     this.updatedAt,
@@ -289,6 +326,7 @@ class FinanceSummary {
     this.insurance,
     this.last30Days = const {},
     this.monthly = const [],
+    this.allocation = const {},
   });
 
   static int _int(dynamic v) => v is num ? v.round() : int.tryParse('${v ?? ''}') ?? 0;
@@ -325,6 +363,7 @@ class FinanceSummary {
       insurance: _section(raw['insurance']),
       last30Days: last30 == null ? const {} : {for (final e in last30.entries) e.key: _int(e.value)},
       monthly: monthly.length > 12 ? monthly.sublist(monthly.length - 12) : monthly,
+      allocation: inv == null || inv['allocation'] is! Map ? const {} : {for (final e in (inv['allocation'] as Map).entries) e.key.toString(): _int(e.value)},
     );
   }
 
@@ -339,6 +378,14 @@ class FinanceSummary {
 
   /// Investment gain (realized + unrealized) in minor units.
   int get totalGains => (investments?['realizedGains'] ?? 0) + (investments?['unrealizedGains'] ?? 0);
+
+  /// The return on the money invested, in percent (gains over invested
+  /// capital), or null with nothing invested.
+  double? get investmentReturnPercent {
+    final int invested = investments?['investedCapital'] ?? 0;
+    if (invested <= 0) return null;
+    return totalGains * 100 / invested;
+  }
 
   /// The largest monthly flow, to scale the chart (at least 1).
   int get chartMax => monthly.fold<int>(1, (m, f) => [m, f.moneyIn, f.moneyOut].reduce((a, b) => a > b ? a : b));

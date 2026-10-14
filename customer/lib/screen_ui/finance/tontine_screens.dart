@@ -1,7 +1,10 @@
 import 'package:customer/screen_ui/finance/fin_ds.dart';
+import 'package:customer/screen_ui/finance/finance_chat_screens.dart';
+import 'package:customer/screen_ui/finance/finance_restriction.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/finance_widgets.dart';
 import 'package:customer/screen_ui/finance/savings_screens.dart';
+import 'package:customer/service/finance_chat_service.dart';
 import 'package:customer/service/finance_group_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/themes/ds/ds.dart';
@@ -10,7 +13,7 @@ import 'package:customer/utils/finance_rules.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:get/get.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 String _date(DateTime? d) => d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
 
@@ -37,8 +40,18 @@ String? _minHelper(String text, int min) {
 /// Spideli Finance > Tontines: invitations and the user's tontines.
 /// `platform_settings/tontines` must exist (admin), else "not available";
 /// a failed read offers Retry.
-class TontineListScreen extends StatelessWidget {
+class TontineListScreen extends StatefulWidget {
   const TontineListScreen({super.key});
+
+  @override
+  State<TontineListScreen> createState() => _TontineListScreenState();
+}
+
+class _TontineListScreenState extends State<TontineListScreen> {
+  /// The user's profile, for `users/{uid}.financeRestriction` (set by
+  /// Spideli): a restriction for tontines blocks creating and joining one.
+  /// One subscription for the screen's life (a rebuild must not reopen it).
+  late final Stream<Map<String, dynamic>> _profile = FinanceService.myProfile();
 
   @override
   Widget build(BuildContext context) {
@@ -47,32 +60,47 @@ class TontineListScreen extends StatelessWidget {
       builder: (context, st) {
         final cfg = st.config;
         final Widget? placeholder = st.placeholder(Icons.groups_2_outlined, "Tontines are not available yet.".tr);
-        return FinScaffold(
-          title: "Tontine".tr,
-          bottomBar: !st.ready
-              ? null
-              : DsStickyBar(
-                  child: DsButton.primary(
-                    label: "Create a tontine".tr,
-                    icon: Icons.add_rounded,
-                    size: DsButtonSize.lg,
-                    expand: true,
-                    onPressed: () => Get.to(() => TontineFormScreen(config: cfg!)),
-                  ),
-                ),
-          body: FinBody(
-            children: [
-              if (placeholder != null) placeholder else ...const [_TontinesHero(), _TontineInvitations(), _TontineList()],
-            ],
-          ),
+        return StreamBuilder<Map<String, dynamic>>(
+          stream: _profile,
+          builder: (context, pSnap) {
+            final bool restricted = FinanceRestriction.blocks(pSnap.data, FinanceRestriction.tontines);
+            return FinScaffold(
+              title: "Tontine".tr,
+              actions: const [FinanceChatsButton(), DsGap(DsSpace.xs)],
+              bottomBar: !st.ready
+                  ? null
+                  : DsStickyBar(
+                      child: DsButton.primary(
+                        label: "Create a tontine".tr,
+                        icon: Icons.add_rounded,
+                        size: DsButtonSize.lg,
+                        expand: true,
+                        onPressed: restricted ? null : () => Get.to(() => TontineFormScreen(config: cfg!)),
+                      ),
+                    ),
+              body: FinBody(
+                children: [
+                  if (placeholder != null)
+                    placeholder
+                  else ...[
+                    // What is restricted, why, since when, and how to reach support.
+                    if (restricted) FinanceRestrictionNotice.of(pSnap.data),
+                    const _TontinesHero(),
+                    _TontineInvitations(restricted: restricted),
+                    const _TontineList(),
+                  ],
+                ],
+              ),
+            );
+          },
         );
       },
     );
   }
 }
 
-/// The focal point: the next contribution the server has scheduled for the
-/// user (finance_summaries/{uid}); hidden when nothing is due.
+/// The focal point: the user's next contribution (the dashboard totals,
+/// FinanceService.summary); hidden when nothing is due.
 class _TontinesHero extends StatelessWidget {
   const _TontinesHero();
 
@@ -99,12 +127,13 @@ class _TontinesHero extends StatelessWidget {
   }
 }
 
-/// An invitation row: what it is, then decline / join.
+/// An invitation row: what it is, then decline / join ([onJoin] null: the
+/// user cannot join now).
 class _Invitation extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onDecline;
-  final VoidCallback onJoin;
+  final VoidCallback? onJoin;
 
   const _Invitation({required this.title, required this.subtitle, required this.onDecline, required this.onJoin});
 
@@ -130,8 +159,8 @@ class _Invitation extends StatelessWidget {
   }
 }
 
-/// The terms an invitation carries when the server copied them onto it
-/// (same names as `tontines/{id}`): an invitee cannot read the tontine
+/// The terms an invitation carries (copied from `tontines/{id}` by the
+/// admin who invited, same names): an invitee cannot read the tontine
 /// itself until they join. Empty when the invitation has none.
 List<(String, String)> _inviteTerms(Map<String, dynamic> i) {
   final String cur = i['currency']?.toString() ?? '';
@@ -149,7 +178,10 @@ List<(String, String)> _inviteTerms(Map<String, dynamic> i) {
 }
 
 class _TontineInvitations extends StatelessWidget {
-  const _TontineInvitations();
+  /// The user is restricted for tontines: they may decline, not join.
+  final bool restricted;
+
+  const _TontineInvitations({required this.restricted});
 
   /// Joining commits the user to a contribution every cycle: what is known
   /// of the commitment first.
@@ -191,7 +223,7 @@ class _TontineInvitations extends StatelessWidget {
                   for (final (_, value) in _inviteTerms(i).take(2)) value,
                 ].join(' · '),
                 onDecline: () => FinanceUi.run(() => FinanceGroupService.respondToInvite(i['tontineId'].toString(), false)),
-                onJoin: () => _join(i),
+                onJoin: restricted ? null : () => _join(i),
               ),
           ],
         );
@@ -460,8 +492,20 @@ class _TontineScreenState extends State<TontineScreen> {
             gone: "This tontine is no longer available.",
             onRetry: () => setState(() => _tontine = FinanceGroupService.tontine(widget.tontineId)),
           );
+          final bool member = t != null && t.memberIds.contains(FinanceService.uid);
           return FinScaffold(
             title: t?.name ?? "Tontine".tr,
+            // The tontine's group conversation, for its active members.
+            actions: !member
+                ? null
+                : [
+                    DsIconButton(
+                      icon: Icons.forum_outlined,
+                      semanticLabel: "Group chat".tr,
+                      onPressed: () => Get.to(() => FinanceChatScreen(target: FinanceChatTarget.tontine(t))),
+                    ),
+                    const DsGap(DsSpace.xs),
+                  ],
             body: state != null || t == null
                 ? FinBody(children: [state ?? FinState.loading(rows: 4)])
                 : StreamBuilder<List<Map<String, dynamic>>>(
@@ -613,7 +657,7 @@ class _Overview extends StatelessWidget {
                       FinNotice("The first cycle starts on the first contribution date.".tr)
                     else
                       _CurrentCycle(tontine: t, cycle: current, members: members, config: config),
-                    if (t.isAdmin(uid) && t.isActive) _PendingPayouts(tontine: t, members: members),
+                    if (t.isActive && t.memberIds.contains(uid)) _PendingPayouts(tontine: t, members: members),
                     if (schedule.isNotEmpty) _schedule(context, schedule, cycles),
                   ],
                 );
@@ -653,7 +697,7 @@ class _Overview extends StatelessWidget {
   }
 
   /// One cycle per member: where the rotation is, then who receives the pot
-  /// when, and what became of each cycle the server opened ([cycles]).
+  /// when, and what became of each cycle opened at the start ([cycles]).
   Widget _schedule(BuildContext context, List<DateTime> schedule, List<Map<String, dynamic>> cycles) {
     final t = tontine;
     final int n = schedule.length;
@@ -769,13 +813,8 @@ class _CurrentCycle extends StatelessWidget {
       amount: amount,
       currency: t.currency,
       methods: config?.paymentMethods ?? const ['wallet'],
-      submit: (payment) async {
-        // One key per intended payment, reused on a retry until the server answers.
-        final String intent = FinanceRequestKeys.intentOf('tontine.contribute', '${t.id}/$cycleId', amount, payment);
-        final reply = await FinanceGroupService.contributeToTontine(t.id, cycleId, payment, FinanceRequestKeys.of(intent));
-        FinanceRequestKeys.done(intent);
-        return reply;
-      },
+      // One contribution per cycle and member (`{cycleId}_{uid}`): a retry finds it instead of paying twice.
+      submit: (FinanceFunding funding) => FinanceGroupService.contributeToTontine(t.id, cycleId, funding),
     );
   }
 
@@ -886,7 +925,9 @@ class _CurrentCycle extends StatelessWidget {
   }
 }
 
-/// Admins approve each payout before the server disburses it.
+/// Admins approve each payout; the approval pays the beneficiary's wallet
+/// from the pot. Nobody approves their own payout: another admin does, or
+/// Spideli when the beneficiary is the only admin.
 class _PendingPayouts extends StatelessWidget {
   final Tontine tontine;
   final List<Map<String, dynamic>> members;
@@ -898,10 +939,13 @@ class _PendingPayouts extends StatelessWidget {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: FinanceGroupService.payouts(tontine.id),
       builder: (context, snap) {
-        final pending = (snap.data ?? const []).where((p) => p['status'] == 'pending_approval').toList();
+        final String me = FinanceService.uid;
+        final bool admin = tontine.isAdmin(me);
+        // An admin sees every payout awaiting approval; a member only their own.
+        final pending = (snap.data ?? const []).where((p) => p['status'] == 'pending_approval' && (admin || p['beneficiaryUserId'] == me)).toList();
         if (pending.isEmpty) return const SizedBox.shrink();
         return FinSection(
-          title: "Payouts to approve".tr,
+          title: (admin ? "Payouts to approve" : "Your payout").tr,
           divided: true,
           children: [for (final p in pending) _approval(context, p)],
         );
@@ -913,6 +957,7 @@ class _PendingPayouts extends StatelessWidget {
     final String name = _nameOf(members, p['beneficiaryUserId']?.toString(), tontine.memberIds);
     final String amount = FinanceMoney.format(FinanceSummary.intOf(p['amount']), tontine.currency);
     final String cycle = '${p['cycleNumber'] ?? '-'}';
+    final bool own = p['beneficiaryUserId'] == FinanceService.uid;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -923,7 +968,21 @@ class _PendingPayouts extends StatelessWidget {
           subtitle: '${"Cycle".tr} $cycle',
           amount: amount,
         ),
-        Padding(
+        if (own)
+          Padding(
+            padding: const EdgeInsets.only(bottom: DsSpace.md),
+            child: FinNotice(
+              (!tontine.isAdmin(FinanceService.uid)
+                      ? "An administrator of the tontine approves your payout. The pot is paid to your wallet once they have."
+                      : TontineWrites.waitsForSpideli(tontine, p)
+                      ? "You are the only administrator: Spideli approves your own payout. The pot is paid to your wallet once it has."
+                      : "Another administrator approves your own payout. The pot is paid to your wallet once they have.")
+                  .tr,
+              title: "Waiting for approval".tr,
+            ),
+          )
+        else
+          Padding(
           padding: const EdgeInsets.only(bottom: DsSpace.sm),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
@@ -945,7 +1004,7 @@ class _PendingPayouts extends StatelessWidget {
               ),
             ],
           ),
-        ),
+          ),
       ],
     );
   }
@@ -972,6 +1031,8 @@ class _Members extends StatelessWidget {
     final others = members.where((m) => m['status'] != 'active').toList();
     final bool editOrder = t.isAdmin(uid) && t.isForming && t.payoutOrderMethod == 'fixed';
     final saved = active.map((m) => m['userId'].toString()).toList();
+    // A member who joined has no position yet: the order must be saved once.
+    final bool incomplete = active.any((m) => m['payoutPosition'] is! num);
     // A draft made before someone joined or left no longer matches: start again from the saved order.
     final draft = order;
     final bool draftValid = draft != null && draft.length == saved.length && saved.every(draft.contains);
@@ -988,7 +1049,7 @@ class _Members extends StatelessWidget {
               expand: true,
               onPressed: () async {
                 final email = await askInviteEmail(context);
-                if (email != null) await FinanceUi.run(() => FinanceGroupService.invite(t.id, email), success: "Invitation sent");
+                if (email != null) await runInvite(() => FinanceGroupService.invite(t.id, email), success: "Invitation sent");
               },
             ),
           ),
@@ -1056,11 +1117,21 @@ class _Members extends StatelessWidget {
                             ],
                           ),
                         ),
+                        // A direct conversation with another member.
+                        if (m['userId'] != uid && (m['userId'] ?? '').toString().isNotEmpty)
+                          DsButton.ghost(
+                            label: "Message".tr,
+                            icon: Icons.chat_bubble_outline_rounded,
+                            size: DsButtonSize.sm,
+                            onPressed: () => Get.to(
+                              () => FinanceChatScreen(target: FinanceChatTarget.direct(uid, m['userId'].toString(), _nameOf(members, m['userId']?.toString(), t.memberIds))),
+                            ),
+                          ),
                       ],
                     ),
                   ),
                 ),
-            if (editOrder && draftValid)
+            if (editOrder && (draftValid || incomplete))
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
                 child: Column(
@@ -1073,7 +1144,7 @@ class _Members extends StatelessWidget {
                         if (await FinanceUi.run(() => FinanceGroupService.setPayoutOrder(t.id, current), success: "Payout order saved")) onOrderChanged(null);
                       },
                     ),
-                    DsButton.ghost(label: "Discard changes".tr, expand: true, onPressed: () => onOrderChanged(null)),
+                    if (draftValid) DsButton.ghost(label: "Discard changes".tr, expand: true, onPressed: () => onOrderChanged(null)),
                   ],
                 ),
               ),

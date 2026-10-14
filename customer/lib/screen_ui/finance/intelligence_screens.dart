@@ -4,8 +4,11 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/finance_widgets.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
+import 'package:customer/screen_ui/finance/investment_screens.dart';
 import 'package:customer/service/finance_intel_service.dart';
+import 'package:customer/service/finance_service.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/finance_financing_rules.dart';
 import 'package:customer/utils/finance_intel_rules.dart';
 import 'package:customer/utils/finance_investment_rules.dart';
@@ -16,6 +19,32 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart' show DateFormat;
 
 String _date(DateTime? d) => d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
+
+/// The messages of this module's own refusals; the others are the shared ones.
+const Map<String, String> _errors = {
+  'permission_denied': 'You are not allowed to do this.',
+  'state_changed': 'This action is no longer possible. Please refresh.',
+  'watchlist_full': 'Your watchlist is full. Remove a security first.',
+};
+
+/// A step behind the loader; a refusal is said in words.
+Future<bool> _run(Future<void> Function() action, {String? success}) async {
+  ShowToastDialog.showLoader("Please wait...".tr);
+  try {
+    await action();
+    ShowToastDialog.closeLoader();
+    if (success != null) ShowToastDialog.showToast(success.tr);
+    return true;
+  } on FinanceException catch (e) {
+    ShowToastDialog.closeLoader();
+    ShowToastDialog.showToast((_errors[e.reason] ?? FinanceErrors.messageKey(e.reason)).tr);
+    return false;
+  } catch (_) {
+    ShowToastDialog.closeLoader();
+    ShowToastDialog.showToast(FinanceErrors.messageKey(null).tr);
+    return false;
+  }
+}
 
 String _dateTime(DateTime? d) => d == null ? '-' : ltr(DateFormat('dd MMM yyyy, HH:mm').format(d));
 
@@ -119,6 +148,32 @@ abstract final class IntelLabels {
       }[t] ??
       t;
 
+  static String securityType(String t) => const {
+        'stock': 'Company share',
+        'etf': 'ETF',
+        'bond': 'Bond',
+        'index': 'Market index',
+      }[t] ??
+      t;
+
+  static String ipoStatus(String s) => const {
+        'upcoming': 'Upcoming',
+        'open': 'Open for subscription',
+        'closed': 'Subscription closed',
+        'listed': 'Listed',
+        'withdrawn': 'Withdrawn',
+      }[s] ??
+      s;
+
+  static String newsCategory(String c) => const {
+        'news': 'News',
+        'analysis': 'Analyses',
+        'markets': 'Markets',
+        'economy': 'Economy',
+        'companies': 'Companies',
+      }[c] ??
+      (c.isEmpty ? c : c[0].toUpperCase() + c.substring(1));
+
   static String reason(String k) => const {
         'sector': 'Your sectors',
         'country': 'Your countries',
@@ -129,11 +184,13 @@ abstract final class IntelLabels {
       k;
 }
 
-/// Spideli Finance > Economic intelligence: indicators, exchange rates and
-/// investment opportunities. `platform_settings/intelligence` must exist (admin).
-/// What [IntelligenceScreen] shows: everything, the markets (indicators and
-/// exchange rates, under Investment) or the projects open to investors
-/// (funding, under Investment).
+/// Spideli Finance > Economic intelligence: indicators, exchange rates,
+/// markets (stocks and market indices, bonds, IPOs, stock collections,
+/// news and analyses) and investment opportunities.
+/// `platform_settings/intelligence` must exist (admin).
+/// What [IntelligenceScreen] shows: everything, the markets (indicators,
+/// exchange rates and market data, under Investment) or the projects open
+/// to investors (funding, under Investment).
 enum IntelligenceView { all, markets, funding }
 
 class IntelligenceScreen extends StatefulWidget {
@@ -156,9 +213,15 @@ class _IntelligenceScreenState extends State<IntelligenceScreen> {
         final cfg = st.config;
         final IntelligenceView view = widget.view;
         final bool markets = view != IntelligenceView.funding, funding = view != IntelligenceView.markets;
+        final mk = markets ? cfg?.markets : null;
         final tabs = <(String, Widget Function())>[
           if (markets && cfg?.indicators != null) ("Indicators", () => _Indicators(config: cfg!.indicators!)),
           if (markets && cfg?.fx != null) ("Exchange rates", () => _Rates(config: cfg!.fx!)),
+          if (mk?.stocks == true) ("Stocks", () => const _Stocks()),
+          if (mk?.bonds == true) ("Bonds", () => const _Bonds()),
+          if (mk?.ipos == true) ("IPOs", () => const _Ipos()),
+          if (mk?.collections == true) ("Collections", () => const _Collections()),
+          if (mk?.news == true) ("News", () => const _News()),
           if (funding && cfg?.matching != null) ("Opportunities", () => _Opportunities(config: cfg!.matching!)),
         ];
         final String title = switch (view) {
@@ -184,8 +247,14 @@ class _IntelligenceScreenState extends State<IntelligenceScreen> {
             else if (tabs.isEmpty)
               FinState.empty(icon, unavailable)
             else ...[
-              if (tabs.length > 1) DsSegmentedTabs(segments: [for (final t in tabs) DsSegment(t.$1.tr)], index: tab, onChanged: (i) => setState(() => _tab = i)),
-              tabs[tab].$2(),
+              if (tabs.length > 1)
+                DsSegmentedTabs(
+                  scrollable: tabs.length > 3,
+                  segments: [for (final t in tabs) DsSegment(t.$1.tr)],
+                  index: tab,
+                  onChanged: (i) => setState(() => _tab = i),
+                ),
+              KeyedSubtree(key: ValueKey(tabs[tab].$1), child: tabs[tab].$2()),
             ],
           ]),
         );
@@ -693,7 +762,7 @@ class _OpportunityScreenState extends State<OpportunityScreen> {
 
   /// Hides the opportunity, then goes back to the list it no longer belongs to.
   Future<void> _notForMe(Opportunity o) async {
-    final ok = await FinanceUi.run(() => FinanceIntelService.respond(o.id, false), success: "Hidden");
+    final ok = await _run(() => FinanceIntelService.respond(o.id, false), success: "Hidden");
     if (ok && mounted) Get.back();
   }
 
@@ -711,14 +780,14 @@ class _OpportunityScreenState extends State<OpportunityScreen> {
               style: DsTypography.body.copyWith(color: DsColors.of(context).textSecondary),
             ),
             const DsGap(DsSpace.md),
-            DsTextField(label: "Message (optional)".tr, controller: message, maxLines: 3, maxLength: 500),
+            DsTextField(label: "Message (optional)".tr, controller: message, maxLines: 3, maxLength: IntelPlans.maxMessage),
             DsButton.primary(label: "Share my interest".tr, expand: true, onPressed: () => Get.back(result: true)),
           ],
         ),
       )),
     );
     if (ok != true) return;
-    final sent = await FinanceUi.run(() => FinanceIntelService.respond(o.id, true, message: message.text.trim()), success: "Interest sent");
+    final sent = await _run(() => FinanceIntelService.respond(o.id, true, message: message.text.trim()), success: "Interest sent");
     if (sent && mounted) setState(() => _sent = true);
   }
 
@@ -847,17 +916,18 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
     final int min = _minTicket;
     final int? max = FinanceAmount.parse(_max.text, _currency);
     if (!_amountsValid || max == null) return;
-    final ok = await FinanceUi.run(
-      () => FinanceIntelService.saveInvestorProfile({
-        'currency': _currency,
-        'sectors': _sectors.toList(),
-        'countries': _countries.toList(),
-        'types': _types.toList(),
-        'minTicket': min,
-        'maxTicket': max,
-        'maxRisk': _risk.round(),
-        'maxHorizonMonths': _horizon,
-      }),
+    final ok = await _run(
+      () => FinanceIntelService.saveInvestorProfile(
+        widget.config,
+        currency: _currency,
+        sectors: _sectors.toList(),
+        countries: _countries.toList(),
+        types: _types.toList(),
+        minTicket: min,
+        maxTicket: max,
+        maxRisk: _risk.round(),
+        maxHorizonMonths: _horizon,
+      ),
       success: "Preferences saved",
     );
     if (ok) Get.back();
@@ -972,6 +1042,666 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
         if (cfg.sectors.isNotEmpty) _choices("Sectors".tr, cfg.sectors, _sectors, FinancingLabels.sector),
         if (cfg.countries.isNotEmpty) _choices("Countries".tr, cfg.countries, _countries, IntelLabels.country),
         if (cfg.types.isNotEmpty) _choices("Types of investment".tr, cfg.types, _types, IntelLabels.type),
+      ]),
+    );
+  }
+}
+
+// ------------------------------------------------------------------ markets
+
+/// The trend icon of a security (its change since the previous close).
+IconData _secTrend(MarketSecurity s) => switch (s.direction) {
+      'up' => Icons.trending_up_rounded,
+      'down' => Icons.trending_down_rounded,
+      'flat' => Icons.trending_flat_rounded,
+      _ => s.isBond ? Icons.receipt_long_outlined : Icons.show_chart_rounded,
+    };
+
+DsTone _secTone(MarketSecurity s) => switch (s.direction) {
+      'up' => DsTone.success,
+      'down' => DsTone.danger,
+      _ => DsTone.brand,
+    };
+
+/// "Up 1.25 %", "Down 0.4 %", "Unchanged": the arrow and the colour are
+/// never the only cue. Null without a change.
+String? _changeText(MarketSecurity s) {
+  final double? v = s.changePercent ?? s.change;
+  if (v == null) return null;
+  final String amount = ltr('${formatNumber(v.abs())}${s.changePercent != null ? ' %' : ''}');
+  return switch (s.direction) {
+    'up' => '${"Up".tr} $amount',
+    'down' => '${"Down".tr} $amount',
+    _ => "Unchanged".tr,
+  };
+}
+
+String _percent(double v) => ltr('${formatNumber(v)} %');
+
+/// "Updated 14 Oct 2026, 14:32 · Delayed".
+String _freshness(MarketSecurity s) => ['${"Updated".tr} ${_dateTime(s.updatedAt)}', if (s.delayed) "Delayed".tr].join(' · ');
+
+/// Buying or subscribing needs a licensed broker: Spideli's regulated funds instead.
+class _FundsNotice extends StatelessWidget {
+  final String message;
+
+  const _FundsNotice(this.message);
+
+  @override
+  Widget build(BuildContext context) => FinNotice(
+        message,
+        title: "Want to invest?".tr,
+        actionLabel: "Invest through the funds".tr,
+        onAction: () => Get.to(() => const InvestmentsScreen()),
+      );
+}
+
+/// The line under market data.
+Widget _marketsCaption(BuildContext context) => Padding(
+      padding: const EdgeInsets.only(top: DsSpace.md, left: DsSpace.xxs, right: DsSpace.xxs),
+      child: _caption(context, "Market data as published by the source shown on each line, for information only. It is not investment advice.".tr),
+    );
+
+/// Choice chips in a scrolling row ("All" first).
+Widget _chips(BuildContext context, List<String> values, String? selected, String Function(String) label, ValueChanged<String?> onSelected) => Padding(
+      padding: const EdgeInsets.only(top: DsSpace.lg),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          for (final v in <String?>[null, ...values])
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: DsSpace.sm),
+              child: ChoiceChip(label: Text(v == null ? "All".tr : label(v)), selected: selected == v, onSelected: (_) => onSelected(v)),
+            ),
+        ]),
+      ),
+    );
+
+/// One security in a list: name, change, symbol and exchange, price, and
+/// when it was updated (with "Delayed" when the feed says so).
+class _SecurityRow extends StatelessWidget {
+  final MarketSecurity security;
+
+  const _SecurityRow({required this.security});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = security;
+    final String facts = s.isBond
+        ? [
+            if (s.couponPercent != null) '${"Coupon rate".tr} ${_percent(s.couponPercent!)}',
+            if (s.yieldPercent != null) '${"Yield".tr} ${_percent(s.yieldPercent!)}',
+            if (s.maturityDate != null) '${"Matures".tr} ${_date(s.maturityDate)}',
+          ].join(' · ')
+        : (_changeText(s) ?? '');
+    return FinListTile(
+      icon: _secTrend(s),
+      iconTone: _secTone(s),
+      title: s.title,
+      subtitle: [
+        if (facts.isNotEmpty) facts,
+        [if (s.symbol.isNotEmpty) ltr(s.symbol), if (s.exchange.isNotEmpty) s.exchange, if (s.type == 'etf') "ETF".tr].join(' · '),
+        _freshness(s),
+      ].where((x) => x.isNotEmpty).join('\n'),
+      amount: s.price == null ? null : ltr(s.priceDisplay),
+      chevron: true,
+      onTap: () => Get.to(() => SecurityScreen(securityId: s.id)),
+    );
+  }
+}
+
+/// Stocks and the stock markets: the user's watchlist, the market indices,
+/// then the shares and ETFs by exchange. Live: prices change on screen as
+/// the admin's feed publishes them.
+class _Stocks extends StatefulWidget {
+  const _Stocks();
+
+  @override
+  State<_Stocks> createState() => _StocksState();
+}
+
+class _StocksState extends State<_Stocks> {
+  late Stream<List<MarketSecurity>> _all = FinanceIntelService.securities();
+  late Stream<List<String>> _watch = FinanceIntelService.watchlist();
+  String? _exchange;
+
+  void _retry() => setState(() {
+        _all = FinanceIntelService.securities();
+        _watch = FinanceIntelService.watchlist();
+      });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<String>>(
+      stream: _watch,
+      builder: (context, ws) => StreamBuilder<List<MarketSecurity>>(
+        stream: _all,
+        builder: (context, snap) {
+          if (snap.hasError) return FinState.error("Could not load the market data.".tr, onRetry: _retry);
+          if (!snap.hasData) return FinState.loading(rows: 5);
+          final all = snap.data!;
+          final indices = all.where((s) => s.isIndex).toList();
+          final shares = all.where((s) => s.type == 'stock' || s.type == 'etf').toList();
+          if (indices.isEmpty && shares.isEmpty) return FinState.empty(Icons.show_chart_rounded, "No market data is published yet.".tr);
+          final byId = {for (final s in all) s.id: s};
+          final mine = [for (final id in ws.data ?? const <String>[]) ?byId[id]];
+          final exchanges = {for (final s in shares) if (s.exchange.isNotEmpty) s.exchange}.toList()..sort();
+          final String? exchange = exchanges.contains(_exchange) ? _exchange : null;
+          final list = shares.where((s) => exchange == null || s.exchange == exchange).toList();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (mine.isNotEmpty)
+                FinSection(title: "My watchlist".tr, divided: true, padding: _listPadding, children: [for (final s in mine) _SecurityRow(security: s)]),
+              if (indices.isNotEmpty)
+                FinSection(title: "Market indices".tr, divided: true, padding: _listPadding, children: [for (final s in indices) _SecurityRow(security: s)]),
+              if (shares.isNotEmpty) ...[
+                if (exchanges.length > 1) _chips(context, exchanges, exchange, (e) => e, (v) => setState(() => _exchange = v)),
+                FinSection(
+                  title: "Shares".tr,
+                  top: exchanges.length > 1 ? DsSpace.md : FinSpace.section,
+                  divided: true,
+                  padding: _listPadding,
+                  children: [for (final s in list) _SecurityRow(security: s)],
+                ),
+              ],
+              _FundsNotice("Spideli does not buy or sell shares: that needs a licensed broker. You can invest in regulated funds instead.".tr),
+              _marketsCaption(context),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Bonds: coupon, yield and maturity, soonest maturity first.
+class _Bonds extends StatefulWidget {
+  const _Bonds();
+
+  @override
+  State<_Bonds> createState() => _BondsState();
+}
+
+class _BondsState extends State<_Bonds> {
+  late Stream<List<MarketSecurity>> _all = FinanceIntelService.securities();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<MarketSecurity>>(
+      stream: _all,
+      builder: (context, snap) {
+        if (snap.hasError) return FinState.error("Could not load the market data.".tr, onRetry: () => setState(() => _all = FinanceIntelService.securities()));
+        if (!snap.hasData) return FinState.loading(rows: 4);
+        final bonds = snap.data!.where((s) => s.isBond).toList()
+          ..sort((a, b) => (a.maturityDate ?? DateTime(9999)).compareTo(b.maturityDate ?? DateTime(9999)));
+        if (bonds.isEmpty) return FinState.empty(Icons.receipt_long_outlined, "No bond is published yet.".tr);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FinSection(divided: true, padding: _listPadding, children: [for (final s in bonds) _SecurityRow(security: s)]),
+            _FundsNotice("Spideli does not buy or sell bonds: that needs a licensed broker. You can invest in regulated funds instead.".tr),
+            _marketsCaption(context),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// One security, live: price and change, its history, key facts, source
+/// and update time; added to or removed from the user's watchlist.
+class SecurityScreen extends StatefulWidget {
+  final String securityId;
+
+  const SecurityScreen({super.key, required this.securityId});
+
+  @override
+  State<SecurityScreen> createState() => _SecurityScreenState();
+}
+
+class _SecurityScreenState extends State<SecurityScreen> {
+  late Stream<MarketSecurity?> _security = FinanceIntelService.security(widget.securityId);
+  late final Stream<List<String>> _watch = FinanceIntelService.watchlist();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<MarketSecurity?>(
+      stream: _security,
+      builder: (context, snap) {
+        final s = snap.data;
+        final Widget? state = FinState.of(
+          snap,
+          gone: "This security is no longer available.",
+          onRetry: () => setState(() => _security = FinanceIntelService.security(widget.securityId)),
+        );
+        return FinScaffold(
+          title: s?.title ?? "Market".tr,
+          actions: s == null || FinanceService.uid.isEmpty
+              ? null
+              : [
+                  StreamBuilder<List<String>>(
+                    stream: _watch,
+                    builder: (context, ws) {
+                      final bool on = (ws.data ?? const <String>[]).contains(s.id);
+                      return DsIconButton(
+                        icon: on ? Icons.star_rounded : Icons.star_border_rounded,
+                        semanticLabel: (on ? "Remove from my watchlist" : "Add to my watchlist").tr,
+                        onPressed: !ws.hasData
+                            ? null
+                            : () => _run(() => FinanceIntelService.setWatched(s.id, !on), success: on ? "Removed from your watchlist" : "Added to your watchlist"),
+                      );
+                    },
+                  ),
+                ],
+          body: state != null || s == null ? FinBody(children: [state ?? FinState.loading(rows: 4)]) : _body(context, s),
+        );
+      },
+    );
+  }
+
+  Widget _body(BuildContext context, MarketSecurity s) {
+    final bool live = s.isLive(DateTime.now());
+    String n(double v) => ltr(formatNumber(v));
+    final facts = <Widget>[
+      if (s.isBond) ...[
+        if (s.couponPercent != null) FinRow("Coupon rate".tr, _percent(s.couponPercent!)),
+        if (s.yieldPercent != null) FinRow("Yield".tr, _percent(s.yieldPercent!)),
+        if (s.maturityDate != null) FinRow("Maturity".tr, _date(s.maturityDate)),
+      ],
+      if (s.open != null) FinRow("Opening price".tr, n(s.open!)),
+      if (s.high != null) FinRow("High".tr, n(s.high!)),
+      if (s.low != null) FinRow("Low".tr, n(s.low!)),
+      if (s.volume != null) FinRow("Volume".tr, ltr(formatNumber(s.volume!, decimals: 0))),
+      if (s.sector.isNotEmpty) FinRow("Sector".tr, s.sector),
+      if (s.country.isNotEmpty) FinRow("Country".tr, IntelLabels.country(s.country).tr),
+      if (s.currency.isNotEmpty && !s.isIndex) FinRow("Currency".tr, s.currency),
+    ];
+    return FinBody(children: [
+      FinHeader(
+        overline: [if (s.symbol.isNotEmpty) ltr(s.symbol), if (s.exchange.isNotEmpty) s.exchange, IntelLabels.securityType(s.type).tr].join(' · '),
+        title: s.price == null ? '-' : ltr(s.priceDisplay),
+        subtitle: [?_changeText(s), if (s.isBond && s.yieldPercent != null) '${"Yield".tr} ${_percent(s.yieldPercent!)}'].join(' · '),
+        status: s.delayed ? 'delayed' : (live ? 'active' : null),
+        statusLabel: s.delayed ? "Delayed".tr : (live ? "Live".tr : null),
+        icon: _secTrend(s),
+      ),
+      // Retry subscribes again: a failed stream does not recover by itself.
+      StatefulBuilder(
+        builder: (context, refresh) => StreamBuilder<List<(DateTime, double)>>(
+          stream: FinanceIntelService.priceHistory(s.id),
+          builder: (context, snap) {
+            if (snap.hasError) return FinState.error("Could not load the history.".tr, onRetry: () => refresh(() {}));
+            if (!snap.hasData) return FinState.loading(rows: 2);
+            final h = snap.data!;
+            if (h.length < 2) return const SizedBox.shrink();
+            return _history(context, [for (final p in h) p.$2], _date(h.first.$1), _date(h.last.$1), (v) => ltr(formatNumber(v)));
+          },
+        ),
+      ),
+      if (facts.isNotEmpty) FinSection(title: "Key facts".tr, children: facts),
+      FinSection(
+        title: "Source".tr,
+        footnote: (s.delayed ? "Prices are delayed by the exchange or the data provider." : "Prices update here as the source publishes them.").tr,
+        children: [
+          FinRow("Published by".tr, s.source),
+          FinRow("Updated".tr, _dateTime(s.updatedAt)),
+        ],
+      ),
+      if (!s.isIndex)
+        _FundsNotice((s.isBond
+                ? "Spideli does not buy or sell bonds: that needs a licensed broker. You can invest in regulated funds instead."
+                : "Spideli does not buy or sell shares: that needs a licensed broker. You can invest in regulated funds instead.")
+            .tr),
+    ]);
+  }
+}
+
+/// IPO tracking: open for subscription, upcoming, then recent ones.
+class _Ipos extends StatefulWidget {
+  const _Ipos();
+
+  @override
+  State<_Ipos> createState() => _IposState();
+}
+
+class _IposState extends State<_Ipos> {
+  late Stream<List<IpoListing>> _ipos = FinanceIntelService.ipos();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<IpoListing>>(
+      stream: _ipos,
+      builder: (context, snap) {
+        if (snap.hasError) return FinState.error("Could not load the IPOs.".tr, onRetry: () => setState(() => _ipos = FinanceIntelService.ipos()));
+        if (!snap.hasData) return FinState.loading(rows: 4);
+        final all = snap.data!;
+        if (all.isEmpty) return FinState.empty(Icons.rocket_launch_outlined, "No IPO is published yet.".tr);
+        Widget part(String title, List<IpoListing> list) =>
+            FinSection(title: title, divided: true, padding: _listPadding, children: [for (final i in list) _IpoRow(ipo: i)]);
+        final open = all.where((i) => i.status == 'open').toList();
+        final upcoming = all.where((i) => i.status == 'upcoming').toList();
+        final recent = all.where((i) => i.rank > 1).toList();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (open.isNotEmpty) part("Open for subscription".tr, open),
+            if (upcoming.isNotEmpty) part("Upcoming".tr, upcoming),
+            if (recent.isNotEmpty) part("Recent".tr, recent),
+            _FundsNotice("Spideli does not take IPO subscriptions: that needs a licensed broker. You can invest in regulated funds instead.".tr),
+            _marketsCaption(context),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The date that matters for an IPO's status, in words.
+String? _ipoWhen(IpoListing i) => switch (i.status) {
+      'open' when i.closeDate != null => '${"Closes on".tr} ${_date(i.closeDate)}',
+      'upcoming' when i.openDate != null => '${"Opens on".tr} ${_date(i.openDate)}',
+      'listed' when i.listingDate != null => '${"Listed on".tr} ${_date(i.listingDate)}',
+      'closed' when i.listingDate != null => '${"Listing on".tr} ${_date(i.listingDate)}',
+      _ => null,
+    };
+
+class _IpoRow extends StatelessWidget {
+  final IpoListing ipo;
+
+  const _IpoRow({required this.ipo});
+
+  @override
+  Widget build(BuildContext context) {
+    final i = ipo;
+    return FinListTile(
+      icon: Icons.rocket_launch_outlined,
+      iconTone: i.status == 'open' ? DsTone.warning : DsTone.brand,
+      title: i.company,
+      subtitle: [
+        [if (i.symbol.isNotEmpty) ltr(i.symbol), if (i.exchange.isNotEmpty) i.exchange].join(' · '),
+        ?_ipoWhen(i),
+      ].where((x) => x.isNotEmpty).join('\n'),
+      amount: i.priceDisplay == null ? null : ltr(i.priceDisplay!),
+      status: i.status,
+      statusLabel: IntelLabels.ipoStatus(i.status).tr,
+      chevron: true,
+      onTap: () => Get.to(() => IpoScreen(ipoId: i.id)),
+    );
+  }
+}
+
+/// One IPO: its terms and dates, the prospectus, its source.
+class IpoScreen extends StatefulWidget {
+  final String ipoId;
+
+  const IpoScreen({super.key, required this.ipoId});
+
+  @override
+  State<IpoScreen> createState() => _IpoScreenState();
+}
+
+class _IpoScreenState extends State<IpoScreen> {
+  late Stream<IpoListing?> _ipo = FinanceIntelService.ipo(widget.ipoId);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<IpoListing?>(
+      stream: _ipo,
+      builder: (context, snap) {
+        final i = snap.data;
+        final Widget? state = FinState.of(snap, gone: "This IPO is no longer available.", onRetry: () => setState(() => _ipo = FinanceIntelService.ipo(widget.ipoId)));
+        final Uri? prospectus = i == null || i.prospectusUrl.isEmpty ? null : Uri.tryParse(i.prospectusUrl);
+        return FinScaffold(
+          title: "IPO".tr,
+          bottomBar: prospectus == null
+              ? null
+              : DsStickyBar(
+                  child: DsButton.secondary(
+                    label: "Read the prospectus".tr,
+                    icon: Icons.open_in_new_rounded,
+                    size: DsButtonSize.lg,
+                    expand: true,
+                    onPressed: () => Constant().launchURL(prospectus),
+                  ),
+                ),
+          body: state != null || i == null
+              ? FinBody(children: [state ?? FinState.loading(rows: 4)])
+              : FinBody(children: [
+                  FinHeader(
+                    overline: [if (i.symbol.isNotEmpty) ltr(i.symbol), if (i.exchange.isNotEmpty) i.exchange].join(' · '),
+                    title: i.company,
+                    subtitle: i.priceDisplay == null ? null : ltr(i.priceDisplay!),
+                    status: i.status,
+                    statusLabel: IntelLabels.ipoStatus(i.status).tr,
+                    icon: Icons.rocket_launch_outlined,
+                  ),
+                  FinSection(
+                    title: "Key facts".tr,
+                    children: [
+                      if (i.offerPrice != null)
+                        FinRow("Offer price".tr, ltr(i.priceDisplay!))
+                      else if (i.priceDisplay != null)
+                        FinRow("Price range".tr, ltr(i.priceDisplay!)),
+                      if (i.exchange.isNotEmpty) FinRow("Exchange".tr, i.exchange),
+                      if (i.country.isNotEmpty) FinRow("Country".tr, IntelLabels.country(i.country).tr),
+                      if (i.sector.isNotEmpty) FinRow("Sector".tr, i.sector),
+                      if (i.openDate != null) FinRow("Subscription opens".tr, _date(i.openDate)),
+                      if (i.closeDate != null) FinRow("Subscription closes".tr, _date(i.closeDate)),
+                      if (i.listingDate != null) FinRow("Listing date".tr, _date(i.listingDate)),
+                    ],
+                  ),
+                  FinSection(
+                    title: "Source".tr,
+                    children: [
+                      FinRow("Published by".tr, i.source),
+                      FinRow("Updated".tr, _dateTime(i.updatedAt)),
+                    ],
+                  ),
+                  _FundsNotice("Spideli does not take IPO subscriptions: that needs a licensed broker. You can invest in regulated funds instead.".tr),
+                ]),
+        );
+      },
+    );
+  }
+}
+
+/// Stock collections: themed selections published by the admin.
+class _Collections extends StatefulWidget {
+  const _Collections();
+
+  @override
+  State<_Collections> createState() => _CollectionsState();
+}
+
+class _CollectionsState extends State<_Collections> {
+  late Stream<List<StockCollection>> _collections = FinanceIntelService.collections();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<StockCollection>>(
+      stream: _collections,
+      builder: (context, snap) {
+        if (snap.hasError) return FinState.error("Could not load the collections.".tr, onRetry: () => setState(() => _collections = FinanceIntelService.collections()));
+        if (!snap.hasData) return FinState.loading(rows: 3);
+        final list = snap.data!;
+        if (list.isEmpty) return FinState.empty(Icons.collections_bookmark_outlined, "No collection is published yet.".tr);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FinSection(
+              divided: true,
+              padding: _listPadding,
+              children: [
+                for (final c in list)
+                  FinListTile(
+                    icon: Icons.collections_bookmark_outlined,
+                    iconTone: DsTone.brand,
+                    title: c.title,
+                    subtitle: [
+                      if (c.summary.isNotEmpty) c.summary,
+                      [
+                        FinanceUi.count(c.securityIds.length, "security", "securities"),
+                        if (c.riskLevel != null) '${"Risk".tr} ${ltr('${c.riskLevel}/7')}',
+                      ].join(' · '),
+                    ].join('\n'),
+                    chevron: true,
+                    onTap: () => Get.to(() => CollectionScreen(collection: c)),
+                  ),
+              ],
+            ),
+            _marketsCaption(context),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// One collection and its securities, live.
+class CollectionScreen extends StatefulWidget {
+  final StockCollection collection;
+
+  const CollectionScreen({super.key, required this.collection});
+
+  @override
+  State<CollectionScreen> createState() => _CollectionScreenState();
+}
+
+class _CollectionScreenState extends State<CollectionScreen> {
+  late Stream<List<MarketSecurity>> _all = FinanceIntelService.securities();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.collection;
+    return FinScaffold(
+      title: "Collection".tr,
+      body: FinBody(children: [
+        FinHeader(
+          overline: c.theme.isEmpty ? null : c.theme,
+          title: c.title,
+          subtitle: c.summary.isEmpty ? null : c.summary,
+          icon: Icons.collections_bookmark_outlined,
+        ),
+        if (c.riskLevel != null)
+          FinSection(children: [FinRow("Risk level".tr, '${RiskScale.label(c.riskLevel!).tr} · ${ltr('${c.riskLevel}/7')}')]),
+        StreamBuilder<List<MarketSecurity>>(
+          stream: _all,
+          builder: (context, snap) {
+            if (snap.hasError) return FinState.error("Could not load the market data.".tr, onRetry: () => setState(() => _all = FinanceIntelService.securities()));
+            if (!snap.hasData) return FinState.loading(rows: 4);
+            final list = c.of(snap.data!);
+            if (list.isEmpty) return FinState.empty(Icons.show_chart_rounded, "No security of this collection is published right now.".tr);
+            return FinSection(title: "Securities".tr, divided: true, padding: _listPadding, children: [for (final s in list) _SecurityRow(security: s)]);
+          },
+        ),
+        FinNotice("A collection is a themed selection for information. It is not a recommendation to buy or sell.".tr, tone: DsTone.warning),
+        _FundsNotice("Spideli does not buy or sell shares: that needs a licensed broker. You can invest in regulated funds instead.".tr),
+      ]),
+    );
+  }
+}
+
+/// Financial news and analyses, newest first, by category.
+class _News extends StatefulWidget {
+  const _News();
+
+  @override
+  State<_News> createState() => _NewsState();
+}
+
+class _NewsState extends State<_News> {
+  late Stream<List<FinanceNews>> _news = FinanceIntelService.news();
+  String? _category;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<FinanceNews>>(
+      stream: _news,
+      builder: (context, snap) {
+        if (snap.hasError) return FinState.error("Could not load the news.".tr, onRetry: () => setState(() => _news = FinanceIntelService.news()));
+        if (!snap.hasData) return FinState.loading(rows: 4);
+        final all = snap.data!;
+        if (all.isEmpty) return FinState.empty(Icons.article_outlined, "No news is published yet.".tr);
+        final categories = {for (final n in all) n.category}.toList();
+        final String? category = categories.contains(_category) ? _category : null;
+        final list = all.where((n) => category == null || n.category == category).toList();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (categories.length > 1) _chips(context, categories, category, (c) => IntelLabels.newsCategory(c).tr, (v) => setState(() => _category = v)),
+            FinSection(
+              top: categories.length > 1 ? DsSpace.md : FinSpace.section,
+              divided: true,
+              padding: _listPadding,
+              children: [
+                for (final n in list)
+                  FinListTile(
+                    icon: n.category == 'analysis' ? Icons.analytics_outlined : Icons.article_outlined,
+                    iconTone: DsTone.brand,
+                    title: n.title,
+                    subtitle: [n.source, _date(n.publishedAt), if (n.country.isNotEmpty) IntelLabels.country(n.country).tr].join(' · '),
+                    chevron: true,
+                    onTap: () => Get.to(() => NewsScreen(news: n)),
+                  ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: DsSpace.md, left: DsSpace.xxs, right: DsSpace.xxs),
+              child: _caption(context, "News and analyses from the sources shown, for information only. They are not investment advice.".tr),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// One news item or analysis: its summary, source and date, and the full
+/// article at its source.
+class NewsScreen extends StatelessWidget {
+  final FinanceNews news;
+
+  const NewsScreen({super.key, required this.news});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DsColors.of(context);
+    final n = news;
+    final Uri? url = n.url.isEmpty ? null : Uri.tryParse(n.url);
+    return FinScaffold(
+      title: IntelLabels.newsCategory(n.category).tr,
+      bottomBar: url == null
+          ? null
+          : DsStickyBar(
+              child: DsButton.primary(
+                label: "Read the full article".tr,
+                icon: Icons.open_in_new_rounded,
+                size: DsButtonSize.lg,
+                expand: true,
+                onPressed: () => Constant().launchURL(url),
+              ),
+            ),
+      body: FinBody(children: [
+        FinSurface(
+          padding: const EdgeInsets.all(DsSpace.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(header: true, child: Text(n.title, style: DsTypography.title.copyWith(color: c.textPrimary))),
+              const DsGap(DsSpace.xs),
+              finFreshness(context, [n.source, _dateTime(n.publishedAt), if (n.country.isNotEmpty) IntelLabels.country(n.country).tr].join(' · ')),
+              if (n.summary.isNotEmpty) ...[
+                const DsGap(DsSpace.md),
+                SelectableText(n.summary, style: DsTypography.body.copyWith(color: c.textPrimary, height: 1.5)),
+              ],
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: DsSpace.md, left: DsSpace.xxs, right: DsSpace.xxs),
+          child: _caption(context, "Published by @source. Spideli does not modify it. For information only, not investment advice.".trParams({'source': n.source})),
+        ),
       ]),
     );
   }
