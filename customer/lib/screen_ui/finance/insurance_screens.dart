@@ -266,14 +266,17 @@ class _PhotoPicker extends StatelessWidget {
 /// Spideli Finance > Insurance: policies, quotes, claims and the catalog.
 /// `platform_settings/insurance` must exist (admin).
 class InsuranceScreen extends StatefulWidget {
-  const InsuranceScreen({super.key});
+  /// The tab it opens on: 0 my policies, 1 quotes, 2 claims, 3 insurance offers.
+  final int initialTab;
+
+  const InsuranceScreen({super.key, this.initialTab = 0});
 
   @override
   State<InsuranceScreen> createState() => _InsuranceScreenState();
 }
 
 class _InsuranceScreenState extends State<InsuranceScreen> {
-  int _tab = 0;
+  late int _tab = widget.initialTab.clamp(0, 3);
   final Future<InsuranceConfig?> _config = FinanceInsuranceService.config();
 
   @override
@@ -283,7 +286,7 @@ class _InsuranceScreenState extends State<InsuranceScreen> {
       builder: (context, cfgSnap) {
         final cfg = cfgSnap.data;
         return FinScaffold(
-          title: "Insurance".tr,
+          title: "Online insurance".tr,
           body: cfgSnap.connectionState == ConnectionState.waiting
               ? _page(FinState.loading())
               : cfg == null

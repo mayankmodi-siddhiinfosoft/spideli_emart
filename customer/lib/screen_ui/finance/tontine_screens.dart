@@ -40,7 +40,7 @@ class TontineListScreen extends StatelessWidget {
       builder: (context, cfgSnap) {
         final cfg = cfgSnap.data;
         return FinScaffold(
-          title: "Tontines".tr,
+          title: "Tontine".tr,
           bottomBar: cfg == null
               ? null
               : DsStickyBar(

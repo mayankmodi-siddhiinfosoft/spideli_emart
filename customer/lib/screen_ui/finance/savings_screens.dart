@@ -37,7 +37,7 @@ class SavingsListScreen extends StatelessWidget {
       builder: (context, cfgSnap) {
         final cfg = cfgSnap.data;
         return FinScaffold(
-          title: "Savings goals".tr,
+          title: "Collective savings".tr,
           bottomBar: cfg == null
               ? null
               : DsStickyBar(

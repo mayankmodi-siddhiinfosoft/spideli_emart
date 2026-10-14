@@ -100,8 +100,15 @@ abstract final class IntelLabels {
 
 /// Spideli Finance > Economic intelligence: indicators, exchange rates and
 /// investment opportunities. `platform_settings/intelligence` must exist (admin).
+/// What [IntelligenceScreen] shows: everything, the markets (indicators and
+/// exchange rates, under Investment) or the projects open to investors
+/// (funding, under Investment).
+enum IntelligenceView { all, markets, funding }
+
 class IntelligenceScreen extends StatefulWidget {
-  const IntelligenceScreen({super.key});
+  final IntelligenceView view;
+
+  const IntelligenceScreen({super.key, this.view = IntelligenceView.all});
 
   @override
   State<IntelligenceScreen> createState() => _IntelligenceScreenState();
@@ -117,19 +124,28 @@ class _IntelligenceScreenState extends State<IntelligenceScreen> {
       future: _config,
       builder: (context, cfgSnap) {
         final cfg = cfgSnap.data;
+        final IntelligenceView view = widget.view;
+        final bool markets = view != IntelligenceView.funding, funding = view != IntelligenceView.markets;
         final tabs = <(String, Widget Function())>[
-          if (cfg?.indicators != null) ("Indicators", () => _Indicators(config: cfg!.indicators!)),
-          if (cfg?.fx != null) ("Exchange rates", () => _Rates(config: cfg!.fx!)),
-          if (cfg?.matching != null) ("Opportunities", () => _Opportunities(config: cfg!.matching!)),
+          if (markets && cfg?.indicators != null) ("Indicators", () => _Indicators(config: cfg!.indicators!)),
+          if (markets && cfg?.fx != null) ("Exchange rates", () => _Rates(config: cfg!.fx!)),
+          if (funding && cfg?.matching != null) ("Opportunities", () => _Opportunities(config: cfg!.matching!)),
         ];
+        final String title = switch (view) {
+          IntelligenceView.all => "Economic intelligence",
+          IntelligenceView.markets => "Markets",
+          IntelligenceView.funding => "Invest in projects",
+        };
         final int tab = tabs.isEmpty ? 0 : math.min(_tab, tabs.length - 1);
         return FinScaffold(
-          title: "Economic intelligence".tr,
+          title: title.tr,
           body: FinBody(children: [
             if (cfgSnap.connectionState == ConnectionState.waiting)
               FinState.loading()
             else if (tabs.isEmpty)
-              FinState.empty(Icons.insights_outlined, "Economic intelligence is not available yet.".tr)
+              FinState.empty(
+                  view == IntelligenceView.funding ? Icons.lightbulb_outline_rounded : Icons.insights_outlined,
+                  (view == IntelligenceView.funding ? "No project is open to investors yet." : view == IntelligenceView.markets ? "Market information is not available yet." : "Economic intelligence is not available yet.").tr)
             else ...[
               if (tabs.length > 1) DsSegmentedTabs(segments: [for (final t in tabs) DsSegment(t.$1.tr)], index: tab, onChanged: (i) => setState(() => _tab = i)),
               tabs[tab].$2(),

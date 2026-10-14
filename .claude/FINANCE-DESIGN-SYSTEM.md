@@ -75,6 +75,32 @@ Existing pieces kept and restyled by the accent:
   - money operations end in `FinancePaySheet`, where success shows only when the server confirms.
 - **Sheets:** short contextual tasks (amount entry, confirmation, details). Workflows get screens.
 
+### 4.1 The finance workflow (home structure)
+
+The finance home follows the client's workflow diagram: the user in the
+centre, nine services around them. Tile names and module screen titles use
+the diagram's names.
+
+| Diagram | Home | Opens |
+|---|---|---|
+| User: document verification | My account › Document verification | `KycScreen` |
+| User: statistics | My account › Statistics | `FinanceStatisticsScreen` (your money, cash flow, statement) |
+| User: group (and chat) | My account › Groups | `FinanceGroupsScreen` → tontines, collective savings, loan groups (no member chat yet) |
+| User: multi-currency wallet | Wallet hero + My account › Wallets | `TransactionsScreen` (one wallet per currency; no conversion yet) |
+| Money transfer | Services › Pay and send | `TransfersScreen` |
+| Payment (bills) | Services › Pay and send | `BillsScreen` |
+| Virtual card | Services › Pay and send | `CardsScreen` |
+| Collective savings | Services › Save and invest | `SavingsListScreen` (shared goals by invitation) |
+| Tontine | Services › Save and invest | `TontineListScreen` |
+| Investment (funds, funding, markets) | Services › Save and invest | `InvestmentsScreen` + "Funding and markets": `IntelligenceScreen(view: funding)`, `FinancingScreen`, `IntelligenceScreen(view: markets)` |
+| Loan (credit scoring) | Services › Borrow, protect and get help | `LoansScreen` |
+| Online insurance (buy, claims) | Services › Borrow, protect and get help | `InsuranceScreen` |
+| AI assistant (coach, simulator) | Services › Borrow, protect and get help | `AiAssistantScreen` → `CoachScreen`, return simulator, insurance premium |
+
+Not built yet (they need a server contract first): IPO tracking, stocks and
+stock collections, group chat, wallet currency conversion, product payments,
+a user-visible loan restriction.
+
 ## 5. Money, dates, references
 
 - Amounts: `FinanceMoney.format(minor, currency)`, and `FinanceMoney.signed` for in/out. Both are left-to-right isolates, so they read correctly in Arabic.

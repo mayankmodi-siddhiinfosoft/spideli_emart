@@ -30,14 +30,17 @@ const EdgeInsets _formPadding = EdgeInsets.all(DsSpace.lg);
 /// Spideli Finance > Loans: borrow from, and lend to, the members of your
 /// groups. `platform_settings/lending` must exist (admin).
 class LoansScreen extends StatefulWidget {
-  const LoansScreen({super.key});
+  /// The tab it opens on: 0 borrow, 1 group requests, 2 lent.
+  final int initialTab;
+
+  const LoansScreen({super.key, this.initialTab = 0});
 
   @override
   State<LoansScreen> createState() => _LoansScreenState();
 }
 
 class _LoansScreenState extends State<LoansScreen> {
-  int _tab = 0;
+  late int _tab = widget.initialTab.clamp(0, 2);
 
   /// Read once, so switching tabs does not reload the configuration.
   late final Future<LendingConfig?> _config = FinanceLendingService.config();
@@ -50,7 +53,7 @@ class _LoansScreenState extends State<LoansScreen> {
         final cfg = cfgSnap.data;
         final bool loading = cfgSnap.connectionState == ConnectionState.waiting;
         return FinScaffold(
-          title: "Loans".tr,
+          title: "Loan".tr,
           bottomBar: cfg == null || _tab != 0
               ? null
               : DsStickyBar(

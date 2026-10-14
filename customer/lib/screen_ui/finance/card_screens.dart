@@ -125,7 +125,7 @@ class CardsScreen extends StatelessWidget {
         final cfg = cfgSnap.data;
         if (cfgSnap.connectionState == ConnectionState.waiting || cfg == null) {
           return FinScaffold(
-            title: "Virtual cards".tr,
+            title: "Virtual card".tr,
             body: FinBody(children: [
               cfg == null && cfgSnap.connectionState != ConnectionState.waiting
                   ? FinState.empty(Icons.credit_card_outlined, "Virtual cards are not available yet.".tr)
@@ -139,7 +139,7 @@ class CardsScreen extends StatelessWidget {
             final cards = snap.data ?? const <VirtualCard>[];
             final bool canCreate = snap.hasData && CardActions.canCreate(cards, cfg);
             return FinScaffold(
-              title: "Virtual cards".tr,
+              title: "Virtual card".tr,
               bottomBar: !canCreate
                   ? null
                   : DsStickyBar(

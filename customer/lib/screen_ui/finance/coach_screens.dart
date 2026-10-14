@@ -13,10 +13,12 @@ import 'package:customer/screen_ui/finance/tontine_screens.dart';
 import 'package:customer/screen_ui/finance/transfer_screens.dart';
 import 'package:customer/service/finance_group_service.dart';
 import 'package:customer/service/finance_intel_service.dart';
+import 'package:customer/service/finance_investment_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/finance_intel_rules.dart';
+import 'package:customer/utils/finance_investment_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -29,14 +31,15 @@ void _openTarget(String target) {
     'savings' => const SavingsListScreen(),
     'tontines' => const TontineListScreen(),
     'loans' => const LoansScreen(),
-    'investments' || 'simulator' => const InvestmentsScreen(),
+    'investments' => const InvestmentsScreen(),
+    'simulator' => const AiAssistantScreen(),
     'insurance' => const InsuranceScreen(),
     'cards' => const CardsScreen(),
     'transfers' => const TransfersScreen(),
     'bills' => const BillsScreen(),
     'financing' => const FinancingScreen(),
     'kyc' => const KycScreen(),
-    'indicators' => const IntelligenceScreen(),
+    'indicators' => const IntelligenceScreen(view: IntelligenceView.markets),
     _ => null,
   };
   if (screen != null) Get.to(() => screen);
@@ -69,6 +72,80 @@ const Radius _bubbleTail = Radius.circular(DsSpace.xs);
 Widget _navy(Widget child) => Builder(
       builder: (context) => DsAccentScope(color: Theme.of(context).brightness == Brightness.dark ? FinColors.navyDark : FinColors.navy, child: child),
     );
+
+/// Spideli Finance > AI assistant (the assistant of the finance workflow):
+/// the financial coach and the simulators - an investment's return, and an
+/// insurance premium from an offer's quote form. Each opens its own screen,
+/// which says itself when its service is not available.
+class AiAssistantScreen extends StatelessWidget {
+  const AiAssistantScreen({super.key});
+
+  /// The return simulator works from the investment settings (rates, terms).
+  static Future<void> _openReturnSimulator() async {
+    ShowToastDialog.showLoader("Please wait".tr);
+    InvestmentConfig? config;
+    try {
+      config = await FinanceInvestmentService.config();
+    } catch (_) {
+      config = null;
+    } finally {
+      ShowToastDialog.closeLoader();
+    }
+    if (config == null) {
+      ShowToastDialog.showToast("Investments are not available yet.".tr);
+      return;
+    }
+    final InvestmentConfig cfg = config;
+    Get.to(() => ReturnSimulatorScreen(config: cfg));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FinScaffold(
+      title: "AI assistant".tr,
+      body: FinBody(children: [
+        FinSection(
+          title: "Coach".tr,
+          padding: _listPadding,
+          children: [
+            FinListTile(
+              icon: Icons.support_agent_rounded,
+              iconTone: DsTone.brand,
+              title: "Financial coach".tr,
+              subtitle: "Ask about budgeting, saving, borrowing, insurance or investing".tr,
+              chevron: true,
+              onTap: () => Get.to(() => const CoachScreen()),
+            ),
+          ],
+        ),
+        FinSection(
+          title: "Simulators".tr,
+          divided: true,
+          padding: _listPadding,
+          footnote: "Simulations are estimates, not offers or guarantees.".tr,
+          children: [
+            FinListTile(
+              icon: Icons.calculate_outlined,
+              iconTone: DsTone.brand,
+              title: "Investment return".tr,
+              subtitle: "See how an amount could grow over time.".tr,
+              chevron: true,
+              onTap: _openReturnSimulator,
+            ),
+            FinListTile(
+              icon: Icons.health_and_safety_outlined,
+              iconTone: DsTone.brand,
+              title: "Insurance premium".tr,
+              subtitle: "Pick an insurance offer to estimate its premium".tr,
+              chevron: true,
+              onTap: () => Get.to(() => const InsuranceScreen(initialTab: 3)),
+            ),
+          ],
+        ),
+      ]),
+    );
+  }
+}
 
 /// Spideli Finance > Financial coach. `platform_settings/intelligence.coach` must be enabled (admin).
 class CoachScreen extends StatelessWidget {

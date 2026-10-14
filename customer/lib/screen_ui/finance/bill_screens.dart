@@ -37,7 +37,7 @@ class BillsScreen extends StatelessWidget {
       builder: (context, cfgSnap) {
         final cfg = cfgSnap.data;
         return FinScaffold(
-          title: "Pay bills".tr,
+          title: "Payment".tr,
           body: FinBody(children: [
             if (cfgSnap.connectionState == ConnectionState.waiting)
               FinState.loading()

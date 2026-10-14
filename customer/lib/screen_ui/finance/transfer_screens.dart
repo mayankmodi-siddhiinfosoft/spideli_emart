@@ -146,7 +146,7 @@ class TransfersScreen extends StatelessWidget {
       builder: (context, cfgSnap) {
         final cfg = cfgSnap.data;
         return FinScaffold(
-          title: "Send money".tr,
+          title: "Money transfer".tr,
           body: FinBody(children: [
             if (cfgSnap.connectionState == ConnectionState.waiting)
               FinState.loading()

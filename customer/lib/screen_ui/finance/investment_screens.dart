@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/finance_widgets.dart';
+import 'package:customer/screen_ui/finance/financing_screens.dart';
+import 'package:customer/screen_ui/finance/intelligence_screens.dart';
 import 'package:customer/service/finance_group_service.dart';
 import 'package:customer/service/finance_investment_service.dart';
 import 'package:customer/themes/ds/ds.dart';
@@ -136,7 +138,7 @@ class _InvestmentsScreenState extends State<InvestmentsScreen> {
       builder: (context, cfgSnap) {
         final cfg = cfgSnap.data;
         return FinScaffold(
-          title: "Investments".tr,
+          title: "Investment".tr,
           actions: [
             if (cfg != null)
               DsIconButton(
@@ -148,7 +150,7 @@ class _InvestmentsScreenState extends State<InvestmentsScreen> {
           body: cfgSnap.connectionState == ConnectionState.waiting
               ? FinBody(children: [FinState.loading()])
               : cfg == null
-                  ? FinBody(children: [FinState.empty(Icons.trending_up_rounded, "Investments are not available yet.".tr)])
+                  ? FinBody(children: [FinState.empty(Icons.trending_up_rounded, "Investments are not available yet.".tr), const _FundingAndMarkets()])
                   : FinBody(
                       children: [
                         const _PortfolioHero(),
@@ -162,10 +164,52 @@ class _InvestmentsScreenState extends State<InvestmentsScreen> {
                           1 => _Catalog(config: cfg),
                           _ => const _Orders(),
                         },
+                        if (_tab == 0) const _FundingAndMarkets(),
                       ],
                     ),
         );
       },
+    );
+  }
+}
+
+/// Funding (projects open to investors, and financing for one's own project)
+/// and the markets (indicators and exchange rates): the rest of the
+/// Investment circle of the finance workflow.
+class _FundingAndMarkets extends StatelessWidget {
+  const _FundingAndMarkets();
+
+  @override
+  Widget build(BuildContext context) {
+    return FinSection(
+      title: "Funding and markets".tr,
+      divided: true,
+      children: [
+        FinListTile(
+          icon: Icons.lightbulb_outline_rounded,
+          iconTone: DsTone.brand,
+          title: "Invest in projects".tr,
+          subtitle: "Back a project reviewed by Spideli".tr,
+          chevron: true,
+          onTap: () => Get.to(() => const IntelligenceScreen(view: IntelligenceView.funding)),
+        ),
+        FinListTile(
+          icon: Icons.business_center_outlined,
+          iconTone: DsTone.brand,
+          title: "Finance my project".tr,
+          subtitle: "Apply for funding for your business or project".tr,
+          chevron: true,
+          onTap: () => Get.to(() => const FinancingScreen()),
+        ),
+        FinListTile(
+          icon: Icons.insights_outlined,
+          iconTone: DsTone.brand,
+          title: "Markets".tr,
+          subtitle: "Economic indicators and exchange rates".tr,
+          chevron: true,
+          onTap: () => Get.to(() => const IntelligenceScreen(view: IntelligenceView.markets)),
+        ),
+      ],
     );
   }
 }
